@@ -227,5 +227,30 @@ comment on function public.is_parent_linked_to_student(uuid) is
   'Authorization helper: current parent has an active parent_student_links row for the student.';
 
 -- =============================================================================
+-- Auth user provisioning (backported from migrations/2026_06_27_001_auth_user_provisioning.sql)
+-- =============================================================================
+-- Auto-create a base profile row when a Supabase Auth user is created. Role/type
+-- (student vs parent) and onboarding details are completed later by the service
+-- layer. SECURITY DEFINER so it can write to RLS-protected public.profiles.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  insert into public.profiles (auth_user_id, email, status)
+  values (new.id, new.email, 'pending')
+  on conflict (auth_user_id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- =============================================================================
 -- End of 002_core_profiles_roles_permissions.sql
 -- =============================================================================

@@ -57,6 +57,28 @@ begin
   end loop;
 end $$;
 
+-- -----------------------------------------------------------------------------
+-- Baseline role privileges (backported from
+-- migrations/2026_06_27_002_role_privilege_baseline.sql).
+-- RLS only governs access once the role can reach the table. The canonical schema
+-- must NOT rely on Supabase's implicit default privileges (absent on a from-zero
+-- rebuild), so grant them explicitly here. RLS policies below still gate the rows;
+-- the authoritative-column hardening at the END of this file re-asserts the column
+-- restrictions that this broad grant would otherwise loosen.
+-- -----------------------------------------------------------------------------
+grant usage on schema public to anon, authenticated, service_role;
+grant select on all tables in schema public to anon, authenticated, service_role;
+grant insert, update, delete on all tables in schema public to authenticated;
+grant all on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to anon, authenticated, service_role;
+-- (public functions are already executable by PUBLIC; no explicit grant needed.)
+
+alter default privileges in schema public grant select on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant insert, update, delete on tables to authenticated;
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant usage, select on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+
 -- =============================================================================
 -- CORE IDENTITY & RBAC
 -- =============================================================================

@@ -11,12 +11,12 @@ This file is intentionally configured for the **first coding session**. No appli
 ## Current Stage
 
 - Stage: Stage 2 — Supabase SQL Planning and Foundation
-- Stage: Stage 2 — Supabase SQL Planning and Foundation — COMPLETE / MANUALLY PASSED (2026-06-27)
-- Current task: DONE. Canonical SQL foundation (`001`–`013`) authored, self-reviewed, hardened, applied + validated on dev/staging (`013`: 12/12 PASS), and marked manually passed. Awaiting human commit/push and the next-stage prompt.
+- Stage: Stage 3 — Auth, Profiles, Roles, Permissions, RLS — IMPLEMENTED + VALIDATED on dev/staging (2026-06-27)
+- Current task: Stage 3 done on dev/staging. Added auth-signup profile provisioning trigger + a role-privilege baseline (RLS was unreachable without it) + an RLS behavioral test suite. `013` 12/12 PASS; RLS behavioral 14/14 PASS; column hardening intact. Awaiting human commit/push.
 - Owner/agent: Claude Code
 - Started: 2026-06-27
 - Last updated: 2026-06-27
-- Stage status: COMPLETE — manually passed. Validated on dev/staging (PostgreSQL 17.6), production untouched. Optional (pre-production): multi-session RLS spot-check. Next: human commit/push, then Stage 3.
+- Stage status: IMPLEMENTED + VALIDATED on dev/staging (PostgreSQL 17.6), production untouched. Stage 2 remains COMPLETE/passed. Ready for self-review/commit. Next: Stage 4 (App skeletons) after approval.
 - Security decision (2026-06-27): Authoritative-column hardening was applied IN Stage 2 (not deferred to Stage 7), per human approval.
 - Previous stage: Stage 1 — Repository Setup and Tracking — COMPLETE and manually passed (baseline committed `2da8a13`, pushed to `origin/main`; `docs/decisions/.gitkeep` added).
 - Version control: Git on `main` branch only (no stage branches). Stage 2 SQL changes are uncommitted in the working tree.
@@ -95,6 +95,8 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | Date | Change type | Migration file | Canonical root SQL file updated | Environment | Validation result | Backport status | Notes |
 |---|---|---|---|---|---|---|---|
 | 2026-06-27 | Initial canonical schema | None (foundation, not a migration) | `001`–`013` created | dev/staging (applied) | PASS — 12/12 `013` checks; `009` storage policies applied OK; authoritative-column hardening verified | N/A (these ARE the canonical files) | Full DB foundation applied in numeric order `001`–`012` (all PASS), then `013` validation 12/12 PASS on PostgreSQL 17.6 dev/staging via `OLIMPIADA_DEV_DB_URL` (never production; URL never printed). `009` `storage.objects` policies succeeded on this project (the ownership-warning fallback was not needed here). |
+| 2026-06-27 | Migration (Stage 3) | `2026_06_27_001_auth_user_provisioning.sql` | Backported into `002` | dev/staging (applied) | PASS (trigger + function present) | completed | `handle_new_user()` + `on_auth_user_created` trigger on `auth.users` auto-create a base `profiles` row on signup (status pending; role/type set during onboarding). |
+| 2026-06-27 | Migration (Stage 3) | `2026_06_27_002_role_privilege_baseline.sql` | Backported into `010` | dev/staging (applied) | PASS — RLS behavioral 14/14; `013` still 12/12; column hardening intact | completed | Behavioral testing exposed that `anon`/`authenticated` had no table privileges (Supabase default grants absent on from-zero rebuild), so RLS was unreachable. Migration grants baseline SELECT/INSERT/UPDATE/DELETE (+ default privileges) and re-asserts the authoritative-column hardening. |
 
 ## Completed Work
 
@@ -112,6 +114,7 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | 2026-06-27 | Docs | Developer setup guide added (no app/SQL change) | `docs/DEVELOPER_SETUP.md` (new), `CLAUDE.md`, `STATUS.md` | Doc only; no commands/tests. | Added concise new-machine setup guide (Windows + VS Code + Claude Code): required tools, GitHub SSH alias `github.com-olimpiada`, clone, repo-local Git identity, dev/staging `OLIMPIADA_DEV_DB_URL` env var (placeholder only, verify-without-printing), `psql` check, daily start, commit/push, security warnings, troubleshooting. Placeholders only — no real secrets. `CLAUDE.md` now points to `docs/DEVELOPER_SETUP.md`. |
 | 2026-06-27 | Stage 2 | Auto-apply + validate SQL on dev/staging (Prompt 2) | None (validation run; no file changes) | `psql` (full path) applied `001`–`012` (all PASS) + `013` validation (12/12 PASS) against `OLIMPIADA_DEV_DB_URL`; verified column-privilege hardening on attempt/progress tables. Secrets never printed; production untouched. | Stage 2 schema is live and validated on dev/staging (PostgreSQL 17.6). All Supabase prerequisites present (auth/storage/roles). `009` storage policies applied without ownership error. Ready to close pending human commit/push. |
 | 2026-06-27 | Stage 2 | Stage 2 MANUALLY PASSED (Prompt 6) | `STATUS.md` | Validation re-confirmed: `013` 12/12 PASS on dev/staging; authoritative-column hardening verified. | Stage 2 closed and marked manually passed. Schema rebuildable from canonical `001`–`013` in numeric order. Limitations carried forward: `answer_options.is_correct` column-hiding + explanation gating (Stage 6 service/view/RPC); optional multi-session RLS spot-check before production. Next: human commit/push, then Stage 3 (Auth/RBAC/RLS) via Prompt 2/7. |
+| 2026-06-27 | Stage 3 | Auth/RBAC/RLS implemented + validated on dev/staging (Prompt 2) | `supabase/sql/002` (+trigger), `supabase/sql/010` (+baseline grants), `migrations/2026_06_27_001`, `migrations/2026_06_27_002`, `supabase/sql/tests/rls_behavioral_tests.sql` | Applied both migrations on dev/staging; ran RLS behavioral suite (14/14 PASS): student A≠B isolation, parent linked-only, content-manager denied payments/audit/settings, admin reads + audit immutability, anon blocked. `013` still 12/12; column hardening intact. | Stage 3 "Done When" criteria proven live. Found+fixed a real gap (missing baseline role grants → RLS unreachable). Profiles auto-provision on signup. Production untouched; secrets never printed. |
 
 ## Open Blockers / Questions
 
@@ -174,13 +177,16 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 - [x] Authoritative-column hardening verified live (authenticated has only safe column grants)
 - [ ] Multi-session RLS spot-check (student A vs B, parent linked/unlinked, content manager) — recommended before production
 
-### Stage 3 — Auth/RBAC/RLS
+### Stage 3 — Auth/RBAC/RLS  (IMPLEMENTED + VALIDATED on dev/staging 2026-06-27)
 
-- [ ] Profiles implemented
-- [ ] Roles implemented
-- [ ] Permissions implemented
-- [ ] Parent-student linking implemented
-- [ ] RLS validated
+- [x] Profiles implemented (+ auto-provision trigger on Auth signup)
+- [x] Roles implemented (4 system roles seeded)
+- [x] Permissions implemented (18 permissions; admin=all; content-manager least-privilege)
+- [x] Parent-student linking implemented (active-link RLS enforced)
+- [x] Account statuses + audit-logging foundation
+- [x] Baseline role grants added so RLS is reachable (gap found via behavioral testing)
+- [x] RLS validated — behavioral suite 14/14 PASS (student isolation, parent linked-only, content-manager denial, admin auditability + audit immutability, anon blocked)
+- [ ] (Optional, pre-production) MFA for admin + rate-limiting per `03_AUTH` — future hardening, not blocking
 
 ### Stage 4 — App Skeletons
 
@@ -271,8 +277,8 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 
 ## Next Recommended Task
 
-- Immediate next task (human): commit + push the Stage 2 SQL and doc updates to `origin/main` (commit message in Human Next Actions), then use Prompt 6 to mark Stage 2 manually passed.
-- Optional before production: multi-session RLS spot-check (student A vs B, parent linked vs unlinked, content manager cannot read payments/audit) per `docs/master/03_AUTH_RBAC_SECURITY_AND_AUDIT.md`.
-- Operational: bootstrap the first administrator account (Supabase Auth user + `administrator` role via `profile_roles`) on dev/staging.
-- Carry-forward (Stage 6 content work): column-level hiding of `answer_options.is_correct` before result + explanation gating (service/view/RPC, not RLS) — already logged in Open Blockers.
-- Gate: Stage 3 (Auth/RBAC/RLS) begins only after Stage 2 is committed and approved.
+- Immediate next task (human): commit + push Stage 2 + Stage 3 SQL/migrations/tests and docs to `origin/main` (commit message in Human Next Actions), then close Stage 3 (Prompt 6).
+- Operational: bootstrap the first administrator account (create the Auth user in Supabase, then assign the `administrator` role via `profile_roles`) on dev/staging — the signup trigger now auto-creates the profile.
+- Next stage: Stage 4 — App Skeletons and Shared Frontend Foundation (Next.js `web-app/` + `admin-panel/`). Begin only after approval (Prompt 2).
+- Carry-forward (Stage 6 content work): column-level hiding of `answer_options.is_correct` before result + explanation gating (service/view/RPC, not RLS).
+- Optional pre-production hardening: admin MFA + rate limiting per `03_AUTH`.

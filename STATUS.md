@@ -10,8 +10,9 @@ This file is intentionally configured for the **first coding session**. No appli
 
 ## Current Stage
 
-- Stage: Stage 6 — Question Management and Media Uploads (parts 1 + 2 complete)
-- Current task: Question management (list/create/edit, taxonomy metadata, per-question language az/en/ru, body/prompt + dynamic answer options with correctness + explanation), content lifecycle with role rules (CM submits; admin approves/publishes — least privilege), content audit triggers, AND media uploads (Supabase Storage `question-media`: image/audio → `media_assets` metadata linked to the question translation; metadata-only in PG, 5 MB/MIME validated). UX fixes: controlled form (persists on error), translated catalog labels. All UI trilingual. typecheck + build PASS; storage bucket/policies confirmed. Stage 5 closed.
+- Stage: Stage 6 — Question Management and Media Uploads — COMPLETE / MANUALLY PASSED (2026-06-27)
+- Current task: DONE. Question management (list/create/edit, taxonomy metadata, per-question language az/en/ru, body/prompt + dynamic answer options with correctness + explanation), content lifecycle with role rules (least privilege), content audit, AND media uploads (Supabase Storage `question-media` → `media_assets` metadata; metadata-only in PG). Human verified: image upload, persistent preview, removal, and the storage object/row all confirmed. Stages 1–6 complete.
+- HOLD before Stage 7: the owner will provide a detailed prompt next session introducing BIG architectural changes + new features for both web-app and admin-panel; planning markdown files will be updated accordingly. Do NOT start Stage 7 until that prompt arrives.
 - Owner/agent: Claude Code
 - Started: 2026-06-27
 - Last updated: 2026-06-27
@@ -127,6 +128,7 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | 2026-06-27 | Stage 6 | Question management increment 1 (Prompt 2) | `admin-panel`: `lib/admin/{questions,question-options}.ts`, `components/{QuestionForm,QuestionLifecycle,DeleteQuestionButton}.tsx`, `app/(protected)/questions/{page,new/page,[id]/edit/page}.tsx`, `nav.ts`, `(protected)/layout.tsx`, `i18n/{messages,server}.ts`, `globals.css`; `supabase/sql/migrations/2026_06_27_003_*` + `011`; `STATUS.md` | typecheck + build PASS (admin 11 routes); migration applied on dev/staging; admin question-create RLS smoke test PASS. | Question list/create/edit (metadata + az body/prompt + dynamic answer options w/ correctness + az explanation), content lifecycle with role rules (CM submits; admin approves/publishes — least privilege), content audit triggers. Atomic-ish save (compensating delete on failure). Questions visible to admin + content managers (permission `content.create`). Deferred: media upload + ru/en content fields. Known follow-up: tighten content child-table RLS to ownership (logged in Open Blockers). |
 | 2026-06-27 | Stage 6 | UX/schema fixes + media upload (part 2) | `admin-panel`: `lib/admin/{media.ts,questions.ts,question-options.ts}`, `components/{QuestionForm,QuestionMediaUploader}.tsx`, `app/(protected)/questions/{page,new,[id]/edit}`, `i18n/messages.ts`, `globals.css`; `supabase/sql/migrations/2026_06_27_004_*` + `004`/`011`; `STATUS.md` | typecheck + build PASS; migration `004` applied on dev/staging; `question-media` bucket public + 2 storage policies confirmed. | Fixes: controlled form fields (persist on validation error); per-question language `primary_locale` (content stored under chosen locale; language column in list); question type/difficulty/olympiad labels translated by code. Media: browser uploads image/audio to `question-media`, server action records `media_assets` (metadata only) + links to the question's translation; 5 MB/MIME validation; preview + remove; replacing media cleans up the old object. |
 | 2026-06-27 | Stage 6 | Fix: media upload `crypto.randomUUID` + child-table RLS tightening | `admin-panel/src/components/QuestionMediaUploader.tsx`, `supabase/sql/migrations/2026_06_27_005_*` + `010`, `STATUS.md` | typecheck + build PASS; behavioral RLS test PASS (CM denied others' content, allowed own). | `crypto.randomUUID()` only exists in secure contexts (https/localhost); failed over a LAN IP. Replaced with a `uniqueId()` fallback. Also tightened content child-table write RLS to parent-question ownership (migration `005` → `010`). |
+| 2026-06-27 | Stage 6 | Stage 6 MANUALLY PASSED | `STATUS.md` | Human browser test: image upload OK, persistent preview, removable, storage object + `media_assets` row confirmed. | Stage 6 closed and marked passed. Stages 1–6 complete. HOLD before Stage 7 pending the owner's incoming architectural-change prompt (next session). |
 
 ## Open Blockers / Questions
 
@@ -235,7 +237,7 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 - [x] UX fixes: form fields now controlled (persist on validation error); question type/difficulty/olympiad labels translated by code
 - [x] Supabase Storage media upload (question-media image/audio → media_assets metadata + linked to translation; PG stores metadata only; 5 MB/MIME validated; preview + remove)
 - [ ] Multi-locale translations of the SAME question (one question = one language for now) (future)
-- [ ] (Human) browser test: create question (try a non-az language) + upload an image, submit/approve/publish, CM least-privilege
+- [x] (Human) browser test PASSED: question create + non-az language + image upload (preview persists, removable, storage object/row confirmed) + lifecycle + CM least-privilege
 
 ### Stage 7 — Test and Daily Task Engine
 
@@ -302,8 +304,9 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 
 ## Next Recommended Task
 
-- Immediate next task (human): browser-test question media upload (image/audio), then commit/push.
-- Next stage: Stage 7 — Test and Daily Task Engine (test packages, test questions, attempts, answers, daily task packages/items, student progress, auto-grading, retry rules). Begin only after approval (Prompt 2).
-- Stage 6 follow-up (small): tighten content child-table RLS to ownership (a CM can currently edit another author's question CONTENT) — logged in Open Blockers.
+- HOLD: Stages 1–6 complete and verified. Before Stage 7, the owner will provide a detailed prompt next session with BIG architectural changes + new features (web-app + admin-panel); planning markdown files will be updated. Wait for that prompt — do not start Stage 7 yet.
+- When that prompt arrives: read it carefully, update the relevant planning docs (`IMPLEMENTATION_EXECUTION_PLAN.md`, `docs/master/*`, app `markdowns/*`) per the new architecture BEFORE coding, and reflect changes in `STATUS.md`.
+- After the architecture update is settled: Stage 7 — Test and Daily Task Engine (or the re-planned next stage).
+- Carry-forward (web-app, Stage 7/8): hide `answer_options.is_correct` from students before result + explanation gating (service/view/RPC, not RLS).
 - Carry-forward (web-app, Stage 7/8): hide `answer_options.is_correct` from students before result + explanation gating (service/view/RPC, not RLS).
 - Optional pre-production hardening: admin MFA + rate limiting per `03_AUTH`.

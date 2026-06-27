@@ -5,12 +5,14 @@ import Link from "next/link";
 // Access is always enforced server-side, never by hiding this page.
 export default function UnauthorizedPage() {
   return (
-    <div className="container">
-      <h1>Unauthorized</h1>
-      <p className="muted">
-        You don’t have permission to access this admin area.
-      </p>
-      <Link href="/">Go to admin home</Link>
+    <div className="page">
+      <div className="page-head">
+        <h1>Unauthorized</h1>
+        <p className="muted">
+          You don’t have permission to access this admin area.
+        </p>
+      </div>
+      <Link href="/">Back to dashboard</Link>
     </div>
   );
 }

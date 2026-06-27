@@ -1,12 +1,24 @@
-/* Minimal, restyleable base for the Admin Panel. Distinct accent from the web app. */
+/* =========================================================================
+   Olimpiada Admin Panel — professional foundation theme.
+   Dark sidebar + light content, refined spacing/typography. No business logic.
+   ========================================================================= */
 :root {
-  --bg: #0c111b;
-  --panel: #161d2b;
-  --text: #e7ecf5;
-  --muted: #9aa6bd;
-  --ok: #4ade80;
-  --warn: #fbbf24;
-  --accent: #8b7bf0;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #e6e8ec;
+  --text: #0f172a;
+  --muted: #64748b;
+  --brand: #4f46e5;
+  --brand-600: #4338ca;
+  --ok-fg: #047857;
+  --ok-bg: #ecfdf5;
+  --warn-fg: #b45309;
+  --warn-bg: #fffbeb;
+
+  --sidebar-bg: #0f172a;
+  --sidebar-fg: #cbd5e1;
+  --sidebar-muted: #64748b;
+  --sidebar-active-bg: rgba(255, 255, 255, 0.08);
 }
 
 * {
@@ -22,55 +34,261 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 
-.app-shell {
+/* ---- Layout shell ------------------------------------------------------- */
+.admin-layout {
+  display: flex;
   min-height: 100vh;
 }
 
-.container {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 48px 20px;
+.sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-fg);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 20px 16px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.2px;
+}
+
+.brand-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #6366f1, #22d3ee);
+  display: inline-block;
+}
+
+.brand-sub {
+  color: var(--sidebar-muted);
+  font-weight: 600;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  overflow-y: auto;
+}
+
+.nav-section-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sidebar-muted);
+  padding: 14px 10px 6px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--sidebar-fg);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.nav-item.active {
+  background: var(--sidebar-active-bg);
+  color: #fff;
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.nav-item.disabled {
+  color: var(--sidebar-muted);
+  cursor: default;
+}
+
+.badge-soon {
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sidebar-muted);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 16px 20px;
+  font-size: 0.72rem;
+  color: var(--sidebar-muted);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 60px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.topbar-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.account-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+
+.admin-content {
+  padding: 28px 24px;
+  max-width: 1120px;
+  width: 100%;
+}
+
+/* ---- Page + cards ------------------------------------------------------- */
+.page-head {
+  margin-bottom: 20px;
 }
 
 h1 {
-  font-size: 1.8rem;
-  margin: 0 0 8px;
+  font-size: 1.5rem;
+  font-weight: 650;
+  margin: 0 0 4px;
 }
 
 .muted {
   color: var(--muted);
 }
 
-.ok {
-  color: var(--ok);
-}
-
-.warn {
-  color: var(--warn);
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(248px, 1fr));
 }
 
 .card {
-  background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px 18px;
-  margin-top: 16px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.card h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.hint {
+  margin-top: 10px;
+  font-size: 0.83rem;
+  color: var(--muted);
+}
+
+code {
+  background: #eef0f4;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.88em;
 }
 
 a {
-  color: var(--accent);
+  color: var(--brand);
 }
 
-button {
-  background: var(--accent);
-  color: #0a0820;
+/* ---- Pills + buttons ---------------------------------------------------- */
+.pill {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.pill-ok {
+  color: var(--ok-fg);
+  background: var(--ok-bg);
+}
+
+.pill-warn {
+  color: var(--warn-fg);
+  background: var(--warn-bg);
+}
+
+.btn {
+  background: var(--brand);
+  color: #fff;
   border: 0;
   border-radius: 8px;
-  padding: 8px 14px;
+  padding: 9px 16px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--brand-600);
+}
+
+/* ---- Responsive --------------------------------------------------------- */
+@media (max-width: 820px) {
+  .admin-layout {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+  }
+  .nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .nav-section-label,
+  .sidebar-foot {
+    display: none;
+  }
 }

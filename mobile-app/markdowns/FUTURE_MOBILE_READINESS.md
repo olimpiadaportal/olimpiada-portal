@@ -19,6 +19,18 @@ Do not implement Flutter/mobile app in the current Web App/Admin Panel MVP. This
 
 A future Flutter app will use the same Supabase backend, PostgreSQL database, Auth sessions, Storage, Edge Functions, subscriptions, progress and notification data.
 
+## Future Readiness for the Parent/Child + Subscription + Olympiad + News Model
+
+The future mobile app must reuse the SAME backend contracts and RLS boundaries as the Web App/Admin Panel. No mobile-specific backend should be created. Readiness notes only — no current implementation:
+
+- Parent-only registration: only parents self-register (email/password); the same registration/auth contract applies on mobile.
+- Parent-created children + child login: children are created by parents and log in with a 8-digit numeric unique ID + parent-set password (no child email login). Future mobile must reuse this same child-credential approach; it must never let children self-register.
+- Child-based subject subscriptions: per-child, subject-based subscriptions with launch promo (first ~1 month free), ongoing 7-day trial, and automatic fixed sibling discount (2nd child 15%, 3rd+ child 20%). Mobile reads the same subscription/access status; it must never compute or override pricing, discounts, trial dates, or access flags.
+- Real payments (parent-only): activation is backend/webhook-verified only; children never purchase. Mobile must reuse the same server-side, webhook-driven activation — no client-trusted payment state.
+- Olympiad Preparation packages: separate paid add-on packages with LIFETIME access for purchasers (purchased records never deleted; listings only soft-archive after the olympiad/end date). Mobile reuses the same package-purchase and lifetime-access contracts; only parents purchase.
+- News (public + in-app): general news with Admin-only CRUD, images in Storage (DB stores object path/metadata only). Mobile consumes the same public/in-app news contract.
+- Child dashboard wallpaper customization: child picks from a PREDEFINED wallpaper/solid-background set, saved per child profile. Mobile reuses the same predefined catalog and per-child selection; no arbitrary theming.
+
 ## Backend/API Compatibility Requirements
 
 - Keep service contracts clean and platform-neutral.
@@ -33,7 +45,7 @@ Future mobile will authenticate with Supabase Auth. RBAC/RLS rules must be ident
 
 ## Data Model Compatibility
 
-Current schema must support mobile reads for tasks, tests, progress, subscription status and notifications without table rewrites.
+Current schema must support mobile reads for tasks, tests, progress, subscription status and notifications without table rewrites. This also covers the new model: parent/child profiles, the child 8-digit unique ID, per-child subject selections and subscription/trial status, sibling-discount audit fields, payment/checkout records, News and news media metadata, Olympiad packages with purchases and lifetime-access records, and per-child wallpaper selection from the predefined catalog. Future mobile reads these as-is — no mobile-specific tables.
 
 ## Future Push Notification Readiness
 

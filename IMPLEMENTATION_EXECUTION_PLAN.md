@@ -206,6 +206,20 @@ Confirm all project decisions before coding starts.
 - UI does not block backend development.
 - Admin Panel and Web App are separate application folders.
 
+### Confirmed Business Model (2026-06-27) — overrides older assumptions
+
+- **Parent-only registration**; **children are created by a parent** (no child self-registration).
+- **Child login = 8-digit unique numeric ID + parent-created password** (server-issued, collision-safe, unique constraint; never trust a client ID). No child email login.
+- Parent-created children are **auto-linked** to the parent (no manual linking as the main flow).
+- **Child-based, subject-based subscriptions** (subjects: Math, Science, Məntiq, İngilis dili). Placeholder pricing 1 AZN/subject (configurable via admin/config); weekly/monthly/yearly.
+- **Launch ~1-month promo, then ongoing 7-day trial**; **failed charge auto-blocks all paid child access**. Real online payment, webhook-verified; never client-activated.
+- **Automatic sibling discount** (subscriptions only, fixed): 2nd child 15%, 3rd+ 20%. **No "Discount Settings" admin module.**
+- **Public marketing website** is in scope; **News** is in scope (public + in-app, Admin-only CRUD).
+- **Olimpiada Hazırlığı / Olympiad Preparation** is a **separate paid add-on module** (parent-purchased, child-access) with **lifetime access**; each attempt selects **25 random questions server-side**; **users never choose difficulty**.
+- **Child dashboard wallpaper customization** from a predefined set (no full theming).
+- **Domain name NOT confirmed** (no purchase/email-domain config this phase).
+- Client can NEVER override price, discount, selected subjects, trial dates, subscription status, access flags, or the 8-digit ID.
+
 ## Deliverables
 
 - Human decision confirmation.
@@ -215,6 +229,26 @@ Confirm all project decisions before coding starts.
 
 - No core architecture conflict remains.
 - `STATUS.md` says Stage 0 is complete.
+
+---
+
+# Revised Forward Roadmap (2026-06-27) — Business Model Update
+
+Stages 1–6 are COMPLETE (repo setup; Supabase SQL foundation `001`–`013`; Auth/RBAC/RLS; app skeletons; Admin Panel foundation + taxonomy; Question Management + media). The confirmed business model (parent/child accounts, child-based subscriptions, public site, News, Olympiad Preparation, wallpaper) adds new database, auth, and feature work. **This roadmap supersedes the old Stage 7–14 ordering for the remaining work.** The detailed Stage 7–14 sections below remain as reference material and are folded into the revised stages here.
+
+The remaining work, in order (each applied via the database versioning workflow; dev/staging first; trilingual UI az/en/ru; least privilege):
+
+- **Stage 7 — Business-Model Database Foundation.** Migrations + new canonical SQL: extend `002` (parent/child profiles, child 8-digit ID + credentials, per-child subjects, wallpapers catalog + per-child selection); extend `007` (child-based subscriptions, subject pricing, launch-promo/trial config, payments, checkout sessions, sibling-discount fields); add `014_news.sql` and `015_olympiad_preparation.sql` (packages, grade/class targeting, question pool, purchases=lifetime access, attempts, random-selection records, archive status); extend `009` (wallpaper-assets, news-media, olympiad-media buckets), `010` (RLS for all new tables), `011` (8-digit ID generator + random-selection helpers), `012`/`013` (seed/validation). Run `014`/`015` before read-only `013`.
+- **Stage 8 — Child Authentication & Account Model.** Server-side collision-safe 8-digit ID + child credential strategy (8-digit ID + parent-set password), parent-created-child auto-link, RLS enforcement, audit.
+- **Stage 9 — Public Marketing Website + News.** Public routes (`/`, `/about`, `/news`, `/news/[slug]`, `/pricing`, `/olympiad-preparation`, `/subjects`, `/faq`, `/contact`, `/login`, `/register`); Admin News CRUD (images in Storage).
+- **Stage 10 — Parent App.** Parent registration/login, parent dashboard, Add-Child flow (child info → SEPARATE subjects page with live pricing preview → set child password → checkout → 8-digit ID), add-subjects-later.
+- **Stage 11 — Child Subscriptions & Payments.** Subject-based pricing, launch promo + 7-day trial, automatic sibling discount, real payment + webhook activation, failed-charge auto-block, subscription gating (all server-side; client never overrides).
+- **Stage 12 — Child App.** Child login (8-digit ID + password), child dashboard, predefined-wallpaper customization, locked/expired states; content gated by parent's active payment.
+- **Stage 13 — Test & Daily Task Engine.** Attempts/grading with server-side random 25-question selection (users never choose difficulty; mix easy/medium/hard where available).
+- **Stage 14 — Olimpiada Preparation Module.** Admin package + question-pool management; parent purchase; child access ("Available Olympiads" / "My Olympiad Packages"); random selection; lifetime access; auto-archive listings (never delete purchased records).
+- **Stage 15+ — Progress/Analytics/Leaderboard/Notifications** (child-based), then **QA/Security/Deployment**, then **Future Mobile readiness** (unchanged, future-only).
+
+The detailed Stage sections below (numbered with the original plan) provide deeper specs for taxonomy/content/test/payment/etc.; read them as references for the corresponding revised stage.
 
 ---
 

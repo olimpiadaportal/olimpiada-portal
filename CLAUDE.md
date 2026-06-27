@@ -104,23 +104,45 @@ Then read the stage-specific files listed in `IMPLEMENTATION_EXECUTION_PLAN.md`.
 - Keep PostgreSQL as the source of truth.
 - Redis is optional and must not be required for correctness.
 - Keep frontend UI clean, simple, responsive, and easy to restyle later.
+- Only parents register; children are created by a parent and log in with a server-issued 8-digit ID + parent password. Never allow child self-registration or child email login.
+- Children can never purchase; all payments/subscriptions/olympiad purchases happen only from the parent account.
+- Do not build a "Discount Settings" admin module; the sibling discount is a fixed business rule (2nd 15% / 3rd+ 20%).
+- Users never choose question difficulty; tests use server-side random selection (25 questions for olympiad attempts).
+- Never delete purchased olympiad package records; archive listings only (purchasers keep lifetime access).
+- Content Managers must not manage News, Olympiad Preparation, payment, or subscription modules.
+
+## Confirmed Product Model (2026-06-27, Non-Negotiable)
+
+These business rules are confirmed and override older baseline assumptions:
+
+- **Parent-only registration** (email/password). **Children never self-register**; a parent creates each child via an Add-Child flow.
+- **Child login = 8-digit unique numeric ID + parent-created password** (server-issued, collision-safe, DB-unique). No child email login. Parent-created children are auto-linked to the parent.
+- **Subscriptions are child-based and subject-based** (subjects: Math, Science, Məntiq, İngilis dili; placeholder 1 AZN/subject, configurable; weekly/monthly/yearly). Launch ~1-month promo, then 7-day trial; failed charge auto-blocks paid child access; real webhook-verified payment, never client-activated.
+- **Automatic sibling discount** (subscriptions only, fixed): 2nd child 15%, 3rd+ 20%. No "Discount Settings" admin module.
+- **Public marketing website** and **News** (public + in-app, Admin-only CRUD) are in scope.
+- **Olimpiada Hazırlığı / Olympiad Preparation** is a separate paid add-on (parent-purchased, child-access) with **lifetime access**; each attempt = 25 server-side random questions; **users never choose difficulty**.
+- **Child wallpaper customization** from a predefined set. **Children can never purchase.** Content Managers must NOT manage News/Olympiad/payment/subscription modules.
+- Domain name NOT confirmed (no purchase/email config this phase). Client never overrides price/discount/subjects/trial/status/access/ID.
 
 ## Current Implementation Direction
 
-Build in this order:
+Build in this order (revised for the confirmed product model; see `IMPLEMENTATION_EXECUTION_PLAN.md` → "Revised Forward Roadmap"):
 
-1. Repository setup and status tracking
-2. Supabase database/security foundation
-3. Auth, profiles, roles, permissions, and RLS
-4. Admin Panel foundation
-5. Admin content taxonomy and question management
-6. Test and daily task engine
-7. Student Web App core flows
-8. Parent Web App flows
-9. Stripe-first subscription/payment flow
-10. Progress, analytics, leaderboard, notifications
-11. QA, security testing, deployment
-12. Future mobile readiness only
+1. Repository setup and status tracking — DONE
+2. Supabase database/security foundation (`001`–`013`) — DONE
+3. Auth, profiles, roles, permissions, and RLS — DONE
+4. App skeletons (web-app + admin-panel) — DONE
+5. Admin Panel foundation and content taxonomy — DONE
+6. Question management and media uploads — DONE
+7. Business-model database foundation (parent/child accounts + 8-digit ID, child subscriptions/payments, News, Olympiad Preparation, wallpapers) — NEXT
+8. Child authentication & account model (8-digit ID + parent password)
+9. Public marketing website + News
+10. Parent app (registration, dashboard, Add-Child flow, subject selection + pricing)
+11. Child subscriptions & payments (subject pricing, promo/trial, sibling discount, webhook activation, gating)
+12. Child app (child login, dashboard, wallpaper, locked/expired states)
+13. Test and daily task engine (random 25-question selection, no user difficulty)
+14. Olimpiada Preparation module (admin packages + pool, parent purchase, child access, lifetime)
+15. Progress/analytics/leaderboard/notifications → QA/security/deployment → future mobile only
 
 For exact stage instructions, use `IMPLEMENTATION_EXECUTION_PLAN.md`.
 

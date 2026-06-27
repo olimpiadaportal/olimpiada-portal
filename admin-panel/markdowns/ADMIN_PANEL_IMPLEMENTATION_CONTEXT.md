@@ -27,18 +27,29 @@ Admin Panel is for Administrator and Teacher/Content Manager users only. It mana
 - User management.
 - Content taxonomy.
 - Questions/options/explanations.
-- Tests and daily tasks.
+- Tests and daily tasks (random mixed selection; users never choose difficulty).
 - Review/approval workflow.
-- Subscriptions/payments monitoring.
+- News management (Admin-only): create/edit/publish/archive, body with inline links, images in Storage.
+- Olympiad Preparation package management (Admin-only): package metadata, grade/class TARGET data field, question pool, random 25-question server-side selection per attempt, listing auto-archive after the olympiad date with lifetime purchaser access, package history.
+- Subscriptions/pricing-plans/payments monitoring (Admin-only).
+- Parent/child account monitoring (Admin-only), including 8-digit child IDs.
 - Notifications, reports, support.
 - Audit logs/settings/feature flags for Admin only.
+
+## Business-Module Boundaries
+
+- News, Olympiad Preparation packages and their question pool, subscriptions, pricing plans, payments, and parent/child monitoring are Admin-only business/payment modules.
+- Content Managers are FORBIDDEN from all of the above and keep only regular educational content/question workflows.
+- There is no "Discount Settings" module; the sibling discount is fixed in business logic (2nd child 15%, 3rd+ child 20%) and computed backend-side.
+- Olympiad listings auto-archive after the olympiad date; purchased packages keep lifetime access and are never deleted.
 
 ## Security Reminders
 
 - Every route requires server-side permission.
-- Content Manager must not access sensitive admin areas.
-- All sensitive actions audited.
-- Destructive actions require confirmation and soft-delete/archive.
+- Content Manager must not access sensitive admin areas or any business/payment module (News, Olympiad packages, subscriptions, pricing, payments, parent/child monitoring).
+- All sensitive actions audited, including News, olympiad package, pricing, subscription, payment-monitoring, and parent/child-monitoring actions.
+- Destructive actions require confirmation and soft-delete/archive; purchased olympiad records are never deleted.
+- Payment/subscription activation is backend/webhook-driven and never set from the panel; price, discount, subjects, trial dates, and access flags are never client-controlled.
 
 ## Out of Scope
 

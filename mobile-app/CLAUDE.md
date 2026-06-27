@@ -6,6 +6,8 @@ This folder is future-only.
 
 Do not implement the mobile app during the current Web App/Admin Panel MVP.
 
+The new parent/child + child-based subscription + Olympiad Preparation + News model is future-compatible: future mobile reuses the same Supabase backend contracts and RLS, and mobile remains future-only (no current implementation).
+
 ## Current Rule
 
 Only maintain future-readiness documentation. Do not create React Native, Flutter, Expo, iOS, Android, or mobile source files unless the user explicitly starts the future mobile phase.

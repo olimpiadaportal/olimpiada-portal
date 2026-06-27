@@ -129,10 +129,16 @@ Use a balanced model:
 | `DailyTaskService` | Package retrieval, completion tracking | Allow duplicate completions |
 | `ProgressService` | Snapshots, weak/strong topics | Run expensive raw queries on every page load |
 | `LeaderboardService` | Ranking calculation and retrieval | Make Redis required for correctness |
-| `SubscriptionService` | Plan access, subscription state | Trust client payment success |
-| `PaymentService` | Stripe checkout/webhooks/idempotency | Expose secret keys to client |
+| `ChildAccountService` | Parent-driven child creation; generate the **8-digit numeric unique ID server-side** (collision-safe sequence/function, zero-padded, DB unique constraint); auto-link child to creating parent; map child credentials (8-digit ID + parent-set password) to the auth system | Trust a client-provided child ID; allow child self-registration; let a parent create/read children that are not their own |
+| `SubscriptionService` | Child-based subscription state; subject selection per child; weekly/monthly/yearly duration; launch-promo and 7-day trial windows; **server-side price/discount computation** (subject-count pricing + automatic sibling discount); add-subjects upgrade/proration as a backend rule | Trust client payment success; accept client-supplied price, discount, selected subjects, trial dates, status or access flags |
+| `PaymentService` | Stripe checkout/webhooks/idempotency; **webhook-only activation**; failed-charge auto-block of all paid child access | Expose secret keys to client; activate or unblock access from the client |
+| `OlympiadService` | Olympiad package lifecycle (create/publish/archive — never delete); package purchase = **lifetime access**; **server-side random selection of 25 questions** per attempt from the pool (use available questions if fewer than 25); grade/class targeting | Let the client choose questions or difficulty; delete purchased/archived packages; allow child-initiated purchase |
+| `NewsService` | Admin-only News CRUD (create/edit/publish/archive/soft-deactivate); news media metadata; public + in-app read | Allow Content Manager or non-admin write; store image binaries in PostgreSQL |
+| `WallpaperService` | Serve the **predefined wallpaper/background catalog**; persist per-child wallpaper selection from the child profile only | Allow arbitrary/custom uploads, free theming or arbitrary colors |
 | `NotificationService` | In-app/email dispatch | Send SMS |
 | `AuditService` | Immutable sensitive action logging | Allow update/delete from UI |
+
+**Server-side authority rule (non-negotiable):** Random question selection and all pricing, subject-count pricing, sibling-discount, trial/promo windows, subscription status and access flags are computed and enforced server-side. The client never overrides price, discount, selected subjects, trial dates, subscription status, access flags, the generated 8-digit child ID, or the randomly selected question set.
 
 ## Environment Strategy
 
@@ -151,6 +157,9 @@ For the current MVP, Supabase Storage is acceptable and should contain only ligh
 - `question-media`: optimized images and small audio files for questions, especially English listening tasks.
 - `explanation-media`: optimized images/audio attached to explanations when needed.
 - `profile-avatars`: optional resized avatars.
+- `wallpaper-assets`: predefined child dashboard wallpapers/backgrounds (curated, admin-managed catalog). Children select from this set only; DB stores just the selection and the asset path/metadata.
+- `news-media`: optimized News images. Published News images may be publicly readable; DB stores only object path/metadata.
+- `olympiad-media`: optional olympiad package banner/cover images. DB stores only object path/metadata.
 - `admin-imports`: temporary content import files, if bulk import is later used.
 - `reports`: generated CSV/PDF exports only if report export is implemented later; PDFs are not a core learning-content storage requirement.
 
@@ -206,9 +215,13 @@ Add `schools`, `districts`, optional `student_school_memberships`, and scope fie
 | `permissions` | Atomic permissions | `id`, `code`, `description` | role_permissions | unique code | admin write | permission changes | 002 |
 | `role_permissions` | Role-permission join | `role_id`, `permission_id` | roles, permissions | composite unique | admin only | always | 002 |
 | `profile_roles` | User role assignments | `profile_id`, `role_id`, `assigned_by` | profiles, roles | composite unique | admin only | always | 002 |
-| `students` | Student-specific data | `profile_id`, `grade_id`, `school_id`, `district_id`, `birth_year_optional` | profiles, grades, schools | unique profile | student self read; parent linked; admin | profile changes | 002/003 |
-| `parents` | Parent-specific data | `profile_id` | profiles | unique profile | self/admin | profile changes | 002 |
-| `parent_student_links` | Verified parent-child relationship | `parent_profile_id`, `student_profile_id`, `status`, `verified_at` | parents, students | unique active pair | parent linked, student own, admin | link/unlink | 002 |
+| `students` | Child/Student data, created by a parent | `profile_id`, `created_by_parent_profile_id`, `child_unique_id`, `grade_id`, `class_grade`, `school_id`, `district_id`, `city`, `first_name`, `last_name`, `birth_year_optional`, `access_status` | profiles, parents, grades, schools | unique profile; **unique `child_unique_id` (8-digit, zero-padded)**; index `created_by_parent_profile_id` | child reads own only; creating parent reads/manages own children; admin | profile changes, access status | 002/003 |
+| `parents` | Parent-specific data (only self-registering user type; parents pay) | `profile_id` | profiles | unique profile | self/admin | profile changes | 002 |
+| `child_unique_ids` | Server-side allocation registry for 8-digit child IDs (collision-safe) | `child_unique_id`, `student_profile_id`, `allocated_at` | students | **unique `child_unique_id`**; allocated via DB sequence/collision-safe function | service-role/admin only | allocation | 002 |
+| `child_credentials` | Maps child auth (8-digit ID + parent-set password) to the auth system | `student_profile_id`, `child_unique_id`, `auth_user_id`, `password_set_by_parent_profile_id`, `password_set_at` | students, parents, auth user | unique `student_profile_id`; unique `child_unique_id`; unique `auth_user_id` | service-role for write; child reads none; creating parent limited | credential set/reset | 002 |
+| `parent_student_links` | Parent-child relationship; **parent-created children are auto-linked** (manual linking is a secondary/edge concept only) | `parent_profile_id`, `student_profile_id`, `link_origin` (`auto_created`/`manual`), `status`, `verified_at` | parents, students | unique active pair | creating/linked parent, child own, admin | link/unlink | 002 |
+| `wallpapers` | Predefined wallpaper/background catalog (admin-curated, no arbitrary colors) | `id`, `code`, `name`, `kind` (`image`/`solid_color`), `media_asset_id`, `status` | child_wallpaper_selections, media_assets | unique code | read active for authenticated; admin write | catalog changes | 003 |
+| `child_wallpaper_selections` | Per-child selected dashboard wallpaper | `student_profile_id`, `wallpaper_id`, `selected_at` | students, wallpapers | unique `student_profile_id` | child own (from child profile); creating parent read; admin | wallpaper change (where sensitive) | 003 |
 | `schools` | Future-ready school reference | `id`, `name`, `district_id`, `status` | districts, students | indexes district/name | admin write; public limited | changes | 003 |
 | `districts` | Rayon/district reference | `id`, `name`, `country_code` | schools | unique country/name | read auth; admin write | changes | 003 |
 | `grades` | Grade 1-11 | `id`, `level`, `name` | students, tests | unique level | read public/auth; admin write | changes | 003 |
@@ -237,12 +250,24 @@ Add `schools`, `districts`, optional `student_school_memberships`, and scope fie
 | `leaderboard_snapshots` | Stored leaderboard versions | `id`, `period_id`, `scope`, `generated_at`, `metadata` | entries | index generated | admin/read published | recalc | 006 |
 | `achievements` | Badge/certificate readiness | `id`, `code`, `name`, `criteria_json` | student_achievements | unique code | read active; admin write | changes | 006 |
 | `student_achievements` | Earned achievements | `student_profile_id`, `achievement_id`, `earned_at` | students/achievements | unique pair | own, parent linked, admin | award/revoke | 006 |
-| `subscription_plans` | Weekly/monthly/yearly plans | `id`, `code`, `price`, `interval`, `status`, `stripe_price_id` | subscriptions | unique code | public active; admin write | changes | 007 |
-| `subscriptions` | User subscription state | `id`, `owner_profile_id`, `student_profile_id`, `plan_id`, `status`, `current_period_end` | plans/profiles | index owner/student/status | owner, linked student read, admin | status changes | 007 |
-| `payments` | Payment records | `id`, `provider`, `profile_id`, `amount`, `currency`, `status`, `provider_ref` | subscriptions/events | unique provider_ref | owner limited, admin | status changes | 007 |
+| `subjects_pricing` | Per-subject / subject-count pricing config (placeholder, admin/config-editable; e.g. 1 AZN per subject; full 4-subject package option) | `id`, `subject_count_or_subject_id`, `interval` (`weekly`/`monthly`/`yearly`), `price`, `currency`, `is_full_package`, `status` | subscriptions | index interval; unique combination | public active read; admin write | price changes | 007 |
+| `launch_promo_config` | Launch-promo configuration (first ~1 month free at platform launch) | `id`, `is_active`, `starts_at`, `ends_at`, `description`, `updated_by` | subscriptions | single active row enforced | public read of active window; admin write | promo config changes | 007 |
+| `child_subscriptions` | Per-child subscription state (subject-based, duration-based) | `id`, `student_profile_id`, `payer_parent_profile_id`, `interval` (`weekly`/`monthly`/`yearly`), `status` (`trialing`/`active`/`past_due`/`blocked`/`canceled`), `trial_starts_at`, `trial_ends_at`, `promo_applied`, `current_period_end`, `access_blocked` | students, parents, subscription_subjects, payments | index student/payer/status; one active subscription per child | child read own (status only); payer parent read/manage own children; admin | status/trial/access changes | 007 |
+| `subscription_subjects` | Selected subjects for a child subscription | `child_subscription_id`, `subject_id` | child_subscriptions, subjects | unique subscription+subject | payer parent read; child read own; admin | subject selection changes | 007 |
+| `checkout_sessions` | Provider checkout/session records (subscription or olympiad) | `id`, `provider`, `payer_parent_profile_id`, `purpose` (`subscription`/`olympiad_package`), `target_id`, `provider_session_ref`, `amount_total`, `currency`, `status` | payments/events | unique provider_session_ref | payer parent limited, admin | session lifecycle | 007 |
+| `payments` | Payment records (parent-paid) | `id`, `provider`, `payer_parent_profile_id`, `purpose`, `amount`, `currency`, `status`, `provider_ref` | subscriptions/purchases/events | unique provider_ref | payer parent limited, admin | status changes | 007 |
+| `sibling_discounts` | Server-computed sibling-discount calc/audit per checkout (fixed rule: 2nd 15%, 3rd+ 20%; no admin discount module) | `id`, `payer_parent_profile_id`, `child_subscription_id`, `child_rank`, `discount_percent`, `discount_amount`, `computed_at`, `computed_by` (`server`) | child_subscriptions, payments | index payer; one per subscription checkout | payer parent read; admin; service-role write only | discount application | 007 |
 | `payment_events` | Webhook/idempotency log | `id`, `provider`, `event_id`, `payload_json`, `processed_at` | payments | unique provider+event | admin/service only | always | 007 |
-| `coupons` | Promo code setup | `id`, `code`, `discount_type`, `value`, `status` | redemptions | unique code | admin only; redeem service | create/update | 007 |
-| `coupon_redemptions` | Coupon usage | `coupon_id`, `profile_id`, `payment_id`, `redeemed_at` | coupons/payments | unique rules | owner/admin | usage | 007 |
+| `news` | General news (public + in-app; Admin-only CRUD) | `id`, `slug`, `status` (`draft`/`published`/`archived`/`inactive`), `published_at`, `created_by`, `created_at`, `updated_at` | news_translations, news_media | unique slug; index status/published_at | public read published; admin write only | publish/archive/deactivate | 007 |
+| `news_translations` | Localized news title/body (links allowed in body) | `news_id`, `locale`, `title`, `body` | news | unique news+locale | public read published; admin write | content changes | 007 |
+| `news_media` | News image metadata (binaries in Storage `news-media`) | `id`, `news_id`, `media_asset_id`, `order_index` | news, media_assets | index news_id | public read published; admin write | media changes | 007 |
+| `olympiad_packages` | Olimpiada Hazırlığı paid add-on packages (separate from subscriptions) | `id`, `name`, `subject_id_optional`, `grade_class_target`, `description`, `start_date`, `olympiad_end_date`, `price`, `currency`, `status` (`draft`/`active`/`archived`), `banner_media_asset_id_optional` | olympiad_questions, olympiad_purchases, media_assets | index status/grade_class_target/dates | public read active listing; admin write; purchasers read purchased always | create/publish/archive | 007 |
+| `olympiad_questions` | Olympiad question pool / package questions | `id`, `package_id`, `question_id_or_inline`, `difficulty_id`, `order_index`, `status` | olympiad_packages, questions, difficulty_levels | index package_id | admin write; purchasers read via attempt only | changes | 007 |
+| `olympiad_purchases` | Parent purchase of an olympiad package = **lifetime access** | `id`, `package_id`, `payer_parent_profile_id`, `student_profile_id`, `payment_id`, `price_paid`, `currency`, `purchased_at`, `access` (`lifetime`) | olympiad_packages, parents, students, payments | unique payer+package+child; never deleted | payer parent + linked child read own; admin read; service-role write | purchase | 007 |
+| `olympiad_package_attempts` | Child attempt at a purchased olympiad package | `id`, `package_id`, `student_profile_id`, `purchase_id`, `started_at`, `submitted_at`, `score`, `status` | olympiad_packages, students, olympiad_purchases, selections | index student/package/status | child own + payer parent + admin | attempt lifecycle | 007 |
+| `olympiad_attempt_selected_questions` | Server-side random 25-question selection per attempt (random mix each attempt; use available if fewer than 25) | `attempt_id`, `question_id`, `order_index` | olympiad_package_attempts, olympiad_questions | unique attempt+question; index attempt | attempt owner/parent/admin; selection set server-side only | generated | 007 |
+| `coupons` | Promo code setup (not the sibling discount, which is fixed code-side) | `id`, `code`, `discount_type`, `value`, `status` | redemptions | unique code | admin only; redeem service | create/update | 007 |
+| `coupon_redemptions` | Coupon usage | `coupon_id`, `payer_parent_profile_id`, `payment_id`, `redeemed_at` | coupons/payments | unique rules | payer parent/admin | usage | 007 |
 | `notifications` | In-app notifications | `id`, `recipient_profile_id`, `type`, `title`, `body`, `read_at` | profiles/templates | index recipient/read | recipient own; admin send | send/read | 008 |
 | `notification_templates` | Email/in-app templates | `id`, `code`, `locale`, `subject`, `body` | deliveries | unique code+locale | admin only | changes | 008 |
 | `notification_deliveries` | Email delivery state | `id`, `notification_id`, `channel`, `status`, `provider_ref` | notifications | index status | recipient limited/admin | delivery | 008 |
@@ -255,6 +280,12 @@ Add `schools`, `districts`, optional `student_school_memberships`, and scope fie
 | `feature_flags` | Safe rollout flags | `key`, `enabled`, `rules_json` | none | pk key | admin only | changes | 008 |
 
 
+## Child 8-Digit ID Strategy and Capacity Note
+
+- The child login identifier is an **8-digit numeric unique ID**, generated **server-side only** via collision-safe **random** generation (not sequential, to avoid account enumeration), zero-padded, and protected by a DB unique constraint (`students.child_unique_id` + `child_unique_ids` registry). A client-provided child ID is never trusted.
+- **Confirmed credential strategy (2026-06-27, see `docs/decisions/2026-06-27-child-auth-and-pricing-decisions.md`):** a child is a real **Supabase Auth user** with a synthetic, non-routable internal email derived from the 8-digit ID (e.g. `c<8digits>@children.invalid`); the parent sets the child's password. Login is a **server-side** action that maps the 8-digit ID → synthetic email → `signInWithPassword` (the synthetic email is never exposed to the client). Passwords are stored only by Supabase Auth (bcrypt) — never in application tables. Rate-limiting + temporary lockout protect against brute force; parents reset the child password via service-role actions.
+- **Finite-space / capacity monitoring:** the 8-digit format yields a finite ID space (~100,000,000 combinations, minus reserved/zero-padding rules). Monitor allocation usage and alert before exhaustion. MVP keeps 8 digits; a future migration may extend the format (e.g. more digits or an alphanumeric scheme) without breaking existing IDs.
+
 ## ERD Overview
 
 ```mermaid
@@ -265,6 +296,11 @@ erDiagram
   permissions ||--o{ role_permissions : included
   profiles ||--o| students : may_be
   profiles ||--o| parents : may_be
+  parents ||--o{ students : creates
+  students ||--|| child_unique_ids : allocated
+  students ||--|| child_credentials : authenticates
+  students ||--o| child_wallpaper_selections : customizes
+  wallpapers ||--o{ child_wallpaper_selections : chosen
   parents ||--o{ parent_student_links : links
   students ||--o{ parent_student_links : linked
   grades ||--o{ students : classifies
@@ -283,8 +319,19 @@ erDiagram
   daily_task_packages ||--o{ student_daily_task_progress : tracked
   students ||--o{ progress_snapshots : summarizes
   students ||--o{ leaderboard_entries : ranks
-  subscription_plans ||--o{ subscriptions : selected
-  profiles ||--o{ payments : pays
+  students ||--o{ child_subscriptions : subscribes
+  child_subscriptions ||--o{ subscription_subjects : selects
+  subjects ||--o{ subscription_subjects : chosen
+  parents ||--o{ payments : pays
+  child_subscriptions ||--o| sibling_discounts : discounted
+  parents ||--o{ checkout_sessions : starts
+  news ||--o{ news_translations : localized
+  news ||--o{ news_media : illustrated
+  olympiad_packages ||--o{ olympiad_questions : pools
+  olympiad_packages ||--o{ olympiad_purchases : sold
+  parents ||--o{ olympiad_purchases : buys
+  students ||--o{ olympiad_package_attempts : attempts
+  olympiad_package_attempts ||--o{ olympiad_attempt_selected_questions : selects
   profiles ||--o{ notifications : receives
   profiles ||--o{ audit_logs : acts
 ```
@@ -295,12 +342,12 @@ erDiagram
 | Order | File | Main responsibility | Safe to rerun? |
 |---:|---|---|---|
 | 001 | `supabase/sql/001_extensions_and_enums.sql` | Extensions, enum types, common domains | Mostly yes, with `if not exists` |
-| 002 | `supabase/sql/002_core_profiles_roles_permissions.sql` | Profiles, roles, permissions, profile roles | Mostly yes |
-| 003 | `supabase/sql/003_academic_taxonomy.sql` | Grades, subjects, topics, subtopics, schools, districts | Mostly yes |
+| 002 | `supabase/sql/002_core_profiles_roles_permissions.sql` | Profiles, roles, permissions, profile roles, parents, parent-created children, 8-digit child IDs, child credentials, parent-child auto-link | Mostly yes |
+| 003 | `supabase/sql/003_academic_taxonomy.sql` | Grades, subjects, topics, subtopics, schools, districts, wallpaper catalog and child wallpaper selection | Mostly yes |
 | 004 | `supabase/sql/004_content_questions_tests.sql` | Questions, translations, options, explanations, tests | Mostly yes |
 | 005 | `supabase/sql/005_attempts_daily_tasks_progress.sql` | Attempts, answers, daily tasks, progress snapshots | Mostly yes |
 | 006 | `supabase/sql/006_leaderboards_analytics.sql` | Leaderboard periods, snapshots, analytics summary tables | Mostly yes |
-| 007 | `supabase/sql/007_subscriptions_payments_coupons.sql` | Plans, subscriptions, payments, Stripe events, coupons | Mostly yes |
+| 007 | `supabase/sql/007_subscriptions_payments_coupons.sql` | Subject pricing, launch promo, child subscriptions, selected subjects, checkout sessions, payments, sibling discounts, Stripe events, coupons, News, olympiad packages/questions/purchases/attempts/selections | Mostly yes |
 | 008 | `supabase/sql/008_notifications_support_audit.sql` | Notifications, templates, deliveries, support, audit logs | Mostly yes |
 | 009 | `supabase/sql/009_storage_buckets_policies.sql` | Storage buckets and storage policies | Caution; policy conflicts possible |
 | 010 | `supabase/sql/010_rls_policies.sql` | All table RLS enablement and policies | Caution; test after every run |

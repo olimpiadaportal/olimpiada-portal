@@ -96,6 +96,10 @@ Rules:
 - `supabase`, `docs`, and `mobile-app` are not deployed to Vercel at this stage.
 - Never commit real secrets, `.env`, `.env.local`, service-role keys, private SSH keys, or local Claude settings.
 
+## Confirmed Product Model (2026-06-27)
+
+The product model is confirmed (see `CLAUDE.md` → "Confirmed Product Model" and `IMPLEMENTATION_EXECUTION_PLAN.md` → "Revised Forward Roadmap"): parent-only registration; parent-created children + 8-digit ID + parent-password child login; child-based subject subscriptions with launch promo + 7-day trial + automatic sibling discount (2nd 15% / 3rd+ 20%); real webhook-verified payment (children never purchase); public marketing website; News (public + admin-only CRUD); Olimpiada Preparation paid module with lifetime access and server-side random 25-question selection (no user-chosen difficulty); child wallpaper customization. Content Managers must not manage News/Olympiad/payment modules. Follow these when implementing any related stage.
+
 ---
 
 ## Mandatory Output — Human Next Actions

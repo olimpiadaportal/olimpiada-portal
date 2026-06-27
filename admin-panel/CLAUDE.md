@@ -34,12 +34,15 @@ Before Admin Panel work:
 ## Admin Panel Rules
 
 - Administrator can manage platform-wide settings and sensitive modules.
-- Content Manager is limited to educational content workflows.
-- Content Manager must not access payment management, role management, sensitive exports, feature flags, system settings, or broad user PII.
-- Sensitive actions require confirmation and audit logging.
+- Content Manager is limited to regular educational content/question workflows.
+- Content Manager must not access payment management, subscriptions, pricing plans, News, Olympiad Preparation packages or their question pool, parent/child account monitoring, role management, sensitive exports, feature flags, system settings, or broad user PII. News, Olympiad packages, and all payment/subscription/business modules are Admin-only.
+- There is NO "Discount Settings" / coupons module. The sibling discount is fixed in business logic (1st child 0%, 2nd child 15%, 3rd+ child 20%) and computed backend-side; never make it admin-configurable.
+- Users never choose difficulty. Tests draw a random mixed set server-side; easy/medium/hard stay in the model only for auto-mixing.
+- Olympiad packages auto-archive listings after the olympiad date but purchasers keep lifetime access; never delete purchased olympiad packages or purchase records.
+- Sensitive actions require confirmation and audit logging, including News, olympiad package, pricing, subscription, payment-monitoring, and parent/child-monitoring actions.
 - Prefer archive/unpublish over destructive delete.
 - Keep data tables searchable, filterable, paginated, and permission-aware.
-- Media uploads use Supabase Storage, not PostgreSQL binary storage.
+- Media uploads (news images, olympiad banners, optimized images/audio/avatars) use Supabase Storage, not PostgreSQL binary storage.
 
 ## Current Admin Panel Build Order
 
@@ -52,7 +55,11 @@ Before Admin Panel work:
 7. Media upload for optimized images/audio
 8. Content lifecycle: draft, in_review, approved, published, archived, rejected
 9. Test package and daily task package management
-10. Analytics/reports/payment monitoring after backend modules exist
+10. News management (Admin-only): create/edit/publish/archive, images in Storage
+11. Olympiad Preparation package management (Admin-only): package metadata, grade/class target, question pool, random 25-question selection, archive listing with lifetime purchaser access, package history
+12. Subscription/pricing-plan visibility and payment monitoring (Admin-only) after backend modules exist
+13. Parent/child account monitoring (Admin-only), including 8-digit child IDs
+14. Analytics/reports after backend modules exist
 
 ## Status Update Requirement
 

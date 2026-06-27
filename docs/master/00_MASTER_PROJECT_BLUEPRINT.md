@@ -17,13 +17,31 @@ Olimpiada Hazırlıq Portalı is a subscription-based educational platform for A
 
 The platform is not a simple quiz website. It is a future-ready education operating system with strong content governance, secure child data handling, role-based access control, audit logging, payment safety, analytics and scalable infrastructure.
 
+### Core Product Model (Canonical)
+
+- **Parent-only registration.** Only parents self-register with email/password through Supabase Auth, and only parents pay. Children never self-register and never purchase.
+- **Parent-created children.** A parent creates each child profile from the parent dashboard through a multi-step "Add child" flow (child info → a separate subject-selection step with a live pricing preview → parent-set password → payment/activation). Parent-created children are auto-linked to the parent; no separate manual linking step is the primary flow.
+- **Child login by 8-digit ID.** Each child logs in with a unique **8-digit numeric ID + a parent-created password** — never email, never a self-chosen account.
+- **Child-based (per-child) subscriptions.** Subscriptions are per child and per subject. A parent selects one, several or all subjects per child; pricing is subject-count based across weekly/monthly/yearly durations.
+- **Subjects (exactly four for MVP).** `Math`, `Science`, `Məntiq`, `İngilis dili`.
+- **Public marketing website.** A public site (Home, About, News, Pricing, Olympiad Preparation overview, Subjects, FAQ, Contact, Login/Register) exists before login and exposes no private student data.
+- **News.** General news is published by Admins and shown both publicly and in-app; images live in Supabase Storage.
+- **Olimpiada Hazırlığı / Olympiad Preparation.** A SEPARATE paid add-on module of package purchases (distinct from regular subscriptions). Purchased olympiad packages grant **lifetime access** and are never deleted.
+- **Child dashboard wallpaper.** Each child may pick a dashboard background from a PREDEFINED set of wallpapers/solid backgrounds (not full theming).
+- **Sibling discount.** Automatic, fixed subscription discount: 1st child 0%, 2nd child 15%, 3rd+ child 20%.
+- **Launch promo + ongoing trial.** A launch promotion makes roughly the first month free; after the promo, new paid child subscriptions receive a 7-day trial before billing.
+- **Real online payment.** Activation is driven by real online payment (Stripe-first, provider-abstracted) and is backend/webhook-verified only — never activated from the client.
+
 ## Business Goals
 
 | Goal | Implementation meaning |
 |---|---|
 | Improve olympiad preparation quality | Provide grade/subject/topic-aligned questions, explanations, tests, daily tasks and mistake review. |
-| Build recurring revenue | Use weekly, monthly and yearly subscription plans with card payment and subscription-gated access. |
-| Support parent trust | Provide parent dashboards, weekly/monthly reports, activity tracking and payment history. |
+| Build recurring revenue | Use child-based, subject-priced weekly/monthly/yearly subscription plans with real online card payment and subscription-gated access. |
+| Add olympiad upsell revenue | Sell a separate paid Olympiad Preparation module of package purchases with lifetime access, independent of subscriptions. |
+| Maximize family conversion | Use a launch one-month promo, an ongoing 7-day trial and an automatic sibling discount (2nd child 15%, 3rd+ 20%) to drive multi-child sign-ups. |
+| Support parent trust | Provide parent dashboards, per-child status, weekly/monthly reports, activity tracking and payment history; parents create and control all child accounts. |
+| Attract via public site | Provide a public marketing website and public/in-app News to acquire and inform families before login. |
 | Reduce admin workload | Build a strong admin panel and limited Content Manager workflow for content creation and review. |
 | Prepare for growth | Design for multilingual content, future Flutter mobile app, schools/partners and optional Redis caching. |
 
@@ -31,10 +49,12 @@ The platform is not a simple quiz website. It is a future-ready education operat
 
 Current implementation covers:
 
-1. Student/Parent Web App.
-2. Admin Panel for Administrator and Teacher/Content Manager users.
-3. Shared Supabase backend, database, auth, storage, Edge Functions and SQL planning.
-4. PostgreSQL schema planning, RLS, RBAC, audit logging, payments, notifications without SMS, progress, leaderboard and analytics.
+1. Public marketing website (Home, About, News, Pricing, Olympiad Preparation overview, Subjects, FAQ, Contact, Login/Register) exposing no private student data.
+2. Parent/Child (Student) Web App: parent-only registration, parent-created children, multi-step add-child flow, child login by 8-digit ID + parent-set password, child dashboard with predefined wallpaper customization.
+3. Admin Panel for Administrator and Teacher/Content Manager users, including News management and Olympiad Preparation package management for Admins only.
+4. Child-based (per-child, subject-priced) subscriptions with launch one-month promo, ongoing 7-day trial and automatic sibling discount, plus the separate paid Olympiad Preparation module with lifetime access for purchasers.
+5. Shared Supabase backend, database, auth, storage, Edge Functions and SQL planning.
+6. PostgreSQL schema planning, RLS, RBAC, audit logging, real online payments (Stripe-first, webhook-verified), notifications without SMS, progress, leaderboard and analytics.
 
 ## Out of Scope for Current Implementation
 
@@ -47,25 +67,28 @@ Current implementation covers:
 - School corporate panel implementation.
 - Teacher classroom management system.
 - CRM integration.
-- Marketing website.
 - Licensed international olympiad question bank integration.
+- Full child theming or arbitrary colors (only a predefined wallpaper/background set is in scope).
+- A "Discount Settings" admin module (the sibling discount is a fixed business rule, not configurable).
+
+> Note: The public marketing website is now IN scope (see Current Scope). It is no longer excluded.
 
 Future readiness may be documented, but these must not be built in the first Web App/Admin Panel MVP.
 
 ## User Types
 
-| User type | Current or future | Access area | Summary |
-|---|---|---|---|
-| Student | Current | Web App | Solves tasks/tests, tracks progress, sees leaderboard and subscription status. |
-| Parent | Current | Web App | Links one or more students, tracks progress, manages subscription and payments. |
-| Administrator | Current | Admin Panel | Full platform control, users, content, payments, reports, settings, audit. |
-| Teacher / Content Manager | Current limited admin role | Admin Panel | Creates and edits assigned content, submits for approval, views limited educational analytics. |
-| School / Partner | Future-only | Future partner dashboard | School-level ownership, reporting and partner permissions later. |
+| User type | Current or future | Registers / logs in how | Access area | Summary |
+|---|---|---|---|---|
+| Parent | Current | Self-registers with email/password (Supabase Auth); only user type that pays | Web App | Creates and controls child accounts, selects per-child subjects, pays subscriptions and olympiad packages, tracks progress, manages payments. |
+| Child / Student | Current | Created by a parent; logs in with a unique **8-digit numeric ID + parent-set password** (NEVER email, NEVER self-registers) | Web App | Solves tasks/tests, tracks own progress, accesses olympiad preparation content the parent purchased, customizes dashboard wallpaper; cannot buy anything. |
+| Administrator | Current | Provisioned account | Admin Panel | Full platform control, users, content, News, Olympiad packages, payments/subscriptions monitoring, reports, settings, audit. |
+| Teacher / Content Manager | Current limited admin role | Provisioned account | Admin Panel | Creates and edits assigned regular educational content, submits for approval, views limited educational analytics. Does NOT manage News, Olympiad packages or any business/payment module. |
+| School / Partner | Future-only | n/a | Future partner dashboard | School-level ownership, reporting and partner permissions later. |
 
 ## Current Applications
 
-- `web-app/`: Student and Parent-facing Next.js web application.
-- `admin-panel/`: Administrator and Content Manager-facing Next.js admin application.
+- `web-app/`: Public marketing website plus Parent and Child (Student) Next.js web application. Parents register and pay; children log in with a 8-digit ID + parent-set password.
+- `admin-panel/`: Administrator and Content Manager-facing Next.js admin application, including Admin-only News and Olympiad Preparation package management.
 - `supabase/`: Shared backend, database, storage, auth, SQL planning and policies.
 
 ## Future Applications
@@ -156,31 +179,39 @@ The package uses 8 master files instead of 20+ master files because the master d
 
 ## MVP Definition
 
-MVP means a working Azerbaijani-language, mobile-browser-friendly Web App and Admin Panel where:
+MVP means a working Azerbaijani-language, mobile-browser-friendly public website, Web App and Admin Panel where:
 
-- Students and parents can register/login through email/password and Supabase Auth.
-- Students can select grade/subjects, solve daily tasks and tests, submit answers, see immediate results and explanations.
-- Parents can link children, view progress/reports and manage subscriptions.
-- Admins can manage users, taxonomy, content, daily tasks, tests, subscriptions, payments, coupons, notifications and reports.
-- Content Managers can create/edit assigned content and submit it for approval without broad admin access.
-- Payments are implemented with Stripe-first card flow and webhook-safe subscription activation.
+- A public marketing website (Home, About, News, Pricing, Olympiad Preparation overview, Subjects, FAQ, Contact, Login/Register) is reachable before login and exposes no private student data.
+- Only parents register/login through email/password and Supabase Auth. Children never self-register.
+- A parent creates each child via a multi-step add-child flow: child info, then a separate subject-selection step (Math/Science/Məntiq/İngilis dili) with a live pricing preview, then a parent-set password, then payment/activation. On success the system assigns a unique server-generated 8-digit numeric ID.
+- Each child logs in with their 8-digit ID + parent-set password, solves daily tasks and tests, sees immediate results and explanations, accesses purchased olympiad preparation content and may pick a dashboard wallpaper from a predefined set. Each test attempt is a server-side random selection of 25 questions from the pool; users never choose difficulty.
+- Subscriptions are child-based and subject-priced, with a launch one-month promo, an ongoing 7-day trial and an automatic sibling discount (2nd child 15%, 3rd+ 20%). A failed charge auto-blocks all paid child access.
+- Parents view per-child status (8-digit ID, subjects, subscription/payment/access status), reports and payment history, and can buy separate Olympiad Preparation packages (lifetime access). Parent-created children are auto-linked to the parent.
+- Admins can manage users, taxonomy, content, daily tasks, tests, subscriptions, payments, coupons, notifications, News and Olympiad Preparation packages, and view payment/account monitoring and reports.
+- Content Managers can create/edit assigned regular educational content and submit it for approval without broad admin access; they do NOT manage News, Olympiad packages or any payment module.
+- Payments are real online payments (Stripe-first card flow) with webhook-verified subscription/package activation only — never client-side activation.
 - RLS, RBAC and audit logging protect the system.
 - Leaderboard works PostgreSQL-first and is Redis-ready.
 
 ## Key Product Modules
 
-1. Authentication and profile onboarding.
-2. RBAC, RLS and audit logging.
-3. Academic taxonomy: grades, subjects, topics, subtopics, difficulty and olympiad types.
-4. Question bank and content review workflow.
-5. Daily task engine.
-6. Test/exam engine and automatic grading.
-7. Progress, reports and analytics.
-8. Leaderboard and anti-manipulation.
-9. Subscriptions, Stripe payments, coupons and payment events.
-10. Notifications without SMS.
-11. Support requests and admin reports.
-12. Future mobile/school/partner readiness.
+1. Public marketing website (Home, About, News, Pricing, Olympiad Preparation overview, Subjects, FAQ, Contact, Login/Register).
+2. Parent authentication (parent-only email/password registration) and parent dashboard.
+3. Child accounts: parent-created child profiles, server-generated 8-digit unique IDs, child login by 8-digit ID + parent-set password, child dashboard with predefined wallpaper customization.
+4. RBAC, RLS and audit logging.
+5. Academic taxonomy: grades, the four subjects (Math, Science, Məntiq, İngilis dili), topics, subtopics, difficulty (auto-mixed, never user-selected) and olympiad types.
+6. Question bank and content review workflow.
+7. Daily task engine.
+8. Test/exam engine with server-side random 25-question selection and automatic grading.
+9. Child-based subject subscriptions: subject pricing, weekly/monthly/yearly duration, launch promo, 7-day trial, sibling discount, access blocking on failed charge.
+10. Olympiad Preparation module: separate paid packages, question pools, random 25-question attempts, lifetime access, package history and archive-on-expiry for listings only.
+11. News (public + in-app, Admin-only CRUD, images in Storage).
+12. Progress, reports and analytics.
+13. Leaderboard and anti-manipulation.
+14. Real online payments (Stripe-first), checkout sessions, webhook-verified activation and payment events.
+15. Notifications without SMS.
+16. Support requests and admin reports.
+17. Future mobile/school/partner readiness.
 
 ## Stack Summary
 
@@ -244,16 +275,30 @@ The first frontend version must be clean, simple, responsive, accessible and fun
 8. Payments are **Stripe-first card payments** with a provider abstraction for future local Azerbaijani providers. Optional bank transfer is excluded.
 9. Redis is not required for correctness. The MVP should be PostgreSQL-first with a Redis-ready `LeaderboardService` abstraction.
 10. UI approval is not a blocker. Build a clean, simple, responsive, accessible, component-ready frontend that can later be restyled.
+11. **Parent-only registration.** Only parents self-register (email/password). Children are created by parents and never self-register.
+12. **Child login by 8-digit ID.** Children log in with a server-generated unique 8-digit numeric ID + a parent-set password, never email. The 8-digit ID is generated server-side, collision-safe, zero-padded and uniquely constrained.
+13. **Child-based subscriptions.** Subscriptions are per child and per subject (not a single parent-level paid account). Pricing is subject-count based across weekly/monthly/yearly durations.
+14. **Launch promo + ongoing trial.** A launch promotion makes roughly the first month free; afterwards, new paid child subscriptions get a 7-day trial. A failed charge after trial/renewal auto-blocks all paid child access.
+15. **Sibling discount is fixed.** Automatic subscription discount of 0% / 15% / 20% for 1st / 2nd / 3rd+ child, computed backend-side. There is NO "Discount Settings" admin module.
+16. **Olympiad Preparation is a separate paid module.** Package purchases are independent of subscriptions; purchased packages grant lifetime access, are never deleted, and only their listings archive after the olympiad/end date.
+17. **Public marketing website and News are in scope.** News is Admin-only CRUD, shown publicly and in-app.
+18. **Child wallpaper customization is in scope** but limited to a predefined wallpaper/background set (no full theming, no arbitrary colors).
+19. **Real online payment is required.** No manual admin approval activates paid access; activation is backend/webhook-verified only. The client can never override price, discount, selected subjects, trial dates, subscription status or access flags.
+20. **Domain not confirmed.** No final domain is chosen; no domain purchase or email-domain configuration happens in this phase.
 
 
 ## Success Criteria
 
-- Student can register, solve tasks/tests and see results without technical friction.
-- Parent can link and monitor one or more students.
-- Admin can manage content and daily tasks safely.
-- Content Manager can create educational content without sensitive admin access.
-- Payment success activates subscription correctly through verified webhook flow.
-- RLS prevents cross-user data leakage.
+- A visitor can browse the public marketing website and News before logging in.
+- A parent can register, create one or more children, select per-child subjects with a live pricing preview, set a child password, pay and have access activated through the verified webhook flow.
+- Each child can log in with their 8-digit ID + parent-set password, solve tasks/tests (server-side random 25-question selection), see results and customize their dashboard wallpaper without technical friction.
+- Parent-created children are auto-linked; the parent can monitor every child's status, subjects and payment history.
+- Sibling discount, launch promo and 7-day trial apply correctly and are computed backend-side; a failed charge auto-blocks paid child access.
+- Olympiad Preparation packages can be purchased separately and grant lifetime access; expired packages archive for listing only and stay accessible to purchasers.
+- Admin can manage content, daily tasks, News and Olympiad packages safely.
+- Content Manager can create regular educational content without sensitive admin access and without touching News, Olympiad or payment modules.
+- Payment success activates the correct child subscription or olympiad package through the verified webhook flow.
+- RLS prevents cross-user data leakage; a child can read only its own profile/content and cannot purchase or edit payment/subscription data.
 - Audit logs record sensitive admin actions.
 - Leaderboard is fair, explainable and not easy to manipulate.
 - Web App works well on desktop, tablet and mobile browsers.
@@ -263,8 +308,13 @@ The first frontend version must be clean, simple, responsive, accessible and fun
 | Topic | Assumption | Needs confirmation |
 |---|---|---|
 | Payment | Stripe-first for current implementation | Confirm Stripe availability/legal fit for Azerbaijan business setup. |
-| Email | Brevo or equivalent | Confirm sender domain and transactional email provider. |
-| Subscription ownership | Parent usually pays, student sees status | Confirm whether student accounts may pay directly. |
+| Email | Brevo or equivalent | Confirm transactional email provider (sender domain deferred — see Domain). |
+| Subscription ownership | Confirmed: child-based subscriptions, paid only by the parent; children never pay | Settled — kept here only as a record of the decision. |
+| Subject pricing | Placeholder pricing of 1 AZN per subject (1/2/3/4 subjects → 1/2/3/4 AZN) across weekly/monthly/yearly; all-4 "full package" option | Confirm final price points and durations; pricing is configurable later. |
+| All-subjects bundle | A discounted "full package" for all 4 subjects is a placeholder | Confirm whether/what discount the bundle carries. |
+| Proration / add subjects later | Parents may add subjects to an existing child subscription; proration/upgrade rule is backend-controlled | Decide the exact proration/upgrade rule (and whether it is MVP or a later backend service). |
+| Domain | No final domain chosen; no domain purchase or email-domain config this phase | A future phase picks one domain for site + corporate email. |
 | Content volume | Initial platform can start with smaller curated seed content, not 5,000-10,000 on day one | Confirm launch content minimum. |
 | Admin account bootstrap | First admin manually created in Supabase or secure seed | Confirm operational process. |
+| 8-digit ID capacity | 8-digit numeric space is finite; MVP uses 8 digits with monitoring | Plan a future migration path if the namespace approaches capacity. |
 | Redis | Not included by default | Re-evaluate after leaderboard load testing. |

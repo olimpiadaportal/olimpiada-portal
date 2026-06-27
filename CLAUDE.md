@@ -20,6 +20,28 @@ The repository has many Markdown planning files. Do not try to read all of them 
 
 Never proceed with large implementation work without updating `STATUS.md`.
 
+## Workflow Control (Permanent Rule)
+
+- `STATUS.md` is the source of truth for the current active stage.
+- `CODING_AGENT_PROMPTS.md` is the workflow guide.
+- At the start of every stage, read `STATUS.md`, `IMPLEMENTATION_EXECUTION_PLAN.md`, and `CODING_AGENT_PROMPTS.md`.
+- Read only the markdown files required for the active stage. Do not reread every project markdown.
+- If a stage includes SQL/database/schema/RLS/storage work, automatically apply the database rules from `CODING_AGENT_PROMPTS.md` (Prompt 8) and the database versioning workflow. Do not wait for a separate database prompt.
+- For SQL/database stages, automatically run database validation against the **dev/staging** database using `OLIMPIADA_DEV_DB_URL` from the local terminal environment (e.g. `psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/0XX_file.sql`). Do not ask the human owner to manually run all SQL files unless automation is impossible (no `OLIMPIADA_DEV_DB_URL`, or no `psql`/safe execution method available).
+- If database validation fails, identify the exact file and error, fix the SQL inside the current stage scope, and rerun validation. Repeat until validation passes or a genuine blocker is found.
+- For SQL/database stages, use **dev/staging only — never run against production.**
+- After every implementation, self-review, fix, or stage close, end the response with a concise `Human Next Actions` section.
+- `Human Next Actions` must include: what the human must manually check, whether UI/manual testing is needed, whether Supabase dashboard checking is needed, whether to commit/push (with a suggested commit message), whether deployment should be checked (after Vercel is connected), the expected success result, what to do if it fails, and the next prompt to use.
+- Do not repeat the full project structure unless something is wrong.
+- Keep final reports concise.
+
+## Secret Handling (Non-Negotiable)
+
+- Never print, echo, save, log, commit, or otherwise expose `OLIMPIADA_DEV_DB_URL`, database passwords, the Supabase service role key, API keys, or any other secret.
+- Do not write secrets into `.env` files tracked by Git, markdown, `STATUS.md`, logs, command output, or commit messages.
+- When using `OLIMPIADA_DEV_DB_URL`, reference it only as the shell variable `"$OLIMPIADA_DEV_DB_URL"`; never expand or display its value. Redact any connection string from command output before reporting.
+- Secrets live only in the local terminal environment and untracked local env files. The repository is never a place for secrets.
+
 ## Source-of-Truth Reading Order
 
 Start with:

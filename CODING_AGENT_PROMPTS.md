@@ -12,7 +12,11 @@ No Codex/ChatGPT review step is part of the current workflow.
 
 # Quick Order Map
 
-Use the prompts in this order.
+Use only the prompt that matches the current situation. Do **not** paste all prompts at once.
+
+`STATUS.md` is the source of truth for the active stage.
+
+Database/schema handling is automatic: use Prompt 2 only. Claude must detect whether the active stage includes SQL/database/schema/RLS/Supabase migration work and then apply the Prompt 8 rules internally.
 
 ## First time only
 
@@ -23,8 +27,7 @@ Prompt 1 — First Coding Session
 → Prompt 3 — Claude Self-Review
 → Human manual test
 → If issues: Prompt 4 or Prompt 5
-→ If passed: Prompt 6 — Manual Testing Passed
-→ Prompt 7 — Prepare Next Stage
+→ If passed: Prompt 6 — Manual Testing Passed + Prepare Next Stage
 ```
 
 After this, do **not** use Prompt 1 again.
@@ -36,13 +39,13 @@ After this, do **not** use Prompt 1 again.
 Use this repeated loop for every implementation stage:
 
 ```text
-Prompt 2 — Start or Resume Current Stage
+Prompt 2 — Start or Resume Active Stage
+→ Claude automatically applies Prompt 8 rules if the active stage includes database/schema work
 → Prompt 3 — Claude Self-Review
 → Human manual test
 → If issues: Prompt 4 or Prompt 5
-→ If passed: Prompt 6 — Manual Testing Passed
-→ Prompt 7 — Prepare Next Stage
-→ Then use Prompt 2 again for the next stage
+→ If passed: Prompt 6 — Manual Testing Passed + Prepare Next Stage
+→ Then repeat from Prompt 2 for the next stage
 ```
 
 ---
@@ -54,23 +57,76 @@ Prompt 2 — Start or Resume Current Stage
 | First ever coding session | Prompt 1 |
 | New terminal/session after first stage | Prompt 2 |
 | Continue the active stage | Prompt 2 |
-| Claude finished coding and you want it to review itself | Prompt 3 |
+| Start a prepared stage | Prompt 2 |
+| Claude finished implementation and you want self-review | Prompt 3 |
 | You manually tested and something failed | Prompt 4 |
-| Claude self-review found problems, or you want it to fix a specific issue | Prompt 5 |
-| Manual testing passed | Prompt 6 |
-| Current stage is approved and you want to prepare the next one | Prompt 7 |
-| The current task includes database/schema changes | Prompt 8, as an add-on before SQL work |
+| Claude self-review found problems, or you want a specific fix | Prompt 5 |
+| Manual testing passed and you want to close the stage | Prompt 6 |
+| The current task includes database/schema changes | Still use Prompt 2 only; Claude applies Prompt 8 rules automatically |
 | Claude starts changing unrelated files or jumping ahead | Prompt 9 |
 
 ---
 
-## Important Rule
+## Token-Saving Rules
 
-Do not paste all prompts at once.
+Claude must keep usage controlled.
 
-Use only the prompt that matches the current situation.
+Rules:
+- Read only `CLAUDE.md`, `STATUS.md`, `IMPLEMENTATION_EXECUTION_PLAN.md`, and the markdown files listed for the active stage.
+- Do not reread every project markdown file unless the active stage requires it.
+- Do not repeat the full project structure unless something is missing or wrong.
+- Do not summarize unchanged files.
+- Keep final reports short and practical.
+- Update `STATUS.md` with deltas only.
+- Do not print long tables unless the human owner asks.
+- Do not start the next stage during the closing prompt.
+- Do not ask the human to paste Prompt 8 separately; apply it automatically when needed.
 
-`STATUS.md` is the source of truth for the current active stage. Claude must update it after every implementation, fix, review, or stage transition.
+---
+
+## Important Project Rules
+
+- Use only the `main` branch unless the human owner explicitly changes this.
+- Keep Git initialized only at the root `olimpiada-portal/` folder.
+- Do not initialize separate Git repositories inside `web-app`, `admin-panel`, `mobile-app`, or `supabase`.
+- This is a monorepo-style project.
+- Later Vercel will deploy separate apps using Root Directory settings:
+  - `web-app` for the student/parent web app,
+  - `admin-panel` for the admin panel.
+- `supabase`, `docs`, and `mobile-app` are not deployed to Vercel at this stage.
+- Never commit real secrets, `.env`, `.env.local`, service-role keys, private SSH keys, or local Claude settings.
+
+---
+
+## Mandatory Output — Human Next Actions
+
+After **every** implementation, self-review, fix, or stage-close response, Claude must end with a concise **Human Next Actions** section so the human owner does not have to track the workflow manually.
+
+It must contain, in this order (omit a line only if it is genuinely not applicable, and say so):
+
+1. **What to manually check** — exactly what the human owner should look at/verify.
+2. **UI / manual testing needed?** — whether the human must manually test UI/design/business behavior (only when apps exist), and which flows.
+3. **Supabase dashboard needed?** — whether the human must use the Supabase dashboard/SQL editor, and for what.
+4. **Database run/validation** — if Claude already ran SQL + validation automatically against dev/staging via `OLIMPIADA_DEV_DB_URL`, say so and report PASS/FAIL (never print the URL). Only if automation was impossible, give the exact SQL files and numeric run order (dev/staging first, never production).
+5. **Expected success result** — what a passing result looks like.
+6. **If it fails** — what to do / which prompt to use to report the failure.
+7. **Commit/push?** — whether the human should commit and push.
+8. **Suggested commit message** — a ready-to-use commit message.
+9. **Deployment check?** — whether the human should check deployment status (only after Vercel is connected later).
+10. **Next prompt** — which prompt from this file to use next.
+
+Keep it short and practical. This section is required even when the rest of the report is brief. Never include secrets (DB URL, passwords, keys) in this section.
+
+## Human Owner Role (Keep It Simple)
+
+The human owner's job stays small. Claude Code handles technical validation automatically. The human owner only:
+
+- manually tests UI/design/business behavior once apps exist,
+- reports bugs or design issues (use Prompt 4),
+- manually commits and pushes to GitHub using the commit message Claude provides,
+- checks deployment status manually after Vercel is connected later.
+
+Claude Code handles SQL execution, database validation, fixes, and `STATUS.md` updates automatically for database stages (using `OLIMPIADA_DEV_DB_URL` against dev/staging, never production, never exposing secrets).
 
 ---
 
@@ -93,6 +149,7 @@ Do not create Web App features.
 Do not create Admin Panel features.
 Do not create payment features.
 Do not create mobile app features.
+Do not create Supabase SQL feature files.
 Do not jump to later stages.
 
 Your goals:
@@ -100,8 +157,19 @@ Your goals:
 2. verify the planning files exist,
 3. confirm the `CLAUDE.md` files are in the right places,
 4. confirm `CODING_AGENT_PROMPTS.md` is Claude Code-only,
-5. update `STATUS.md` to show Stage 1 progress,
-6. tell me whether the project is ready to begin Stage 2 — Supabase SQL Planning and Foundation.
+5. verify Git baseline:
+   - root-level Git repo only,
+   - `main` branch only,
+   - professional `.gitignore`,
+   - no nested Git repos inside app folders,
+6. update `STATUS.md` to show Stage 1 progress,
+7. tell me whether the project is ready to begin Stage 2 — Supabase SQL Planning and Foundation.
+
+If Git is not initialized:
+- initialize Git only at the root `olimpiada-portal/` folder,
+- use only the `main` branch,
+- create a professional `.gitignore`,
+- do not make a commit unless I approve.
 
 After the work:
 - list changed files,
@@ -115,7 +183,7 @@ After the work:
 
 ---
 
-# Prompt 2 — Start or Resume Current Stage Prompt
+# Prompt 2 — Start or Resume Active Stage Prompt
 
 Use this for **every normal coding session after Prompt 1**.
 
@@ -126,7 +194,7 @@ Use it when:
 - or asking Claude to implement the active stage from `STATUS.md`.
 
 ```text
-Read `CLAUDE.md`, `IMPLEMENTATION_EXECUTION_PLAN.md`, and `STATUS.md`.
+Read `CLAUDE.md`, `IMPLEMENTATION_EXECUTION_PLAN.md`, `STATUS.md`, and `CODING_AGENT_PROMPTS.md`.
 
 Find the current active stage in `STATUS.md`.
 
@@ -144,13 +212,19 @@ Rules:
 - Do not implement SMS.
 - Do not implement optional bank transfer.
 - Do not implement the mobile app now.
+- Keep the final report concise.
 
-If this stage includes database work:
-- follow `supabase/sql/README_DATABASE_VERSIONING_WORKFLOW.md`,
-- write canonical SQL files under `supabase/sql/`,
-- write incremental migrations only under `supabase/sql/migrations/`,
-- update migration/backport status in `STATUS.md`,
-- never apply production database changes without a migration script.
+If this stage includes database/schema/Supabase/RLS/storage/migration work, do all of this automatically (no separate prompt needed):
+- apply Prompt 8 from this file and the database versioning workflow before writing SQL,
+- detect that the stage is database-related from `STATUS.md` and the stage docs,
+- check whether `OLIMPIADA_DEV_DB_URL` exists in the environment WITHOUT printing it (e.g. `[ -n "$OLIMPIADA_DEV_DB_URL" ] && echo set || echo missing`),
+- check whether `psql` (or another safe SQL execution method) is available,
+- if both exist, run the stage's SQL files in the required numeric order against the dev/staging database via `psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/0XX_file.sql`, then run the validation queries (`013_validation_queries.sql`),
+- if a SQL file errors, identify the exact file and error, fix it inside the current stage scope, and rerun,
+- use dev/staging ONLY — never production,
+- never print, echo, save, or commit `OLIMPIADA_DEV_DB_URL`, passwords, keys, or any secret; redact any connection string from output,
+- if `OLIMPIADA_DEV_DB_URL` or `psql` is missing, do not run SQL — instead give the human the exact run order in `Human Next Actions`,
+- update `STATUS.md` (files changed, validation result, environment = dev/staging, blockers).
 
 After implementation:
 1. list changed files,
@@ -158,7 +232,8 @@ After implementation:
 3. list failed/skipped tests,
 4. summarize risks or unfinished work,
 5. update `STATUS.md`,
-6. say whether the stage is ready for Claude self-review.
+6. say whether the stage is ready for Claude self-review,
+7. end with a concise `Human Next Actions` section (see "Mandatory Output — Human Next Actions" above).
 ```
 
 ---
@@ -175,11 +250,12 @@ Read:
 - `IMPLEMENTATION_EXECUTION_PLAN.md`
 - `STATUS.md`
 - the markdown files listed for the current stage
-- the files changed in this stage
+- only the files changed in this stage
 
 Do not implement new features.
 Do not jump to the next stage.
 Do not refactor unrelated files.
+Do not repeat the full project structure unless something is wrong.
 
 Review your own work for:
 - architecture violations,
@@ -195,7 +271,7 @@ Review your own work for:
 - places where business logic was put into UI components,
 - places where client-side code is trusted too much.
 
-Return:
+Return concise results:
 1. critical issues,
 2. important improvements,
 3. optional suggestions,
@@ -266,57 +342,60 @@ After fixing:
 
 ---
 
-# Prompt 6 — Manual Testing Passed Prompt
+# Prompt 6 — Manual Testing Passed + Prepare Next Stage Prompt
 
 Use this after you manually test the stage and everything required for that stage works.
 
+This prompt replaces the old separate “Prepare Next Stage” prompt to reduce token usage.
+
 ```text
-Manual testing passed.
+Manual testing passed for the current stage.
+
+Close the current stage and prepare the next stage.
 
 Update `STATUS.md`:
 - mark the current stage checklist items as complete,
 - add the manual test result to Completed Work,
-- record any notes or limitations,
 - record commands/tests that passed,
-- set the next recommended task to the next stage from `IMPLEMENTATION_EXECUTION_PLAN.md`.
+- record commit/push status if available,
+- record any notes or limitations,
+- set the next stage from `IMPLEMENTATION_EXECUTION_PLAN.md` as the active stage,
+- set the new current task,
+- list only the markdown files required for the next stage,
+- list only the expected files to change for the next stage,
+- list only the key risks for the next stage,
+- list the next prompt I should use. If the next stage is database-related, say: `Use Prompt 2; Prompt 8 rules will be applied automatically.`
 
 Do not implement the next stage yet.
+Do not reread unnecessary markdown files.
+Keep the output concise.
 Stop after updating `STATUS.md`.
 ```
 
 ---
 
-# Prompt 7 — Prepare Next Stage Prompt
+# Prompt 7 — Removed
 
-Use this only after the current stage has passed implementation, Claude self-review, required fixes, and manual testing.
+Prompt 7 was intentionally removed to reduce token usage.
+
+The old separate “Prepare Next Stage” action is now included inside:
 
 ```text
-The current stage is approved.
-
-Prepare the next stage from `IMPLEMENTATION_EXECUTION_PLAN.md`.
-
-Update `STATUS.md` first:
-- set the new active stage,
-- set the new current task,
-- list the markdown files that must be read for the new stage,
-- list expected files to change,
-- list risks for the new stage,
-- list the next prompt I should use.
-
-Do not code the next stage yet.
-Stop and wait for my approval before coding.
+Prompt 6 — Manual Testing Passed + Prepare Next Stage
 ```
+
+Do not use Prompt 7.
 
 ---
 
-# Prompt 8 — Database Change Add-On Prompt
+# Prompt 8 — Database Rules Reference
 
-Use this as an **add-on** whenever the current stage needs SQL/database changes.
+Do **not** paste Prompt 8 separately during normal work.
 
-Paste it after Prompt 1 or Prompt 2 if database work is involved.
+Prompt 2 must automatically apply these rules whenever the active stage includes SQL/database/schema/RLS/Supabase migration work.
 
 ```text
-This task includes database changes.
+The active stage includes database changes.
 
 Before writing SQL, read:
 - `supabase/CLAUDE.md`
@@ -335,6 +414,8 @@ Rules:
 - Supabase Dashboard SQL Editor can be used only for development/staging experiments, but the repository remains source of truth.
 - Update `STATUS.md` database tracking table.
 - Do not write destructive SQL without explicit human approval and rollback notes.
+- Keep SQL creation in numeric run order.
+- Do not create Web App, Admin Panel, payment, or mobile files during database-only stages.
 ```
 
 ---
@@ -371,7 +452,6 @@ First time only:
 3. Manual test
 4. Prompt 4 or 5 if there are issues
 5. Prompt 6 if passed
-6. Prompt 7 to prepare next stage
 
 Every later stage:
 1. Prompt 2
@@ -379,18 +459,9 @@ Every later stage:
 3. Manual test
 4. Prompt 4 or 5 if there are issues
 5. Prompt 6 if passed
-6. Prompt 7 to prepare next stage
-7. Repeat from Prompt 2
-```
+6. Repeat from Prompt 2
 
-One branch per stage is recommended:
-
-```text
-stage-01-repository-setup
-stage-02-supabase-foundation
-stage-03-auth-rbac-rls
-stage-04-app-skeletons
-stage-05-admin-taxonomy
+For database stages, still use Prompt 2 only. Claude reads this file and applies Prompt 8 rules automatically.
 ```
 
 Keep Claude Code as the only coding agent unless the human owner explicitly changes the workflow later.

@@ -42,6 +42,13 @@ values
      array['text/csv','application/pdf'])
 on conflict (id) do nothing;
 
+-- wallpaper-assets : predefined child-dashboard wallpaper images (public read,
+-- admin write). Solid-color wallpapers need no file; image wallpapers live here.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('wallpaper-assets', 'wallpaper-assets', true, 3145728,
+        array['image/png','image/jpeg','image/webp'])
+on conflict (id) do nothing;
+
 -- -----------------------------------------------------------------------------
 -- !!! VALIDATION WARNING — TEST THIS FILE ON SUPABASE DEV/STAGING FIRST !!!
 -- `storage.objects` is owned by `supabase_storage_admin`, not `postgres`. On some
@@ -100,6 +107,19 @@ create policy "owner manage own avatar"
     bucket_id = 'profile-avatars'
     and (owner = auth.uid() or public.is_admin())
   );
+
+-- ===== wallpaper-assets: public read; admin manages the catalog images ========
+drop policy if exists "public read wallpaper-assets" on storage.objects;
+create policy "public read wallpaper-assets"
+  on storage.objects for select
+  using (bucket_id = 'wallpaper-assets');
+
+drop policy if exists "admin manage wallpaper-assets" on storage.objects;
+create policy "admin manage wallpaper-assets"
+  on storage.objects for all
+  to authenticated
+  using (bucket_id = 'wallpaper-assets' and public.is_admin())
+  with check (bucket_id = 'wallpaper-assets' and public.is_admin());
 
 -- ===== Private buckets: admin-imports, reports — no public access ============
 -- admin-imports: admins (and content importers) only.

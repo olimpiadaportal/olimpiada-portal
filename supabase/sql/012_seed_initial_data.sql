@@ -91,6 +91,19 @@ insert into public.subjects (code, name, status) values
 on conflict (code) do nothing;
 
 -- -----------------------------------------------------------------------------
+-- Predefined solid-color wallpapers (child dashboard). Image wallpapers are
+-- added later by an admin via the wallpaper-assets bucket.
+-- -----------------------------------------------------------------------------
+insert into public.wallpapers (code, name, kind, value, status) values
+  ('solid_sky',      'Sky',      'solid_color', '#dbeafe', 'active'),
+  ('solid_mint',     'Mint',     'solid_color', '#dcfce7', 'active'),
+  ('solid_lavender', 'Lavender', 'solid_color', '#ede9fe', 'active'),
+  ('solid_peach',    'Peach',    'solid_color', '#ffedd5', 'active'),
+  ('solid_rose',     'Rose',     'solid_color', '#ffe4e6', 'active'),
+  ('solid_slate',    'Slate',    'solid_color', '#e2e8f0', 'active')
+on conflict (code) do nothing;
+
+-- -----------------------------------------------------------------------------
 -- Question types.
 -- -----------------------------------------------------------------------------
 insert into public.question_types (code, name, supports_auto_grading) values

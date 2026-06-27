@@ -54,6 +54,13 @@ do $$ begin
     ('pending', 'active', 'revoked', 'disputed');
 exception when duplicate_object then null; end $$;
 
+-- Parent-created child account access lifecycle
+-- (Stage 7 business model: child access driven by subscription/trial state).
+do $$ begin
+  create type public.child_access_status as enum
+    ('inactive', 'trialing', 'active', 'locked', 'expired');
+exception when duplicate_object then null; end $$;
+
 -- Content lifecycle for questions / tests / daily task packages
 -- (05_ADMIN_PANEL content workflow: draft .. published .. archived/rejected).
 do $$ begin

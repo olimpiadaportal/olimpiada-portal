@@ -38,7 +38,9 @@ begin
   foreach t in array array[
     'profiles','roles','permissions','role_permissions','profile_roles',
     'parents','students','parent_student_links',
+    'child_unique_ids','child_credentials',
     'districts','schools','grades','subjects','topics','subtopics',
+    'wallpapers','child_wallpaper_selections',
     'question_types','difficulty_levels','olympiad_types','sources',
     'questions','question_translations','answer_options','answer_option_translations',
     'question_explanations','tests','test_questions',
@@ -139,7 +141,9 @@ create policy "parents_write" on public.parents for all to authenticated
   using (profile_id = public.current_profile_id() or public.is_admin())
   with check (profile_id = public.current_profile_id() or public.is_admin());
 
--- students (own / linked parent / admin) --------------------------------------
+-- students (own / linked parent / CREATING parent / admin) --------------------
+-- created_by_parent_profile_id lets the parent who created a child account read
+-- and manage that child even before/without an active parent_student_links row.
 drop policy if exists "students_select" on public.students;
 create policy "students_select" on public.students for select to authenticated
   using (
@@ -147,12 +151,31 @@ create policy "students_select" on public.students for select to authenticated
     or public.is_admin()
     or public.has_permission('users.read')
     or public.is_parent_linked_to_student(profile_id)
+    or created_by_parent_profile_id = public.current_profile_id()
   );
 
 drop policy if exists "students_write" on public.students;
 create policy "students_write" on public.students for all to authenticated
-  using (profile_id = public.current_profile_id() or public.is_admin())
-  with check (profile_id = public.current_profile_id() or public.is_admin());
+  using (
+    profile_id = public.current_profile_id()
+    or created_by_parent_profile_id = public.current_profile_id()
+    or public.is_admin()
+  )
+  with check (
+    profile_id = public.current_profile_id()
+    or created_by_parent_profile_id = public.current_profile_id()
+    or public.is_admin()
+  );
+
+-- child_unique_ids / child_credentials: admin read only. Writes go through the
+-- allocate_child_unique_id() SECURITY DEFINER function / service role (both bypass
+-- RLS), so there is intentionally NO write policy here.
+drop policy if exists "child_unique_ids_admin" on public.child_unique_ids;
+create policy "child_unique_ids_admin" on public.child_unique_ids for select to authenticated
+  using (public.is_admin());
+drop policy if exists "child_credentials_admin" on public.child_credentials;
+create policy "child_credentials_admin" on public.child_credentials for select to authenticated
+  using (public.is_admin());
 
 -- parent_student_links (parent/student involved / admin) ----------------------
 drop policy if exists "psl_select" on public.parent_student_links;
@@ -191,6 +214,30 @@ begin
       'create policy "%1$s_write" on public.%1$I for all to authenticated using (public.is_admin()) with check (public.is_admin());', t);
   end loop;
 end $$;
+
+-- wallpapers: active catalog readable by authenticated; admin write.
+drop policy if exists "wallpapers_select" on public.wallpapers;
+create policy "wallpapers_select" on public.wallpapers for select to authenticated
+  using (status = 'active' or public.is_admin());
+drop policy if exists "wallpapers_write" on public.wallpapers;
+create policy "wallpapers_write" on public.wallpapers for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- child_wallpaper_selections: child manages own; parent (linked or creator)/admin read.
+drop policy if exists "cws_select" on public.child_wallpaper_selections;
+create policy "cws_select" on public.child_wallpaper_selections for select to authenticated
+  using (
+    student_profile_id = public.current_profile_id()
+    or public.is_parent_linked_to_student(student_profile_id)
+    or public.is_admin()
+    or exists (select 1 from public.students s
+               where s.profile_id = student_profile_id
+                 and s.created_by_parent_profile_id = public.current_profile_id())
+  );
+drop policy if exists "cws_write" on public.child_wallpaper_selections;
+create policy "cws_write" on public.child_wallpaper_selections for all to authenticated
+  using (student_profile_id = public.current_profile_id() or public.is_admin())
+  with check (student_profile_id = public.current_profile_id() or public.is_admin());
 
 -- =============================================================================
 -- CONTENT CONFIG CATALOGS (read authenticated; admin write)

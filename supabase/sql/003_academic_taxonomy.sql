@@ -87,6 +87,33 @@ create table if not exists public.subtopics (
   updated_at  timestamptz not null default now()
 );
 
+-- -----------------------------------------------------------------------------
+-- wallpapers : predefined child-dashboard wallpaper catalog (no arbitrary colors).
+-- 'solid_color' uses a hex value; 'image' uses a media_asset (wallpaper-assets
+-- bucket). media_asset_id references media_assets (008); its FK is deferred to 011
+-- to preserve numeric run order.
+-- -----------------------------------------------------------------------------
+create table if not exists public.wallpapers (
+  id             uuid primary key default gen_random_uuid(),
+  code           text not null unique,
+  name           text not null,
+  kind           text not null default 'solid_color' check (kind in ('image', 'solid_color')),
+  value          text,            -- hex color for solid_color
+  media_asset_id uuid,            -- FK -> media_assets(id) added in 011 (image kind)
+  status         public.catalog_status not null default 'active',
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
+-- child_wallpaper_selections : the child's chosen dashboard wallpaper (1 per child).
+-- -----------------------------------------------------------------------------
+create table if not exists public.child_wallpaper_selections (
+  student_profile_id uuid primary key references public.students (profile_id) on delete cascade,
+  wallpaper_id       uuid not null references public.wallpapers (id) on delete cascade,
+  selected_at        timestamptz not null default now()
+);
+
 -- =============================================================================
 -- End of 003_academic_taxonomy.sql
 -- =============================================================================

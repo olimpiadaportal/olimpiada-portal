@@ -47,6 +47,11 @@ alter table public.question_explanations drop constraint if exists fk_qexpl_medi
 alter table public.question_explanations add constraint fk_qexpl_media
   foreign key (media_asset_id) references public.media_assets (id) on delete set null;
 
+-- wallpapers (003) -> media_assets (008) for the image-kind catalog entries.
+alter table public.wallpapers drop constraint if exists fk_wallpapers_media;
+alter table public.wallpapers add constraint fk_wallpapers_media
+  foreign key (media_asset_id) references public.media_assets (id) on delete set null;
+
 -- -----------------------------------------------------------------------------
 -- Indexes (foreign-key lookups, status filters, search).
 -- -----------------------------------------------------------------------------
@@ -56,6 +61,7 @@ create index if not exists idx_role_permissions_perm on public.role_permissions 
 
 create index if not exists idx_students_grade on public.students (grade_id);
 create index if not exists idx_students_school on public.students (school_id);
+create index if not exists idx_students_created_by_parent on public.students (created_by_parent_profile_id);
 create index if not exists idx_psl_student on public.parent_student_links (student_profile_id);
 create index if not exists idx_psl_parent_status on public.parent_student_links (parent_profile_id, status);
 
@@ -227,6 +233,50 @@ drop trigger if exists trg_audit_daily_task_packages on public.daily_task_packag
 create trigger trg_audit_daily_task_packages
   after insert or update or delete on public.daily_task_packages
   for each row execute function public.fn_audit_row();
+
+-- -----------------------------------------------------------------------------
+-- Child account business-logic functions & triggers (Stage 7).
+-- -----------------------------------------------------------------------------
+-- 8-digit child ID generator: random, collision-safe, server-side. Inserts into
+-- the child_unique_ids registry (002) under uniqueness and retries on collision,
+-- then stamps students.child_unique_id. SECURITY DEFINER so it can write the
+-- RLS-protected registry; never trust a client-provided ID.
+create or replace function public.allocate_child_unique_id(p_student_profile_id uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_id text;
+  tries int := 0;
+begin
+  loop
+    tries := tries + 1;
+    -- 10000000..99999999 (no leading zero), ~90M space.
+    v_id := (10000000 + floor(random() * 90000000))::bigint::text;
+    begin
+      insert into public.child_unique_ids (child_unique_id, student_profile_id)
+      values (v_id, p_student_profile_id);
+      update public.students set child_unique_id = v_id where profile_id = p_student_profile_id;
+      return v_id;
+    exception when unique_violation then
+      if tries > 50 then
+        raise exception 'Could not allocate a unique child ID after 50 attempts';
+      end if;
+      -- loop and retry
+    end;
+  end loop;
+end;
+$$;
+
+-- updated_at triggers for the child-account tables (not in the bulk array above).
+drop trigger if exists trg_set_updated_at on public.child_credentials;
+create trigger trg_set_updated_at before update on public.child_credentials
+  for each row execute function public.set_updated_at();
+drop trigger if exists trg_set_updated_at on public.wallpapers;
+create trigger trg_set_updated_at before update on public.wallpapers
+  for each row execute function public.set_updated_at();
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

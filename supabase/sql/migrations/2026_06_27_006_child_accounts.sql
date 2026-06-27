@@ -7,7 +7,7 @@
 -- Related root SQL file(s): 002 (students/child_unique_ids/child_credentials),
 --          003 (wallpapers/child_wallpaper_selections), 009 (wallpaper bucket),
 --          010 (RLS), 011 (generator + indexes), 012 (seed wallpapers).
--- Backport status: pending (will backport at Stage 7 close)
+-- Backport status: completed (canonical 001/002/003/009/010/011/012; wallpapers media FK deferred to 011)
 -- Destructive change: no (additive columns/tables/policies)
 -- Rollback notes: drop the new tables/columns/function/policies; non-destructive to existing data.
 -- =============================================================================

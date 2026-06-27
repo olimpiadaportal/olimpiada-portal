@@ -110,6 +110,16 @@ create table if not exists public.students (
   school_id          uuid,                     -- FK -> schools(id) added in 011
   district_id        uuid,                     -- FK -> districts(id) added in 011
   birth_year_optional smallint,
+  -- Parent-created child account fields (Stage 7 business model).
+  -- created_by_parent_profile_id index is added in 011.
+  created_by_parent_profile_id uuid references public.profiles (id) on delete set null,
+  child_unique_id    text unique,              -- server-allocated 8-digit ID (registry below)
+  first_name         text,
+  last_name          text,
+  city               text,
+  school_name        text,
+  class_grade        text,
+  access_status      public.child_access_status not null default 'inactive',
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
@@ -132,6 +142,32 @@ create table if not exists public.parent_student_links (
 
 comment on table public.parent_student_links is
   'Verified parent-child relationship. Parent RLS access to student data requires status = active here.';
+
+-- -----------------------------------------------------------------------------
+-- child_unique_ids : server-side 8-digit ID allocation registry (collision-safe).
+-- The allocate_child_unique_id() generator (011) inserts here under uniqueness to
+-- guarantee no two children share an ID. Never trust a client-provided ID.
+-- -----------------------------------------------------------------------------
+create table if not exists public.child_unique_ids (
+  child_unique_id    text primary key,
+  student_profile_id uuid not null unique references public.students (profile_id) on delete cascade,
+  allocated_at       timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
+-- child_credentials : maps a child auth user (synthetic c<8digits>@children.invalid
+-- email) to its 8-digit ID. The parent sets the password; passwords live ONLY in
+-- Supabase Auth (never stored here). Children never self-register or log in by email.
+-- -----------------------------------------------------------------------------
+create table if not exists public.child_credentials (
+  student_profile_id                uuid primary key references public.students (profile_id) on delete cascade,
+  child_unique_id                   text not null unique,
+  auth_user_id                      uuid not null unique references auth.users (id) on delete cascade,
+  password_set_by_parent_profile_id uuid references public.profiles (id) on delete set null,
+  password_set_at                   timestamptz,
+  created_at                        timestamptz not null default now(),
+  updated_at                        timestamptz not null default now()
+);
 
 -- =============================================================================
 -- Security / permission helper functions (used by RLS in 010)

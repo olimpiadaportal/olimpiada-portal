@@ -34,6 +34,7 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - For SQL/database stages, use **dev/staging only — never run against production.**
 - After every implementation, self-review, fix, or stage close, end the response with a concise `Human Next Actions` section.
 - `Human Next Actions` must include: what the human must manually check, whether UI/manual testing is needed, whether Supabase dashboard checking is needed, whether to commit/push (with a suggested commit message), whether deployment should be checked (after Vercel is connected), the expected success result, what to do if it fails, and the next prompt to use.
+- Whenever a human step needs code, SQL, shell commands, dashboard clicks, env values, or config, provide the EXACT ready-to-run snippet/steps in the response — clearly labeled, copy-paste ready, with placeholders for any value the human must choose (e.g. email/password). Never describe a manual step abstractly when a concrete snippet is possible. Never put real secrets in the snippet.
 - Do not repeat the full project structure unless something is wrong.
 - Keep final reports concise.
 

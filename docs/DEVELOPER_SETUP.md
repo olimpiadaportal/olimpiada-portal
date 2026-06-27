@@ -182,6 +182,45 @@ Use only the `main` branch unless told otherwise.
 
 ---
 
+## First Administrator Bootstrap (one-time, dev/staging)
+
+The first admin is created manually. The Auth signup trigger auto-creates the
+`profiles` row; you then mark it active and assign the `administrator` role.
+
+**Step 1 — Create the Auth user (Supabase Dashboard):**
+Authentication → Users → **Add user** → enter the admin email + a strong password →
+enable **Auto Confirm User** → Create. (This fires `on_auth_user_created`, which
+creates the `profiles` row automatically.)
+
+**Step 2 — Activate + assign the admin role** (Supabase SQL editor, or
+`psql "$OLIMPIADA_DEV_DB_URL"`). Replace the email placeholder:
+
+```sql
+update public.profiles set status = 'active'
+where email = 'admin@example.com';
+
+insert into public.profile_roles (profile_id, role_id)
+select p.id, r.id
+from public.profiles p
+join public.roles r on r.code = 'administrator'
+where p.email = 'admin@example.com'
+on conflict do nothing;
+```
+
+**Step 3 — Verify:**
+
+```sql
+select p.email, p.status, array_agg(r.code) as roles
+from public.profiles p
+left join public.profile_roles pr on pr.profile_id = p.id
+left join public.roles r on r.id = pr.role_id
+where p.email = 'admin@example.com'
+group by p.email, p.status;
+```
+
+Expect `status = active` and `roles` containing `administrator`. Dev/staging only —
+never create production admins with shared/test credentials.
+
 ## 10. Troubleshooting
 
 **Passphrase asked on every push**

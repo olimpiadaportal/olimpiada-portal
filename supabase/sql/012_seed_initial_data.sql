@@ -145,6 +145,26 @@ insert into public.subscription_plans (code, name, price_amount, currency, inter
 on conflict (code) do nothing;
 
 -- -----------------------------------------------------------------------------
+-- Child-based subscriptions config & subject pricing (Stage 7, increment 2).
+-- Backported from migrations/2026_06_27_007_child_subscriptions_payments.sql.
+-- -----------------------------------------------------------------------------
+-- Singleton promo/trial config (promo window unset; ongoing 7-day trial).
+insert into public.launch_promo_config (id, trial_days) values (1, 7)
+on conflict (id) do nothing;
+
+-- Placeholder per-subject pricing (1 AZN/subject weekly; configurable by admin).
+insert into public.subjects_pricing (subject_id, interval, price_amount, currency, status)
+select s.id, i.interval, i.price, 'AZN', 'active'
+from public.subjects s
+cross join (values
+  ('week'::public.plan_interval, 1.00),
+  ('month'::public.plan_interval, 3.00),
+  ('year'::public.plan_interval, 30.00)
+) as i(interval, price)
+where s.code in ('math', 'science', 'english', 'informatics', 'az_language')
+on conflict (subject_id, interval) do nothing;
+
+-- -----------------------------------------------------------------------------
 -- Base system settings.
 -- -----------------------------------------------------------------------------
 insert into public.system_settings (key, value_json) values

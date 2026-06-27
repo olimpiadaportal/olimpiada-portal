@@ -106,6 +106,15 @@ create index if not exists idx_subs_status on public.subscriptions (status);
 create index if not exists idx_payments_profile on public.payments (profile_id);
 create index if not exists idx_payments_status on public.payments (status);
 
+-- Child-based subscriptions / subject pricing / checkout (Stage 7, increment 2).
+-- Backported from migrations/2026_06_27_007_child_subscriptions_payments.sql.
+create index if not exists idx_child_subs_student on public.child_subscriptions (student_profile_id);
+create index if not exists idx_child_subs_owner on public.child_subscriptions (owner_parent_profile_id);
+create index if not exists idx_child_subs_status on public.child_subscriptions (status);
+create index if not exists idx_sub_subjects_subject on public.subscription_subjects (subject_id);
+create index if not exists idx_checkout_owner on public.checkout_sessions (owner_parent_profile_id);
+create index if not exists idx_sibling_discounts_owner on public.sibling_discounts (owner_parent_profile_id);
+
 create index if not exists idx_notifications_recipient on public.notifications (recipient_profile_id, read_at);
 create index if not exists idx_support_profile_status on public.support_requests (profile_id, status);
 create index if not exists idx_media_owner on public.media_assets (owner_profile_id);
@@ -277,6 +286,27 @@ create trigger trg_set_updated_at before update on public.child_credentials
 drop trigger if exists trg_set_updated_at on public.wallpapers;
 create trigger trg_set_updated_at before update on public.wallpapers
   for each row execute function public.set_updated_at();
+
+-- -----------------------------------------------------------------------------
+-- Child-based subscriptions / subject pricing (Stage 7, increment 2).
+-- Backported from migrations/2026_06_27_007_child_subscriptions_payments.sql.
+-- updated_at triggers (not in the bulk array above) + child-subscription audit.
+-- -----------------------------------------------------------------------------
+drop trigger if exists trg_set_updated_at on public.subjects_pricing;
+create trigger trg_set_updated_at before update on public.subjects_pricing
+  for each row execute function public.set_updated_at();
+drop trigger if exists trg_set_updated_at on public.child_subscriptions;
+create trigger trg_set_updated_at before update on public.child_subscriptions
+  for each row execute function public.set_updated_at();
+drop trigger if exists trg_set_updated_at on public.launch_promo_config;
+create trigger trg_set_updated_at before update on public.launch_promo_config
+  for each row execute function public.set_updated_at();
+
+-- Audit subscription/payment status changes (money table).
+drop trigger if exists trg_audit_child_subscriptions on public.child_subscriptions;
+create trigger trg_audit_child_subscriptions
+  after update on public.child_subscriptions
+  for each row execute function public.fn_audit_row();
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

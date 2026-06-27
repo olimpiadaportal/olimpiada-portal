@@ -5,7 +5,7 @@
 --          is Stage 11. All pricing/discount/status are server/service-role written.
 -- Environment first applied: development/staging
 -- Related root SQL file(s): 007 (subscriptions/payments), 010 (RLS), 011 (indexes/triggers), 012 (seed)
--- Backport status: pending (at Stage 7 close)
+-- Backport status: completed (canonical 007/010/011/012; re-applied idempotently, 013 = 12/12 PASS)
 -- Destructive change: no (additive; the old generic `subscription_plans`/`subscriptions`
 --          tables are left in place but DEPRECATED in favour of `child_subscriptions`;
 --          dropping them later requires explicit approval).

@@ -50,6 +50,8 @@ begin
     'achievements','student_achievements','question_analytics',
     'subscription_plans','subscriptions','payments','payment_events',
     'coupons','coupon_redemptions',
+    'subjects_pricing','launch_promo_config','child_subscriptions',
+    'subscription_subjects','checkout_sessions','sibling_discounts',
     'media_assets','notification_templates','notifications','notification_deliveries',
     'support_requests','audit_logs','admin_actions','content_reviews',
     'system_settings','feature_flags'
@@ -535,6 +537,72 @@ create policy "coupon_redemptions_select" on public.coupon_redemptions for selec
 drop policy if exists "coupon_redemptions_write" on public.coupon_redemptions;
 create policy "coupon_redemptions_write" on public.coupon_redemptions for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
+
+-- -----------------------------------------------------------------------------
+-- CHILD-BASED SUBSCRIPTIONS & SUBJECT PRICING (Stage 7, increment 2).
+-- Backported from migrations/2026_06_27_007_child_subscriptions_payments.sql.
+-- -----------------------------------------------------------------------------
+
+-- Pricing + promo config: readable (public pricing page); admin write.
+drop policy if exists "subjects_pricing_select" on public.subjects_pricing;
+create policy "subjects_pricing_select" on public.subjects_pricing for select
+  using (status = 'active' or public.is_admin());
+drop policy if exists "subjects_pricing_write" on public.subjects_pricing;
+create policy "subjects_pricing_write" on public.subjects_pricing for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "launch_promo_select" on public.launch_promo_config;
+create policy "launch_promo_select" on public.launch_promo_config for select using (true);
+drop policy if exists "launch_promo_write" on public.launch_promo_config;
+create policy "launch_promo_write" on public.launch_promo_config for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- child_subscriptions: owner parent + the child read; writes ADMIN/SERVICE ONLY
+-- (activation is webhook/service-role; clients never set price/discount/status).
+drop policy if exists "child_subs_select" on public.child_subscriptions;
+create policy "child_subs_select" on public.child_subscriptions for select to authenticated
+  using (
+    owner_parent_profile_id = public.current_profile_id()
+    or student_profile_id = public.current_profile_id()
+    or public.is_parent_linked_to_student(student_profile_id)
+    or public.is_admin()
+    or public.has_permission('subscriptions.manage')
+  );
+drop policy if exists "child_subs_write" on public.child_subscriptions;
+create policy "child_subs_write" on public.child_subscriptions for all to authenticated
+  using (public.is_admin() or public.has_permission('subscriptions.manage'))
+  with check (public.is_admin() or public.has_permission('subscriptions.manage'));
+
+-- subscription_subjects: visibility follows the parent subscription; writes admin/service.
+drop policy if exists "sub_subjects_select" on public.subscription_subjects;
+create policy "sub_subjects_select" on public.subscription_subjects for select to authenticated
+  using (exists (
+    select 1 from public.child_subscriptions cs where cs.id = child_subscription_id
+      and (cs.owner_parent_profile_id = public.current_profile_id()
+           or cs.student_profile_id = public.current_profile_id()
+           or public.is_parent_linked_to_student(cs.student_profile_id)
+           or public.is_admin())));
+drop policy if exists "sub_subjects_write" on public.subscription_subjects;
+create policy "sub_subjects_write" on public.subscription_subjects for all to authenticated
+  using (public.is_admin() or public.has_permission('subscriptions.manage'))
+  with check (public.is_admin() or public.has_permission('subscriptions.manage'));
+
+-- checkout_sessions + sibling_discounts: owner reads; writes admin/service only.
+drop policy if exists "checkout_select" on public.checkout_sessions;
+create policy "checkout_select" on public.checkout_sessions for select to authenticated
+  using (owner_parent_profile_id = public.current_profile_id() or public.is_admin());
+drop policy if exists "checkout_write" on public.checkout_sessions;
+create policy "checkout_write" on public.checkout_sessions for all to authenticated
+  using (public.is_admin() or public.has_permission('payments.manage'))
+  with check (public.is_admin() or public.has_permission('payments.manage'));
+
+drop policy if exists "sibling_discounts_select" on public.sibling_discounts;
+create policy "sibling_discounts_select" on public.sibling_discounts for select to authenticated
+  using (owner_parent_profile_id = public.current_profile_id() or public.is_admin());
+drop policy if exists "sibling_discounts_write" on public.sibling_discounts;
+create policy "sibling_discounts_write" on public.sibling_discounts for all to authenticated
+  using (public.is_admin() or public.has_permission('payments.manage'))
+  with check (public.is_admin() or public.has_permission('payments.manage'));
 
 -- =============================================================================
 -- NOTIFICATIONS, SUPPORT, AUDIT, CONTENT REVIEW, MEDIA, SETTINGS

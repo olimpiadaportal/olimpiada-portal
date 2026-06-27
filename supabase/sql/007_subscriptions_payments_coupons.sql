@@ -121,5 +121,122 @@ create table if not exists public.coupon_redemptions (
 );
 
 -- =============================================================================
+-- CHILD-BASED SUBSCRIPTIONS & SUBJECT PRICING (Stage 7, increment 2)
+-- Backported from migrations/2026_06_27_007_child_subscriptions_payments.sql.
+--
+-- DEPRECATION: the generic subscription_plans / subscriptions tables above are
+-- DEPRECATED in favour of the child-based, subject-priced model below
+-- (child_subscriptions). They are intentionally left in place (non-destructive);
+-- dropping them later requires explicit approval.
+--
+-- Provider-agnostic: pricing/plans live in our DB; real provider integration is
+-- Stage 11. All pricing/discount/status are server/service-role written (clients
+-- never set price/discount/status). RLS is in 010; indexes/triggers in 011;
+-- seeds in 012.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- subjects_pricing : per-subject price for each billing interval.
+-- Placeholder pricing (configurable by admins). Subscription price =
+-- selected-subject-count priced from here, minus the automatic sibling discount.
+-- -----------------------------------------------------------------------------
+create table if not exists public.subjects_pricing (
+  id           uuid primary key default gen_random_uuid(),
+  subject_id   uuid not null references public.subjects (id) on delete cascade,
+  interval     public.plan_interval not null,
+  price_amount numeric(12,2) not null,
+  currency     text not null default 'AZN',
+  status       public.catalog_status not null default 'active',
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  constraint uq_subject_interval_price unique (subject_id, interval)
+);
+
+-- -----------------------------------------------------------------------------
+-- launch_promo_config : singleton (launch promo window + trial length).
+-- Sibling discount is NOT here — it is a fixed business rule (2nd 15% / 3rd+ 20%)
+-- computed server-side (no "Discount Settings" module).
+-- -----------------------------------------------------------------------------
+create table if not exists public.launch_promo_config (
+  id                       smallint primary key default 1 check (id = 1),
+  launch_promo_starts_at   timestamptz,
+  launch_promo_ends_at     timestamptz,
+  trial_days               integer not null default 7,
+  updated_at               timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
+-- child_subscriptions : per-child subscription (parent-owned/paid).
+-- Status, amounts, discount and trial dates are written ONLY by trusted server /
+-- service-role code (webhook-verified). Clients can never set these.
+-- Defined before the tables/ALTER that reference it.
+-- -----------------------------------------------------------------------------
+create table if not exists public.child_subscriptions (
+  id                       uuid primary key default gen_random_uuid(),
+  student_profile_id       uuid not null references public.students (profile_id) on delete cascade,
+  owner_parent_profile_id  uuid not null references public.profiles (id) on delete cascade,
+  interval                 public.plan_interval not null,
+  status                   public.subscription_status not null default 'incomplete',
+  trial_started_at         timestamptz,
+  trial_ends_at            timestamptz,
+  current_period_start     timestamptz,
+  current_period_end       timestamptz,
+  base_amount              numeric(12,2),
+  sibling_discount_percent numeric(5,2) not null default 0,
+  discount_amount          numeric(12,2),
+  total_amount             numeric(12,2),
+  currency                 text not null default 'AZN',
+  provider                 text not null default 'none',
+  provider_subscription_id text,
+  created_at               timestamptz not null default now(),
+  updated_at               timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
+-- subscription_subjects : which subjects this child subscription covers.
+-- -----------------------------------------------------------------------------
+create table if not exists public.subscription_subjects (
+  child_subscription_id uuid not null references public.child_subscriptions (id) on delete cascade,
+  subject_id            uuid not null references public.subjects (id) on delete cascade,
+  added_at              timestamptz not null default now(),
+  primary key (child_subscription_id, subject_id)
+);
+
+-- -----------------------------------------------------------------------------
+-- checkout_sessions : provider-agnostic checkout (subscription | olympiad).
+-- -----------------------------------------------------------------------------
+create table if not exists public.checkout_sessions (
+  id                       uuid primary key default gen_random_uuid(),
+  owner_parent_profile_id  uuid not null references public.profiles (id) on delete cascade,
+  kind                     text not null check (kind in ('subscription', 'olympiad')),
+  child_subscription_id    uuid references public.child_subscriptions (id) on delete set null,
+  amount                   numeric(12,2),
+  currency                 text not null default 'AZN',
+  status                   text not null default 'pending',
+  provider                 text not null default 'none',
+  provider_session_id      text,
+  created_at               timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
+-- sibling_discounts : audit of the automatic discount applied.
+-- -----------------------------------------------------------------------------
+create table if not exists public.sibling_discounts (
+  id                       uuid primary key default gen_random_uuid(),
+  owner_parent_profile_id  uuid not null references public.profiles (id) on delete cascade,
+  child_subscription_id    uuid references public.child_subscriptions (id) on delete cascade,
+  child_rank               integer not null,           -- 1, 2, 3, ...
+  discount_percent         numeric(5,2) not null,       -- 0 / 15 / 20
+  applied_at               timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
+-- payments : link to the new child subscription / checkout (additive columns).
+-- -----------------------------------------------------------------------------
+alter table public.payments
+  add column if not exists child_subscription_id uuid references public.child_subscriptions (id) on delete set null,
+  add column if not exists checkout_session_id uuid references public.checkout_sessions (id) on delete set null;
+
+-- =============================================================================
 -- End of 007_subscriptions_payments_coupons.sql
 -- =============================================================================

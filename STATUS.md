@@ -15,8 +15,8 @@ This file is intentionally configured for the **first coding session**. No appli
 - Owner/agent: Claude Code
 - Started: 2026-06-27
 - Last updated: 2026-06-27
-- Stage status: Complete — verification + Git baseline done; fully ready for human manual verification; awaiting human approval before Stage 2
-- Version control: Git initialized on `main` branch only (no stage branches). `.gitignore` created. No commit made yet — awaiting approval.
+- Stage status: Complete — verification + Git baseline done; manually verified, committed, and pushed; awaiting human approval before Stage 2
+- Version control: Git initialized on `main` branch only (no stage branches). `.gitignore` created. Initial baseline committed and pushed to `origin/main` (commit `2da8a13`); local and remote are in sync.
 
 ## First Coding Session Instruction
 
@@ -85,7 +85,8 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 |---|---|---|---|---|---|
 | Initial package | Stage 0 | Planning package and confirmed decisions prepared | Markdown planning files only | Not applicable | Ready for first Claude Code coding session. |
 | 2026-06-27 | Stage 1 | Repository structure and tracking verification | `STATUS.md` | Directory/file inventory only (no build/test suite exists yet) | All required Stage 1 folders, planning docs, and 5 `CLAUDE.md` files verified present. `CODING_AGENT_PROMPTS.md` confirmed Claude Code-only. SQL files `001`-`013` intentionally absent (Stage 2 deliverables). |
-| 2026-06-27 | Stage 1 | Git baseline setup | `.gitignore` (new), `STATUS.md` | `git check-ignore` verification of ignore patterns; `git status` review | Git initialized on `main` branch only (no stage branches). Professional `.gitignore` covers secrets/`.env`/`.env.local`, `node_modules`, build outputs (`.next`, `out`, `dist`, `.vercel`), Supabase temp files, OS files, editor junk, and `.claude/settings.local.json`; `.env.example` templates remain trackable. No commit made yet (awaiting human approval). No feature/SQL files created. |
+| 2026-06-27 | Stage 1 | Git baseline setup | `.gitignore` (new), `STATUS.md` | `git check-ignore` verification of ignore patterns; `git status` review | Git initialized on `main` branch only (no stage branches). Professional `.gitignore` covers secrets/`.env`/`.env.local`, `node_modules`, build outputs (`.next`, `out`, `dist`, `.vercel`), Supabase temp files, OS files, editor junk, and `.claude/settings.local.json`; `.env.example` templates remain trackable. Baseline committed (`2da8a13`) and pushed to `origin/main`; local and remote in sync. No feature/SQL files created. |
+| 2026-06-27 | Stage 1 | Manual verification passed + cleanups | `docs/decisions/.gitkeep` (new), `STATUS.md` | `git log`/`git status`/`git rev-parse` sync checks; remote vs local compare | Human manually verified the Git baseline, confirmed initial commit, and confirmed push to GitHub `main` with local/remote in sync. Added `docs/decisions/.gitkeep` so the empty decisions folder is tracked. Updated stale STATUS.md lines to reflect committed/pushed baseline. Stage 1 marked manually passed. Stage 2 not started. |
 
 ## Open Blockers / Questions
 
@@ -117,6 +118,8 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 - [x] Git initialized on `main` branch (no stage branches)
 - [x] `.gitignore` created/verified (secrets, `.env`/`.env.local`, `node_modules`, build outputs, Supabase temp files, OS files, editor junk, local Claude settings)
 - [x] Stage 1 fully ready for human manual verification
+- [x] Stage 1 MANUALLY PASSED (2026-06-27) — baseline verified, committed (`2da8a13`), and pushed to `origin/main`
+- [x] `docs/decisions/.gitkeep` added so the empty decisions folder is preserved in Git
 - [x] Stage 2 recommended only after Stage 1 is complete (recommended; awaiting human approval)
 
 ### Stage 2 — Supabase SQL Planning and Foundation

@@ -76,7 +76,7 @@ with expected(name) as (
          ('subscription_status'),('payment_status'),('plan_interval'),('discount_type'),
          ('notification_channel'),('delivery_status'),('leaderboard_period_type'),
          ('leaderboard_scope_type'),('support_status'),('audit_severity'),
-         ('media_visibility'),('scoring_policy')
+         ('media_visibility'),('scoring_policy'),('child_access_status')
 )
 select '4_missing_enums' as check_name,
        coalesce(string_agg(e.name, ', '), '(none)') as missing_enums,
@@ -88,7 +88,8 @@ where t.typname is null;
 -- 5) Security helper functions exist. --------------------------------------------
 with expected(name) as (
   values ('current_profile_id'),('has_role'),('is_admin'),('has_permission'),
-         ('is_parent_linked_to_student'),('set_updated_at'),('fn_audit_row')
+         ('is_parent_linked_to_student'),('set_updated_at'),('fn_audit_row'),
+         ('allocate_child_unique_id')
 )
 select '5_missing_functions' as check_name,
        coalesce(string_agg(e.name, ', '), '(none)') as missing_functions,
@@ -141,12 +142,13 @@ select '10_leaderboard_unique_index' as check_name,
          where schemaname = 'public' and indexname = 'uq_leaderboard_entry_scope'
        ) then 'PASS' else 'FAIL' end as status;
 
--- 11) Storage buckets exist (5 expected). ---------------------------------------
+-- 11) Storage buckets exist (8 expected incl. Stage 7 wallpaper/news/olympiad). --
 select '11_storage_buckets' as check_name,
        coalesce(string_agg(b.id, ', ' order by b.id), '(none)') as buckets,
-       case when count(*) = 5 then 'PASS' else 'FAIL' end as status
+       case when count(*) = 8 then 'PASS' else 'FAIL' end as status
 from storage.buckets b
-where b.id in ('question-media','explanation-media','profile-avatars','admin-imports','reports');
+where b.id in ('question-media','explanation-media','profile-avatars','admin-imports','reports',
+               'wallpaper-assets','news-media','olympiad-media');
 
 -- 12) Grades 1..11 and starter subjects seeded. ---------------------------------
 select '12_taxonomy_seed' as check_name,
@@ -155,6 +157,83 @@ select '12_taxonomy_seed' as check_name,
        case when (select count(*) from public.grades) = 11
              and (select count(*) from public.subjects) >= 1
             then 'PASS' else 'FAIL' end as status;
+
+-- -----------------------------------------------------------------------------
+-- Stage 7 — Business-Model Database Foundation checks (child accounts,
+-- subscriptions/payments, News, Olympiad Preparation).
+-- -----------------------------------------------------------------------------
+
+-- 13) Child-account tables + the parent-created student columns exist. -----------
+with expected(name) as (
+  values ('child_unique_ids'),('child_credentials'),('wallpapers'),('child_wallpaper_selections')
+)
+select '13_child_account_tables' as check_name,
+       coalesce(string_agg(e.name, ', '), '(none)') as missing_tables,
+       case when count(*) = 0
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='child_unique_id')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='created_by_parent_profile_id')
+            then 'PASS' else 'FAIL' end as status
+from expected e
+left join information_schema.tables t
+  on t.table_schema='public' and t.table_name=e.name
+where t.table_name is null;
+
+-- 14) Child subscription/payment tables + the 3 payments link columns exist. -----
+with expected(name) as (
+  values ('subjects_pricing'),('launch_promo_config'),('child_subscriptions'),
+         ('subscription_subjects'),('checkout_sessions'),('sibling_discounts')
+)
+select '14_subscription_tables' as check_name,
+       coalesce(string_agg(e.name, ', '), '(none)') as missing_tables,
+       case when count(*) = 0
+             and (select count(*) from information_schema.columns
+                   where table_schema='public' and table_name='payments'
+                     and column_name in
+                     ('child_subscription_id','checkout_session_id','olympiad_purchase_id')) = 3
+            then 'PASS' else 'FAIL' end as status
+from expected e
+left join information_schema.tables t
+  on t.table_schema='public' and t.table_name=e.name
+where t.table_name is null;
+
+-- 15) News module tables + news-media bucket exist. ------------------------------
+with expected(name) as ( values ('news'),('news_translations') )
+select '15_news_module' as check_name,
+       coalesce(string_agg(e.name, ', '), '(none)') as missing_tables,
+       case when count(*) = 0
+             and exists (select 1 from storage.buckets where id='news-media')
+            then 'PASS' else 'FAIL' end as status
+from expected e
+left join information_schema.tables t
+  on t.table_schema='public' and t.table_name=e.name
+where t.table_name is null;
+
+-- 16) Olympiad module tables + bucket + purchased-package lifetime FK (RESTRICT). -
+with expected(name) as (
+  values ('olympiad_packages'),('olympiad_package_translations'),
+         ('olympiad_package_questions'),('olympiad_purchases')
+)
+select '16_olympiad_module' as check_name,
+       coalesce(string_agg(e.name, ', '), '(none)') as missing_tables,
+       case when count(*) = 0
+             and exists (select 1 from storage.buckets where id='olympiad-media')
+             and exists (select 1 from pg_constraint con
+                          join pg_class child on child.oid = con.conrelid
+                          join pg_class parent on parent.oid = con.confrelid
+                          join pg_namespace n on n.oid = child.relnamespace
+                          where n.nspname='public'
+                            and child.relname='olympiad_purchases'
+                            and parent.relname='olympiad_packages'
+                            and con.confdeltype='r')  -- on delete restrict
+            then 'PASS' else 'FAIL' end as status
+from expected e
+left join information_schema.tables t
+  on t.table_schema='public' and t.table_name=e.name
+where t.table_name is null;
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

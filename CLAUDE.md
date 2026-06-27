@@ -8,6 +8,8 @@ Claude Code is the primary and only planned coding agent for this project. Do no
 
 The repository has many Markdown planning files. Do not try to read all of them for every task. Use `IMPLEMENTATION_EXECUTION_PLAN.md` to select the correct stage, then read only the documents listed for that stage.
 
+New machine setup instructions live in `docs/DEVELOPER_SETUP.md`.
+
 ## First Action in Every New Coding Session
 
 1. Open `STATUS.md`.

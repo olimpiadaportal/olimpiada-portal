@@ -11,11 +11,12 @@ This file is intentionally configured for the **first coding session**. No appli
 ## Current Stage
 
 - Stage: Stage 2 — Supabase SQL Planning and Foundation
-- Current task: Canonical Supabase SQL foundation (`001`–`013`) authored + self-review applied. Security hardening done: authoritative grading/progress columns are now service-role/RPC-only via column-level GRANT/REVOKE in `010`. NOT YET APPLIED to any Supabase project — pending human dev/staging validation.
+- Stage: Stage 2 — Supabase SQL Planning and Foundation — COMPLETE / MANUALLY PASSED (2026-06-27)
+- Current task: DONE. Canonical SQL foundation (`001`–`013`) authored, self-reviewed, hardened, applied + validated on dev/staging (`013`: 12/12 PASS), and marked manually passed. Awaiting human commit/push and the next-stage prompt.
 - Owner/agent: Claude Code
 - Started: 2026-06-27
 - Last updated: 2026-06-27
-- Stage status: Implementation + self-review fixes complete in repository — pending human dev/staging apply + validation. No database has been modified.
+- Stage status: COMPLETE — manually passed. Validated on dev/staging (PostgreSQL 17.6), production untouched. Optional (pre-production): multi-session RLS spot-check. Next: human commit/push, then Stage 3.
 - Security decision (2026-06-27): Authoritative-column hardening was applied IN Stage 2 (not deferred to Stage 7), per human approval.
 - Previous stage: Stage 1 — Repository Setup and Tracking — COMPLETE and manually passed (baseline committed `2da8a13`, pushed to `origin/main`; `docs/decisions/.gitkeep` added).
 - Version control: Git on `main` branch only (no stage branches). Stage 2 SQL changes are uncommitted in the working tree.
@@ -93,7 +94,7 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 
 | Date | Change type | Migration file | Canonical root SQL file updated | Environment | Validation result | Backport status | Notes |
 |---|---|---|---|---|---|---|---|
-| 2026-06-27 | Initial canonical schema | None (foundation, not a migration) | `001`–`013` created | None applied yet (repository only) | Not run — pending human staging apply | N/A (these ARE the canonical files) | Full DB foundation drafted: extensions/enums, RBAC, taxonomy, content, attempts/daily tasks, leaderboard/analytics, subscriptions/payments, notifications/support/audit, storage buckets+policies, RLS, indexes/triggers/audit, seed, validation. Apply on staging in numeric order, then run `013`. |
+| 2026-06-27 | Initial canonical schema | None (foundation, not a migration) | `001`–`013` created | dev/staging (applied) | PASS — 12/12 `013` checks; `009` storage policies applied OK; authoritative-column hardening verified | N/A (these ARE the canonical files) | Full DB foundation applied in numeric order `001`–`012` (all PASS), then `013` validation 12/12 PASS on PostgreSQL 17.6 dev/staging via `OLIMPIADA_DEV_DB_URL` (never production; URL never printed). `009` `storage.objects` policies succeeded on this project (the ownership-warning fallback was not needed here). |
 
 ## Completed Work
 
@@ -108,6 +109,9 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | 2026-06-27 | Stage 2 | Self-review fix: authoritative-column hardening (backported into canonical `010`) | `supabase/sql/010_rls_policies.sql`, `supabase/sql/009_storage_buckets_policies.sql`, `CODING_AGENT_PROMPTS.md`, `STATUS.md` | Static: `010` dollar-quote parity OK; REVOKE/GRANT statements reviewed; column names verified against `005`. Not executed against a DB. | Column-level GRANT/REVOKE added to `010` so `authenticated`/`anon` cannot write `test_attempts.{score,max_score,status,submitted_at,graded_at}`, `test_attempt_answers.{is_correct,points_awarded}`, `student_daily_task_progress.{status,score,completed_at}`; learners keep only safe columns (start attempt / record answer / begin task); authoritative writes are service_role/RPC-only. `009` gained a VALIDATION WARNING about `storage.objects` policy ownership + dashboard fallback. This change is canonical (lives directly in `010`); no separate migration since not yet applied to any environment. |
 | 2026-06-27 | Workflow | Workflow-control rules (no app/SQL change) | `CLAUDE.md`, `CODING_AGENT_PROMPTS.md`, `STATUS.md` | Doc edits only; no commands/tests. | Added a permanent "Workflow Control" rule to root `CLAUDE.md` (STATUS = source of truth; auto-apply DB rules for SQL/RLS/storage stages; always end with `Human Next Actions`). Prompt 2 now explicitly requires the `Human Next Actions` output and already auto-detects database work. Goal: Prompt 2 alone is sufficient to run a normal stage without manually pasting Prompt 8 or tracking next steps. |
 | 2026-06-27 | Workflow + Security | Automated DB validation + secret-handling rules (no app/SQL change) | `CLAUDE.md`, `CODING_AGENT_PROMPTS.md`, `STATUS.md` | Doc edits only; no DB run performed in this task. | DECISION: for SQL/database stages Claude Code automatically runs the stage SQL + validation against the **dev/staging** DB using the `OLIMPIADA_DEV_DB_URL` shell env var (never production), fixes failures in-scope, and reruns — instead of asking the human to run every file by hand. Stage 2 `001`–`013` validation should be automated this way on the next database turn (provided `OLIMPIADA_DEV_DB_URL` and `psql` are present). SECURITY: secrets (`OLIMPIADA_DEV_DB_URL`, DB passwords, service role key, API keys) must NEVER be printed, echoed, saved, logged, committed, or written into `.env`/markdown/`STATUS.md`/Git. Human role kept minimal (manual UI testing when apps exist, report bugs, commit/push with provided message, check Vercel later). |
+| 2026-06-27 | Docs | Developer setup guide added (no app/SQL change) | `docs/DEVELOPER_SETUP.md` (new), `CLAUDE.md`, `STATUS.md` | Doc only; no commands/tests. | Added concise new-machine setup guide (Windows + VS Code + Claude Code): required tools, GitHub SSH alias `github.com-olimpiada`, clone, repo-local Git identity, dev/staging `OLIMPIADA_DEV_DB_URL` env var (placeholder only, verify-without-printing), `psql` check, daily start, commit/push, security warnings, troubleshooting. Placeholders only — no real secrets. `CLAUDE.md` now points to `docs/DEVELOPER_SETUP.md`. |
+| 2026-06-27 | Stage 2 | Auto-apply + validate SQL on dev/staging (Prompt 2) | None (validation run; no file changes) | `psql` (full path) applied `001`–`012` (all PASS) + `013` validation (12/12 PASS) against `OLIMPIADA_DEV_DB_URL`; verified column-privilege hardening on attempt/progress tables. Secrets never printed; production untouched. | Stage 2 schema is live and validated on dev/staging (PostgreSQL 17.6). All Supabase prerequisites present (auth/storage/roles). `009` storage policies applied without ownership error. Ready to close pending human commit/push. |
+| 2026-06-27 | Stage 2 | Stage 2 MANUALLY PASSED (Prompt 6) | `STATUS.md` | Validation re-confirmed: `013` 12/12 PASS on dev/staging; authoritative-column hardening verified. | Stage 2 closed and marked manually passed. Schema rebuildable from canonical `001`–`013` in numeric order. Limitations carried forward: `answer_options.is_correct` column-hiding + explanation gating (Stage 6 service/view/RPC); optional multi-session RLS spot-check before production. Next: human commit/push, then Stage 3 (Auth/RBAC/RLS) via Prompt 2/7. |
 
 ## Open Blockers / Questions
 
@@ -117,9 +121,9 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | Final UI/UX approval | Frontend | Not a blocker; build clean component-ready UI first. |
 | Future mobile framework | Mobile | Mobile is future-only. React Native can be selected later if preferred. |
 | `answer_options.is_correct` must be hidden from students before result; `question_explanations` gated to after result | Security / Content (Stage 2→6) | RLS is row-level, not column-level. Enforce via service layer / SECURITY DEFINER RPC / public view that omits `is_correct`. Not a Stage 2 blocker; required before students consume content. |
-| Stage 2 SQL not yet applied/validated on a Supabase project | Database | On the next database turn, Claude Code will auto-run `001`–`013` + `013` validation against dev/staging using `OLIMPIADA_DEV_DB_URL` (never production, never printing the URL); fix failures in-scope and rerun. Still confirm SECURITY DEFINER helpers bypass RLS (no recursion) and whether the project allows managing `storage.objects` policies. Requires `OLIMPIADA_DEV_DB_URL` + `psql` present in the terminal. |
+| RESOLVED (2026-06-27): Stage 2 SQL applied + validated on dev/staging | Database | Auto-applied `001`–`012` and ran `013` (12/12 PASS) via `OLIMPIADA_DEV_DB_URL` on PostgreSQL 17.6 dev/staging (psql called by full path; URL never printed; production untouched). SECURITY DEFINER helpers worked (no recursion). Remaining: optional multi-session RLS spot-check before production. |
 | RESOLVED (2026-06-27): authoritative-column writes hardened in Stage 2 | Security | Fixed in `010` via column-level GRANT/REVOKE: `authenticated`/`anon` can no longer write grading/progress authoritative columns; those are service_role/RPC-only. Confirm with a session test on staging that a learner cannot UPDATE `score`/`is_correct`/`status`. |
-| OPEN (validation warning): `009` storage policies use DROP/CREATE POLICY on `storage.objects` | Database (Supabase env) | `storage.objects` is owned by `supabase_storage_admin`; on some projects `postgres` cannot manage its policies and `009` will error with "must be owner of relation objects". Fallback: create the equivalent policies via the Supabase Storage dashboard and keep `009` as source-of-truth documentation. Buckets insert is unaffected. (Warning now also documented in the `009` header.) |
+| RESOLVED on dev/staging (2026-06-27): `009` storage policies applied successfully | Database (Supabase env) | On this dev/staging project `009` applied without the `storage.objects` ownership error, so the dashboard fallback was not needed. Keep the warning in the `009` header in case a future target project (or production) lacks the privilege. |
 
 ## Stage Checklist
 
@@ -165,9 +169,10 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 - [x] `012_seed_initial_data.sql` (authored; not yet applied)
 - [x] `013_validation_queries.sql` (authored; not yet applied)
 - [x] Self-review fix: authoritative grading/progress columns hardened in `010` (service-role/RPC-only)
-- [ ] Applied to staging Supabase in numeric order
-- [ ] `013` validation queries run on staging (all checks PASS)
-- [ ] RLS behavior tested with real sessions (student A/B, parent linked/unlinked, content manager)
+- [x] Applied to dev/staging Supabase in numeric order (`001`–`012`, all PASS)
+- [x] `013` validation queries run on dev/staging (12/12 PASS)
+- [x] Authoritative-column hardening verified live (authenticated has only safe column grants)
+- [ ] Multi-session RLS spot-check (student A vs B, parent linked/unlinked, content manager) — recommended before production
 
 ### Stage 3 — Auth/RBAC/RLS
 
@@ -266,8 +271,8 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 
 ## Next Recommended Task
 
-- Immediate next task: Claude self-review of the Stage 2 SQL (Prompt 3), focusing on RLS correctness, run-order/idempotency, security helper recursion, and storage policy safety.
-- Then (human): apply `001`–`013` in numeric order on a development/staging Supabase project, run `013_validation_queries.sql`, and perform the RLS/RBAC session tests from `docs/master/03_AUTH_RBAC_SECURITY_AND_AUDIT.md`.
-- Open items to verify on staging (see Open Blockers / risks): column-level hiding of `answer_options.is_correct` and explanation gating (service/view layer, not RLS); confirm SECURITY DEFINER helper functions bypass RLS as intended (no recursion); confirm permission to manage `storage.objects` policies in the target project.
-- After staging validation passes: bootstrap the first administrator account (Supabase Auth user + `administrator` role via `profile_roles`).
-- Gate: Stage 3 (Auth/RBAC/RLS hardening) begins only after Stage 2 is validated on staging and approved.
+- Immediate next task (human): commit + push the Stage 2 SQL and doc updates to `origin/main` (commit message in Human Next Actions), then use Prompt 6 to mark Stage 2 manually passed.
+- Optional before production: multi-session RLS spot-check (student A vs B, parent linked vs unlinked, content manager cannot read payments/audit) per `docs/master/03_AUTH_RBAC_SECURITY_AND_AUDIT.md`.
+- Operational: bootstrap the first administrator account (Supabase Auth user + `administrator` role via `profile_roles`) on dev/staging.
+- Carry-forward (Stage 6 content work): column-level hiding of `answer_options.is_correct` before result + explanation gating (service/view/RPC, not RLS) — already logged in Open Blockers.
+- Gate: Stage 3 (Auth/RBAC/RLS) begins only after Stage 2 is committed and approved.

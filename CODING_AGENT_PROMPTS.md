@@ -185,6 +185,15 @@ After the work:
 
 # Prompt 2 — Start or Resume Active Stage Prompt
 
+MAIN:
+----------------
+Run Prompt 2 from CODING_AGENT_PROMPTS.md for the current active stage.
+
+Use OLIMPIADA_DEV_DB_URL from the environment.
+Do not print or save secrets.
+Keep the report short.
+----------------
+
 Use this for **every normal coding session after Prompt 1**.
 
 Use it when:

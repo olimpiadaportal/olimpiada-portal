@@ -10,13 +10,12 @@ This file is intentionally configured for the **first coding session**. No appli
 
 ## Current Stage
 
-- Stage: Stage 2 — Supabase SQL Planning and Foundation
-- Stage: Stage 3 — Auth, Profiles, Roles, Permissions, RLS — COMPLETE / MANUALLY PASSED (2026-06-27)
-- Current task: DONE. Auth-signup profile provisioning trigger + role-privilege baseline + RLS behavioral suite, validated on dev/staging (RLS behavioral 14/14 PASS; `013` 12/12 PASS; column hardening intact). Awaiting human commit/push, then Stage 4.
+- Stage: Stage 4 — App Skeletons and Shared Frontend Foundation
+- Current task: Scaffolded separate Next.js (App Router + TS) skeletons for `web-app/` (port 3000) and `admin-panel/` (port 3001): safe Supabase browser/server clients (anon key only; no service role exposure), session-refresh middleware, env templates, and base layout/loading/error/not-found/unauthorized states. No business features. Both apps: `npm install` + `typecheck` + `build` PASS. Awaiting human run + Supabase env values.
 - Owner/agent: Claude Code
 - Started: 2026-06-27
 - Last updated: 2026-06-27
-- Stage status: COMPLETE — passed on dev/staging (PostgreSQL 17.6), production untouched. Stages 1–3 done. Next: Stage 4 (App skeletons) after approval.
+- Stage status: IMPLEMENTED + locally validated (typecheck + production build PASS for both apps). Stages 1–3 complete. "Connect to Supabase dev" needs the human to fill `.env.local`. Next: Stage 5 after approval.
 - Security decision (2026-06-27): Authoritative-column hardening was applied IN Stage 2 (not deferred to Stage 7), per human approval.
 - Previous stage: Stage 1 — Repository Setup and Tracking — COMPLETE and manually passed (baseline committed `2da8a13`, pushed to `origin/main`; `docs/decisions/.gitkeep` added).
 - Version control: Git on `main` branch only (no stage branches). Stage 2 SQL changes are uncommitted in the working tree.
@@ -116,6 +115,7 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | 2026-06-27 | Stage 2 | Stage 2 MANUALLY PASSED (Prompt 6) | `STATUS.md` | Validation re-confirmed: `013` 12/12 PASS on dev/staging; authoritative-column hardening verified. | Stage 2 closed and marked manually passed. Schema rebuildable from canonical `001`–`013` in numeric order. Limitations carried forward: `answer_options.is_correct` column-hiding + explanation gating (Stage 6 service/view/RPC); optional multi-session RLS spot-check before production. Next: human commit/push, then Stage 3 (Auth/RBAC/RLS) via Prompt 2/7. |
 | 2026-06-27 | Stage 3 | Auth/RBAC/RLS implemented + validated on dev/staging (Prompt 2) | `supabase/sql/002` (+trigger), `supabase/sql/010` (+baseline grants), `migrations/2026_06_27_001`, `migrations/2026_06_27_002`, `supabase/sql/tests/rls_behavioral_tests.sql` | Applied both migrations on dev/staging; ran RLS behavioral suite (14/14 PASS): student A≠B isolation, parent linked-only, content-manager denied payments/audit/settings, admin reads + audit immutability, anon blocked. `013` still 12/12; column hardening intact. | Stage 3 "Done When" criteria proven live. Found+fixed a real gap (missing baseline role grants → RLS unreachable). Profiles auto-provision on signup. Production untouched; secrets never printed. |
 | 2026-06-27 | Stage 3 | Stage 3 MANUALLY PASSED (Prompt 6) | `STATUS.md` | Re-confirmed on dev/staging: RLS behavioral 14/14 PASS, `013` 12/12 PASS, authoritative-column hardening intact. | Stage 3 closed and marked passed. Both migrations backported into canonical `002`/`010` (schema rebuildable from zero). Carry-forward: bootstrap first admin account; `answer_options.is_correct`/explanation gating (Stage 6); optional admin MFA + rate limiting before production. Next: human commit/push, then Stage 4 (App skeletons) via Prompt 2. |
+| 2026-06-27 | Stage 4 | App skeletons for `web-app/` + `admin-panel/` (Prompt 2) | `web-app/**` (18 files), `admin-panel/**` (18 files), `STATUS.md` | Both apps: `npm install` (316 pkgs each), `npm run typecheck` PASS, `npm run build` PASS (5 static routes each). | Separate Next.js 15 App Router + TS skeletons sharing the root Supabase backend. Safe Supabase clients (browser/server via `@supabase/ssr`, anon key only — service role never exposed; admin service-role key left commented server-only for later). Session-refresh middleware, `.env.local.example` templates, base layout + loading/error/not-found/unauthorized states. No business logic. web-app=3000, admin-panel=3001. node_modules/.next git-ignored; env examples tracked. Connect-to-Supabase test needs human `.env.local`. |
 
 ## Open Blockers / Questions
 
@@ -189,12 +189,15 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 - [x] RLS validated — behavioral suite 14/14 PASS (student isolation, parent linked-only, content-manager denial, admin auditability + audit immutability, anon blocked)
 - [ ] (Optional, pre-production) MFA for admin + rate-limiting per `03_AUTH` — future hardening, not blocking
 
-### Stage 4 — App Skeletons
+### Stage 4 — App Skeletons  (IMPLEMENTED + locally validated 2026-06-27)
 
-- [ ] `web-app/` skeleton
-- [ ] `admin-panel/` skeleton
-- [ ] Supabase clients configured safely
-- [ ] Environment variables documented
+- [x] `web-app/` skeleton (Next.js 15 App Router + TS; build PASS)
+- [x] `admin-panel/` skeleton (separate app, port 3001; build PASS)
+- [x] Supabase clients configured safely (browser/server, anon key only; no service role exposure)
+- [x] Session-refresh middleware + base states (loading/error/not-found/unauthorized)
+- [x] Environment variables documented (`.env.local.example` per app)
+- [x] typecheck + production build PASS for both apps
+- [ ] (Human) `npm install && npm run dev` per app with real `.env.local` → confirm both connect to Supabase dev
 
 ### Stage 5 — Admin Content Taxonomy
 
@@ -278,8 +281,7 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 
 ## Next Recommended Task
 
-- Immediate next task (human): commit + push Stage 2 + Stage 3 SQL/migrations/tests and docs to `origin/main` (commit message in Human Next Actions), then close Stage 3 (Prompt 6).
-- Operational: bootstrap the first administrator account (create the Auth user in Supabase, then assign the `administrator` role via `profile_roles`) on dev/staging — the signup trigger now auto-creates the profile.
-- Next stage: Stage 4 — App Skeletons and Shared Frontend Foundation (Next.js `web-app/` + `admin-panel/`). Begin only after approval (Prompt 2).
+- Immediate next task (human): fill `.env.local` in both apps and run `npm install && npm run dev` to confirm each connects to Supabase dev (steps in Human Next Actions), then commit/push.
+- Next stage: Stage 5 — Admin Panel Foundation and Content Taxonomy (admin login, permission-aware layout, grades/subjects/topics CRUD). Begin only after approval (Prompt 2). Bootstrap the first admin first (see `docs/DEVELOPER_SETUP.md`).
 - Carry-forward (Stage 6 content work): column-level hiding of `answer_options.is_correct` before result + explanation gating (service/view/RPC, not RLS).
 - Optional pre-production hardening: admin MFA + rate limiting per `03_AUTH`.

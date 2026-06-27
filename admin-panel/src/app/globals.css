@@ -405,6 +405,79 @@ a {
   align-self: flex-start;
 }
 
+.field textarea {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: inherit;
+  background: #fff;
+  color: var(--text);
+  resize: vertical;
+}
+
+.field textarea:focus {
+  outline: 2px solid rgba(79, 70, 229, 0.35);
+  border-color: var(--brand);
+}
+
+.form h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+/* ---- Question editor ---------------------------------------------------- */
+.options-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.option-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.option-row input[type="text"] {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.option-correct {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.lifecycle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.lifecycle form {
+  display: inline;
+}
+
+.head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.pill-muted {
+  color: var(--muted);
+  background: #f1f5f9;
+}
+
 .form-error {
   margin: 0;
   color: #b91c1c;

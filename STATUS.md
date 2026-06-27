@@ -10,8 +10,8 @@ This file is intentionally configured for the **first coding session**. No appli
 
 ## Current Stage
 
-- Stage: Stage 5 — Admin Panel Foundation and Content Taxonomy
-- Current task: Built admin auth (login/logout, Supabase Auth), `(protected)` layout with server-side guards, permission-aware sidebar, and taxonomy + content-config CRUD via an allowlisted resource engine: grades, subjects, topics, subtopics, difficulty levels, question types, olympiad types. Admin-only; Content Managers see only Dashboard. `typecheck` + `build` PASS. Stage 4 closed.
+- Stage: Stage 6 — Question Management and Media Uploads (increment 1)
+- Current task: Built question management in admin-panel: list/create/edit questions (taxonomy metadata + Azerbaijani body/prompt + dynamic answer options with correctness + az explanation), content lifecycle (draft→in_review→approved→published→archived/rejected) with role rules (CM submits, admin approves/publishes; least privilege), and content audit triggers (migration `003` → backported `011`). All UI trilingual (az/en/ru). typecheck + build PASS; admin question-create path RLS-smoke-tested (PASS). DEFERRED to next Stage-6 pass: media upload (Supabase Storage) + ru/en content fields. Stage 5 closed.
 - Owner/agent: Claude Code
 - Started: 2026-06-27
 - Last updated: 2026-06-27
@@ -96,6 +96,8 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | 2026-06-27 | Initial canonical schema | None (foundation, not a migration) | `001`–`013` created | dev/staging (applied) | PASS — 12/12 `013` checks; `009` storage policies applied OK; authoritative-column hardening verified | N/A (these ARE the canonical files) | Full DB foundation applied in numeric order `001`–`012` (all PASS), then `013` validation 12/12 PASS on PostgreSQL 17.6 dev/staging via `OLIMPIADA_DEV_DB_URL` (never production; URL never printed). `009` `storage.objects` policies succeeded on this project (the ownership-warning fallback was not needed here). |
 | 2026-06-27 | Migration (Stage 3) | `2026_06_27_001_auth_user_provisioning.sql` | Backported into `002` | dev/staging (applied) | PASS (trigger + function present) | completed | `handle_new_user()` + `on_auth_user_created` trigger on `auth.users` auto-create a base `profiles` row on signup (status pending; role/type set during onboarding). |
 | 2026-06-27 | Migration (Stage 3) | `2026_06_27_002_role_privilege_baseline.sql` | Backported into `010` | dev/staging (applied) | PASS — RLS behavioral 14/14; `013` still 12/12; column hardening intact | completed | Behavioral testing exposed that `anon`/`authenticated` had no table privileges (Supabase default grants absent on from-zero rebuild), so RLS was unreachable. Migration grants baseline SELECT/INSERT/UPDATE/DELETE (+ default privileges) and re-asserts the authoritative-column hardening. |
+| 2026-06-27 | Migration (Stage 6) | `2026_06_27_003_content_audit_triggers.sql` | Backported into `011` | dev/staging (applied) | PASS (triggers present; admin question-create RLS smoke test PASS) | completed | Append-only audit triggers on `questions`, `tests`, `daily_task_packages` (reuse `fn_audit_row`). Captures create/edit/archive/publish via before/after status. |
+| 2026-06-27 | Migration (Stage 6) | `2026_06_27_004_question_primary_locale.sql` | Backported into `004` (column) + `011` (index) | dev/staging (applied) | PASS (column present) | completed | Adds `questions.primary_locale` (content_locale, default az) so questions are categorized by language (az/en/ru); content stored under the chosen locale. |
 
 ## Completed Work
 
@@ -121,6 +123,7 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | 2026-06-27 | Stage 5+ | Fix: empty Users list + admin role scoping | `admin-panel/src/app/(protected)/users/page.tsx`, `admin-panel/src/lib/admin/guards.ts` | typecheck + build PASS; confirmed DB has 1 admin + 1 content_manager. | Users list was empty because `profile_roles` has two FKs to `profiles` (`profile_id`, `assigned_by`) → ambiguous PostgREST embed returned nothing. Rewrote the query without embeds (explicit role→profile_roles→profiles lookups). Also fixed `getAuthContext` to scope `profile_roles` to the current profile (an admin's RLS returned all rows, polluting roleCodes/permissions). |
 | 2026-06-27 | Stage 5+ | Admin user management + trilingual UI (az/en/ru) | `admin-panel`: `lib/supabase/admin.ts` (server-only service client), `lib/admin/users.ts`, `components/CreateUserForm.tsx`, `(protected)/users/page.tsx`, `i18n/*` + `components/{LanguageSwitcher,LoginForm}.tsx` + localized pages/components; `web-app`: `i18n/*` + `components/LanguageSwitcher.tsx` + localized pages/states; `CLAUDE.md`, `IMPLEMENTATION_EXECUTION_PLAN.md`, memory | Both apps: typecheck + build PASS (admin 8 routes incl `/users`). Not browser-tested. | Admins can create Administrator/Content Manager accounts from `/users` (least privilege: admin-guarded, fixed role allowlist, service-role client only after the check; needs `SUPABASE_SERVICE_ROLE_KEY` in `admin-panel/.env.local`, server-only). Trilingual UI rule recorded (CLAUDE.md + plan + memory); current strings translated az(default)/en/ru with cookie-based locale + `LanguageSwitcher` in both apps. |
 | 2026-06-27 | Stage 5 | Admin auth + taxonomy/config CRUD (Prompt 2) | `admin-panel/src/lib/admin/*` (guards, resources, nav, actions), `admin-panel/src/components/*` (Sidebar, SignOutButton, ResourceForm, DeleteButton), `admin-panel/src/app/*` (root layout/page, login, `(protected)` layout+dashboard, `manage/[resource]` list+edit, state pages), `admin-panel/src/app/globals.css`, `CLAUDE.md`, `STATUS.md` | `npm run typecheck` PASS; `npm run build` PASS (7 routes). Not yet browser-tested (needs admin login). | Admin login/logout via Supabase Auth; `(protected)` layout enforces `requirePanelAccess` (admin or content manager) server-side; admin-only routes via `requireAdmin`. Permission-aware sidebar (CM sees only Dashboard). Allowlisted resource engine drives CRUD for grades/subjects/topics/subtopics/difficulty-levels/question-types/olympiad-types (only registry tables+columns written; RLS is the final gate). No new SQL (taxonomy + RLS already exist). Routes use a generic `/manage/[resource]` instead of the doc's per-entity paths (cleaner/DRY). |
+| 2026-06-27 | Stage 6 | Question management increment 1 (Prompt 2) | `admin-panel`: `lib/admin/{questions,question-options}.ts`, `components/{QuestionForm,QuestionLifecycle,DeleteQuestionButton}.tsx`, `app/(protected)/questions/{page,new/page,[id]/edit/page}.tsx`, `nav.ts`, `(protected)/layout.tsx`, `i18n/{messages,server}.ts`, `globals.css`; `supabase/sql/migrations/2026_06_27_003_*` + `011`; `STATUS.md` | typecheck + build PASS (admin 11 routes); migration applied on dev/staging; admin question-create RLS smoke test PASS. | Question list/create/edit (metadata + az body/prompt + dynamic answer options w/ correctness + az explanation), content lifecycle with role rules (CM submits; admin approves/publishes — least privilege), content audit triggers. Atomic-ish save (compensating delete on failure). Questions visible to admin + content managers (permission `content.create`). Deferred: media upload + ru/en content fields. Known follow-up: tighten content child-table RLS to ownership (logged in Open Blockers). |
 
 ## Open Blockers / Questions
 
@@ -133,6 +136,7 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | RESOLVED (2026-06-27): Stage 2 SQL applied + validated on dev/staging | Database | Auto-applied `001`–`012` and ran `013` (12/12 PASS) via `OLIMPIADA_DEV_DB_URL` on PostgreSQL 17.6 dev/staging (psql called by full path; URL never printed; production untouched). SECURITY DEFINER helpers worked (no recursion). Remaining: optional multi-session RLS spot-check before production. |
 | RESOLVED (2026-06-27): authoritative-column writes hardened in Stage 2 | Security | Fixed in `010` via column-level GRANT/REVOKE: `authenticated`/`anon` can no longer write grading/progress authoritative columns; those are service_role/RPC-only. Confirm with a session test on staging that a learner cannot UPDATE `score`/`is_correct`/`status`. |
 | RESOLVED on dev/staging (2026-06-27): `009` storage policies applied successfully | Database (Supabase env) | On this dev/staging project `009` applied without the `storage.objects` ownership error, so the dashboard fallback was not needed. Keep the warning in the `009` header in case a future target project (or production) lacks the privilege. |
+| Content child-table write RLS is not ownership-scoped | Security (Stage 6 follow-up) | `question_translations`/`answer_options`/`*_translations`/`question_explanations` write policies allow any holder of `content.create`/`content.edit_own` (not scoped to the question's `created_by`). A content manager could edit another author's question CONTENT (parent `questions` row IS ownership-scoped). Tighten these child policies to check the parent question's ownership in a Stage-6 follow-up migration. Low impact with few content managers; admin review still gates publish. |
 
 ## Stage Checklist
 
@@ -216,14 +220,19 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 - [x] typecheck + build PASS
 - [ ] (Human) browser test: log in as admin, create/edit/delete taxonomy; confirm a Content Manager cannot reach `/manage/*`
 
-### Stage 6 — Question Bank
+### Stage 6 — Question Bank  (increment 1 IMPLEMENTED + locally validated 2026-06-27)
 
-- [ ] Question CRUD
-- [ ] Answer options
-- [ ] Explanations
-- [ ] Content lifecycle
-- [ ] Supabase Storage upload
-- [ ] Audit logging
+- [x] Question CRUD (list/new/edit; taxonomy metadata + az body/prompt)
+- [x] Answer options (dynamic add/remove, correctness flag, az text)
+- [x] Explanations (az, optional)
+- [x] Content lifecycle (draft→in_review→approved→published→archived/rejected) with role rules (CM submits; admin approves/publishes; least privilege)
+- [x] Audit logging (content audit triggers; migration `003` → `011`)
+- [x] Trilingual UI (az/en/ru); typecheck + build PASS; admin create-path RLS smoke test PASS
+- [x] Per-question language (`primary_locale` az/en/ru) — content stored under chosen locale; language column in list
+- [x] UX fixes: form fields now controlled (persist on validation error); question type/difficulty/olympiad labels translated by code
+- [ ] Supabase Storage media upload (DEFERRED to Stage-6 pass 2)
+- [ ] Multi-locale translations of the SAME question (one question = one language for now) (future)
+- [ ] (Human) browser test: create question (try a non-az language), submit/approve/publish, CM least-privilege
 
 ### Stage 7 — Test and Daily Task Engine
 
@@ -290,7 +299,8 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 
 ## Next Recommended Task
 
-- Immediate next task (human): bootstrap an admin (`docs/DEVELOPER_SETUP.md`), set `admin-panel/.env.local`, run `admin-panel` and manually test login + taxonomy CRUD; then commit/push.
-- Next stage: Stage 6 — Question Management and Media Uploads (question CRUD, answer options, explanations, content lifecycle, Supabase Storage upload). Begin only after approval (Prompt 2).
-- Carry-forward (Stage 6 content work): column-level hiding of `answer_options.is_correct` before result + explanation gating (service/view/RPC, not RLS).
+- Immediate next task (human): browser-test question management (create/lifecycle/least-privilege), then commit/push.
+- Stage 6 pass 2 (next Prompt 2): Supabase Storage media upload (question/explanation images, small audio) storing `media_assets` metadata + linking to translations; ru/en CONTENT fields; tighten content child-table RLS to ownership (follow-up migration).
+- Then Stage 7 — Test and Daily Task Engine.
+- Carry-forward (web-app, Stage 7/8): hide `answer_options.is_correct` from students before result + explanation gating (service/view/RPC, not RLS).
 - Optional pre-production hardening: admin MFA + rate limiting per `03_AUTH`.

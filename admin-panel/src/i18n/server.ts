@@ -18,3 +18,9 @@ export async function getT(): Promise<T> {
   const fallback = messages[defaultLocale];
   return (key: string) => dict[key] ?? fallback[key] ?? key;
 }
+
+// Full current-locale dictionary, for client components that need many keys.
+export async function getDict(): Promise<Record<string, string>> {
+  const locale = await getLocale();
+  return messages[locale];
+}

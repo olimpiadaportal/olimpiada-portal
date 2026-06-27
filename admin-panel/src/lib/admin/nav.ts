@@ -6,6 +6,7 @@ export type NavItem = {
   label: string; // i18n key
   href?: string;
   adminOnly?: boolean;
+  permission?: string; // visible to admin OR holders of this permission
   soon?: boolean;
 };
 
@@ -40,9 +41,14 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    label: "group.content",
+    items: [
+      { label: "nav.questions", href: "/questions", permission: "content.create" },
+    ],
+  },
+  {
     label: "group.comingSoon",
     items: [
-      { label: "nav.questions", soon: true },
       { label: "nav.testsDailyTasks", soon: true },
       { label: "nav.reviews", soon: true },
       { label: "nav.subscriptions", soon: true, adminOnly: true },

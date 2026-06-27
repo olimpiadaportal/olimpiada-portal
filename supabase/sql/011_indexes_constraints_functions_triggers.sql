@@ -68,6 +68,7 @@ create index if not exists idx_questions_subject on public.questions (subject_id
 create index if not exists idx_questions_grade on public.questions (grade_id);
 create index if not exists idx_questions_topic on public.questions (topic_id);
 create index if not exists idx_questions_created_by on public.questions (created_by);
+create index if not exists idx_questions_primary_locale on public.questions (primary_locale);
 -- trigram search over localized question bodies (pg_trgm from 001).
 create index if not exists idx_qtrans_body_trgm
   on public.question_translations using gin (body gin_trgm_ops);
@@ -208,6 +209,23 @@ create trigger trg_audit_subscriptions
 drop trigger if exists trg_audit_payments on public.payments;
 create trigger trg_audit_payments
   after update on public.payments
+  for each row execute function public.fn_audit_row();
+
+-- Content actions (create/edit/archive/publish/etc.) — backported from
+-- migrations/2026_06_27_003_content_audit_triggers.sql.
+drop trigger if exists trg_audit_questions on public.questions;
+create trigger trg_audit_questions
+  after insert or update or delete on public.questions
+  for each row execute function public.fn_audit_row();
+
+drop trigger if exists trg_audit_tests on public.tests;
+create trigger trg_audit_tests
+  after insert or update or delete on public.tests
+  for each row execute function public.fn_audit_row();
+
+drop trigger if exists trg_audit_daily_task_packages on public.daily_task_packages;
+create trigger trg_audit_daily_task_packages
+  after insert or update or delete on public.daily_task_packages
   for each row execute function public.fn_audit_row();
 
 -- =============================================================================

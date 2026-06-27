@@ -76,6 +76,7 @@ create table if not exists public.questions (
   olympiad_type_id uuid references public.olympiad_types (id) on delete set null,
   source_id      uuid references public.sources (id) on delete set null,
   status         public.content_status not null default 'draft',
+  primary_locale public.content_locale not null default 'az',  -- question presentation language
   created_by     uuid references public.profiles (id) on delete set null,
   updated_by     uuid references public.profiles (id) on delete set null,
   created_at     timestamptz not null default now(),

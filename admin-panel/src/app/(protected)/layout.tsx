@@ -19,7 +19,12 @@ export default async function ProtectedLayout({
   const groups = NAV.map((g) => ({
     label: t(g.label),
     items: g.items
-      .filter((i) => !i.adminOnly || ctx.isAdmin)
+      .filter((i) => {
+        if (i.adminOnly) return ctx.isAdmin;
+        if (i.permission)
+          return ctx.isAdmin || ctx.permissions.includes(i.permission);
+        return true;
+      })
       .map((i) => ({ label: t(i.label), href: i.href ?? null, soon: !!i.soon })),
   })).filter((g) => g.items.length > 0);
 

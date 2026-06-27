@@ -6,6 +6,7 @@ import { getDict, getT } from "@/i18n/server";
 import { loadQuestionOptions } from "@/lib/admin/question-options";
 import { QuestionForm } from "@/components/QuestionForm";
 import { QuestionLifecycle } from "@/components/QuestionLifecycle";
+import { QuestionMediaUploader } from "@/components/QuestionMediaUploader";
 
 export default async function EditQuestionPage({
   params,
@@ -29,9 +30,25 @@ export default async function EditQuestionPage({
 
   const { data: trans } = await supabase
     .from("question_translations")
-    .select("locale, body, prompt")
+    .select("locale, body, prompt, media_asset_id")
     .eq("question_id", id);
   const tr = (trans ?? []).find((x: any) => x.locale === loc);
+
+  // Current media (if attached to the primary-locale translation).
+  let currentMedia: { url: string; mime: string } | null = null;
+  if (tr?.media_asset_id) {
+    const { data: m } = await supabase
+      .from("media_assets")
+      .select("bucket, path, mime_type")
+      .eq("id", tr.media_asset_id)
+      .maybeSingle();
+    if (m) {
+      const { data: pub } = supabase.storage
+        .from(m.bucket)
+        .getPublicUrl(m.path);
+      currentMedia = { url: pub.publicUrl, mime: m.mime_type ?? "" };
+    }
+  }
 
   const { data: expl } = await supabase
     .from("question_explanations")
@@ -97,6 +114,22 @@ export default async function EditQuestionPage({
           defaults={defaults}
           id={id}
           submitLabel={t("qform.save")}
+        />
+      </section>
+
+      <section className="card" style={{ marginTop: 20 }}>
+        <QuestionMediaUploader
+          questionId={id}
+          locale={loc}
+          current={currentMedia}
+          strings={{
+            title: t("qmedia.title"),
+            upload: t("qmedia.upload"),
+            uploading: t("qmedia.uploading"),
+            remove: t("qmedia.remove"),
+            none: t("qmedia.none"),
+            hint: t("qmedia.hint"),
+          }}
         />
       </section>
     </div>

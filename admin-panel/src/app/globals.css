@@ -478,6 +478,33 @@ a {
   background: #f1f5f9;
 }
 
+/* ---- Question media ----------------------------------------------------- */
+.media-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.media-current {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.media-preview {
+  max-width: 280px;
+  max-height: 200px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.media-upload {
+  display: inline-flex;
+  cursor: pointer;
+}
+
 .form-error {
   margin: 0;
   color: #b91c1c;

@@ -31,6 +31,10 @@ Use it like this:
 4. Update `STATUS.md`.
 5. Move to the next stage only when the done criteria are met.
 
+## Cross-Cutting Requirement: Trilingual UI
+
+Every UI stage (Admin Panel and Web App, and future mobile) must ship strings in **Azerbaijani (`az`, default), English (`en`), and Russian (`ru`)** with natural, native phrasing. New screens/strings are translated in the same change. UI strings live per app in `src/i18n/messages.ts`. This is separate from database content translation (`*_translations` tables). See `CLAUDE.md` → "Localization (Permanent, Non-Negotiable)".
+
 ## Required Root Project Structure
 
 ```text

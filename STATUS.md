@@ -10,12 +10,12 @@ This file is intentionally configured for the **first coding session**. No appli
 
 ## Current Stage
 
-- Stage: Stage 4 — App Skeletons and Shared Frontend Foundation
-- Current task: Scaffolded separate Next.js (App Router + TS) skeletons for `web-app/` (port 3000) and `admin-panel/` (port 3001): safe Supabase browser/server clients (anon key only; no service role exposure), session-refresh middleware, env templates, and base layout/loading/error/not-found/unauthorized states. No business features. Both apps: `npm install` + `typecheck` + `build` PASS. Awaiting human run + Supabase env values.
+- Stage: Stage 5 — Admin Panel Foundation and Content Taxonomy
+- Current task: Built admin auth (login/logout, Supabase Auth), `(protected)` layout with server-side guards, permission-aware sidebar, and taxonomy + content-config CRUD via an allowlisted resource engine: grades, subjects, topics, subtopics, difficulty levels, question types, olympiad types. Admin-only; Content Managers see only Dashboard. `typecheck` + `build` PASS. Stage 4 closed.
 - Owner/agent: Claude Code
 - Started: 2026-06-27
 - Last updated: 2026-06-27
-- Stage status: IMPLEMENTED + locally validated (typecheck + production build PASS for both apps). Stages 1–3 complete. "Connect to Supabase dev" needs the human to fill `.env.local`. Next: Stage 5 after approval.
+- Stage status: IMPLEMENTED + locally validated (both apps typecheck + build PASS). Stages 1–4 complete. Added: admin can create Administrators/Content Managers from the panel (least privilege, needs `SUPABASE_SERVICE_ROLE_KEY` server-side); trilingual UI (az/en/ru) across both apps with a language switcher. Browser flow needs human manual test. Next: Stage 6 after approval.
 - Security decision (2026-06-27): Authoritative-column hardening was applied IN Stage 2 (not deferred to Stage 7), per human approval.
 - Previous stage: Stage 1 — Repository Setup and Tracking — COMPLETE and manually passed (baseline committed `2da8a13`, pushed to `origin/main`; `docs/decisions/.gitkeep` added).
 - Version control: Git on `main` branch only (no stage branches). Stage 2 SQL changes are uncommitted in the working tree.
@@ -116,7 +116,11 @@ These decisions are confirmed and should not be re-litigated unless the human ow
 | 2026-06-27 | Stage 3 | Auth/RBAC/RLS implemented + validated on dev/staging (Prompt 2) | `supabase/sql/002` (+trigger), `supabase/sql/010` (+baseline grants), `migrations/2026_06_27_001`, `migrations/2026_06_27_002`, `supabase/sql/tests/rls_behavioral_tests.sql` | Applied both migrations on dev/staging; ran RLS behavioral suite (14/14 PASS): student A≠B isolation, parent linked-only, content-manager denied payments/audit/settings, admin reads + audit immutability, anon blocked. `013` still 12/12; column hardening intact. | Stage 3 "Done When" criteria proven live. Found+fixed a real gap (missing baseline role grants → RLS unreachable). Profiles auto-provision on signup. Production untouched; secrets never printed. |
 | 2026-06-27 | Stage 3 | Stage 3 MANUALLY PASSED (Prompt 6) | `STATUS.md` | Re-confirmed on dev/staging: RLS behavioral 14/14 PASS, `013` 12/12 PASS, authoritative-column hardening intact. | Stage 3 closed and marked passed. Both migrations backported into canonical `002`/`010` (schema rebuildable from zero). Carry-forward: bootstrap first admin account; `answer_options.is_correct`/explanation gating (Stage 6); optional admin MFA + rate limiting before production. Next: human commit/push, then Stage 4 (App skeletons) via Prompt 2. |
 | 2026-06-27 | Stage 4 | App skeletons for `web-app/` + `admin-panel/` (Prompt 2) | `web-app/**` (18 files), `admin-panel/**` (18 files), `STATUS.md` | Both apps: `npm install` (316 pkgs each), `npm run typecheck` PASS, `npm run build` PASS (5 static routes each). | Separate Next.js 15 App Router + TS skeletons sharing the root Supabase backend. Safe Supabase clients (browser/server via `@supabase/ssr`, anon key only — service role never exposed; admin service-role key left commented server-only for later). Session-refresh middleware, `.env.local.example` templates, base layout + loading/error/not-found/unauthorized states. No business logic. web-app=3000, admin-panel=3001. node_modules/.next git-ignored; env examples tracked. Connect-to-Supabase test needs human `.env.local`. |
-| 2026-06-27 | Stage 4 | Design pass: simplistic web-app, professional admin shell | `web-app/src/app/globals.css`, `admin-panel/src/app/globals.css` + `layout.tsx` + 5 page/state files | Both apps typecheck + build PASS after redesign. | Per design direction: `web-app` kept minimal/neutral (easy to restyle when the investor-approved Claude Design lands); `admin-panel` given a professional shell (dark sidebar with planned sections marked "soon", topbar, dashboard cards, pills/buttons, responsive). Still no business logic/fake data. (Direction saved to memory: `ui-design-direction`.) |
+| 2026-06-27 | Stage 4 | Design pass: simplistic web-app, professional admin shell | `web-app/src/app/globals.css`, `admin-panel/src/app/globals.css` + `layout.tsx` + 5 page/state files | Both apps typecheck + build PASS after redesign. | Per design direction: `web-app` kept minimal/neutral (easy to restyle when the investor-approved Claude Design lands); `admin-panel` given a professional shell (dark sidebar with planned sections marked "soon", topbar, dashboard cards, pills/buttons, responsive). Still no business logic/fake data. (Direction saved to memory: `ui-design-direction` and to `CLAUDE.md` → "UI / Design Direction".) |
+| 2026-06-27 | Stage 4 | Stage 4 closed (advanced via Prompt 2) | `STATUS.md` | typecheck + build PASS for both apps (prior). | Stage 4 marked complete; proceeded to Stage 5. |
+| 2026-06-27 | Stage 5+ | Fix: empty Users list + admin role scoping | `admin-panel/src/app/(protected)/users/page.tsx`, `admin-panel/src/lib/admin/guards.ts` | typecheck + build PASS; confirmed DB has 1 admin + 1 content_manager. | Users list was empty because `profile_roles` has two FKs to `profiles` (`profile_id`, `assigned_by`) → ambiguous PostgREST embed returned nothing. Rewrote the query without embeds (explicit role→profile_roles→profiles lookups). Also fixed `getAuthContext` to scope `profile_roles` to the current profile (an admin's RLS returned all rows, polluting roleCodes/permissions). |
+| 2026-06-27 | Stage 5+ | Admin user management + trilingual UI (az/en/ru) | `admin-panel`: `lib/supabase/admin.ts` (server-only service client), `lib/admin/users.ts`, `components/CreateUserForm.tsx`, `(protected)/users/page.tsx`, `i18n/*` + `components/{LanguageSwitcher,LoginForm}.tsx` + localized pages/components; `web-app`: `i18n/*` + `components/LanguageSwitcher.tsx` + localized pages/states; `CLAUDE.md`, `IMPLEMENTATION_EXECUTION_PLAN.md`, memory | Both apps: typecheck + build PASS (admin 8 routes incl `/users`). Not browser-tested. | Admins can create Administrator/Content Manager accounts from `/users` (least privilege: admin-guarded, fixed role allowlist, service-role client only after the check; needs `SUPABASE_SERVICE_ROLE_KEY` in `admin-panel/.env.local`, server-only). Trilingual UI rule recorded (CLAUDE.md + plan + memory); current strings translated az(default)/en/ru with cookie-based locale + `LanguageSwitcher` in both apps. |
+| 2026-06-27 | Stage 5 | Admin auth + taxonomy/config CRUD (Prompt 2) | `admin-panel/src/lib/admin/*` (guards, resources, nav, actions), `admin-panel/src/components/*` (Sidebar, SignOutButton, ResourceForm, DeleteButton), `admin-panel/src/app/*` (root layout/page, login, `(protected)` layout+dashboard, `manage/[resource]` list+edit, state pages), `admin-panel/src/app/globals.css`, `CLAUDE.md`, `STATUS.md` | `npm run typecheck` PASS; `npm run build` PASS (7 routes). Not yet browser-tested (needs admin login). | Admin login/logout via Supabase Auth; `(protected)` layout enforces `requirePanelAccess` (admin or content manager) server-side; admin-only routes via `requireAdmin`. Permission-aware sidebar (CM sees only Dashboard). Allowlisted resource engine drives CRUD for grades/subjects/topics/subtopics/difficulty-levels/question-types/olympiad-types (only registry tables+columns written; RLS is the final gate). No new SQL (taxonomy + RLS already exist). Routes use a generic `/manage/[resource]` instead of the doc's per-entity paths (cleaner/DRY). |
 
 ## Open Blockers / Questions
 
@@ -200,13 +204,17 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 - [x] typecheck + production build PASS for both apps
 - [ ] (Human) `npm install && npm run dev` per app with real `.env.local` → confirm both connect to Supabase dev
 
-### Stage 5 — Admin Content Taxonomy
+### Stage 5 — Admin Content Taxonomy  (IMPLEMENTED + locally validated 2026-06-27)
 
-- [ ] Admin layout
-- [ ] Permission-aware sidebar
-- [ ] Grades CRUD
-- [ ] Subjects CRUD
-- [ ] Topics/subtopics CRUD
+- [x] Admin login/logout (Supabase Auth) + `(protected)` layout with server-side guards
+- [x] Permission-aware sidebar (admin sees taxonomy/config; Content Manager sees only Dashboard)
+- [x] Grades CRUD
+- [x] Subjects CRUD
+- [x] Topics/subtopics CRUD
+- [x] Difficulty levels / Question types / Olympiad types CRUD
+- [x] Content Manager restricted (admin-only `/manage/*` via `requireAdmin`; RLS backstop)
+- [x] typecheck + build PASS
+- [ ] (Human) browser test: log in as admin, create/edit/delete taxonomy; confirm a Content Manager cannot reach `/manage/*`
 
 ### Stage 6 — Question Bank
 
@@ -282,7 +290,7 @@ Legend: [x] = file authored in repository. Staging application + validation are 
 
 ## Next Recommended Task
 
-- Immediate next task (human): fill `.env.local` in both apps and run `npm install && npm run dev` to confirm each connects to Supabase dev (steps in Human Next Actions), then commit/push.
-- Next stage: Stage 5 — Admin Panel Foundation and Content Taxonomy (admin login, permission-aware layout, grades/subjects/topics CRUD). Begin only after approval (Prompt 2). Bootstrap the first admin first (see `docs/DEVELOPER_SETUP.md`).
+- Immediate next task (human): bootstrap an admin (`docs/DEVELOPER_SETUP.md`), set `admin-panel/.env.local`, run `admin-panel` and manually test login + taxonomy CRUD; then commit/push.
+- Next stage: Stage 6 — Question Management and Media Uploads (question CRUD, answer options, explanations, content lifecycle, Supabase Storage upload). Begin only after approval (Prompt 2).
 - Carry-forward (Stage 6 content work): column-level hiding of `answer_options.is_correct` before result + explanation gating (service/view/RPC, not RLS).
 - Optional pre-production hardening: admin MFA + rate limiting per `03_AUTH`.

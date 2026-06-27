@@ -45,6 +45,19 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - When using `OLIMPIADA_DEV_DB_URL`, reference it only as the shell variable `"$OLIMPIADA_DEV_DB_URL"`; never expand or display its value. Redact any connection string from command output before reporting.
 - Secrets live only in the local terminal environment and untracked local env files. The repository is never a place for secrets.
 
+## Localization (Permanent, Non-Negotiable)
+
+- The product is **trilingual**: **Azerbaijani (`az`, default), English (`en`), Russian (`ru`)** — for `web-app`, `admin-panel`, and the future mobile app.
+- Whenever a new feature, screen, or UI string is added, it MUST be translated into all three languages in the same change. Do not ship UI text in only one language.
+- Use **natural, native phrasing** that each speaker would actually use — not literal/word-for-word machine translation.
+- UI strings live in each app's `src/i18n/messages.ts` (keys → `{ az, en, ru }`); default locale is `az`. This is separate from CONTENT translation (question/answer/explanation bodies) which uses the database `*_translations` tables.
+
+## UI / Design Direction (Permanent)
+
+- `web-app/` (Student/Parent) UI must stay **nice but simplistic and easy to restyle later**. The official web-app design is being prepared and shown to an investor; once approved, the owner will share design files from **Claude Design** and that design will be implemented then. Until then, keep web-app styling minimal/neutral so a design system drops in cleanly. Do not over-invest in web-app visuals.
+- `admin-panel/` (Administrator/Content Manager) should have a **professional design now** — it is internal and not investor-gated.
+- Both apps stay free of business logic and fake data per the stage rules.
+
 ## Source-of-Truth Reading Order
 
 Start with:

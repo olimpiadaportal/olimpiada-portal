@@ -1,14 +1,15 @@
 import Link from "next/link";
+import { getT } from "@/i18n/server";
 
 // Shared "unauthorized" state. Route guards in later stages redirect here when a
-// user lacks access. Authorization is always enforced server-side / via RLS, not
-// by hiding this page.
-export default function UnauthorizedPage() {
+// user lacks access. Authorization is always enforced server-side / via RLS.
+export default async function UnauthorizedPage() {
+  const t = await getT();
   return (
     <div className="container">
-      <h1>Unauthorized</h1>
-      <p className="muted">You don’t have access to this page.</p>
-      <Link href="/">Go home</Link>
+      <h1>{t("unauthorized.title")}</h1>
+      <p className="muted">{t("unauthorized.desc")}</p>
+      <Link href="/">{t("action.goHome")}</Link>
     </div>
   );
 }

@@ -33,6 +33,40 @@ body {
   min-height: 100vh;
 }
 
+.topbar-lite {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.lang-switch {
+  display: inline-flex;
+  gap: 2px;
+  background: #f3f4f6;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.lang-btn {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.lang-btn.active {
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
 .container {
   max-width: 640px;
   margin: 0 auto;

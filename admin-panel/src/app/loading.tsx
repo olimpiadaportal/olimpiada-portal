@@ -1,8 +1,8 @@
-// Global loading state (renders inside the admin shell).
+// Transient suspense fallback — language-neutral so it stays instant.
 export default function Loading() {
   return (
-    <div className="page">
-      <p className="muted">Loading…</p>
+    <div className="standalone">
+      <p className="muted">…</p>
     </div>
   );
 }

@@ -1,18 +1,15 @@
 import Link from "next/link";
+import { getT } from "@/i18n/server";
 
-// Shared "unauthorized" state. Admin route guards in later stages redirect here
-// when a user is not an Administrator/Content Manager or lacks a permission.
-// Access is always enforced server-side, never by hiding this page.
-export default function UnauthorizedPage() {
+// Shown when a signed-in user lacks access (e.g., a Content Manager hitting an
+// admin-only route). Access is enforced server-side by the guards, not by hiding.
+export default async function UnauthorizedPage() {
+  const t = await getT();
   return (
-    <div className="page">
-      <div className="page-head">
-        <h1>Unauthorized</h1>
-        <p className="muted">
-          You don’t have permission to access this admin area.
-        </p>
-      </div>
-      <Link href="/">Back to dashboard</Link>
+    <div className="standalone">
+      <h1>{t("unauthorized.title")}</h1>
+      <p className="muted">{t("unauthorized.desc")}</p>
+      <Link href="/login">{t("action.signInDifferent")}</Link>
     </div>
   );
 }

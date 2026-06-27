@@ -1,14 +1,13 @@
 import Link from "next/link";
+import { getT } from "@/i18n/server";
 
-// Global 404 state.
-export default function NotFound() {
+export default async function NotFound() {
+  const t = await getT();
   return (
-    <div className="page">
-      <div className="page-head">
-        <h1>Page not found</h1>
-        <p className="muted">The page you’re looking for doesn’t exist.</p>
-      </div>
-      <Link href="/">Back to dashboard</Link>
+    <div className="standalone">
+      <h1>{t("notFound.title")}</h1>
+      <p className="muted">{t("notFound.desc")}</p>
+      <Link href="/">{t("action.goDashboard")}</Link>
     </div>
   );
 }

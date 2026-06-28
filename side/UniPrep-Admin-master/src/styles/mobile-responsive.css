@@ -1,0 +1,307 @@
+/* Mobile Responsiveness Enhancements */
+/* Phase 6: Improved mobile experience for analytics */
+
+/* ===================================
+   MOBILE-FIRST BREAKPOINTS
+   =================================== */
+
+/* Small devices (phones, less than 640px) */
+@media (max-width: 639px) {
+  /* Dashboard Grid Adjustments */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+
+  /* Metric Cards */
+  .metric-card {
+    padding: 1rem !important;
+  }
+
+  .metric-card-value {
+    font-size: 1.5rem !important;
+  }
+
+  /* Charts */
+  .chart-container {
+    height: 250px !important;
+    overflow-x: auto;
+  }
+
+  /* Tables */
+  .analytics-table {
+    font-size: 0.875rem !important;
+  }
+
+  .analytics-table th,
+  .analytics-table td {
+    padding: 0.5rem !important;
+  }
+
+  /* Hide less important columns on mobile */
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  /* Date Range Picker */
+  .date-range-picker {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  /* Buttons */
+  .btn-group {
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+
+  .btn-group button {
+    width: 100% !important;
+  }
+
+  /* Filters */
+  .filter-group {
+    flex-direction: column !important;
+    gap: 0.75rem !important;
+  }
+
+  /* Modal/Dialog */
+  .modal-content {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    margin: 1rem !important;
+  }
+
+  /* Navigation */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* Header */
+  .page-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+  }
+
+  .page-header-actions {
+    width: 100% !important;
+    flex-direction: column !important;
+  }
+}
+
+/* Medium devices (tablets, 640px to 1023px) */
+@media (min-width: 640px) and (max-width: 1023px) {
+  /* Dashboard Grid */
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Charts */
+  .chart-container {
+    height: 300px !important;
+  }
+
+  /* Tables */
+  .analytics-table {
+    font-size: 0.9375rem !important;
+  }
+}
+
+/* ===================================
+   TOUCH-FRIENDLY INTERACTIONS
+   =================================== */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Increase tap targets for touch devices */
+  button,
+  a,
+  .clickable {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+
+  /* Larger padding for better touch */
+  .metric-card {
+    padding: 1.25rem !important;
+  }
+
+  /* Remove hover effects on touch devices */
+  .hover-effect:hover {
+    transform: none !important;
+  }
+
+  /* Larger tooltips for touch */
+  .tooltip {
+    font-size: 0.9375rem !important;
+    padding: 0.75rem !important;
+  }
+}
+
+/* ===================================
+   LANDSCAPE ORIENTATION
+   =================================== */
+
+@media (max-width: 767px) and (orientation: landscape) {
+  /* Reduce vertical spacing in landscape */
+  .page-container {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+
+  /* Smaller charts in landscape */
+  .chart-container {
+    height: 200px !important;
+  }
+
+  /* Compact header */
+  .page-header {
+    padding: 0.75rem !important;
+  }
+}
+
+/* ===================================
+   PRINT STYLES
+   =================================== */
+
+@media print {
+  /* Hide navigation and actions */
+  .sidebar,
+  .header-actions,
+  .btn-group,
+  .filter-group {
+    display: none !important;
+  }
+
+  /* Full width for content */
+  .page-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  /* Optimize charts for print */
+  .chart-container {
+    page-break-inside: avoid;
+    height: auto !important;
+  }
+
+  /* Optimize tables for print */
+  .analytics-table {
+    font-size: 10pt !important;
+  }
+
+  /* Show all columns in print */
+  .hide-on-mobile {
+    display: table-cell !important;
+  }
+
+  /* Page breaks */
+  .metric-card,
+  .chart-container,
+  .analytics-table {
+    page-break-inside: avoid;
+  }
+}
+
+/* ===================================
+   ACCESSIBILITY ENHANCEMENTS
+   =================================== */
+
+/* Reduced motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .skeleton-loader {
+    animation: none !important;
+    opacity: 0.5 !important;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .metric-card {
+    border: 2px solid currentColor !important;
+  }
+
+  .chart-container {
+    border: 2px solid currentColor !important;
+  }
+
+  button {
+    border: 2px solid currentColor !important;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .metric-card {
+    background-color: #1f2937 !important;
+    color: #f9fafb !important;
+  }
+
+  .chart-container {
+    background-color: #1f2937 !important;
+  }
+
+  .analytics-table {
+    background-color: #1f2937 !important;
+    color: #f9fafb !important;
+  }
+
+  .tooltip {
+    background-color: #374151 !important;
+    color: #f9fafb !important;
+  }
+}
+
+/* ===================================
+   UTILITY CLASSES
+   =================================== */
+
+/* Responsive visibility */
+.mobile-only {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .mobile-only {
+    display: block;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+}
+
+/* Responsive text sizes */
+.text-responsive {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+}
+
+.heading-responsive {
+  font-size: clamp(1.25rem, 4vw, 1.875rem);
+}
+
+/* Responsive spacing */
+.spacing-responsive {
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+/* Responsive grid */
+.grid-responsive {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 1rem;
+}

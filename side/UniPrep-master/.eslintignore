@@ -1,0 +1,13 @@
+# Supabase Edge Functions (Deno runtime, not React Native)
+supabase/functions/
+
+# Build outputs
+dist/
+build/
+.expo/
+
+# Dependencies
+node_modules/
+
+# Generated files
+*.tsbuildinfo

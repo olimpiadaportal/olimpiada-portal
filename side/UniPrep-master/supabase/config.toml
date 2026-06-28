@@ -1,0 +1,47 @@
+# Supabase Edge Functions Configuration
+# All functions handle JWT verification internally via supabase.auth.getUser()
+# so we disable Supabase's relay-level JWT verification.
+# Without this, the relay rejects requests with 401 before function code runs,
+# resulting in no function logs and "Unauthorized" errors.
+
+[functions.ai-insights]
+verify_jwt = false
+
+[functions.ai-explain]
+verify_jwt = false
+
+[functions.ai-generate-questions]
+verify_jwt = false
+
+[functions.grade-open-questions]
+verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = false
+
+[functions.create-payment]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.request-payout]
+verify_jwt = false
+
+[functions.capture-booking-payment]
+verify_jwt = false
+
+[functions.get-payment-client-secret]
+verify_jwt = false
+
+[functions.create-teacher-subscription]
+verify_jwt = false
+
+[functions.cancel-teacher-subscription]
+verify_jwt = false
+
+[functions.resume-teacher-subscription]
+verify_jwt = false
+
+[functions.abandon-teacher-subscription]
+verify_jwt = false

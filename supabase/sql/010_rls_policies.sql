@@ -38,7 +38,7 @@ begin
   foreach t in array array[
     'profiles','roles','permissions','role_permissions','profile_roles',
     'parents','students','parent_student_links',
-    'child_unique_ids','child_credentials',
+    'child_unique_ids','child_credentials','child_login_attempts',
     'districts','schools','grades','subjects','topics','subtopics',
     'wallpapers','child_wallpaper_selections',
     'question_types','difficulty_levels','olympiad_types','sources',
@@ -177,6 +177,14 @@ create policy "child_unique_ids_admin" on public.child_unique_ids for select to 
   using (public.is_admin());
 drop policy if exists "child_credentials_admin" on public.child_credentials;
 create policy "child_credentials_admin" on public.child_credentials for select to authenticated
+  using (public.is_admin());
+
+-- child_login_attempts: admins may READ the lockout log (security monitoring);
+-- writes are service-role only (no write policy). Table privileges + the login
+-- helper functions live in 011 (backported from
+-- migrations/2026_06_28_008_child_account_provisioning.sql).
+drop policy if exists "child_login_attempts_admin_select" on public.child_login_attempts;
+create policy "child_login_attempts_admin_select" on public.child_login_attempts for select to authenticated
   using (public.is_admin());
 
 -- parent_student_links (parent/student involved / admin) ----------------------

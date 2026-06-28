@@ -169,6 +169,21 @@ create table if not exists public.child_credentials (
   updated_at                        timestamptz not null default now()
 );
 
+-- -----------------------------------------------------------------------------
+-- child_login_attempts : rate-limit / temporary-lockout log for child login.
+-- The child 8-digit ID is a public username; security is password + lockout. We
+-- store an IP HASH (not the raw IP) for privacy. Service-role-only (no client RLS).
+-- Its index, grants, RLS policy, and login helper functions live in 010/011
+-- (backported from migrations/2026_06_28_008_child_account_provisioning.sql).
+-- -----------------------------------------------------------------------------
+create table if not exists public.child_login_attempts (
+  id              bigint generated always as identity primary key,
+  child_unique_id text not null,
+  ip_hash         text,
+  success         boolean not null default false,
+  attempted_at    timestamptz not null default now()
+);
+
 -- =============================================================================
 -- Security / permission helper functions (used by RLS in 010)
 -- =============================================================================

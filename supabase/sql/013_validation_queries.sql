@@ -22,7 +22,7 @@
 with expected(name) as (
   values
     ('profiles'),('roles'),('permissions'),('role_permissions'),('profile_roles'),
-    ('parents'),('students'),('parent_student_links'),
+    ('parents'),('students'),('parent_student_links'),('child_login_attempts'),
     ('districts'),('schools'),('grades'),('subjects'),('topics'),('subtopics'),
     ('question_types'),('difficulty_levels'),('olympiad_types'),('sources'),
     ('questions'),('question_translations'),('answer_options'),
@@ -89,7 +89,8 @@ where t.typname is null;
 with expected(name) as (
   values ('current_profile_id'),('has_role'),('is_admin'),('has_permission'),
          ('is_parent_linked_to_student'),('set_updated_at'),('fn_audit_row'),
-         ('allocate_child_unique_id')
+         ('allocate_child_unique_id'),('create_child_account'),
+         ('is_child_login_locked'),('record_child_login_attempt')
 )
 select '5_missing_functions' as check_name,
        coalesce(string_agg(e.name, ', '), '(none)') as missing_functions,
@@ -234,6 +235,22 @@ from expected e
 left join information_schema.tables t
   on t.table_schema='public' and t.table_name=e.name
 where t.table_name is null;
+
+-- -----------------------------------------------------------------------------
+-- Stage 8 — Child Authentication & Account Model checks (provisioning security).
+-- -----------------------------------------------------------------------------
+
+-- 17) Child provisioning is secure: the lockout log table exists AND the atomic
+--     create_child_account() function is NOT EXECUTE-grantable by clients
+--     (authenticated/anon) — it is service_role only.
+select '17_child_provisioning_secure' as check_name,
+       case when exists (select 1 from information_schema.tables
+                          where table_schema='public' and table_name='child_login_attempts')
+             and has_function_privilege('authenticated',
+                   'public.create_child_account(uuid,uuid,text,text,text,text,text)', 'EXECUTE') = false
+             and has_function_privilege('anon',
+                   'public.create_child_account(uuid,uuid,text,text,text,text,text)', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

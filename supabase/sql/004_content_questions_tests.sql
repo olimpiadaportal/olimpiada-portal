@@ -175,6 +175,23 @@ create table if not exists public.test_questions (
   primary key (test_id, question_id)
 );
 
+-- -----------------------------------------------------------------------------
+-- question_imports : history/audit of bulk imports (one row per bulk call).
+-- Backported from migrations/2026_06_28_009_bulk_question_import.sql.
+-- Index/grants/RLS/the bulk_insert_questions() function live in 010/011.
+-- -----------------------------------------------------------------------------
+create table if not exists public.question_imports (
+  id          uuid primary key default gen_random_uuid(),
+  imported_by uuid references public.profiles (id) on delete set null,
+  filename    text,
+  subject_id  uuid references public.subjects (id) on delete set null,
+  total       integer not null default 0,
+  successful  integer not null default 0,
+  failed      integer not null default 0,
+  errors      jsonb,
+  created_at  timestamptz not null default now()
+);
+
 -- =============================================================================
 -- End of 004_content_questions_tests.sql
 -- =============================================================================

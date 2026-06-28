@@ -43,7 +43,7 @@ begin
     'wallpapers','child_wallpaper_selections',
     'question_types','difficulty_levels','olympiad_types','sources',
     'questions','question_translations','answer_options','answer_option_translations',
-    'question_explanations','tests','test_questions',
+    'question_explanations','tests','test_questions','question_imports',
     'test_attempts','test_attempt_answers','daily_task_packages','daily_task_items',
     'student_daily_task_progress','progress_snapshots',
     'leaderboard_periods','leaderboard_entries','leaderboard_snapshots',
@@ -385,6 +385,14 @@ drop policy if exists "test_questions_write" on public.test_questions;
 create policy "test_questions_write" on public.test_questions for all to authenticated
   using (public.is_admin() or public.has_permission('tests.manage'))
   with check (public.is_admin() or public.has_permission('tests.manage'));
+
+-- question_imports: importer/admin read only. Writes happen exclusively via the
+-- bulk_insert_questions() SECURITY DEFINER function / service role (both bypass
+-- RLS); there is intentionally NO write policy here. Table privileges live in 011.
+-- Backported from migrations/2026_06_28_009_bulk_question_import.sql.
+drop policy if exists "question_imports_select" on public.question_imports;
+create policy "question_imports_select" on public.question_imports for select to authenticated
+  using (imported_by = public.current_profile_id() or public.is_admin());
 
 -- =============================================================================
 -- LEARNING ACTIVITY (student-owned; parent linked; admin)

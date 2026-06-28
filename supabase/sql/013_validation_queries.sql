@@ -27,6 +27,7 @@ with expected(name) as (
     ('question_types'),('difficulty_levels'),('olympiad_types'),('sources'),
     ('questions'),('question_translations'),('answer_options'),
     ('answer_option_translations'),('question_explanations'),('tests'),('test_questions'),
+    ('question_imports'),
     ('test_attempts'),('test_attempt_answers'),('daily_task_packages'),('daily_task_items'),
     ('student_daily_task_progress'),('progress_snapshots'),
     ('leaderboard_periods'),('leaderboard_entries'),('leaderboard_snapshots'),
@@ -90,7 +91,8 @@ with expected(name) as (
   values ('current_profile_id'),('has_role'),('is_admin'),('has_permission'),
          ('is_parent_linked_to_student'),('set_updated_at'),('fn_audit_row'),
          ('allocate_child_unique_id'),('create_child_account'),
-         ('is_child_login_locked'),('record_child_login_attempt')
+         ('is_child_login_locked'),('record_child_login_attempt'),
+         ('bulk_insert_questions')
 )
 select '5_missing_functions' as check_name,
        coalesce(string_agg(e.name, ', '), '(none)') as missing_functions,
@@ -250,6 +252,20 @@ select '17_child_provisioning_secure' as check_name,
                    'public.create_child_account(uuid,uuid,text,text,text,text,text)', 'EXECUTE') = false
              and has_function_privilege('anon',
                    'public.create_child_account(uuid,uuid,text,text,text,text,text)', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- -----------------------------------------------------------------------------
+-- Stage 6 — Bulk question import checks (import-history + secure DEFINER RPC).
+-- -----------------------------------------------------------------------------
+
+-- 18) Bulk import is secure: the question_imports history table exists AND the
+--     bulk_insert_questions() DEFINER function is NOT EXECUTE-grantable by anon
+--     (content authors run it as authenticated; never anon/public).
+select '18_bulk_import_secure' as check_name,
+       case when exists (select 1 from information_schema.tables
+                          where table_schema='public' and table_name='question_imports')
+             and has_function_privilege('anon',
+                   'public.bulk_insert_questions(jsonb,text)', 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

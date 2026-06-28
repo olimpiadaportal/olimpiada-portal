@@ -19,7 +19,7 @@ const META: { name: string; key: string; required?: boolean }[] = [
   { name: "subject_id", key: "qfield.subject", required: true },
   { name: "grade_id", key: "qfield.grade", required: true },
   { name: "type_id", key: "qfield.type", required: true },
-  { name: "difficulty_id", key: "qfield.difficulty", required: true },
+  { name: "difficulty_id", key: "qfield.difficulty" },
   { name: "topic_id", key: "qfield.topic" },
   { name: "subtopic_id", key: "qfield.subtopic" },
   { name: "olympiad_type_id", key: "qfield.olympiad" },

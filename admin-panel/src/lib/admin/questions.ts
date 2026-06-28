@@ -46,7 +46,8 @@ export async function saveQuestion(
   if (!meta.subject_id) return { error: t("qerr.subjectRequired") };
   if (!meta.grade_id) return { error: t("qerr.gradeRequired") };
   if (!meta.type_id) return { error: t("qerr.typeRequired") };
-  if (!meta.difficulty_id) return { error: t("qerr.difficultyRequired") };
+  // Difficulty is optional — an admin may tag it later (used only for server-side
+  // random selection, never chosen by students).
 
   const localeRaw = s(formData, "primary_locale");
   const locale = ["az", "en", "ru"].includes(localeRaw) ? localeRaw : "az";
@@ -211,4 +212,144 @@ export async function deleteQuestion(formData: FormData): Promise<void> {
   await supabase.from("questions").delete().eq("id", id);
   revalidatePath("/questions");
   redirect("/questions");
+}
+
+// ---------------------------------------------------------------------------
+// Bulk operations. Bulk insert is delegated to the SECURITY DEFINER
+// bulk_insert_questions RPC (checks content.create internally + derives
+// created_by from the session). Bulk delete/transition run as the signed-in
+// user under RLS, mirroring the single-item permission rules.
+// ---------------------------------------------------------------------------
+
+export type BulkImportState =
+  | {
+      ok: boolean;
+      result?: {
+        total: number;
+        successful: number;
+        failed: number;
+        errors: { index: number; error: string }[];
+      };
+      error?: string;
+    }
+  | null;
+
+export async function bulkImportQuestions(
+  _prev: BulkImportState,
+  formData: FormData,
+): Promise<BulkImportState> {
+  await requirePermission("content.create");
+  const t = await getT();
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: t("bulk.pickFile") };
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    return { ok: false, error: t("bulk.tooLarge") };
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch {
+    return { ok: false, error: t("bulk.invalidJson") };
+  }
+  if (!Array.isArray(payload)) {
+    return { ok: false, error: t("bulk.notArray") };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("bulk_insert_questions", {
+    p_questions: payload,
+    p_filename: file.name,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/questions");
+  revalidatePath("/questions/import");
+  return {
+    ok: true,
+    result: data as {
+      total: number;
+      successful: number;
+      failed: number;
+      errors: { index: number; error: string }[];
+    },
+  };
+}
+
+function idList(formData: FormData): string[] {
+  return String(formData.get("ids") ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+export async function bulkDeleteQuestions(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const ids = idList(formData);
+  if (ids.length === 0) return;
+  const supabase = await createClient();
+  await supabase.from("questions").delete().in("id", ids);
+  revalidatePath("/questions");
+}
+
+export async function bulkTransitionQuestions(formData: FormData): Promise<void> {
+  const action = s(formData, "__action");
+  const tr = TRANSITIONS[action];
+  const ids = idList(formData);
+  if (!tr || ids.length === 0) return;
+
+  const ctx = await requirePanelAccess();
+  if (tr.perm && !ctx.isAdmin && !ctx.permissions.includes(tr.perm)) {
+    redirect("/unauthorized");
+  }
+
+  const supabase = await createClient();
+  const { data: qs } = await supabase
+    .from("questions")
+    .select("id, status, created_by")
+    .in("id", ids);
+
+  // Only transition rows whose current status allows it (submit also needs
+  // creator/admin). RLS additionally restricts which rows actually update.
+  const eligible = (qs ?? [])
+    .filter(
+      (q: { status: string; created_by: string | null }) =>
+        tr.from.includes(q.status) &&
+        (action !== "submit" || ctx.isAdmin || q.created_by === ctx.profileId),
+    )
+    .map((q: { id: string }) => q.id);
+  if (eligible.length === 0) {
+    revalidatePath("/questions");
+    return;
+  }
+
+  await supabase
+    .from("questions")
+    .update({ status: tr.to, updated_by: ctx.profileId })
+    .in("id", eligible);
+  revalidatePath("/questions");
+}
+
+export async function bulkAssignTopic(formData: FormData): Promise<void> {
+  const ctx = await requirePermission("content.create");
+  const ids = idList(formData);
+  const subjectId = s(formData, "subject_id");
+  const topicId = s(formData, "topic_id");
+  const subtopicId = s(formData, "subtopic_id");
+  if (ids.length === 0 || !subjectId || !topicId) return;
+
+  // Set subject+topic(+subtopic) together so the question's subject always
+  // matches its topic. RLS restricts which rows actually update.
+  const supabase = await createClient();
+  await supabase
+    .from("questions")
+    .update({
+      subject_id: subjectId,
+      topic_id: topicId,
+      subtopic_id: subtopicId || null,
+      updated_by: ctx.profileId,
+    })
+    .in("id", ids);
+  revalidatePath("/questions");
 }

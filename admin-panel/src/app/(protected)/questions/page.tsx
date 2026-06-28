@@ -3,50 +3,87 @@ import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
 import { localeNames, locales, type Locale } from "@/i18n/config";
-
-function statusPill(s: string): string {
-  if (s === "published") return "pill-ok";
-  if (s === "archived" || s === "rejected") return "pill-warn";
-  return "pill-muted";
-}
-
-function langName(loc: string): string {
-  return (locales as readonly string[]).includes(loc)
-    ? localeNames[loc as Locale]
-    : loc;
-}
+import {
+  QuestionsTable,
+  type QuestionRow,
+  type Taxonomy,
+} from "@/components/QuestionsTable";
 
 export default async function QuestionsPage() {
   // Admin or Content Manager (content.create) may access the questions area.
-  await requirePermission("content.create");
+  const ctx = await requirePermission("content.create");
   const t = await getT();
   const supabase = await createClient();
 
-  const { data: rows } = await supabase
-    .from("questions")
-    .select(
-      "id, status, primary_locale, created_at, subjects(name), grades(name), question_types(code, name), question_translations(locale, body)",
-    )
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const [{ data: rows }, { data: subjects }, { data: topics }, { data: subtopics }] =
+    await Promise.all([
+      supabase
+        .from("questions")
+        .select(
+          "id, status, primary_locale, created_at, subjects(name), grades(name), question_types(code, name), question_translations(locale, body)",
+        )
+        .order("created_at", { ascending: false })
+        .limit(100),
+      supabase.from("subjects").select("id, name").order("name"),
+      supabase.from("topics").select("id, subject_id, name").order("name"),
+      supabase.from("subtopics").select("id, topic_id, name").order("name"),
+    ]);
   const list = (rows ?? []) as any[];
 
-  function bodySnippet(r: any): string {
+  const langName = (loc: string): string =>
+    (locales as readonly string[]).includes(loc)
+      ? localeNames[loc as Locale]
+      : loc;
+
+  const typeLabel = (r: any): string => {
+    const code = r.question_types?.code;
+    if (!code) return "—";
+    const key = `qtype.${code}`;
+    const tr = t(key);
+    return tr === key ? (r.question_types?.name ?? "—") : tr;
+  };
+
+  const bodySnippet = (r: any): string => {
     const tr = (r.question_translations ?? []).find(
       (x: any) => x.locale === r.primary_locale,
     );
     const b: string = tr?.body ?? "";
     if (!b) return "—";
     return b.length > 60 ? b.slice(0, 60) + "…" : b;
-  }
+  };
 
-  function typeLabel(r: any): string {
-    const code = r.question_types?.code;
-    if (!code) return "—";
-    const key = `qtype.${code}`;
-    const translated = t(key);
-    return translated === key ? (r.question_types?.name ?? "—") : translated;
-  }
+  const display: QuestionRow[] = list.map((r) => ({
+    id: r.id,
+    subject: r.subjects?.name ?? "—",
+    grade: r.grades?.name ?? "—",
+    lang: langName(r.primary_locale),
+    type: typeLabel(r),
+    body: bodySnippet(r),
+    status: r.status,
+  }));
+
+  const taxonomy: Taxonomy = {
+    subjects: (subjects ?? []) as Taxonomy["subjects"],
+    topics: (topics ?? []) as Taxonomy["topics"],
+    subtopics: (subtopics ?? []) as Taxonomy["subtopics"],
+  };
+
+  // Strings the client table needs (passed as a dict, like QuestionForm).
+  const keys = [
+    "qbulk.selected", "qbulk.chooseAction", "qbulk.apply", "qbulk.confirmAction",
+    "qbulk.confirmDelete", "qbulk.selectAll", "qbulk.assignTopic", "qbulk.assign",
+    "qbulk.confirmAssign", "qbulk.optional",
+    "action.delete", "action.edit",
+    "qfield.subject", "qfield.grade", "qfield.language", "qfield.type",
+    "qfield.topic", "qfield.subtopic", "qfield.bodyAz", "qfield.status",
+    "questions.none",
+    "qact.submit", "qact.approve", "qact.reject", "qact.publish",
+    "qact.unpublish", "qact.archive",
+    "qstatus.draft", "qstatus.in_review", "qstatus.approved",
+    "qstatus.published", "qstatus.archived", "qstatus.rejected",
+  ];
+  const dict: Record<string, string> = {};
+  for (const k of keys) dict[k] = t(k);
 
   return (
     <div className="page">
@@ -56,53 +93,24 @@ export default async function QuestionsPage() {
             <h1>{t("nav.questions")}</h1>
             <p className="muted">{t("questions.subtitle")}</p>
           </div>
-          <Link className="btn" href="/questions/new">
-            {t("questions.new")}
-          </Link>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Link className="btn-ghost" href="/questions/import">
+              {t("bulk.title")}
+            </Link>
+            <Link className="btn" href="/questions/new">
+              {t("questions.new")}
+            </Link>
+          </div>
         </div>
       </div>
 
-      <section className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>{t("qfield.subject")}</th>
-              <th>{t("qfield.grade")}</th>
-              <th>{t("qfield.language")}</th>
-              <th>{t("qfield.type")}</th>
-              <th>{t("qfield.bodyAz")}</th>
-              <th>{t("qfield.status")}</th>
-              <th aria-label="actions" />
-            </tr>
-          </thead>
-          <tbody>
-            {list.length === 0 && (
-              <tr>
-                <td colSpan={7} className="muted">
-                  {t("questions.none")}
-                </td>
-              </tr>
-            )}
-            {list.map((r) => (
-              <tr key={r.id}>
-                <td>{r.subjects?.name ?? "—"}</td>
-                <td>{r.grades?.name ?? "—"}</td>
-                <td>{langName(r.primary_locale)}</td>
-                <td>{typeLabel(r)}</td>
-                <td>{bodySnippet(r)}</td>
-                <td>
-                  <span className={`pill ${statusPill(r.status)}`}>
-                    {t(`qstatus.${r.status}`)}
-                  </span>
-                </td>
-                <td className="row-actions">
-                  <Link href={`/questions/${r.id}/edit`}>{t("action.edit")}</Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      <QuestionsTable
+        rows={display}
+        taxonomy={taxonomy}
+        dict={dict}
+        isAdmin={ctx.isAdmin}
+        perms={ctx.permissions}
+      />
     </div>
   );
 }

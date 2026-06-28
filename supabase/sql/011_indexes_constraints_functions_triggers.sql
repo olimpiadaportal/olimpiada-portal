@@ -547,8 +547,12 @@ begin
       select id into v_type from public.question_types where code = (v_item->'meta'->>'type_code');
       if v_type is null then raise exception 'unknown type_code %', coalesce(v_item->'meta'->>'type_code','(null)'); end if;
 
-      select id into v_diff from public.difficulty_levels where code = (v_item->'meta'->>'difficulty_code');
-      if v_diff is null then raise exception 'unknown difficulty_code %', coalesce(v_item->'meta'->>'difficulty_code','(null)'); end if;
+      -- difficulty is OPTIONAL (validated only when provided).
+      v_diff := null;
+      if coalesce(v_item->'meta'->>'difficulty_code','') <> '' then
+        select id into v_diff from public.difficulty_levels where code = (v_item->'meta'->>'difficulty_code');
+        if v_diff is null then raise exception 'unknown difficulty_code %', (v_item->'meta'->>'difficulty_code'); end if;
+      end if;
 
       -- ---- optional taxonomy (resolve-or-create) ----
       v_oly := null;

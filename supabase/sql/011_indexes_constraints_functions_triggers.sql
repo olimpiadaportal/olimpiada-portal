@@ -86,6 +86,8 @@ create index if not exists idx_test_questions_question on public.test_questions 
 create index if not exists idx_attempts_student on public.test_attempts (student_profile_id);
 create index if not exists idx_attempts_test on public.test_attempts (test_id);
 create index if not exists idx_attempts_status on public.test_attempts (status);
+-- Practice/daily attempts filtered by subject (Stage 13 test engine).
+create index if not exists idx_test_attempts_subject on public.test_attempts (subject_id);
 create index if not exists idx_answers_attempt on public.test_attempt_answers (attempt_id);
 
 create index if not exists idx_dtp_publish on public.daily_task_packages (publish_date, status);
@@ -320,16 +322,22 @@ create trigger trg_audit_child_subscriptions
 create index if not exists idx_child_login_attempts_lookup
   on public.child_login_attempts (child_unique_id, attempted_at desc);
 
--- create_child_account : atomic, server-side child provisioning.
+-- create_child_account : atomic, server-side child provisioning WITHOUT a login ID.
 -- The Auth user (p_auth_user_id) is created first by the service layer; the
 -- on_auth_user_created trigger has already inserted a base profiles row. This
--- function promotes that profile to an active child, creates the student row,
--- allocates the 8-digit ID, assigns the Student role, records the credential
--- mapping, and auto-links the child to the creating parent — all in one txn.
--- SECURITY DEFINER; EXECUTE restricted to service_role (the parent server action
--- runs this with the service role, after admin.createUser). Never client-callable.
--- (drop first: renaming the RETURNS TABLE columns changes the return signature)
+-- function promotes that profile to an active child, creates the student row
+-- (optional structured p_grade_id + p_district_id/p_school_id), assigns the Student
+-- role, records the credential mapping with a NULL child_unique_id, and auto-links
+-- the child to the creating parent — all in one txn. The 8-digit ID is DEFERRED: it
+-- is allocated later by create_child_subscription once a plan is chosen (Batch H).
+-- access_status stays 'inactive' until then. The structured city(district)/school
+-- params are OPTIONAL at the DB layer (the app enforces mandatory); FK targets are
+-- validated when provided, but a null is never an error. SECURITY DEFINER; EXECUTE
+-- restricted to service_role.
+-- (drop first: the parameter list / signature changed across versions)
 drop function if exists public.create_child_account(uuid, uuid, text, text, text, text, text);
+drop function if exists public.create_child_account(uuid, uuid, text, text, text, text, text, uuid);
+drop function if exists public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid);
 create or replace function public.create_child_account(
   p_parent_profile_id uuid,
   p_auth_user_id      uuid,
@@ -337,7 +345,10 @@ create or replace function public.create_child_account(
   p_last_name         text,
   p_city              text default null,
   p_school_name       text default null,
-  p_class_grade       text default null
+  p_class_grade       text default null,
+  p_grade_id          uuid default null,
+  p_district_id       uuid default null,
+  p_school_id         uuid default null
 )
 -- OUT column names are deliberately non-colliding with table columns (else plpgsql
 -- raises "ambiguous column reference" inside the body).
@@ -349,7 +360,6 @@ as $$
 declare
   v_profile_id      uuid;
   v_student_role_id uuid;
-  v_child_id        text;
 begin
   -- The creator must be a registered parent (parents row exists).
   if not exists (select 1 from public.parents pa where pa.profile_id = p_parent_profile_id) then
@@ -372,6 +382,35 @@ begin
       using errcode = 'unique_violation';
   end if;
 
+  -- Validate the optional structured grade.
+  if p_grade_id is not null
+     and not exists (select 1 from public.grades g where g.id = p_grade_id) then
+    raise exception 'create_child_account: grade % does not exist', p_grade_id
+      using errcode = 'foreign_key_violation';
+  end if;
+
+  -- Validate the optional structured city (district). OPTIONAL: no raise on null.
+  if p_district_id is not null
+     and not exists (select 1 from public.districts d where d.id = p_district_id) then
+    raise exception 'create_child_account: city (district) % does not exist', p_district_id
+      using errcode = 'foreign_key_violation';
+  end if;
+
+  -- Validate the optional structured school, and (when both given) that the
+  -- school belongs to the chosen city. OPTIONAL: no raise on null.
+  if p_school_id is not null then
+    if not exists (select 1 from public.schools sc where sc.id = p_school_id) then
+      raise exception 'create_child_account: school % does not exist', p_school_id
+        using errcode = 'foreign_key_violation';
+    end if;
+    if p_district_id is not null
+       and not exists (select 1 from public.schools sc
+                        where sc.id = p_school_id and sc.district_id = p_district_id) then
+      raise exception 'create_child_account: school % is not in city %', p_school_id, p_district_id
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
   -- 1) Promote the auto-created profile into an active child profile.
   --    Children have no contact email (synthetic auth email is not contact info).
   update public.profiles
@@ -381,18 +420,20 @@ begin
          updated_at   = now()
    where id = v_profile_id;
 
-  -- 2) Create the student row (parent-created child; no paid access yet).
-  insert into public.students (profile_id, created_by_parent_profile_id,
+  -- 2) Create the student row WITHOUT a login ID (no paid access yet).
+  --    child_unique_id stays NULL until a plan is chosen (subscribe step).
+  --    Structured district_id/school_id are stored alongside the free-text
+  --    city/school_name/class_grade (display) values.
+  insert into public.students (profile_id, created_by_parent_profile_id, grade_id,
+                               district_id, school_id,
                                first_name, last_name, city, school_name, class_grade,
                                access_status)
-  values (v_profile_id, p_parent_profile_id,
+  values (v_profile_id, p_parent_profile_id, p_grade_id,
+          p_district_id, p_school_id,
           p_first_name, p_last_name, p_city, p_school_name, p_class_grade,
           'inactive');
 
-  -- 3) Allocate the collision-safe 8-digit ID (also sets students.child_unique_id).
-  v_child_id := public.allocate_child_unique_id(v_profile_id);
-
-  -- 4) Assign the Student role.
+  -- 3) Assign the Student role.
   select r.id into v_student_role_id from public.roles r where r.code = 'student';
   if v_student_role_id is null then
     raise exception 'create_child_account: student role missing (seed 012)';
@@ -401,30 +442,100 @@ begin
   values (v_profile_id, v_student_role_id, p_parent_profile_id)
   on conflict do nothing;
 
-  -- 5) Record the credential mapping (password lives ONLY in Supabase Auth).
+  -- 4) Record the credential mapping with a NULL ID (backfilled on allocation).
+  --    Password lives ONLY in Supabase Auth (never stored here).
   insert into public.child_credentials (student_profile_id, child_unique_id, auth_user_id,
                                         password_set_by_parent_profile_id, password_set_at)
-  values (v_profile_id, v_child_id, p_auth_user_id, p_parent_profile_id, now());
+  values (v_profile_id, null, p_auth_user_id, p_parent_profile_id, now());
 
-  -- 6) Auto-link the child to the creating parent (active link = parent access).
+  -- 5) Auto-link the child to the creating parent (active link = parent access).
   insert into public.parent_student_links (parent_profile_id, student_profile_id, status,
                                            verified_at, created_by)
   values (p_parent_profile_id, v_profile_id, 'active', now(), p_parent_profile_id)
   on conflict (parent_profile_id, student_profile_id)
     do update set status = 'active', verified_at = now();
 
-  return query select v_profile_id, v_child_id;
+  -- The login ID is NULL until a plan is chosen (create_child_subscription).
+  return query select v_profile_id, null::text;
 end;
 $$;
 
-comment on function public.create_child_account(uuid, uuid, text, text, text, text, text) is
-  'Atomic parent-created child provisioning. service_role EXECUTE only. Run AFTER admin.createUser (synthetic c<8digits>@children.invalid).';
+comment on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid) is
+  'Atomic parent-created child provisioning WITHOUT a login ID (allocated later on subscribe). Optional structured grade/city(district)/school stored on students. service_role EXECUTE only. Run AFTER admin.createUser (pending email).';
 
 -- service_role only (the service layer runs admin.createUser then this).
 -- Revoke anon/authenticated EXPLICITLY: Supabase ALTER DEFAULT PRIVILEGES grants
 -- EXECUTE to anon/authenticated on every new function; revoking public is not enough.
-revoke all on function public.create_child_account(uuid, uuid, text, text, text, text, text) from public, anon, authenticated;
-grant execute on function public.create_child_account(uuid, uuid, text, text, text, text, text) to service_role;
+revoke all on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- advance_student_grades : yearly grade promotion (intended Sept 1 via pg_cron).
+-- For every non-graduated student with a grade_id: level < 11 -> next grade level;
+-- level = 11 -> graduated = true (grade_id kept as last grade attended). Returns
+-- jsonb {promoted, graduated}. SECURITY DEFINER; service_role EXECUTE only.
+--
+-- INTENDED SCHEDULE (run once a year on Sep 1). If pg_cron is enabled (it is NOT
+-- assumed here), schedule it with:
+--   select cron.schedule(
+--     'advance-student-grades-sept-1',
+--     '0 3 1 9 *',                          -- 03:00 on Sep 1, every year
+--     $$ select public.advance_student_grades(); $$
+--   );
+-- -----------------------------------------------------------------------------
+create or replace function public.advance_student_grades()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_promoted  int := 0;
+  v_graduated int := 0;
+begin
+  -- Promote students below grade 11 to the next grade level.
+  with promotable as (
+    select s.profile_id, g_next.id as next_grade_id
+    from public.students s
+    join public.grades g_cur  on g_cur.id = s.grade_id
+    join public.grades g_next on g_next.level = g_cur.level + 1
+    where s.graduated = false
+      and s.grade_id is not null
+      and g_cur.level < 11
+  ),
+  upd as (
+    update public.students s
+       set grade_id   = p.next_grade_id,
+           updated_at = now()
+      from promotable p
+     where s.profile_id = p.profile_id
+    returning 1
+  )
+  select count(*) into v_promoted from upd;
+
+  -- Graduate students currently in grade 11 (keep grade_id as the last grade).
+  with grads as (
+    update public.students s
+       set graduated  = true,
+           updated_at = now()
+      from public.grades g_cur
+     where g_cur.id = s.grade_id
+       and s.graduated = false
+       and s.grade_id is not null
+       and g_cur.level = 11
+    returning 1
+  )
+  select count(*) into v_graduated from grads;
+
+  return jsonb_build_object('promoted', v_promoted, 'graduated', v_graduated);
+end;
+$$;
+
+comment on function public.advance_student_grades() is
+  'Yearly grade promotion (intended Sept 1 via pg_cron). Promotes non-graduated students level<11 to next grade; marks level-11 students graduated. Returns jsonb {promoted, graduated}. service_role EXECUTE only.';
+
+revoke all on function public.advance_student_grades() from public, anon, authenticated;
+grant execute on function public.advance_student_grades() to service_role;
 
 -- True when a child ID has >= 8 failed attempts in the last 15 minutes.
 create or replace function public.is_child_login_locked(p_child_unique_id text)
@@ -499,8 +610,8 @@ create index if not exists idx_question_imports_imported_by
 -- Item shape (JSON):
 -- {
 --   "primary_locale": "az",
---   "meta": { "subject_code","grade_level","type_code","difficulty_code",
---             "olympiad_type_code"?, "topic"?, "subtopic"?, "source"? },
+--   "meta": { "subject","grade_level","type",
+--             "olympiad_type"?, "topic"?, "subtopic"?, "source"? },
 --   "translations": { "az": {"body","prompt"?,"explanation"?}, "en"?: {...}, "ru"?: {...} },
 --   "options": [ { "is_correct": true, "order_index"?: 0, "text": {"az": "...","en"?:"...","ru"?:"..."} } ]
 -- }
@@ -520,7 +631,7 @@ declare
   v_ok       int := 0;
   v_fail     int := 0;
   v_errors   jsonb := '[]'::jsonb;
-  v_subject  uuid; v_grade uuid; v_type uuid; v_diff uuid; v_oly uuid; v_source uuid;
+  v_subject  uuid; v_grade uuid; v_type uuid; v_oly uuid; v_source uuid;
   v_topic    uuid; v_subtopic uuid;
   v_qid      uuid; v_optid uuid;
   v_pl       text; v_loc text; v_opt jsonb; v_order int;
@@ -538,26 +649,21 @@ begin
     v_idx := v_idx + 1;
     begin
       -- ---- resolve taxonomy by code/level (required) ----
-      select id into v_subject from public.subjects where code = (v_item->'meta'->>'subject_code');
-      if v_subject is null then raise exception 'unknown subject_code %', coalesce(v_item->'meta'->>'subject_code','(null)'); end if;
+      select id into v_subject from public.subjects where name = (v_item->'meta'->>'subject');
+      if v_subject is null then raise exception 'unknown subject %', coalesce(v_item->'meta'->>'subject','(null)'); end if;
 
       select id into v_grade from public.grades where level = nullif(v_item->'meta'->>'grade_level','')::smallint;
       if v_grade is null then raise exception 'unknown grade_level %', coalesce(v_item->'meta'->>'grade_level','(null)'); end if;
 
-      select id into v_type from public.question_types where code = (v_item->'meta'->>'type_code');
-      if v_type is null then raise exception 'unknown type_code %', coalesce(v_item->'meta'->>'type_code','(null)'); end if;
+      select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
+      if v_type is null then raise exception 'unknown type %', coalesce(v_item->'meta'->>'type','(null)'); end if;
 
-      -- difficulty is OPTIONAL (validated only when provided).
-      v_diff := null;
-      if coalesce(v_item->'meta'->>'difficulty_code','') <> '' then
-        select id into v_diff from public.difficulty_levels where code = (v_item->'meta'->>'difficulty_code');
-        if v_diff is null then raise exception 'unknown difficulty_code %', (v_item->'meta'->>'difficulty_code'); end if;
-      end if;
+      -- difficulty removed from the platform (difficulty_id left null).
 
       -- ---- optional taxonomy (resolve-or-create) ----
       v_oly := null;
-      if coalesce(v_item->'meta'->>'olympiad_type_code','') <> '' then
-        select id into v_oly from public.olympiad_types where code = (v_item->'meta'->>'olympiad_type_code');
+      if coalesce(v_item->'meta'->>'olympiad_type','') <> '' then
+        select id into v_oly from public.olympiad_types where name = (v_item->'meta'->>'olympiad_type');
       end if;
 
       v_source := null;
@@ -598,7 +704,7 @@ begin
         (grade_id, subject_id, topic_id, subtopic_id, type_id, difficulty_id,
          olympiad_type_id, source_id, status, primary_locale, created_by, updated_by)
       values
-        (v_grade, v_subject, v_topic, v_subtopic, v_type, v_diff,
+        (v_grade, v_subject, v_topic, v_subtopic, v_type, null,
          v_oly, v_source, 'draft', v_pl::public.content_locale, v_profile, v_profile)
       returning id into v_qid;
 
@@ -644,7 +750,7 @@ begin
 
   insert into public.question_imports (imported_by, filename, subject_id, total, successful, failed, errors)
   values (v_profile, p_filename,
-          (select id from public.subjects where code = (p_questions->0->'meta'->>'subject_code')),
+          (select id from public.subjects where name = (p_questions->0->'meta'->>'subject')),
           v_idx, v_ok, v_fail, case when v_errors = '[]'::jsonb then null else v_errors end);
 
   return jsonb_build_object('total', v_idx, 'successful', v_ok, 'failed', v_fail, 'errors', v_errors);
@@ -664,6 +770,816 @@ grant execute on function public.bulk_insert_questions(jsonb, text) to authentic
 revoke all on public.question_imports from anon, authenticated;
 grant select on public.question_imports to authenticated;  -- RLS limits rows
 grant all on public.question_imports to service_role;
+
+-- -----------------------------------------------------------------------------
+-- Parent self-registration (Stage 10, increment 1).
+-- Backported from migrations/2026_06_28_011_parent_registration.sql. Placed at
+-- the END of this file so the function-privilege REVOKE below runs AFTER 010's
+-- blanket grants — otherwise anon/authenticated's EXECUTE grant would remain.
+-- The web-app registration server action creates the Auth user (service role,
+-- email_confirm) then calls this to promote the auto-created profile into an
+-- ACTIVE parent (parent role + parents row). Provider-agnostic; no email
+-- dependency (we use admin.createUser, not signUp + email confirmation).
+-- SECURITY DEFINER; service_role EXECUTE only (like create_child_account).
+-- -----------------------------------------------------------------------------
+create or replace function public.setup_parent(
+  p_auth_user_id uuid,
+  p_display_name text default null
+)
+returns uuid  -- the parent's profile id
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_profile uuid;
+  v_role    uuid;
+begin
+  select id into v_profile from public.profiles where auth_user_id = p_auth_user_id;
+  if v_profile is null then
+    raise exception 'setup_parent: no profile for auth user %', p_auth_user_id
+      using errcode = 'no_data_found';
+  end if;
+
+  -- A child profile must never be turned into a parent.
+  if exists (select 1 from public.students s where s.profile_id = v_profile) then
+    raise exception 'setup_parent: profile % is a student', v_profile using errcode = 'check_violation';
+  end if;
+
+  update public.profiles
+     set status       = 'active',
+         display_name = coalesce(nullif(btrim(p_display_name), ''), display_name),
+         updated_at   = now()
+   where id = v_profile;
+
+  insert into public.parents (profile_id) values (v_profile)
+  on conflict (profile_id) do nothing;
+
+  select id into v_role from public.roles where code = 'parent';
+  if v_role is null then raise exception 'setup_parent: parent role missing (seed 012)'; end if;
+  insert into public.profile_roles (profile_id, role_id) values (v_profile, v_role)
+  on conflict do nothing;
+
+  return v_profile;
+end;
+$$;
+
+comment on function public.setup_parent(uuid, text) is
+  'Promote an auth user''s profile to an active parent (parent role + parents row). service_role EXECUTE only; run after admin.createUser.';
+
+revoke all on function public.setup_parent(uuid, text) from public, anon, authenticated;
+grant execute on function public.setup_parent(uuid, text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- Child subscription engine (Stage 11, increment 1).
+-- Backported from migrations/2026_06_28_012_child_subscription_engine.sql. Placed
+-- at the END of this file so the function-privilege REVOKEs below run AFTER 010's
+-- blanket grants — otherwise anon/authenticated's EXECUTE grant would remain.
+-- Server-side pricing + subscription creation: price = sum(subject pricing for the
+-- interval); sibling discount (2nd 15% / 3rd+ 20%) and trial length are computed
+-- HERE, never by the client. quote_* is read-only (preview); create_* writes the
+-- subscription as a 7-day trial and flips the child to access 'trialing'. Real
+-- charge/webhook is provider-specific and out of scope until a provider is chosen.
+-- SECURITY DEFINER; service_role EXECUTE only (called from the parent server
+-- action's admin client after it authorizes the parent + child). create_* calls
+-- quote_*, so quote_* is defined first.
+-- -----------------------------------------------------------------------------
+
+-- Read-only price quote (base, sibling discount, total, trial length).
+create or replace function public.quote_child_subscription(
+  p_student_profile_id uuid,
+  p_interval           public.plan_interval,
+  p_subject_ids        uuid[]
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner   uuid;
+  v_base    numeric(12,2);
+  v_rank    int;
+  v_pct     numeric(5,2);
+  v_amt     numeric(12,2);
+  v_total   numeric(12,2);
+  v_trial   int;
+  v_missing int;
+begin
+  if p_subject_ids is null or array_length(p_subject_ids, 1) is null then
+    raise exception 'quote: no subjects selected';
+  end if;
+
+  select created_by_parent_profile_id into v_owner
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then raise exception 'quote: child has no owning parent'; end if;
+
+  -- Every selected subject must have active pricing for the interval.
+  select count(*) into v_missing
+  from unnest(p_subject_ids) s(sid)
+  where not exists (
+    select 1 from public.subjects_pricing sp
+    where sp.subject_id = s.sid and sp.interval = p_interval and sp.status = 'active'
+  );
+  if v_missing > 0 then raise exception 'quote: missing pricing for % subject(s)', v_missing; end if;
+
+  select coalesce(sum(sp.price_amount), 0) into v_base
+  from public.subjects_pricing sp
+  where sp.subject_id = any (p_subject_ids) and sp.interval = p_interval and sp.status = 'active';
+
+  -- Sibling rank = (this parent's OTHER children already on a live subscription) + 1.
+  select count(distinct cs.student_profile_id) + 1 into v_rank
+  from public.child_subscriptions cs
+  where cs.owner_parent_profile_id = v_owner
+    and cs.student_profile_id <> p_student_profile_id
+    and cs.status in ('trialing', 'active', 'past_due');
+
+  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 15 else 20 end;
+  v_amt := round(v_base * v_pct / 100.0, 2);
+  v_total := v_base - v_amt;
+
+  select coalesce(trial_days, 7) into v_trial from public.launch_promo_config where id = 1;
+  v_trial := coalesce(v_trial, 7);
+
+  return jsonb_build_object(
+    'base', v_base, 'discount_percent', v_pct, 'discount', v_amt,
+    'total', v_total, 'rank', v_rank, 'trial_days', v_trial, 'currency', 'AZN');
+end;
+$$;
+
+-- Create the subscription as a trial (computes amounts via quote; writes rows).
+-- Batch H: ALSO allocates the deferred 8-digit login ID on the FIRST subscription
+-- for a child that still has none, backfills child_credentials, and returns
+-- new_child_unique_id + auth_user_id so the server action sets the synthetic email.
+create or replace function public.create_child_subscription(
+  p_student_profile_id uuid,
+  p_interval           public.plan_interval,
+  p_subject_ids        uuid[]
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner uuid;
+  v_q     jsonb;
+  v_sub   uuid;
+  v_sid   uuid;
+  v_trial int;
+  v_child text;
+  v_auth  uuid;
+begin
+  select created_by_parent_profile_id, child_unique_id
+    into v_owner, v_child
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then raise exception 'create: child has no owning parent'; end if;
+
+  v_q := public.quote_child_subscription(p_student_profile_id, p_interval, p_subject_ids);
+  v_trial := (v_q->>'trial_days')::int;
+
+  insert into public.child_subscriptions
+    (student_profile_id, owner_parent_profile_id, interval, status,
+     trial_started_at, trial_ends_at, current_period_start, current_period_end,
+     base_amount, sibling_discount_percent, discount_amount, total_amount, currency, provider)
+  values
+    (p_student_profile_id, v_owner, p_interval, 'trialing',
+     now(), now() + (v_trial || ' days')::interval, now(), now() + (v_trial || ' days')::interval,
+     (v_q->>'base')::numeric, (v_q->>'discount_percent')::numeric,
+     (v_q->>'discount')::numeric, (v_q->>'total')::numeric, 'AZN', 'none')
+  returning id into v_sub;
+
+  foreach v_sid in array p_subject_ids loop
+    insert into public.subscription_subjects (child_subscription_id, subject_id)
+    values (v_sub, v_sid) on conflict do nothing;
+  end loop;
+
+  if (v_q->>'discount_percent')::numeric > 0 then
+    insert into public.sibling_discounts
+      (owner_parent_profile_id, child_subscription_id, child_rank, discount_percent)
+    values (v_owner, v_sub, (v_q->>'rank')::int, (v_q->>'discount_percent')::numeric);
+  end if;
+
+  -- Allocate the deferred 8-digit login ID now (first plan chosen) if the child has
+  -- none, and backfill the credential mapping so child login works.
+  if v_child is null then
+    v_child := public.allocate_child_unique_id(p_student_profile_id);
+    update public.child_credentials
+       set child_unique_id = v_child, updated_at = now()
+     where student_profile_id = p_student_profile_id;
+  end if;
+
+  select auth_user_id into v_auth
+  from public.child_credentials where student_profile_id = p_student_profile_id;
+
+  update public.students set access_status = 'trialing' where profile_id = p_student_profile_id;
+
+  return v_q || jsonb_build_object(
+    'subscription_id', v_sub, 'status', 'trialing',
+    'new_child_unique_id', v_child, 'auth_user_id', v_auth);
+end;
+$$;
+
+-- add_subscription_subject / remove_subscription_subject (Batch H): let a parent edit
+-- the subjects on a child's current live subscription. Re-priced server-side from the
+-- subscription's interval pricing at the kept sibling rate; never client-set amounts.
+create or replace function public.add_subscription_subject(
+  p_student_profile_id uuid,
+  p_subject_id         uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_sub      uuid;
+  v_interval public.plan_interval;
+  v_pct      numeric(5,2);
+  v_subjects uuid[];
+  v_base     numeric(12,2);
+  v_amt      numeric(12,2);
+  v_total    numeric(12,2);
+begin
+  select id, interval, sibling_discount_percent
+    into v_sub, v_interval, v_pct
+  from public.child_subscriptions
+  where student_profile_id = p_student_profile_id
+    and status in ('trialing', 'active', 'past_due')
+  order by created_at desc
+  limit 1;
+  if v_sub is null then raise exception 'add_subject: no active subscription'; end if;
+
+  if not exists (
+    select 1 from public.subjects_pricing sp
+    where sp.subject_id = p_subject_id and sp.interval = v_interval and sp.status = 'active'
+  ) then
+    raise exception 'add_subject: no active pricing for subject %', p_subject_id;
+  end if;
+
+  insert into public.subscription_subjects (child_subscription_id, subject_id)
+  values (v_sub, p_subject_id) on conflict do nothing;
+
+  select array_agg(subject_id) into v_subjects
+  from public.subscription_subjects where child_subscription_id = v_sub;
+
+  select coalesce(sum(sp.price_amount), 0) into v_base
+  from public.subjects_pricing sp
+  where sp.subject_id = any (v_subjects) and sp.interval = v_interval and sp.status = 'active';
+
+  v_amt   := round(v_base * v_pct / 100.0, 2);
+  v_total := v_base - v_amt;
+
+  update public.child_subscriptions
+     set base_amount = v_base, discount_amount = v_amt, total_amount = v_total, updated_at = now()
+   where id = v_sub;
+
+  return jsonb_build_object(
+    'base', v_base, 'discount_percent', v_pct, 'discount', v_amt,
+    'total', v_total, 'currency', 'AZN', 'subscription_id', v_sub);
+end;
+$$;
+
+create or replace function public.remove_subscription_subject(
+  p_student_profile_id uuid,
+  p_subject_id         uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_sub      uuid;
+  v_interval public.plan_interval;
+  v_pct      numeric(5,2);
+  v_count    int;
+  v_subjects uuid[];
+  v_base     numeric(12,2);
+  v_amt      numeric(12,2);
+  v_total    numeric(12,2);
+begin
+  select id, interval, sibling_discount_percent
+    into v_sub, v_interval, v_pct
+  from public.child_subscriptions
+  where student_profile_id = p_student_profile_id
+    and status in ('trialing', 'active', 'past_due')
+  order by created_at desc
+  limit 1;
+  if v_sub is null then raise exception 'remove_subject: no active subscription'; end if;
+
+  select count(*) into v_count
+  from public.subscription_subjects where child_subscription_id = v_sub;
+  if v_count <= 1 then
+    raise exception 'remove_subject: at least one subject must remain';
+  end if;
+
+  delete from public.subscription_subjects
+  where child_subscription_id = v_sub and subject_id = p_subject_id;
+
+  select array_agg(subject_id) into v_subjects
+  from public.subscription_subjects where child_subscription_id = v_sub;
+
+  select coalesce(sum(sp.price_amount), 0) into v_base
+  from public.subjects_pricing sp
+  where sp.subject_id = any (v_subjects) and sp.interval = v_interval and sp.status = 'active';
+
+  v_amt   := round(v_base * v_pct / 100.0, 2);
+  v_total := v_base - v_amt;
+
+  update public.child_subscriptions
+     set base_amount = v_base, discount_amount = v_amt, total_amount = v_total, updated_at = now()
+   where id = v_sub;
+
+  return jsonb_build_object(
+    'base', v_base, 'discount_percent', v_pct, 'discount', v_amt,
+    'total', v_total, 'currency', 'AZN', 'subscription_id', v_sub);
+end;
+$$;
+
+revoke all on function public.quote_child_subscription(uuid, public.plan_interval, uuid[]) from public, anon, authenticated;
+grant execute on function public.quote_child_subscription(uuid, public.plan_interval, uuid[]) to service_role;
+revoke all on function public.create_child_subscription(uuid, public.plan_interval, uuid[]) from public, anon, authenticated;
+grant execute on function public.create_child_subscription(uuid, public.plan_interval, uuid[]) to service_role;
+revoke all on function public.add_subscription_subject(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.add_subscription_subject(uuid, uuid) to service_role;
+revoke all on function public.remove_subscription_subject(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.remove_subscription_subject(uuid, uuid) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- Test & daily task engine (Stage 13, increment 1).
+-- Backported from migrations/2026_06_28_013_test_engine.sql. Server-side RANDOM
+-- question selection + attempts + auto-grading. Users never choose difficulty and
+-- never see is_correct before grading; scores are computed server-side. Three
+-- SECURITY DEFINER RPCs executable by the authenticated student (each verifies it
+-- owns the attempt). Placed at the END so the function REVOKEs run AFTER 010's
+-- blanket grants — otherwise anon's EXECUTE grant would remain.
+-- -----------------------------------------------------------------------------
+
+-- ---- start_practice_attempt ----
+create or replace function public.start_practice_attempt(
+  p_subject_id uuid,
+  p_count      int default 25
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student uuid := public.current_profile_id();
+  v_access  public.child_access_status;
+  v_grade   uuid;
+  v_attempt uuid;
+  v_n       int;
+begin
+  if v_student is null then raise exception 'start_practice: not authenticated'; end if;
+  select access_status, grade_id into v_access, v_grade
+  from public.students where profile_id = v_student;
+  if v_access is null then raise exception 'start_practice: not a student'; end if;
+  if v_access not in ('trialing', 'active') then
+    raise exception 'start_practice: no active access' using errcode = 'check_violation';
+  end if;
+
+  insert into public.test_attempts (student_profile_id, subject_id, kind, status)
+  values (v_student, p_subject_id, 'practice', 'in_progress')
+  returning id into v_attempt;
+
+  -- Random selection of published, objective, auto-gradable GENERAL questions for
+  -- the subject (grade-matched when the child has a grade). Difficulty is NOT
+  -- chosen. PRIVATE olympiad-package questions are excluded (olympiad_package_id IS NULL).
+  with picked as (
+    select q.id
+    from public.questions q
+    where q.subject_id = p_subject_id
+      and q.status = 'published'
+      and q.olympiad_package_id is null
+      and q.type_id in (
+        select id from public.question_types where code in ('single_choice', 'multiple_choice', 'true_false')
+      )
+      and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct)
+      and (v_grade is null or q.grade_id = v_grade or q.grade_id is null)
+    order by random()
+    limit greatest(1, p_count)
+  )
+  insert into public.test_attempt_answers (attempt_id, question_id)
+  select v_attempt, id from picked;
+  get diagnostics v_n = row_count;
+
+  if v_n = 0 then
+    raise exception 'start_practice: no questions available for this subject'
+      using errcode = 'no_data_found';
+  end if;
+
+  return v_attempt;
+end;
+$$;
+
+-- ---- get_practice_attempt (questions + options, NO is_correct) ----
+create or replace function public.get_practice_attempt(
+  p_attempt_id uuid,
+  p_locale     text default 'az'
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student uuid := public.current_profile_id();
+  v_owner   uuid;
+  v_status  public.attempt_status;
+  v_loc     text := case when p_locale in ('az', 'en', 'ru') then p_locale else 'az' end;
+  v_result  jsonb;
+begin
+  select student_profile_id, status into v_owner, v_status
+  from public.test_attempts where id = p_attempt_id;
+  if v_owner is null or v_owner <> v_student then raise exception 'forbidden'; end if;
+
+  select jsonb_build_object('attempt_id', p_attempt_id, 'status', v_status,
+                            'questions', coalesce(jsonb_agg(q order by ord), '[]'::jsonb))
+  into v_result
+  from (
+    select
+      row_number() over (order by taa.created_at, taa.id) as ord,
+      jsonb_build_object(
+        'question_id', taa.question_id,
+        'type', qtp.code,
+        'body', coalesce(qt.body, qt_az.body),
+        'prompt', coalesce(qt.prompt, qt_az.prompt),
+        'options', (
+          select coalesce(jsonb_agg(
+            jsonb_build_object('option_id', ao.id,
+                               'text', coalesce(aot.text, aot_az.text))
+            order by ao.order_index), '[]'::jsonb)
+          from public.answer_options ao
+          left join public.answer_option_translations aot
+            on aot.option_id = ao.id and aot.locale = v_loc::public.content_locale
+          left join public.answer_option_translations aot_az
+            on aot_az.option_id = ao.id and aot_az.locale = 'az'
+          where ao.question_id = taa.question_id
+        )
+      ) as q
+    from public.test_attempt_answers taa
+    left join public.questions qq on qq.id = taa.question_id
+    left join public.question_types qtp on qtp.id = qq.type_id
+    left join public.question_translations qt
+      on qt.question_id = taa.question_id and qt.locale = v_loc::public.content_locale
+    left join public.question_translations qt_az
+      on qt_az.question_id = taa.question_id and qt_az.locale = 'az'
+    where taa.attempt_id = p_attempt_id
+  ) s;
+
+  return v_result;
+end;
+$$;
+
+-- ---- grade_practice_attempt (records answers, auto-grades, sets score) ----
+create or replace function public.grade_practice_attempt(
+  p_attempt_id uuid,
+  p_answers    jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student uuid := public.current_profile_id();
+  v_owner   uuid;
+  v_status  public.attempt_status;
+  v_item    jsonb;
+  v_qid     uuid;
+  v_sel     uuid[];
+  v_correct uuid[];
+  v_ok      boolean;
+  v_score   numeric := 0;
+  v_max     int;
+begin
+  select student_profile_id, status into v_owner, v_status
+  from public.test_attempts where id = p_attempt_id;
+  if v_owner is null or v_owner <> v_student then raise exception 'forbidden'; end if;
+  if v_status <> 'in_progress' then raise exception 'attempt already submitted'; end if;
+
+  for v_item in select * from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb))
+  loop
+    v_qid := (v_item->>'question_id')::uuid;
+    select coalesce(array_agg(e::uuid), '{}')
+      into v_sel
+      from jsonb_array_elements_text(coalesce(v_item->'selected_option_ids', '[]'::jsonb)) e;
+    select coalesce(array_agg(ao.id), '{}')
+      into v_correct
+      from public.answer_options ao where ao.question_id = v_qid and ao.is_correct;
+
+    v_ok := (array_length(v_correct, 1) is not null)
+        and (v_sel <@ v_correct) and (v_correct <@ v_sel)
+        and coalesce(array_length(v_sel, 1), 0) = array_length(v_correct, 1);
+
+    update public.test_attempt_answers
+       set selected_option_ids = v_sel,
+           is_correct = v_ok,
+           points_awarded = case when v_ok then 1 else 0 end,
+           updated_at = now()
+     where attempt_id = p_attempt_id and question_id = v_qid;
+    if v_ok then v_score := v_score + 1; end if;
+  end loop;
+
+  select count(*) into v_max from public.test_attempt_answers where attempt_id = p_attempt_id;
+  update public.test_attempts
+     set status = 'graded', score = v_score, max_score = v_max,
+         submitted_at = now(), graded_at = now(), updated_at = now()
+   where id = p_attempt_id;
+
+  return jsonb_build_object('score', v_score, 'max', v_max,
+    'results', (select coalesce(jsonb_agg(jsonb_build_object(
+                  'question_id', question_id, 'is_correct', is_correct)), '[]'::jsonb)
+                from public.test_attempt_answers where attempt_id = p_attempt_id));
+end;
+$$;
+
+-- EXECUTE: the authenticated student (owner-checked inside); never anon.
+revoke all on function public.start_practice_attempt(uuid, int) from public, anon;
+grant execute on function public.start_practice_attempt(uuid, int) to authenticated, service_role;
+revoke all on function public.get_practice_attempt(uuid, text) from public, anon;
+grant execute on function public.get_practice_attempt(uuid, text) to authenticated, service_role;
+revoke all on function public.grade_practice_attempt(uuid, jsonb) from public, anon;
+grant execute on function public.grade_practice_attempt(uuid, jsonb) to authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
+-- Olimpiada Preparation engine (Stage 14, increment 1).
+-- Backported from migrations/2026_06_28_014_olympiad_engine.sql. Parent one-time
+-- LIFETIME purchase + child olympiad attempts (25 random from the package's
+-- curated pool, reusing get_/grade_practice_attempt). Real charge is provider-
+-- specific and stubbed (purchase marked active immediately) until a provider is
+-- chosen. purchase_olympiad is service-role (parent action authorizes the parent);
+-- start_olympiad_attempt is the authenticated child (purchase-gated). Placed at
+-- the END so the function REVOKEs run AFTER 010's blanket grants — otherwise
+-- anon/authenticated's EXECUTE grant on purchase_olympiad would remain.
+-- -----------------------------------------------------------------------------
+create or replace function public.purchase_olympiad(
+  p_student_profile_id uuid,
+  p_package_id         uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner    uuid;
+  v_price    numeric(10,2);
+  v_currency text;
+  v_status   public.catalog_status;
+  v_existing uuid;
+  v_id       uuid;
+begin
+  select created_by_parent_profile_id into v_owner
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then raise exception 'purchase: child has no owning parent'; end if;
+
+  select price_amount, currency, status into v_price, v_currency, v_status
+  from public.olympiad_packages where id = p_package_id;
+  if v_price is null then raise exception 'purchase: package not found'; end if;
+  if v_status <> 'active' then
+    raise exception 'purchase: package not available' using errcode = 'check_violation';
+  end if;
+
+  -- Lifetime: one purchase per child/package (idempotent).
+  select id into v_existing from public.olympiad_purchases
+  where student_profile_id = p_student_profile_id and olympiad_package_id = p_package_id;
+  if v_existing is not null then
+    update public.olympiad_purchases
+       set status = 'active', purchased_at = coalesce(purchased_at, now()), updated_at = now()
+     where id = v_existing;
+    return jsonb_build_object('purchase_id', v_existing, 'status', 'active', 'existing', true);
+  end if;
+
+  insert into public.olympiad_purchases
+    (olympiad_package_id, owner_parent_profile_id, student_profile_id,
+     amount, currency, status, purchased_at, provider)
+  values
+    (p_package_id, v_owner, p_student_profile_id, v_price, v_currency, 'active', now(), 'none')
+  returning id into v_id;
+
+  return jsonb_build_object('purchase_id', v_id, 'status', 'active', 'existing', false);
+end;
+$$;
+
+comment on function public.purchase_olympiad(uuid, uuid) is
+  'Parent one-time LIFETIME purchase of an olympiad package for a child. service_role only (payment stubbed).';
+
+create or replace function public.start_olympiad_attempt(p_package_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student uuid := public.current_profile_id();
+  v_subject uuid;
+  v_n_per   int;
+  v_attempt uuid;
+  v_n       int;
+begin
+  if v_student is null then raise exception 'olympiad: not authenticated'; end if;
+  if not exists (
+    select 1 from public.olympiad_purchases
+    where student_profile_id = v_student and olympiad_package_id = p_package_id and status = 'active'
+  ) then
+    raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
+  end if;
+
+  select subject_id, questions_per_attempt into v_subject, v_n_per
+  from public.olympiad_packages where id = p_package_id;
+  v_n_per := coalesce(v_n_per, 25);
+
+  insert into public.test_attempts (student_profile_id, subject_id, kind, status)
+  values (v_student, v_subject, 'olympiad', 'in_progress')
+  returning id into v_attempt;
+
+  -- PRIVATE pool: questions assigned to this package only (Batch D).
+  with picked as (
+    select q.id
+    from public.questions q
+    where q.olympiad_package_id = p_package_id
+      and q.status = 'published'
+      and q.type_id in (
+        select id from public.question_types where code in ('single_choice', 'multiple_choice', 'true_false')
+      )
+      and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct)
+    order by random()
+    limit greatest(1, v_n_per)
+  )
+  insert into public.test_attempt_answers (attempt_id, question_id)
+  select v_attempt, id from picked;
+  get diagnostics v_n = row_count;
+  if v_n = 0 then
+    raise exception 'olympiad: no questions in package pool' using errcode = 'no_data_found';
+  end if;
+
+  return v_attempt;
+end;
+$$;
+
+revoke all on function public.purchase_olympiad(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.purchase_olympiad(uuid, uuid) to service_role;
+revoke all on function public.start_olympiad_attempt(uuid) from public, anon;
+grant execute on function public.start_olympiad_attempt(uuid) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- bulk_insert_olympiad_package_questions (Batch D): import PRIVATE trilingual
+-- questions for one olympiad package. Same item format as bulk_insert_questions
+-- but every inserted question gets olympiad_package_id = p_package_id and is
+-- published immediately (the attempt engine requires status='published'), so it
+-- stays out of the general pool. Subject defaults to the package's subject; type
+-- resolved by name. Admin/content.create gated; never anon-executable.
+-- ---------------------------------------------------------------------------
+create or replace function public.bulk_insert_olympiad_package_questions(
+  p_package_id uuid,
+  p_questions  jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_profile  uuid := public.current_profile_id();
+  v_pkg_subj uuid;
+  v_item     jsonb;
+  v_idx      int := 0;
+  v_ok       int := 0;
+  v_fail     int := 0;
+  v_errors   jsonb := '[]'::jsonb;
+  v_subject  uuid; v_grade uuid; v_type uuid; v_oly uuid; v_source uuid;
+  v_topic    uuid; v_subtopic uuid;
+  v_qid      uuid; v_optid uuid;
+  v_pl       text; v_loc text; v_opt jsonb; v_order int;
+begin
+  if v_profile is null or not (public.is_admin() or public.has_permission('content.create')) then
+    raise exception 'bulk_insert_olympiad_package_questions: forbidden' using errcode = 'insufficient_privilege';
+  end if;
+  if jsonb_typeof(p_questions) <> 'array' then
+    raise exception 'bulk_insert_olympiad_package_questions: payload must be a JSON array';
+  end if;
+
+  select subject_id into v_pkg_subj from public.olympiad_packages where id = p_package_id;
+  if not found then
+    raise exception 'bulk_insert_olympiad_package_questions: package not found';
+  end if;
+
+  for v_item in select * from jsonb_array_elements(p_questions)
+  loop
+    v_idx := v_idx + 1;
+    begin
+      v_subject := v_pkg_subj;
+      if v_subject is null and coalesce(v_item->'meta'->>'subject','') <> '' then
+        select id into v_subject from public.subjects where name = (v_item->'meta'->>'subject');
+      end if;
+      if v_subject is null then raise exception 'no subject (package has none and item has no subject)'; end if;
+
+      select id into v_grade from public.grades where level = nullif(v_item->'meta'->>'grade_level','')::smallint;
+      if v_grade is null then raise exception 'unknown grade_level %', coalesce(v_item->'meta'->>'grade_level','(null)'); end if;
+
+      select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
+      if v_type is null then raise exception 'unknown type %', coalesce(v_item->'meta'->>'type','(null)'); end if;
+
+      v_oly := null;
+      if coalesce(v_item->'meta'->>'olympiad_type','') <> '' then
+        select id into v_oly from public.olympiad_types where name = (v_item->'meta'->>'olympiad_type');
+      end if;
+
+      v_source := null;
+      if coalesce(v_item->'meta'->>'source','') <> '' then
+        select id into v_source from public.sources where name = (v_item->'meta'->>'source') limit 1;
+        if v_source is null then
+          insert into public.sources (name) values (v_item->'meta'->>'source') returning id into v_source;
+        end if;
+      end if;
+
+      v_topic := null; v_subtopic := null;
+      if coalesce(v_item->'meta'->>'topic','') <> '' then
+        select id into v_topic from public.topics
+          where subject_id = v_subject and name = (v_item->'meta'->>'topic') limit 1;
+        if v_topic is null then
+          insert into public.topics (subject_id, grade_id, name)
+          values (v_subject, v_grade, v_item->'meta'->>'topic') returning id into v_topic;
+        end if;
+        if coalesce(v_item->'meta'->>'subtopic','') <> '' then
+          select id into v_subtopic from public.subtopics
+            where topic_id = v_topic and name = (v_item->'meta'->>'subtopic') limit 1;
+          if v_subtopic is null then
+            insert into public.subtopics (topic_id, name)
+            values (v_topic, v_item->'meta'->>'subtopic') returning id into v_subtopic;
+          end if;
+        end if;
+      end if;
+
+      v_pl := coalesce(v_item->>'primary_locale','az');
+      if v_pl not in ('az','en','ru') then v_pl := 'az'; end if;
+      if coalesce(v_item->'translations'->v_pl->>'body','') = '' then
+        raise exception 'missing % body', v_pl;
+      end if;
+
+      -- PRIVATE + published; difficulty removed (difficulty_id null).
+      insert into public.questions
+        (grade_id, subject_id, topic_id, subtopic_id, type_id, difficulty_id,
+         olympiad_type_id, source_id, status, primary_locale,
+         olympiad_package_id, created_by, updated_by)
+      values
+        (v_grade, v_subject, v_topic, v_subtopic, v_type, null,
+         v_oly, v_source, 'published', v_pl::public.content_locale,
+         p_package_id, v_profile, v_profile)
+      returning id into v_qid;
+
+      for v_loc in select jsonb_object_keys(v_item->'translations')
+      loop
+        if v_loc in ('az','en','ru') and coalesce(v_item->'translations'->v_loc->>'body','') <> '' then
+          insert into public.question_translations (question_id, locale, body, prompt)
+          values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'body',
+                  nullif(v_item->'translations'->v_loc->>'prompt',''));
+          if coalesce(v_item->'translations'->v_loc->>'explanation','') <> '' then
+            insert into public.question_explanations (question_id, locale, explanation_body)
+            values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'explanation');
+          end if;
+        end if;
+      end loop;
+
+      v_order := 0;
+      for v_opt in select * from jsonb_array_elements(coalesce(v_item->'options','[]'::jsonb))
+      loop
+        insert into public.answer_options (question_id, is_correct, order_index)
+        values (v_qid, coalesce((v_opt->>'is_correct')::boolean, false),
+                coalesce((v_opt->>'order_index')::int, v_order))
+        returning id into v_optid;
+        v_order := v_order + 1;
+        for v_loc in select jsonb_object_keys(coalesce(v_opt->'text','{}'::jsonb))
+        loop
+          if v_loc in ('az','en','ru') and coalesce(v_opt->'text'->>v_loc,'') <> '' then
+            insert into public.answer_option_translations (option_id, locale, text)
+            values (v_optid, v_loc::public.content_locale, v_opt->'text'->>v_loc);
+          end if;
+        end loop;
+      end loop;
+
+      v_ok := v_ok + 1;
+    exception when others then
+      v_fail := v_fail + 1;
+      v_errors := v_errors || jsonb_build_object('index', v_idx, 'error', SQLERRM);
+    end;
+  end loop;
+
+  return jsonb_build_object('total', v_idx, 'successful', v_ok, 'failed', v_fail, 'errors', v_errors);
+end;
+$$;
+
+comment on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) is
+  'Bulk import of PRIVATE trilingual questions for one olympiad package (sets questions.olympiad_package_id, status published). Caller must hold content.create (checked internally). Not anon-executable.';
+
+revoke all on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) from public, anon;
+grant execute on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) to authenticated, service_role;
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

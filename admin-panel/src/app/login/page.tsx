@@ -20,6 +20,8 @@ export default async function LoginPage() {
             password: t("field.password"),
             submit: t("login.submit"),
             submitting: t("login.submitting"),
+            showPassword: t("auth.showPassword"),
+            hidePassword: t("auth.hidePassword"),
           }}
         />
       </div>

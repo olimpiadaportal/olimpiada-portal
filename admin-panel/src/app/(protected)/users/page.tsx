@@ -90,6 +90,8 @@ export default async function UsersPage() {
             submitting: t("users.creating"),
             created: t("users.created"),
             select: t("manage.select"),
+            showPassword: t("auth.showPassword"),
+            hidePassword: t("auth.hidePassword"),
           }}
           roles={[
             { value: "administrator", label: t("role.administrator") },

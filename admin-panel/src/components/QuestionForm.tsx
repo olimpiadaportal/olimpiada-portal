@@ -19,7 +19,6 @@ const META: { name: string; key: string; required?: boolean }[] = [
   { name: "subject_id", key: "qfield.subject", required: true },
   { name: "grade_id", key: "qfield.grade", required: true },
   { name: "type_id", key: "qfield.type", required: true },
-  { name: "difficulty_id", key: "qfield.difficulty" },
   { name: "topic_id", key: "qfield.topic" },
   { name: "subtopic_id", key: "qfield.subtopic" },
   { name: "olympiad_type_id", key: "qfield.olympiad" },
@@ -29,12 +28,17 @@ const META: { name: string; key: string; required?: boolean }[] = [
 export function QuestionForm({
   dict,
   options,
+  typeCodes,
   defaults,
   id,
   submitLabel,
 }: {
   dict: Record<string, string>;
   options: Options;
+  // Maps each question type id → its stable `code` (single_choice,
+  // multiple_choice, true_false, …) so the editor can show the right per-type
+  // hint and adapt the True/False options without depending on translated labels.
+  typeCodes: Record<string, string>;
   defaults?: Defaults;
   id?: string;
   submitLabel: string;
@@ -62,6 +66,45 @@ export function QuestionForm({
       { text: "", correct: false },
     ],
   );
+
+  // The chosen type's stable code drives type-aware option editing/hints.
+  const typeCode = typeCodes[meta.type_id ?? ""] ?? "";
+  const isTrueFalse = typeCode === "true_false";
+  const isSingle = typeCode === "single_choice";
+  const optionHint = isTrueFalse
+    ? tt("qhint.trueFalse")
+    : isSingle
+      ? tt("qhint.single")
+      : typeCode === "multiple_choice"
+        ? tt("qhint.multiple")
+        : "";
+
+  // For single_choice & true_false at most one option may be correct: marking a
+  // new one clears the others so the editor matches what saveQuestion accepts.
+  function markCorrect(i: number, checked: boolean) {
+    const exclusive = isSingle || isTrueFalse;
+    setOpts((p) =>
+      p.map((x, idx) =>
+        idx === i
+          ? { ...x, correct: checked }
+          : exclusive && checked
+            ? { ...x, correct: false }
+            : x,
+      ),
+    );
+  }
+
+  // True/False is a fixed two-option question. Seed the two locale-labelled
+  // options once (without clobbering an existing saved pair) and lock add/remove.
+  function applyTrueFalse() {
+    setOpts((p) => {
+      if (p.length === 2 && p[0].text && p[1].text) return p;
+      return [
+        { text: tt("qopt.true"), correct: p[0]?.correct ?? false },
+        { text: tt("qopt.false"), correct: p[1]?.correct ?? false },
+      ];
+    });
+  }
 
   return (
     <form action={action} className="form">
@@ -97,9 +140,14 @@ export function QuestionForm({
               name={m.name}
               required={m.required}
               value={meta[m.name] ?? ""}
-              onChange={(e) =>
-                setMeta((p) => ({ ...p, [m.name]: e.target.value }))
-              }
+              onChange={(e) => {
+                const value = e.target.value;
+                setMeta((p) => ({ ...p, [m.name]: value }));
+                // Switching INTO True/False seeds its fixed two-option pair.
+                if (m.name === "type_id" && typeCodes[value] === "true_false") {
+                  applyTrueFalse();
+                }
+              }}
             >
               <option value="">{tt("manage.select")}</option>
               {(options[m.name] ?? []).map((o) => (
@@ -147,6 +195,7 @@ export function QuestionForm({
       </label>
 
       <h3 style={{ marginTop: 18 }}>{tt("qsection.options")}</h3>
+      {optionHint && <p className="hint">{optionHint}</p>}
       <input type="hidden" name="opt_count" value={opts.length} />
       <div className="options-editor">
         {opts.map((o, i) => (
@@ -156,6 +205,7 @@ export function QuestionForm({
               name={`opt.${i}.text`}
               value={o.text}
               placeholder={tt("qopt.text")}
+              readOnly={isTrueFalse}
               onChange={(e) =>
                 setOpts((p) =>
                   p.map((x, idx) =>
@@ -169,33 +219,31 @@ export function QuestionForm({
                 type="checkbox"
                 name={`opt.${i}.correct`}
                 checked={o.correct}
-                onChange={(e) =>
-                  setOpts((p) =>
-                    p.map((x, idx) =>
-                      idx === i ? { ...x, correct: e.target.checked } : x,
-                    ),
-                  )
-                }
+                onChange={(e) => markCorrect(i, e.target.checked)}
               />
               {tt("qopt.correct")}
             </label>
-            <button
-              type="button"
-              className="link-danger"
-              onClick={() => setOpts((p) => p.filter((_, idx) => idx !== i))}
-            >
-              {tt("qopt.remove")}
-            </button>
+            {!isTrueFalse && (
+              <button
+                type="button"
+                className="link-danger"
+                onClick={() => setOpts((p) => p.filter((_, idx) => idx !== i))}
+              >
+                {tt("qopt.remove")}
+              </button>
+            )}
           </div>
         ))}
       </div>
-      <button
-        type="button"
-        className="btn-ghost"
-        onClick={() => setOpts((p) => [...p, { text: "", correct: false }])}
-      >
-        {tt("qopt.add")}
-      </button>
+      {!isTrueFalse && (
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={() => setOpts((p) => [...p, { text: "", correct: false }])}
+        >
+          {tt("qopt.add")}
+        </button>
+      )}
 
       {state?.error && <p className="form-error">{state.error}</p>}
       <button className="btn" type="submit" disabled={pending}>

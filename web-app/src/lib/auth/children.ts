@@ -28,6 +28,13 @@ export type ChildInfo = {
   city?: string | null;
   schoolName?: string | null;
   classGrade?: string | null;
+  // Structured grade (FK to public.grades). Batch H: the Add-Child form uses a real
+  // grade dropdown; classGrade stays as a human label fallback.
+  gradeId?: string | null;
+  // Structured catalog FKs (D2 wizard): city = districts.id, school = schools.id.
+  // The wizard makes these mandatory; validateChildInfo enforces it server-side.
+  districtId?: string | null;
+  schoolId?: string | null;
 };
 
 export type ValidationResult =
@@ -58,6 +65,11 @@ export function validateChildInfo(info: ChildInfo): ValidationResult {
   const errors: string[] = [];
   if (!info.firstName?.trim()) errors.push("auth.child.err.firstNameRequired");
   if (!info.lastName?.trim()) errors.push("auth.child.err.lastNameRequired");
+  // D2 wizard: structured city (district), school and grade are MANDATORY.
+  // (The DB keeps them optional for back-compat; the app enforces them here.)
+  if (!info.districtId?.trim()) errors.push("addchild.err.cityRequired");
+  if (!info.schoolId?.trim()) errors.push("addchild.err.schoolRequired");
+  if (!info.gradeId?.trim()) errors.push("addchild.err.gradeRequired");
   return result(errors);
 }
 

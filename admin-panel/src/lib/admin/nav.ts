@@ -30,12 +30,13 @@ export const NAV: NavGroup[] = [
       { label: "nav.subjects", href: "/manage/subjects", adminOnly: true },
       { label: "nav.topics", href: "/manage/topics", adminOnly: true },
       { label: "nav.subtopics", href: "/manage/subtopics", adminOnly: true },
+      { label: "nav.cities", href: "/cities", adminOnly: true },
+      { label: "nav.schools", href: "/schools", adminOnly: true },
     ],
   },
   {
     label: "group.contentConfig",
     items: [
-      { label: "nav.difficultyLevels", href: "/manage/difficulty-levels", adminOnly: true },
       { label: "nav.questionTypes", href: "/manage/question-types", adminOnly: true },
       { label: "nav.olympiadTypes", href: "/manage/olympiad-types", adminOnly: true },
     ],
@@ -44,6 +45,16 @@ export const NAV: NavGroup[] = [
     label: "group.content",
     items: [
       { label: "nav.questions", href: "/questions", permission: "content.create" },
+      { label: "nav.news", href: "/news", adminOnly: true },
+      { label: "nav.olympiad", href: "/olympiad", adminOnly: true },
+    ],
+  },
+  {
+    label: "group.operations",
+    items: [
+      { label: "nav.accounts", href: "/accounts", adminOnly: true },
+      { label: "nav.audit", href: "/audit", adminOnly: true },
+      { label: "nav.settings", href: "/settings", adminOnly: true },
     ],
   },
   {
@@ -53,8 +64,6 @@ export const NAV: NavGroup[] = [
       { label: "nav.reviews", soon: true },
       { label: "nav.subscriptions", soon: true, adminOnly: true },
       { label: "nav.payments", soon: true, adminOnly: true },
-      { label: "nav.auditLogs", soon: true, adminOnly: true },
-      { label: "nav.settings", soon: true, adminOnly: true },
     ],
   },
 ];

@@ -120,6 +120,7 @@ create table if not exists public.students (
   school_name        text,
   class_grade        text,
   access_status      public.child_access_status not null default 'inactive',
+  graduated          boolean not null default false, -- true once grade 11 is finished; promotion stops (advance_student_grades, 011)
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
@@ -159,9 +160,12 @@ create table if not exists public.child_unique_ids (
 -- email) to its 8-digit ID. The parent sets the password; passwords live ONLY in
 -- Supabase Auth (never stored here). Children never self-register or log in by email.
 -- -----------------------------------------------------------------------------
+-- child_unique_id is NULLABLE: the credential row is written at child-create time,
+-- BEFORE any 8-digit ID exists. The ID is allocated later (on the first subscription /
+-- plan choice) and backfilled here (see create_child_subscription in 011).
 create table if not exists public.child_credentials (
   student_profile_id                uuid primary key references public.students (profile_id) on delete cascade,
-  child_unique_id                   text not null unique,
+  child_unique_id                   text unique,
   auth_user_id                      uuid not null unique references auth.users (id) on delete cascade,
   password_set_by_parent_profile_id uuid references public.profiles (id) on delete set null,
   password_set_at                   timestamptz,

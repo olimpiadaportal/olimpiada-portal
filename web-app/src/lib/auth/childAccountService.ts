@@ -1,9 +1,13 @@
 // SERVER-ONLY child account services (parent-driven, service role).
 //
 // createChild: parent creates a child. A child is a real Supabase Auth user
-//   (synthetic email + parent-set password); the atomic create_child_account RPC
-//   does all DB writes. On any post-createUser failure we delete the orphaned auth
-//   user (the RPC's own transaction already rolled back its DB writes).
+//   (parent-set password); the atomic create_child_account RPC does all DB writes.
+//   Batch H: the 8-digit login ID is DEFERRED — it is NOT allocated here. The auth
+//   user keeps its temporary pending email until the parent chooses a plan; the
+//   subscribe step allocates the ID and sets the canonical synthetic email
+//   (see allocateChildIdFromSubscribe + subscriptionService.subscribeChild).
+//   On any post-createUser failure we delete the orphaned auth user (the RPC's own
+//   transaction already rolled back its DB writes).
 // resetChildPassword: parent resets their child's password (ownership-checked).
 //
 // Callers (Stage 10 parent server actions) MUST authorize the parent first; this
@@ -19,7 +23,8 @@ import {
 } from "@/lib/auth/children";
 
 export type CreateChildResult =
-  | { ok: true; childUniqueId: string; studentProfileId: string }
+  // childUniqueId is now allocated on subscribe, so it is null at create time.
+  | { ok: true; childUniqueId: string | null; studentProfileId: string }
   | { ok: false; errors: string[]; detail?: string };
 
 export async function createChild(params: {
@@ -54,7 +59,9 @@ export async function createChild(params: {
   const authUserId = created.user.id;
 
   try {
-    // 2) Atomic DB provisioning (allocates the 8-digit ID, links to the parent).
+    // 2) Atomic DB provisioning (links to the parent). Batch H: the 8-digit ID is
+    //    NOT allocated here — it is deferred to the subscribe step. The auth user
+    //    keeps its temporary pending email until then.
     const { data: rows, error: rpcErr } = await admin.rpc("create_child_account", {
       p_parent_profile_id: parentProfileId,
       p_auth_user_id: authUserId,
@@ -63,23 +70,18 @@ export async function createChild(params: {
       p_city: info.city ?? null,
       p_school_name: info.schoolName ?? null,
       p_class_grade: info.classGrade ?? null,
+      p_grade_id: info.gradeId ?? null,
+      // D2 wizard: structured catalog FKs (migration 017 — 10-arg signature).
+      p_district_id: info.districtId ?? null,
+      p_school_id: info.schoolId ?? null,
     });
     if (rpcErr) throw new Error(rpcErr.message);
     const row = Array.isArray(rows) ? rows[0] : rows;
-    const childUniqueId: string | undefined = row?.new_child_unique_id;
     const studentProfileId: string | undefined = row?.new_student_profile_id;
-    if (!childUniqueId || !studentProfileId) throw new Error("provisioning returned no id");
+    if (!studentProfileId) throw new Error("provisioning returned no student id");
 
-    // Defensive: never allow password == the allocated ID.
-    if (password === childUniqueId) throw new Error("password equals allocated id");
-
-    // 3) Set the canonical synthetic email derived from the allocated ID.
-    const { error: updErr } = await admin.auth.admin.updateUserById(authUserId, {
-      email: childSyntheticEmail(childUniqueId),
-    });
-    if (updErr) throw new Error(updErr.message);
-
-    return { ok: true, childUniqueId, studentProfileId };
+    // childUniqueId is null until the parent chooses a plan (subscribe step).
+    return { ok: true, childUniqueId: null, studentProfileId };
   } catch (e) {
     // Saga cleanup: remove the orphaned Auth user (cascades the auto-created
     // profile). The RPC transaction already rolled back any partial DB writes.
@@ -129,6 +131,23 @@ export async function resetChildPassword(params: {
     })
     .eq("student_profile_id", studentProfileId);
 
+  return { ok: true };
+}
+
+// Batch H: after the subscribe RPC allocates the deferred 8-digit ID, set the
+// child's canonical synthetic auth email (c<8digits>@children.invalid) so that
+// child login (ID -> synthetic email -> signInWithPassword) works. Idempotent and
+// best-effort: a child can only ever log in once this email is set. Called from the
+// subscribe server action, which already authorized the parent + child.
+export async function applyAllocatedChildEmail(params: {
+  authUserId: string;
+  childUniqueId: string;
+}): Promise<{ ok: boolean; detail?: string }> {
+  const admin = getAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(params.authUserId, {
+    email: childSyntheticEmail(params.childUniqueId),
+  });
+  if (error) return { ok: false, detail: error.message };
   return { ok: true };
 }
 

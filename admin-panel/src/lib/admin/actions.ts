@@ -11,6 +11,23 @@ import { requireAdmin, requirePanelAccess } from "@/lib/admin/guards";
 
 export type SaveState = { error?: string } | null;
 
+// Auto-generate the internal stable `code` (no longer a UI input) from `name`.
+const AZ_MAP: Record<string, string> = {
+  ə: "e", ö: "o", ü: "u", ğ: "g", ı: "i", ç: "c", ş: "s",
+};
+function slugifyCode(input: string): string {
+  return (
+    input
+      .toLowerCase()
+      .replace(/[əöügıçş]/g, (c) => AZ_MAP[c] ?? c)
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 48) || "item"
+  );
+}
+
 async function authorize(res: Resource) {
   if (res.adminOnly) await requireAdmin();
   else await requirePanelAccess();
@@ -52,7 +69,17 @@ export async function saveRow(
     revalidatePath(`/manage/${slug}`);
     redirect(`/manage/${slug}`);
   } else {
-    const { error } = await supabase.from(res.table).insert(payload);
+    if (res.autoCode && !payload.code) {
+      payload.code = slugifyCode(String(payload.name ?? ""));
+    }
+    let { error } = await supabase.from(res.table).insert(payload);
+    if (error && res.autoCode && (error as { code?: string }).code === "23505") {
+      // `code` collided — retry once with a short random suffix.
+      payload.code = `${slugifyCode(String(payload.name ?? ""))}_${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+      ({ error } = await supabase.from(res.table).insert(payload));
+    }
     if (error) return { error: error.message };
     revalidatePath(`/manage/${slug}`);
     return null;

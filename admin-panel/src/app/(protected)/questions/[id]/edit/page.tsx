@@ -3,7 +3,10 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
 import { getDict, getT } from "@/i18n/server";
-import { loadQuestionOptions } from "@/lib/admin/question-options";
+import {
+  loadQuestionOptions,
+  loadQuestionTypeCodes,
+} from "@/lib/admin/question-options";
 import { QuestionForm } from "@/components/QuestionForm";
 import { QuestionLifecycle } from "@/components/QuestionLifecycle";
 import { QuestionMediaUploader } from "@/components/QuestionMediaUploader";
@@ -69,12 +72,12 @@ export default async function EditQuestionPage({
   }));
 
   const selectOptions = await loadQuestionOptions(t);
+  const typeCodes = await loadQuestionTypeCodes();
   const defaults = {
     meta: {
       subject_id: q.subject_id,
       grade_id: q.grade_id,
       type_id: q.type_id,
-      difficulty_id: q.difficulty_id,
       topic_id: q.topic_id,
       subtopic_id: q.subtopic_id,
       olympiad_type_id: q.olympiad_type_id,
@@ -111,6 +114,7 @@ export default async function EditQuestionPage({
         <QuestionForm
           dict={dict}
           options={selectOptions}
+          typeCodes={typeCodes}
           defaults={defaults}
           id={id}
           submitLabel={t("qform.save")}

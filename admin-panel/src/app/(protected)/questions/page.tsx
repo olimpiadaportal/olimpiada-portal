@@ -22,6 +22,8 @@ export default async function QuestionsPage() {
         .select(
           "id, status, primary_locale, created_at, subjects(name), grades(name), question_types(code, name), question_translations(locale, body)",
         )
+        // PRIVATE olympiad-package questions are excluded from the general list.
+        .is("olympiad_package_id", null)
         .order("created_at", { ascending: false })
         .limit(100),
       supabase.from("subjects").select("id, name").order("name"),

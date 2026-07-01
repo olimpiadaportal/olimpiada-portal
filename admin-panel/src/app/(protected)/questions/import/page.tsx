@@ -13,7 +13,6 @@ export default async function QuestionImportPage() {
     { data: imports },
     { data: subjects },
     { data: types },
-    { data: difficulties },
     { data: olympiadTypes },
   ] = await Promise.all([
     // RLS: content managers see their own imports; admins see all.
@@ -22,14 +21,13 @@ export default async function QuestionImportPage() {
       .select("id, filename, total, successful, failed, created_at")
       .order("created_at", { ascending: false })
       .limit(10),
-    supabase.from("subjects").select("code").order("code"),
-    supabase.from("question_types").select("code").order("code"),
-    supabase.from("difficulty_levels").select("code").order("code"),
-    supabase.from("olympiad_types").select("code").order("code"),
+    supabase.from("subjects").select("name").order("name"),
+    supabase.from("question_types").select("name").order("name"),
+    supabase.from("olympiad_types").select("name").order("name"),
   ]);
   const history = (imports ?? []) as any[];
   const codes = (rows: any[] | null): string =>
-    (rows ?? []).map((r) => r.code).join(", ") || "—";
+    (rows ?? []).map((r) => r.name).join(", ") || "—";
 
   const keys = [
     "bulk.title", "bulk.subtitle", "bulk.fileLabel", "bulk.fileHint",
@@ -61,16 +59,13 @@ export default async function QuestionImportPage() {
         <p className="hint">{t("bulk.codesNote")}</p>
         <ul className="muted" style={{ lineHeight: 1.8 }}>
           <li>
-            <b>subject_code</b> ({t("nav.subjects")}): {codes(subjects)}
+            <b>subject</b> ({t("nav.subjects")}): {codes(subjects)}
           </li>
           <li>
-            <b>type_code</b> ({t("nav.questionTypes")}): {codes(types)}
+            <b>type</b> ({t("nav.questionTypes")}): {codes(types)}
           </li>
           <li>
-            <b>difficulty_code</b> ({t("nav.difficultyLevels")}): {codes(difficulties)}
-          </li>
-          <li>
-            <b>olympiad_type_code</b> ({t("nav.olympiadTypes")}): {codes(olympiadTypes)}
+            <b>olympiad_type</b> ({t("nav.olympiadTypes")}): {codes(olympiadTypes)}
           </li>
           <li>
             <b>topic</b> / <b>subtopic</b>: {t("bulk.codesByName")}

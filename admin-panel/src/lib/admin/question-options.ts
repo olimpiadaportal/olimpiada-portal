@@ -48,3 +48,17 @@ export async function loadQuestionOptions(
     source_id: await named("sources"),
   };
 }
+
+// Maps each question type id → its stable `code` (single_choice, multiple_choice,
+// true_false, …). Used to drive type-aware option validation (server) and the
+// per-type option hints in the editor (client). Codes are stable identifiers, so
+// validation never depends on translated labels.
+export async function loadQuestionTypeCodes(): Promise<Record<string, string>> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("question_types").select("id, code");
+  const map: Record<string, string> = {};
+  for (const r of (data ?? []) as { id: string; code: string }[]) {
+    map[r.id] = r.code;
+  }
+  return map;
+}

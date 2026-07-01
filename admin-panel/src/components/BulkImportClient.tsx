@@ -8,11 +8,10 @@ const TEMPLATE = [
   {
     primary_locale: "az",
     meta: {
-      subject_code: "math",
+      subject: "Riyaziyyat",
       grade_level: 5,
-      type_code: "single_choice",
-      difficulty_code: "easy",
-      olympiad_type_code: "school",
+      type: "Single choice",
+      olympiad_type: "School",
       topic: "Toplama",
       subtopic: "Birrəqəmli ədədlər",
       source: "Nümunə",

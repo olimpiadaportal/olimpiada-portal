@@ -19,7 +19,6 @@ const META_FIELDS = [
   "topic_id",
   "subtopic_id",
   "type_id",
-  "difficulty_id",
   "olympiad_type_id",
   "source_id",
 ] as const;
@@ -68,8 +67,36 @@ export async function saveQuestion(
       order_index: options.length,
     });
   }
-  if (options.length > 0 && !options.some((o) => o.is_correct)) {
-    return { error: t("qerr.needCorrect") };
+
+  // Type-aware answer validation. Every practice question is graded by exact
+  // set-equality of the selected option ids (see grade_practice_attempt), so the
+  // option/correctness shape MUST be valid for the chosen type's code. The
+  // platform is multiple-choice-only for now: only the option-based families
+  // (single_choice, multiple_choice, true_false) may be saved as practice content.
+  const correctCount = options.filter((o) => o.is_correct).length;
+  const { data: qType } = await supabase
+    .from("question_types")
+    .select("code")
+    .eq("id", meta.type_id as string)
+    .maybeSingle();
+  const typeCode = qType?.code ?? "";
+  switch (typeCode) {
+    case "single_choice":
+      if (options.length < 2) return { error: t("qval.minOptions") };
+      if (correctCount !== 1) return { error: t("qval.singleOneCorrect") };
+      break;
+    case "multiple_choice":
+      if (options.length < 2) return { error: t("qval.minOptions") };
+      if (correctCount < 1) return { error: t("qval.multiAtLeastOne") };
+      break;
+    case "true_false":
+      if (options.length !== 2) return { error: t("qval.trueFalseTwoOptions") };
+      if (correctCount !== 1) return { error: t("qval.trueFalseTwoOptions") };
+      break;
+    default:
+      // numeric_input / short_text / open_text (or unknown): not gradable as
+      // multiple-choice content, which is all the platform supports today.
+      return { error: t("qval.typeNotSupported") };
   }
 
   let questionId = id;

@@ -92,7 +92,13 @@ with expected(name) as (
          ('is_parent_linked_to_student'),('set_updated_at'),('fn_audit_row'),
          ('allocate_child_unique_id'),('create_child_account'),
          ('is_child_login_locked'),('record_child_login_attempt'),
-         ('bulk_insert_questions')
+         ('bulk_insert_questions'),('setup_parent'),
+         ('quote_child_subscription'),('create_child_subscription'),
+         ('add_subscription_subject'),('remove_subscription_subject'),
+         ('start_practice_attempt'),('get_practice_attempt'),('grade_practice_attempt'),
+         ('purchase_olympiad'),('start_olympiad_attempt'),
+         ('bulk_insert_olympiad_package_questions'),
+         ('advance_student_grades')
 )
 select '5_missing_functions' as check_name,
        coalesce(string_agg(e.name, ', '), '(none)') as missing_functions,
@@ -249,9 +255,9 @@ select '17_child_provisioning_secure' as check_name,
        case when exists (select 1 from information_schema.tables
                           where table_schema='public' and table_name='child_login_attempts')
              and has_function_privilege('authenticated',
-                   'public.create_child_account(uuid,uuid,text,text,text,text,text)', 'EXECUTE') = false
+                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid)', 'EXECUTE') = false
              and has_function_privilege('anon',
-                   'public.create_child_account(uuid,uuid,text,text,text,text,text)', 'EXECUTE') = false
+                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid)', 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
 -- -----------------------------------------------------------------------------
@@ -266,6 +272,113 @@ select '18_bulk_import_secure' as check_name,
                           where table_schema='public' and table_name='question_imports')
              and has_function_privilege('anon',
                    'public.bulk_insert_questions(jsonb,text)', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- -----------------------------------------------------------------------------
+-- Stage 10 — Parent self-registration checks (secure DEFINER RPC).
+-- -----------------------------------------------------------------------------
+
+-- 19) Parent setup is secure: the atomic setup_parent() function is NOT
+--     EXECUTE-grantable by clients (authenticated/anon) — it is service_role
+--     only (the web-app registration server action runs it as service_role,
+--     after admin.createUser).
+select '19_parent_setup_secure' as check_name,
+       case when has_function_privilege('anon',
+                   'public.setup_parent(uuid,text)', 'EXECUTE') = false
+             and has_function_privilege('authenticated',
+                   'public.setup_parent(uuid,text)', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- -----------------------------------------------------------------------------
+-- Stage 11 — Child subscription engine checks (secure DEFINER pricing/creation).
+-- -----------------------------------------------------------------------------
+
+-- 20) Subscription engine is secure: the atomic create_child_subscription()
+--     function is NOT EXECUTE-grantable by clients (authenticated/anon) — it is
+--     service_role only (the parent server action runs it as service_role, after
+--     authorizing the parent + child). Pricing/discount/trial are computed here.
+select '20_subscription_engine_secure' as check_name,
+       case when has_function_privilege('anon',
+                   'public.create_child_subscription(uuid,public.plan_interval,uuid[])', 'EXECUTE') = false
+             and has_function_privilege('authenticated',
+                   'public.create_child_subscription(uuid,public.plan_interval,uuid[])', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- -----------------------------------------------------------------------------
+-- Stage 13 — Test & daily task engine checks (secure DEFINER grading RPC).
+-- -----------------------------------------------------------------------------
+
+-- 21) Test engine is secure: the auto-grading grade_practice_attempt() function
+--     is NOT EXECUTE-grantable by anon — only the authenticated student (whose
+--     ownership is verified inside) and service_role may run it, so scores are
+--     never client-forgeable via an anonymous session.
+select '21_test_engine_secure' as check_name,
+       case when has_function_privilege('anon',
+                   'public.grade_practice_attempt(uuid,jsonb)', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- -----------------------------------------------------------------------------
+-- Stage 14 — Olimpiada Preparation engine checks (secure DEFINER purchase RPC).
+-- -----------------------------------------------------------------------------
+
+-- 22) Olympiad engine is secure: the one-time LIFETIME purchase_olympiad()
+--     function is NOT EXECUTE-grantable by clients (authenticated/anon) — it is
+--     service_role only (the parent server action runs it as service_role, after
+--     authorizing the parent + child). Payment is stubbed until a provider is
+--     chosen, so a purchase must never be client-activated.
+select '22_olympiad_engine_secure' as check_name,
+       case when has_function_privilege('anon',
+                   'public.purchase_olympiad(uuid,uuid)', 'EXECUTE') = false
+             and has_function_privilege('authenticated',
+                   'public.purchase_olympiad(uuid,uuid)', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- 23) Olympiad PRIVATE pool (Batch D): questions.olympiad_package_id column +
+--     index exist, and the private-pool bulk importer is content-gated (not
+--     anon-executable). Private questions are kept out of the general pool by
+--     the start_practice_attempt / admin-list filters (behavioral, tested in UI).
+select '23_olympiad_private_pool' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='questions'
+                            and column_name='olympiad_package_id')
+             and exists (select 1 from pg_indexes
+                          where schemaname='public' and indexname='idx_questions_olympiad_package')
+             and has_function_privilege('anon',
+                   'public.bulk_insert_olympiad_package_questions(uuid,jsonb)', 'EXECUTE') = false
+             and has_function_privilege('authenticated',
+                   'public.bulk_insert_olympiad_package_questions(uuid,jsonb)', 'EXECUTE') = true
+            then 'PASS' else 'FAIL' end as status;
+
+-- -----------------------------------------------------------------------------
+-- Cities + Schools + Grade Promotion + structured Add-Child (migration 017).
+-- -----------------------------------------------------------------------------
+
+-- 24) Cities/schools/promotion foundation: students.graduated column exists, the
+--     service-role-only advance_student_grades() function exists, the districts
+--     table is seeded with cities (Bakı present), and schools.district_id is
+--     MANDATORY (NOT NULL — a school must belong to a city).
+select '24_cities_schools_grade_promotion' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='graduated')
+             and exists (select 1 from pg_proc p
+                          join pg_namespace n on n.oid = p.pronamespace
+                          where n.nspname='public' and p.proname='advance_student_grades')
+             and exists (select 1 from public.districts
+                          where country_code='AZ' and name='Bakı' and status='active')
+             and (select is_nullable from information_schema.columns
+                   where table_schema='public' and table_name='schools'
+                     and column_name='district_id') = 'NO'
+            then 'PASS' else 'FAIL' end as status;
+
+-- 25) Grade promotion is secure: advance_student_grades() is NOT EXECUTE-grantable
+--     by clients (authenticated/anon) — it is service_role only (it mutates every
+--     student's grade and must run only from the scheduled service-role job).
+select '25_grade_promotion_secure' as check_name,
+       case when has_function_privilege('anon',
+                   'public.advance_student_grades()', 'EXECUTE') = false
+             and has_function_privilege('authenticated',
+                   'public.advance_student_grades()', 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

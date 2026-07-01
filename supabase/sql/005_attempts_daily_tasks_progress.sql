@@ -19,8 +19,12 @@
 -- -----------------------------------------------------------------------------
 create table if not exists public.test_attempts (
   id                 uuid primary key default gen_random_uuid(),
-  test_id            uuid not null references public.tests (id) on delete cascade,
+  -- nullable: random practice/daily attempts have no fixed test (Stage 13).
+  test_id            uuid references public.tests (id) on delete cascade,
   student_profile_id uuid not null references public.students (profile_id) on delete cascade,
+  subject_id         uuid references public.subjects (id) on delete set null,
+  kind               text not null default 'test'
+                       check (kind in ('test', 'practice', 'daily', 'olympiad')),
   status             public.attempt_status not null default 'in_progress',
   score              numeric(8,2),                 -- authoritative; set by grading, not client
   max_score          numeric(8,2),

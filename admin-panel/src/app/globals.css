@@ -426,6 +426,59 @@ a {
   font-weight: 600;
 }
 
+/* ---- Password field with show/hide eye (PasswordInput.tsx) -------------- */
+/* Self-contained: mirrors `.field input[type="password"]` so it looks right
+   inside a `.field` label or an `.inline-form`. The wrapper is relative so the
+   eye button can sit at the right edge; the input reserves padding for it. */
+.pw-field {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.pw-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 40px 9px 11px; /* extra right padding clears the eye button */
+  font: inherit;
+  background: #fff;
+  color: var(--text);
+}
+
+.pw-input:focus {
+  outline: 2px solid rgba(79, 70, 229, 0.35); /* visible focus ring */
+  border-color: var(--brand);
+}
+
+.pw-eye {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pw-eye:hover {
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.pw-eye:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.35); /* visible focus ring on toggle */
+  outline-offset: 1px;
+}
+
 /* ---- Question editor ---------------------------------------------------- */
 .options-editor {
   display: flex;
@@ -605,7 +658,349 @@ a {
   text-align: center;
 }
 
+/* =========================================================================
+   Polish additions — Settings page redesign + Questions list compaction.
+   Phase B. These classes are additive; they do not alter existing tokens.
+   ========================================================================= */
+
+/* ---- Stacked cards (consistent vertical rhythm) ------------------------- */
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.card-head h3 {
+  margin: 0;
+}
+
+.card-head .muted {
+  font-size: 0.83rem;
+}
+
+/* ---- Settings: feature flags list --------------------------------------- */
+.flag-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.flag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+
+.flag-row:last-child {
+  border-bottom: 0;
+}
+
+.flag-row:hover {
+  background: #f8fafc;
+}
+
+.flag-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.flag-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-word;
+}
+
+.flag-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.flag-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.flag-controls form {
+  display: inline;
+}
+
+.flag-empty {
+  padding: 18px 14px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* Inline (non-floating) pill used inside rows; overrides .pill top margin. */
+.pill-inline {
+  margin-top: 0;
+  vertical-align: middle;
+}
+
+/* ---- Settings: system settings editor ----------------------------------- */
+.setting-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.setting-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.setting-key {
+  font-weight: 600;
+  font-size: 0.86rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+}
+
+.setting-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-editor textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.setting-editor textarea:focus {
+  outline: 2px solid rgba(79, 70, 229, 0.35);
+  border-color: var(--brand);
+  background: #fff;
+}
+
+.setting-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.setting-empty {
+  padding: 16px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+/* Compact inline status text (saved / error) next to a control. */
+.inline-status {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.inline-status.ok {
+  color: var(--ok-fg);
+}
+
+.inline-status.err {
+  color: #b91c1c;
+}
+
+/* ---- Questions list: compact table -------------------------------------- */
+.table-compact {
+  font-size: 0.86rem;
+}
+
+.table-compact th,
+.table-compact td {
+  padding: 8px 10px;
+}
+
+.table-compact th {
+  font-size: 0.7rem;
+  background: #f8fafc;
+}
+
+.table-compact tbody tr:nth-child(even) {
+  background: #fcfcfd;
+}
+
+.table-compact tbody tr:hover {
+  background: #f1f5f9;
+}
+
+.table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.table-wrap .table {
+  margin: 0;
+}
+
+.table-wrap .table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.col-check {
+  width: 36px;
+  text-align: center;
+}
+
+.col-check input {
+  vertical-align: middle;
+}
+
+.col-narrow {
+  white-space: nowrap;
+}
+
+.cell-body {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.cell-muted {
+  color: var(--muted);
+}
+
+/* Refined status pill for the questions table — slightly tighter. */
+.pill-sm {
+  margin-top: 0;
+  padding: 2px 9px;
+  font-size: 0.74rem;
+  vertical-align: middle;
+}
+
+/* ---- Bulk-action toolbar ------------------------------------------------ */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: #f1f5f9;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.bulk-count {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.bulk-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulk-spacer {
+  flex: 1;
+}
+
+.bulk-bar select {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 0.83rem;
+  background: #fff;
+  color: var(--text);
+}
+
+.bulk-bar select:focus {
+  outline: 2px solid rgba(79, 70, 229, 0.3);
+  border-color: var(--brand);
+}
+
+.bulk-assign {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.bulk-assign-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Toggled (expanded) state for the assign-topic ghost button. */
+.btn-ghost.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
+.btn-ghost.active:hover {
+  background: var(--brand-600);
+}
+
 /* ---- Responsive --------------------------------------------------------- */
+@media (max-width: 640px) {
+  .flag-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .flag-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .bulk-spacer {
+    display: none;
+  }
+}
+
 @media (max-width: 820px) {
   .admin-layout {
     flex-direction: column;

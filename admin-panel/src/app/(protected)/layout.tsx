@@ -2,6 +2,7 @@ import { requirePanelAccess } from "@/lib/admin/guards";
 import { NAV } from "@/lib/admin/nav";
 import { Sidebar } from "@/components/Sidebar";
 import { SignOutButton } from "@/components/SignOutButton";
+import { IdleTimeout } from "@/components/IdleTimeout";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { getLocale, getT } from "@/i18n/server";
 
@@ -30,6 +31,7 @@ export default async function ProtectedLayout({
 
   return (
     <div className="admin-layout">
+      <IdleTimeout />
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-dot" aria-hidden /> Olimpiada{" "}

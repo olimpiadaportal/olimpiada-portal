@@ -54,10 +54,13 @@ olimpiada-portal/
 │   └── sql/
 │       ├── README_DATABASE_VERSIONING_WORKFLOW.md
 │       ├── 001_extensions_and_enums.sql
-│       ├── ...
-│       ├── 013_validation_queries.sql
+│       ├── ...  (002–012)
+│       ├── 013_validation_queries.sql   (read-only validation; runs LAST)
+│       ├── 014_news.sql                 (module — Stage 7)
+│       ├── 015_olympiad_preparation.sql (module — Stage 7)
 │       └── migrations/
-│           └── README_MIGRATIONS.md
+│           ├── README_MIGRATIONS.md
+│           └── 2026_*.sql               (backported into canonical files)
 ├── web-app/
 │   ├── CLAUDE.md
 │   └── markdowns/
@@ -234,7 +237,13 @@ Confirm all project decisions before coding starts.
 
 # Revised Forward Roadmap (2026-06-27) — Business Model Update
 
-Stages 1–6 are COMPLETE (repo setup; Supabase SQL foundation `001`–`013`; Auth/RBAC/RLS; app skeletons; Admin Panel foundation + taxonomy; Question Management + media). The confirmed business model (parent/child accounts, child-based subscriptions, public site, News, Olympiad Preparation, wallpaper) adds new database, auth, and feature work. **This roadmap supersedes the old Stage 7–14 ordering for the remaining work.** The detailed Stage 7–14 sections below remain as reference material and are folded into the revised stages here.
+**Current state (updated 2026-06-28):** Stages **1–8 are COMPLETE** plus an admin **bulk-question** acceleration layer.
+- 1–6: repo setup; Supabase SQL foundation; Auth/RBAC/RLS; app skeletons; Admin Panel foundation + taxonomy; Question Management + media.
+- 7 (Business-Model DB Foundation): canonical SQL now **`001`–`015`** (added `014_news.sql`, `015_olympiad_preparation.sql`) + migrations `006`/`007`; child accounts + 8-digit ID, child subject-subscriptions + sibling discount + promo/trial, News, Olympiad-lifetime, wallpapers. From-zero rebuild = **18/18**.
+- 8 (Child Authentication & Account Model): `create_child_account` provisioning RPC + login lockout (migration `008`); web-app server-side child-auth service layer (`createChild`/`childLogin`/`resetChildPassword`, server-only admin client) — **no UI yet** (UI is Stages 10/12).
+- Admin bulk ops (pre-Stage-9): `bulk_insert_questions` RPC + `question_imports` (migrations `009`/`010`); admin import page + multi-select bulk delete/status/assign-topic. typecheck + build PASS.
+
+Remaining to deliver: **Stages 9–15+** (below). **This roadmap supersedes the old Stage 7–14 ordering for the remaining work.** The detailed Stage 7–14 sections below remain as reference material and are folded into the revised stages here.
 
 The remaining work, in order (each applied via the database versioning workflow; dev/staging first; trilingual UI az/en/ru; least privilege):
 
@@ -247,6 +256,9 @@ The remaining work, in order (each applied via the database versioning workflow;
 - **Stage 13 — Test & Daily Task Engine.** Attempts/grading with server-side random 25-question selection (users never choose difficulty; mix easy/medium/hard where available).
 - **Stage 14 — Olimpiada Preparation Module.** Admin package + question-pool management; parent purchase; child access ("Available Olympiads" / "My Olympiad Packages"); random selection; lifetime access; auto-archive listings (never delete purchased records).
 - **Stage 15+ — Progress/Analytics/Leaderboard/Notifications** (child-based), then **QA/Security/Deployment**, then **Future Mobile readiness** (unchanged, future-only).
+
+### Investor Review Round 2 (2026-06-28) — change requests + future backlog
+A large set of owner change requests is tracked in `STATUS.md` → "CHANGE REQUESTS — Investor Review Round 2" (auth completeness, code/difficulty removal, olympiad private pool + bulk, add-child→payment→ID flow, subjects/discount UX, admin operations tooling, and the "Arena" Claude-Design student app). **Deferred to end** (saved in STATUS): real payments + webhook activation, failed-charge auto-block + trial/subscription expiry automation, admin subscription/payment monitoring. **Future backlog** (build after the round): full **leaderboard** (school/rayon/country), **in-app notifications**, **achievements/streaks** engine, **advanced analytics/exports** — a read-only leaderboard + streak display ship earlier as part of the Arena design.
 
 The detailed Stage sections below (numbered with the original plan) provide deeper specs for taxonomy/content/test/payment/etc.; read them as references for the corresponding revised stage.
 
@@ -320,7 +332,16 @@ Create the Supabase SQL foundation in the correct run order.
 - `supabase/markdowns/`
 - Supabase dashboard / SQL editor for development and staging, with every SQL change copied back into repository files
 
-## Build Order
+## Build Order (canonical root SQL — CURRENT: 001–015, validated 2026-06-28)
+
+> **Updated 2026-06-28.** The original plan listed 13 files (`001`–`013`). The
+> business-model foundation (Stage 7) added two **module** files — `014_news.sql`
+> and `015_olympiad_preparation.sql` — so there are now **15 canonical files**.
+> The read-only `013_validation_queries.sql` always runs **LAST**, so `014`/`015`
+> run AFTER `012` and BEFORE `013`. A non-destructive from-zero rebuild currently
+> passes **18/18** validation checks.
+
+Run order (dev/staging first; production changes go through migrations):
 
 1. `001_extensions_and_enums.sql`
 2. `002_core_profiles_roles_permissions.sql`
@@ -334,7 +355,15 @@ Create the Supabase SQL foundation in the correct run order.
 10. `010_rls_policies.sql`
 11. `011_indexes_constraints_functions_triggers.sql`
 12. `012_seed_initial_data.sql`
-13. `013_validation_queries.sql`
+13. `014_news.sql`  *(module — added Stage 7)*
+14. `015_olympiad_preparation.sql`  *(module — added Stage 7)*
+15. `013_validation_queries.sql`  *(READ-ONLY validation — runs LAST)*
+
+**Incremental migrations** live in `supabase/sql/migrations/` (timestamped:
+`2026_06_27_006`/`007` child accounts + subscriptions; `2026_06_28_008` child-auth
+provisioning; `2026_06_28_009` bulk question import; `2026_06_28_010` difficulty
+optional). Each is **backported** into the relevant canonical file above; the
+canonical set alone reproduces the full schema from zero.
 
 ## Deliverables
 

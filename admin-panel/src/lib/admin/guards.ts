@@ -13,6 +13,17 @@ export type AuthContext = {
   isContentManager: boolean;
 };
 
+// Retry a Supabase query once on a hard error (transient DB/network hiccup), so a
+// momentary blip does not present an authenticated admin as having no roles and
+// log them out. Does NOT retry on a clean "no rows" result — only on errors.
+async function withRetry<R extends { error: unknown }>(
+  fn: () => PromiseLike<R>,
+): Promise<R> {
+  const first = await fn();
+  if (!first.error) return first;
+  return await fn();
+}
+
 export async function getAuthContext(): Promise<AuthContext | null> {
   const supabase = await createClient();
   const {
@@ -20,20 +31,24 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  const { data: profile } = await withRetry(() =>
+    supabase
+      .from("profiles")
+      .select("id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle(),
+  );
   const profileId = profile?.id ?? null;
 
   // Scope to THIS profile explicitly. (For an admin, RLS would otherwise return
   // every profile_roles row, polluting roleCodes/permissions with other users'.)
   const { data: prRows } = profileId
-    ? await supabase
-        .from("profile_roles")
-        .select("role_id, roles(code)")
-        .eq("profile_id", profileId)
+    ? await withRetry(() =>
+        supabase
+          .from("profile_roles")
+          .select("role_id, roles(code)")
+          .eq("profile_id", profileId),
+      )
     : { data: [] as any[] };
 
   const roleIds: string[] = (prRows ?? []).map((r: any) => r.role_id);
@@ -65,6 +80,10 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   };
 }
 
+// No authenticated user/session → send to /login (NOT /unauthorized). A missing
+// or transiently-stale session is an auth problem, not an authorization failure;
+// only a genuinely authenticated user that lacks a panel role reaches a
+// /unauthorized redirect (in the guards below).
 export async function requireAuthed(): Promise<AuthContext> {
   const ctx = await getAuthContext();
   if (!ctx) redirect("/login");

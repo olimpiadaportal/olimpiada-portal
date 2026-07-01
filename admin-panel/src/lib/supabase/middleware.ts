@@ -28,7 +28,17 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  // IMPORTANT: getUser() validates the access token and, when it is expired but
+  // the refresh token is still valid, rotates the session and writes the refreshed
+  // auth cookies (via setAll above) onto `response`. This keeps a logged-in admin
+  // from presenting as logged-out on the next request. Never short-circuit before
+  // this call. Swallow transient errors so a momentary blip doesn't drop cookies.
+  try {
+    await supabase.auth.getUser();
+  } catch {
+    // Network/transient error — keep the existing cookies on the response and let
+    // the server guards re-evaluate the session on the actual request.
+  }
 
   return response;
 }

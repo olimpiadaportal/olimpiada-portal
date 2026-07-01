@@ -103,6 +103,26 @@ alter table public.payments
   add column if not exists olympiad_purchase_id uuid references public.olympiad_purchases (id) on delete set null;
 
 -- -----------------------------------------------------------------------------
+-- PRIVATE per-package question pool (Batch D). A question with a non-null
+-- olympiad_package_id belongs PRIVATELY to that package: it is EXCLUDED from the
+-- general question list and from practice random selection, and the olympiad
+-- ATTEMPT engine (start_olympiad_attempt in 011) draws its random questions ONLY
+-- from questions WHERE olympiad_package_id = the package. The legacy
+-- olympiad_package_questions join table above is retained for compatibility but
+-- is no longer the source the attempt engine reads. The column lives here (not
+-- in 004) because it FKs olympiad_packages, which is created in this file.
+-- -----------------------------------------------------------------------------
+alter table public.questions
+  add column if not exists olympiad_package_id uuid
+    references public.olympiad_packages (id) on delete cascade;
+
+comment on column public.questions.olympiad_package_id is
+  'When set, this question is PRIVATE to that olympiad package and is excluded from the general question list and from practice random selection. NULL = general question.';
+
+create index if not exists idx_questions_olympiad_package
+  on public.questions (olympiad_package_id);
+
+-- -----------------------------------------------------------------------------
 -- Storage bucket: olympiad-media (package cover images). Public read; admin write.
 -- -----------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

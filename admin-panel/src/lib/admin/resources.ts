@@ -1,6 +1,11 @@
 // Allowlisted registry of manageable taxonomy/config resources.
 // Server actions only operate on tables/columns defined here — the slug and
 // field names are never taken raw from the client. RLS is the final gate.
+//
+// NOTE: the internal `code` column (subjects/question_types/olympiad_types) is no
+// longer a UI input — it is auto-generated server-side from `name` when a row is
+// created (resources with `autoCode: true`). The "difficulty" feature has been
+// removed from the platform, so there is no difficulty-levels resource.
 
 export type FieldType = "text" | "number" | "boolean" | "select" | "reference";
 
@@ -24,11 +29,12 @@ export type Resource = {
   orderBy: string;
   fields: ResourceField[];
   listColumns: string[];
+  autoCode?: boolean; // auto-generate the stable `code` column from `name` on insert
 };
 
 const STATUS_OPTIONS = [
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
+  { value: "active", label: "Public" },
+  { value: "inactive", label: "Private" },
   { value: "archived", label: "Archived" },
 ];
 
@@ -55,12 +61,12 @@ export const RESOURCES: Record<string, Resource> = {
     group: "Taxonomy",
     adminOnly: true,
     orderBy: "name",
+    autoCode: true,
     fields: [
-      { name: "code", label: "Code", type: "text", required: true },
       { name: "name", label: "Name", type: "text", required: true },
       { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
     ],
-    listColumns: ["code", "name", "status"],
+    listColumns: ["name", "status"],
   },
   topics: {
     slug: "topics",
@@ -95,21 +101,6 @@ export const RESOURCES: Record<string, Resource> = {
     ],
     listColumns: ["topic_id", "name", "order_index", "status"],
   },
-  "difficulty-levels": {
-    slug: "difficulty-levels",
-    table: "difficulty_levels",
-    label: "Difficulty level",
-    labelPlural: "Difficulty levels",
-    group: "Content config",
-    adminOnly: true,
-    orderBy: "weight",
-    fields: [
-      { name: "code", label: "Code", type: "text", required: true },
-      { name: "name", label: "Name", type: "text", required: true },
-      { name: "weight", label: "Weight", type: "number", step: "0.5" },
-    ],
-    listColumns: ["code", "name", "weight"],
-  },
   "question-types": {
     slug: "question-types",
     table: "question_types",
@@ -118,12 +109,12 @@ export const RESOURCES: Record<string, Resource> = {
     group: "Content config",
     adminOnly: true,
     orderBy: "name",
+    autoCode: true,
     fields: [
-      { name: "code", label: "Code", type: "text", required: true },
       { name: "name", label: "Name", type: "text", required: true },
       { name: "supports_auto_grading", label: "Supports auto-grading", type: "boolean" },
     ],
-    listColumns: ["code", "name", "supports_auto_grading"],
+    listColumns: ["name", "supports_auto_grading"],
   },
   "olympiad-types": {
     slug: "olympiad-types",
@@ -133,11 +124,11 @@ export const RESOURCES: Record<string, Resource> = {
     group: "Content config",
     adminOnly: true,
     orderBy: "name",
+    autoCode: true,
     fields: [
-      { name: "code", label: "Code", type: "text", required: true },
       { name: "name", label: "Name", type: "text", required: true },
     ],
-    listColumns: ["code", "name"],
+    listColumns: ["name"],
   },
 };
 

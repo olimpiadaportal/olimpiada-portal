@@ -13,7 +13,11 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- districts : rayon / district reference (future school/partner readiness).
+-- districts : the admin-managed CITY entity (schools link to a city via
+-- schools.district_id). Despite the legacy name, this is the City catalog — we do
+-- NOT keep a separate `cities` table (that would duplicate schools.district_id).
+-- `name` holds the AZ proper noun; city seeds live in 012. (Localized city names
+-- could be added later as a districts_translations table.)
 -- -----------------------------------------------------------------------------
 create table if not exists public.districts (
   id           uuid primary key default gen_random_uuid(),
@@ -26,12 +30,13 @@ create table if not exists public.districts (
 );
 
 -- -----------------------------------------------------------------------------
--- schools : future-ready school reference.
+-- schools : a school MUST belong to a city (districts). district_id is MANDATORY.
+-- Admins create schools later; sample schools (under Bakı) are seeded in 012.
 -- -----------------------------------------------------------------------------
 create table if not exists public.schools (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
-  district_id uuid references public.districts (id) on delete set null,
+  district_id uuid not null references public.districts (id) on delete restrict,
   status      public.catalog_status not null default 'active',
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()

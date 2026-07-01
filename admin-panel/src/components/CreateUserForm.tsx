@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { createPanelUser, type CreateUserState } from "@/lib/admin/users";
+import { PasswordInput } from "@/components/PasswordInput";
 
 type Strings = {
   email: string;
@@ -13,6 +14,8 @@ type Strings = {
   submitting: string;
   created: string;
   select: string;
+  showPassword: string;
+  hidePassword: string;
 };
 
 export function CreateUserForm({
@@ -60,12 +63,12 @@ export function CreateUserForm({
             {strings.password}
             <span className="req"> *</span>
           </span>
-          <input
-            type="password"
+          <PasswordInput
             name="password"
             required
             minLength={8}
             autoComplete="new-password"
+            strings={{ show: strings.showPassword, hide: strings.hidePassword }}
           />
         </label>
       </div>

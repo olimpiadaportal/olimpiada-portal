@@ -83,17 +83,17 @@ export function QuestionsTable({
   return (
     <section className="card">
       {sel.size > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <span className="muted">
+        <>
+          <div className="bulk-bar">
+            <span className="bulk-count">
               {sel.size} {tt("qbulk.selected")}
             </span>
             <form
+              className="bulk-group"
               action={bulkTransitionQuestions}
               onSubmit={(e) => {
                 if (!action || !confirm(tt("qbulk.confirmAction"))) e.preventDefault();
               }}
-              style={{ display: "flex", gap: 8, alignItems: "center" }}
             >
               <input type="hidden" name="ids" value={ids} />
               <select name="__action" value={action} onChange={(e) => setAction(e.target.value)}>
@@ -110,11 +110,13 @@ export function QuestionsTable({
             </form>
             <button
               type="button"
-              className="btn-ghost"
+              className={`btn-ghost${showAssign ? " active" : ""}`}
+              aria-expanded={showAssign}
               onClick={() => setShowAssign((v) => !v)}
             >
               {tt("qbulk.assignTopic")}
             </button>
+            <span className="bulk-spacer" />
             {isAdmin && (
               <form
                 action={bulkDeleteQuestions}
@@ -132,18 +134,13 @@ export function QuestionsTable({
 
           {showAssign && (
             <form
+              className="bulk-assign"
               action={bulkAssignTopic}
               onSubmit={(e) => {
                 if (!aTopic || !confirm(tt("qbulk.confirmAssign"))) e.preventDefault();
               }}
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                flexWrap: "wrap",
-                marginTop: 10,
-              }}
             >
+              <span className="bulk-assign-label">{tt("qbulk.assignTopic")}</span>
               <input type="hidden" name="ids" value={ids} />
               <select
                 name="subject_id"
@@ -195,64 +192,68 @@ export function QuestionsTable({
               </button>
             </form>
           )}
-        </div>
+        </>
       )}
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th style={{ width: 32 }}>
-              <input
-                type="checkbox"
-                checked={allOnPage}
-                onChange={toggleAll}
-                aria-label={tt("qbulk.selectAll")}
-              />
-            </th>
-            <th>{tt("qfield.subject")}</th>
-            <th>{tt("qfield.grade")}</th>
-            <th>{tt("qfield.language")}</th>
-            <th>{tt("qfield.type")}</th>
-            <th>{tt("qfield.bodyAz")}</th>
-            <th>{tt("qfield.status")}</th>
-            <th aria-label="actions" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && (
+      <div className="table-wrap">
+        <table className="table table-compact">
+          <thead>
             <tr>
-              <td colSpan={8} className="muted">
-                {tt("questions.none")}
-              </td>
-            </tr>
-          )}
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td>
+              <th className="col-check">
                 <input
                   type="checkbox"
-                  checked={sel.has(r.id)}
-                  onChange={() => toggle(r.id)}
-                  aria-label="select"
+                  checked={allOnPage}
+                  onChange={toggleAll}
+                  aria-label={tt("qbulk.selectAll")}
                 />
-              </td>
-              <td>{r.subject}</td>
-              <td>{r.grade}</td>
-              <td>{r.lang}</td>
-              <td>{r.type}</td>
-              <td>{r.body}</td>
-              <td>
-                <span className={`pill ${statusPill(r.status)}`}>
-                  {tt(`qstatus.${r.status}`)}
-                </span>
-              </td>
-              <td className="row-actions">
-                <Link href={`/questions/${r.id}/edit`}>{tt("action.edit")}</Link>
-              </td>
+              </th>
+              <th>{tt("qfield.subject")}</th>
+              <th className="col-narrow">{tt("qfield.grade")}</th>
+              <th className="col-narrow">{tt("qfield.language")}</th>
+              <th>{tt("qfield.type")}</th>
+              <th>{tt("qfield.bodyAz")}</th>
+              <th className="col-narrow">{tt("qfield.status")}</th>
+              <th aria-label="actions" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={8} className="muted">
+                  {tt("questions.none")}
+                </td>
+              </tr>
+            )}
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td className="col-check">
+                  <input
+                    type="checkbox"
+                    checked={sel.has(r.id)}
+                    onChange={() => toggle(r.id)}
+                    aria-label="select"
+                  />
+                </td>
+                <td>{r.subject}</td>
+                <td className="col-narrow">{r.grade}</td>
+                <td className="col-narrow">{r.lang}</td>
+                <td className="cell-muted">{r.type}</td>
+                <td className="cell-body" title={r.body}>
+                  {r.body}
+                </td>
+                <td className="col-narrow">
+                  <span className={`pill pill-sm ${statusPill(r.status)}`}>
+                    {tt(`qstatus.${r.status}`)}
+                  </span>
+                </td>
+                <td className="row-actions">
+                  <Link href={`/questions/${r.id}/edit`}>{tt("action.edit")}</Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

@@ -81,6 +81,46 @@ from generate_series(1, 11) as g
 on conflict (level) do nothing;
 
 -- -----------------------------------------------------------------------------
+-- Cities (the districts table is the City catalog; schools link to a city).
+-- AZ proper nouns; idempotent via unique(country_code, name). Localized city
+-- names could be added later as a districts_translations table.
+-- -----------------------------------------------------------------------------
+insert into public.districts (name, country_code, status) values
+  ('Bakı',       'AZ', 'active'),
+  ('Gəncə',      'AZ', 'active'),
+  ('Sumqayıt',   'AZ', 'active'),
+  ('Mingəçevir', 'AZ', 'active'),
+  ('Şirvan',     'AZ', 'active'),
+  ('Naxçıvan',   'AZ', 'active'),
+  ('Lənkəran',   'AZ', 'active'),
+  ('Şəki',       'AZ', 'active'),
+  ('Yevlax',     'AZ', 'active'),
+  ('Xırdalan',   'AZ', 'active'),
+  ('Quba',       'AZ', 'active'),
+  ('Şamaxı',     'AZ', 'active'),
+  ('Qəbələ',     'AZ', 'active'),
+  ('Gədəbəy',    'AZ', 'active'),
+  ('Ağdam',      'AZ', 'active')
+on conflict (country_code, name) do nothing;
+
+-- -----------------------------------------------------------------------------
+-- Sample schools under Bakı (each with a valid mandatory district_id) for testing.
+-- Admins create real schools later via the Admin Panel.
+-- -----------------------------------------------------------------------------
+insert into public.schools (name, district_id, status)
+select v.name, d.id, 'active'::public.catalog_status
+from (values
+  ('Bakı 6 nömrəli tam orta məktəb'),
+  ('Bakı 20 nömrəli tam orta məktəb')
+) as v(name)
+cross join lateral (
+  select id from public.districts where country_code = 'AZ' and name = 'Bakı' limit 1
+) as d
+where not exists (
+  select 1 from public.schools s where s.name = v.name and s.district_id = d.id
+);
+
+-- -----------------------------------------------------------------------------
 -- Starter subjects (curated minimum; expand via Admin Panel later).
 -- -----------------------------------------------------------------------------
 insert into public.subjects (code, name, status) values

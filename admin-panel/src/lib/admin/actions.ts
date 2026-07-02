@@ -8,8 +8,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getResource, type Resource } from "@/lib/admin/resources";
 import { requireAdmin, requirePanelAccess } from "@/lib/admin/guards";
+import { getT } from "@/i18n/server";
 
 export type SaveState = { error?: string } | null;
+
+// Server-side length cap on free text (taxonomy/config names ≤ 120).
+const TEXT_MAX = 120;
 
 // Auto-generate the internal stable `code` (no longer a UI input) from `name`.
 const AZ_MAP: Record<string, string> = {
@@ -33,7 +37,11 @@ async function authorize(res: Resource) {
   else await requirePanelAccess();
 }
 
-function buildPayload(res: Resource, formData: FormData) {
+type BuiltPayload =
+  | { payload: Record<string, unknown>; invalid?: undefined }
+  | { payload?: undefined; invalid: "number" | "text" };
+
+function buildPayload(res: Resource, formData: FormData): BuiltPayload {
   const payload: Record<string, unknown> = {};
   for (const f of res.fields) {
     if (f.type === "boolean") {
@@ -42,12 +50,32 @@ function buildPayload(res: Resource, formData: FormData) {
     }
     const raw = formData.get(f.name);
     const val = typeof raw === "string" ? raw.trim() : "";
-    if (f.type === "number") payload[f.name] = val === "" ? null : Number(val);
-    else if (f.type === "reference" || f.type === "select")
+    if (f.type === "number") {
+      if (val === "") {
+        payload[f.name] = null;
+        continue;
+      }
+      const n = Number(val);
+      // Numeric guard: reject NaN/Infinity and negatives.
+      if (!Number.isFinite(n) || n < 0) return { invalid: "number" };
+      // Grade level is a school class: integer 1..11 only.
+      if (
+        res.slug === "grades" &&
+        f.name === "level" &&
+        (!Number.isInteger(n) || n < 1 || n > 11)
+      ) {
+        return { invalid: "number" };
+      }
+      payload[f.name] = n;
+    } else if (f.type === "reference" || f.type === "select") {
       payload[f.name] = val === "" ? null : val;
-    else payload[f.name] = val;
+    } else {
+      // Cap: taxonomy/config names ≤ 120 (server-side, mirrors the UI limit).
+      if (val.length > TEXT_MAX) return { invalid: "text" };
+      payload[f.name] = val;
+    }
   }
-  return payload;
+  return { payload };
 }
 
 export async function saveRow(
@@ -59,13 +87,21 @@ export async function saveRow(
   const res = getResource(slug);
   if (!res) return { error: "Unknown resource." };
   await authorize(res);
+  const t = await getT();
 
   const supabase = await createClient();
-  const payload = buildPayload(res, formData);
+  const built = buildPayload(res, formData);
+  if (built.invalid) {
+    return { error: built.invalid === "text" ? t("err.tooLong") : t("err.server") };
+  }
+  const payload = built.payload;
 
   if (id) {
     const { error } = await supabase.from(res.table).update(payload).eq("id", id);
-    if (error) return { error: error.message };
+    if (error) {
+      console.error("[admin] resource update failed", slug, error.message);
+      return { error: t("err.server") };
+    }
     revalidatePath(`/manage/${slug}`);
     redirect(`/manage/${slug}`);
   } else {
@@ -80,7 +116,10 @@ export async function saveRow(
         .slice(2, 6)}`;
       ({ error } = await supabase.from(res.table).insert(payload));
     }
-    if (error) return { error: error.message };
+    if (error) {
+      console.error("[admin] resource insert failed", slug, error.message);
+      return { error: t("err.server") };
+    }
     revalidatePath(`/manage/${slug}`);
     return null;
   }

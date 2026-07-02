@@ -85,6 +85,9 @@ export async function saveSchool(
   const status = readStatus(formData);
 
   if (!name) return { error: "missing.name" };
+  // Cap: school name ≤ 200 (server-side). The form maps this unknown code to
+  // its localized generic error.
+  if (name.length > 200) return { error: "err.tooLong" };
   // Mandatory City — server-validated, never trust a missing/blank dropdown.
   if (!district_id) return { error: "missing.city" };
 
@@ -106,10 +109,17 @@ export async function saveSchool(
       .from("schools")
       .update(payload)
       .eq("id", id);
-    if (error) return { error: error.message };
+    if (error) {
+      // Never return raw DB error text to the client — generic code only.
+      console.error("[admin] school update failed", error.message);
+      return { error: "err.server" };
+    }
   } else {
     const { error } = await supabase.from("schools").insert(payload);
-    if (error) return { error: error.message };
+    if (error) {
+      console.error("[admin] school insert failed", error.message);
+      return { error: "err.server" };
+    }
   }
   revalidatePath("/schools");
   redirect("/schools");

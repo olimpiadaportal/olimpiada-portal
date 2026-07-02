@@ -6,9 +6,15 @@
 import { revalidatePath } from "next/cache";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { requireParent } from "@/lib/auth/session";
+import { isFeatureEnabled } from "@/lib/flags";
 
 export async function buyOlympiad(formData: FormData): Promise<void> {
   const parent = await requireParent();
+  // Server-side flag gates: a purchase needs BOTH the olympiad module and
+  // payments to be enabled (admin Settings). The pages hide the buy UI too;
+  // this stops hand-crafted POSTs.
+  if (!(await isFeatureEnabled("olympiad_module"))) return;
+  if (!(await isFeatureEnabled("payments"))) return;
   const studentId = String(formData.get("student_id") ?? "");
   const packageId = String(formData.get("package_id") ?? "");
   if (!studentId || !packageId) return;

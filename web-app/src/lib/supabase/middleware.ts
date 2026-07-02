@@ -13,6 +13,9 @@ export async function updateSession(request: NextRequest) {
   if (!isSupabaseConfigured) return response;
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    // Distinct cookie name so the web-app session never collides with the admin
+    // session (both run on localhost, where cookies are shared across ports).
+    cookieOptions: { name: "sb-olimpiada-web" },
     cookies: {
       getAll() {
         return request.cookies.getAll();

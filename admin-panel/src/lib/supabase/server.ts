@@ -11,6 +11,9 @@ export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(supabaseUrl, supabaseAnonKey, {
+    // Distinct cookie name so the admin session never collides with the web-app
+    // session (both run on localhost, where cookies are shared across ports).
+    cookieOptions: { name: "sb-olimpiada-admin" },
     cookies: {
       getAll() {
         return cookieStore.getAll();

@@ -5,5 +5,9 @@ import { createBrowserClient } from "@supabase/ssr";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/env";
 
 export function createClient() {
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  // Distinct cookie name so the admin session never collides with the web-app
+  // session (both run on localhost, where cookies are shared across ports).
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: { name: "sb-olimpiada-admin" },
+  });
 }

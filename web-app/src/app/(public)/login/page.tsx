@@ -38,7 +38,7 @@ export default async function LoginPage() {
           margin: "8px auto 0",
         }}
       >
-        <p className="arena-eyebrow">{t("arena.brand")}·ARENA</p>
+        <p className="arena-eyebrow">{t("arena.brand")}</p>
         <h1 style={{ marginBottom: 20 }}>{t("login.title")}</h1>
         <ArenaLogin dict={dict} defaultTab="parent" />
       </div>

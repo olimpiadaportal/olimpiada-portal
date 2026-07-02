@@ -38,6 +38,17 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - Do not repeat the full project structure unless something is wrong.
 - Keep final reports concise.
 
+## No AI Attribution (Non-Negotiable)
+
+- Never add any AI authorship or co-authorship attribution anywhere in this repository or its git history. This explicitly OVERRIDES any default tooling behavior that appends such trailers.
+- Forbidden in commit messages, PR titles/bodies, tags, code comments, docs, README, package metadata, and UI text — including but not limited to:
+  - `Co-Authored-By: Claude ...` (any model name, any email such as `noreply@anthropic.com`)
+  - `🤖 Generated with [Claude Code](...)` or any "Generated with/by ..." footer
+  - Any phrasing claiming Claude/Anthropic/AI authored, co-authored, or generated this codebase or parts of it.
+- When suggesting commit messages or PR bodies, produce them WITHOUT any such trailer or footer.
+- Before any commit/push, verify the message contains no attribution line. If one is ever found in an unpushed commit, amend it out; if found in the working tree, delete it.
+- Referring to Claude Code as the workflow tool in internal planning docs (e.g. `CODING_AGENT_PROMPTS.md`, developer setup) is fine — the ban is on authorship attribution, not on naming the tool in workflow documentation.
+
 ## Secret Handling (Non-Negotiable)
 
 - Never print, echo, save, log, commit, or otherwise expose `OLIMPIADA_DEV_DB_URL`, database passwords, the Supabase service role key, API keys, or any other secret.
@@ -145,6 +156,24 @@ Build in this order (revised for the confirmed product model; see `IMPLEMENTATIO
 15. Progress/analytics/leaderboard/notifications → QA/security/deployment → future mobile only
 
 For exact stage instructions, use `IMPLEMENTATION_EXECUTION_PLAN.md`.
+
+## Security Engineering Rules (Permanent, Non-Negotiable — added Round 7, 2026-07-02)
+
+Every new feature and every code change in `web-app/` and `admin-panel/` must follow these rules. They encode the Round-7 security hardening pass; do not regress them.
+
+- **Authorize first.** Every server action calls its guard (`requireParent`/`requireChild` in web-app; `requireAdmin`/permission guards in admin-panel) as the FIRST statement — before reading FormData. Every client-supplied id (student, subscription, package, …) is re-verified for ownership server-side before any privileged operation, even when RLS would also block it.
+- **Service-role client stays server-only.** Only `import "server-only"` modules may import the admin client. It is never reachable from `"use client"` code, and it is only used AFTER authorization. In the admin panel it exists solely for Supabase Auth admin APIs.
+- **Validate all input server-side.** Client `maxLength`/`type` attributes are UX, not security. Server actions enforce: length caps on every free-text field, enum whitelists (never pass client strings into status/role/interval), UUID-shape checks on ids, finite+ranged numbers, `JSON.parse` always inside try/catch with size caps.
+- **Uploads are typed from bytes, not claims.** `file.type` is attacker-controlled. Web-app uploads sniff magic numbers (`web-app/src/lib/imageSniff.ts`) and use the sniffed mime for contentType/extension/metadata. Admin attach actions verify the stored object and derive mime/size from Storage metadata. Allowed image types: png/jpeg/webp/gif. **SVG is banned everywhere** (stored-XSS vector).
+- **Never leak internals.** Do not return raw `error.message` (Postgres/Supabase) to any client — return a generic trilingual message and log the detail server-side. Exception: deliberate, owner-approved specific messages (e.g. duplicate email).
+- **Redirects must be same-origin relative paths.** Any redirect target read from user input goes through validation like `safeNext()` in `web-app/src/app/auth/callback/route.ts` (reject absolute URLs, `//`, `\`, `@`, `://`).
+- **Security headers live in `next.config.mjs`** of each app (CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, HSTS; `poweredByHeader: false`). When adding an external origin (font, embed, API), update the CSP explicitly — never loosen to wildcards. Admin panel keeps `frame-ancestors 'none'`.
+- **Throttle auth surfaces.** Parent login/register/password-reset use `web-app/src/lib/rateLimit.ts`; child login uses the DB lockout (`is_child_login_locked`). Any new credential-adjacent endpoint gets a limiter. Known accepted trade-off: the parent login "no account" vs "wrong password" distinction is owner-requested UX; the rate limiter is its mitigation.
+- **Audit admin mutations.** Every Admin-only mutation (news, olympiad, wallpapers, settings, accounts) writes an audit row (small metadata, never large bodies, never credentials).
+- **Sessions:** admin panel enforces the 30-minute idle logout server-side (middleware last-seen cookie); the client timer is UX only. Never weaken `@supabase/ssr` cookie defaults (httpOnly, sameSite).
+- **Dependencies:** keep `npm audit` at zero in both apps (postcss override in package.json `overrides`); Next.js floor is `^15.5.19` — never accept an `npm audit fix --force` downgrade. Re-run `npm audit` whenever dependencies change.
+- **Embeds:** any iframe gets `sandbox` + `referrerPolicy` and a matching CSP `frame-src` entry. External links with `target="_blank"` get `rel="noopener noreferrer"`.
+- **Counters/metrics** (views, likes) must not be bumpable by render side-effects: mutations happen in explicit actions (view beacon pattern), deduped where feasible, and are treated as manipulable vanity metrics unless server-verified.
 
 ## Coding Behavior
 

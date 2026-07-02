@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
+import { writeAuditLog } from "@/lib/admin/audit";
 import { getT } from "@/i18n/server";
 
 export type OlympiadState = { error?: string } | null;
@@ -45,7 +46,14 @@ export async function saveOlympiadPackage(
   const subjectId = s(fd, "subject_id");
   if (!subjectId) return { error: t("oly2.err.subject") };
   const gradeId = s(fd, "grade_id") || null;
-  const price = Number(s(fd, "price_amount")) || 0;
+  // Price must be a finite number ≥ 0 (negatives/NaN/Infinity rejected);
+  // normalized to 2 decimals.
+  const priceRaw = s(fd, "price_amount");
+  const priceNum = priceRaw === "" ? 0 : Number(priceRaw);
+  if (!Number.isFinite(priceNum) || priceNum < 0) {
+    return { error: t("err.server") };
+  }
+  const price = Math.round(priceNum * 100) / 100;
   const statusRaw = s(fd, "status");
   const status = ["active", "inactive", "archived"].includes(statusRaw) ? statusRaw : "inactive";
   const titleAz = s(fd, "title_az");
@@ -75,13 +83,17 @@ export async function saveOlympiadPackage(
         code = `${base}-${Math.random().toString(36).slice(2, 6)}`;
         continue;
       }
-      return { error: error?.message ?? "Insert failed." };
+      console.error("[admin] olympiad package insert failed", error?.message);
+      return { error: t("err.server") };
     }
-    if (!inserted) return { error: "Insert failed." };
+    if (!inserted) return { error: t("err.server") };
     pkgId = inserted.id;
   } else {
     const { error } = await supabase.from("olympiad_packages").update(row).eq("id", pkgId);
-    if (error) return { error: error.message };
+    if (error) {
+      console.error("[admin] olympiad package update failed", error.message);
+      return { error: t("err.server") };
+    }
   }
 
   for (const loc of LOCALES) {
@@ -94,7 +106,10 @@ export async function saveOlympiadPackage(
           { olympiad_package_id: pkgId, locale: loc, title, description: desc || null },
           { onConflict: "olympiad_package_id,locale" },
         );
-      if (error) return { error: error.message };
+      if (error) {
+        console.error("[admin] olympiad translation upsert failed", error.message);
+        return { error: t("err.server") };
+      }
     } else if (id) {
       await supabase
         .from("olympiad_package_translations")
@@ -103,6 +118,15 @@ export async function saveOlympiadPackage(
         .eq("locale", loc);
     }
   }
+
+  // Best-effort audit trail (never fails the mutation — handled inside).
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: id ? "admin.olympiad.update" : "admin.olympiad.create",
+    targetTable: "olympiad_packages",
+    targetId: pkgId,
+    metadata: { status, price },
+  });
 
   revalidatePath("/olympiad");
   redirect(`/olympiad/${pkgId}/edit`);
@@ -129,7 +153,7 @@ export async function bulkImportOlympiadQuestions(
   _prev: OlympiadBulkState,
   fd: FormData,
 ): Promise<OlympiadBulkState> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const t = await getT();
   const pkgId = s(fd, "__id");
   if (!pkgId) return { ok: false, error: t("bulk.pickFile") };
@@ -155,26 +179,55 @@ export async function bulkImportOlympiadQuestions(
     p_package_id: pkgId,
     p_questions: payload,
   });
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    console.error("[admin] olympiad bulk import failed", error.message);
+    return { ok: false, error: t("err.server") };
+  }
+
+  const result = data as {
+    total: number;
+    successful: number;
+    failed: number;
+    errors: { index: number; error: string }[];
+  };
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.bulk_import",
+    targetTable: "olympiad_packages",
+    targetId: pkgId,
+    metadata: {
+      total: result?.total,
+      successful: result?.successful,
+      failed: result?.failed,
+    },
+  });
 
   revalidatePath(`/olympiad/${pkgId}/edit`);
-  return {
-    ok: true,
-    result: data as {
-      total: number;
-      successful: number;
-      failed: number;
-      errors: { index: number; error: string }[];
-    },
-  };
+  return { ok: true, result };
 }
 
 export async function archiveOlympiadPackage(fd: FormData): Promise<void> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const id = s(fd, "__id");
   if (!id) return;
   const supabase = await createClient();
-  await supabase.from("olympiad_packages").update({ status: "archived" }).eq("id", id);
+  const { error } = await supabase
+    .from("olympiad_packages")
+    .update({ status: "archived" })
+    .eq("id", id);
+
+  if (!error) {
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.olympiad.archive",
+      targetTable: "olympiad_packages",
+      targetId: id,
+      metadata: { status: "archived" },
+      severity: "warning",
+    });
+  }
+
   revalidatePath("/olympiad");
   redirect("/olympiad");
 }

@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
+import { getLocaleSettings, getPublicSiteSettings } from "@/lib/flags";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { LanguageDropdown } from "@/components/LanguageDropdown";
 
 // Public top nav: Pricing, About, FAQ, Contact, News.
 const NAV: [string, string][] = [
@@ -40,6 +43,18 @@ export default async function PublicLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const t = await getT();
+  const locale = await getLocale();
+  const { enabled: enabledLocales } = await getLocaleSettings();
+  // Social links (admin Settings → social.*): only non-empty ones render.
+  const { social } = await getPublicSiteSettings();
+  const socialLinks = (
+    [
+      ["Facebook", social.facebook],
+      ["Instagram", social.instagram],
+      ["YouTube", social.youtube],
+      ["TikTok", social.tiktok],
+    ] as const
+  ).filter(([, url]) => Boolean(url));
   const year = new Date().getFullYear();
   return (
     <>
@@ -61,6 +76,10 @@ export default async function PublicLayout({
           <Link className="btn" href="/register">
             {t("nav.register")}
           </Link>
+        </div>
+        <div className="navbar-controls">
+          <ThemeToggle locale={locale} />
+          <LanguageDropdown current={locale} available={enabledLocales} />
         </div>
       </header>
 
@@ -87,7 +106,18 @@ export default async function PublicLayout({
         </div>
         <div className="site-foot-bottom">
           <div className="site-foot-bottom-inner">
-            © {year} {t("app.brand")} — {t("foot.rights")}
+            <span>
+              © {year} {t("app.brand")} — {t("foot.rights")}
+            </span>
+            {socialLinks.length > 0 && (
+              <span className="site-foot-social">
+                {socialLinks.map(([name, url]) => (
+                  <a key={name} href={url} target="_blank" rel="noopener noreferrer">
+                    {name}
+                  </a>
+                ))}
+              </span>
+            )}
           </div>
         </div>
       </footer>

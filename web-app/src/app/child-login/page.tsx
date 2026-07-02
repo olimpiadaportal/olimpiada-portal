@@ -31,7 +31,7 @@ export default async function ChildLoginPage() {
       <div className="arena arena-auth">
         <div className="arena-auth-brandside">
           <span className="arena-brand" style={{ fontSize: "1.4rem" }}>
-            {t("arena.brand")}·<b style={{ color: "var(--lime)" }}>ARENA</b>
+            {t("arena.brand")}
           </span>
           <h1>{t("child.loginTitle")}</h1>
           <p className="arena-muted">{t("auth.brandTagline")}</p>

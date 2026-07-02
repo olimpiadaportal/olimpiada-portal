@@ -61,15 +61,34 @@ export function validateChildPassword(
   return result(errors);
 }
 
+// R7 security: server-side bounds — names capped (client maxLength is not a
+// guarantee) and the picker ids must LOOK like UUIDs before reaching the RPC.
+const CHILD_NAME_MAX = 80;
+const UUID_LIKE_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function validateChildInfo(info: ChildInfo): ValidationResult {
   const errors: string[] = [];
   if (!info.firstName?.trim()) errors.push("auth.child.err.firstNameRequired");
   if (!info.lastName?.trim()) errors.push("auth.child.err.lastNameRequired");
+  if ((info.firstName?.trim().length ?? 0) > CHILD_NAME_MAX) {
+    errors.push("auth.child.err.nameTooLong");
+  }
+  if ((info.lastName?.trim().length ?? 0) > CHILD_NAME_MAX) {
+    errors.push("auth.child.err.nameTooLong");
+  }
   // D2 wizard: structured city (district), school and grade are MANDATORY.
   // (The DB keeps them optional for back-compat; the app enforces them here.)
-  if (!info.districtId?.trim()) errors.push("addchild.err.cityRequired");
-  if (!info.schoolId?.trim()) errors.push("addchild.err.schoolRequired");
-  if (!info.gradeId?.trim()) errors.push("addchild.err.gradeRequired");
+  // A malformed (non-UUID) id is treated the same as a missing one.
+  if (!UUID_LIKE_RE.test(info.districtId?.trim() ?? "")) {
+    errors.push("addchild.err.cityRequired");
+  }
+  if (!UUID_LIKE_RE.test(info.schoolId?.trim() ?? "")) {
+    errors.push("addchild.err.schoolRequired");
+  }
+  if (!UUID_LIKE_RE.test(info.gradeId?.trim() ?? "")) {
+    errors.push("addchild.err.gradeRequired");
+  }
   return result(errors);
 }
 

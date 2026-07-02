@@ -439,6 +439,101 @@ Source: owner review. Work through top-to-bottom in batches; validate (typecheck
 - [x] H4 Subscribe redesign: **subjects-first checkboxes → live subtotal → weekly/monthly/yearly → server price preview** with sibling discount reflected in the total.
 
 ---
+## ✅ INVESTOR REVIEW ROUND 5 — COMPLETE & VALIDATED (2026-07-01)
+Rebrand + design + profile/wallpaper/news polish. **Final gate: web typecheck+build PASS (30 routes), admin typecheck+build PASS (21 routes), from-zero DB rebuild = 26/26 PASS.** No SQL changes this round (wallpaper backend already existed). Nothing committed yet.
+
+### 1) Rebrand → OlimpIQ
+- [x] Product brand renamed **"Olimpiada Portal" → "OlimpIQ"** (planned domain olimpiq.ai) across both apps: web `app.brand`/`arena.brand`/`about.title`/`stats.title`/inline brand phrases (az/en/ru) + web metadata; admin metadata + hard-coded sidebar/login literals + css comment. **Kept the Azerbaijani word *olimpiada*=olympiad** in all feature names (Olimpiada Hazırlığı, oly.*, kind.olympiad, etc.). Cookie names left as `sb-olimpiada-*` (renaming would force re-login — technical, not brand). Memory note added.
+
+### 2) "Energetic" design applied to LIGHT mode (dark untouched)
+- [x] web-app `globals.css` LIGHT tokens remapped to the Energetic palette: bg `#fffbf5`, brand purple `#7c3aed`, accent orange `#ff8a00`, soft `#f7f0fe`, ink `#2a1a3e`, ok `#06b66b`, danger `#ff4757`; purple-tinted card shadows; **22px** card radii; **Trebuchet MS** (light-only); signature gradients — gradient logo mark (135° purple→orange, rotate −4°), purple-glow 14px buttons, gradient stat numbers, 3-stop hero (`150° #7c3aed→#9333ea→#ff8a00`). **Dark theme + `.arena` scope byte-unchanged** (block-B tokens re-pinned under `[data-theme="dark"]`). Source = the owner's "Enerjili" Claude Design HTML.
+
+### 3) Dedicated Profile pages + drawer-as-button (parent AND student)
+- [x] Profile editing moved out of the cramped 360px drawer onto full-width pages: **/profile** (parent) + **/child/profile** (student). Drawers now show a **Profile button** (+ Language + Theme + Logout). Student got a **drawer mirroring the parent** (`ChildProfileDrawer`). Profile removed from the student home. Parent footer wrapped in `.site-foot-inner`/`.site-foot-col` (was raw edge-jammed links).
+
+### 4) De-Arena the student app
+- [x] All user-facing **"ARENA" wording removed** (child header, ticker, login/child-login), first nav tab relabeled Home; the `.arena-*` CSS classes + `arena.*` i18n keys are kept (they're just the dark-theme scope).
+
+### 5) Wallpapers (admin-managed set + student reset)
+- [x] New admin **/wallpapers** manager: add solid colors + **upload image wallpapers** (→ wallpaper-assets bucket → media_assets → wallpapers `kind='image'`), activate/archive. Student picker now **renders image wallpapers** (was colors-only) and has a **"Default" swatch** → `resetWallpaper` deletes the selection so the app falls back to the theme (light/dark) default. Backend (table/bucket/RLS) pre-existed — no SQL.
+
+### 6) Admin settings toggles
+- [x] Real **sliding switches** (the knob used flex-`order` + `translateX:0` so it never moved → now translates 20px) + **optimistic** flag toggle (instant flip via `useOptimistic`). Shortened the leaderboard-names label.
+- [x] **Flags now actually gate** (were persisted-but-inert): `feature_flags`/`system_settings` read via a server helper `web-app/src/lib/flags.ts` (service client, safe fallbacks) — **`news_public`** hides the public News page when off; **`leaderboard.public_display_names`** anonymizes leaderboard names when off. Other flags (launch_promo, olympiad_module, payments, notifications_email) persist + slide but their gates are **not yet wired** (deferred — see below).
+
+### 7) News fixes
+- [x] **First-load image fix:** covers were full-resolution originals piped into 72px thumbnails. Now `next/image` (+ `next.config` remotePatterns for the Supabase host) resizes + serves webp with explicit dimensions → fast first paint, no layout shift. **List redesigned** to a card grid (cover/placeholder + title + excerpt + date + views); **detail** got a meta row + typography.
+
+### Round 5 — deferred / not wired (honest list)
+- Feature-flag **gates for launch_promo, olympiad_module, payments, notifications_email** (toggles persist + slide; behavior not yet wired). Real **payments + webhook**, failed-charge/expiry automation, admin subscription/payment monitoring, pg_cron scheduling of `advance_student_grades()`, News **"Most Liked"** (likes model). Package.json/README brand fields not renamed (non-UI). Energetic theme applied to **light** only (dark kept as the owner's reference dark design).
+
+---
+## ✅ INVESTOR REVIEW ROUND 6 — COMPLETE & VALIDATED (2026-07-02)
+
+**Final gate: web typecheck+build PASS (30 routes), admin typecheck+build PASS (21 routes incl. redesigned /settings), migrations 019+020 applied on dev, extended `013` = 28/28 PASS on dev AND inside a non-destructive from-zero rebuild (single transaction, rolled back; dev verified intact after). Nothing committed yet.**
+
+- [x] R6-1 **Student nav = parent nav structure (drawer bug fixed).** Root cause found: `.arena-nav` had `backdrop-filter`, which makes the header the CONTAINING BLOCK for the `position:fixed` drawer rendered inside it → the closed drawer (`translateX(100%)`) stuck out past the right edge (page extended right) and never docked to the viewport. The child shell now uses the parent's `.pnav` header verbatim (shared `ParentNavLinks` + `.pnav-right`, arena-dark overrides, NO backdrop-filter); also fixed the always-active first tab (active state now follows `usePathname`, with `exact` matching for the `/child` home tab). Old `.arena-nav*` CSS removed.
+- [x] R6-2 **Spacing pass.** `.profile-section` is now a flex column with real gap rhythm (was block layout where the Round-5 `gap` had NO effect — the actual cramping cause); ChildProfile head restructured to mirror ParentProfile (removed the misused `.profile-grid` inside the head); button paddings normalized so no text hugs borders (`.btn/.btn-ghost` 10×18, `.arena-btn(-ghost/-sm)` bumped, `.avatar-upload-btn` 9×16, form inputs 10×14); Save/Cancel rows via new `.form-actions`.
+- [x] R6-3 **Language settings actually gate.** `getLocaleSettings()` (one request-cached query) reads `platform.supported_locales` + `platform.default_locale`; `getLocale()` clamps the cookie locale to the enabled set (fallback = admin default); `LanguageDropdown` (public navbar + both drawers) only offers enabled locales. Dev currently has ru UNCHECKED (the owner's test) → web-app now really drops Russian.
+- [x] R6-4 **Hydration error fixed** with `suppressHydrationWarning` on `<html>` (documented Next.js pattern — the no-flash script intentionally rewrites `data-theme` pre-hydration; suppression covers only `<html>` attributes). Admin panel has no such pattern (no change needed).
+- [x] R6-5 **Admin Settings redesigned UniPrep-style** (via subagent; typecheck+build PASS): 3 tabs (General / Localization / Features) of grouped SettingCard blocks (warning/info variants), reusable typed SettingInput with per-field Save + helper text, SettingToggle with inline CONFIRMATION for maintenance mode, sliding flag toggles + ON/OFF pills, reality-accurate flag descriptions, 34 new i18n keys ×3. **All raw-JSON editors removed** (trilingual maintenance message = 3 textareas assembled into one JSON in code). Update-only security posture of `updateSetting` kept. Orphan `site.promo_banner` setting deleted (migration 019; referenced nowhere).
+- [x] R6-6 **All six flag gates wired** (server-side first, UI second): `payments` blocks `subscribeChild`/`addSubjectAction`/`removeSubjectAction`/`buyOlympiad` + hides the subscribe form/buy buttons with a trilingual notice (cancel stays allowed); `olympiad_module` gates the student Tasks tab, `/child/olympiads`, `startOlympiad`, the parent purchase page + dashboard button, and 404s public `/olympiad-preparation`; `launch_promo` gates the promo/trial line on public `/pricing` (actual trial behavior stays in `launch_promo_config`); `notifications_email` → `canSendEmailNotifications()` helper documented as the mandatory gate for any future email sender (nothing sends email today; Supabase Auth security emails deliberately NOT gated). Also NEW live settings: `platform.maintenance_mode(+message)` → full web-app maintenance splash (admin app unaffected); `contact.support_phone` → public Contact page; `social.*` → public footer links.
+- [x] R6-7 **News likes + "Most liked"** (migration `2026_07_02_019`, backported to canonical `012`/`014`/`013` check #27): `news_likes` (PK news+profile, RLS own-row insert/delete on published only, NO anon) + `news.like_count` via SECURITY DEFINER trigger (smoke-tested inc/dec on dev, rolled back). UI: ♥ like button (optimistic, parent OR child) on the article page, plain counter for anonymous, ♥ counts on list cards, "Most liked" sort option. Migration 019 also backfills flags/settings that existed ONLY on dev (launch_promo/news_public/olympiad_module, contact.support_email) — closing a from-zero coverage gap.
+- [x] R6-8 **pg_cron grade promotion** (migration `2026_07_02_020`, canonical **NEW `016_scheduled_jobs.sql`**, `013` check #28 SKIP-safe): job `olimpiq_advance_student_grades` = `advance_student_grades()` every Sept 1 03:00 UTC — **verified scheduled on dev** (`cron.job` row present). Guarded: environments without pg_cron skip with a NOTICE (from-zero rebuild stays green).
+- [x] R6-9 Validation done (see gate line above); `docs/MANUAL_TESTING_GUIDE.md` extended with Round-6 section **U1–U8**.
+
+---
+## ✅ INVESTOR REVIEW ROUND 7 — COMPLETE & VALIDATED (2026-07-02)
+
+**Final gate: web typecheck+build PASS (30 routes), admin typecheck+build PASS (21 routes), `npm audit` = 0 vulnerabilities in BOTH apps. No DB changes this round. Nothing committed yet.**
+
+- [x] R7-1 **Brand mark spacing**: `.pnav-brand` is now a fixed 18px slot with a 10px gap before the "Home" label, vertically centered via flex (`.pnav-link` inline-flex). Logo-file-ready: when the real logo asset arrives, an `<img>` drops into the slot and the `::before` dot is deleted — no layout change.
+- [x] R7-2 **Views/likes cross-talk fixed (root cause)**: liking called `revalidatePath` → the article re-rendered → the render-time `bump_news_view` fired again, so every like click also bumped views. Views now register via a client `<ViewBeacon/>` once per browser session per article (sessionStorage-guarded, UUID-validated server action); the render never mutates. NOT kept as a feature — it corrupted "Most viewed" and was trivially farmable. Not a DDoS vector (cheap, rate-limited requests); counters documented as manipulable vanity metrics in CLAUDE.md.
+- [x] R7-3 **Security hardening pass (both apps) — audits run by two read-only subagents, all confirmed findings fixed:**
+  - **Dependencies:** `npm audit` 0/0 (was 2 moderate each — postcss <8.5.10 pinned inside Next; fixed via package.json `overrides` postcss ^8.5.10, NOT the suggested next@9 downgrade). Next.js floor raised to `^15.5.19` (already past the 15.2.3 middleware-bypass CVE window).
+  - **Security headers (both `next.config.mjs`)**: CSP (per-app: web allows Google Fonts + Maps frame + Supabase; admin stricter with `frame-src 'none'`), X-Frame-Options (web SAMEORIGIN / admin DENY), nosniff, Referrer-Policy, Permissions-Policy, HSTS, `poweredByHeader: false`; dev-only `'unsafe-eval'` for HMR.
+  - **web-app fixes:** open redirect in `/auth/callback` (`safeNext()` — relative same-origin only); in-memory rate limiting (`lib/rateLimit.ts`) on parent login (10/15min) + register (5/15min) + password reset (3/15min) with trilingual "too many attempts" (serverless per-instance limitation documented — mitigates the owner-requested "no account vs wrong password" enumeration UX); avatar uploads now magic-byte sniffed (`lib/imageSniff.ts`, parent + child; sniffed mime drives contentType/ext/metadata); raw Postgres `error.message` no longer returned (subscription/quote/gradePractice → generic trilingual); wallpaper URL escaped before inline CSS `url()` interpolation; Maps iframes sandboxed; email regex + length caps (names 80, email 255, password 128) on parent auth; child-info validation caps names (80) + UUID-shape-checks district/school/grade ids.
+  - **admin-panel fixes (subagent; typecheck+build PASS):** 30-min idle logout now enforced SERVER-side (middleware `olimpiq-admin-last-seen` httpOnly cookie → signOut + `/login?timeout=1` with trilingual note; client timer kept as UX); audit logging added to ALL Admin-only mutations (new `lib/admin/audit.ts` helper reusing the accounts.ts pattern; news save/transition/delete/cover, olympiad save/archive/bulk-import, wallpapers create/attach/status, settings flag/setting — best-effort, metadata capped 200 chars); media attach actions now verify the ACTUAL storage object (`lib/admin/media-verify.ts` — strict path shape, extension whitelist, no SVG, server-derived size/mime; client mime/size fields ignored); `error.message` sweep → generic trilingual + server-side `console.error` (known-error special cases kept); admin login → single generic "invalid credentials"; numeric validation (price ≥ 0 finite, grade integer 1–11, NaN guards); server-side length caps across news/wallpapers/cities/schools/questions/taxonomy; `updateSetting` validates parsed JSON against the key's SETTING_META kind + size caps + unknown keys rejected; guard-first ordering in questions.ts delete/transition/bulk; dashboard page now calls `requirePanelAccess()`.
+  - **Verified clean (no action needed):** server-action authorization/ownership coverage in BOTH apps; service-role containment (`server-only`, no client imports, no NEXT_PUBLIC_ leaks); XSS sinks (all user content React-escaped; only the static theme script uses dangerouslySetInnerHTML); no SVG allowed by any storage bucket; cookies keep @supabase/ssr httpOnly/lax defaults; `.env.local` untracked (only `.example` files in git); child login lockout confirmed wired; bulk-import prototype-pollution inert (payload → jsonb RPC, never merged into JS objects).
+  - **CLAUDE.md**: permanent "Security Engineering Rules" section added (guards-first, server-side validation, byte-sniffed uploads, no raw error leaks, same-origin redirects, CSP upkeep, throttling, audit logging, dependency floor) so future implementations stay secure.
+  - New i18n keys ×3 locales: web `parent.err.tooMany`, `sub.err.failed`, `auth.child.err.nameTooLong`; admin `err.server`, `err.tooLong`, `login.invalid`, `login.timeout`.
+  - Testing guide extended with **V1–V5**.
+
+### Round 6 — still deferred (owner-acknowledged, tracked)
+- **Real payments + webhook activation** (needs a payment-provider decision; schema is provider-agnostic and ready).
+- **Trial/charge automation** (trial→paid conversion, failed-charge auto-block, expiry recompute job).
+- **Admin subscription/payment monitoring** module (read-only finance views).
+- **Brand rename in `package.json`/`README`** (non-UI; safe to do anytime — package names `olimpiada-web-app`/`olimpiada-admin-panel` and repo README still use the old name).
+- `notifications_email` gate is wired but idle until an email sender exists.
+
+## ✅ INVESTOR REVIEW ROUND 4 — COMPLETE & VALIDATED (2026-07-01)
+Bugs-first then redesign. **Final gate: web typecheck+build PASS (28 routes), admin typecheck+build PASS (20 routes), from-zero DB rebuild = 26/26 PASS.** Nothing committed yet.
+
+### Phase 1 — Critical bugs (root-caused + verified)
+- [x] **Add-Child "could not be created"** — root cause: the D2 wizard calls the **10-arg** `create_child_account`, which only existed once **migration 017** was applied to dev (done end of Round 3). Verified the full flow (`addChild`→`getParent`→`createChild`→RPC) returns `ok:true` in the running app. Also improved `getParent`/`getChild` with a one-retry so a transient RPC hiccup can't log a valid parent out.
+- [x] **"Logs out every minute" (admin) + logout-on-nav** — root cause: **both apps run on localhost and shared the same Supabase auth cookie** (cookies are domain- not port-scoped). Gave each app its own cookie name (`sb-olimpiada-web` / `sb-olimpiada-admin`) in all 6 client factories. (JWT TTL verified 3600s; IdleTimeout correctly 30 min; guards sound.) → **one-time re-login required after this change.**
+- [x] Password-eye **vertical centering** (both apps; `display:block` on the input removes the inline descender gap). Admin **Public→"Hər kəsə açıq" / Private→"Gizli"** (az).
+- [x] "News/Contact logs me out" was NOT a real logout — parent nav pointed at the **public** pages; fixed by the parent nav restructure (in-app `/help/*`).
+
+### Phase 1b — Admin bugs
+- [x] **Audit log** — real bug: `writeAudit` passed `severity:"error"` (not in the `audit_severity` enum) so the INSERT threw and was **silently swallowed** → rows dropped. Fixed (type-constrained severity, null-coerced blank target_id, errors now logged). Timestamps now render in **Asia/Baku** (Intl `timeZone:'Asia/Baku'`).
+- [x] **Cities** — Country Code field removed (server defaults `'AZ'`). **Add-News** — featured-image upload added to the Add-News flow (`/news/new` → create → cover upload → Continue).
+
+### Phase 2 — DB + Landing
+- [x] **Migration 018**: `news.view_count` + public `bump_news_view(uuid)` RPC (backported to 014/013; from-zero 26/26; applied to dev).
+- [x] **Landing redesign**: **light-mode depth/energy** (elevated cards, shadows/borders; dark untouched); **About Us** section + **stat cards** (illustrative placeholders, inline-SVG art); **side-by-side pricing**; **navbar** now holds the theme toggle + a **language dropdown** (root topbar removed); **FAQ chevrons**; **equal-size** contact info/map; **News** list sort chips (Latest/Oldest/Most-Viewed via `?sort=`) + **pagination** (`?page=`, 6/pg) + view badges; detail page counts views.
+
+### Phase 3 — Parent panel
+- [x] Independent parent nav (no wordmark): **Home / Analytics / Subscription / FAQ / Contact** + a far-right **profile drawer** (Account = avatar/password/delete/logout, Language, Theme). **In-app** Contact/FAQ at `/help/faq` `/help/contact` (no public-shell "logout"). **Home** = carousel (fixed — one slide, working arrows/dots) + children with **Add-Child on the right**. New **Analytics** page (real per-parent metrics). Generous spacing.
+
+### Phase 4 — Subscription + Settings + Child
+- [x] **Subscription Management** = modern SaaS **cards** per child + a **Cancel flow** (confirm → reason → "what you'll lose" → confirm). New `cancelChildSubscription` action (owner-verified, service-role mutation, access kept until period end; demo-safe).
+- [x] Admin **Settings** redesigned user-friendly: friendly flag names+descriptions with On/Off switches; typed inputs for known settings (email / Yes-No / locale select / locales checkboxes) + an Advanced JSON fallback; persistence shape unchanged. (Meta maps moved to `settings-meta.ts` — a `"use server"` file can't export objects.)
+- [x] **Child/ARENA** panel: wordmark removed (just "ARENA"); theme toggle + language dropdown added to the arena nav; Student nav is independent.
+
+### Round 4 — deferred (unchanged)
+- Real payments + webhook, failed-charge/expiry automation, admin subscription/payment monitoring, pg_cron scheduling of `advance_student_grades()`. News **"Most Liked"** (likes model) deferred — **Most Viewed** shipped. Landing **"Energetic" design image** not received — light-mode polish built to the written spec; align to the image when shared.
+
 ## ✅ INVESTOR REVIEW ROUND 3 — COMPLETE & VALIDATED (2026-06-29)
 Implemented the full Round-3 punch-list (≈24 change requests) across 7 phases of multi-agent work. **Final gate: admin-panel typecheck+build PASS (20/20), web-app typecheck+build PASS (24/24), from-zero DB rebuild = 25/25 PASS** (dev/staging, non-destructive, rolled back). Nothing committed yet (awaiting owner go-ahead). Updated manual testing guide in `docs/MANUAL_TESTING_GUIDE.md`.
 

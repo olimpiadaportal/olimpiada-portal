@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { isFeatureEnabled } from "@/lib/flags";
 import { SubscribeForm } from "@/components/SubscribeForm";
 import { ManageSubjects } from "@/components/ManageSubjects";
 
@@ -80,7 +81,11 @@ export default async function SubscribePage({
       <p className="muted">
         {(child as any).first_name} {(child as any).last_name}
       </p>
-      {sub?.id ? (
+      {!(await isFeatureEnabled("payments")) ? (
+        // payments flag OFF → no new plans and no billing edits (the server
+        // actions enforce the same gate; this is the friendly notice).
+        <div className="price-callout">{t("gate.paymentsOff")}</div>
+      ) : sub?.id ? (
         <ManageSubjects
           studentId={id}
           subjects={subjects}

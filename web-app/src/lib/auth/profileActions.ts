@@ -13,9 +13,12 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireParent } from "@/lib/auth/session";
 import { getT } from "@/i18n/server";
+import { sniffImageMime, EXT_BY_SNIFFED } from "@/lib/imageSniff";
 
 const AVATAR_BUCKET = "profile-avatars";
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2 MB (matches bucket limit)
+// Cheap early reject only — the authoritative type comes from byte sniffing
+// (imageSniff) inside the action.
 const ALLOWED_MIME = new Set([
   "image/png",
   "image/jpeg",
@@ -23,13 +26,6 @@ const ALLOWED_MIME = new Set([
   "image/webp",
   "image/gif",
 ]);
-const EXT_BY_MIME: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/jpg": "jpg",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
 
 export type ProfileActionState = { ok?: boolean; error?: string } | null;
 
@@ -71,6 +67,12 @@ export async function setOwnAvatar(
   if (file.size > MAX_AVATAR_BYTES) {
     return { error: t("profile.err.fileTooLarge") };
   }
+  // R7 security: type the upload from its BYTES (magic numbers), never from the
+  // attacker-controlled file.type. The sniffed mime drives contentType + ext +
+  // the media_assets row.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sniffed = sniffImageMime(bytes);
+  if (!sniffed) return { error: t("profile.err.fileType") };
 
   const supabase = await createClient();
   const {
@@ -78,12 +80,12 @@ export async function setOwnAvatar(
   } = await supabase.auth.getUser();
   if (!user) return { error: t("profile.err.updateFailed") };
 
-  const ext = EXT_BY_MIME[file.type] ?? "png";
+  const ext = EXT_BY_SNIFFED[sniffed];
   const path = `${user.id}/${Date.now()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from(AVATAR_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: false });
+    .upload(path, bytes, { contentType: sniffed, upsert: false });
   if (uploadError) return { error: t("profile.err.uploadFailed") };
 
   // Record file metadata (PostgreSQL stores metadata only, never the binary).
@@ -93,8 +95,8 @@ export async function setOwnAvatar(
       bucket: AVATAR_BUCKET,
       path,
       owner_profile_id: parent.profileId,
-      mime_type: file.type,
-      file_size_bytes: file.size,
+      mime_type: sniffed,
+      file_size_bytes: bytes.byteLength,
       visibility: "public",
     })
     .select("id")

@@ -1,6 +1,15 @@
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
+import { getSystemSetting } from "@/lib/flags";
+
+// Localized "anonymous student" label used when public display names are OFF.
+// Kept inline (no new i18n key) so this agent stays within its file scope.
+const ANON_LABEL: Record<string, string> = {
+  az: "Şagird",
+  en: "Student",
+  ru: "Ученик",
+};
 
 // Read-only leaderboard. RLS scopes a child to its OWN rows, so we build the
 // "me" row from the child's real graded attempts and clearly mark the full
@@ -8,7 +17,25 @@ import { getT } from "@/i18n/server";
 export default async function ChildLeaderboardPage() {
   const child = await requireChild();
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
+
+  // Admin setting gate: when leaderboard.public_display_names is not TRUE, other
+  // students' names are anonymized across the public board (privacy-safe default
+  // — a missing/unreadable setting also anonymizes). The current child always
+  // sees their OWN row labeled as them. This helper is applied to every row so
+  // that once real competitors populate the board they are anonymized correctly.
+  const publicNamesSetting = await getSystemSetting(
+    "leaderboard.public_display_names",
+  );
+  const showPublicNames = publicNamesSetting === true;
+  const anonBase = ANON_LABEL[locale] ?? ANON_LABEL.az;
+  const displayName = (
+    realName: string,
+    isMe: boolean,
+    shortId: string,
+  ): string =>
+    isMe || showPublicNames ? realName : `${anonBase} ${shortId}`;
 
   const { data: student } = await supabase
     .from("students")
@@ -20,6 +47,9 @@ export default async function ChildLeaderboardPage() {
   const name = `${first} ${last}`.trim() || t("arena.lb.you");
   const city = (student as any)?.city ?? "—";
   const initial = (first.trim()[0] ?? "?").toUpperCase();
+  // The current child's own row is always shown as them (isMe = true); the same
+  // helper anonymizes any non-me competitor when public display names are OFF.
+  const meDisplay = displayName(name, true, String(child.profileId).slice(0, 4));
 
   const { data: attempts } = await supabase
     .from("test_attempts")
@@ -82,7 +112,7 @@ export default async function ChildLeaderboardPage() {
                     <span className="arena-part-av">{initial}</span>
                     <div>
                       <div className="arena-part-name">
-                        {name} <span className="arena-pts">· {t("arena.lb.you")}</span>
+                        {meDisplay} <span className="arena-pts">· {t("arena.lb.you")}</span>
                       </div>
                       <div className="arena-part-city">{city}</div>
                     </div>

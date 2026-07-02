@@ -14,6 +14,7 @@ export function NewsForm({
   submitLabel,
   formId = "news-form",
   hideSubmit = false,
+  afterCreateStay = false,
 }: {
   dict: Record<string, string>;
   defaults?: Defaults;
@@ -23,6 +24,12 @@ export function NewsForm({
   formId?: string;
   /** Hide the in-form submit button when a top toolbar provides Save. */
   hideSubmit?: boolean;
+  /**
+   * When set on the create form, stay on /news/new after the draft is created
+   * (so the featured-image uploader can be shown) instead of jumping to the
+   * full edit page. Only meaningful when `id` is absent.
+   */
+  afterCreateStay?: boolean;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [state, action, pending] = useActionState<NewsState, FormData>(
@@ -49,6 +56,9 @@ export function NewsForm({
   return (
     <form id={formId} action={action} className="form">
       {id && <input type="hidden" name="__id" value={id} />}
+      {!id && afterCreateStay && (
+        <input type="hidden" name="__afterCreate" value="stay" />
+      )}
 
       <label className="field">
         <span className="field-label">{tt("news.field.slug")}</span>

@@ -8,7 +8,8 @@
 //
 // Security: every mutation re-checks requireAdmin server-side and writes through
 // the normal RLS-respecting server client. Only the allowlisted columns
-// (name, country_code, status) are ever written.
+// (name, status) are ever written; country_code is not exposed in the UI and is
+// always defaulted to 'AZ' server-side.
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -17,7 +18,6 @@ import { requireAdmin } from "@/lib/admin/guards";
 export type CityRow = {
   id: string;
   name: string;
-  country_code: string;
   status: string;
   school_count?: number;
 };
@@ -36,12 +36,11 @@ export async function listCities(): Promise<CityRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("districts")
-    .select("id, name, country_code, status, schools(count)")
+    .select("id, name, status, schools(count)")
     .order("name");
   return (data ?? []).map((r: any) => ({
     id: r.id,
     name: r.name,
-    country_code: r.country_code,
     status: r.status,
     school_count: r.schools?.[0]?.count ?? 0,
   }));
@@ -52,7 +51,7 @@ export async function getCity(id: string): Promise<CityRow | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("districts")
-    .select("id, name, country_code, status")
+    .select("id, name, status")
     .eq("id", id)
     .maybeSingle();
   return (data as CityRow) ?? null;
@@ -65,28 +64,37 @@ export async function saveCity(
   await requireAdmin();
   const id = String(formData.get("__id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
-  const country_code =
-    String(formData.get("country_code") ?? "").trim().toUpperCase() || "AZ";
   const status = readStatus(formData);
 
   if (!name) return { error: "missing.name" };
+  // Cap: city/district name ≤ 120 (server-side). The form maps this unknown
+  // code to its localized generic error.
+  if (name.length > 120) return { error: "err.tooLong" };
 
   const supabase = await createClient();
-  const payload = { name, country_code, status };
+  // country_code is not exposed in the admin UI; cities are always Azerbaijan.
+  // We always default it to 'AZ' server-side so the DB unique(country_code, name)
+  // constraint keeps working (the column stays in the districts table).
+  const payload = { name, country_code: "AZ", status };
 
   if (id) {
     const { error } = await supabase
       .from("districts")
       .update(payload)
       .eq("id", id);
-    if (error) return { error: error.message };
+    if (error) {
+      // Never return raw DB error text to the client — generic code only.
+      console.error("[admin] city update failed", error.message);
+      return { error: "err.server" };
+    }
   } else {
     const { error } = await supabase.from("districts").insert(payload);
     if (error) {
       // unique(country_code, name) collision
       if ((error as { code?: string }).code === "23505")
         return { error: "duplicate" };
-      return { error: error.message };
+      console.error("[admin] city insert failed", error.message);
+      return { error: "err.server" };
     }
   }
   revalidatePath("/cities");
@@ -111,7 +119,9 @@ export async function deleteCity(
     // instead of crashing.
     if ((error as { code?: string }).code === "23503")
       return { error: "cityInUse" };
-    return { error: error.message };
+    // Never return raw DB error text to the client — generic code only.
+    console.error("[admin] city delete failed", error.message);
+    return { error: "err.server" };
   }
   revalidatePath("/cities");
   redirect("/cities");

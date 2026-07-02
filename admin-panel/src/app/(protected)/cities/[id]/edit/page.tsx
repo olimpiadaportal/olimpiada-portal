@@ -34,12 +34,10 @@ export default async function EditCityPage({
           id={id}
           defaultValues={{
             name: city.name,
-            country_code: city.country_code,
             status: city.status,
           }}
           labels={{
             name: lt("cities.cityName"),
-            countryCode: lt("cities.countryCode"),
             status: t("field.status"),
             statusActive: t("status.active"),
             statusInactive: t("status.inactive"),

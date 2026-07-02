@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { childLogin, childLogout } from "@/lib/auth/childLoginService";
 import { requireChild } from "@/lib/auth/session";
 import { getT } from "@/i18n/server";
+import { isFeatureEnabled } from "@/lib/flags";
 
 export type ChildLoginState = { error?: string } | null;
 
@@ -42,6 +43,20 @@ export async function selectWallpaper(formData: FormData): Promise<void> {
       { onConflict: "student_profile_id" },
     );
   revalidatePath("/child");
+  revalidatePath("/child/profile");
+}
+
+// Reset wallpaper to the theme default: deleting the selection row IS the reset
+// — the arena falls back to the light/dark theme background when none exists.
+export async function resetWallpaper(): Promise<void> {
+  const child = await requireChild();
+  const supabase = await createClient();
+  await supabase
+    .from("child_wallpaper_selections")
+    .delete()
+    .eq("student_profile_id", child.profileId);
+  revalidatePath("/child");
+  revalidatePath("/child/profile");
 }
 
 // Stage 13 — start a random 25-question practice attempt (server picks the
@@ -62,6 +77,8 @@ export async function startPractice(formData: FormData): Promise<void> {
 // Stage 14 — child starts an olympiad attempt from a purchased package's pool.
 export async function startOlympiad(formData: FormData): Promise<void> {
   await requireChild();
+  // Module gate (admin Settings → olympiad_module): no new attempts while off.
+  if (!(await isFeatureEnabled("olympiad_module"))) redirect("/child");
   const packageId = String(formData.get("package_id") ?? "");
   if (!packageId) redirect("/child/olympiads");
   const supabase = await createClient();
@@ -99,7 +116,9 @@ export async function gradePractice(
     p_attempt_id: attemptId,
     p_answers: answers,
   });
-  if (error) return { ok: false, error: error.message };
+  // R7 security: no raw Postgres error text to the client (same generic marker
+  // the JSON-parse failure path uses).
+  if (error) return { ok: false, error: "bad" };
   const d = data as { score: number; max: number; results: any[] };
   return { ok: true, score: d.score, max: d.max, results: d.results };
 }

@@ -7,6 +7,12 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
+import {
+  QUESTION_MEDIA_FILENAME_RE,
+  splitStoragePath,
+  verifyStorageObject,
+} from "@/lib/admin/media-verify";
+import { getT } from "@/i18n/server";
 
 export type MediaState = { error?: string } | null;
 
@@ -22,25 +28,45 @@ const ALLOWED_MIME = [
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const LOCALES = ["az", "en", "ru"];
 const BUCKET = "question-media";
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function attachQuestionMedia(
   formData: FormData,
 ): Promise<MediaState> {
   const ctx = await requirePermission("content.create");
+  const t = await getT();
   const questionId = String(formData.get("question_id") ?? "");
   const locale = String(formData.get("locale") ?? "");
   const bucket = String(formData.get("bucket") ?? "");
   const path = String(formData.get("path") ?? "");
-  const mime = String(formData.get("mime") ?? "");
-  const size = Number(formData.get("size") ?? 0);
+  // NOTE: client-submitted mime/size form fields are deliberately IGNORED —
+  // both are derived server-side from the storage object below.
 
-  if (!questionId || !LOCALES.includes(locale)) return { error: "Invalid request." };
+  if (!questionId || !UUID_RE.test(questionId) || !LOCALES.includes(locale)) {
+    return { error: "Invalid request." };
+  }
   if (bucket !== BUCKET) return { error: "Invalid bucket." };
-  if (!path.startsWith(`questions/${questionId}/`)) return { error: "Invalid path." };
-  if (!ALLOWED_MIME.includes(mime)) return { error: "Unsupported file type." };
-  if (size <= 0 || size > MAX_SIZE) return { error: "File too large (max 5 MB)." };
+  // Strict path shape: questions/<questionId>/<single safe filename>
+  // (image or small-audio extensions only; svg rejected).
+  const filename = splitStoragePath(path, `questions/${questionId}/`);
+  if (!filename || !QUESTION_MEDIA_FILENAME_RE.test(filename)) {
+    return { error: "Invalid path." };
+  }
 
   const supabase = await createClient();
+
+  // Verify the object actually exists in the bucket and derive size + mime
+  // server-side; reject when missing or outside the whitelist.
+  const obj = await verifyStorageObject(
+    supabase,
+    bucket,
+    `questions/${questionId}`,
+    filename,
+  );
+  if (!obj) return { error: "Invalid path." };
+  if (!ALLOWED_MIME.includes(obj.mime)) return { error: "Unsupported file type." };
+  if (obj.size > MAX_SIZE) return { error: "File too large (max 5 MB)." };
 
   // Remember any previous media so we can clean it up after re-linking.
   const { data: prev } = await supabase
@@ -57,20 +83,27 @@ export async function attachQuestionMedia(
       bucket,
       path,
       owner_profile_id: ctx.profileId,
-      mime_type: mime,
-      file_size_bytes: size,
+      // Server-derived values only (never the client-submitted form fields).
+      mime_type: obj.mime,
+      file_size_bytes: obj.size,
       visibility: "public",
     })
     .select("id")
     .single();
-  if (error || !media) return { error: error?.message ?? "Could not record media." };
+  if (error || !media) {
+    console.error("[admin] question media insert failed", error?.message);
+    return { error: t("err.server") };
+  }
 
   const { error: linkErr } = await supabase
     .from("question_translations")
     .update({ media_asset_id: media.id })
     .eq("question_id", questionId)
     .eq("locale", locale);
-  if (linkErr) return { error: linkErr.message };
+  if (linkErr) {
+    console.error("[admin] question media link failed", linkErr.message);
+    return { error: t("err.server") };
+  }
 
   if (prevId) {
     const { data: pm } = await supabase

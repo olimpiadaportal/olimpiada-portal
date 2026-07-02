@@ -1,11 +1,14 @@
 "use client";
 
-// Parent information carousel (Phase E2): the numbered rotating panel ported
-// from the student panel. Renders 5 numbered slides (carousel.i1..i5) with a
-// dot pager + prev/next arrows and gentle auto-advance. All copy is passed in
-// from the server page (already localized via getT) so this stays free of any
-// client-side i18n dependency. Uses E1's contract classes verbatim.
-import { useEffect, useState } from "react";
+// Parent information carousel: a real single-slide carousel. The track holds all
+// slides side-by-side (each 100% wide) and is shifted with translateX(-index*100%)
+// so exactly ONE slide is visible at a time. Prev/next arrows wrap around, the dot
+// pager jumps to a slide + reflects the active one, and a 6s auto-advance runs while
+// the pointer is not hovering the carousel. All copy is passed in from the server
+// page (already localized via getT) so this stays free of client-side i18n. Uses the
+// contract classes: .info-carousel/.info-track/.info-slide/.info-slide-num/.info-dots/
+// .info-dot(.active)/.info-arrow(.prev/.next).
+import { useEffect, useRef, useState } from "react";
 
 export type InfoSlide = { title: string; body: string };
 
@@ -18,16 +21,18 @@ export function InfoCarousel({
 }) {
   const count = slides.length;
   const [index, setIndex] = useState(0);
+  const paused = useRef(false);
 
   const go = (next: number) => {
     if (count === 0) return;
     setIndex(((next % count) + count) % count);
   };
 
-  // Auto-advance every 6s; pauses are unnecessary for this lightweight panel.
+  // Auto-advance every 6s, but skip a tick while the pointer is hovering (paused).
   useEffect(() => {
     if (count <= 1) return;
     const id = setInterval(() => {
+      if (paused.current) return;
       setIndex((i) => (i + 1) % count);
     }, 6000);
     return () => clearInterval(id);
@@ -36,22 +41,33 @@ export function InfoCarousel({
   if (count === 0) return null;
 
   return (
-    <section className="info-carousel" aria-roledescription="carousel" aria-label={title}>
+    <section
+      className="info-carousel"
+      aria-roledescription="carousel"
+      aria-label={title}
+      onMouseEnter={() => {
+        paused.current = true;
+      }}
+      onMouseLeave={() => {
+        paused.current = false;
+      }}
+    >
       <button
         type="button"
         className="info-arrow prev"
         onClick={() => go(index - 1)}
-        aria-label="‹"
+        aria-label="Previous"
       >
         ‹
       </button>
 
-      <div className="info-track">
+      <div className="info-track" style={{ transform: `translateX(-${index * 100}%)` }}>
         {slides.map((s, i) => (
           <div
             key={i}
             className="info-slide"
-            hidden={i !== index}
+            role="group"
+            aria-roledescription="slide"
             aria-hidden={i !== index}
           >
             <span className="info-slide-num">{i + 1}</span>
@@ -65,12 +81,12 @@ export function InfoCarousel({
         type="button"
         className="info-arrow next"
         onClick={() => go(index + 1)}
-        aria-label="›"
+        aria-label="Next"
       >
         ›
       </button>
 
-      <div className="info-dots" role="tablist">
+      <div className="info-dots" role="tablist" aria-label={title}>
         {slides.map((_, i) => (
           <button
             key={i}

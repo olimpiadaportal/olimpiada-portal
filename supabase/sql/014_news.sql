@@ -28,9 +28,14 @@ create table if not exists public.news (
   cover_media_id uuid references public.media_assets (id) on delete set null,
   created_by    uuid references public.profiles (id) on delete set null,
   published_at  timestamptz,
+  view_count    integer not null default 0,           -- public view counter (bump_news_view)
+  like_count    integer not null default 0,           -- likes counter (trg_news_like_count)
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+
+-- Rerun-safety for databases created before Round 6 (migration 019).
+alter table public.news add column if not exists like_count integer not null default 0;
 
 comment on table public.news is
   'General news (public + in-app). Admin-only CRUD. Images in Supabase Storage (news-media).';
@@ -114,6 +119,99 @@ create policy "news_translations_select" on public.news_translations for select
 drop policy if exists "news_translations_write" on public.news_translations;
 create policy "news_translations_write" on public.news_translations for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
+
+-- ---- Public view counter -----------------------------------------------------
+-- Lets anon/authenticated readers register a view on a PUBLISHED article without
+-- holding UPDATE rights on public.news (SECURITY DEFINER). Only published rows
+-- are counted so a leaked draft id can't inflate the counter.
+create or replace function public.bump_news_view(p_news_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  update public.news
+     set view_count = view_count + 1
+   where id = p_news_id and status = 'published';
+end;
+$$;
+
+comment on function public.bump_news_view(uuid) is
+  'Increments a PUBLISHED news article''s view_count. SECURITY DEFINER so readers '
+  'can register a view without UPDATE rights on public.news.';
+
+revoke all on function public.bump_news_view(uuid) from public;
+grant execute on function public.bump_news_view(uuid) to anon, authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
+-- News likes (Round 6, migration 019): one like per signed-in profile (parent OR
+-- child) per article; news.like_count is maintained by a SECURITY DEFINER
+-- trigger because likers hold no UPDATE right on public.news.
+-- -----------------------------------------------------------------------------
+create table if not exists public.news_likes (
+  news_id    uuid not null references public.news (id) on delete cascade,
+  profile_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (news_id, profile_id)
+);
+
+comment on table public.news_likes is
+  'One like per signed-in profile (parent OR child) per news article. Drives news.like_count.';
+comment on column public.news.like_count is
+  'Denormalized like counter maintained by trg_news_like_count (fn_news_like_count).';
+
+create index if not exists idx_news_likes_profile on public.news_likes (profile_id);
+
+create or replace function public.fn_news_like_count()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.news set like_count = like_count + 1 where id = new.news_id;
+    return new;
+  elsif tg_op = 'DELETE' then
+    update public.news set like_count = greatest(like_count - 1, 0) where id = old.news_id;
+    return old;
+  end if;
+  return null;
+end;
+$$;
+
+comment on function public.fn_news_like_count() is
+  'Trigger function: keeps news.like_count in sync with news_likes rows. '
+  'SECURITY DEFINER so likers need no UPDATE right on public.news.';
+
+revoke all on function public.fn_news_like_count() from public, anon, authenticated;
+
+drop trigger if exists trg_news_like_count on public.news_likes;
+create trigger trg_news_like_count
+  after insert or delete on public.news_likes
+  for each row execute function public.fn_news_like_count();
+
+-- Baseline privileges (RLS gates rows). NO anon grants: liking requires login.
+grant select, insert, delete on public.news_likes to authenticated;
+grant all on public.news_likes to service_role;
+
+alter table public.news_likes enable row level security;
+
+drop policy if exists "news_likes_select_own" on public.news_likes;
+create policy "news_likes_select_own" on public.news_likes for select to authenticated
+  using (profile_id = public.current_profile_id() or public.is_admin());
+
+drop policy if exists "news_likes_insert_own" on public.news_likes;
+create policy "news_likes_insert_own" on public.news_likes for insert to authenticated
+  with check (
+    profile_id = public.current_profile_id()
+    and exists (select 1 from public.news n where n.id = news_id and n.status = 'published')
+  );
+
+drop policy if exists "news_likes_delete_own" on public.news_likes;
+create policy "news_likes_delete_own" on public.news_likes for delete to authenticated
+  using (profile_id = public.current_profile_id());
 
 -- =============================================================================
 -- End of 014_news.sql

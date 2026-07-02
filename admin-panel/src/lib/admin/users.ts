@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/admin/guards";
 import { createAdminClient, hasServiceRole } from "@/lib/supabase/admin";
+import { getT } from "@/i18n/server";
 
 const ALLOWED_ROLES = ["administrator", "content_manager"] as const;
 type AllowedRole = (typeof ALLOWED_ROLES)[number];
@@ -46,7 +47,12 @@ export async function createPanelUser(
     email_confirm: true,
     user_metadata: displayName ? { display_name: displayName } : undefined,
   });
-  if (createErr) return { error: createErr.message };
+  if (createErr) {
+    // Never return raw Auth error text to the client (never log passwords).
+    console.error("[admin] panel user create failed", createErr.message);
+    const t = await getT();
+    return { error: t("err.server") };
+  }
   const authUserId = created.user?.id;
   if (!authUserId) return { error: "User was not created." };
 
@@ -72,7 +78,12 @@ export async function createPanelUser(
   const { error: assignErr } = await admin
     .from("profile_roles")
     .insert({ profile_id: profile.id, role_id: roleRow.id });
-  if (assignErr) return { error: assignErr.message };
+  if (assignErr) {
+    // Never return raw DB error text to the client.
+    console.error("[admin] panel role assign failed", assignErr.message);
+    const t = await getT();
+    return { error: t("err.server") };
+  }
 
   revalidatePath("/users");
   return { ok: true };

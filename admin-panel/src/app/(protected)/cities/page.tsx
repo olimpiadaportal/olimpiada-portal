@@ -24,7 +24,6 @@ export default async function CitiesPage() {
         <CityForm
           labels={{
             name: lt("cities.cityName"),
-            countryCode: lt("cities.countryCode"),
             status: t("field.status"),
             statusActive: t("status.active"),
             statusInactive: t("status.inactive"),
@@ -42,7 +41,6 @@ export default async function CitiesPage() {
           <thead>
             <tr>
               <th>{lt("cities.cityName")}</th>
-              <th>{lt("cities.countryCode")}</th>
               <th>{t("field.status")}</th>
               <th>{lt("cities.schoolCount")}</th>
               <th aria-label="actions" />
@@ -51,7 +49,7 @@ export default async function CitiesPage() {
           <tbody>
             {cities.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
+                <td colSpan={4} className="muted">
                   {lt("cities.noRecords")}
                 </td>
               </tr>
@@ -59,7 +57,6 @@ export default async function CitiesPage() {
             {cities.map((c) => (
               <tr key={c.id}>
                 <td>{c.name}</td>
-                <td>{c.country_code}</td>
                 <td>{t(`status.${c.status}`)}</td>
                 <td>{c.school_count}</td>
                 <td className="row-actions">

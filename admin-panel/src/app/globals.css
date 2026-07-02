@@ -1,5 +1,5 @@
 /* =========================================================================
-   Olimpiada Admin Panel — professional foundation theme.
+   OlimpIQ Admin Panel — professional foundation theme.
    Dark sidebar + light content, refined spacing/typography. No business logic.
    ========================================================================= */
 :root {
@@ -350,6 +350,40 @@ a {
   text-decoration: underline;
 }
 
+/* Neutral inline action button (matches .link-danger, brand color). */
+.link-button {
+  background: none;
+  border: 0;
+  color: var(--accent, #2563eb);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+/* Wallpaper catalog preview swatch (solid color or image thumbnail). */
+.wallpaper-swatch {
+  display: inline-block;
+  width: 56px;
+  height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #e5e7eb);
+  object-fit: cover;
+  vertical-align: middle;
+}
+
+/* Native color picker sized to sit inside a .field. */
+.color-input {
+  width: 64px;
+  height: 40px;
+  padding: 2px;
+  cursor: pointer;
+}
+
 /* ---- Forms -------------------------------------------------------------- */
 .form {
   display: flex;
@@ -437,6 +471,7 @@ a {
 }
 
 .pw-input {
+  display: block; /* remove inline descender gap so the eye centers on the input */
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -750,10 +785,88 @@ a {
   font-size: 0.88rem;
 }
 
+/* Friendly flag name (human label, not a raw key). */
+.flag-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
 /* Inline (non-floating) pill used inside rows; overrides .pill top margin. */
 .pill-inline {
   margin-top: 0;
   vertical-align: middle;
+}
+
+/* Short intro paragraph under a card head. */
+.section-intro {
+  margin: 0 0 14px;
+  font-size: 0.86rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ---- Switch control (feature flags + boolean settings) ------------------ */
+/* Fixed-geometry track: the knob physically slides left↔right (translateX),
+   it does not merely recolor. Background swaps grey↔brand on state. */
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  width: 44px;
+  height: 24px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #e5e7eb;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+  line-height: 1;
+}
+
+.switch:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.4);
+  outline-offset: 2px;
+}
+
+.switch-knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transform: translateX(0);
+  transition: transform 0.18s ease;
+}
+
+.switch-on .switch-knob {
+  transform: translateX(20px);
+}
+
+/* Optional Yes/No label sits beside the track (not inside it), so the fixed
+   track geometry is preserved and the knob has a clean 20px travel. */
+.switch-text {
+  position: absolute;
+  left: calc(100% + 8px);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.switch-on {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.switch-on .switch-text {
+  color: var(--text);
+}
+
+/* Compact switch (flag row toggle, no text label) keeps the same track. */
+.switch-sm {
+  width: 44px;
 }
 
 /* ---- Settings: system settings editor ----------------------------------- */
@@ -793,26 +906,6 @@ a {
   gap: 8px;
 }
 
-.setting-editor textarea {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: #f8fafc;
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  resize: vertical;
-  tab-size: 2;
-}
-
-.setting-editor textarea:focus {
-  outline: 2px solid rgba(79, 70, 229, 0.35);
-  border-color: var(--brand);
-  background: #fff;
-}
-
 .setting-editor-actions {
   display: flex;
   align-items: center;
@@ -826,6 +919,41 @@ a {
   font-size: 0.88rem;
   border: 1px dashed var(--border);
   border-radius: 10px;
+}
+
+/* Helper text under a friendly setting field. */
+.setting-help {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* Row of language checkboxes (chips) for multi-select settings. */
+.checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.checkbox-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-chip input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 /* Compact inline status text (saved / error) next to a control. */
@@ -1021,5 +1149,283 @@ a {
   .nav-section-label,
   .sidebar-foot {
     display: none;
+  }
+}
+
+/* =========================================================================
+   SETTINGS REDESIGN (Round 6)
+   Tabbed settings page (General / Localization / Features): underline tab
+   bar, grouped setting cards (default / warning / info variants), typed
+   per-field editors with per-field Save, trilingual grid, boolean toggle
+   rows with status pills, and an inline confirmation row for dangerous
+   toggles. Additive only — earlier tokens/classes are unchanged.
+   ========================================================================= */
+
+/* ---- Tab bar (underline style) ------------------------------------------ */
+.settings-tabbar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+
+.settings-tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; /* underline sits on the bar's border */
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-tab:hover {
+  color: var(--text);
+}
+
+.settings-tab.active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+}
+
+.settings-tab:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.4);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* Vertical rhythm between cards inside a tab panel. */
+.settings-panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ---- Setting cards (title + gray description header) -------------------- */
+.setting-card {
+  padding: 22px 24px;
+}
+
+.setting-card-head {
+  margin-bottom: 18px;
+}
+
+.setting-card-head h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.setting-card-desc {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.setting-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Warning variant (amber accent) — dangerous areas like maintenance. */
+.setting-card-warn {
+  border-color: #fcd34d;
+  background: #fffdf5;
+  box-shadow: inset 3px 0 0 #f59e0b, 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+/* Info variant (blue accent) — informational groups like social links. */
+.setting-card-info {
+  border-color: #bfdbfe;
+  background: #f8fbff;
+  box-shadow: inset 3px 0 0 #3b82f6, 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+/* ---- Typed setting field (label + control + per-field Save + help) ------ */
+.sfield {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sfield-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sfield-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.sfield-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Compact per-field Save button. */
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 0.83rem;
+  border-radius: 7px;
+}
+
+/* Amber confirm button for dangerous actions (extends .btn). */
+.btn-warn {
+  background: #d97706;
+}
+
+.btn-warn:hover {
+  background: #b45309;
+}
+
+/* Shared control styling for inputs/textareas/selects in setting fields. */
+.sfield-control {
+  width: 100%;
+  max-width: 480px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: inherit;
+  background: #fff;
+  color: var(--text);
+}
+
+.sfield-control:focus,
+.sfield-control:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.35);
+  border-color: var(--brand);
+}
+
+textarea.sfield-control {
+  max-width: 100%;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+select.sfield-select {
+  max-width: 220px;
+}
+
+.sfield-help {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* Muted "not configured yet" hint for settings whose DB row isn't seeded. */
+.sfield-missing {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ---- Trilingual editor (az/en/ru saved together) ------------------------ */
+.tri-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.tri-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tri-lang {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---- Boolean setting toggle row (label/desc left, pill + switch right) --- */
+.toggle-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toggle-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* ---- Inline confirmation row for dangerous toggles ----------------------- */
+.confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  background: var(--warn-bg);
+}
+
+.confirm-text {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--warn-fg);
+}
+
+.confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- Responsive ---------------------------------------------------------- */
+@media (max-width: 640px) {
+  .toggle-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .toggle-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .sfield-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
 }

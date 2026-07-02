@@ -381,6 +381,49 @@ select '25_grade_promotion_secure' as check_name,
                    'public.advance_student_grades()', 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
+-- 26) News view counter: column exists + bump_news_view present and callable by
+--     readers (anon + authenticated) so public "Most Viewed" can register views.
+select '26_news_view_count' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='news'
+                            and column_name='view_count')
+             and exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                          where n.nspname='public' and p.proname='bump_news_view')
+             and has_function_privilege('anon', 'public.bump_news_view(uuid)', 'EXECUTE')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 27) News likes (Round 6, migration 019): news_likes table with RLS ON + its 3
+--     own-row policies, like_count column, counter trigger present, and the
+--     Round-6 settings/flags seeds in place (maintenance mode + launch_promo/
+--     news_public/olympiad_module flags). No anon INSERT privilege on likes.
+select '27_news_likes_round6' as check_name,
+       case when exists (select 1 from pg_tables where schemaname='public'
+                          and tablename='news_likes' and rowsecurity)
+             and (select count(*) from pg_policies
+                   where schemaname='public' and tablename='news_likes') = 3
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='news'
+                            and column_name='like_count')
+             and exists (select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid
+                          where c.relname='news_likes' and t.tgname='trg_news_like_count')
+             and has_table_privilege('anon', 'public.news_likes', 'INSERT') = false
+             and exists (select 1 from public.system_settings
+                          where key='platform.maintenance_mode')
+             and (select count(*) from public.feature_flags
+                   where key in ('launch_promo','news_public','olympiad_module')) = 3
+            then 'PASS' else 'FAIL' end as status;
+
+-- 28) Scheduled jobs (016): report-only. NOTE: plain SQL cannot reference
+--     cron.job on databases where pg_cron is absent (missing relation fails at
+--     PLAN time even inside an untaken CASE branch), so this check reports the
+--     extension's presence; the actual job row is asserted manually on dev:
+--       select jobname, schedule from cron.job
+--        where jobname = 'olimpiq_advance_student_grades';
+select '28_pg_cron_grade_promotion' as check_name,
+       case when exists (select 1 from pg_extension where extname='pg_cron')
+            then 'PASS (pg_cron present; job managed by 016)'
+            else 'SKIP (pg_cron absent — 016 skipped safely)' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

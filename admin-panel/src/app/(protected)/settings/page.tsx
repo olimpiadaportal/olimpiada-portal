@@ -1,34 +1,205 @@
 import { requireAdmin } from "@/lib/admin/guards";
 import { createClient } from "@/lib/supabase/server";
 import { FeatureFlagToggle } from "@/components/FeatureFlagToggle";
-import { SettingEditor } from "@/components/SettingEditor";
+import { SettingEditor, type SettingFieldKind } from "@/components/SettingEditor";
+import { SettingToggle } from "@/components/SettingToggle";
+import { SettingCard } from "@/components/SettingCard";
+import { SettingsTabs } from "@/components/SettingsTabs";
+import { FLAG_META, SETTING_META, LOCALE_OPTIONS } from "@/lib/admin/settings-meta";
 import { getT } from "@/i18n/server";
 
+// Settings redesign (Round 6): a single tabbed page (General / Localization /
+// Features) with settings grouped into cards and typed per-field editors.
+// There is NO raw-JSON editor: every rendered setting uses a typed control
+// from SETTING_META. Keys present in the DB but absent from SETTING_META are
+// intentionally NOT rendered — all live keys are covered by META, so an
+// unknown key means a not-yet-supported experiment that should get a META
+// entry (and i18n strings) before being exposed to admins.
 export default async function SettingsPage() {
   await requireAdmin();
   const t = await getT();
   const supabase = await createClient();
 
-  const { data: flagRows } = await supabase
-    .from("feature_flags")
-    .select("key, enabled")
-    .order("key", { ascending: true });
-  const flags = (flagRows ?? []) as any[];
+  const [{ data: flagRows }, { data: settingRows }] = await Promise.all([
+    supabase.from("feature_flags").select("key, enabled"),
+    supabase.from("system_settings").select("key, value_json"),
+  ]);
 
-  const { data: settingRows } = await supabase
-    .from("system_settings")
-    .select("key, value_json")
-    .order("key", { ascending: true });
-  const settings = (settingRows ?? []) as any[];
+  const flagEnabled = new Map(
+    ((flagRows ?? []) as { key: string; enabled: boolean }[]).map((f) => [
+      f.key,
+      f.enabled,
+    ]),
+  );
 
-  const settingStrings = {
+  const settingValue = new Map<string, unknown>();
+  for (const row of (settingRows ?? []) as { key: string; value_json: unknown }[]) {
+    settingValue.set(row.key, row.value_json);
+  }
+
+  // Shared strings for the typed field editors.
+  const editorBase = {
     save: t("action.save"),
     saving: t("manage.saving"),
     saved: t("settings.saved"),
     invalidJson: t("settings.err.invalidJson"),
     notFound: t("settings.err.notFound"),
     missing: t("settings.err.missing"),
+    notConfigured: t("settings.notConfigured"),
+    localesEmpty: t("settings.err.localesEmpty"),
+    langAz: t("settings.lang.az"),
+    langEn: t("settings.lang.en"),
+    langRu: t("settings.lang.ru"),
   };
+
+  // Typed field for a known non-boolean setting key. If the DB row has not
+  // been seeded yet, the control still renders (empty/default value) with a
+  // muted "not configured yet" hint; saving then reports not-found.
+  function field(key: string) {
+    const meta = SETTING_META[key];
+    if (!meta) return null;
+    const kind = meta.kind;
+    if (kind === "boolean") return null; // booleans render via toggle()
+    return (
+      <SettingEditor
+        key={key}
+        settingKey={key}
+        kind={kind as SettingFieldKind}
+        value={settingValue.get(key)}
+        exists={settingValue.has(key)}
+        localeOptions={LOCALE_OPTIONS}
+        placeholder={meta.placeholder}
+        strings={{ ...editorBase, label: t(meta.labelKey), help: t(meta.helpKey) }}
+      />
+    );
+  }
+
+  // Boolean setting toggle (saves immediately). `confirm` marks dangerous
+  // toggles that require an inline confirmation step before enabling.
+  function toggle(key: string, opts?: { confirm?: boolean }) {
+    const meta = SETTING_META[key];
+    if (!meta) return null;
+    return (
+      <SettingToggle
+        key={key}
+        settingKey={key}
+        initial={settingValue.get(key) === true}
+        exists={settingValue.has(key)}
+        strings={{
+          label: t(meta.labelKey),
+          help: t(meta.helpKey),
+          on: t("settings.on"),
+          off: t("settings.off"),
+          enable: t("settings.enable"),
+          disable: t("settings.disable"),
+          saved: t("settings.saved"),
+          notFound: t("settings.err.notFound"),
+          notConfigured: t("settings.notConfigured"),
+          ...(opts?.confirm
+            ? {
+                confirmText: t("settings.maintenanceConfirm"),
+                confirmYes: t("settings.confirm"),
+                cancel: t("action.cancel"),
+              }
+            : {}),
+        }}
+      />
+    );
+  }
+
+  /* ------------------------------ Tab: General ------------------------------ */
+  const generalTab = (
+    <div className="settings-panel-stack">
+      <SettingCard
+        title={t("settings.card.maintenance.title")}
+        description={t("settings.card.maintenance.desc")}
+        variant="warning"
+      >
+        {toggle("platform.maintenance_mode", { confirm: true })}
+        {field("platform.maintenance_message")}
+      </SettingCard>
+
+      <SettingCard
+        title={t("settings.card.support.title")}
+        description={t("settings.card.support.desc")}
+      >
+        {field("contact.support_email")}
+        {field("contact.support_phone")}
+      </SettingCard>
+
+      <SettingCard
+        title={t("settings.card.social.title")}
+        description={t("settings.card.social.desc")}
+        variant="info"
+      >
+        {field("social.facebook")}
+        {field("social.instagram")}
+        {field("social.youtube")}
+        {field("social.tiktok")}
+      </SettingCard>
+    </div>
+  );
+
+  /* --------------------------- Tab: Localization ---------------------------- */
+  const localizationTab = (
+    <div className="settings-panel-stack">
+      <SettingCard
+        title={t("settings.card.languages.title")}
+        description={t("settings.card.languages.desc")}
+      >
+        {field("platform.default_locale")}
+        {field("platform.supported_locales")}
+      </SettingCard>
+    </div>
+  );
+
+  /* ------------------------------ Tab: Features ----------------------------- */
+  const featuresTab = (
+    <div className="settings-panel-stack">
+      <SettingCard
+        title={t("settings.flagsTitle")}
+        description={t("settings.flagsIntro")}
+      >
+        <div className="flag-list">
+          {Object.entries(FLAG_META).map(([key, meta]) => {
+            const enabled = flagEnabled.get(key);
+            return (
+              <div className="flag-row" key={key}>
+                <div className="flag-info">
+                  <span className="flag-title">{t(meta.labelKey)}</span>
+                  <span className="flag-desc">{t(meta.descKey)}</span>
+                </div>
+                <div className="flag-controls">
+                  {enabled === undefined ? (
+                    // Flag row not seeded in the DB yet — nothing to toggle.
+                    <span className="sfield-missing">
+                      {t("settings.notConfigured")}
+                    </span>
+                  ) : (
+                    <FeatureFlagToggle
+                      flagKey={key}
+                      enabled={enabled}
+                      enableLabel={t("settings.enable")}
+                      disableLabel={t("settings.disable")}
+                      onText={t("settings.on")}
+                      offText={t("settings.off")}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </SettingCard>
+
+      <SettingCard
+        title={t("settings.card.leaderboard.title")}
+        description={t("settings.card.leaderboard.desc")}
+      >
+        {toggle("leaderboard.public_display_names")}
+      </SettingCard>
+    </div>
+  );
 
   return (
     <div className="page">
@@ -37,69 +208,17 @@ export default async function SettingsPage() {
         <p className="muted">{t("settings.subtitle")}</p>
       </div>
 
-      <div className="card-stack">
-        <section className="card">
-          <div className="card-head">
-            <h3>{t("settings.flagsTitle")}</h3>
-          </div>
-
-          {flags.length === 0 ? (
-            <div className="flag-empty">{t("settings.noFlags")}</div>
-          ) : (
-            <div className="flag-list">
-              {flags.map((f) => (
-                <div className="flag-row" key={f.key}>
-                  <div className="flag-info">
-                    <span className="flag-name">{f.key}</span>
-                    <span className="flag-desc">{t("settings.flagKey")}</span>
-                  </div>
-                  <div className="flag-controls">
-                    <span
-                      className={`pill pill-inline ${
-                        f.enabled ? "pill-ok" : "pill-muted"
-                      }`}
-                    >
-                      {f.enabled ? t("settings.on") : t("settings.off")}
-                    </span>
-                    <FeatureFlagToggle
-                      flagKey={f.key}
-                      enabled={f.enabled}
-                      enableLabel={t("settings.enable")}
-                      disableLabel={t("settings.disable")}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="card">
-          <div className="card-head">
-            <h3>{t("settings.settingsTitle")}</h3>
-            <span className="muted">{t("settings.jsonHint")}</span>
-          </div>
-
-          {settings.length === 0 ? (
-            <div className="setting-empty">{t("settings.noSettings")}</div>
-          ) : (
-            <div className="setting-list">
-              {settings.map((srow) => (
-                <div className="setting-item" key={srow.key}>
-                  <div className="setting-item-head">
-                    <span className="setting-key">{srow.key}</span>
-                  </div>
-                  <SettingEditor
-                    settingKey={srow.key}
-                    value={JSON.stringify(srow.value_json, null, 2)}
-                    strings={settingStrings}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+      <SettingsTabs
+        tabs={[
+          { id: "general", label: t("settings.tab.general"), content: generalTab },
+          {
+            id: "localization",
+            label: t("settings.tab.localization"),
+            content: localizationTab,
+          },
+          { id: "features", label: t("settings.tab.features"), content: featuresTab },
+        ]}
+      />
     </div>
   );
 }

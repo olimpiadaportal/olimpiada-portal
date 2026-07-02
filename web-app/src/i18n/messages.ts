@@ -4,7 +4,7 @@ import type { Locale } from "./config";
 // Keep all three languages in sync whenever a UI string is added.
 export const messages: Record<Locale, Record<string, string>> = {
   az: {
-    "app.brand": "Olimpiada Portalı",
+    "app.brand": "OlimpIQ",
     "home.subtitle": "Şagird və Valideyn Veb Tətbiqi — ilkin versiya.",
     "supabase.heading": "Supabase bağlantısı",
     "supabase.configured": "qurulub ✓",
@@ -25,6 +25,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "auth.child.err.idFormat": "8 rəqəmli ID daxil edin.",
     "auth.child.err.passwordRequired": "Parolu daxil edin.",
     "auth.child.err.passwordTooShort": "Parol ən az 8 simvol olmalıdır.",
+    "auth.child.err.nameTooLong": "Ad çox uzundur (maksimum 80 simvol).",
     "auth.child.err.passwordEqualsId": "Parol ID ilə eyni ola bilməz.",
     "auth.child.err.firstNameRequired": "Adı daxil edin.",
     "auth.child.err.lastNameRequired": "Soyadı daxil edin.",
@@ -64,9 +65,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "home.f4Title": "Gündəlik məşq",
     "home.f4Desc":
       "Suallar sinifə uyğun serverdə seçilir — təxmin yox, davamlı irəliləyiş.",
-    "about.title": "Olimpiada Portalı haqqında",
+    "about.title": "OlimpIQ haqqında",
     "about.p1":
-      "Olimpiada Portalı 1–11-ci sinif Azərbaycan şagirdlərinə olimpiadalara hazırlaşmağa və gündəlik məşqlə möhkəm təməl qurmağa kömək edir.",
+      "OlimpIQ 1–11-ci sinif Azərbaycan şagirdlərinə olimpiadalara hazırlaşmağa və gündəlik məşqlə möhkəm təməl qurmağa kömək edir.",
     "about.p2":
       "Valideyn idarədədir: hər uşağın hesabını yaradır və idarə edir, fənləri seçir və irəliləyişi izləyir — hamısı bir yerdə.",
     "subjects.title": "Fənlər",
@@ -164,6 +165,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Uşaqlarınızı əlavə etmək və idarə etmək üçün valideyn kimi qeydiyyatdan keçin.",
     "parent.err.email": "Düzgün e-poçt daxil edin.",
     "parent.err.password": "Parol ən az 8 simvol olmalıdır.",
+    "parent.err.tooMany":
+      "Həddindən çox cəhd edildi. Zəhmət olmasa bir neçə dəqiqə sonra yenidən yoxlayın.",
     "parent.err.required": "E-poçt və parolu daxil edin.",
     "parent.err.invalid": "E-poçt və ya parol yanlışdır.",
     "parent.err.createFailed":
@@ -230,6 +233,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.noSubjects": "Ən az bir fənn seçin.",
     "sub.err.notYourChild": "Bu uşaq sizin hesabınıza aid deyil.",
     "sub.err.idFailed": "Giriş ID-si təyin edilə bilmədi. Yenidən cəhd edin.",
+    "sub.err.failed": "Əməliyyat alınmadı. Zəhmət olmasa yenidən cəhd edin.",
+    "gate.paymentsOff":
+      "Ödənişlər müvəqqəti olaraq dayandırılıb. Yeni abunə və satınalmalar hazırda mümkün deyil.",
+    "gate.olympiadOff": "Olimpiada modulu hazırda aktiv deyil.",
     "subjedit.title": "Fənləri idarə et",
     "subjedit.current": "Cari fənlər",
     "subjedit.add": "Əlavə et",
@@ -258,6 +265,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Öyrənməyə başlamaq üçün valideyninizdən fənn abunəliyini aktivləşdirməsini xahiş edin.",
     "child.wallpaper": "Divar kağızı",
     "child.wallpaperNote": "İdarə paneliniz üçün fon seçin.",
+    "child.wallpaperDefault": "Standart",
     "child.noSubjects": "Hələ fənn yoxdur — valideyninizdən əlavə etməsini xahiş edin.",
     "practice.title": "Məşq",
     "practice.start": "Məşq et",
@@ -284,8 +292,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "kind.olympiad": "Olimpiada",
     "kind.test": "Test",
     "kind.daily": "Gündəlik",
-    "arena.brand": "OLIMP",
-    "arena.nav.arena": "Arena",
+    "arena.brand": "OlimpIQ",
+    "arena.nav.arena": "Ana səhifə",
     "arena.nav.tasks": "Tapşırıqlar",
     "arena.nav.rank": "Reytinq",
     "arena.nav.profile": "Profil",
@@ -413,7 +421,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — About (official multi-section) —
     "about.mission.title": "Missiyamız",
     "about.mission.body":
-      "Olimpiada Portalı Azərbaycanda 1–11-ci sinif şagirdlərinə güclü akademik təməl qurmağa və olimpiadalara inamla hazırlaşmağa kömək etmək üçün yaradılıb. Məqsədimiz keyfiyyətli, müntəzəm və ölçüləbilən hazırlığı hər ailə üçün əlçatan etməkdir.",
+      "OlimpIQ Azərbaycanda 1–11-ci sinif şagirdlərinə güclü akademik təməl qurmağa və olimpiadalara inamla hazırlaşmağa kömək etmək üçün yaradılıb. Məqsədimiz keyfiyyətli, müntəzəm və ölçüləbilən hazırlığı hər ailə üçün əlçatan etməkdir.",
     "about.offer.title": "Platforma nə təklif edir",
     "about.offer.body":
       "Valideyn idarəli uşaq hesabları, fənn üzrə abunələr (Riyaziyyat, Elm, Məntiq və İngilis dili), birdəfəlik ömürlük girişli Olimpiada Hazırlığı paketləri, gündəlik məşq və irəliləyişin izlənməsi — hamısı bir yerdə. Bütün interfeys üç dildə işləyir: Azərbaycan, ingilis və rus.",
@@ -445,6 +453,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.address": "Ünvan",
     "contact.addressValue": "Hökumət Evi, Bakı, Azərbaycan",
     "contact.emailLabel": "Dəstək e-poçtu",
+    "contact.phoneLabel": "Telefon",
+    "maintenance.title": "Texniki işlər aparılır",
+    "maintenance.body":
+      "Sayt qısa müddətlik texniki xidmətdədir. Zəhmət olmasa bir azdan yenidən yoxlayın.",
     "contact.mapsCaption": "Bakı, Hökumət Evi — xəritədə yerimiz.",
     "contact.shortNote":
       "Adətən iş günləri ərzində cavablandırırıq. Sual, təklif və ya texniki dəstək üçün yazın.",
@@ -503,9 +515,110 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.latest": "Son xəbərlər",
     "news.viewAll": "Hamısına bax",
     "news.none": "Hələ xəbər yoxdur.",
+    "news.published": "Dərc olundu",
+    "news.readMore": "Ətraflı",
+    "news.unavailable": "Xəbərlər hazırda əlçatan deyil.",
+
+    // — Round4 — Landing stats (labels only; numbers are illustrative) —
+    "stats.title": "Rəqəmlərlə OlimpIQ",
+    "stats.tests": "Həll edilən testlər",
+    "stats.olympiads": "Olimpiada paketləri",
+    "stats.students": "Fəal şagirdlər",
+    "stats.successRate": "Uğur göstəricisi",
+
+    // — Round4 — About Us (hero + vision + 4 values) —
+    "about.hero.title": "Hər şagird üçün olimpiadaya aparan aydın yol",
+    "about.hero.body":
+      "OlimpIQ Azərbaycanda 1–11-ci sinif şagirdləri üçün abunə əsaslı təhsil platformasıdır. Valideyn idarə edir, uşaq öyrənir: fənn üzrə abunələr, gündəlik məşq və olimpiada hazırlığı bir yerdə toplanır ki, ailələr keyfiyyətli hazırlığı sadə və şəffaf şəkildə əldə etsin.",
+    "about.vision.title": "Baxışımız",
+    "about.vision.body":
+      "İnanırıq ki, güclü akademik hazırlıq hər ailə üçün əlçatan olmalıdır. Məqsədimiz Azərbaycan şagirdlərinə müntəzəm məşq, obyektiv qiymətləndirmə və ölçüləbilən irəliləyiş vasitəsilə öz potensialını açmağa və olimpiadalarda inamla iştirak etməyə kömək edən etibarlı platforma qurmaqdır.",
+    "about.values.title": "Bizi fərqləndirən dəyərlər",
+    "about.value1.title": "Üçdilli öyrənmə",
+    "about.value1.body":
+      "Bütün interfeys Azərbaycan, ingilis və rus dilində işləyir — hər ailə özünə rahat dildə öyrənə bilər.",
+    "about.value2.title": "Valideyn idarəli təhlükəsizlik",
+    "about.value2.body":
+      "Hesabları valideyn yaradır və idarə edir. Uşaqlar e-poçt və ödəniş məlumatı daxil etmir; hər şey nəzarət altındadır.",
+    "about.value3.title": "Olimpiada hazırlığı",
+    "about.value3.body":
+      "Ömürlük girişli xüsusi paketlər və serverdə seçilən 25 suallıq cəhdlər real yarış təcrübəsi qurur.",
+    "about.value4.title": "Ölçüləbilən irəliləyiş",
+    "about.value4.body":
+      "Nəticələr, dəqiqlik və fənn üzrə güc şəffaf göstərilir — hər addımın harada olduğunuzu görürsünüz.",
+
+    // — Round4 — News browse (sort + pager + views) —
+    "news.sort.latest": "Ən yeni",
+    "news.sort.oldest": "Ən köhnə",
+    "news.sort.mostViewed": "Ən çox baxılan",
+    "news.sort.mostLiked": "Ən çox bəyənilən",
+    "news.like": "Bəyən",
+    "news.liked": "Bəyənildi",
+    "news.likes": "bəyənmə",
+    "news.page.prev": "Əvvəlki",
+    "news.page.next": "Növbəti",
+    "news.page.indicator": "Səhifə {current} / {total}",
+    "news.views": "baxış",
+    "news.empty2": "Bu bölmədə hələ xəbər yoxdur.",
+
+    // — Round4 — Language dropdown —
+    "lang.select": "Dil seçin",
+
+    // — Round4 PARENT — nav / drawer / analytics / subscription / help —
+    "nav.analytics": "Analitika",
+    "nav.subscription": "Abunəlik",
+    "nav.help": "Yardım",
+    "drawer.title": "Hesab",
+    "drawer.account": "Hesab",
+    "drawer.language": "Dil",
+    "drawer.theme": "Görünüş",
+    "drawer.close": "Bağla",
+    "drawer.profileBtn": "Profilim",
+    "drawer.logout": "Çıxış",
+    "analytics.title": "Analitika",
+    "analytics.subtitle": "Övladlarınızın irəliləyişinə ümumi baxış.",
+    "analytics.totalChildren": "Uşaqlar",
+    "analytics.activeSubs": "Aktiv abunəliklər",
+    "analytics.attempts": "Cəhdlər",
+    "analytics.avgScore": "Orta nəticə",
+    "analytics.none": "Hələ məlumat yoxdur.",
+    "subscription.title": "Abunəlik",
+    "subscription.subtitle": "Övladlarınızın fənlərini və abunəliklərini idarə edin.",
+    "help.faqTitle": "Tez-tez verilən suallar",
+    "help.contactTitle": "Əlaqə",
+
+    // — Round4 Phase4 — subscription cards + cancel modal + arena controls —
+    "subscription.child": "Övlad",
+    "subscription.status.trialing": "Sınaq müddəti",
+    "subscription.status.active": "Aktiv",
+    "subscription.status.past_due": "Ödəniş gecikib",
+    "subscription.status.canceled": "Ləğv edilib",
+    "subscription.status.expired": "Müddəti bitib",
+    "subscription.status.none": "Abunəlik yoxdur",
+    "subscription.subjects": "Fənlər",
+    "subscription.interval": "Dövr",
+    "subscription.manageSubjects": "Fənləri idarə et",
+    "subscription.startPlan": "Abunəliyə başla",
+    "subscription.cancelBtn": "Abunəliyi ləğv et",
+    "cancel.title": "Abunəliyi ləğv etmək istəyirsiniz?",
+    "cancel.intro": "Getməzdən əvvəl bir neçə saniyənizi ayırın. Ləğv etmə səbəbinizi bizə bildirin.",
+    "cancel.reasonLabel": "Ləğv etmə səbəbi",
+    "cancel.reason.price": "Qiymət mənə uyğun deyil",
+    "cancel.reason.notUsing": "Kifayət qədər istifadə etmirik",
+    "cancel.reason.features": "İstədiyim imkanlar yoxdur",
+    "cancel.reason.temporary": "Müvəqqəti fasilə verirəm",
+    "cancel.reason.other": "Digər səbəb",
+    "cancel.benefitsTitle": "Ləğv etsəniz, itirəcəksiniz:",
+    "cancel.benefit1": "Bu fənn üzrə məşq və gündəlik tapşırıqlara girişi",
+    "cancel.benefit2": "Övladınızın irəliləyiş və nəticələrinin izlənməsini",
+    "cancel.benefit3": "Cari sınaq müddətini və qazandığınız endirimi",
+    "cancel.confirm": "Bəli, ləğv et",
+    "cancel.keep": "Abunəliyi saxla",
+    "cancel.done": "Abunəlik ləğv edildi.",
+    "cancel.err": "Abunəlik ləğv edilə bilmədi. Yenidən cəhd edin.",
   },
   en: {
-    "app.brand": "Olimpiada Portal",
+    "app.brand": "OlimpIQ",
     "home.subtitle": "Student & Parent Web App — foundation skeleton.",
     "supabase.heading": "Supabase connection",
     "supabase.configured": "configured ✓",
@@ -526,6 +639,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "auth.child.err.idFormat": "Enter the 8-digit ID.",
     "auth.child.err.passwordRequired": "Enter the password.",
     "auth.child.err.passwordTooShort": "Password must be at least 8 characters.",
+    "auth.child.err.nameTooLong": "The name is too long (80 characters max).",
     "auth.child.err.passwordEqualsId": "Password cannot be the same as the ID.",
     "auth.child.err.firstNameRequired": "Enter the first name.",
     "auth.child.err.lastNameRequired": "Enter the last name.",
@@ -565,9 +679,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "home.f4Title": "Daily practice",
     "home.f4Desc":
       "Questions selected by grade on the server — no guesswork, just steady progress.",
-    "about.title": "About Olimpiada Portal",
+    "about.title": "About OlimpIQ",
     "about.p1":
-      "Olimpiada Portal helps Azerbaijani students in grades 1–11 prepare for olympiads and build strong fundamentals through daily practice.",
+      "OlimpIQ helps Azerbaijani students in grades 1–11 prepare for olympiads and build strong fundamentals through daily practice.",
     "about.p2":
       "Parents stay in control: they create and manage each child's account, choose subjects, and follow progress — all in one place.",
     "subjects.title": "Subjects",
@@ -661,6 +775,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Register as a parent to add and manage your children.",
     "parent.err.email": "Enter a valid email.",
     "parent.err.password": "Password must be at least 8 characters.",
+    "parent.err.tooMany":
+      "Too many attempts. Please try again in a few minutes.",
     "parent.err.required": "Enter your email and password.",
     "parent.err.invalid": "Incorrect email or password.",
     "parent.err.createFailed":
@@ -727,6 +843,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.noSubjects": "Select at least one subject.",
     "sub.err.notYourChild": "This child is not on your account.",
     "sub.err.idFailed": "Could not assign the login ID. Please try again.",
+    "sub.err.failed": "The operation could not be completed. Please try again.",
+    "gate.paymentsOff":
+      "Payments are temporarily paused. New subscriptions and purchases are unavailable right now.",
+    "gate.olympiadOff": "The olympiad module is currently unavailable.",
     "subjedit.title": "Manage subjects",
     "subjedit.current": "Current subjects",
     "subjedit.add": "Add",
@@ -755,6 +875,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Ask your parent to activate a subject subscription so you can start learning.",
     "child.wallpaper": "Wallpaper",
     "child.wallpaperNote": "Pick a background for your dashboard.",
+    "child.wallpaperDefault": "Default",
     "child.noSubjects": "No subjects yet — ask your parent to add one.",
     "practice.title": "Practice",
     "practice.start": "Practice",
@@ -781,8 +902,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "kind.olympiad": "Olympiad",
     "kind.test": "Test",
     "kind.daily": "Daily",
-    "arena.brand": "OLIMP",
-    "arena.nav.arena": "Arena",
+    "arena.brand": "OlimpIQ",
+    "arena.nav.arena": "Home",
     "arena.nav.tasks": "Tasks",
     "arena.nav.rank": "Ranking",
     "arena.nav.profile": "Profile",
@@ -910,7 +1031,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — About (official multi-section) —
     "about.mission.title": "Our mission",
     "about.mission.body":
-      "Olimpiada Portal was created to help students in grades 1–11 across Azerbaijan build a strong academic foundation and prepare for olympiads with confidence. Our goal is to make high-quality, consistent, and measurable preparation accessible to every family.",
+      "OlimpIQ was created to help students in grades 1–11 across Azerbaijan build a strong academic foundation and prepare for olympiads with confidence. Our goal is to make high-quality, consistent, and measurable preparation accessible to every family.",
     "about.offer.title": "What the platform offers",
     "about.offer.body":
       "Parent-managed child accounts, per-subject subscriptions (Mathematics, Science, Logic, and English), one-time Olympiad Preparation packages with lifetime access, daily practice, and progress tracking — all in one place. The entire interface works in three languages: Azerbaijani, English, and Russian.",
@@ -942,6 +1063,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.address": "Address",
     "contact.addressValue": "Government House of Baku, Azerbaijan",
     "contact.emailLabel": "Support email",
+    "contact.phoneLabel": "Phone",
+    "maintenance.title": "We’ll be right back",
+    "maintenance.body":
+      "The site is briefly down for maintenance. Please check back in a little while.",
     "contact.mapsCaption": "Government House, Baku — our location on the map.",
     "contact.shortNote":
       "We usually reply during business days. Write to us with questions, suggestions, or technical support requests.",
@@ -1000,9 +1125,110 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.latest": "Latest news",
     "news.viewAll": "View all",
     "news.none": "No news yet.",
+    "news.published": "Published",
+    "news.readMore": "Read more",
+    "news.unavailable": "News is currently unavailable.",
+
+    // — Round4 — Landing stats (labels only; numbers are illustrative) —
+    "stats.title": "OlimpIQ in numbers",
+    "stats.tests": "Tests completed",
+    "stats.olympiads": "Olympiad packages",
+    "stats.students": "Active students",
+    "stats.successRate": "Success rate",
+
+    // — Round4 — About Us (hero + vision + 4 values) —
+    "about.hero.title": "A clear path to the olympiad for every student",
+    "about.hero.body":
+      "OlimpIQ is a subscription learning platform for students in grades 1–11 across Azerbaijan. Parents manage, children learn: per-subject subscriptions, daily practice, and olympiad preparation come together in one place, so families get high-quality preparation that is simple and transparent.",
+    "about.vision.title": "Our vision",
+    "about.vision.body":
+      "We believe strong academic preparation should be within reach of every family. Our goal is to build a trusted platform that helps students in Azerbaijan unlock their potential through regular practice, objective assessment, and measurable progress — and to compete in olympiads with confidence.",
+    "about.values.title": "What sets us apart",
+    "about.value1.title": "Trilingual learning",
+    "about.value1.body":
+      "The entire interface works in Azerbaijani, English, and Russian — so every family can learn in the language they are most comfortable with.",
+    "about.value2.title": "Parent-controlled safety",
+    "about.value2.body":
+      "Parents create and manage the accounts. Children never enter email or payment details; everything stays under a parent's control.",
+    "about.value3.title": "Olympiad preparation",
+    "about.value3.body":
+      "Dedicated packages with lifetime access and server-selected 25-question attempts recreate a real competition experience.",
+    "about.value4.title": "Measurable progress",
+    "about.value4.body":
+      "Results, accuracy, and subject strength are shown transparently — you always see exactly where each step stands.",
+
+    // — Round4 — News browse (sort + pager + views) —
+    "news.sort.latest": "Newest",
+    "news.sort.oldest": "Oldest",
+    "news.sort.mostViewed": "Most viewed",
+    "news.sort.mostLiked": "Most liked",
+    "news.like": "Like",
+    "news.liked": "Liked",
+    "news.likes": "likes",
+    "news.page.prev": "Previous",
+    "news.page.next": "Next",
+    "news.page.indicator": "Page {current} of {total}",
+    "news.views": "views",
+    "news.empty2": "No news in this view yet.",
+
+    // — Round4 — Language dropdown —
+    "lang.select": "Select language",
+
+    // — Round4 PARENT — nav / drawer / analytics / subscription / help —
+    "nav.analytics": "Analytics",
+    "nav.subscription": "Subscription",
+    "nav.help": "Help",
+    "drawer.title": "Account",
+    "drawer.account": "Account",
+    "drawer.language": "Language",
+    "drawer.theme": "Appearance",
+    "drawer.close": "Close",
+    "drawer.profileBtn": "My profile",
+    "drawer.logout": "Log out",
+    "analytics.title": "Analytics",
+    "analytics.subtitle": "An overview of your children's progress.",
+    "analytics.totalChildren": "Children",
+    "analytics.activeSubs": "Active subscriptions",
+    "analytics.attempts": "Attempts",
+    "analytics.avgScore": "Average score",
+    "analytics.none": "No data yet.",
+    "subscription.title": "Subscription",
+    "subscription.subtitle": "Manage your children's subjects and subscriptions.",
+    "help.faqTitle": "Frequently asked questions",
+    "help.contactTitle": "Contact",
+
+    // — Round4 Phase4 — subscription cards + cancel modal + arena controls —
+    "subscription.child": "Child",
+    "subscription.status.trialing": "Trial",
+    "subscription.status.active": "Active",
+    "subscription.status.past_due": "Payment due",
+    "subscription.status.canceled": "Canceled",
+    "subscription.status.expired": "Expired",
+    "subscription.status.none": "No subscription",
+    "subscription.subjects": "Subjects",
+    "subscription.interval": "Billing",
+    "subscription.manageSubjects": "Manage subjects",
+    "subscription.startPlan": "Start a plan",
+    "subscription.cancelBtn": "Cancel subscription",
+    "cancel.title": "Cancel your subscription?",
+    "cancel.intro": "Before you go, take a moment. Let us know why you're canceling.",
+    "cancel.reasonLabel": "Reason for canceling",
+    "cancel.reason.price": "The price isn't right for me",
+    "cancel.reason.notUsing": "We're not using it enough",
+    "cancel.reason.features": "It's missing features I need",
+    "cancel.reason.temporary": "Just taking a break",
+    "cancel.reason.other": "Another reason",
+    "cancel.benefitsTitle": "If you cancel, you'll lose:",
+    "cancel.benefit1": "Access to this subject's practice and daily tasks",
+    "cancel.benefit2": "Your child's progress tracking and results",
+    "cancel.benefit3": "Your current trial period and earned discount",
+    "cancel.confirm": "Yes, cancel",
+    "cancel.keep": "Keep subscription",
+    "cancel.done": "Subscription canceled.",
+    "cancel.err": "Couldn't cancel the subscription. Please try again.",
   },
   ru: {
-    "app.brand": "Портал Олимпиад",
+    "app.brand": "OlimpIQ",
     "home.subtitle": "Веб-приложение для учеников и родителей — основа.",
     "supabase.heading": "Подключение Supabase",
     "supabase.configured": "настроено ✓",
@@ -1023,6 +1249,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "auth.child.err.idFormat": "Введите 8-значный ID.",
     "auth.child.err.passwordRequired": "Введите пароль.",
     "auth.child.err.passwordTooShort": "Пароль должен содержать не менее 8 символов.",
+    "auth.child.err.nameTooLong": "Слишком длинное имя (не более 80 символов).",
     "auth.child.err.passwordEqualsId": "Пароль не может совпадать с ID.",
     "auth.child.err.firstNameRequired": "Введите имя.",
     "auth.child.err.lastNameRequired": "Введите фамилию.",
@@ -1062,9 +1289,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "home.f4Title": "Ежедневная практика",
     "home.f4Desc":
       "Вопросы подбираются по классу на сервере — без догадок, стабильный прогресс.",
-    "about.title": "О Портале Олимпиад",
+    "about.title": "Об OlimpIQ",
     "about.p1":
-      "Портал Олимпиад помогает ученикам 1–11 классов Азербайджана готовиться к олимпиадам и строить прочную базу через ежедневную практику.",
+      "OlimpIQ помогает ученикам 1–11 классов Азербайджана готовиться к олимпиадам и строить прочную базу через ежедневную практику.",
     "about.p2":
       "Родитель сохраняет контроль: создаёт и ведёт аккаунт каждого ребёнка, выбирает предметы и следит за прогрессом — всё в одном месте.",
     "subjects.title": "Предметы",
@@ -1158,6 +1385,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Зарегистрируйтесь как родитель, чтобы добавлять детей и управлять ими.",
     "parent.err.email": "Введите корректную эл. почту.",
     "parent.err.password": "Пароль должен содержать не менее 8 символов.",
+    "parent.err.tooMany":
+      "Слишком много попыток. Повторите попытку через несколько минут.",
     "parent.err.required": "Введите эл. почту и пароль.",
     "parent.err.invalid": "Неверная эл. почта или пароль.",
     "parent.err.createFailed":
@@ -1224,6 +1453,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.noSubjects": "Выберите хотя бы один предмет.",
     "sub.err.notYourChild": "Этот ребёнок не привязан к вашему аккаунту.",
     "sub.err.idFailed": "Не удалось назначить ID для входа. Попробуйте ещё раз.",
+    "sub.err.failed": "Не удалось выполнить операцию. Пожалуйста, попробуйте ещё раз.",
+    "gate.paymentsOff":
+      "Платежи временно приостановлены. Новые подписки и покупки сейчас недоступны.",
+    "gate.olympiadOff": "Модуль олимпиад в данный момент недоступен.",
     "subjedit.title": "Управление предметами",
     "subjedit.current": "Текущие предметы",
     "subjedit.add": "Добавить",
@@ -1252,6 +1485,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Попросите родителя активировать подписку на предмет, чтобы начать учиться.",
     "child.wallpaper": "Обои",
     "child.wallpaperNote": "Выберите фон для панели.",
+    "child.wallpaperDefault": "По умолчанию",
     "child.noSubjects": "Предметов пока нет — попросите родителя добавить.",
     "practice.title": "Практика",
     "practice.start": "Практика",
@@ -1278,8 +1512,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "kind.olympiad": "Олимпиада",
     "kind.test": "Тест",
     "kind.daily": "Ежедневное",
-    "arena.brand": "OLIMP",
-    "arena.nav.arena": "Арена",
+    "arena.brand": "OlimpIQ",
+    "arena.nav.arena": "Главная",
     "arena.nav.tasks": "Задания",
     "arena.nav.rank": "Рейтинг",
     "arena.nav.profile": "Профиль",
@@ -1407,7 +1641,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — About (official multi-section) —
     "about.mission.title": "Наша миссия",
     "about.mission.body":
-      "Портал Олимпиад создан, чтобы помочь ученикам 1–11 классов по всему Азербайджану заложить прочную академическую базу и уверенно готовиться к олимпиадам. Наша цель — сделать качественную, регулярную и измеримую подготовку доступной каждой семье.",
+      "OlimpIQ создан, чтобы помочь ученикам 1–11 классов по всему Азербайджану заложить прочную академическую базу и уверенно готовиться к олимпиадам. Наша цель — сделать качественную, регулярную и измеримую подготовку доступной каждой семье.",
     "about.offer.title": "Что предлагает платформа",
     "about.offer.body":
       "Детские аккаунты под управлением родителя, подписки на отдельные предметы (математика, наука, логика и английский), разовые пакеты подготовки к олимпиадам с пожизненным доступом, ежедневная практика и отслеживание прогресса — всё в одном месте. Весь интерфейс работает на трёх языках: азербайджанском, английском и русском.",
@@ -1439,6 +1673,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.address": "Адрес",
     "contact.addressValue": "Дом Правительства, Баку, Азербайджан",
     "contact.emailLabel": "Эл. почта поддержки",
+    "contact.phoneLabel": "Телефон",
+    "maintenance.title": "Идут технические работы",
+    "maintenance.body":
+      "Сайт временно недоступен из-за технического обслуживания. Пожалуйста, зайдите чуть позже.",
     "contact.mapsCaption": "Дом Правительства, Баку — наше расположение на карте.",
     "contact.shortNote":
       "Обычно отвечаем в рабочие дни. Пишите нам по вопросам, предложениям или за технической поддержкой.",
@@ -1497,5 +1735,106 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.latest": "Последние новости",
     "news.viewAll": "Все новости",
     "news.none": "Новостей пока нет.",
+    "news.published": "Опубликовано",
+    "news.readMore": "Подробнее",
+    "news.unavailable": "Новости сейчас недоступны.",
+
+    // — Round4 — Landing stats (labels only; numbers are illustrative) —
+    "stats.title": "OlimpIQ в цифрах",
+    "stats.tests": "Пройдено тестов",
+    "stats.olympiads": "Олимпиадных пакетов",
+    "stats.students": "Активных учеников",
+    "stats.successRate": "Показатель успеха",
+
+    // — Round4 — About Us (hero + vision + 4 values) —
+    "about.hero.title": "Понятный путь к олимпиаде для каждого ученика",
+    "about.hero.body":
+      "OlimpIQ — это образовательная платформа по подписке для учеников 1–11 классов по всему Азербайджану. Родитель управляет, ребёнок учится: подписки на отдельные предметы, ежедневная практика и подготовка к олимпиадам собраны в одном месте, чтобы семьи получали качественную подготовку — просто и прозрачно.",
+    "about.vision.title": "Наше видение",
+    "about.vision.body":
+      "Мы верим, что сильная академическая подготовка должна быть доступна каждой семье. Наша цель — создать надёжную платформу, которая помогает ученикам Азербайджана раскрыть свой потенциал через регулярную практику, объективную оценку и измеримый прогресс, а также уверенно участвовать в олимпиадах.",
+    "about.values.title": "Что нас отличает",
+    "about.value1.title": "Обучение на трёх языках",
+    "about.value1.body":
+      "Весь интерфейс работает на азербайджанском, английском и русском — каждая семья учится на удобном для неё языке.",
+    "about.value2.title": "Безопасность под контролем родителя",
+    "about.value2.body":
+      "Аккаунты создаёт и ведёт родитель. Дети не вводят эл. почту и платёжные данные; всё остаётся под контролем родителя.",
+    "about.value3.title": "Подготовка к олимпиадам",
+    "about.value3.body":
+      "Отдельные пакеты с пожизненным доступом и попытками по 25 вопросов, подобранных сервером, воссоздают настоящий соревновательный опыт.",
+    "about.value4.title": "Измеримый прогресс",
+    "about.value4.body":
+      "Результаты, точность и сила по предметам показываются прозрачно — вы всегда видите, на каком этапе находится каждый шаг.",
+
+    // — Round4 — News browse (sort + pager + views) —
+    "news.sort.latest": "Сначала новые",
+    "news.sort.oldest": "Сначала старые",
+    "news.sort.mostViewed": "Самые просматриваемые",
+    "news.sort.mostLiked": "Самые популярные",
+    "news.like": "Нравится",
+    "news.liked": "Понравилось",
+    "news.likes": "лайков",
+    "news.page.prev": "Назад",
+    "news.page.next": "Вперёд",
+    "news.page.indicator": "Страница {current} из {total}",
+    "news.views": "просмотров",
+    "news.empty2": "В этом разделе пока нет новостей.",
+
+    // — Round4 — Language dropdown —
+    "lang.select": "Выберите язык",
+
+    // — Round4 PARENT — nav / drawer / analytics / subscription / help —
+    "nav.analytics": "Аналитика",
+    "nav.subscription": "Подписка",
+    "nav.help": "Помощь",
+    "drawer.title": "Аккаунт",
+    "drawer.account": "Аккаунт",
+    "drawer.language": "Язык",
+    "drawer.theme": "Оформление",
+    "drawer.close": "Закрыть",
+    "drawer.profileBtn": "Мой профиль",
+    "drawer.logout": "Выйти",
+    "analytics.title": "Аналитика",
+    "analytics.subtitle": "Обзор успеваемости ваших детей.",
+    "analytics.totalChildren": "Дети",
+    "analytics.activeSubs": "Активные подписки",
+    "analytics.attempts": "Попытки",
+    "analytics.avgScore": "Средний балл",
+    "analytics.none": "Данных пока нет.",
+    "subscription.title": "Подписка",
+    "subscription.subtitle": "Управляйте предметами и подписками ваших детей.",
+    "help.faqTitle": "Часто задаваемые вопросы",
+    "help.contactTitle": "Контакты",
+
+    // — Round4 Phase4 — subscription cards + cancel modal + arena controls —
+    "subscription.child": "Ребёнок",
+    "subscription.status.trialing": "Пробный период",
+    "subscription.status.active": "Активна",
+    "subscription.status.past_due": "Просрочен платёж",
+    "subscription.status.canceled": "Отменена",
+    "subscription.status.expired": "Истекла",
+    "subscription.status.none": "Нет подписки",
+    "subscription.subjects": "Предметы",
+    "subscription.interval": "Оплата",
+    "subscription.manageSubjects": "Управлять предметами",
+    "subscription.startPlan": "Оформить подписку",
+    "subscription.cancelBtn": "Отменить подписку",
+    "cancel.title": "Отменить подписку?",
+    "cancel.intro": "Прежде чем уйти, уделите минуту. Расскажите, почему вы отменяете подписку.",
+    "cancel.reasonLabel": "Причина отмены",
+    "cancel.reason.price": "Цена мне не подходит",
+    "cancel.reason.notUsing": "Мы пользуемся недостаточно часто",
+    "cancel.reason.features": "Не хватает нужных возможностей",
+    "cancel.reason.temporary": "Просто делаю перерыв",
+    "cancel.reason.other": "Другая причина",
+    "cancel.benefitsTitle": "Если вы отмените, вы потеряете:",
+    "cancel.benefit1": "Доступ к практике и ежедневным заданиям по этому предмету",
+    "cancel.benefit2": "Отслеживание прогресса и результатов вашего ребёнка",
+    "cancel.benefit3": "Текущий пробный период и полученную скидку",
+    "cancel.confirm": "Да, отменить",
+    "cancel.keep": "Оставить подписку",
+    "cancel.done": "Подписка отменена.",
+    "cancel.err": "Не удалось отменить подписку. Попробуйте ещё раз.",
   },
 };

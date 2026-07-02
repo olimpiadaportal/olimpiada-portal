@@ -1,12 +1,23 @@
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
+import { isFeatureEnabled } from "@/lib/flags";
 import { startOlympiad } from "@/lib/auth/childActions";
 
 export default async function ChildOlympiadsPage() {
   const child = await requireChild();
   const locale = await getLocale();
   const t = await getT();
+  // Module gate (admin Settings): friendly notice instead of the package list.
+  if (!(await isFeatureEnabled("olympiad_module"))) {
+    return (
+      <section>
+        <p className="arena-eyebrow">{t("arena.nav.tasks")}</p>
+        <h1 style={{ marginBottom: 20 }}>{t("oly3.childTitle")}</h1>
+        <div className="arena-panel arena-muted">{t("gate.olympiadOff")}</div>
+      </section>
+    );
+  }
   const supabase = await createClient();
 
   const { data: purchases } = await supabase

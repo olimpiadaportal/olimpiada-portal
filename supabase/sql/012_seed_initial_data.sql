@@ -210,16 +210,31 @@ on conflict (subject_id, interval) do nothing;
 insert into public.system_settings (key, value_json) values
   ('platform.default_locale', '"az"'::jsonb),
   ('platform.supported_locales', '["az","ru","en"]'::jsonb),
-  ('leaderboard.public_display_names', 'false'::jsonb)
+  ('leaderboard.public_display_names', 'false'::jsonb),
+  -- Round 6 (migration 019): support/maintenance/social settings surfaced by the
+  -- redesigned admin Settings (typed controls; no raw-JSON editors).
+  ('contact.support_email',         '""'::jsonb),
+  ('contact.support_phone',         '""'::jsonb),
+  ('platform.maintenance_mode',     'false'::jsonb),
+  ('platform.maintenance_message',  '{"az":"","en":"","ru":""}'::jsonb),
+  ('social.facebook',               '""'::jsonb),
+  ('social.instagram',              '""'::jsonb),
+  ('social.youtube',                '""'::jsonb),
+  ('social.tiktok',                 '""'::jsonb)
 on conflict (key) do nothing;
 
 -- -----------------------------------------------------------------------------
--- Base feature flags (off by default; enable per stage rollout).
+-- Base feature flags (payments/leaderboard/notifications off by default;
+-- launch_promo/news_public/olympiad_module ship enabled — Round 6 backport of
+-- flags that previously existed only on dev).
 -- -----------------------------------------------------------------------------
 insert into public.feature_flags (key, enabled) values
   ('payments',    false),
   ('leaderboard', false),
-  ('notifications_email', false)
+  ('notifications_email', false),
+  ('launch_promo',    true),
+  ('news_public',     true),
+  ('olympiad_module', true)
 on conflict (key) do nothing;
 
 -- =============================================================================

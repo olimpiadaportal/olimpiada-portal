@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/admin/guards";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 
 function severityPill(s: string): string {
   if (s === "critical" || s === "error") return "pill-warn";
@@ -8,9 +8,26 @@ function severityPill(s: string): string {
   return "pill-ok";
 }
 
+// Render an audit timestamp in the Asia/Baku timezone (UTC+4, no DST).
+// The DB stores created_at as timestamptz (UTC); the previous code used
+// toLocaleString() with the SERVER's timezone, so times were wrong. We pin the
+// zone to Asia/Baku and localize with the admin's active locale.
+function formatBakuTime(iso: string, locale: string): string {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      timeZone: "Asia/Baku",
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
 export default async function AuditPage() {
   await requireAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
 
   // audit_logs is admin-read-only via RLS. Read the most recent entries.
@@ -36,13 +53,7 @@ export default async function AuditPage() {
     actorById = new Map((actors ?? []).map((a: any) => [a.id, a]));
   }
 
-  const fmt = (iso: string): string => {
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return iso;
-    }
-  };
+  const fmt = (iso: string): string => formatBakuTime(iso, locale);
 
   const actorLabel = (id: string | null): string => {
     if (!id) return t("audit.systemActor");

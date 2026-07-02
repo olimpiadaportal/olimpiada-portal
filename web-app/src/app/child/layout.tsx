@@ -1,8 +1,9 @@
-import Link from "next/link";
 import { requireChild } from "@/lib/auth/session";
-import { childLogoutAction } from "@/lib/auth/childActions";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
+import { getLocaleSettings, isFeatureEnabled } from "@/lib/flags";
+import { ChildProfileDrawer } from "@/components/ChildProfileDrawer";
+import { ParentNavLinks } from "@/components/ProfileDrawer";
 
 // Arena (Claude-Design) shell for the Student/Child app. Dark theme is scoped
 // to the `.arena` root so the parent/public areas and the admin panel are never
@@ -12,15 +13,45 @@ export default async function ChildLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const child = await requireChild();
   const t = await getT();
+  const locale = await getLocale();
+  const { enabled: enabledLocales } = await getLocaleSettings();
   const supabase = await createClient();
 
   const { data: sel } = await supabase
     .from("child_wallpaper_selections")
-    .select("wallpapers(kind, value)")
+    .select("wallpapers(kind, value, media_asset_id, media_assets:media_asset_id(bucket, path))")
     .eq("student_profile_id", child.profileId)
     .maybeSingle();
   const wp = (sel as any)?.wallpapers;
   const bg = wp?.kind === "solid_color" ? (wp.value as string) : undefined;
+  // Image-kind wallpaper → resolve its public URL for the .arena background.
+  // R7 security: the URL is interpolated into inline CSS url('…'), so encode it
+  // and escape quote/paren breakers — a crafted storage path must not be able
+  // to escape the CSS string context (defense in depth; the catalog is
+  // admin-managed and the child only picks a wallpaper_id).
+  let wpImg: string | undefined;
+  if (wp?.kind === "image") {
+    const m = wp.media_assets;
+    if (m?.bucket && m?.path) {
+      const raw = supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
+      wpImg = encodeURI(raw).replace(
+        /['"()]/g,
+        (c) => `%${c.charCodeAt(0).toString(16)}`,
+      );
+    }
+  }
+
+  // Arena background props: image wallpaper wins, then solid color, else the
+  // theme default (no data-wallpaper → globals.css falls back to var(--bg)).
+  const arenaProps: Record<string, any> = {};
+  if (wpImg) {
+    arenaProps["data-wallpaper"] = "";
+    arenaProps["data-wp-kind"] = "image";
+    arenaProps.style = { ["--wp-img" as any]: `url('${wpImg}')` };
+  } else if (bg) {
+    arenaProps["data-wallpaper"] = "";
+    arenaProps.style = { ["--wp" as any]: bg };
+  }
 
   const { data: student } = await supabase
     .from("students")
@@ -29,6 +60,23 @@ export default async function ChildLayout({
     .maybeSingle();
   const firstName = (student as any)?.first_name ?? "";
   const initial = (firstName.trim()[0] ?? "?").toUpperCase();
+
+  // Avatar public URL for the drawer trigger (degrades to initials on any
+  // failure — never blocks the shell from rendering).
+  let avatarUrl: string | null = null;
+  try {
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("avatar_media_id, media_assets:avatar_media_id(bucket, path)")
+      .eq("id", child.profileId)
+      .maybeSingle();
+    const m = (prof as any)?.media_assets;
+    if (m?.bucket && m?.path) {
+      avatarUrl = supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
+    }
+  } catch {
+    avatarUrl = null;
+  }
 
   // Streak: count of distinct recent days the child submitted a graded attempt
   // (derived from real data; 0 when none yet — never fabricated).
@@ -45,11 +93,18 @@ export default async function ChildLayout({
   }
   const streak = days.size;
 
-  const NAV: [string, string][] = [
-    ["/child", "arena.nav.arena"],
-    ["/child/olympiads", "arena.nav.tasks"],
-    ["/child/leaderboard", "arena.nav.rank"],
-    ["/child", "arena.nav.profile"],
+  // Same header structure as the parent shell (.pnav + ParentNavLinks +
+  // .pnav-right drawer trigger). The drawer must NOT live inside a header with
+  // backdrop-filter — a filtered ancestor becomes the containing block for
+  // position:fixed, which broke the old .arena-nav drawer. Profile lives in the
+  // drawer (avatar → Profile / Language / Theme / Logout), not as a nav tab.
+  const olympiadOn = await isFeatureEnabled("olympiad_module");
+  const navItems = [
+    { href: "/child", label: t("arena.nav.arena"), brand: true, exact: true },
+    // Module gate (admin Settings → olympiad_module) hides the tab; the page
+    // and the start action are gated server-side as well.
+    ...(olympiadOn ? [{ href: "/child/olympiads", label: t("arena.nav.tasks") }] : []),
+    { href: "/child/leaderboard", label: t("arena.nav.rank") },
   ];
 
   return (
@@ -65,33 +120,26 @@ export default async function ChildLayout({
         href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap"
         rel="stylesheet"
       />
-      <div
-        className="arena"
-        {...(bg ? { "data-wallpaper": "", style: { ["--wp" as any]: bg } } : {})}
-      >
-        <header className="arena-nav">
-          <Link href="/child" className="arena-brand brand-compact">
-            {t("arena.brand")}·<b>ARENA</b>
-          </Link>
-          <nav className="arena-navlinks">
-            {NAV.map(([href, key], i) => (
-              <Link key={key} href={href} className={`arena-navlink${i === 0 ? " active" : ""}`}>
-                {t(key)}
-              </Link>
-            ))}
-          </nav>
-          <div className="arena-navright">
+      <div className="arena" {...arenaProps}>
+        <header className="pnav">
+          <ParentNavLinks items={navItems} />
+          <div className="pnav-right">
             <span className="arena-streak" title={t("arena.streak")}>
               🔥 {streak} {t("arena.streak")}
             </span>
-            <span className="arena-avatar" aria-hidden>
-              {initial}
-            </span>
-            <form action={childLogoutAction}>
-              <button className="arena-btn-ghost arena-btn-sm" type="submit">
-                {t("child.logout")}
-              </button>
-            </form>
+            <ChildProfileDrawer
+              locale={locale}
+              availableLocales={enabledLocales}
+              profile={{ initials: initial, avatarUrl }}
+              drawer={{
+                title: t("drawer.title"),
+                profileBtn: t("drawer.profileBtn"),
+                language: t("drawer.language"),
+                theme: t("drawer.theme"),
+                logout: t("drawer.logout"),
+                close: t("drawer.close"),
+              }}
+            />
           </div>
         </header>
         <main className="arena-main">{children}</main>

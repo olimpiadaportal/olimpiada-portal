@@ -271,3 +271,152 @@ If anything in §1–§5 doesn't match its **Expect**, report it and I'll fix it
 - Per-type **hint text** shows near the options. (The child quiz already grades each type correctly.)
 
 If anything here doesn't match its **Expect**, tell me which **R#** + what you saw, and I'll fix it.
+
+---
+
+# Round 4 changes — what to test (2026-07-01)
+
+> **Prerequisites (do these first, or fixes will look absent):**
+> 1. Apply the Round-4 migration to dev/staging, then re-validate:
+>    ```bash
+>    psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/migrations/2026_07_01_018_news_view_count.sql
+>    psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/013_validation_queries.sql   # expect 26/26 PASS
+>    ```
+> 2. **Restart both dev servers** and **log in again in each app** — the session cookie was renamed per-app (`sb-olimpiada-web` / `sb-olimpiada-admin`), so old sessions are ignored once.
+
+## S1. Blocking bugs (verify fixed)
+- **Add-Child now works:** parent → Add child → complete the wizard (city → school → grade → subjects → plan → demo pay) → **the 8-digit ID is revealed** and the child appears on Home. (No more "Child account could not be created.")
+- **No more constant logout:** keep the **admin** open and use it for several minutes while the web-app is also open — you should **not** get logged out (each app has its own cookie now). Admin only signs you out after **30 min idle**.
+- **Password eye** is vertically centered in every password field (Add-Child, login, admin).
+- **Admin status** reads **"Hər kəsə açıq" / "Gizli"** in AZ.
+
+## S2. Admin
+- **Audit log** (`/audit`): perform account actions (create/edit/delete parent, reset child password) → they now **appear** in the log (previously silently dropped), timestamps in **Baku time**.
+- **Cities** (`/cities`): no **Country Code** field; creating a city needs only name + status.
+- **Add News** (`/news/new`): after saving the article you get a **featured-image upload** step, then "Continue to editing".
+- **Settings** (`/settings`): friendly **feature-flag** names + descriptions with On/Off switches; **system settings** show proper inputs (email field, Yes/No, locale select, locale checkboxes) with an "Advanced (raw value)" disclosure — no raw JSON walls.
+
+## S3. Landing (public) — test in **Light mode** (toggle in the navbar)
+- **Navbar:** the theme toggle + a **language dropdown** live in the nav (top-right). Language dropdown switches az/en/ru.
+- **Light theme** now has depth — cards have shadows/borders and stand out (not flat).
+- **Home:** **stat cards** (Tests/Olympiads/Students/Success rate — illustrative) + an **About Us** section with illustrations.
+- **Pricing:** three plans **side-by-side**.
+- **FAQ:** each question has a **down-chevron** that rotates on expand.
+- **Contact:** the address card and the map are the **same size**.
+- **News:** sort chips **Latest / Oldest / Most viewed** + **pagination** (prev/next); each item shows a **views** badge; opening an article increments its view count.
+
+## S4. Parent panel
+- **Nav** (no "Olimpiada Portal" wordmark): **Home · Analytics · Subscription · FAQ · Contact** + a round **profile icon** far right → opens a **drawer** with **Account** (avatar/change-password/delete/logout), **Language**, **Theme**.
+- **FAQ/Contact** from the parent nav stay **inside the parent app** (no jump to the public/landing site).
+- **Home:** first the **information carousel** (now working — one slide, arrows + dots), then **My children** with the **Add child** button on the **right**.
+- **Analytics** page shows real metrics (children, active subscriptions, attempts, avg score).
+- **Subscription** page: modern **cards** per child + **Cancel subscription** → a dialog asks **why** + shows **what you'll lose** before confirming.
+
+## S5. Student (ARENA) panel
+- The **theme toggle + language dropdown** are in the ARENA top nav; the wordmark is gone (just "ARENA").
+
+If anything here doesn't match its **Expect**, tell me the **S#** + what you saw, and I'll fix it. And re-drop the **"Energetic" landing design image** when you can — I built the light-mode polish to your written description and will align it to the image.
+
+---
+
+# Round 5 changes — what to test (2026-07-01)
+
+> **No DB or terminal work needed** — no SQL changed this round (the wallpaper backend already existed). Just **restart both dev servers** so the new code loads (no re-login needed this time — cookie names unchanged).
+
+## T1. Rebrand → OlimpIQ
+- Everywhere the brand appears (landing header/footer, login/register, student header, admin sidebar/login, browser tab titles) now reads **OlimpIQ** — no more "Olimpiada Portal" / "OLIMP·ARENA".
+- **But** the olympiad *feature* wording is intentionally kept: "Olimpiada Hazırlığı" / "Olympiad preparation" / nav "Olimpiada hazırlığı" etc. stay (that's the competition word, not the brand).
+
+## T2. Energetic LIGHT theme (toggle to Light in the navbar)
+- In **Light** mode the app is now purple (`#7c3aed`) + orange (`#ff8a00`) on a cream background, rounded (22px) cards with soft purple shadows, Trebuchet font, gradient logo mark + gradient stat numbers + a purple→orange hero. It should feel energetic, not flat.
+- **Dark** mode should look exactly as before (unchanged).
+
+## T3. Profile pages + drawers (parent & student)
+- **Parent:** the round profile icon (top-right) opens a **drawer** with **My profile** (button), Language, Theme, Log out. Clicking **My profile** → a full-width **/profile** page (avatar upload, change password, delete account) — no longer cramped inside the drawer.
+- **Student:** same pattern now exists — a profile drawer (avatar → drawer with My profile / Language / Theme / Log out) → **/child/profile** page (avatar, change password, wallpaper). The student **home page no longer shows the profile panel**.
+
+## T4. Wallpapers (admin set + student reset)
+- **Admin → Wallpapers** (`/wallpapers`): add a solid color; **upload an image wallpaper** (≤3 MB); activate/archive.
+- **Student → /child/profile → wallpaper:** the image wallpapers you uploaded now **show as photo swatches** (not a flat dark box); pick one → the ARENA background becomes that photo (with a readability scrim). A **"Default"** swatch **resets** to the theme default (follows light/dark).
+
+## T5. Admin settings toggles
+- The feature-flag + Yes/No switches now **physically slide** (the knob glides left↔right) and flip **instantly** on click.
+- **Gating actually works now** (previously the toggles saved but did nothing):
+  - Turn **"Public news page" (news_public) OFF** → visit the public **/news** → it shows "News is currently unavailable." Turn it back ON → the list returns.
+  - Turn **"Public leaderboard names" OFF** → the student **leaderboard** anonymizes other students (e.g. "Student ####"); your own row stays yours. ON → real names.
+  - *(Note: launch_promo / olympiad_module / payments / notifications_email toggles slide + save but their gates aren't wired yet — see deferred.)*
+
+## T6. News image + design
+- Open **/news** — the cover images now load **immediately** (no more blank-then-pop; they're resized/webp via next/image). The list is now a **card grid** (cover or placeholder + title + short excerpt + date + views). Open an article → a cleaner detail page (meta row with date + views, better typography).
+
+If anything here doesn't match its **Expect**, tell me the **T#** + what you saw and I'll fix it.
+
+---
+
+# Round 6 — what to re-test (U1–U8)
+
+> Restart the web dev server first (`Ctrl-C` → `npm run dev` in `web-app/`), and the admin panel too.
+
+## U1. Student navigation = parent navigation (drawer bug fixed)
+- Log in as a student. The top bar is now the **same structure as the parent's**: logo dot + Home, Tasks, Leaderboard on the left, streak + round profile icon on the right (dark arena colors).
+- The page must **not extend to the right** anymore, and clicking the profile icon must slide in the **drawer from the right edge** with visible content (My profile / Language / Theme / Log out). Log out from it.
+- The active tab now follows the page you're on (it used to always highlight the first tab).
+
+## U2. Spacing pass
+- Student **/child/profile** and parent **/profile**: the avatar / name / upload / change-password blocks have clear vertical breathing room (no card-in-card cramping).
+- Buttons across the app (Save, Cancel, Change password, upload, plan buttons) hold their text with comfortable padding — no text touching borders.
+
+## U3. Language settings now GATE the web-app
+- Admin → Settings → Localization: **Supported languages** currently has **Russian unchecked** (your earlier test!). Open the web-app → the language dropdown (public navbar + parent/student drawers) offers **only AZ + EN**, and if your browser still had `ru` selected the UI falls back to the default language.
+- Re-check Russian in admin → the web-app offers all three again.
+
+## U4. Hydration console error — gone
+- Open the web-app home with DevTools console: the `data-theme` hydration error no longer appears.
+
+## U5. Feature-flag gates (all six now wired)
+- **payments** is currently **OFF** on dev: parent → child → Subjects/subscribe shows "Payments are temporarily paused…" instead of the form; olympiad Buy buttons hidden; subject add/remove blocked. Turn payments ON in admin Settings before testing the subscribe flow.
+- **launch_promo** is currently OFF: the public /pricing page hides the trial promo line. Turn ON → line returns.
+- **olympiad_module** OFF → student "Tasks" tab disappears, olympiad pages show a notice, public /olympiad-preparation 404s, parent dashboard hides the Olympiads button. (Currently ON.)
+- **news_public** / **leaderboard names** — as in T5.
+- **notifications_email** — gate helper exists for the future email sender; nothing sends email yet (honest note).
+
+## U6. Admin Settings redesign (UniPrep-style)
+- Admin → Settings: tabbed layout (**General / Localization / Features**) with grouped cards, per-field Save buttons, descriptions under labels, and **no raw JSON editors anywhere**.
+- General tab: **Maintenance mode** (asks for confirmation; turning it ON makes the whole web-app show a maintenance notice — try it, then turn it off), trilingual maintenance message, support email + phone (phone appears on the public Contact page when set), social links (appear in the public site footer when set).
+
+## U7. News likes + "Most liked"
+- Open a news article **while logged in** (parent or student): a ♥ like button sits next to the views counter — click to like/unlike (instant). Logged out → just a ♥ counter.
+- /news list: cards show ♥ counts and the toolbar has a **"Most liked"** sort.
+
+## U8. Grade promotion is scheduled (pg_cron)
+- Nothing to click — the dev DB now has a pg_cron job `olimpiq_advance_student_grades` running `advance_student_grades()` every **September 1, 03:00 UTC**. (Verified present on dev.)
+
+If anything here doesn't match, tell me the **U#** + what you saw.
+
+---
+
+# Round 7 — what to re-test (V1–V5)
+
+> Restart both dev servers first. Also run `npm install` in BOTH `web-app/` and `admin-panel/` once (dependency security overrides changed the lockfiles).
+
+## V1. Brand mark spacing
+- Parent + student top bars: the logo dot now sits in a fixed slot with clear space (10px) before the "Home" label, vertically centered. (The slot is ready for the real logo file — when you share it, it drops in without layout changes.)
+
+## V2. Views no longer inflate from likes
+- Open a news article logged in, spam the ♥ like button: the like count toggles instantly, but **views do not increase**. Views now count **once per browser session per article** (a fresh tab session = +1). What you saw before was every like click re-rendering the article and each re-render counting as a "view" — kept likes, fixed views.
+
+## V3. Security headers (both apps)
+- DevTools → Network → click the document request → Response Headers: you should see `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`.
+- Sanity: the Google Maps box on /contact still loads; Light/Dark toggle still works; student area fonts still load; images/avatars/wallpapers still display; admin panel pages all render. **If anything visual broke, it's most likely the new CSP — tell me what + the console error.**
+
+## V4. Auth hardening (web-app)
+- Parent login: after ~10 rapid failed attempts for the same email you get "Too many attempts…" for a while (per app instance). Register/forgot-password are similarly throttled.
+- Avatar upload: renaming a `.exe`/`.txt` to `.png` and uploading now fails with the file-type error (bytes are checked, not the name).
+- Subscription/practice errors no longer show raw database text — generic message instead.
+
+## V5. Admin panel hardening
+- Idle logout is now enforced server-side: leave the admin idle >30 min → the next click/refresh lands on the login page (previously only a browser timer).
+- Admin login failures show one generic "invalid credentials" message.
+- News/Olympiad/Wallpaper/Settings changes now appear in the Audit log page.
+
+If anything here doesn't match, tell me the **V#** + what you saw.

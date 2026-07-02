@@ -19,7 +19,13 @@ export async function signIn(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: error.message };
+  if (error) {
+    // One generic message for every failure — never surface the raw Auth error
+    // and never differentiate unconfirmed / nonexistent / wrong-password (no
+    // account-enumeration signal from the admin panel).
+    const t = await getT();
+    return { error: t("login.invalid") };
+  }
 
   redirect("/dashboard");
 }

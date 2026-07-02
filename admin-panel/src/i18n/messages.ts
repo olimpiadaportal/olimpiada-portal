@@ -25,6 +25,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "login.submit": "Daxil ol",
     "login.submitting": "Daxil olunur…",
     "login.required": "E-poçt və şifrə tələb olunur.",
+    "login.invalid": "E-poçt və ya şifrə yanlışdır.",
+    "login.timeout":
+      "Uzun müddət əməliyyat olmadığı üçün sessiya bağlandı. Zəhmət olmasa yenidən daxil olun.",
+    "err.server": "Əməliyyat alınmadı. Yenidən cəhd edin.",
+    "err.tooLong": "Mətn həddindən artıq uzundur. Qısaldıb yenidən cəhd edin.",
     "action.signOut": "Çıxış",
     "group.overview": "İcmal",
     "group.taxonomy": "Taksonomiya",
@@ -107,8 +112,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "field.topic_id": "Mövzu",
     "field.order_index": "Sıra",
     "field.supports_auto_grading": "Avtomatik qiymətləndirmə",
-    "status.active": "İctimai",
-    "status.inactive": "Şəxsi",
+    "status.active": "Hər kəsə açıq",
+    "status.inactive": "Gizli",
     "status.archived": "Arxivlənmiş",
     "boolean.yes": "Bəli",
     "boolean.no": "Xeyr",
@@ -274,7 +279,30 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.cover.remove": "Sil",
     "news.cover.none": "Üz şəkli əlavə edilməyib.",
     "news.cover.hint": "PNG, JPEG, WEBP və ya GIF. Maksimum 5 MB.",
+    "news.created.title": "Xəbər yaradıldı",
+    "news.created.hint":
+      "Qaralama saxlanıldı. İstəsəniz üz şəkli əlavə edin, sonra redaktəyə keçin.",
+    "news.created.continue": "Redaktəyə keç",
     "nav.olympiad": "Olimpiada paketləri",
+    "nav.wallpapers": "Divar kağızları",
+    "wallpaper.title": "Divar kağızları",
+    "wallpaper.subtitle":
+      "Uşaqların panelində seçdiyi divar kağızı dəstini idarə edin — düz rəng və ya şəkil əlavə edin, aktivləşdirin və ya arxivləşdirin.",
+    "wallpaper.addColor": "Düz rəng əlavə et",
+    "wallpaper.addImage": "Şəkil əlavə et",
+    "wallpaper.name": "Ad",
+    "wallpaper.hex": "Rəng",
+    "wallpaper.upload": "Şəkil yüklə",
+    "wallpaper.imageHint": "PNG, JPEG və ya WEBP · maksimum 3 MB",
+    "wallpaper.preview": "Önizləmə",
+    "wallpaper.kindLabel": "Növ",
+    "wallpaper.kind.color": "Düz rəng",
+    "wallpaper.kind.image": "Şəkil",
+    "wallpaper.activate": "Aktivləşdir",
+    "wallpaper.archive": "Arxivləşdir",
+    "wallpaper.statusActive": "Aktiv",
+    "wallpaper.statusArchived": "Arxivlənib",
+    "wallpaper.none": "Hələ divar kağızı yoxdur.",
     "oly2.subtitle": "Olimpiada paketləri yaradın və sual hovuzunu tənzimləyin.",
     "oly2.new": "Yeni paket",
     "oly2.none": "Hələ paket yoxdur.",
@@ -317,6 +345,85 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.err.invalidJson": "Yararsız JSON. Formatı yoxlayın.",
     "settings.err.notFound": "Parametr tapılmadı.",
     "settings.err.missing": "Dəyər tələb olunur.",
+    "settings.yes": "Bəli",
+    "settings.no": "Xeyr",
+    "settings.advanced": "Ətraflı (texniki dəyər)",
+    "settings.flagsIntro":
+      "Platformanın bölmələrini aşağıdakı açarlarla aça və ya bağlaya bilərsiniz. Açar söndürüldükdə həmin funksiya istifadəçilər üçün görünmür.",
+    "settings.settingsIntro":
+      "Platformanın ümumi parametrlərini burada tənzimləyin. Dəyişikliklər yadda saxlandıqdan sonra qüvvəyə minir.",
+    "settings.flag.launch_promo.label": "Başlanğıc kampaniyası",
+    "settings.flag.launch_promo.desc":
+      "Açıq qiymətlər səhifəsində start kampaniyası və sınaq müddəti barədə təqdimat mesajlarını göstərir; söndürüldükdə bu mesajlar gizlədilir.",
+    "settings.flag.news_public.label": "Açıq xəbərlər səhifəsi",
+    "settings.flag.news_public.desc":
+      "Saytın açıq Xəbərlər bölməsini göstərir; söndürüldükdə bölmə tamamilə gizlədilir.",
+    "settings.flag.olympiad_module.label": "Olimpiada hazırlığı",
+    "settings.flag.olympiad_module.desc":
+      "Olimpiada modulunu bütün platformada aktivləşdirir: şagird bölməsi və səhifələri, valideynin alış səhifəsi, açıq tanıtım səhifəsi və yeni cəhdlər.",
+    "settings.flag.payments.label": "Ödənişlər",
+    "settings.flag.payments.desc":
+      "Yeni abunəliklərə, ödəniş dəyişikliklərinə və olimpiada alışlarına icazə verir; söndürüldükdə bunlar bloklanır (ləğvetmə həmişə mümkün qalır).",
+    "settings.flag.leaderboard.label": "Reytinq cədvəli",
+    "settings.flag.leaderboard.desc":
+      "Reytinq cədvəlini göstərir; söndürüldükdə cədvəl gizlədilir.",
+    "settings.flag.notifications_email.label": "E-poçt bildirişləri",
+    "settings.flag.notifications_email.desc":
+      "Platformadan e-poçt bildirişlərinin göndərilməsinə icazə verir; söndürüldükdə heç bir e-poçt göndərilmir (göndərmə xidməti hələ qoşulmayıb).",
+    "settings.sys.support_email.label": "Dəstək e-poçtu",
+    "settings.sys.support_email.help":
+      "İstifadəçilərin kömək üçün müraciət etdiyi e-poçt ünvanı.",
+    "settings.sys.public_display_names.label": "Reytinqdə adlar",
+    "settings.sys.public_display_names.help":
+      "Aktiv olduqda reytinq cədvəlində şagirdlərin adları göstərilir; söndürüldükdə adlar anonimləşdirilir.",
+    "settings.sys.default_locale.label": "Standart dil",
+    "settings.sys.default_locale.help":
+      "Yeni istifadəçilər üçün ilkin olaraq təyin olunan platforma dili.",
+    "settings.sys.supported_locales.label": "Dəstəklənən dillər",
+    "settings.sys.supported_locales.help":
+      "Veb-tətbiqin istifadəçilərə hansı dilləri təklif etdiyini müəyyən edir. Ən azı bir dil seçilməlidir.",
+    "settings.tab.general": "Ümumi",
+    "settings.tab.localization": "Dil parametrləri",
+    "settings.tab.features": "Funksiyalar",
+    "settings.card.maintenance.title": "Texniki fasilə",
+    "settings.card.maintenance.desc":
+      "Texniki iş apararkən veb-tətbiqi müvəqqəti bağlayın. Rejim aktiv olduğu müddətdə veb-tətbiq bütün ziyarətçilərə texniki fasilə bildirişi göstərir.",
+    "settings.card.support.title": "Dəstək",
+    "settings.card.support.desc": "İstifadəçilərə göstərilən əlaqə məlumatları.",
+    "settings.card.social.title": "Sosial şəbəkələr",
+    "settings.card.social.desc":
+      "Doldurulmuş keçidlər açıq saytın aşağı hissəsində (footer) göstərilir.",
+    "settings.card.languages.title": "Dillər",
+    "settings.card.languages.desc":
+      "Platformanın standart dili və istifadəçilərə təklif olunan dillər.",
+    "settings.card.leaderboard.title": "Reytinq məxfiliyi",
+    "settings.card.leaderboard.desc":
+      "Reytinq cədvəlində şagird adlarının necə göstərildiyini idarə edin.",
+    "settings.sys.maintenance_mode.label": "Texniki fasilə rejimi",
+    "settings.sys.maintenance_mode.help":
+      "Aktiv olduqda veb-tətbiq bütün ziyarətçilərə texniki fasilə bildirişi göstərir.",
+    "settings.sys.maintenance_message.label": "Texniki fasilə mesajı",
+    "settings.sys.maintenance_message.help":
+      "Rejim aktiv olarkən ziyarətçilərin görəcəyi bildiriş. Hər üç dildə doldurun.",
+    "settings.sys.support_phone.label": "Dəstək telefonu",
+    "settings.sys.support_phone.help":
+      "Doldurulduqda açıq saytdakı Əlaqə səhifəsində göstərilir.",
+    "settings.sys.social_facebook.label": "Facebook",
+    "settings.sys.social_facebook.help": "Facebook səhifənizin tam keçidi.",
+    "settings.sys.social_instagram.label": "Instagram",
+    "settings.sys.social_instagram.help": "Instagram profilinizin tam keçidi.",
+    "settings.sys.social_youtube.label": "YouTube",
+    "settings.sys.social_youtube.help": "YouTube kanalınızın tam keçidi.",
+    "settings.sys.social_tiktok.label": "TikTok",
+    "settings.sys.social_tiktok.help": "TikTok profilinizin tam keçidi.",
+    "settings.notConfigured": "Hələ tənzimlənməyib.",
+    "settings.maintenanceConfirm":
+      "Texniki fasilə rejimi aktivləşdirilsin? Bu, veb-tətbiqin BÜTÜN ziyarətçilərinə texniki fasilə bildirişi göstərəcək.",
+    "settings.confirm": "Təsdiqlə",
+    "settings.err.localesEmpty": "Ən azı bir dil seçilməlidir.",
+    "settings.lang.az": "Azərbaycanca",
+    "settings.lang.en": "İngiliscə",
+    "settings.lang.ru": "Rusca",
     "accounts.subtitle": "Valideyn və uşaq hesablarını izləyin, uşaq şifrələrini sıfırlayın.",
     "accounts.none": "Hələ valideyn hesabı yoxdur.",
     "accounts.parentNoName": "Adsız valideyn",
@@ -427,6 +534,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "login.submit": "Sign in",
     "login.submitting": "Signing in…",
     "login.required": "Email and password are required.",
+    "login.invalid": "Incorrect email or password.",
+    "login.timeout": "You were signed out due to inactivity. Please sign in again.",
+    "err.server": "The operation failed. Please try again.",
+    "err.tooLong": "The text is too long. Please shorten it and try again.",
     "action.signOut": "Sign out",
     "group.overview": "Overview",
     "group.taxonomy": "Taxonomy",
@@ -670,7 +781,30 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.cover.remove": "Remove",
     "news.cover.none": "No cover image attached.",
     "news.cover.hint": "PNG, JPEG, WEBP or GIF. Max 5 MB.",
+    "news.created.title": "Article created",
+    "news.created.hint":
+      "Draft saved. Add a featured image if you like, then continue to editing.",
+    "news.created.continue": "Continue to editing",
     "nav.olympiad": "Olympiad packages",
+    "nav.wallpapers": "Wallpapers",
+    "wallpaper.title": "Wallpapers",
+    "wallpaper.subtitle":
+      "Manage the wallpaper set children pick from on their dashboard — add a solid color or an image, then activate or archive each.",
+    "wallpaper.addColor": "Add solid color",
+    "wallpaper.addImage": "Add image",
+    "wallpaper.name": "Name",
+    "wallpaper.hex": "Color",
+    "wallpaper.upload": "Upload image",
+    "wallpaper.imageHint": "PNG, JPEG or WEBP · 3 MB max",
+    "wallpaper.preview": "Preview",
+    "wallpaper.kindLabel": "Kind",
+    "wallpaper.kind.color": "Solid color",
+    "wallpaper.kind.image": "Image",
+    "wallpaper.activate": "Activate",
+    "wallpaper.archive": "Archive",
+    "wallpaper.statusActive": "Active",
+    "wallpaper.statusArchived": "Archived",
+    "wallpaper.none": "No wallpapers yet.",
     "oly2.subtitle": "Create olympiad packages and curate their question pool.",
     "oly2.new": "New package",
     "oly2.none": "No packages yet.",
@@ -713,6 +847,85 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.err.invalidJson": "Invalid JSON. Check the format.",
     "settings.err.notFound": "Setting not found.",
     "settings.err.missing": "A value is required.",
+    "settings.yes": "Yes",
+    "settings.no": "No",
+    "settings.advanced": "Advanced (raw value)",
+    "settings.flagsIntro":
+      "Turn parts of the platform on or off using the switches below. When a feature is off, it stays hidden from users.",
+    "settings.settingsIntro":
+      "Adjust the platform's general settings here. Changes take effect once you save them.",
+    "settings.flag.launch_promo.label": "Launch promotion",
+    "settings.flag.launch_promo.desc":
+      "Shows the promotional trial messaging on the public pricing page; turn it off to hide it.",
+    "settings.flag.news_public.label": "Public news page",
+    "settings.flag.news_public.desc":
+      "Shows the public News section on the website; when off, the section is hidden entirely.",
+    "settings.flag.olympiad_module.label": "Olympiad preparation",
+    "settings.flag.olympiad_module.desc":
+      "Enables the olympiad module everywhere: the student tab and pages, the parent purchase page, the public marketing page, and new attempts.",
+    "settings.flag.payments.label": "Payments",
+    "settings.flag.payments.desc":
+      "Allows new subscriptions, billing changes and olympiad purchases; when off, these are blocked (cancelling is always allowed).",
+    "settings.flag.leaderboard.label": "Leaderboard",
+    "settings.flag.leaderboard.desc":
+      "Shows the leaderboard; when off, it is hidden.",
+    "settings.flag.notifications_email.label": "Email notifications",
+    "settings.flag.notifications_email.desc":
+      "Allows the platform to send email notifications; when off, no emails go out (email sending is not connected yet).",
+    "settings.sys.support_email.label": "Support email",
+    "settings.sys.support_email.help":
+      "The email address users contact for help.",
+    "settings.sys.public_display_names.label": "Public leaderboard names",
+    "settings.sys.public_display_names.help":
+      "When on, student names appear on the leaderboard; when off, names are shown anonymized.",
+    "settings.sys.default_locale.label": "Default language",
+    "settings.sys.default_locale.help":
+      "The platform language new users start with.",
+    "settings.sys.supported_locales.label": "Available languages",
+    "settings.sys.supported_locales.help":
+      "Controls which languages the web app offers to users. At least one must be selected.",
+    "settings.tab.general": "General",
+    "settings.tab.localization": "Localization",
+    "settings.tab.features": "Features",
+    "settings.card.maintenance.title": "Maintenance",
+    "settings.card.maintenance.desc":
+      "Temporarily take the web app offline while you work on it. While enabled, the web app shows a maintenance notice to all visitors.",
+    "settings.card.support.title": "Support",
+    "settings.card.support.desc": "Contact details shown to your users.",
+    "settings.card.social.title": "Social links",
+    "settings.card.social.desc":
+      "Links you fill in here appear in the public site footer.",
+    "settings.card.languages.title": "Languages",
+    "settings.card.languages.desc":
+      "The platform's default language and the languages offered to users.",
+    "settings.card.leaderboard.title": "Leaderboard privacy",
+    "settings.card.leaderboard.desc":
+      "Control how student names appear on the leaderboard.",
+    "settings.sys.maintenance_mode.label": "Maintenance mode",
+    "settings.sys.maintenance_mode.help":
+      "While enabled, the web app shows a maintenance notice to all visitors.",
+    "settings.sys.maintenance_message.label": "Maintenance message",
+    "settings.sys.maintenance_message.help":
+      "The notice visitors see while maintenance mode is on. Fill in all three languages.",
+    "settings.sys.support_phone.label": "Support phone",
+    "settings.sys.support_phone.help":
+      "Shown on the public Contact page when set.",
+    "settings.sys.social_facebook.label": "Facebook",
+    "settings.sys.social_facebook.help": "Full link to your Facebook page.",
+    "settings.sys.social_instagram.label": "Instagram",
+    "settings.sys.social_instagram.help": "Full link to your Instagram profile.",
+    "settings.sys.social_youtube.label": "YouTube",
+    "settings.sys.social_youtube.help": "Full link to your YouTube channel.",
+    "settings.sys.social_tiktok.label": "TikTok",
+    "settings.sys.social_tiktok.help": "Full link to your TikTok profile.",
+    "settings.notConfigured": "Not configured yet.",
+    "settings.maintenanceConfirm":
+      "Enable maintenance mode? This will show a maintenance notice to ALL web-app visitors.",
+    "settings.confirm": "Confirm",
+    "settings.err.localesEmpty": "Select at least one language.",
+    "settings.lang.az": "Azerbaijani",
+    "settings.lang.en": "English",
+    "settings.lang.ru": "Russian",
     "accounts.subtitle": "Monitor parent and child accounts and reset child passwords.",
     "accounts.none": "No parent accounts yet.",
     "accounts.parentNoName": "Unnamed parent",
@@ -823,6 +1036,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "login.submit": "Войти",
     "login.submitting": "Вход…",
     "login.required": "Укажите эл. почту и пароль.",
+    "login.invalid": "Неверная эл. почта или пароль.",
+    "login.timeout": "Сеанс завершён из-за неактивности. Пожалуйста, войдите снова.",
+    "err.server": "Не удалось выполнить операцию. Попробуйте ещё раз.",
+    "err.tooLong": "Текст слишком длинный. Сократите его и попробуйте ещё раз.",
     "action.signOut": "Выйти",
     "group.overview": "Обзор",
     "group.taxonomy": "Таксономия",
@@ -1069,7 +1286,30 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.cover.remove": "Удалить",
     "news.cover.none": "Обложка не прикреплена.",
     "news.cover.hint": "PNG, JPEG, WEBP или GIF. Максимум 5 МБ.",
+    "news.created.title": "Статья создана",
+    "news.created.hint":
+      "Черновик сохранён. При желании добавьте обложку, затем перейдите к редактированию.",
+    "news.created.continue": "Перейти к редактированию",
     "nav.olympiad": "Олимпиадные пакеты",
+    "nav.wallpapers": "Обои",
+    "wallpaper.title": "Обои",
+    "wallpaper.subtitle":
+      "Управляйте набором обоев, которые дети выбирают на своей панели — добавьте сплошной цвет или изображение, затем активируйте или архивируйте каждое.",
+    "wallpaper.addColor": "Добавить цвет",
+    "wallpaper.addImage": "Добавить изображение",
+    "wallpaper.name": "Название",
+    "wallpaper.hex": "Цвет",
+    "wallpaper.upload": "Загрузить изображение",
+    "wallpaper.imageHint": "PNG, JPEG или WEBP · до 3 МБ",
+    "wallpaper.preview": "Превью",
+    "wallpaper.kindLabel": "Тип",
+    "wallpaper.kind.color": "Сплошной цвет",
+    "wallpaper.kind.image": "Изображение",
+    "wallpaper.activate": "Активировать",
+    "wallpaper.archive": "Архивировать",
+    "wallpaper.statusActive": "Активно",
+    "wallpaper.statusArchived": "В архиве",
+    "wallpaper.none": "Обоев пока нет.",
     "oly2.subtitle": "Создавайте олимпиадные пакеты и формируйте пул вопросов.",
     "oly2.new": "Новый пакет",
     "oly2.none": "Пакетов пока нет.",
@@ -1112,6 +1352,90 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.err.invalidJson": "Некорректный JSON. Проверьте формат.",
     "settings.err.notFound": "Настройка не найдена.",
     "settings.err.missing": "Требуется значение.",
+    "settings.yes": "Да",
+    "settings.no": "Нет",
+    "settings.advanced": "Дополнительно (техническое значение)",
+    "settings.flagsIntro":
+      "Включайте и выключайте разделы платформы с помощью переключателей ниже. Когда функция выключена, она скрыта от пользователей.",
+    "settings.settingsIntro":
+      "Здесь можно настроить общие параметры платформы. Изменения вступают в силу после сохранения.",
+    "settings.flag.launch_promo.label": "Стартовая акция",
+    "settings.flag.launch_promo.desc":
+      "Показывает промо-сообщения о пробном периоде на публичной странице цен; при выключении они скрываются.",
+    "settings.flag.news_public.label": "Публичная страница новостей",
+    "settings.flag.news_public.desc":
+      "Показывает публичный раздел «Новости» на сайте; при выключении раздел полностью скрыт.",
+    "settings.flag.olympiad_module.label": "Подготовка к олимпиаде",
+    "settings.flag.olympiad_module.desc":
+      "Включает олимпиадный модуль везде: вкладка и страницы ученика, страница покупки для родителя, публичная страница на сайте и новые попытки.",
+    "settings.flag.payments.label": "Платежи",
+    "settings.flag.payments.desc":
+      "Разрешает новые подписки, изменения оплаты и покупку олимпиад; при выключении они блокируются (отмена доступна всегда).",
+    "settings.flag.leaderboard.label": "Таблица лидеров",
+    "settings.flag.leaderboard.desc":
+      "Показывает таблицу лидеров; при выключении она скрыта.",
+    "settings.flag.notifications_email.label": "Уведомления по эл. почте",
+    "settings.flag.notifications_email.desc":
+      "Разрешает платформе отправлять уведомления по электронной почте; при выключении письма не отправляются (отправка почты ещё не подключена).",
+    "settings.sys.support_email.label": "Эл. почта поддержки",
+    "settings.sys.support_email.help":
+      "Адрес электронной почты, куда пользователи обращаются за помощью.",
+    "settings.sys.public_display_names.label": "Имена в рейтинге",
+    "settings.sys.public_display_names.help":
+      "Если включено, имена учеников отображаются в таблице лидеров; если выключено, имена анонимизируются.",
+    "settings.sys.default_locale.label": "Язык по умолчанию",
+    "settings.sys.default_locale.help":
+      "Язык платформы, который назначается новым пользователям.",
+    "settings.sys.supported_locales.label": "Доступные языки",
+    "settings.sys.supported_locales.help":
+      "Определяет, какие языки веб-приложение предлагает пользователям. Должен быть выбран хотя бы один.",
+    "settings.tab.general": "Общие",
+    "settings.tab.localization": "Локализация",
+    "settings.tab.features": "Функции",
+    "settings.card.maintenance.title": "Технические работы",
+    "settings.card.maintenance.desc":
+      "Временно закройте веб-приложение на время работ. Пока режим включён, веб-приложение показывает уведомление о технических работах всем посетителям.",
+    "settings.card.support.title": "Поддержка",
+    "settings.card.support.desc":
+      "Контактные данные, которые видят пользователи.",
+    "settings.card.social.title": "Социальные сети",
+    "settings.card.social.desc":
+      "Заполненные ссылки отображаются в подвале публичного сайта.",
+    "settings.card.languages.title": "Языки",
+    "settings.card.languages.desc":
+      "Язык платформы по умолчанию и языки, доступные пользователям.",
+    "settings.card.leaderboard.title": "Приватность рейтинга",
+    "settings.card.leaderboard.desc":
+      "Управляйте тем, как имена учеников отображаются в таблице лидеров.",
+    "settings.sys.maintenance_mode.label": "Режим технических работ",
+    "settings.sys.maintenance_mode.help":
+      "Пока режим включён, веб-приложение показывает уведомление о технических работах всем посетителям.",
+    "settings.sys.maintenance_message.label": "Сообщение о технических работах",
+    "settings.sys.maintenance_message.help":
+      "Уведомление, которое видят посетители, пока идут работы. Заполните на всех трёх языках.",
+    "settings.sys.support_phone.label": "Телефон поддержки",
+    "settings.sys.support_phone.help":
+      "Отображается на публичной странице «Контакты», если заполнено.",
+    "settings.sys.social_facebook.label": "Facebook",
+    "settings.sys.social_facebook.help":
+      "Полная ссылка на вашу страницу в Facebook.",
+    "settings.sys.social_instagram.label": "Instagram",
+    "settings.sys.social_instagram.help":
+      "Полная ссылка на ваш профиль в Instagram.",
+    "settings.sys.social_youtube.label": "YouTube",
+    "settings.sys.social_youtube.help":
+      "Полная ссылка на ваш канал YouTube.",
+    "settings.sys.social_tiktok.label": "TikTok",
+    "settings.sys.social_tiktok.help":
+      "Полная ссылка на ваш профиль в TikTok.",
+    "settings.notConfigured": "Пока не настроено.",
+    "settings.maintenanceConfirm":
+      "Включить режим технических работ? Уведомление о работах увидят ВСЕ посетители веб-приложения.",
+    "settings.confirm": "Подтвердить",
+    "settings.err.localesEmpty": "Выберите хотя бы один язык.",
+    "settings.lang.az": "Азербайджанский",
+    "settings.lang.en": "Английский",
+    "settings.lang.ru": "Русский",
     "accounts.subtitle": "Отслеживайте аккаунты родителей и детей и сбрасывайте пароли детей.",
     "accounts.none": "Родительских аккаунтов пока нет.",
     "accounts.parentNoName": "Родитель без имени",

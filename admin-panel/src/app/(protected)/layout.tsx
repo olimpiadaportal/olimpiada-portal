@@ -34,7 +34,7 @@ export default async function ProtectedLayout({
       <IdleTimeout />
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-dot" aria-hidden /> Olimpiada{" "}
+          <span className="brand-dot" aria-hidden /> OlimpIQ{" "}
           <span className="brand-sub">Admin</span>
         </div>
         <Sidebar groups={groups} soonLabel={t("badge.soon")} />

@@ -13,6 +13,11 @@ import { getT } from "@/i18n/server";
 
 export type QuestionState = { error?: string } | null;
 
+// Server-side length caps on free text (defence-in-depth; the UI also limits).
+const BODY_MAX = 8000; // question body / prompt
+const EXPLANATION_MAX = 8000;
+const OPTION_MAX = 2000; // answer-option text
+
 const META_FIELDS = [
   "grade_id",
   "subject_id",
@@ -55,12 +60,18 @@ export async function saveQuestion(
   const prompt = s(formData, "prompt");
   const explanation = s(formData, "explanation");
   if (!body) return { error: t("qerr.bodyRequired") };
+  // Caps: body/prompt ≤ 8000, explanation ≤ 8000, option text ≤ 2000.
+  if (body.length > BODY_MAX || prompt.length > BODY_MAX) {
+    return { error: t("err.tooLong") };
+  }
+  if (explanation.length > EXPLANATION_MAX) return { error: t("err.tooLong") };
 
   const count = Number(s(formData, "opt_count")) || 0;
   const options: { text: string; is_correct: boolean; order_index: number }[] = [];
   for (let i = 0; i < count; i++) {
     const text = s(formData, `opt.${i}.text`);
     if (!text) continue;
+    if (text.length > OPTION_MAX) return { error: t("err.tooLong") };
     options.push({
       text,
       is_correct: formData.get(`opt.${i}.correct`) != null,
@@ -113,22 +124,29 @@ export async function saveQuestion(
       })
       .select("id")
       .single();
-    if (error || !q) return { error: error?.message ?? "Insert failed." };
+    if (error || !q) {
+      console.error("[admin] question insert failed", error?.message);
+      return { error: t("err.server") };
+    }
     questionId = q.id;
   } else {
     const { error } = await supabase
       .from("questions")
       .update({ ...meta, primary_locale: locale, updated_by: ctx.profileId })
       .eq("id", questionId);
-    if (error) return { error: error.message };
+    if (error) {
+      console.error("[admin] question update failed", error.message);
+      return { error: t("err.server") };
+    }
   }
 
-  const cleanup = async (msg: string): Promise<QuestionState> => {
+  const cleanup = async (context: string, msg?: string): Promise<QuestionState> => {
+    console.error("[admin]", context, msg);
     if (!id && questionId) {
       // Only undo a question we created in this call.
       await supabase.from("questions").delete().eq("id", questionId);
     }
-    return { error: msg };
+    return { error: t("err.server") };
   };
 
   // Azerbaijani translation (body/prompt).
@@ -139,7 +157,7 @@ export async function saveQuestion(
         { question_id: questionId, locale, body, prompt: prompt || null },
         { onConflict: "question_id,locale" },
       );
-    if (error) return cleanup(error.message);
+    if (error) return cleanup("question translation upsert failed", error.message);
   }
 
   // Azerbaijani explanation (optional).
@@ -150,7 +168,7 @@ export async function saveQuestion(
         { question_id: questionId, locale, explanation_body: explanation },
         { onConflict: "question_id,locale" },
       );
-    if (error) return cleanup(error.message);
+    if (error) return cleanup("question explanation upsert failed", error.message);
   } else if (id) {
     await supabase
       .from("question_explanations")
@@ -171,11 +189,11 @@ export async function saveQuestion(
       })
       .select("id")
       .single();
-    if (oErr || !opt) return cleanup(oErr?.message ?? "Option insert failed.");
+    if (oErr || !opt) return cleanup("answer option insert failed", oErr?.message);
     const { error: tErr } = await supabase
       .from("answer_option_translations")
       .insert({ option_id: opt.id, locale, text: o.text });
-    if (tErr) return cleanup(tErr.message);
+    if (tErr) return cleanup("answer option translation failed", tErr.message);
   }
 
   revalidatePath("/questions");
@@ -200,12 +218,13 @@ const TRANSITIONS: Record<
 };
 
 export async function transitionQuestion(formData: FormData): Promise<void> {
+  // Guard FIRST — before touching any client-supplied FormData.
+  const ctx = await requirePanelAccess();
   const id = s(formData, "__id");
   const action = s(formData, "__action");
   const tr = TRANSITIONS[action];
   if (!id || !tr) return;
 
-  const ctx = await requirePanelAccess();
   if (tr.perm && !ctx.isAdmin && !ctx.permissions.includes(tr.perm)) {
     redirect("/unauthorized");
   }
@@ -232,9 +251,10 @@ export async function transitionQuestion(formData: FormData): Promise<void> {
 }
 
 export async function deleteQuestion(formData: FormData): Promise<void> {
+  // Guard FIRST — before touching any client-supplied FormData.
+  await requireAdmin();
   const id = s(formData, "__id");
   if (!id) return;
-  await requireAdmin();
   const supabase = await createClient();
   await supabase.from("questions").delete().eq("id", id);
   revalidatePath("/questions");
@@ -289,7 +309,10 @@ export async function bulkImportQuestions(
     p_questions: payload,
     p_filename: file.name,
   });
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    console.error("[admin] question bulk import failed", error.message);
+    return { ok: false, error: t("err.server") };
+  }
 
   revalidatePath("/questions");
   revalidatePath("/questions/import");
@@ -321,12 +344,13 @@ export async function bulkDeleteQuestions(formData: FormData): Promise<void> {
 }
 
 export async function bulkTransitionQuestions(formData: FormData): Promise<void> {
+  // Guard FIRST — before touching any client-supplied FormData.
+  const ctx = await requirePanelAccess();
   const action = s(formData, "__action");
   const tr = TRANSITIONS[action];
   const ids = idList(formData);
   if (!tr || ids.length === 0) return;
 
-  const ctx = await requirePanelAccess();
   if (tr.perm && !ctx.isAdmin && !ctx.permissions.includes(tr.perm)) {
     redirect("/unauthorized");
   }

@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth/childAccountService";
 import { type ChildInfo } from "@/lib/auth/children";
 import { getT } from "@/i18n/server";
+import { rateLimitAllow } from "@/lib/rateLimit";
 
 export type AuthFormState = { error?: string } | null;
 
@@ -27,19 +28,39 @@ function siteUrl(): string {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 }
 
+// R7 security: pragmatic email shape check (local@domain.tld) + hard length
+// caps so unbounded strings never reach auth/DB. bcrypt effectively uses 72
+// bytes, so >128-char passwords are rejected rather than silently truncated.
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
+const NAME_MAX = 80;
+const EMAIL_MAX = 255;
+const PASSWORD_MAX = 128;
+
+// R7 security: throttle windows for the parent auth surface (in-memory, see
+// lib/rateLimit.ts for the serverless caveat). Child login has its own
+// DB-backed lockout; Supabase GoTrue adds per-IP limits underneath.
+const WINDOW_15_MIN = 15 * 60_000;
+
 export async function registerParent(
   _prev: AuthFormState,
   formData: FormData,
 ): Promise<AuthFormState> {
   const t = await getT();
-  const firstName = f(formData, "first_name");
-  const lastName = f(formData, "last_name");
+  const firstName = f(formData, "first_name").slice(0, NAME_MAX);
+  const lastName = f(formData, "last_name").slice(0, NAME_MAX);
   const displayName = `${firstName} ${lastName}`.trim();
   const email = f(formData, "email").toLowerCase();
   const password = String(formData.get("password") ?? "");
   if (!firstName || !lastName) return { error: t("parent.err.required") };
-  if (!email || !email.includes("@")) return { error: t("parent.err.email") };
-  if (password.length < 8) return { error: t("parent.err.password") };
+  if (!email || email.length > EMAIL_MAX || !EMAIL_RE.test(email)) {
+    return { error: t("parent.err.email") };
+  }
+  if (password.length < 8 || password.length > PASSWORD_MAX) {
+    return { error: t("parent.err.password") };
+  }
+  if (!rateLimitAllow("register", email, 5, WINDOW_15_MIN)) {
+    return { error: t("parent.err.tooMany") };
+  }
 
   // EMAIL VERIFICATION REQUIRED: use signUp (sends a confirmation email) rather
   // than admin.createUser(email_confirm). When the Supabase project has
@@ -85,9 +106,15 @@ export async function parentLogin(
   formData: FormData,
 ): Promise<AuthFormState> {
   const t = await getT();
-  const email = f(formData, "email").toLowerCase();
-  const password = String(formData.get("password") ?? "");
+  const email = f(formData, "email").toLowerCase().slice(0, EMAIL_MAX);
+  const password = String(formData.get("password") ?? "").slice(0, PASSWORD_MAX);
   if (!email || !password) return { error: t("parent.err.required") };
+  // Throttle BEFORE any credential/existence work: the "no account" vs "wrong
+  // password" UX (owner-requested) is an enumeration signal, so bulk probing
+  // must hit this wall. 10 attempts / 15 min per email.
+  if (!rateLimitAllow("login", email, 10, WINDOW_15_MIN)) {
+    return { error: t("parent.err.tooMany") };
+  }
   const supabase = await createServerSupabase();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
@@ -139,7 +166,12 @@ export async function requestPasswordReset(
 ): Promise<AuthFormState> {
   const t = await getT();
   const email = f(formData, "email").toLowerCase();
-  if (!email || !email.includes("@")) return { error: t("parent.err.email") };
+  if (!email || email.length > EMAIL_MAX || !EMAIL_RE.test(email)) {
+    return { error: t("parent.err.email") };
+  }
+  if (!rateLimitAllow("pwreset", email, 3, WINDOW_15_MIN)) {
+    return { error: t("parent.err.tooMany") };
+  }
   const supabase = await createServerSupabase();
   // Recovery link → /auth/callback exchanges the code → forwards to /reset-password.
   await supabase.auth.resetPasswordForEmail(email, {

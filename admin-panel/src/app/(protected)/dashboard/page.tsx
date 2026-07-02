@@ -1,9 +1,10 @@
 import { isSupabaseConfigured } from "@/lib/env";
-import { getAuthContext } from "@/lib/admin/guards";
+import { requirePanelAccess } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
 
 export default async function DashboardPage() {
-  const ctx = await getAuthContext();
+  // Same guard as every other protected page — never rely on the layout alone.
+  const ctx = await requirePanelAccess();
   const t = await getT();
 
   return (

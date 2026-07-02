@@ -1,7 +1,12 @@
+import { notFound } from "next/navigation";
 import { getT } from "@/i18n/server";
+import { isFeatureEnabled } from "@/lib/flags";
 
 export default async function OlympiadPreparationPage() {
   const t = await getT();
+  // Module gate (admin Settings → olympiad_module): the marketing page 404s
+  // while the module is off — same pattern as the news_public gate.
+  if (!(await isFeatureEnabled("olympiad_module"))) notFound();
   return (
     <section className="prose">
       <h1>{t("oly.title")}</h1>

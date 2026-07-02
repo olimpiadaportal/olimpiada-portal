@@ -7,7 +7,6 @@ import { saveCity, type CitySaveState } from "@/lib/admin/cities";
 // server page (so this client component holds no i18n dictionary itself).
 export type CityFormLabels = {
   name: string;
-  countryCode: string;
   status: string;
   statusActive: string;
   statusInactive: string;
@@ -31,7 +30,7 @@ export function CityForm({
   id,
 }: {
   labels: CityFormLabels;
-  defaultValues?: { name?: string; country_code?: string; status?: string };
+  defaultValues?: { name?: string; status?: string };
   id?: string;
 }) {
   const [state, formAction, pending] = useActionState<CitySaveState, FormData>(
@@ -54,16 +53,6 @@ export function CityForm({
             name="name"
             defaultValue={defaultValues?.name ?? ""}
             required
-          />
-        </label>
-
-        <label className="field">
-          <span className="field-label">{labels.countryCode}</span>
-          <input
-            type="text"
-            name="country_code"
-            maxLength={2}
-            defaultValue={defaultValues?.country_code ?? "AZ"}
           />
         </label>
 

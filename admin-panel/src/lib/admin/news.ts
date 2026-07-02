@@ -7,6 +7,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
+import { writeAuditLog } from "@/lib/admin/audit";
+import {
+  IMAGE_FILENAME_RE,
+  splitStoragePath,
+  verifyStorageObject,
+} from "@/lib/admin/media-verify";
 import { getT } from "@/i18n/server";
 
 export type NewsState = { error?: string } | null;
@@ -14,6 +20,13 @@ export type NewsCoverState = { error?: string } | null;
 
 const LOCALES = ["az", "en", "ru"] as const;
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Server-side length caps on free text (defence-in-depth; the UI also limits).
+const TITLE_MAX = 200;
+const BODY_MAX = 20000;
+const SLUG_MAX = 120;
 
 // Cover image constraints — mirror the news-media bucket (014_news.sql): image-only,
 // 5 MB. The binary lives in Supabase Storage; PostgreSQL stores only the metadata
@@ -53,13 +66,22 @@ export async function saveNews(
   const bodyAz = s(formData, "body_az");
   if (!titleAz || !bodyAz) return { error: t("news.err.azRequired") };
 
+  // Server-side length caps: title ≤ 200, body ≤ 20000 (every locale is checked
+  // again in the loop below).
+  for (const loc of LOCALES) {
+    if (s(formData, `title_${loc}`).length > TITLE_MAX) return { error: t("err.tooLong") };
+    if (s(formData, `body_${loc}`).length > BODY_MAX) return { error: t("err.tooLong") };
+  }
+
   // Slug (URL) is OPTIONAL — auto-generate from the az title when blank.
+  // Cap: slug ≤ 120 (falls back to a generated slug, same as a failed SLUG_RE).
   let slug = s(formData, "slug").toLowerCase();
   if (!slug) slug = slugify(titleAz);
-  if (!SLUG_RE.test(slug)) slug = `news-${Date.now()}`;
+  if (slug.length > SLUG_MAX || !SLUG_RE.test(slug)) slug = `news-${Date.now()}`;
 
   const supabase = await createClient();
   let newsId = id;
+  const isCreate = !newsId;
 
   if (!newsId) {
     const { data, error } = await supabase
@@ -67,11 +89,17 @@ export async function saveNews(
       .insert({ slug, status: "draft", created_by: ctx.profileId })
       .select("id")
       .single();
-    if (error || !data) return { error: error?.message ?? "Insert failed." };
+    if (error || !data) {
+      console.error("[admin] news insert failed", error?.message);
+      return { error: t("err.server") };
+    }
     newsId = data.id;
   } else {
     const { error } = await supabase.from("news").update({ slug }).eq("id", newsId);
-    if (error) return { error: error.message };
+    if (error) {
+      console.error("[admin] news update failed", error.message);
+      return { error: t("err.server") };
+    }
   }
 
   for (const loc of LOCALES) {
@@ -84,7 +112,10 @@ export async function saveNews(
           { news_id: newsId, locale: loc, title, body },
           { onConflict: "news_id,locale" },
         );
-      if (error) return { error: error.message };
+      if (error) {
+        console.error("[admin] news translation upsert failed", error.message);
+        return { error: t("err.server") };
+      }
     } else if (id) {
       // Translation cleared on edit → remove it.
       await supabase
@@ -95,7 +126,22 @@ export async function saveNews(
     }
   }
 
+  // Best-effort audit trail (never fails the mutation — handled inside).
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: isCreate ? "admin.news.create" : "admin.news.update",
+    targetTable: "news",
+    targetId: newsId,
+    metadata: { slug },
+  });
+
   revalidatePath("/news");
+  // On first create (from the Add-News page) land back on /news/new with the new
+  // id so the featured-image uploader appears at the end of the same flow. Edits
+  // go straight to the full edit page (which has its own cover uploader).
+  if (isCreate && s(formData, "__afterCreate") === "stay") {
+    redirect(`/news/new?created=${newsId}`);
+  }
   redirect(`/news/${newsId}/edit`);
 }
 
@@ -109,7 +155,7 @@ const NEWS_TRANSITIONS: Record<
 };
 
 export async function transitionNews(formData: FormData): Promise<void> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const id = s(formData, "__id");
   const action = s(formData, "__action");
   const tr = NEWS_TRANSITIONS[action];
@@ -125,7 +171,17 @@ export async function transitionNews(formData: FormData): Promise<void> {
 
   const patch: Record<string, unknown> = { status: tr.to };
   if (tr.setPublished) patch.published_at = new Date().toISOString();
-  await supabase.from("news").update(patch).eq("id", id);
+  const { error } = await supabase.from("news").update(patch).eq("id", id);
+
+  if (!error) {
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.news.transition",
+      targetTable: "news",
+      targetId: id,
+      metadata: { transition: action, from: n.status, to: tr.to },
+    });
+  }
 
   revalidatePath("/news");
   revalidatePath(`/news/${id}/edit`);
@@ -138,21 +194,31 @@ export async function attachNewsCover(
   formData: FormData,
 ): Promise<NewsCoverState> {
   const ctx = await requireAdmin();
+  const t = await getT();
   const newsId = s(formData, "news_id");
   const bucket = s(formData, "bucket");
   const path = s(formData, "path");
-  const mime = s(formData, "mime");
-  const size = Number(formData.get("size") ?? 0);
+  // NOTE: client-submitted mime/size form fields are deliberately IGNORED —
+  // both are derived server-side from the storage object below.
 
-  if (!newsId) return { error: "Invalid request." };
+  if (!newsId || !UUID_RE.test(newsId)) return { error: "Invalid request." };
   if (bucket !== COVER_BUCKET) return { error: "Invalid bucket." };
-  if (!path.startsWith(`news/${newsId}/`)) return { error: "Invalid path." };
-  if (!COVER_MIME.includes(mime)) return { error: "Unsupported file type." };
-  if (size <= 0 || size > COVER_MAX_SIZE) {
-    return { error: "File too large (max 5 MB)." };
+  // Strict path shape: news/<newsId>/<single safe image filename> (no svg).
+  const filename = splitStoragePath(path, `news/${newsId}/`);
+  if (!filename || !IMAGE_FILENAME_RE.test(filename)) {
+    return { error: "Invalid path." };
   }
 
   const supabase = await createClient();
+
+  // Verify the object actually exists in the bucket and derive size + mime
+  // server-side; reject when missing or outside the image whitelist.
+  const obj = await verifyStorageObject(supabase, bucket, `news/${newsId}`, filename);
+  if (!obj) return { error: "Invalid path." };
+  if (!COVER_MIME.includes(obj.mime)) return { error: "Unsupported file type." };
+  if (obj.size > COVER_MAX_SIZE) {
+    return { error: "File too large (max 5 MB)." };
+  }
 
   // Remember any previous cover so we can clean it up after re-linking.
   const { data: prev } = await supabase
@@ -168,19 +234,26 @@ export async function attachNewsCover(
       bucket,
       path,
       owner_profile_id: ctx.profileId,
-      mime_type: mime,
-      file_size_bytes: size,
+      // Server-derived values only (never the client-submitted form fields).
+      mime_type: obj.mime,
+      file_size_bytes: obj.size,
       visibility: "public",
     })
     .select("id")
     .single();
-  if (error || !media) return { error: error?.message ?? "Could not record media." };
+  if (error || !media) {
+    console.error("[admin] news cover media insert failed", error?.message);
+    return { error: t("err.server") };
+  }
 
   const { error: linkErr } = await supabase
     .from("news")
     .update({ cover_media_id: media.id })
     .eq("id", newsId);
-  if (linkErr) return { error: linkErr.message };
+  if (linkErr) {
+    console.error("[admin] news cover link failed", linkErr.message);
+    return { error: t("err.server") };
+  }
 
   if (prevId) {
     const { data: pm } = await supabase
@@ -192,6 +265,14 @@ export async function attachNewsCover(
     await supabase.from("media_assets").delete().eq("id", prevId);
   }
 
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.news.cover_attach",
+    targetTable: "news",
+    targetId: newsId,
+    metadata: { path, mime: obj.mime, size: obj.size },
+  });
+
   revalidatePath(`/news/${newsId}/edit`);
   return null;
 }
@@ -199,7 +280,7 @@ export async function attachNewsCover(
 // Removes the cover: nulls news.cover_media_id, deletes the storage object and the
 // media_assets row. Admin-only.
 export async function detachNewsCover(formData: FormData): Promise<void> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const newsId = s(formData, "news_id");
   if (!newsId) return;
 
@@ -223,15 +304,33 @@ export async function detachNewsCover(formData: FormData): Promise<void> {
     await supabase.from("media_assets").delete().eq("id", mediaId);
   }
 
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.news.cover_detach",
+    targetTable: "news",
+    targetId: newsId,
+  });
+
   revalidatePath(`/news/${newsId}/edit`);
 }
 
 export async function deleteNews(formData: FormData): Promise<void> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const id = s(formData, "__id");
   if (!id) return;
   const supabase = await createClient();
-  await supabase.from("news").delete().eq("id", id);
+  const { error } = await supabase.from("news").delete().eq("id", id);
+
+  if (!error) {
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.news.delete",
+      targetTable: "news",
+      targetId: id,
+      severity: "warning",
+    });
+  }
+
   revalidatePath("/news");
   redirect("/news");
 }

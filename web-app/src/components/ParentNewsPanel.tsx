@@ -5,6 +5,7 @@
 // empty state so the dashboard never crashes. Uses E1's contract classes/keys
 // verbatim. Copy is passed in from the page (already localized).
 import Link from "next/link";
+import Image from "next/image";
 import { getLocale } from "@/i18n/server";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
@@ -63,8 +64,15 @@ export async function ParentNewsPanel({
           {items.map((it) => (
             <Link className="news-mini" href={`/news/${it.slug}`} key={it.slug}>
               {it.cover ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={it.cover} alt="" className="news-mini-thumb" />
+                <Image
+                  src={it.cover}
+                  alt=""
+                  width={52}
+                  height={52}
+                  sizes="52px"
+                  loading="lazy"
+                  className="news-mini-thumb"
+                />
               ) : (
                 <span className="news-mini-thumb" aria-hidden="true" />
               )}

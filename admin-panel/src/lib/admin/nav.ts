@@ -47,6 +47,7 @@ export const NAV: NavGroup[] = [
       { label: "nav.questions", href: "/questions", permission: "content.create" },
       { label: "nav.news", href: "/news", adminOnly: true },
       { label: "nav.olympiad", href: "/olympiad", adminOnly: true },
+      { label: "nav.wallpapers", href: "/wallpapers", adminOnly: true },
     ],
   },
   {

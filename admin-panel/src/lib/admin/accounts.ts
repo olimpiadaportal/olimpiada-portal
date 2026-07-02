@@ -13,41 +13,20 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/admin/guards";
 import { createAdminClient, hasServiceRole } from "@/lib/supabase/admin";
+import { writeAuditLog } from "@/lib/admin/audit";
 import { getT } from "@/i18n/server";
 
 // --------------------------------------------------------------------------
-// Audit helper. audit_logs (008) columns: actor_profile_id, action,
-// target_table, target_id, severity, metadata_json, success. Best-effort:
-// auditing must never block or fail the primary operation.
+// Auditing uses the shared best-effort helper in @/lib/admin/audit (extracted
+// from the pattern that originated here; see that file for the audit_logs
+// columns, the audit_severity enum constraint, and the service-role rationale).
+//
+// NOTE: account CRUD here targets profiles / students / child_credentials, none
+// of which carry the generic fn_audit_row() DB trigger (011 attaches those to
+// profile_roles, parent_student_links, subscriptions, payments, questions,
+// tests, daily_task_packages). So these app writes are the single source of
+// truth for account-level events and do not duplicate/conflict with triggers.
 // --------------------------------------------------------------------------
-type AdminClient = ReturnType<typeof createAdminClient>;
-
-async function writeAudit(
-  admin: AdminClient,
-  entry: {
-    actorProfileId: string | null;
-    action: string;
-    targetTable?: string;
-    targetId?: string | null;
-    metadata?: Record<string, unknown>;
-    severity?: "info" | "warning" | "error" | "critical";
-    success?: boolean;
-  },
-): Promise<void> {
-  try {
-    await admin.from("audit_logs").insert({
-      actor_profile_id: entry.actorProfileId,
-      action: entry.action,
-      target_table: entry.targetTable ?? null,
-      target_id: entry.targetId ?? null,
-      metadata_json: entry.metadata ?? {},
-      severity: entry.severity ?? "info",
-      success: entry.success ?? true,
-    });
-  } catch {
-    /* never let auditing break the operation */
-  }
-}
 
 function f(formData: FormData, name: string): string {
   const v = formData.get(name);
@@ -84,7 +63,11 @@ export async function resetChildPassword(
     .select("auth_user_id, child_unique_id")
     .eq("student_profile_id", studentProfileId)
     .maybeSingle();
-  if (credErr) return { error: credErr.message };
+  if (credErr) {
+    // Never return raw DB error text to the client.
+    console.error("[admin] child credential lookup failed", credErr.message);
+    return { error: t("err.server") };
+  }
   if (!cred?.auth_user_id) return { error: t("accounts.reset.err.noCredentials") };
 
   // Defensive: never allow the password to equal the public 8-digit ID.
@@ -97,7 +80,11 @@ export async function resetChildPassword(
     cred.auth_user_id,
     { password },
   );
-  if (updErr) return { error: updErr.message };
+  if (updErr) {
+    // Never return raw Auth error text to the client (never log passwords).
+    console.error("[admin] child password reset failed", updErr.message);
+    return { error: t("err.server") };
+  }
 
   // 3) Record who/when the password was last set.
   await admin
@@ -108,7 +95,7 @@ export async function resetChildPassword(
     })
     .eq("student_profile_id", studentProfileId);
 
-  await writeAudit(admin, {
+  await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.child.password_reset",
     targetTable: "child_credentials",
@@ -182,7 +169,7 @@ export async function createParent(
     .eq("auth_user_id", created.user.id)
     .maybeSingle();
 
-  await writeAudit(admin, {
+  await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.parent.create",
     targetTable: "profiles",
@@ -251,7 +238,7 @@ export async function updateParent(
     .eq("id", parentProfileId);
   if (updErr) return { error: t("accounts.edit.err.failed") };
 
-  await writeAudit(admin, {
+  await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.parent.update",
     targetTable: "profiles",
@@ -306,7 +293,7 @@ export async function deleteChild(
     await admin.auth.admin.deleteUser(cred.auth_user_id).catch(() => {});
   }
 
-  await writeAudit(admin, {
+  await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.child.delete",
     targetTable: "students",
@@ -373,7 +360,7 @@ export async function deleteParent(
   // 2) Delete the parent auth user (cascades profile/parents/links via FK).
   await admin.auth.admin.deleteUser(parentProfile.auth_user_id).catch(() => {});
 
-  await writeAudit(admin, {
+  await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.parent.delete",
     targetTable: "profiles",

@@ -10,10 +10,13 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireChild } from "@/lib/auth/session";
 import { getT } from "@/i18n/server";
+import { sniffImageMime, EXT_BY_SNIFFED } from "@/lib/imageSniff";
 
 export type ChildProfileState = { ok?: boolean; error?: string } | null;
 
 // Avatar upload constraints (mirror the 'profile-avatars' bucket: 2 MB, images).
+// The declared type is only a cheap early reject — the authoritative type comes
+// from byte sniffing (imageSniff) in the action itself.
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_AVATAR_MIME = new Set([
   "image/png",
@@ -22,14 +25,6 @@ const ALLOWED_AVATAR_MIME = new Set([
   "image/webp",
   "image/gif",
 ]);
-
-const EXT_BY_MIME: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/jpg": "jpg",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
 
 // Change the logged-in child's own login password. Enforces min length 8 and
 // that the password is not equal to the child's 8-digit login ID (a trivial,
@@ -88,6 +83,11 @@ export async function setChildOwnAvatar(
   if (file.size > MAX_AVATAR_BYTES) {
     return { error: t("profile.err.fileTooLarge") };
   }
+  // R7 security: type the upload from its BYTES (magic numbers), never from the
+  // attacker-controlled file.type (mirrors the parent avatar action).
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sniffed = sniffImageMime(bytes);
+  if (!sniffed) return { error: t("profile.err.fileType") };
 
   const supabase = await createClient();
   const {
@@ -97,12 +97,12 @@ export async function setChildOwnAvatar(
     return { error: t("profile.err.uploadFailed") };
   }
 
-  const ext = EXT_BY_MIME[file.type] ?? "png";
+  const ext = EXT_BY_SNIFFED[sniffed];
   const path = `${user.id}/${Date.now()}.${ext}`;
 
   const { error: uploadErr } = await supabase.storage
     .from("profile-avatars")
-    .upload(path, file, { contentType: file.type, upsert: false });
+    .upload(path, bytes, { contentType: sniffed, upsert: false });
   if (uploadErr) {
     return { error: t("profile.err.uploadFailed") };
   }
@@ -113,8 +113,8 @@ export async function setChildOwnAvatar(
       bucket: "profile-avatars",
       path,
       owner_profile_id: child.profileId,
-      mime_type: file.type,
-      file_size_bytes: file.size,
+      mime_type: sniffed,
+      file_size_bytes: bytes.byteLength,
       visibility: "public",
     })
     .select("id")

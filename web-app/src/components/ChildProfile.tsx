@@ -35,6 +35,9 @@ export function ChildProfile({
 
   return (
     <div className="profile-section">
+      {/* Same head shape as the parent profile: avatar + identity block.
+          (.profile-grid is NOT used here — its divider styling is meant for a
+          full-width row grid below the head, not for content beside the avatar.) */}
       <div className="profile-head">
         <span className="profile-avatar">
           {avatarUrl ? (
@@ -46,21 +49,17 @@ export function ChildProfile({
             </span>
           )}
         </span>
-        <div className="profile-grid">
-          <div className="profile-row">
-            <span className="arena-muted">{tt("profile.account")}</span>
-            <span className="profile-field">{name || "—"}</span>
-          </div>
-          <div className="profile-row">
-            <span className="arena-muted">{tt("child.id")}</span>
-            <span className="profile-field mono">{uniqueId || "—"}</span>
-          </div>
+        <div className="profile-field">
+          <strong>{name || "—"}</strong>
+          <span className="arena-muted">
+            {tt("child.id")}: <span className="mono">{uniqueId || "—"}</span>
+          </span>
         </div>
       </div>
 
       <ChildAvatarUploader hasAvatar={avatarUrl !== null} dict={dict} />
 
-      <div className="avatar-actions" style={{ marginTop: 14 }}>
+      <div className="avatar-actions">
         <button
           type="button"
           className="arena-btn-ghost arena-btn-sm"
@@ -72,7 +71,7 @@ export function ChildProfile({
       </div>
 
       {open && (
-        <form action={action} className="form" style={{ marginTop: 12 }}>
+        <form action={action} className="form">
           <label className="field">
             <span className="field-label">{tt("profile.newPassword")}</span>
             <PasswordInput
@@ -87,7 +86,7 @@ export function ChildProfile({
           </label>
           {state?.error && <p className="form-error">{state.error}</p>}
           {state?.ok && <p className="arena-muted">{tt("profile.passwordChanged")}</p>}
-          <div className="avatar-actions" style={{ marginTop: 10 }}>
+          <div className="avatar-actions form-actions">
             <button className="arena-btn arena-btn-sm" type="submit" disabled={pending}>
               {tt("profile.save")}
             </button>

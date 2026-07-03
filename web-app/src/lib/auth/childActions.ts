@@ -28,7 +28,9 @@ export async function childLoginAction(
 
 export async function childLogoutAction(): Promise<void> {
   await childLogout();
-  redirect("/child-login");
+  // R8 fix: after logout the student lands on the public landing page (was
+  // /child-login).
+  redirect("/");
 }
 
 export async function selectWallpaper(formData: FormData): Promise<void> {

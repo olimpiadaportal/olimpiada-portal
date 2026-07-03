@@ -6,6 +6,7 @@ import {
   bulkAssignTopic,
   bulkDeleteQuestions,
   bulkTransitionQuestions,
+  transitionQuestion,
 } from "@/lib/admin/questions";
 
 export type QuestionRow = {
@@ -40,6 +41,30 @@ function statusPill(s: string): string {
   return "pill-muted";
 }
 
+// Per-row quick actions — mirrors the allowed-transitions logic of the edit
+// page (QuestionLifecycle). The server action re-checks permissions, current
+// status and (for submit) creatorship; RLS is the final gate.
+function rowTransitions(
+  status: string,
+  can: (p: string) => boolean,
+): { action: string; key: string }[] {
+  const buttons: { action: string; key: string }[] = [];
+  if (status === "draft" || status === "rejected")
+    buttons.push({ action: "submit", key: "qact.submit" });
+  if (status === "in_review" && can("content.review"))
+    buttons.push(
+      { action: "approve", key: "qact.approve" },
+      { action: "reject", key: "qact.reject" },
+    );
+  if (status === "approved" && can("content.publish"))
+    buttons.push({ action: "publish", key: "qact.publish" });
+  if (status === "published" && can("content.publish"))
+    buttons.push({ action: "unpublish", key: "qact.unpublish" });
+  if (status !== "archived" && can("content.archive"))
+    buttons.push({ action: "archive", key: "qact.archive" });
+  return buttons;
+}
+
 export function QuestionsTable({
   rows,
   taxonomy,
@@ -63,7 +88,8 @@ export function QuestionsTable({
 
   const allOnPage = rows.length > 0 && rows.every((r) => sel.has(r.id));
   const ids = Array.from(sel).join(",");
-  const allowed = ACTIONS.filter((a) => !a.perm || isAdmin || perms.includes(a.perm));
+  const can = (p: string) => isAdmin || perms.includes(p);
+  const allowed = ACTIONS.filter((a) => !a.perm || can(a.perm!));
 
   const topicsForSubject = taxonomy.topics.filter((t) => t.subject_id === aSubject);
   const subtopicsForTopic = taxonomy.subtopics.filter((s) => s.topic_id === aTopic);
@@ -247,6 +273,17 @@ export function QuestionsTable({
                   </span>
                 </td>
                 <td className="row-actions">
+                  <span className="qrow-quick">
+                    {rowTransitions(r.status, can).map((a) => (
+                      <form key={a.action} action={transitionQuestion}>
+                        <input type="hidden" name="__id" value={r.id} />
+                        <input type="hidden" name="__action" value={a.action} />
+                        <button className="btn-ghost btn-xs" type="submit">
+                          {tt(a.key)}
+                        </button>
+                      </form>
+                    ))}
+                  </span>
                   <Link href={`/questions/${r.id}/edit`}>{tt("action.edit")}</Link>
                 </td>
               </tr>

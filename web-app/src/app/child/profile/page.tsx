@@ -1,15 +1,14 @@
-import Link from "next/link";
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { WallpaperPicker } from "@/components/WallpaperPicker";
 import { ChildProfile } from "@/components/ChildProfile";
 
-// Student profile page (Round 5 P2) — the child equivalent of the parent
-// /profile page. Full-width .profile-page rendering the student's own profile
-// editor: avatar + change-password (<ChildProfile/>) and the wallpaper picker.
-// A child can never delete their account (no delete control is exposed). The
-// server fetch mirrors the former inline panel that lived on /child.
+// Student profile page — Round 8 redesign. Same account-settings design
+// language as the parent /profile page but student-only: identity header
+// (avatar + name + 8-digit ID) and Security (change password) rendered by
+// <ChildProfile/>, plus the "background templates" gallery (WallpaperPicker).
+// A child can never delete their account and has no email — neither is shown.
 export default async function ChildProfilePage() {
   const child = await requireChild();
   const t = await getT();
@@ -65,6 +64,10 @@ export default async function ChildProfilePage() {
     "child.id",
     "auth.showPassword",
     "auth.hidePassword",
+    // Round 8 account-settings sections (prof2.*)
+    "prof2.security",
+    "prof2.securityHint",
+    "prof2.idHint",
   ]) {
     profileDict[k] = t(k);
   }
@@ -74,7 +77,8 @@ export default async function ChildProfilePage() {
     .select("id, name, kind, value, media_asset_id, media_assets:media_asset_id(bucket, path)")
     .eq("status", "active")
     .order("name");
-  // Resolve a public URL for image-kind wallpapers (solid colors keep value).
+  // Resolve a public URL for image-kind wallpapers (color/gradient values keep
+  // their CSS `value` string and render as the swatch background directly).
   const wallpaperList = ((wallpapers ?? []) as any[]).map((w) => {
     let imageUrl: string | null = null;
     const m = w.media_assets;
@@ -96,7 +100,7 @@ export default async function ChildProfilePage() {
         {t("profile.title")}
       </h1>
 
-      <div className="arena-panel">
+      <div className="prof2-stack">
         <ChildProfile
           name={childName}
           uniqueId={childId}
@@ -104,25 +108,18 @@ export default async function ChildProfilePage() {
           avatarUrl={avatarUrl}
           dict={profileDict}
         />
-      </div>
 
-      <h3 className="arena-section-h" style={{ marginTop: 26 }}>
-        {t("arena.settings")}
-      </h3>
-      <div className="arena-panel">
-        <p className="arena-muted" style={{ margin: "0 0 12px" }}>
-          {t("child.wallpaperNote")}
-        </p>
-        <WallpaperPicker
-          wallpapers={wallpaperList}
-          currentId={currentId}
-          defaultLabel={t("child.wallpaperDefault")}
-        />
-        <p style={{ marginTop: 16, marginBottom: 0 }}>
-          <Link className="arena-btn-ghost arena-btn-sm" href="/child/olympiads">
-            {t("child.myOlympiads")}
-          </Link>
-        </p>
+        {/* Background templates gallery. */}
+        <section className="prof2-card" aria-label={t("prof2.wallpaperTitle")}>
+          <h2 className="prof2-sec-title">{t("prof2.wallpaperTitle")}</h2>
+          <p className="prof2-sec-hint">{t("child.wallpaperNote")}</p>
+          <WallpaperPicker
+            wallpapers={wallpaperList}
+            currentId={currentId}
+            defaultLabel={t("child.wallpaperDefault")}
+            selectedLabel={t("prof2.selected")}
+          />
+        </section>
       </div>
     </div>
   );

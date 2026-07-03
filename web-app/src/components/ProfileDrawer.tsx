@@ -1,28 +1,44 @@
 "use client";
 
-// Parent profile drawer (Round 5 — parent shell). Renders a round
+// Parent profile drawer (Round 8 redesign — parent shell). Renders a round
 // .drawer-trigger profile-icon button in the parent top nav; clicking it opens
-// a right slide-in .drawer (with a dimming .drawer-overlay). The drawer is now a
-// lightweight launcher — profile EDITING lives on the dedicated /profile page, so
-// the drawer only groups quick account controls into labelled sections:
-//   ACCOUNT  → .drawer-link → /profile (opens the full-width profile page)
-//   LANGUAGE → <LanguageDropdown/>
-//   THEME    → <ThemeToggle/>
-//   (footer) → .drawer-logout row (parentLogout form)
+// a right slide-in .drawer (with a dimming .drawer-overlay). The drawer is a
+// lightweight launcher — profile EDITING lives on the dedicated /profile page.
+// Round 8 section order (muted .drawer-section-label titles):
+//   ACCOUNT    → .drawer-link → /profile (user icon; chevron comes from the
+//                CSS ::after — no inline chevron SVG)
+//   LANGUAGE   → segmented [AZ][EN][RU] on desktop, <LanguageDropdown/> on
+//                mobile (CSS display switch inside .drawer2-lang)
+//   APPEARANCE → <ThemeToggle variant="segmented"/> ([Light][Dark] buttons)
+//   SESSION    → .drawer-logout row (parentLogout form), calm danger
 //
 // The layout (server) fetches only what the trigger + labels need (avatar public
-// URL / initials, locale, drawer chrome copy). Closes on: overlay click, the
+// URL / initials, locale, drawer chrome copy). New labels (appearance, session,
+// themeLight, themeDark) are OPTIONAL on the drawer prop so the existing layout
+// keeps compiling; until it passes them they resolve from the i18n catalog
+// (drawer2.*) with graceful static fallbacks. Closes on: overlay click, the
 // .drawer-close button, Escape, or navigating via the profile link. Uses the
-// shared contract classes verbatim (.drawer-trigger, .drawer-overlay(.open),
-// .drawer(.open), .drawer-head, .drawer-title, .drawer-close, .drawer-section,
-// .drawer-section-label, .drawer-link, .drawer-logout).
+// shared contract classes (.drawer-trigger, .drawer-overlay(.open),
+// .drawer(.open) + .drawer2, .drawer-head, .drawer-title, .drawer-close,
+// .drawer-section, .drawer-section-label, .drawer-link, .drawer-logout).
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LanguageDropdown } from "@/components/LanguageDropdown";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import {
+  LanguageDropdown,
+  LanguageSegmented,
+} from "@/components/LanguageDropdown";
+import { ThemeToggle, trFirst } from "@/components/ThemeToggle";
 import { parentLogout } from "@/lib/auth/parentService";
 import type { Locale } from "@/i18n/config";
+
+// Static last-resort fallback for the Session section title (used only until
+// the drawer2.* strings are merged into the catalog / passed by the layout).
+const SESSION_FALLBACK: Record<Locale, string> = {
+  az: "Sessiya",
+  en: "Session",
+  ru: "Сеанс",
+};
 
 // Parent top-nav links (client — needs usePathname to mark the active link).
 // Rendered by the server layout inside <nav className="pnav-links">. Order is
@@ -79,7 +95,9 @@ export function ProfileDrawer({
   // Admin-enabled locales, forwarded to the language dropdown.
   availableLocales?: Locale[];
   profile: ProfileDrawerData;
-  // Drawer chrome copy: { title, account, language, theme, close, profileBtn, logout }.
+  // Drawer chrome copy. The optional Round-8 fields (appearance/session/
+  // themeLight/themeDark) fall back to the i18n catalog when the layout does
+  // not pass them yet, so the existing layout keeps working unchanged.
   drawer: {
     title: string;
     account: string;
@@ -88,11 +106,22 @@ export function ProfileDrawer({
     close: string;
     profileBtn: string;
     logout: string;
+    appearance?: string;
+    session?: string;
+    themeLight?: string;
+    themeDark?: string;
   };
 }) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Section titles: explicit prop → merged drawer2.* catalog string → fallback.
+  const appearanceLabel =
+    drawer.appearance ?? trFirst(locale, ["drawer2.appearance"], drawer.theme);
+  const sessionLabel =
+    drawer.session ??
+    trFirst(locale, ["drawer2.session"], SESSION_FALLBACK[locale] ?? "Session");
 
   // Close on Escape; restore focus to the trigger when the drawer closes.
   useEffect(() => {
@@ -138,7 +167,7 @@ export function ProfileDrawer({
 
       <aside
         ref={panelRef}
-        className={`drawer${open ? " open" : ""}`}
+        className={`drawer drawer2${open ? " open" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={drawer.title}
@@ -171,13 +200,15 @@ export function ProfileDrawer({
 
         <div className="drawer-section">
           <span className="drawer-section-label">{drawer.account}</span>
+          {/* Exactly ONE arrow: the trailing chevron comes from the
+              .drawer-link::after CSS — no inline chevron SVG here. */}
           <Link
             href="/profile"
             className="drawer-link"
             onClick={() => setOpen(false)}
           >
-            <span>{drawer.profileBtn}</span>
             <svg
+              className="drawer2-row-ic"
               viewBox="0 0 24 24"
               width="18"
               height="18"
@@ -188,26 +219,55 @@ export function ProfileDrawer({
               strokeLinejoin="round"
               aria-hidden="true"
             >
-              <path d="m9 18 6-6-6-6" />
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
             </svg>
+            <span>{drawer.profileBtn}</span>
           </Link>
         </div>
 
         <div className="drawer-section">
           <span className="drawer-section-label">{drawer.language}</span>
-          <LanguageDropdown current={locale} available={availableLocales} />
+          <div className="drawer2-lang">
+            <LanguageSegmented current={locale} available={availableLocales} />
+            <div className="drawer2-lang-dd">
+              <LanguageDropdown current={locale} available={availableLocales} />
+            </div>
+          </div>
         </div>
 
         <div className="drawer-section">
-          <span className="drawer-section-label">{drawer.theme}</span>
-          <ThemeToggle locale={locale} />
+          <span className="drawer-section-label">{appearanceLabel}</span>
+          <ThemeToggle
+            locale={locale}
+            variant="segmented"
+            labels={{ light: drawer.themeLight, dark: drawer.themeDark }}
+          />
         </div>
 
-        <form action={parentLogout} className="drawer-section">
-          <button type="submit" className="drawer-logout">
-            {drawer.logout}
-          </button>
-        </form>
+        <div className="drawer-section drawer2-session">
+          <span className="drawer-section-label">{sessionLabel}</span>
+          <form action={parentLogout}>
+            <button type="submit" className="drawer-logout">
+              <svg
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <path d="m16 17 5-5-5-5" />
+                <path d="M21 12H9" />
+              </svg>
+              {drawer.logout}
+            </button>
+          </form>
+        </div>
       </aside>
     </>
   );

@@ -61,8 +61,15 @@ export const NAV: NavGroup[] = [
   {
     label: "group.comingSoon",
     items: [
-      { label: "nav.testsDailyTasks", soon: true },
-      { label: "nav.reviews", soon: true },
+      // Round 10 (F11): "Tests & Daily Tasks" trimmed to Daily Tasks only —
+      // standalone tests are already covered by the Questions module. Visible
+      // to Admins AND Content Managers (CMs will manage daily tasks), so it is
+      // permission-gated rather than adminOnly.
+      { label: "nav.dailyTasks", soon: true, permission: "content.create" },
+      // Round 10 (F12): the "nav.reviews" placeholder was REMOVED — it never
+      // had a page, and the review queue is already served by the Questions
+      // list (in_review status filter + stat card, Round 9). A separate
+      // Reviews module would just duplicate that flow.
       { label: "nav.subscriptions", soon: true, adminOnly: true },
       { label: "nav.payments", soon: true, adminOnly: true },
     ],

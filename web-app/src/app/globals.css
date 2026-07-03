@@ -73,8 +73,10 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
+  /* R8: Azerbaijani-safe global stack — Arial renders ə/Ə ğ ş ç ü ö ı İ cleanly
+     (the previous decorative fonts drew a poor schwa). Applies to body,
+     headings, buttons and inputs via inheritance/`font: inherit`. */
+  font-family: Arial, Helvetica, "Segoe UI", system-ui, sans-serif;
   line-height: 1.6;
 }
 
@@ -844,7 +846,9 @@ ul.clean li {
     radial-gradient(900px 500px at -10% 110%, rgba(196, 255, 0, 0.06), transparent 55%),
     var(--bg);
   color: var(--ink);
-  font-family: "Chivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* R8: Chivo → the global Azerbaijani-safe stack (ə/Ə fidelity). JetBrains
+     Mono stays for .mono numeric accents only. */
+  font-family: Arial, Helvetica, "Segoe UI", system-ui, sans-serif;
   font-weight: 400;
   line-height: 1.55;
 }
@@ -2746,18 +2750,16 @@ ul.clean li {
   border-color: var(--accent);
   filter: none;
 }
-/* Caret after the current-language label; rotates when the menu is open. */
-.lang-dd-btn::after {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  transform: rotate(45deg) translateY(-1px);
+/* R9 fix: the button used to render TWO carets — this CSS ::after border-caret
+   PLUS the .lang-dd-caret svg from the JSX. The svg is the single caret now
+   and carries the open/close rotation. Do not re-add an ::after caret. */
+.lang-dd-caret {
+  flex: none;
+  color: var(--muted);
   transition: transform 0.16s ease;
 }
-.lang-dd-btn[aria-expanded="true"]::after {
-  transform: rotate(-135deg) translateY(-1px);
+.lang-dd-btn[aria-expanded="true"] .lang-dd-caret {
+  transform: rotate(180deg);
 }
 .lang-dd-menu {
   position: absolute;
@@ -2846,23 +2848,13 @@ ul.clean li {
   }
 }
 
-/* =====================  FAQ chevron  ===================== */
-/* A down-caret drawn from borders; rotates when the item is open. Pairs with
-   FaqAccordion via native <details open> or an aria-expanded toggle. */
-.faq-chevron {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  transform: rotate(45deg) translateY(-2px);
-  transition: transform 0.18s ease;
-}
-.faq-item[open] .faq-chevron,
-.faq-q[aria-expanded="true"] .faq-chevron,
-[aria-expanded="true"] > .faq-chevron {
-  transform: rotate(-135deg) translateY(-2px);
-}
+/* =====================  FAQ chevron  =====================
+   R8 fix: a border-drawn caret override used to live here, layered ON TOP of
+   the svg chevron the FaqAccordion already renders — that's what produced the
+   "two chevrons" (a small caret above the main arrow). The single source of
+   truth is the .faq-chevron svg block near the FAQ styles (rotates 180° when
+   open, vertically centered by the .faq-q flex row). Do not re-add a second
+   .faq-chevron rule. */
 
 /* =====================  CONTACT — equal-height  ===================== */
 /* Two-column grid where the info card and the map frame stretch to the SAME
@@ -3673,10 +3665,9 @@ ul.clean li {
    override for the student-login art panel, not an edit of the arena rule).
    ========================================================================== */
 
-/* STEP 5 — softer display font (light only; dark + arena keep system-ui). */
-[data-theme="light"] body {
-  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-}
+/* STEP 5 — R8: the Energetic theme used "Trebuchet MS", whose Azerbaijani ə/Ə
+   glyphs render badly. All themes now share the global Azerbaijani-safe Arial
+   stack set on body (no light-only font override anymore). */
 
 /* STEP 6 — 22px card signature radius on LIGHT surfaces (shared-with-dark
    base rules keep their own radius in dark; buttons stay ~14px). */
@@ -4386,3 +4377,3185 @@ ul.clean li {
   color: var(--text);
 }
 /* End R6 */
+
+/* =============================================================================
+   ROUND 8 — STUDENT LIGHT THEME (R8-10 light-mode unification).
+   The .arena scope styles everything through its LOCAL tokens, so remapping
+   them under [data-theme="light"] re-skins the whole student panel to the
+   landing/Energetic light reference. Dark stays byte-identical (these rules
+   only match when <html data-theme="light">). The arena accent (--lime) maps
+   to brand purple in light — elements that painted dark text on the lime fill
+   flip to white below.
+   ========================================================================== */
+[data-theme="light"] .arena {
+  --bg: #fffbf5;
+  --bg2: #fff7ec;
+  --panel: #ffffff;
+  --panel2: #f7f0fe;
+  --line: #e9e0f7;
+  --ink: #2a1a3e;
+  --muted: #6f6486;
+  --dim: #a195bb;
+  --lime: #7c3aed;
+  --blue: #6d28d9;
+  --red: #ff4757;
+  --gold: #ff8a00;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(124, 58, 237, 0.08), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(255, 138, 0, 0.06), transparent 55%),
+    var(--bg);
+}
+[data-theme="light"] .arena[data-wallpaper] {
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(124, 58, 237, 0.08), transparent 60%),
+    var(--wp, var(--bg));
+}
+/* Text painted onto the (now purple) accent fill flips to white. */
+[data-theme="light"] .arena ::selection {
+  background: #7c3aed;
+  color: #ffffff;
+}
+[data-theme="light"] .arena-btn {
+  color: #ffffff;
+}
+[data-theme="light"] .arena-tab.active {
+  color: #ffffff;
+}
+[data-theme="light"] .arena .info-slide-num {
+  color: #ffffff;
+}
+[data-theme="light"] .arena-opt.selected .arena-opt-key {
+  color: #ffffff;
+}
+/* Lime-tinted accents become soft purple tints. */
+[data-theme="light"] .arena-opt.selected {
+  background: rgba(124, 58, 237, 0.08);
+}
+[data-theme="light"] .arena-table tr.me td {
+  background: rgba(124, 58, 237, 0.07);
+}
+[data-theme="light"] .arena-wp-swatch.current {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
+}
+[data-theme="light"] .arena .pw-eye:focus-visible {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35);
+}
+[data-theme="light"] .arena .pnav-brand::before {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+}
+/* Softer chrome shadows on light. */
+[data-theme="light"] .arena .drawer {
+  box-shadow: -16px 0 44px rgba(42, 26, 62, 0.16);
+}
+/* End ROUND 8 student light theme */
+
+
+/* ============ ROUND 8 MERGE: about.css ============ */
+/* ==========================================================================
+   Round 8 — About page redesign (namespace: about2-)
+   Corporate premium SaaS: gradient hero, alternating illustration blocks,
+   4-card value grid. Token-driven → works in light AND dark automatically.
+   ========================================================================== */
+
+.about2 {
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+  padding: 8px 0 24px;
+}
+
+/* ---------------------------- Hero ---------------------------- */
+
+.about2-hero {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 40px;
+  align-items: center;
+  padding: 48px 44px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(640px 320px at 92% -10%, color-mix(in srgb, var(--accent-2) 13%, transparent), transparent 62%),
+    radial-gradient(720px 380px at -8% 110%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 62%),
+    var(--surface);
+  box-shadow: 0 10px 28px var(--shadow);
+  overflow: hidden;
+}
+
+.about2-eyebrow {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.about2-hero h1 {
+  margin: 16px 0 0;
+  font-size: clamp(28px, 4.4vw, 40px);
+  line-height: 1.16;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.about2-lead {
+  margin: 14px 0 0;
+  max-width: 48ch;
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.about2-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.about2-chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.about2-hero-art {
+  min-width: 0;
+}
+.about2-hero-art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ---------------------- Alternating blocks ---------------------- */
+
+.about2-block {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: center;
+}
+
+.about2-art {
+  min-width: 0;
+  padding: 24px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--accent) 6%, transparent),
+      color-mix(in srgb, var(--accent-2) 7%, transparent)
+    ),
+    var(--surface);
+  box-shadow: 0 6px 20px var(--shadow);
+}
+.about2-art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Swap sides on even blocks (desktop only; reset in the media query). */
+.about2-rev .about2-art {
+  order: 2;
+}
+.about2-rev .about2-copy {
+  order: 1;
+}
+
+.about2-copy {
+  min-width: 0;
+}
+
+.about2-tag {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.about2-rev .about2-tag {
+  background: color-mix(in srgb, var(--accent-2) 13%, transparent);
+  color: var(--accent-2);
+}
+
+.about2-copy h2 {
+  margin: 12px 0 0;
+  font-size: clamp(21px, 3vw, 27px);
+  line-height: 1.25;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.about2-copy p {
+  margin: 12px 0 0;
+  font-size: 15.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* ------------------------- Values grid ------------------------- */
+
+.about2-values {
+  text-align: center;
+}
+
+.about2-values h2 {
+  margin: 0;
+  font-size: clamp(22px, 3.2vw, 30px);
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.about2-values-sub {
+  margin: 10px auto 0;
+  max-width: 52ch;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.about2-vgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-top: 28px;
+}
+
+.about2-vcard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 26px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 4px 14px var(--shadow);
+  text-align: left;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.about2-vcard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px var(--shadow);
+}
+
+.about2-vico {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--pill-bg);
+  color: var(--accent);
+}
+.about2-vcard:nth-child(even) .about2-vico {
+  background: color-mix(in srgb, var(--accent-2) 13%, transparent);
+  color: var(--accent-2);
+}
+.about2-vico svg {
+  width: 22px;
+  height: 22px;
+}
+
+.about2-vcard h3 {
+  margin: 4px 0 0;
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.about2-vcard p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+/* -------------------------- Responsive -------------------------- */
+
+@media (max-width: 900px) {
+  .about2 {
+    gap: 44px;
+  }
+  .about2-hero {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 36px 28px;
+  }
+  .about2-hero-art {
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+  .about2-block {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  /* Stacked: illustration always above copy, including swapped blocks. */
+  .about2-rev .about2-art {
+    order: 0;
+  }
+  .about2-rev .about2-copy {
+    order: 1;
+  }
+  .about2-art {
+    max-width: 460px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .about2 {
+    gap: 36px;
+    padding-bottom: 8px;
+  }
+  .about2-hero {
+    padding: 28px 20px;
+  }
+  .about2-lead {
+    font-size: 15.5px;
+  }
+  .about2-art {
+    padding: 16px;
+  }
+  .about2-vgrid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .about2-vcard {
+    padding: 22px 20px;
+  }
+}
+
+
+/* ============ ROUND 8 MERGE: analytics.css ============ */
+/* ==========================================================================
+   R8 — ANALYTICS (ana-) — parent analytics dashboard + responsive carousel
+   --------------------------------------------------------------------------
+   Theme-aware: only the shared tokens (--bg/--surface/--border/--text/--muted/
+   --accent/--accent-2/--chip-bg/--pill-bg/--shadow/--ok/--warn) so light AND
+   dark render correctly. Soft shadows, 14–22px radii, 8px spacing rhythm.
+   Classes:
+     .ana-page .ana-head .ana-section-head .ana-dash
+     .ana-controls .ana-ctl .ana-ctl-label .ana-seg .ana-seg-btn(.active)
+     .ana-tabs .ana-tab(.active,:disabled) .ana-lockhint
+     .ana-locked-panel .ana-locked-ico .ana-locked-sub
+     .ana-kpis .ana-kpi .ana-kpi-val .ana-kpi-label
+     .ana-facts .ana-fact .ana-fact-ico(.ok/.warn) .ana-fact-txt
+       .ana-fact-val .ana-fact-label
+     .ana-charts .ana-chart-card .ana-chart-title .ana-chart-sub .ana-svg
+     .ana-tables .ana-tablewrap .ana-table .ana-right .ana-num(.strong)
+       .ana-acc .ana-meter .ana-meter-fill
+     .ana-carousel .ana-car-stage .ana-car-viewport .ana-slide-card
+   ========================================================================== */
+
+/* ---- Page scaffold ---- */
+.ana-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 8px 0 24px;
+}
+.ana-head h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.ana-head p {
+  margin: 6px 0 0;
+}
+.ana-section-head {
+  margin-top: 16px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.ana-section-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.ana-section-head p {
+  margin: 6px 0 0;
+}
+.ana-dash {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- Child selector + subject tabs ---- */
+.ana-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px 32px;
+}
+.ana-ctl {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.ana-ctl-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.ana-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.ana-seg-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ana-seg-btn:hover {
+  color: var(--text);
+}
+.ana-seg-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.ana-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ana-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.ana-tab:hover:not(:disabled):not(.active) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ana-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.ana-tab:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: var(--chip-bg);
+  border-color: var(--border);
+  opacity: 0.75;
+}
+.ana-tab svg {
+  flex: none;
+}
+.ana-lockhint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+.ana-lockhint svg {
+  flex: none;
+}
+
+/* ---- Locked / empty panel ---- */
+.ana-locked-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 40px 24px;
+  border: 1px dashed var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+.ana-locked-panel p {
+  margin: 0;
+  color: var(--text);
+  font-weight: 600;
+  max-width: 44ch;
+}
+.ana-locked-panel .ana-locked-sub {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.9rem;
+}
+.ana-locked-panel .btn {
+  margin-top: 8px;
+}
+.ana-locked-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--pill-bg);
+  color: var(--accent);
+}
+
+/* ---- KPI tiles ---- */
+.ana-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+}
+.ana-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 2px var(--shadow);
+  min-width: 0;
+}
+.ana-kpi-val {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.ana-kpi-label {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ---- Best / weakest / last-activity fact cards ---- */
+.ana-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.ana-fact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 2px var(--shadow);
+  min-width: 0;
+}
+.ana-fact-ico {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--pill-bg);
+  color: var(--accent);
+}
+.ana-fact-ico.ok {
+  color: var(--ok);
+}
+.ana-fact-ico.warn {
+  color: var(--warn);
+}
+.ana-fact-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ana-fact-val {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.ana-fact-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* ---- Chart cards ---- */
+.ana-charts,
+.ana-tables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+.ana-chart-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 18px 20px 16px;
+  box-shadow: 0 1px 2px var(--shadow);
+  min-width: 0;
+}
+.ana-chart-title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.ana-chart-sub {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.ana-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: auto;
+}
+
+/* ---- Tables ---- */
+.ana-tablewrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.ana-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.ana-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ana-table td {
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+.ana-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ana-table .ana-right {
+  text-align: right;
+  padding-right: 0;
+}
+.ana-num {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.86rem;
+  color: var(--text);
+}
+.ana-num.strong {
+  font-weight: 700;
+}
+.ana-acc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 120px;
+}
+.ana-meter {
+  flex: 1;
+  height: 6px;
+  min-width: 56px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  overflow: hidden;
+}
+.ana-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* ---- Info carousel (R8 responsive rework: 2 full cards >=860px, 1 below;
+       the outer shell goes transparent and each slide becomes its own
+       equal-height card; the viewport clips page-by-page sliding) ---- */
+.info-carousel.ana-carousel {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  overflow: visible;
+}
+.ana-car-stage {
+  position: relative;
+  padding: 0 48px;
+}
+.ana-car-viewport {
+  overflow: hidden;
+  border-radius: 18px;
+}
+.ana-carousel .info-track {
+  display: flex;
+  align-items: stretch;
+  margin: 0 -6px;
+  transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.info-carousel.ana-carousel .info-slide {
+  flex: 0 0 100%;
+  width: auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  padding: 2px 6px 5px;
+}
+.ana-slide-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 22px 24px;
+  box-shadow: 0 1px 2px var(--shadow);
+  min-height: 170px;
+}
+.ana-slide-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.ana-slide-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.info-carousel.ana-carousel .info-arrow.prev {
+  left: 0;
+}
+.info-carousel.ana-carousel .info-arrow.next {
+  right: 0;
+}
+.info-carousel.ana-carousel .info-dots {
+  margin-top: 16px;
+}
+
+/* ---- Responsive: tablet wrap ---- */
+@media (min-width: 860px) {
+  .info-carousel.ana-carousel .info-slide {
+    flex-basis: 50%;
+  }
+}
+@media (max-width: 900px) {
+  .ana-charts,
+  .ana-tables {
+    grid-template-columns: 1fr;
+  }
+  .ana-facts {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+/* ---- Responsive: mobile stack ---- */
+@media (max-width: 560px) {
+  .ana-page {
+    gap: 20px;
+  }
+  .ana-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .ana-kpi {
+    padding: 14px 14px;
+  }
+  .ana-kpi-val {
+    font-size: 1.3rem;
+  }
+  .ana-facts {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .ana-charts,
+  .ana-tables {
+    gap: 12px;
+  }
+  .ana-chart-card {
+    padding: 16px 16px 14px;
+  }
+  .ana-controls {
+    gap: 14px;
+  }
+  .ana-seg,
+  .ana-tabs {
+    width: 100%;
+  }
+  .ana-seg-btn,
+  .ana-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+    text-align: center;
+  }
+  /* Arrows are hidden at this width by the base .info-arrow rule; drop the
+     side padding so both cards' gutters align with the page edge. */
+  .ana-car-stage {
+    padding: 0;
+  }
+  .ana-slide-card {
+    padding: 18px 18px 20px;
+    min-height: 150px;
+  }
+}
+
+
+/* ============ ROUND 8 MERGE: billing.css ============ */
+/* ==========================================================================
+   R8 — billing.* : one-page subscription center (Plans | Billing | Invoices)
+   Prefix: billing- . Reuses the shared plan-card contract classes
+   (.plans-grid / .plan-card / .plan-badge / .plan-cta — defined by the
+   pricing agent) and the existing .sub-status badges. Colors flow through
+   theme tokens so light + dark work automatically.
+   ========================================================================== */
+
+.billing-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 32px 28px 72px;
+}
+.billing-head h1 {
+  margin: 0 0 6px;
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.billing-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* ------------------------------------------------- sticky section tabs -- */
+.billing-tabs {
+  position: sticky;
+  top: 10px;
+  z-index: 30;
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  gap: 6px;
+  margin-top: 22px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 6px 18px var(--shadow);
+}
+.billing-tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.billing-tab:hover {
+  color: var(--text);
+  background: var(--chip-bg);
+}
+.billing-tab.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.billing-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------- sections ----- */
+.billing-section {
+  margin-top: 46px;
+  scroll-margin-top: 92px;
+}
+.billing-section-h {
+  margin: 0 0 14px;
+  font-size: 20px;
+  color: var(--text);
+}
+
+/* ------------------------------------------------ per-child plan block -- */
+.billing-child {
+  margin-top: 28px;
+}
+.billing-child-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.billing-child-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chip-bg);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 13px;
+  flex: none;
+}
+.billing-child-name {
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--text);
+}
+
+/* Additions layered on top of the shared plan-card contract. */
+.billing-nosub {
+  color: var(--muted);
+  font-size: 13.5px;
+  margin: 10px 0 0;
+}
+.billing-calc {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 10px;
+}
+.billing-total {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.billing-total strong {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* ----------------------------------------------------- billing panel ---- */
+.billing-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 26px 28px;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.billing-row {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 8px 24px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.billing-row:last-child {
+  border-bottom: 0;
+}
+.billing-row-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+.billing-row-value {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+.billing-card-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.billing-card-brand svg {
+  flex: none;
+  display: block;
+  color: var(--muted);
+}
+
+/* status / paid pills */
+.billing-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  background: var(--pill-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.billing-pill.ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+/* action buttons (demo-inert secondary buttons) */
+.billing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.billing-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.billing-btn:hover {
+  border-color: var(--accent);
+}
+.billing-btn.inert {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.billing-btn.inert:hover {
+  border-color: var(--border);
+}
+
+/* real cancel-subscription rows (one per cancellable child) */
+.billing-cancel-rows {
+  margin-top: 18px;
+}
+.billing-cancel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-top: 1px dashed var(--border);
+}
+.billing-cancel-name {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.billing-note {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* -------------------------------------------------------- invoices ------ */
+.billing-invmail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.billing-invmail-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.billing-invmail-title {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 15px;
+}
+.billing-invmail-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* styled switch (local demo state) */
+.billing-switch {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.billing-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px var(--shadow);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+.billing-switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.billing-switch.on .billing-switch-thumb {
+  transform: translateX(20px);
+  background: #ffffff;
+}
+.billing-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* recipient email row */
+.billing-email-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.billing-email {
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 999px;
+  overflow-wrap: anywhere;
+}
+
+/* invoice history table (horizontal scroll on small screens) */
+.billing-table-wrap {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow-x: auto;
+}
+.billing-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.billing-table th {
+  text-align: left;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--chip-bg);
+  white-space: nowrap;
+}
+.billing-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+.billing-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* inert download chip */
+.billing-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: not-allowed;
+  white-space: nowrap;
+}
+.billing-dl svg {
+  display: block;
+  flex: none;
+}
+
+/* -------------------------------------------------------- responsive ---- */
+@media (max-width: 900px) {
+  .billing-page {
+    padding: 24px 20px 56px;
+  }
+  .billing-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 10px 0;
+  }
+  .billing-tabs {
+    top: 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .billing-head h1 {
+    font-size: 24px;
+  }
+  .billing-panel {
+    padding: 18px;
+    border-radius: 16px;
+  }
+  .billing-section {
+    margin-top: 36px;
+    scroll-margin-top: 84px;
+  }
+  .billing-tab {
+    padding: 8px 14px;
+    font-size: 13.5px;
+  }
+  .billing-actions .billing-btn {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+  .billing-invmail {
+    align-items: flex-start;
+  }
+}
+
+
+/* ============ ROUND 8 MERGE: drawers.css ============ */
+/* =============================================================================
+   ROUND 8 — DRAWERS: redesigned account drawers (parent + student .arena).
+   .drawer2 is a modifier ADDED to the shared .drawer panel by both drawers:
+     - wider desktop panel (~400px), balanced 24px section rhythm
+     - .seg-* segmented controls (language [AZ][EN][RU] + appearance
+       [Light][Dark] with a check on the active segment)
+     - .drawer2-lang responsive switch: segmented on desktop, the existing
+       LanguageDropdown on mobile (display swap at 640px)
+     - .drawer2-row-ic leading icon on the Profilim row (the trailing chevron
+       stays the existing .drawer-link::after — exactly one arrow)
+     - calm-danger Session/logout row spacing refinements
+   Theme-aware via existing tokens; .arena rules map everything onto the
+   student dark palette (same pattern as the existing .arena .drawer* rules).
+   ========================================================================== */
+
+/* ---- Drawer chrome (.drawer2 modifier on the shared .drawer panel) -------- */
+.drawer.drawer2 {
+  width: 400px;
+  max-width: 92vw;
+}
+.drawer2 .drawer-head {
+  padding: 20px 24px;
+}
+.drawer2 .drawer-section {
+  padding: 20px 24px;
+  gap: 12px;
+}
+.drawer2 .drawer-link {
+  border-radius: 14px;
+  padding: 13px 14px;
+}
+
+/* Leading icon on drawer rows (e.g. the user icon on the Profilim row). */
+.drawer2-row-ic {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--accent);
+}
+
+/* ---- Segmented control (shared by language + appearance) ------------------ */
+.seg-group {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.seg-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.seg-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.seg-btn.active {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.seg-btn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+/* Check mark rendered in every segment but shown only on the ACTIVE one
+   (appearance control). */
+.seg-btn .seg-check {
+  display: none;
+}
+.seg-btn.active .seg-check {
+  display: block;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+/* Language segments show short codes — slight tracking reads cleaner. */
+.seg-lang .seg-btn {
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+/* ---- Language: segmented on desktop, dropdown on mobile ------------------- */
+.drawer2-lang {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.drawer2-lang .seg-lang {
+  display: flex;
+}
+.drawer2-lang .drawer2-lang-dd {
+  display: none;
+}
+@media (max-width: 640px) {
+  .drawer2-lang .seg-lang {
+    display: none;
+  }
+  .drawer2-lang .drawer2-lang-dd {
+    display: block;
+  }
+}
+
+/* ---- Session (calm danger logout row) ------------------------------------- */
+.drawer2-session form {
+  margin: 0;
+  width: 100%;
+}
+.drawer2 .drawer-logout {
+  border-radius: 14px;
+  padding: 13px 14px;
+  gap: 10px;
+  align-items: center;
+}
+.drawer2 .drawer-logout svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+/* ---- Arena (student dark) overrides ---------------------------------------
+   The student drawer lives inside .arena, which defines its own local tokens
+   (--panel/--panel2/--line/--ink/--dim/--lime). Map the new controls onto
+   that palette, mirroring the existing .arena .drawer-link pattern. */
+.arena .drawer2-row-ic {
+  color: var(--lime);
+}
+.arena .seg-btn {
+  background: var(--panel2);
+  border-color: var(--line);
+  color: var(--dim);
+}
+.arena .seg-btn:hover {
+  border-color: var(--lime);
+  color: var(--ink);
+}
+.arena .seg-btn:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lime) 30%, transparent);
+}
+.arena .seg-btn.active {
+  background: color-mix(in srgb, var(--lime) 12%, var(--panel2));
+  border-color: var(--lime);
+  color: var(--ink);
+  box-shadow: none;
+}
+.arena .seg-btn.active .seg-check {
+  color: var(--lime);
+}
+.arena .drawer2 .drawer-section {
+  padding: 20px 24px;
+}
+
+/* ---- Small screens: full-width panel, slightly tighter gutters ------------ */
+@media (max-width: 460px) {
+  .drawer.drawer2 {
+    width: 100%;
+    max-width: 100%;
+  }
+  .drawer2 .drawer-head,
+  .drawer2 .drawer-section,
+  .arena .drawer2 .drawer-section {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+/* End ROUND 8 DRAWERS */
+
+
+/* ============ ROUND 8 MERGE: olympiads.css ============ */
+/* =============================================================================
+   ROUND 8 — oly4: student "Olimpiadalar" tab (planned-olympiad cards + detail
+   modal). Lives inside the dark .arena scope today; every color is var()-driven
+   with root-token fallbacks so the future light student theme drops in cleanly:
+   var(--arena-token, var(--root-token, literal)).
+   ========================================================================== */
+
+.oly4-section {
+  margin-top: 32px;
+}
+.oly4-section:first-of-type {
+  margin-top: 8px;
+}
+.oly4-h {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--dim, var(--muted, #6b7280));
+  margin: 0 0 14px;
+}
+
+/* ---- Card grid: 3-up desktop, 2-up tablet, stacked mobile; equal heights. */
+.oly4-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.oly4-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--panel, var(--surface, #ffffff));
+  border: 1px solid var(--line, var(--border, #e5e0d8));
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: var(--shadow, 0 6px 18px rgba(15, 15, 35, 0.08));
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+.oly4-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--lime, var(--accent, #7c3aed));
+}
+
+.oly4-cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-bottom: 1px solid var(--line, var(--border, #e5e0d8));
+}
+/* Branded gradient placeholder (inline-SVG medal sits inside). */
+.oly4-cover-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(120% 140% at 85% -20%, rgba(255, 138, 0, 0.35), transparent 55%),
+    linear-gradient(140deg, #7c3aed 0%, #5b21b6 70%);
+}
+
+.oly4-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.oly4-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.oly4-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line, var(--border, #e5e0d8));
+  background: var(--panel2, var(--chip-bg, #f4f1ec));
+  color: var(--muted, #6b7280);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Status accents: upcoming = brand accent, planned = warm pending, held = dim. */
+.oly4-status.is-upcoming {
+  color: var(--lime, var(--accent, #7c3aed));
+  border-color: var(--lime, var(--accent, #7c3aed));
+  background: transparent;
+}
+.oly4-status.is-planned {
+  color: var(--gold, var(--accent-2, #ff8a00));
+  border-color: currentColor;
+  background: transparent;
+}
+.oly4-status.is-held {
+  color: var(--dim, var(--muted, #9ca3af));
+}
+
+.oly4-title {
+  margin: 0;
+  font-size: 1.04rem;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--ink, var(--text, #1c1917));
+  overflow-wrap: break-word;
+}
+.oly4-desc {
+  margin: 0;
+  font-size: 0.87rem;
+  line-height: 1.55;
+  color: var(--muted, #6b7280);
+  overflow-wrap: break-word;
+}
+.oly4-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--muted, #6b7280);
+}
+.oly4-meta svg {
+  flex: none;
+  opacity: 0.85;
+}
+
+/* Footer pinned to the card bottom → equal-height cards keep aligned CTAs. */
+.oly4-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, var(--border, #e5e0d8));
+}
+.oly4-count {
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--dim, var(--muted, #6b7280));
+  white-space: nowrap;
+}
+.oly4-btn {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid var(--line, var(--border, #e5e0d8));
+  background: transparent;
+  color: var(--ink, var(--text, #1c1917));
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 9px 16px;
+  border-radius: 999px;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.oly4-btn:hover,
+.oly4-btn:focus-visible {
+  border-color: var(--lime, var(--accent, #7c3aed));
+  color: var(--lime, var(--accent, #7c3aed));
+}
+.oly4-btn:focus-visible {
+  outline: 2px solid var(--lime, var(--accent, #7c3aed));
+  outline-offset: 2px;
+}
+
+/* ---- Detail modal ------------------------------------------------------- */
+.oly4-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 10, 20, 0.62);
+}
+.oly4-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(540px, 100%);
+  max-height: min(86vh, 720px);
+  background: var(--panel, var(--surface, #ffffff));
+  border: 1px solid var(--line, var(--border, #e5e0d8));
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(10, 10, 30, 0.35);
+}
+.oly4-modal-cover {
+  display: block;
+  width: 100%;
+  height: 168px;
+  object-fit: cover;
+  border-bottom: 1px solid var(--line, var(--border, #e5e0d8));
+  flex: none;
+}
+.oly4-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  background: rgba(10, 12, 24, 0.55);
+  color: #ffffff;
+}
+.oly4-close:hover {
+  background: rgba(10, 12, 24, 0.75);
+}
+.oly4-close:focus-visible {
+  outline: 2px solid var(--lime, var(--accent, #7c3aed));
+  outline-offset: 2px;
+}
+.oly4-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 22px;
+  overflow-y: auto;
+}
+.oly4-modal-title {
+  margin: 0;
+  font-size: 1.22rem;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--ink, var(--text, #1c1917));
+  overflow-wrap: break-word;
+}
+.oly4-rows {
+  margin: 6px 0 0;
+}
+.oly4-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line, var(--border, #e5e0d8));
+  font-size: 0.9rem;
+}
+.oly4-row:last-child {
+  border-bottom: 0;
+}
+.oly4-row dt {
+  color: var(--muted, #6b7280);
+  flex: none;
+}
+.oly4-row dd {
+  margin: 0;
+  color: var(--ink, var(--text, #1c1917));
+  font-weight: 700;
+  text-align: right;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+/* Purchase note pinned to the modal bottom (children can never buy). */
+.oly4-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  margin-top: auto;
+  padding: 14px 22px;
+  flex: none;
+  background: var(--panel2, var(--chip-bg, #f4f1ec));
+  border-top: 1px solid var(--line, var(--border, #e5e0d8));
+  color: var(--ink, var(--text, #1c1917));
+  font-size: 0.87rem;
+  line-height: 1.5;
+}
+.oly4-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--gold, var(--accent-2, #ff8a00));
+}
+
+/* ---- Responsive --------------------------------------------------------- */
+@media (max-width: 1024px) {
+  .oly4-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .oly4-grid {
+    grid-template-columns: 1fr;
+  }
+  .oly4-modal-backdrop {
+    padding: 12px;
+  }
+  .oly4-modal {
+    max-height: 92vh;
+  }
+  .oly4-modal-cover {
+    height: 136px;
+  }
+  .oly4-modal-body {
+    padding: 16px;
+  }
+  .oly4-note {
+    padding: 12px 16px;
+  }
+  .oly4-foot {
+    flex-wrap: wrap;
+  }
+}
+
+
+/* ============ ROUND 8 MERGE: pricing.css ============ */
+/* ============================================================
+   Round 8 — Public Pricing page (author: pricing agent)
+   Shared plan-card contract classes (.plans-grid / .plan-card /
+   .plan-badge / .plan-name / .plan-price / .plan-per / .plan-desc /
+   .plan-benefits / .plan-cta / .sibling-box / .pricing-note /
+   .pricing-head / .pricing-sub) — REUSED by the Subscription page.
+   Page-level extras are namespaced pricing2-*.
+   ============================================================ */
+
+.pricing2-page {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 8px 0 48px;
+}
+
+/* --- Centered header --- */
+.pricing-head {
+  max-width: 720px;
+  margin: 0 auto 40px;
+  text-align: center;
+}
+.pricing-head h1 {
+  margin: 0 0 12px;
+  font-size: clamp(30px, 4.5vw, 42px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+}
+.pricing-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.6;
+}
+.pricing2-promo {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 16px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* --- Plans grid: 3-col desktop, wrap tablet, stack mobile --- */
+.plans-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+.plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 28px 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.plan-card.featured {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 5%, var(--surface)),
+    var(--surface) 45%
+  );
+  box-shadow: 0 10px 28px -20px var(--shadow), 0 1px 2px var(--shadow);
+}
+
+/* Badge: pill overlapping the top border, centered */
+.plan-badge {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  max-width: calc(100% - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.plan-badge.current {
+  background: var(--chip-bg);
+  color: var(--chip-text);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.plan-name {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.plan-price {
+  margin: 4px 0 2px;
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text);
+}
+.plan-per {
+  font-size: 13px;
+  color: var(--muted);
+}
+.plan-desc {
+  margin: 14px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--text) 82%, var(--muted));
+}
+.plan-benefits {
+  list-style: none;
+  margin: 18px 0 24px;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+}
+.plan-benefits li {
+  position: relative;
+  padding-left: 30px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.plan-benefits li::before {
+  content: "\2713";
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--chip-bg);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 19px;
+  text-align: center;
+}
+
+/* CTA pinned to the card bottom */
+.plan-cta {
+  margin-top: auto;
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease,
+    filter 0.15s ease;
+}
+.plan-cta:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.plan-cta.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.plan-cta.primary:hover {
+  filter: brightness(1.08);
+  color: #fff;
+}
+
+/* --- Sibling discount info box --- */
+.sibling-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin: 28px 0 0;
+  padding: 22px 26px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.sibling-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+}
+.sibling-icon svg {
+  display: block;
+}
+.sibling-box strong {
+  display: block;
+  margin: 2px 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.sibling-box p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* --- Quiet disclaimer --- */
+.pricing-note {
+  margin: 20px auto 0;
+  max-width: 640px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* --- Responsive --- */
+@media (max-width: 1020px) {
+  .plans-grid {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    row-gap: 28px;
+  }
+}
+@media (max-width: 680px) {
+  .plans-grid {
+    grid-template-columns: 1fr;
+    row-gap: 26px;
+  }
+  .plan-card {
+    padding: 28px 22px 24px;
+  }
+  .plan-price {
+    font-size: 34px;
+  }
+  .pricing-head {
+    margin-bottom: 32px;
+  }
+  .sibling-box {
+    padding: 18px;
+  }
+}
+
+
+/* ============ ROUND 8 MERGE: profiles.css ============ */
+/* =============================================================================
+   ROUND 8 — PROFILES (prof2-*) + BACKGROUND TEMPLATES GALLERY (wp2-*)
+   Parent /profile account-settings redesign, child /child/profile redesign,
+   and the wallpaper "background templates" picker. Theme-aware: parent/public
+   surfaces use the :root tokens (--bg/--surface/--border/--text/--muted/
+   --accent/--accent-2/--chip-bg/--pill-bg/--shadow/--danger/--ok); inside the
+   student .arena scope the same classes remap onto the arena tokens
+   (--panel/--panel2/--line/--ink/--muted/--dim/--lime) via .arena overrides.
+   ========================================================================== */
+
+/* ---- Page stack + section cards ---------------------------------------- */
+.prof2-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.prof2-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 4px 14px -10px var(--shadow);
+}
+.prof2-sec-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+.prof2-sec-hint {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+/* ---- Identity header: avatar + name/email + grouped photo actions ------- */
+.prof2-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.prof2-avatar {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  background: var(--chip-bg);
+  display: grid;
+  place-items: center;
+}
+.prof2-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.prof2-avatar-fallback {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+.prof2-id-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.prof2-id-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.prof2-id-email {
+  font-size: 14px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.prof2-mono {
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+/* Photo actions grouped inside the identity header (uploader block). */
+.prof2-photo-actions {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+.prof2-photo-btns {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.prof2-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* ---- Buttons: one consistent height/radius/padding system --------------- */
+.prof2-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.prof2-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.prof2-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.prof2-btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+.prof2-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 16px -8px var(--shadow);
+  filter: brightness(1.05);
+}
+.prof2-btn-outline {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+.prof2-btn-outline:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.prof2-btn-ghost {
+  background: transparent;
+  color: var(--muted);
+}
+.prof2-btn-ghost:hover:not(:disabled) {
+  background: var(--chip-bg);
+  color: var(--text);
+}
+/* Danger TEXT button (e.g. "Remove photo") — deliberately quieter than the
+   outline buttons so destructive photo removal doesn't compete visually. */
+.prof2-btn-text-danger {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 8px 4px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--danger);
+  cursor: pointer;
+}
+.prof2-btn-text-danger:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.prof2-btn-text-danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.prof2-btn-text-danger:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+/* The upload control is a <label> wrapping a hidden file input. */
+.prof2-upload-btn {
+  cursor: pointer;
+}
+
+/* ---- Account information label/value rows ------------------------------- */
+.prof2-rows {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+.prof2-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 12px 0;
+}
+.prof2-row:last-child {
+  padding-bottom: 0;
+}
+.prof2-row + .prof2-row {
+  border-top: 1px solid var(--border);
+}
+.prof2-row-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.prof2-row-value {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Security: inline change-password form ------------------------------ */
+.prof2-pwform {
+  margin-top: 6px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.prof2-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.prof2-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14.5px;
+}
+.prof2-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.prof2-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.prof2-ok {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ok);
+}
+.prof2-error {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+/* ---- Danger zone: clearly separated, soft red-tinted container ----------- */
+.prof2-danger {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+  background: color-mix(in srgb, var(--danger) 5%, var(--surface));
+}
+.prof2-danger-title {
+  color: var(--danger);
+}
+/* The existing DeleteAccountButton renders a .link-danger text button; inside
+   the danger zone it is promoted to a real danger-outline button. */
+.prof2-danger .link-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: transparent;
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.prof2-danger .link-danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: var(--danger);
+  text-decoration: none;
+}
+.prof2-danger .link-danger:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+
+/* ---- Session: calm secondary logout, separated from destructive actions -- */
+.prof2-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.prof2-session-meta {
+  min-width: 0;
+}
+.prof2-session .prof2-sec-hint {
+  margin-bottom: 0;
+}
+
+/* ---- Arena scope: the same classes on the dark student shell ------------- */
+.arena .prof2-card {
+  background: var(--panel);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.arena .prof2-sec-title,
+.arena .prof2-id-name,
+.arena .prof2-row-value {
+  color: var(--ink);
+}
+.arena .prof2-sec-hint,
+.arena .prof2-id-email,
+.arena .prof2-row-label,
+.arena .prof2-label {
+  color: var(--muted);
+}
+.arena .prof2-hint {
+  color: var(--dim);
+}
+.arena .prof2-row + .prof2-row {
+  border-top-color: var(--line);
+}
+.arena .prof2-avatar {
+  border-color: var(--line);
+  background: var(--panel2);
+}
+.arena .prof2-avatar-fallback {
+  color: var(--lime);
+}
+.arena .prof2-btn-primary {
+  background: var(--lime);
+  color: #0a0e1a;
+}
+.arena .prof2-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.45);
+}
+[data-theme="light"] .arena .prof2-btn-primary {
+  color: #ffffff;
+}
+.arena .prof2-btn-outline {
+  background: var(--panel2);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.arena .prof2-btn-outline:hover:not(:disabled) {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+.arena .prof2-btn-ghost {
+  color: var(--muted);
+}
+.arena .prof2-btn-ghost:hover:not(:disabled) {
+  background: var(--panel2);
+  color: var(--ink);
+}
+.arena .prof2-btn:focus-visible {
+  outline-color: var(--lime);
+}
+.arena .prof2-input {
+  background: var(--panel2);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.arena .prof2-input:focus {
+  border-color: var(--lime);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lime) 22%, transparent);
+}
+.arena .prof2-ok {
+  color: var(--lime);
+}
+
+/* ---- wp2: background-templates gallery (arena-first, fallback tokens) ---- */
+.wp2-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.wp2-item {
+  margin: 0;
+  min-width: 0;
+}
+.wp2-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line, var(--border));
+  background: var(--panel2, var(--chip-bg));
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.wp2-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--dim, var(--muted));
+}
+.wp2-card:focus-visible {
+  outline: 2px solid var(--lime, var(--accent));
+  outline-offset: 2px;
+}
+.wp2-swatch {
+  display: block;
+  width: 100%;
+  height: 80px;
+  border-radius: 10px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid color-mix(in srgb, var(--line, var(--border)) 60%, transparent);
+}
+/* Reset/theme-default preview: neutral surface gradient + reset icon. */
+.wp2-swatch-default {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--panel2, var(--chip-bg)), var(--panel, var(--surface)));
+  color: var(--muted);
+}
+.wp2-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink, var(--text));
+  overflow-wrap: anywhere;
+  padding: 0 2px 2px;
+}
+.wp2-card.wp2-selected {
+  border-color: var(--lime, var(--accent));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lime, var(--accent)) 40%, transparent);
+}
+.wp2-card.wp2-selected .wp2-name {
+  color: var(--lime, var(--accent));
+}
+.wp2-check {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--lime, var(--accent));
+  color: #0a0e1a;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+/* On the light arena the lime token is a dark green — flip the check to white
+   (on the dark arena the lime fill takes the dark check above). */
+[data-theme="light"] .arena .wp2-check {
+  color: #ffffff;
+}
+
+/* ---- Responsive: desktop grid → tablet wrap → mobile stack --------------- */
+@media (max-width: 900px) {
+  .prof2-card {
+    padding: 20px;
+  }
+}
+@media (max-width: 720px) {
+  .prof2-identity {
+    align-items: flex-start;
+  }
+  .prof2-photo-actions {
+    margin-left: 0;
+    align-items: flex-start;
+    width: 100%;
+  }
+  .prof2-session {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .prof2-card {
+    padding: 16px;
+    border-radius: 16px;
+  }
+  .prof2-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .prof2-pwform {
+    max-width: none;
+  }
+  .prof2-btn {
+    padding: 0 14px;
+  }
+  .wp2-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 10px;
+  }
+  .wp2-swatch {
+    height: 72px;
+  }
+}
+
+/* =============================================================================
+   ROUND 9 — global fixes (T1-T3)
+   ========================================================================== */
+/* T2: danger variant of the ghost button — same geometry as .btn-ghost, tinted
+   for destructive actions (parent-home "Uşağı sil" etc.). */
+.btn-ghost.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+.btn-ghost.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+/* T2: bare inline inputs (reset-password row on the child card) match forms. */
+.inline-input {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  min-width: 0;
+  flex: 1;
+}
+.inline-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* T3: every avatar surface clips uploaded images to a perfect circle —
+   fixed square box, 50% radius, overflow hidden, cover fit. Applies to the nav
+   drawer trigger and every profile avatar container (old + Round-8 classes). */
+.drawer-trigger,
+.profile-avatar,
+.prof2-avatar {
+  border-radius: 50%;
+  overflow: hidden;
+}
+.drawer-trigger .avatar-img,
+.profile-avatar .avatar-img,
+.prof2-avatar .prof2-avatar-img,
+.prof2-avatar img,
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+/* End ROUND 9 global fixes */
+
+/* ---- R9 T5: shared Modal (portal into <body>) -------------------------------
+   Token-driven so it reads correctly in light, dark and the student area (the
+   portal renders OUTSIDE .arena, so root tokens apply everywhere — that is
+   intentional and keeps one consistent modal look). */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(10, 8, 20, 0.55);
+  animation: modal-fade 0.16s ease;
+}
+@keyframes modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.modal-panel {
+  width: 100%;
+  max-width: 520px;
+  max-height: min(84vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px -24px rgba(10, 8, 20, 0.45);
+  animation: modal-pop 0.18s ease;
+  outline: none;
+}
+@keyframes modal-pop {
+  from { transform: translateY(10px) scale(0.98); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+.modal-close {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.modal-close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.modal-body {
+  padding: 18px 20px 20px;
+  overflow-y: auto;
+}
+.modal-message {
+  margin: 0 0 4px;
+  line-height: 1.6;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+@media (max-width: 460px) {
+  .modal-panel { max-width: 100%; }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions > * { width: 100%; }
+}
+/* End R9 T5 modal */
+
+
+/* ============ ROUND 9 MERGE: analytics.css ============ */
+/* =========================================================================
+   R9 (T6+T4) — analytics CSS additions. Token-driven only.
+   WEB (web-app/src/app/globals.css): .ana-kpis-5
+   ADMIN (admin-panel/src/app/globals.css): .adash-*
+   ========================================================================= */
+
+/* ---- WEB: exactly-5 KPI tiles fill the row evenly on desktop (T4).
+   0-2-0 specificity so these win over the Round-8 .ana-kpis rules
+   regardless of merge order. ---- */
+.ana-kpis.ana-kpis-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 1100px) {
+  .ana-kpis.ana-kpis-5 {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .ana-kpis.ana-kpis-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* ============ ROUND 9 MERGE: parent-olympiads.css ============ */
+/* =============================================================================
+   R9 T7 — Parent "Olimpiadalar" catalog (/olympiads) — poly-* classes.
+   Token-driven: uses the parent-panel tokens (--surface/--border/--text/--muted/
+   --accent/--chip-bg/--pill-bg/--pill-text/--danger/--shadow), which the root
+   scope + [data-theme="dark"] both define, so light AND dark themes resolve
+   automatically. Soft shadows, 14–22px radii, equal-height cards.
+   ========================================================================== */
+
+.poly-page {
+  display: grid;
+  gap: 20px;
+}
+.poly-head h1 {
+  margin: 0;
+}
+.poly-sub {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  max-width: 60ch;
+}
+
+/* ---- Empty state (no children yet) --------------------------------------- */
+.poly-empty {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+}
+
+/* ---- Child selector (segmented buttons) ---------------------------------- */
+.poly-picker {
+  display: grid;
+  gap: 8px;
+}
+.poly-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  width: fit-content;
+  max-width: 100%;
+}
+.poly-seg-btn {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 12px;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.poly-seg-btn:hover {
+  color: var(--text);
+}
+.poly-seg-btn.active {
+  background: var(--surface);
+  color: var(--accent);
+  border-color: var(--border);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.poly-seg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Package grid / cards (equal heights) --------------------------------- */
+.poly-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+.poly-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 22px var(--shadow);
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+.poly-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+.poly-cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-bottom: 1px solid var(--border);
+}
+/* Branded gradient placeholder (inline-SVG medal sits inside; no external
+   images — strict CSP). */
+.poly-cover-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(120% 140% at 85% -20%, rgba(255, 138, 0, 0.35), transparent 55%),
+    linear-gradient(140deg, #7c3aed 0%, #5b21b6 70%);
+}
+.poly-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 15px 16px 16px;
+  flex: 1;
+  min-width: 0;
+}
+.poly-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.poly-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--chip-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.poly-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+.poly-desc {
+  margin: 0;
+  font-size: 0.87rem;
+  line-height: 1.5;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.poly-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.poly-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.poly-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+/* Admin-defined price — the prominent element of the card. */
+.poly-price {
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.poly-owned {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.poly-buy {
+  appearance: none;
+  cursor: pointer;
+  border: none;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding: 9px 16px;
+  border-radius: 14px;
+  box-shadow: 0 4px 12px var(--shadow);
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.poly-buy:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.poly-buy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Purchase modal body -------------------------------------------------- */
+.poly-rows {
+  margin: 0 0 14px;
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.poly-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+}
+.poly-row + .poly-row {
+  border-top: 1px solid var(--border);
+}
+.poly-row dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.poly-row dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.poly-row-price {
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+/* Mock-payment note. */
+.poly-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 0 14px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.5;
+}
+.poly-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+.poly-error {
+  margin: 0 0 12px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 0.86rem;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.poly-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Success state inside the modal. */
+.poly-success {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 10px 4px 2px;
+  text-align: center;
+}
+.poly-success-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--ok);
+}
+.poly-success-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  max-width: 38ch;
+}
+.poly-success .poly-actions {
+  justify-content: center;
+  width: 100%;
+}
+
+/* ---- Responsive ----------------------------------------------------------- */
+@media (max-width: 1024px) {
+  .poly-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .poly-grid {
+    grid-template-columns: 1fr;
+  }
+  .poly-seg {
+    width: 100%;
+  }
+  .poly-seg-btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ============ ROUND 10 — main-session web fixes ============ */
+/* F8: footer social ICONS — round chips, accessible focus ring. */
+.site-foot-social {
+  align-items: center;
+}
+.site-foot-social .social-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--muted);
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.site-foot-social .social-icon:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.site-foot-social .social-icon:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* F9: news covers get a soft shimmer while the optimized image streams in, so
+   the card never reads as a broken empty box. */
+.news-card-media {
+  background: linear-gradient(
+    100deg,
+    var(--chip-bg) 40%,
+    color-mix(in srgb, var(--chip-bg) 55%, var(--surface)) 50%,
+    var(--chip-bg) 60%
+  );
+  background-size: 200% 100%;
+  animation: news-shimmer 1.6s ease infinite;
+}
+.news-card-media img {
+  position: relative;
+  z-index: 1;
+}
+@keyframes news-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -20% 0; }
+}
+/* End ROUND 10 main-session web fixes */

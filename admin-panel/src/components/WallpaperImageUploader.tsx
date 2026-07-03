@@ -28,6 +28,7 @@ type Strings = {
   upload: string;
   uploading: string;
   hint: string;
+  saved: string;
 };
 
 export function WallpaperImageUploader({ strings }: { strings: Strings }) {
@@ -35,11 +36,13 @@ export function WallpaperImageUploader({ strings }: { strings: Strings }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
+    setSaved(false);
 
     if (!name.trim()) {
       setError(strings.name);
@@ -78,6 +81,8 @@ export function WallpaperImageUploader({ strings }: { strings: Strings }) {
         setError(res.error);
         return;
       }
+      // R9 (T9a): explicit success feedback — no more guessing whether it saved.
+      setSaved(true);
       setName("");
       router.refresh();
     } finally {
@@ -109,6 +114,7 @@ export function WallpaperImageUploader({ strings }: { strings: Strings }) {
         />
       </label>
       <p className="hint">{strings.hint}</p>
+      {saved && <p className="form-ok">{strings.saved}</p>}
       {error && <p className="form-error">{error}</p>}
     </div>
   );

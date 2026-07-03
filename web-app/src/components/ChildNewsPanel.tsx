@@ -50,7 +50,8 @@ export async function ChildNewsPanel() {
         <h3 className="arena-section-h" style={{ margin: 0 }}>
           {t("news.latest")}
         </h3>
-        <Link className="arena-btn-ghost arena-btn-sm" href="/news">
+        {/* R10 (F10): View all stays INSIDE the student panel. */}
+        <Link className="arena-btn-ghost arena-btn-sm" href="/child/news">
           {t("news.viewAll")}
         </Link>
       </div>
@@ -60,7 +61,7 @@ export async function ChildNewsPanel() {
         </p>
       ) : (
         items.map((it) => (
-          <Link className="news-mini" href={`/news/${it.slug}`} key={it.slug}>
+          <Link className="news-mini" href={`/child/news/${it.slug}`} key={it.slug}>
             {it.cover ? (
               <Image
                 src={it.cover}

@@ -98,18 +98,23 @@ export default async function ChildLayout({
   // backdrop-filter — a filtered ancestor becomes the containing block for
   // position:fixed, which broke the old .arena-nav drawer. Profile lives in the
   // drawer (avatar → Profile / Language / Theme / Logout), not as a nav tab.
-  const olympiadOn = await isFeatureEnabled("olympiad_module");
+  const [olympiadOn, leaderboardOn] = await Promise.all([
+    isFeatureEnabled("olympiad_module"),
+    isFeatureEnabled("leaderboard"),
+  ]);
   const navItems = [
     { href: "/child", label: t("arena.nav.arena"), brand: true, exact: true },
-    // Module gate (admin Settings → olympiad_module) hides the tab; the page
-    // and the start action are gated server-side as well.
+    // Module gates (admin Settings) hide the tabs; the pages/actions are gated
+    // server-side as well.
     ...(olympiadOn ? [{ href: "/child/olympiads", label: t("arena.nav.tasks") }] : []),
-    { href: "/child/leaderboard", label: t("arena.nav.rank") },
+    ...(leaderboardOn ? [{ href: "/child/leaderboard", label: t("arena.nav.rank") }] : []),
+    { href: "/child/news", label: t("nav.news") },
   ];
 
   return (
     <>
-      {/* Arena design fonts: Chivo (body) + JetBrains Mono (numbers/labels). */}
+      {/* R8: body text now uses the global Azerbaijani-safe Arial stack (Chivo
+          dropped — poor ə/Ə). JetBrains Mono remains for numeric accents. */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link
         rel="preconnect"
@@ -117,7 +122,7 @@ export default async function ChildLayout({
         crossOrigin="anonymous"
       />
       <link
-        href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap"
         rel="stylesheet"
       />
       <div className="arena" {...arenaProps}>
@@ -138,6 +143,12 @@ export default async function ChildLayout({
                 theme: t("drawer.theme"),
                 logout: t("drawer.logout"),
                 close: t("drawer.close"),
+                // Round 8 drawer sections + segmented theme labels.
+                account: t("drawer2.account"),
+                appearance: t("drawer2.appearance"),
+                session: t("drawer2.session"),
+                themeLight: t("drawer2.themeLight"),
+                themeDark: t("drawer2.themeDark"),
               }}
             />
           </div>

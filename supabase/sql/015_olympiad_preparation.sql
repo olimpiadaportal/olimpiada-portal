@@ -38,14 +38,21 @@ create table if not exists public.olympiad_packages (
   price_amount         numeric(10,2) not null default 0,
   currency             text not null default 'AZN',
   questions_per_attempt integer not null default 25 check (questions_per_attempt > 0),
+  event_starts_at      timestamptz,                          -- planned event date shown to students (Round 8; NULL = undated)
   status               public.catalog_status not null default 'inactive', -- active = listed; archived = delisted (purchasers keep access)
   created_by           uuid references public.profiles (id) on delete set null,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
 );
 
+-- Rerun-safety for databases created before Round 8 (migration 021).
+alter table public.olympiad_packages
+  add column if not exists event_starts_at timestamptz;
+
 comment on table public.olympiad_packages is
   'Olympiad-Preparation add-on listing (Admin-only). Parent buys; child gets LIFETIME access. Each attempt = questions_per_attempt (25) server-side random from the pool. Archive only — never delete purchased packages.';
+comment on column public.olympiad_packages.event_starts_at is
+  'Planned event date/time shown on the student "Olimpiadalar" tab (NULL = undated/planned).';
 
 -- -----------------------------------------------------------------------------
 -- olympiad_package_translations : localized title/description (az/en/ru).

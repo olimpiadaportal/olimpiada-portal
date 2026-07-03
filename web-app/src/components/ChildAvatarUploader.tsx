@@ -7,11 +7,12 @@ import {
   type ChildProfileState,
 } from "@/lib/auth/childProfileActions";
 
-// Arena-styled avatar upload/change/remove control for the logged-in child.
-// Uses E1's contract classes (.avatar-upload, .avatar-upload-btn, .avatar-actions)
-// and keys (profile.uploadAvatar / changeAvatar / removeAvatar / avatarHint).
-// Submits a file input straight to setChildOwnAvatar; the hidden input is
-// auto-submitted on selection so the flow is a single tap.
+// Child avatar upload/change/remove control — Round 8 restyle only (logic
+// unchanged). Mirrors the parent AvatarUploader look: outline "Change/Upload
+// photo" button + danger TEXT "Remove photo" button with the helper line
+// underneath. Submits the hidden file input straight to setChildOwnAvatar on
+// selection so the flow stays a single tap. Arena-scoped prof2 overrides in
+// CSS keep it legible inside the dark student shell.
 export function ChildAvatarUploader({
   hasAvatar,
   dict,
@@ -33,10 +34,10 @@ export function ChildAvatarUploader({
   const error = upState?.error ?? rmState?.error;
 
   return (
-    <div className="avatar-upload">
-      <div className="avatar-actions">
+    <div className="prof2-photo-actions">
+      <div className="prof2-photo-btns">
         <form ref={formRef} action={upAction}>
-          <label className="arena-btn-ghost arena-btn-sm avatar-upload-btn">
+          <label className="prof2-btn prof2-btn-outline prof2-upload-btn">
             {upPending
               ? tt("profile.uploadAvatar")
               : hasAvatar
@@ -58,7 +59,7 @@ export function ChildAvatarUploader({
           <form action={rmAction}>
             <button
               type="submit"
-              className="arena-btn-ghost arena-btn-sm link-danger"
+              className="prof2-btn-text-danger"
               disabled={rmPending}
             >
               {tt("profile.removeAvatar")}
@@ -66,14 +67,8 @@ export function ChildAvatarUploader({
           </form>
         )}
       </div>
-      <p className="arena-muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
-        {tt("profile.avatarHint")}
-      </p>
-      {error && (
-        <p className="form-error" style={{ marginTop: 8 }}>
-          {error}
-        </p>
-      )}
+      <p className="prof2-hint">{tt("profile.avatarHint")}</p>
+      {error && <p className="prof2-error">{error}</p>}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
 import { OlympiadForm } from "@/components/OlympiadForm";
 import { OlympiadBulkImport } from "@/components/OlympiadBulkImport";
+import { OlympiadCoverUploader } from "@/components/OlympiadCoverUploader";
 import { archiveOlympiadPackage } from "@/lib/admin/olympiad";
 
 const FORM_KEYS = [
@@ -12,6 +13,7 @@ const FORM_KEYS = [
   "oly2.status.active", "oly2.status.inactive", "oly2.status.archived",
   "oly2.title", "oly2.desc", "manage.select", "manage.saving",
   "oly2.err.subject", "oly2.err.titleAz",
+  "oly2.eventAt", "oly2.eventAtHint", "oly2.eventClear",
 ];
 const BULK_KEYS = [
   "olybulk.note", "bulk.fileLabel", "bulk.fileHint", "bulk.template",
@@ -32,10 +34,24 @@ export default async function EditOlympiadPage({
 
   const { data: pkg } = await supabase
     .from("olympiad_packages")
-    .select("id, subject_id, grade_id, price_amount, status")
+    .select("id, subject_id, grade_id, price_amount, status, event_starts_at, cover_media_id")
     .eq("id", id)
     .maybeSingle();
   if (!pkg) notFound();
+
+  // Resolve the current cover image (if any) to a public URL for preview.
+  let currentCover: { url: string; mime: string } | null = null;
+  if ((pkg as any).cover_media_id) {
+    const { data: m } = await supabase
+      .from("media_assets")
+      .select("bucket, path, mime_type")
+      .eq("id", (pkg as any).cover_media_id)
+      .maybeSingle();
+    if (m) {
+      const { data: pub } = supabase.storage.from(m.bucket).getPublicUrl(m.path);
+      currentCover = { url: pub.publicUrl, mime: m.mime_type ?? "" };
+    }
+  }
 
   const { data: trs } = await supabase
     .from("olympiad_package_translations")
@@ -82,9 +98,24 @@ export default async function EditOlympiadPage({
             grade_id: (pkg as any).grade_id ?? "",
             price: String((pkg as any).price_amount ?? 0),
             status: (pkg as any).status,
+            event: (pkg as any).event_starts_at ?? "",
             tr,
           }}
           submitLabel={t("manage.save")}
+        />
+      </section>
+      <section className="card" style={{ marginTop: 16 }}>
+        <OlympiadCoverUploader
+          packageId={(pkg as any).id}
+          current={currentCover}
+          strings={{
+            title: t("oly2.cover.title"),
+            upload: t("oly2.cover.upload"),
+            uploading: t("oly2.cover.uploading"),
+            remove: t("oly2.cover.remove"),
+            none: t("oly2.cover.none"),
+            hint: t("oly2.cover.hint"),
+          }}
         />
       </section>
       <section className="card" style={{ marginTop: 16 }}>

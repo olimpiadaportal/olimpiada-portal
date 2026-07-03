@@ -6,6 +6,21 @@ import { AccountCreateForm } from "@/components/AccountCreateForm";
 import { AccountEditForm } from "@/components/AccountEditForm";
 import { AccountDeleteButton } from "@/components/AccountDeleteButton";
 import { getT } from "@/i18n/server";
+import { FilterBar } from "@/components/FilterBar";
+
+// Round 10 (F5) — debounced account search applied at QUERY level over the
+// useful identifiers: parent display name OR email (profiles .or(ilike)).
+// The q param is trimmed, capped and LIKE-escaped; characters that PostgREST's
+// or() grammar treats specially (comma/parens/quotes) are stripped so raw user
+// input can never alter the filter expression.
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function firstParam(sp: SearchParams, key: string): string {
+  const v = sp[key];
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v[0] ?? "";
+  return "";
+}
 
 function accessPill(s: string): string {
   if (s === "active") return "pill-ok";
@@ -20,11 +35,19 @@ function parentStatusPill(s: string): string {
   return "pill-muted";
 }
 
-export default async function AccountsPage() {
+export default async function AccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   await requireAdmin();
   const t = await getT();
   const supabase = await createClient();
   const serviceReady = hasServiceRole();
+  const sp = await searchParams;
+
+  // ---- Validated search param ---------------------------------------------
+  const q = firstParam(sp, "q").trim().slice(0, 200);
 
   // Parents = profiles holding the 'parent' role (resolved explicitly, since
   // profile_roles has two FKs to profiles and an embedded select is ambiguous).
@@ -45,25 +68,39 @@ export default async function AccountsPage() {
     );
   }
 
-  // Parent profile details.
+  // Parent profile details — the search is applied HERE, at query level.
   let parentProfiles: any[] = [];
   if (parentProfileIds.length) {
-    const { data } = await supabase
+    let qb = supabase
       .from("profiles")
       .select("id, display_name, email, status")
       .in("id", parentProfileIds);
+    if (q) {
+      // Neutralize PostgREST or()-grammar characters, then escape LIKE
+      // wildcards so the term is matched literally.
+      const safe = q.replace(/[,()"']/g, " ").trim();
+      const escaped = safe.replace(/[\\%_]/g, (m) => `\\${m}`);
+      if (escaped) {
+        qb = qb.or(
+          `display_name.ilike.%${escaped}%,email.ilike.%${escaped}%`,
+        );
+      }
+    }
+    const { data } = await qb.order("display_name");
     parentProfiles = data ?? [];
   }
 
-  // Children for those parents (RLS lets admins read all students).
+  // Children only for the parents actually shown (RLS lets admins read all
+  // students) — keeps the search cheap when it narrows the list.
+  const shownParentIds = parentProfiles.map((p: any) => p.id);
   let children: any[] = [];
-  if (parentProfileIds.length) {
+  if (shownParentIds.length) {
     const { data } = await supabase
       .from("students")
       .select(
         "profile_id, created_by_parent_profile_id, first_name, last_name, child_unique_id, access_status",
       )
-      .in("created_by_parent_profile_id", parentProfileIds)
+      .in("created_by_parent_profile_id", shownParentIds)
       .order("created_at", { ascending: true });
     children = data ?? [];
   }
@@ -162,9 +199,15 @@ export default async function AccountsPage() {
         </section>
       )}
 
+      <FilterBar
+        basePath="/accounts"
+        search={{ value: q, placeholder: t("flt.accountSearch") }}
+        clearLabel={t("qfilter.clear")}
+      />
+
       {parentProfiles.length === 0 && (
         <section className="card">
-          <p className="muted">{t("accounts.none")}</p>
+          <p className="muted">{q ? t("flt.noMatches") : t("accounts.none")}</p>
         </section>
       )}
 
@@ -204,53 +247,55 @@ export default async function AccountsPage() {
               </div>
             )}
 
-            <table className="table" style={{ marginTop: 12 }}>
-              <thead>
-                <tr>
-                  <th>{t("accounts.childName")}</th>
-                  <th>{t("accounts.childId")}</th>
-                  <th>{t("accounts.accessStatus")}</th>
-                  <th aria-label="actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {kids.length === 0 && (
+            <div className="table-wrap" style={{ marginTop: 12 }}>
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={4} className="muted">
-                      {t("accounts.noChildren")}
-                    </td>
+                    <th>{t("accounts.childName")}</th>
+                    <th>{t("accounts.childId")}</th>
+                    <th>{t("accounts.accessStatus")}</th>
+                    <th aria-label="actions" />
                   </tr>
-                )}
-                {kids.map((c) => {
-                  const name =
-                    [c.first_name, c.last_name].filter(Boolean).join(" ") || "—";
-                  return (
-                    <tr key={c.profile_id}>
-                      <td>{name}</td>
-                      <td className="muted">{c.child_unique_id ?? "—"}</td>
-                      <td>
-                        <span className={`pill ${accessPill(c.access_status)}`}>
-                          {t(`accounts.access.${c.access_status}`)}
-                        </span>
-                      </td>
-                      <td className="row-actions">
-                        <ChildPasswordReset
-                          studentProfileId={c.profile_id}
-                          strings={resetStrings}
-                        />
-                        {serviceReady && (
-                          <AccountDeleteButton
-                            kind="child"
-                            targetId={c.profile_id}
-                            strings={deleteChildStrings}
-                          />
-                        )}
+                </thead>
+                <tbody>
+                  {kids.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="muted">
+                        {t("accounts.noChildren")}
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  )}
+                  {kids.map((c) => {
+                    const name =
+                      [c.first_name, c.last_name].filter(Boolean).join(" ") || "—";
+                    return (
+                      <tr key={c.profile_id}>
+                        <td>{name}</td>
+                        <td className="muted nowrap">{c.child_unique_id ?? "—"}</td>
+                        <td className="nowrap">
+                          <span className={`pill ${accessPill(c.access_status)}`}>
+                            {t(`accounts.access.${c.access_status}`)}
+                          </span>
+                        </td>
+                        <td className="row-actions nowrap">
+                          <ChildPasswordReset
+                            studentProfileId={c.profile_id}
+                            strings={resetStrings}
+                          />
+                          {serviceReady && (
+                            <AccountDeleteButton
+                              kind="child"
+                              targetId={c.profile_id}
+                              strings={deleteChildStrings}
+                            />
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </section>
         );
       })}

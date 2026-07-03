@@ -63,11 +63,15 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - Use **natural, native phrasing** that each speaker would actually use — not literal/word-for-word machine translation.
 - UI strings live in each app's `src/i18n/messages.ts` (keys → `{ az, en, ru }`); default locale is `az`. This is separate from CONTENT translation (question/answer/explanation bodies) which uses the database `*_translations` tables.
 
-## UI / Design Direction (Permanent)
+## UI / Design Direction (Permanent — updated Round 8, 2026-07-03)
 
-- `web-app/` (Student/Parent) UI must stay **nice but simplistic and easy to restyle later**. The official web-app design is being prepared and shown to an investor; once approved, the owner will share design files from **Claude Design** and that design will be implemented then. Until then, keep web-app styling minimal/neutral so a design system drops in cleanly. Do not over-invest in web-app visuals.
-- `admin-panel/` (Administrator/Content Manager) should have a **professional design now** — it is internal and not investor-gated.
-- Both apps stay free of business logic and fake data per the stage rules.
+- The old "keep web-app minimal until the investor design lands" gate is RETIRED: since Round 5 the owner drives the web-app design directly through investor-review rounds.
+- **Light mode reference = the landing page's Energetic light theme** (purple `#7c3aed` + orange `#ff8a00` on cream `#fffbf5`, 14–22px radii, soft subtle shadows — avoid heavy purple shadows). Landing, Parent panel and Student panel light modes must stay visually consistent with it (the student `.arena` scope maps its local tokens under `[data-theme="light"]`).
+- **Dark mode is the owner's reference design — do not change it** (parent/public dark tokens + the student `.arena` dark palette stay as-is unless the owner asks).
+- **Global font = the Azerbaijani-safe Arial stack** (`Arial, Helvetica, "Segoe UI", system-ui, sans-serif`) for body/headings/buttons everywhere; JetBrains Mono only for numeric accents. Never introduce a font without verifying ə Ə ğ Ğ ş Ş ç Ç ü Ü ö Ö ı İ render cleanly.
+- Prefer token-driven colors (`var(--…)`) over literals so every surface works in both themes automatically.
+- `admin-panel/` keeps its professional internal design (not investor-gated).
+- Both apps stay free of business logic in visual components. Fake/demo data is allowed ONLY where the owner explicitly requested demo content (currently: parent analytics dashboard, billing/invoices demo sections) and must be tracked in `STATUS.md` until replaced by real data.
 
 ## Source-of-Truth Reading Order
 
@@ -89,7 +93,7 @@ Then read the stage-specific files listed in `IMPLEMENTATION_EXECUTION_PLAN.md`.
 - `supabase/` is the shared backend, database, Auth, Storage, RLS, SQL planning, and security area.
 - `web-app/` is only the Student/Parent Next.js Web App.
 - `admin-panel/` is only the Administrator and Content Manager Next.js Admin Panel.
-- `mobile-app/` is future-only. Do not implement the mobile app now.
+- `mobile-app/` is PLANNED (React Native + Expo — confirmed 2026-07-03) but DORMANT: implement it ONLY when a Mobile stage (M0–M9) is the active stage in `STATUS.md`. Plans: `mobile-app/markdowns/MOBILE_APP_MASTER_PLAN.md` (design truth) + root `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md` (stages). The mobile app never receives the service-role key; privileged flows go through web-app BFF route handlers (`/api/mobile/v1/*`) wrapping the existing audited service functions.
 - `docs/master/` contains the highest-level source of truth.
 - `*_CLAUDE_CODE_RULES.md` files are detailed rule references. This `CLAUDE.md` file is the short operational entrypoint.
 
@@ -100,7 +104,7 @@ Then read the stage-specific files listed in `IMPLEMENTATION_EXECUTION_PLAN.md`.
 - PostgreSQL stores only file metadata, storage bucket name, object path, ownership, MIME type, and audit fields.
 - Do not implement SMS.
 - Do not implement optional bank transfer.
-- Do not implement current mobile app work.
+- Do not implement mobile app work unless the active stage in `STATUS.md` is a Mobile (M#) stage.
 - Do not create SQL files inside `web-app/` or `admin-panel/`.
 - All SQL belongs under `supabase/sql/`.
 - Run SQL scripts in numeric order only.

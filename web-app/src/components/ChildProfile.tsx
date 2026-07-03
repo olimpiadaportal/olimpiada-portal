@@ -8,11 +8,13 @@ import {
   type ChildProfileState,
 } from "@/lib/auth/childProfileActions";
 
-// Child self-service profile block, rendered inside the arena "settings" area
-// alongside the wallpaper picker. Uses E1's contract classes (.profile-section,
-// .profile-head, .profile-avatar, .avatar-img / .avatar-fallback, .profile-grid,
-// .profile-row, .profile-field) and keys, styled for the dark arena. A child
-// CANNOT delete their own account — only password + avatar are exposed here.
+// Child self-service profile — Round 8 redesign, same design language as the
+// parent account-settings page but student-only features: identity header
+// (avatar + name + 8-digit ID in mono + grouped photo actions) and a Security
+// section (childChangeOwnPassword). NO delete-account and NO email here — a
+// child never gets those. Renders a fragment of prof2 cards; the page owns
+// the surrounding .prof2-stack. Styled by prof2-* classes with .arena-scoped
+// overrides so it reads well inside the dark student shell.
 export function ChildProfile({
   name,
   uniqueId,
@@ -34,72 +36,81 @@ export function ChildProfile({
   );
 
   return (
-    <div className="profile-section">
-      {/* Same head shape as the parent profile: avatar + identity block.
-          (.profile-grid is NOT used here — its divider styling is meant for a
-          full-width row grid below the head, not for content beside the avatar.) */}
-      <div className="profile-head">
-        <span className="profile-avatar">
+    <>
+      {/* Identity header: avatar, name, 8-digit ID (mono), photo actions. */}
+      <section className="prof2-card prof2-identity" aria-label={tt("profile.avatar")}>
+        <span className="prof2-avatar">
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatarUrl} alt="" className="avatar-img" />
+            <img src={avatarUrl} alt="" className="prof2-avatar-img" />
           ) : (
-            <span className="avatar-fallback" aria-hidden>
+            <span className="prof2-avatar-fallback" aria-hidden="true">
               {initial}
             </span>
           )}
         </span>
-        <div className="profile-field">
-          <strong>{name || "—"}</strong>
-          <span className="arena-muted">
-            {tt("child.id")}: <span className="mono">{uniqueId || "—"}</span>
+        <div className="prof2-id-meta">
+          <strong className="prof2-id-name">{name || "—"}</strong>
+          <span className="prof2-id-email">
+            {tt("child.id")}:{" "}
+            <span className="prof2-mono">{uniqueId || "—"}</span>
           </span>
+          <span className="prof2-hint">{tt("prof2.idHint")}</span>
         </div>
-      </div>
+        <ChildAvatarUploader hasAvatar={avatarUrl !== null} dict={dict} />
+      </section>
 
-      <ChildAvatarUploader hasAvatar={avatarUrl !== null} dict={dict} />
-
-      <div className="avatar-actions">
-        <button
-          type="button"
-          className="arena-btn-ghost arena-btn-sm"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-        >
-          {tt("profile.changePassword")}
-        </button>
-      </div>
-
-      {open && (
-        <form action={action} className="form">
-          <label className="field">
-            <span className="field-label">{tt("profile.newPassword")}</span>
+      {/* Security: change password (same childChangeOwnPassword action). */}
+      <section className="prof2-card" aria-label={tt("prof2.security")}>
+        <h2 className="prof2-sec-title">{tt("prof2.security")}</h2>
+        <p className="prof2-sec-hint">{tt("prof2.securityHint")}</p>
+        {!open ? (
+          <button
+            type="button"
+            className="prof2-btn prof2-btn-outline"
+            onClick={() => setOpen(true)}
+            aria-expanded={false}
+          >
+            {tt("profile.changePassword")}
+          </button>
+        ) : (
+          <form action={action} className="prof2-pwform">
+            <label className="prof2-label" htmlFor="prof2-child-newpw">
+              {tt("profile.newPassword")}
+            </label>
             <PasswordInput
+              id="prof2-child-newpw"
               name="new_password"
               required
               minLength={8}
               autoComplete="new-password"
-              className="arena-input"
+              className="prof2-input"
               showLabel={tt("auth.showPassword")}
               hideLabel={tt("auth.hidePassword")}
             />
-          </label>
-          {state?.error && <p className="form-error">{state.error}</p>}
-          {state?.ok && <p className="arena-muted">{tt("profile.passwordChanged")}</p>}
-          <div className="avatar-actions form-actions">
-            <button className="arena-btn arena-btn-sm" type="submit" disabled={pending}>
-              {tt("profile.save")}
-            </button>
-            <button
-              type="button"
-              className="arena-btn-ghost arena-btn-sm"
-              onClick={() => setOpen(false)}
-            >
-              {tt("profile.cancel")}
-            </button>
-          </div>
-        </form>
-      )}
-    </div>
+            <div className="prof2-form-actions">
+              <button
+                type="submit"
+                className="prof2-btn prof2-btn-primary"
+                disabled={pending}
+              >
+                {tt("profile.save")}
+              </button>
+              <button
+                type="button"
+                className="prof2-btn prof2-btn-ghost"
+                onClick={() => setOpen(false)}
+              >
+                {tt("profile.cancel")}
+              </button>
+            </div>
+            {state?.ok && (
+              <p className="prof2-ok">{tt("profile.passwordChanged")}</p>
+            )}
+            {state?.error && <p className="prof2-error">{state.error}</p>}
+          </form>
+        )}
+      </section>
+    </>
   );
 }

@@ -1,9 +1,11 @@
 "use client";
 
-// Avatar upload control (Phase E2). Wraps a hidden file input + the setOwnAvatar
-// server action (multipart FormData with field "avatar"). Client-side guards
-// (image mime + ≤2MB) give instant feedback; the server re-validates as the real
-// gate. Uses E1's contract classes (.avatar-upload, .avatar-upload-btn) verbatim.
+// Avatar upload control — Round 8 restyle only (logic unchanged). Renders a
+// grouped photo-actions block for the identity header: "Change/Upload photo"
+// as an outline button, "Remove photo" as a danger TEXT button, with the
+// helper line ("JPG or PNG, maximum 2 MB.") directly underneath. Client-side
+// guards (image mime + ≤2MB) give instant feedback; the server re-validates
+// as the real gate (setOwnAvatar / removeOwnAvatar).
 import { useActionState, useRef } from "react";
 import {
   setOwnAvatar,
@@ -56,31 +58,37 @@ export function AvatarUploader({
   const err = state?.error ?? removeState?.error;
 
   return (
-    <div className="avatar-upload">
-      <form ref={formRef} action={action}>
-        <label className="avatar-upload-btn btn-ghost">
-          {hasAvatar ? labels.change : labels.upload}
-          <input
-            type="file"
-            name="avatar"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            onChange={onPick}
-            disabled={pending}
-            hidden
-          />
-        </label>
-      </form>
-
-      {hasAvatar && (
-        <form action={removeAction}>
-          <button type="submit" className="link-danger" disabled={removing}>
-            {labels.remove}
-          </button>
+    <div className="prof2-photo-actions">
+      <div className="prof2-photo-btns">
+        <form ref={formRef} action={action}>
+          <label className="prof2-btn prof2-btn-outline prof2-upload-btn">
+            {hasAvatar ? labels.change : labels.upload}
+            <input
+              type="file"
+              name="avatar"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={onPick}
+              disabled={pending}
+              hidden
+            />
+          </label>
         </form>
-      )}
 
-      <p className="muted">{labels.hint}</p>
-      {err && <p className="form-error">{err}</p>}
+        {hasAvatar && (
+          <form action={removeAction}>
+            <button
+              type="submit"
+              className="prof2-btn-text-danger"
+              disabled={removing}
+            >
+              {labels.remove}
+            </button>
+          </form>
+        )}
+      </div>
+
+      <p className="prof2-hint">{labels.hint}</p>
+      {err && <p className="prof2-error">{err}</p>}
     </div>
   );
 }

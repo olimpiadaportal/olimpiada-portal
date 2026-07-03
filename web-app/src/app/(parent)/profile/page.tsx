@@ -18,6 +18,11 @@ const PROFILE_KEYS = [
   "profile.err.fileType", "profile.err.fileTooLarge", "profile.err.uploadFailed",
   "profile.err.updateFailed", "account.deleteConfirm",
   "auth.showPassword", "auth.hidePassword",
+  // Round 8 account-settings sections (prof2.*)
+  "prof2.accountInfo", "prof2.name", "prof2.email",
+  "prof2.security", "prof2.securityHint",
+  "prof2.danger", "prof2.dangerHint",
+  "prof2.session", "prof2.sessionHint",
 ];
 
 function initialsOf(name: string, email: string): string {

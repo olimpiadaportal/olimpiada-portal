@@ -10,6 +10,7 @@ import { ParentNewsPanel } from "@/components/ParentNewsPanel";
 const CHILD_KEYS = [
   "child.resetPw", "child.newPassword", "child.resetPwSubmit",
   "child.resetPwOk", "child.deleteChild", "child.deleteConfirm",
+  "profile.cancel", // ConfirmModal cancel label (R9)
 ];
 
 const NEWS_KEYS = ["news.latest", "news.viewAll", "news.none"];
@@ -86,9 +87,6 @@ export default async function ParentDashboard() {
                       {t("parent.dash.olympiads")}
                     </Link>
                   )}
-                  <Link className="btn-ghost" href={`/children/${c.profile_id}/progress`}>
-                    {t("parent.dash.progress")}
-                  </Link>
                 </p>
                 <ChildCardActions studentProfileId={c.profile_id} dict={childDict} />
               </div>

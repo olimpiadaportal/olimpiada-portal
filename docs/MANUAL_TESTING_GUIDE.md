@@ -420,3 +420,136 @@ If anything here doesn't match, tell me the **U#** + what you saw.
 - News/Olympiad/Wallpaper/Settings changes now appear in the Audit log page.
 
 If anything here doesn't match, tell me the **V#** + what you saw.
+
+---
+
+# Round 8 — what to re-test (W1–W12)
+
+> Restart both dev servers first.
+
+## W1. Pricing page (public)
+- /pricing is now a SaaS pricing page: centered title + one-line subtitle, three EQUAL-HEIGHT cards (Weekly ≈2 / Monthly ≈6 / Yearly ≈50 AZN — unchanged), Monthly has a "Most popular" badge + stronger purple CTA, each card has 3 benefits with check icons and a CTA to /register. Below: the sibling-discount info box (icon + auto-apply text, no promo code) and a small muted sample-prices note. Check light AND dark, and AZ/EN/RU (no overflow).
+
+## W2. About page (public)
+- /about: gradient hero with an illustration + fact chips, then alternating illustration/text story blocks (studying, family dashboard, olympiad prep, progress, safety), then a 2×2 card grid (Mission / What we offer / Who it is for / Trust & Transparency). All inline SVG (no external images). Mobile: stacks cleanly.
+
+## W3. FAQ chevrons (landing + parent)
+- FAQ items now show ONE chevron, vertically centered on the right, rotating on open/close. The small extra caret above it is gone (both /faq and parent Help → FAQ).
+
+## W4. Font (ə/Ə test)
+- The whole site now uses Arial. Check these render cleanly everywhere (headings, buttons, FAQ, pricing, nav): ə Ə ğ Ğ ş Ş ç Ç ü Ü ö Ö ı İ — especially "ə" on the landing light theme and in the student panel.
+
+## W5. Carousel
+- Parent dashboard carousel now shows 2 FULL cards on desktop, 1 on mobile — never a half-cut card; equal heights; arrows/dots aligned; smooth sliding.
+
+## W6. Analytics (progress merged in)
+- "Uşaqlarım" child cards no longer have a progress button (only manage/subscribe, olympiads, reset password, delete). Old progress URLs redirect to /analytics.
+- /analytics: 4 real stat cards on top; below — child selector (if 2+ children), 4 subject tabs (inactive subjects disabled with a lock + "Subscribe to unlock…"; the single active subject auto-opens), then the demo dashboard: KPI tiles, weekly bar chart, accuracy trend, topic table, mistakes-by-topic table. **Dashboard numbers are DEMO data for now** (owner-approved) — they vary per child/subject but are static.
+
+## W7. Subscription page
+- /subscription: [Plans | Billing | Invoices] tabs smooth-scroll on the same page. Plans reuse the public pricing cards with "Current plan" on the child's real interval + selected subjects + computed total + Manage/Add subjects buttons. Billing + Invoices sections are DEMO (next billing 29/01/2026, MasterCard ****8475, 2 invoice rows) — only "Cancel subscription" is real.
+
+## W8. Parent profile
+- /profile is a structured account-settings page: identity header (avatar + name + email + photo actions + "JPG or PNG, maximum 2 MB."), Account information, Security (change password), Danger zone (delete), Session (log out). Everything aligned, consistent buttons.
+
+## W9. Account drawers (parent + student)
+- Sections: Account / Language / Appearance / Session. "Profilim" row has ONE arrow + a user icon. Language = [AZ][EN][RU] segmented buttons on desktop (selected highlighted; disabled languages hidden), dropdown on mobile. Appearance = [Light][Dark] side-by-side with the active one clearly marked. Log out sits under Session.
+
+## W10. Student light mode + Olympiads tab
+- Student panel in LIGHT mode now matches the landing light style (white cards, purple accents, cream background); DARK mode unchanged.
+- Student nav tab is now "Olimpiadalar" with two sections: "Keçirilməsi planlaşdırılan olimpiadalar" (cards with cover/status/date/subject + "Ətraflı" opening a detail modal ending with "Bu olimpiadaya qatılmaq üçün valideyninizdən paketi almağı xahiş edin.") and "Olimpiadalarım" (owned packages; empty-state kept).
+- Admin → Olimpiada package form now has a cover-image upload + an "Event date & time" field; set both on a package and confirm the student card shows them.
+
+## W11. Student profile + backgrounds
+- /child/profile: identity header (avatar, name, 8-digit ID), photo actions + helper text, Security (password). No delete/email/olympiads button.
+- Background selector is now a template gallery with 6 new playful presets (Sürət yarışı, Kosmos, Okean, Cəngəllik, Şirniyyat, Gecə yarışı) + the color/photo ones; selected template clearly highlighted; picking one changes the dashboard background.
+
+## W12. Student logout
+- Log out from the student drawer → lands on the LANDING page (/), not /child-login.
+
+If anything here doesn't match, tell me the **W#** + what you saw.
+
+---
+
+# Round 9 — what to re-test (X1–X9)
+
+> Restart both dev servers first.
+
+## X1. Landing language selector
+- The language button in the public navbar shows ONE chevron (rotates when the menu opens).
+
+## X2. Parent home child cards
+- "Uşağı sil" is now a proper outlined danger button matching the row; clicking it opens a styled confirmation dialog (not the browser popup). The reset-password inline input is styled like other inputs.
+
+## X3. Avatars
+- Upload a parent and a student photo: the navbar circle and every profile avatar clip the image into a perfect circle (no square corners poking out).
+
+## X4. Modals (shared component)
+- Student → Olimpiadalar → "Ətraflı": opens a centered modal (was broken/clipped); closes on outside click, Escape, and ×; page scroll locks while open.
+- Parent: subscription Cancel flow, Delete account, and Delete child all use the same modal style now.
+
+## X5. Analytics is REAL now (+ 5 boxes)
+- /analytics: the top 4 metric cards stay; the dashboard below now shows REAL numbers computed from the child's graded attempts (new DB functions) — child/subject selection updates the URL. The "Orta dəqiqlik" tile is gone: exactly **5** KPI boxes fill the row evenly. With no practice data you get a friendly "no data yet" panel — no fake numbers anywhere. To see it live: have the student complete a practice test, then reload analytics.
+- Admin → Dashboard: new "Platform overview" section (children, parents, active 7d, attempts 30d, accuracy 30d, published questions, active subscriptions + signup/attempt trends). Content-manager logins simply don't see the section.
+
+## X6. Parent "Olimpiadalar" menu (new)
+- New nav item between Analitika and Abunəlik. Pick a child (segmented selector) → package cards show cover, chips, date, question count and the ADMIN-defined price → "Buy" opens the shared modal → confirm → success state, card flips to "owned", and the package appears in that student's "Olimpiadalarım". Already-owned packages show a disabled owned pill. Payment is MOCK (single seam ready for the real provider). With `payments` flag OFF the buy buttons hide.
+
+## X7. Admin Questions upgrades
+- /questions now has: lifecycle stat cards (Total/Draft/In review/Published/Archived — clickable filters), a debounced text search, cascading Subject→Topic→Subtopic + Type/Grade/Status filters, server-side pagination (25/50/100 with a numbered pager + "Showing X–Y of N"), and per-row quick lifecycle buttons (approve/publish/etc. without opening the question). Bulk toolbar/import all still work.
+
+## X8. Admin Wallpapers — fixed (root cause found)
+- Your earlier saves ("blue", "test") WERE saved — a duplicate database relationship made the list query fail silently, so they never displayed. That's fixed at the DB level (migration 022) + the code now surfaces list errors and shows explicit "Saved ✓" / error feedback on both the color form and image upload. Your old test rows will now appear — archive them if unwanted.
+
+## X9. Student background templates ← admin
+- Student → Profile → backgrounds: the gallery is fully driven by Admin → Wallpapers (colors, images, and the playful presets). Add a new color/image in admin → it appears in the student gallery immediately (active ones only).
+
+If anything here doesn't match, tell me the **X#** + what you saw.
+
+---
+
+# Round 10 — what to re-test (Y1–Y13)
+
+> Restart both dev servers first.
+
+## Y1. Content Manager least privilege
+- Log in as a content manager: sidebar shows only Dashboard + Questions (+ the "Tezliklə" Daily Tasks placeholder). Direct URLs to /news, /olympiad, /wallpapers, /settings, /accounts, /audit, /cities, /schools, /manage/* redirect to Unauthorized. Questions: CM can create/edit/submit but NOT approve/publish/delete (admin-only). A full module-by-module matrix is recorded in STATUS.md.
+
+## Y2. Admin filters (7 sections)
+- News, Olimpiada paketləri, Subjects/Topics/Subtopics (Manage), Cities, Schools: each list now has a filter bar — status select + debounced name/title search; Topics adds a Subject filter; Subtopics adds Subject→Topic cascade; Schools adds a City filter. Filters live in the URL (shareable) and are validated server-side.
+
+## Y3. Schools data
+- Schools list now contains **312 verified Bakı schools** (310 numbered + the Sports Lyceum №1 and the Bülbül music school), seeded from the official Bakı Education Department list (source URL documented in migration 024). Numbers absent from the official list (2, 6, 11, 15, 16, 20, 40…) are intentionally NOT present. The two old sample rows (№6/№20) remain untouched (legacy references) — archive them if desired. Other cities: deliberately not seeded until an official list is available (documented decision).
+- Add-Child wizard: the School dropdown for Bakı now offers the full list.
+
+## Y4. Olympiad Packages table
+- /olympiad: rows are level (no crooked borders), price/status/actions never wrap, and the table scrolls horizontally on narrow screens.
+
+## Y5. Accounts search
+- /accounts: search box filters parents by name or email at query level (children shown for matches).
+
+## Y6. Audit log
+- /audit: Action and Entity columns show human-readable trilingual labels (e.g. "Divar kağızı yaradıldı" instead of admin.wallpaper.create). Only Admin/Content-Manager actions appear — general user/system rows are excluded IN THE QUERY. An entity filter select on top.
+
+## Y7. Settings save buttons
+- /settings: each field now reads top-to-bottom — label, input, help text, then the Save button under the field (right-aligned). No more buttons floating above inputs.
+
+## Y8. Social icons
+- Set Facebook/Instagram/YouTube/TikTok URLs in Settings → General → Social links: the public footer shows round platform ICONS (hover = purple; screen readers announce the platform name).
+
+## Y9. News images
+- Public /news (and panel news): covers paint with a soft shimmer instead of an empty box; the first page loads eagerly; revisits are instant (optimized variants now cached 31 days).
+
+## Y10. Panel news
+- Parent nav has "Xəbərlər" → /dashboard/news (stays inside the parent shell); the dashboard "View all" goes there too. Student nav has "Xəbərlər" → /child/news inside the arena shell. Articles, sorting, pagination, views and ♥ likes all work inside both panels.
+
+## Y11. Admin "Tezliklə"
+- The Upcoming group now lists only: Gündəlik tapşırıqlar (visible to Admin + CM), Subscriptions, Payments. "Tests & Daily Tasks" is renamed/reduced; the redundant Tests half is gone.
+
+## Y12. "Baxışlar" removed
+- The Reviews/Baxışlar placeholder is gone from the sidebar — the review queue lives in Questions (In-review stat card + status filter).
+
+## Y13. Leaderboard flag
+- Settings → Features → Leaderboard OFF → the student "Reytinq" tab disappears and the direct URL shows "ranking is currently unavailable — disabled by an administrator" (trilingual). ON → tab + page return.
+
+If anything here doesn't match, tell me the **Y#** + what you saw.

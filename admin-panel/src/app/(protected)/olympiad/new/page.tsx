@@ -9,6 +9,7 @@ const KEYS = [
   "oly2.status.active", "oly2.status.inactive", "oly2.status.archived",
   "oly2.title", "oly2.desc", "manage.select", "manage.saving",
   "oly2.err.subject", "oly2.err.titleAz",
+  "oly2.eventAt", "oly2.eventAtHint", "oly2.eventClear",
 ];
 
 export default async function NewOlympiadPage() {

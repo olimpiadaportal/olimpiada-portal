@@ -96,3 +96,46 @@ export function LanguageDropdown({
     </div>
   );
 }
+
+/**
+ * Segmented language control — [AZ] [EN] [RU] side-by-side buttons, used
+ * inside the account drawers on desktop (the dropdown above stays the
+ * compact/default control for the public navbar and the drawers' mobile
+ * variant). Same mechanism as the dropdown: choosing a locale writes the
+ * `locale` cookie and reloads so server components re-render in the new
+ * language. Renders only the admin-enabled locales when `available` is given.
+ */
+export function LanguageSegmented({
+  current,
+  available,
+}: {
+  current: Locale;
+  // Admin-enabled locales (platform.supported_locales). Omitted → offer all.
+  available?: Locale[];
+}) {
+  const options = available && available.length > 0 ? available : [...locales];
+
+  function choose(l: Locale) {
+    if (l === current) return;
+    document.cookie = `locale=${l}; path=/; max-age=31536000`;
+    location.reload();
+  }
+
+  return (
+    <div className="seg-group seg-lang" role="group">
+      {options.map((l) => (
+        <button
+          key={l}
+          type="button"
+          className={`seg-btn${l === current ? " active" : ""}`}
+          aria-pressed={l === current}
+          aria-label={localeNames[l]}
+          title={localeNames[l]}
+          onClick={() => choose(l)}
+        >
+          {l.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}

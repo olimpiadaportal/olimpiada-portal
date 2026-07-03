@@ -22,7 +22,9 @@ export type WallpaperRow = {
   imageUrl: string | null;
 };
 
-export type WallpaperState = { error?: string } | null;
+export type WallpaperState = { ok?: boolean; error?: string } | null;
+
+export type WallpaperList = { rows: WallpaperRow[]; loadError: boolean };
 
 // Image constraints — mirror the wallpaper-assets bucket (migration
 // 2026_06_27_006): image-only (png/jpeg/webp), 3 MB.
@@ -65,15 +67,24 @@ function s(formData: FormData, name: string): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-export async function listWallpapers(): Promise<WallpaperRow[]> {
+export async function listWallpapers(): Promise<WallpaperList> {
   await requireAdmin();
   const supabase = await createClient();
-  const { data } = await supabase
+  // R9 (T9a): the embed carries an explicit FK-column hint, and errors are
+  // SURFACED, never swallowed. Root cause of the "saves disappear" bug: dev
+  // carried a duplicate wallpapers→media_assets FK (fixed in migration 022),
+  // which made this embed ambiguous (PGRST201) — the old code ignored `error`
+  // and rendered an empty/stale list while inserts were succeeding.
+  const { data, error } = await supabase
     .from("wallpapers")
-    .select("id, name, kind, value, status, media_assets(bucket, path)")
+    .select("id, name, kind, value, status, media_assets:media_asset_id(bucket, path)")
     .order("created_at", { ascending: false });
+  if (error) {
+    console.error("[admin] wallpapers list failed", error.message);
+    return { rows: [], loadError: true };
+  }
 
-  return ((data ?? []) as any[]).map((r) => {
+  const rows = ((data ?? []) as any[]).map((r) => {
     let imageUrl: string | null = null;
     const m = r.media_assets;
     if (m?.bucket && m?.path) {
@@ -88,17 +99,21 @@ export async function listWallpapers(): Promise<WallpaperRow[]> {
       imageUrl,
     };
   });
+  return { rows, loadError: false };
 }
 
-// Adds a solid-color wallpaper. Plain server action (name + hex), validated
-// server-side; the browser also validates via required/pattern for UX.
-export async function createSolidWallpaper(formData: FormData): Promise<void> {
+// Adds a solid-color wallpaper. R9 (T9a): state-returning action (was a void
+// action with NO error channel — failures were invisible by construction).
+// The form shows explicit success/error feedback via useActionState.
+export async function createSolidWallpaper(
+  _prev: WallpaperState,
+  formData: FormData,
+): Promise<WallpaperState> {
   const ctx = await requireAdmin();
-  // Cap: wallpaper name ≤ 80 (trimmed rather than rejected — this is a void
-  // form action with no error channel, so silent rejection would be hostile).
+  const t = await getT();
   const name = s(formData, "name").slice(0, NAME_MAX);
   const rawHex = s(formData, "hex");
-  if (!name || !HEX_RE.test(rawHex)) return;
+  if (!name || !HEX_RE.test(rawHex)) return { error: t("err.server") };
 
   const hex = `#${rawHex.replace(/^#/, "").toLowerCase()}`;
   const supabase = await createClient();
@@ -113,18 +128,21 @@ export async function createSolidWallpaper(formData: FormData): Promise<void> {
     })
     .select("id")
     .single();
-
-  if (!error) {
-    await writeAuditLog({
-      actorProfileId: ctx.profileId,
-      action: "admin.wallpaper.create",
-      targetTable: "wallpapers",
-      targetId: created?.id ?? null,
-      metadata: { kind: "solid_color", name, value: hex },
-    });
+  if (error) {
+    console.error("[admin] solid wallpaper insert failed", error.message);
+    return { error: t("err.server") };
   }
 
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.wallpaper.create",
+    targetTable: "wallpapers",
+    targetId: created?.id ?? null,
+    metadata: { kind: "solid_color", name, value: hex },
+  });
+
   revalidatePath("/wallpapers");
+  return { ok: true };
 }
 
 // Records an image wallpaper: inserts a media_assets row and a wallpapers row
@@ -208,7 +226,7 @@ export async function attachWallpaperImage(
   });
 
   revalidatePath("/wallpapers");
-  return null;
+  return { ok: true };
 }
 
 // Flips a wallpaper between active (listed for children) and archived (hidden).

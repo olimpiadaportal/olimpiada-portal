@@ -46,10 +46,14 @@ export default async function ParentLayout({
     // keep defaults
   }
 
+  // Home is exact-matched: /dashboard/news lives under it (R10 in-panel news)
+  // and must not keep the Home tab highlighted.
   const navItems = [
-    { href: "/dashboard", label: t("nav.home"), brand: true },
+    { href: "/dashboard", label: t("nav.home"), brand: true, exact: true },
     { href: "/analytics", label: t("nav.analytics") },
+    { href: "/olympiads", label: t("poly.nav") },
     { href: "/subscription", label: t("nav.subscription") },
+    { href: "/dashboard/news", label: t("nav.news") },
     { href: "/help/faq", label: t("help.faqTitle") },
     { href: "/help/contact", label: t("help.contactTitle") },
   ];
@@ -74,6 +78,11 @@ export default async function ParentLayout({
               close: t("drawer.close"),
               profileBtn: t("drawer.profileBtn"),
               logout: t("drawer.logout"),
+              // Round 8 drawer sections + segmented theme labels.
+              appearance: t("drawer2.appearance"),
+              session: t("drawer2.session"),
+              themeLight: t("drawer2.themeLight"),
+              themeDark: t("drawer2.themeDark"),
             }}
           />
         </div>

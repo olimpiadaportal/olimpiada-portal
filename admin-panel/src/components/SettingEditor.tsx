@@ -115,6 +115,9 @@ function FieldShell({
   children: React.ReactNode;
 }) {
   const shownError = error ?? inlineError ?? null;
+  // R10 (F7): intuitive top-to-bottom order — label, control, help, then a
+  // FOOTER row holding the status + Save button. The button used to sit in the
+  // header row ABOVE the input, which read as belonging to the previous field.
   return (
     <form action={action} className="sfield">
       <input type="hidden" name="__key" value={settingKey} />
@@ -126,31 +129,31 @@ function FieldShell({
         ) : (
           <span className="sfield-label">{strings.label}</span>
         )}
-        <div className="sfield-status">
-          {shownError && (
-            <span className="inline-status err" role="alert">
-              {shownError}
-            </span>
-          )}
-          {showSaved && !shownError && (
-            <span className="inline-status ok" role="status">
-              {strings.saved}
-            </span>
-          )}
-          <button
-            className="btn btn-sm"
-            type="submit"
-            disabled={pending || saveDisabled}
-          >
-            {pending ? strings.saving : strings.save}
-          </button>
-        </div>
       </div>
       {children}
       <p className="sfield-help">{strings.help}</p>
       {!exists && (
         <p className="sfield-help sfield-missing">{strings.notConfigured}</p>
       )}
+      <div className="sfield-foot">
+        {shownError && (
+          <span className="inline-status err" role="alert">
+            {shownError}
+          </span>
+        )}
+        {showSaved && !shownError && (
+          <span className="inline-status ok" role="status">
+            {strings.saved}
+          </span>
+        )}
+        <button
+          className="btn btn-sm"
+          type="submit"
+          disabled={pending || saveDisabled}
+        >
+          {pending ? strings.saving : strings.save}
+        </button>
+      </div>
     </form>
   );
 }

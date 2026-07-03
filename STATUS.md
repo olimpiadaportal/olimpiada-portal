@@ -499,6 +499,113 @@ Rebrand + design + profile/wallpaper/news polish. **Final gate: web typecheck+bu
   - New i18n keys ×3 locales: web `parent.err.tooMany`, `sub.err.failed`, `auth.child.err.nameTooLong`; admin `err.server`, `err.tooLong`, `login.invalid`, `login.timeout`.
   - Testing guide extended with **V1–V5**.
 
+---
+## ✅ INVESTOR REVIEW ROUND 8 — COMPLETE & VALIDATED (2026-07-03)
+
+**Final gate: web typecheck+build PASS (30 routes), admin typecheck+build PASS (21 routes), migration 021 applied on dev, extended `013` = 29/29 PASS incl. non-destructive from-zero rebuild. 213 new i18n keys ×3 locales merged conflict-free. Nothing committed yet.**
+
+Delivered exactly per plan below (all boxes done): Phase 1 — FAQ single chevron (root cause: a later border-caret rule layered on the svg), global Azerbaijani-safe Arial stack (Trebuchet+Chivo removed; JetBrains Mono kept for numerics), student logout → `/`, nav renamed Olimpiadalar, migration `2026_07_03_021` (olympiad `event_starts_at` + 6 playful gradient background presets; backported 012/015/013 #29). Phase 2 (7 parallel agents, disjoint ownership, central merge) — SaaS Pricing page (owner copy, contract plan-cards, sibling box, quiet note; promo line still launch_promo-gated); corporate About (SVG illustrations, alternating blocks, 4-card grid); Analytics with merged child progress (real stat cards + child selector + lockable subject tabs + DEMO dashboard: KPI tiles, SVG weekly/accuracy charts, topic + mistakes tables; dashboard child-card progress button removed; old progress route redirects); SaaS Subscription center (smooth-scroll Plans/Billing/Invoices; real plans/subjects/cancel + DEMO billing/invoices); professional Profile pages (parent: identity/account/security/danger/session; student: identity+ID/photo/security only) + background-template gallery (new presets, highlighted selection); redesigned drawers (Account/Language/Appearance/Session, segmented [AZ][EN][RU] + [Light][Dark], single-arrow profile row) with backward-compatible ThemeToggle/LanguageDropdown; student Olimpiadalar tab (planned-olympiad cards + detail modal with the ask-your-parent note; Olimpiadalarım kept) + admin package form gained cover-image upload (news-cover pattern incl. media-verify + audit) and event date field. Phase 3 — student LIGHT theme via `.arena` token remap to the landing reference (dark byte-unchanged) + merged all agent CSS/i18n centrally.
+
+**Demo-data registry (to replace with real data later):** analytics subject dashboard numbers/charts; subscription Billing panel (next billing date, MasterCard ****8475) and Invoices (toggle, 2 rows). Real: plan cards' child subjects/interval/total, cancel flow, planned olympiads (admin data), backgrounds.
+
+Docs updated: CLAUDE.md (design direction — light reference/dark frozen/Arial rule/demo-data policy), MANUAL_TESTING_GUIDE **W1–W12**.
+
+### Original Round 8 plan (all delivered)
+
+Execution model (per the established round workflow): main session owns ALL shared files (`globals.css`, web `messages.ts`, `child/layout.tsx`, SQL) + global fixes; parallel agents own disjoint pages/components and RETURN their CSS blocks + trilingual key/value triples for central merge (no shared-file races).
+
+**Phase 1 — global fixes + DB (main session):**
+- [ ] R8-A FAQ double chevron: delete the later `.faq-chevron` border-caret override block (globals.css ~2849) — it drew a small caret ON the svg element that already draws the main chevron. One centered chevron + rotation stays. Fixes landing AND parent FAQ (shared FaqAccordion).
+- [ ] R8-B Font: global Azerbaijani-safe stack `Arial, Helvetica, …` — replace light-mode Trebuchet MS + arena Chivo + lead the root stack with Arial; keep JetBrains Mono for numeric accents only; slim the Google Fonts link. Verify ə Ə ğ Ğ ş Ş ç Ç ü Ü ö Ö ı İ.
+- [ ] R8-C BUG: student logout redirects to `/` (landing), not `/child-login`.
+- [ ] R8-D Student nav item "Tapşırıqlar" → "Olimpiadalar" (az/en/ru value change).
+- [ ] R8-E Migration `2026_07_03_021`: `olympiad_packages.event_starts_at timestamptz` (planned-olympiad date for the student tab) + seed 6 playful gradient wallpaper PRESETS (racing/space/ocean/jungle/candy/night — CSS gradient values; picker + arena background already accept any CSS background). Backport 015/012 + 013 check #29; apply dev; from-zero at the end.
+
+**Phase 2 — parallel agents (disjoint ownership):**
+- [ ] R8-1 Pricing page → SaaS cards (owner-provided copy; badges, benefits, CTAs, sibling info box, muted note; equal heights; both themes; responsive) — authors the shared `plan-*` card CSS contract.
+- [ ] R8-2 About page → hero + alternating sections + Mission/Offer/Audience/Trust cards + inline-SVG illustrations (CSP-safe), corporate polish, trilingual.
+- [ ] R8-3 Analytics: merge child progress into /analytics — stat cards kept; child selector; subject tabs (locked ⟶ "subscribe to unlock"); demo SaaS dashboard (weekly activity, totals, accuracy, best/weakest topic, time, last activity; SVG charts; mistakes-by-topic table). Child cards on dashboard lose the progress button; /children/[id]/progress redirects to /analytics. InfoCarousel → 2 cards desktop / 1 mobile, no half-cuts.
+- [ ] R8-4 Subscription page → SaaS billing: Plans/Billing/Invoices smooth-scroll tabs; plan cards REUSE the pricing contract + "Current plan" badge + per-child subjects + manage/add subjects; demo Billing (next date, MasterCard ****8475) + demo Invoices (email toggle, request button, history table).
+- [ ] R8-5 Profile redesign (parent AND student): settings-card layout (identity header / Account info / photo actions + "JPG or PNG, max 2 MB" / Security / Danger zone (parent only) / Session); student keeps avatar+name+8-digit ID+password only; wallpaper picker → template preview cards incl. the new playful presets, clear selected state.
+- [ ] R8-6 Drawers (parent + student): section titles Account/Language/Appearance/Session; theme = side-by-side [Light][Dark] segmented with active highlight; language = [AZ][EN][RU] segmented on desktop (dropdown mobile; respects enabled-locales gating); single arrow on the profile row; logout under Session (calm danger).
+- [ ] R8-7 Student Olympiads tab: "Planned olympiads" cards (image/title/desc/date/subject/status + Ətraflı detail w/ "ask your parent to buy the package" note; data = admin olympiad packages) + "Olimpiadalarım" (owned; empty state kept). Admin: add cover-image upload if missing + event date field.
+
+**Phase 3 — main session:** merge returned CSS/i18n; light-mode unification (landing Energetic light = reference for parent + STUDENT light; `[data-theme="light"] .arena` token remap; dark byte-kept); final typecheck/build both apps; from-zero DB; docs (CLAUDE.md design direction note, MANUAL_TESTING_GUIDE W-section, STATUS completion).
+
+---
+## ✅ INVESTOR REVIEW ROUND 9 — COMPLETE & VALIDATED (2026-07-03)
+
+**Final gate: web typecheck+build PASS (31 routes incl. new /olympiads), admin typecheck+build PASS, migrations 022+023 applied on dev + backported (011/013), extended `013` = 31/31 PASS incl. non-destructive from-zero rebuild. Nothing committed yet.**
+
+- [x] T1 Language dropdown double caret — removed the CSS ::after caret; the svg caret is the single, animated one.
+- [x] T2 "Uşağı sil" — new `.btn-ghost.danger` variant (ghost geometry, danger tint) + styled inline reset-password input.
+- [x] T3 Avatars — every avatar container (nav trigger + profile classes old/new) enforces square box, 50% radius, overflow hidden, object-fit cover.
+- [x] T4 Analytics KPI grid — "Orta dəqiqlik" tile removed → exactly 5 boxes, `repeat(5,1fr)` desktop / auto-fit tablet / 2-col mobile (accuracy still in trend chart + topic table).
+- [x] T5 Shared `<Modal/>` + `<ConfirmModal/>` (`components/Modal.tsx`: portal into body, overlay/Escape/× close, scroll lock, role=dialog/aria-modal/focus restore) — the buggy student "Ətraflı" dialog (root cause: rendered INSIDE the clipped/stacked card) rebuilt on it; CancelSubscription, DeleteAccountButton and the delete-child confirm() all refactored onto it. Every web-app modal now shares one implementation.
+- [x] T6 REAL analytics (UniPrep architecture study → port): migration `2026_07_03_023` adds `get_child_subject_dashboard(child, subject?, days?)` (totals/accuracy/time-spent(started_at→submitted_at, clamped)/last-activity/7-day activity/accuracy trend/per-topic/mistakes; SECURITY DEFINER with COALESCE'd in-body auth: service-role/admin/linked-parent/the child; anon revoked) + `get_admin_platform_overview()` (admin-only KPIs + signup/attempt trends). Parent dashboard now URL-driven (?child&subject) and 100% real data with honest empty states (ALL Round-8 demo numbers deleted); admin dashboard gained the Platform overview section (content managers: section omitted). UniPrep ideas deliberately skipped: DISTINCT ON dedup (our answers are already unique), ELO/tiers, per-user timezones, fetch-all client aggregation.
+- [x] T7 Parent "Olimpiadalar" menu (`/olympiads` between Analitika/Abunəlik): browse all active packages (cover/chips/date/questions/admin price), segmented child selector, purchase via shared Modal, `purchaseOlympiadForChild` action (guard-first, ownership re-check, olympiad_module+payments server gates, price read server-side, duplicate race → "already owned") with the MOCK payment isolated in non-exported `processOlympiadPayment()` — the single seam for the future real provider. Purchases appear in the student's Olimpiadalarım (existing RPC/RLS).
+- [x] T8 Admin Questions (UniPrep gap analysis → G1–G5): server-side pagination (25/50/100 + numbered pager + Showing X–Y of N), debounced ?q search over translations (LIKE-escaped, id-set strategy), cascading Subject→Topic→Subtopic + Type/Grade/Status filters (searchParams-driven, uuid/status whitelists), per-row lifecycle quick actions (mirrors QuestionLifecycle permissions via existing transitionQuestion), lifecycle stat cards (click-to-filter, private-pool exclusion). Deliberately NOT ported: is_active toggle (we have a 6-state lifecycle), Situasiya groups, difficulty-centric UI, client fetch-all.
+- [x] T9a Wallpapers "silent save failure" — ROOT CAUSE: saves were persisting all along; dev carried a DUPLICATE FK wallpapers→media_assets (inline FK from migration 006 + canonical named FK from 011), making every PostgREST embed ambiguous (PGRST201) — the list swallowed the error and looked frozen. Fixed: migration `2026_07_03_022` (single canonical FK; 013 check #30 guards the invariant), `listWallpapers` hints the FK column + SURFACES load errors, `createSolidWallpaper` converted to state-returning with explicit saved/error feedback (was void = structurally silent), image uploader shows success. End-to-end verified via a throwaway-admin PostgREST repro (all layers OK post-fix).
+- [x] T9b Student background gallery confirmed fully DB-driven (no hardcoded list) — it was broken by the same duplicate-FK embed failure; works after 022 (verified: 15 wallpapers incl. the owner's stuck "test" image now flow through).
+
+**Demo-data registry update:** parent analytics dashboard is now REAL (removed from the registry). Still demo: subscription Billing panel + Invoices section; olympiad purchase payment step (mock seam).
+
+Docs updated: MANUAL_TESTING_GUIDE **X1–X9**.
+
+---
+## 📱 MOBILE APP TRACK — PLANNED (2026-07-03), DORMANT UNTIL ACTIVATED
+
+Owner confirmed React Native + Expo. Full plan authored:
+- `mobile-app/markdowns/MOBILE_APP_MASTER_PLAN.md` — design truth: stack (Expo SDK 52+/TS strict/expo-router/supabase-js + SecureStore adapter/TanStack Query/zustand/expo-image/RN-svg/bottom-sheet; security-vetted dependency policy, npm audit = 0), UI identity mirrored from web tokens (Energetic light/dark/arena + arena-light remap; i18n SYNCED from web messages.ts), backend integration (direct RLS for user-scoped data; NEW anon-safe `get_mobile_config()` whitelist RPC so the ADMIN PANEL controls flags/maintenance/locales/forced-update without releases; NEW `mobile_app_versions` admin module; privileged flows via web-app BFF `/api/mobile/v1/*` wrapping existing audited service functions — service-role key never ships in the app), full screen↔web parity map, OWASP MASVS-aligned security checklist, children's-data posture, store/IAP compliance decision (v1 = read-only payments recommended).
+- Root `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md` — stages M0 (foundation/design system) → M1 (admin control plane FIRST) → M2 (auth incl. child-login BFF) → M3 (public+news) → M4 (parent) → M5 (student arena) → M6 (commerce posture) → M7 (push, optional) → M8 (hardening/compliance/store) → M9 (launch ops), each with docs-to-read, DB/BFF work, acceptance + security gates.
+- Docs wired: root `CLAUDE.md` (mobile activation rule + boundary update), `mobile-app/CLAUDE.md` (rewritten for RN+Expo with reading order), `CODING_AGENT_PROMPTS.md` (Prompt 2 mobile-stage reading rule).
+- **To activate:** owner sets "M0 — Foundation" as the active stage here and runs Prompt 2. Owner inputs needed before M8: store accounts, bundle id (suggest `ai.olimpiq.app`), push in-scope?, confirm read-only-payments posture (master plan §10).
+
+---
+## ✅ INVESTOR REVIEW ROUND 10 — COMPLETE & VALIDATED (2026-07-03)
+
+**Final gate: web typecheck+build PASS (35 routes incl. /dashboard/news + /child/news), admin typecheck+build PASS, migration 024 applied on dev + backported (012 + 013 #32), extended `013` = 32/32 PASS incl. non-destructive from-zero rebuild. Nothing committed yet.**
+
+- [x] F1 CM least-privilege VERIFIED both layers, zero gaps (full module→access→guard matrix below via agent audit): nav flags correct; every admin-only page/action `requireAdmin`; content work `requirePermission(content.*)` with per-transition perms; DB seed grants CM only content.create/edit_own/analytics.read_subject_limited. CMs create/edit/submit content but never approve/publish/delete (intentionally stricter).
+- [x] F2 Filters added via one reusable searchParams-driven FilterBar (debounced, URL-as-truth, server-validated uuid/status whitelists, LIKE-escaped): News (status+title search), Olympiad (subject+status+title), Manage resources (name search + status where applicable; Topics +subject; Subtopics +subject→topic cascade), Cities (status+name), Schools (city+status+name).
+- [x] F3 Schools: **312 verified Bakı schools seeded** (migration `2026_07_03_024`): the EXACT numbered-school union of the official BŞTİ list pages 1–11 (baku.edu.gov.az/az/page/231, retrieved 2026-07-03; 310 numbers between 1–350 with official gaps preserved) + 2 named institutions; per-district duplicate-guard unique index `uq_schools_district_name`; source documented in the migration header + canonical 012 backport (schema has no source column). Legacy sample rows №6/№20 (not on the official list) left untouched — possible FK references. Other cities deliberately deferred until official lists are sourced (no unverified data).
+- [x] F4 Olympiad table alignment: `.table-wrap` (responsive horizontal scroll) + `.nowrap` cells applied on /olympiad and every other admin list touched this round.
+- [x] F5 Accounts search (query-level `.or(display_name.ilike,email.ilike)` scoped to parent ids; PostgREST-grammar chars stripped + LIKE-escaped).
+- [x] F6 Audit log: 21 app action codes + trigger `op:table` format + 17 entities mapped to trilingual labels (clean-text fallback, never raw); QUERY-level scope to administrator/content_manager actors via profile_roles join (system/trigger NULL-actor rows excluded by the IN); entity filter select.
+- [x] F7 Settings: SettingsField restructured — label → control → help → footer row with status + Save (`.sfield-foot`), button no longer floats above the input.
+- [x] F8 Footer social links render as inline-SVG platform icons (round chips, aria-label + title, focus ring).
+- [x] F9 News images: `images.minimumCacheTTL` 31d (optimized covers cached), first page eager + first two priority, shimmer placeholder on `.news-card-media`.
+- [x] F10 In-panel News: shared NewsBrowser/NewsArticleView components; new routes /dashboard/news(+[slug]) and /child/news(+[slug]) inside their shells; parent+student nav items added (parent Home now exact-matched); both dashboards' "View all"/article links stay internal. Public /news keeps the news_public gate; in-app news intentionally ungated (flag governs the PUBLIC section per product model).
+- [x] F11 "Tezliklə": Tests&Daily Tasks → **Daily Tasks only** (soon; visible to Admin + CM via content.create).
+- [x] F12 "Baxışlar" (Reviews) placeholder REMOVED (review queue = Questions in_review filter + stat card); dead i18n keys pruned ×3.
+- [x] F13 Leaderboard flag now gates for real: student nav tab hidden when off + /child/leaderboard shows a clear trilingual "ranking disabled by administrator" notice; flag description already matched.
+- Tests note (assumption recorded): no JS test framework exists and adding one would violate the no-new-dependencies constraint — permission/audit/flag/routing verification lives in the SQL validation suite (now 32 checks incl. #32 schools) + builds + the Y1–Y13 manual matrix.
+
+Docs updated: MANUAL_TESTING_GUIDE **Y1–Y13**; demo-data registry unchanged (billing/invoices + olympiad mock payment remain the only demo surfaces).
+
+### Original Round 10 plan
+
+Partition: main session = shared files, admin CSS/structure fixes (F4/F7), web tasks (F8 icons, F9 news images, F10 panel news at /dashboard/news + /child/news, F13 leaderboard flag), F3 schools research+seed (migration 024). Agent A = admin filters (news/olympiad/subjects/topics/subtopics/cities/schools) + accounts search (owns admin messages/globals + those pages, incl. applying the new .table-wrap to fix F4 alignment). Agent B = F1 CM least-privilege verification+fixes, F6 audit log (humanized action/entity + query-level admin/CM-actor filter), F11 Upcoming cleanup (keep Daily Tasks only, admin+CM), F12 remove "Baxışlar"/Reviews placeholder (redundant — questions list filters cover the review queue); returns admin i18n TSV for central merge.
+
+- [ ] F1 CM least privilege (UI + server verified) · [ ] F2 filters ×7 sections · [ ] F3 schools data (verified sources, deduped, source documented) · [ ] F4 olympiad table alignment · [ ] F5 accounts search · [ ] F6 audit log humanize + actor scope · [ ] F7 settings save-button placement · [ ] F8 social icons (aria) · [ ] F9 landing news images · [ ] F10 panel news nav + internal View-all · [ ] F11 Upcoming: Daily Tasks only · [ ] F12 Views/Reviews removed · [ ] F13 leaderboard flag gates + notice
+- Tests note: no JS test framework exists in the repo (adding one = new dependency); security-sensitive checks continue to live in the SQL validation suite (013) which gains checks where applicable; permission/flag behavior is verified by build + documented manual checks (guide Y-section).
+
+### Original Round 9 plan (all delivered)
+
+Model: main session = shared files (globals.css, messages.ts, layouts, SQL), root-cause bugs, shared Modal; background agents = UniPrep studies + big builds (contract returns for CSS/i18n).
+
+- [ ] T1 Landing language dropdown shows TWO carets (JSX svg + CSS ::after) — keep the animated one.
+- [ ] T2 Parent home "Uşağı sil" button styling broken — restyle to match card buttons (danger variant), same behavior.
+- [ ] T3 Uploaded avatar not clipped in the nav circle — enforce fixed square + 50% radius + overflow hidden + object-fit cover on every avatar surface.
+- [ ] T4 Analytics: remove the "Orta dəqiqlik" stat card → exactly 5 boxes, even responsive grid (executed inside the T6 analytics rebuild).
+- [ ] T5 Shared reusable <Modal> (isOpen/onClose/title/children; portal, overlay click-close, Escape, ×, scroll lock, role=dialog/aria-modal/focus) + rebuild the buggy student "Ətraflı" olympiad modal on it + refactor every other web-app modal to it.
+- [ ] T6 Study UniPrep analytics architecture (agent) → implement REAL analytics on our schema (SQL RPC migration 022 over test_attempts/answers/questions/topics; wire parent dashboard to real data; admin analytics where needed). Replaces the Round-8 demo numbers where real data exists.
+- [ ] T7 Parent "Olimpiadalar" purchase menu: nav item + page (browse all packages w/ admin price, child selector, mock-payment service isolated for a future provider, shared Modal confirm, purchased/loading/success/error states) → unlocks in student "Olimpiadalarım" (existing purchase_olympiad RPC).
+- [ ] T8 Study UniPrep admin Questions page (agent) → implement the missing high-value features in our admin Questions.
+- [ ] T9a Admin Wallpapers save silently fails (color AND image) — debug the whole flow (form → action → validation → storage/DB → refresh), fix root cause, add visible success/error feedback.
+- [ ] T9b Student background templates must be driven by admin wallpapers (verify the Round-8 gallery is fully DB-driven; no hardcoded list).
+- [ ] Validation: typecheck/build both apps, migration applied + backported + from-zero, MANUAL_TESTING_GUIDE + STATUS updates.
+
 ### Round 6 — still deferred (owner-acknowledged, tracked)
 - **Real payments + webhook activation** (needs a payment-provider decision; schema is provider-agnostic and ready).
 - **Trial/charge automation** (trial→paid conversion, failed-charge auto-block, expiry recompute job).

@@ -52,7 +52,8 @@ export async function ParentNewsPanel({
     <section className="news-panel" aria-label={t("news.latest")}>
       <div className="news-panel-head">
         <h2>{t("news.latest")}</h2>
-        <Link className="btn-ghost" href="/news">
+        {/* R10 (F10): View all stays INSIDE the parent panel. */}
+        <Link className="btn-ghost" href="/dashboard/news">
           {t("news.viewAll")}
         </Link>
       </div>
@@ -62,7 +63,7 @@ export async function ParentNewsPanel({
       ) : (
         <div>
           {items.map((it) => (
-            <Link className="news-mini" href={`/news/${it.slug}`} key={it.slug}>
+            <Link className="news-mini" href={`/dashboard/news/${it.slug}`} key={it.slug}>
               {it.cover ? (
                 <Image
                   src={it.cover}

@@ -98,7 +98,9 @@ with expected(name) as (
          ('start_practice_attempt'),('get_practice_attempt'),('grade_practice_attempt'),
          ('purchase_olympiad'),('start_olympiad_attempt'),
          ('bulk_insert_olympiad_package_questions'),
-         ('advance_student_grades')
+         ('advance_student_grades'),
+         ('get_child_subject_dashboard'),
+         ('get_admin_platform_overview')
 )
 select '5_missing_functions' as check_name,
        coalesce(string_agg(e.name, ', '), '(none)') as missing_functions,
@@ -423,6 +425,49 @@ select '28_pg_cron_grade_promotion' as check_name,
        case when exists (select 1 from pg_extension where extname='pg_cron')
             then 'PASS (pg_cron present; job managed by 016)'
             else 'SKIP (pg_cron absent — 016 skipped safely)' end as status;
+
+-- 29) Round 8 (migration 021): olympiad event date column + the 6 playful
+--     gradient wallpaper presets for the student background selector.
+select '29_round8_olympiad_event_wallpaper_presets' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='olympiad_packages'
+                            and column_name='event_starts_at')
+             and (select count(*) from public.wallpapers
+                   where code in ('preset_race','preset_space','preset_ocean',
+                                  'preset_jungle','preset_candy','preset_night_drive')) = 6
+            then 'PASS' else 'FAIL' end as status;
+
+-- 30) Round 9 (migration 022): EXACTLY ONE foreign key between wallpapers and
+--     media_assets. A duplicate FK makes every PostgREST embed on that pair
+--     ambiguous (PGRST201) and silently breaks the admin Wallpapers list and
+--     the student background picker.
+select '30_wallpapers_single_media_fk' as check_name,
+       case when (select count(*) from pg_constraint c
+                   where c.contype = 'f'
+                     and c.conrelid = 'public.wallpapers'::regclass
+                     and c.confrelid = 'public.media_assets'::regclass) = 1
+            then 'PASS' else 'FAIL' end as status;
+
+-- 31) Round 9 (migration 023): analytics RPCs exist (checked in #5) and are NOT
+--     executable by anon.
+select '31_analytics_rpcs_secure' as check_name,
+       case when has_function_privilege('anon',
+                   'public.get_child_subject_dashboard(uuid,uuid,int)', 'EXECUTE') = false
+             and has_function_privilege('anon',
+                   'public.get_admin_platform_overview()', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- 32) Round 10 (migration 024): verified Bakı schools seeded from the official
+--     BŞTİ list (≥ 300 rows) + the per-district duplicate guard index.
+select '32_baku_schools_seed' as check_name,
+       case when (select count(*) from public.schools s
+                    join public.districts d on d.id = s.district_id
+                   where d.country_code = 'AZ'
+                     and s.name like 'Bak% n%mr%li tam orta m%kt%b') >= 300
+             and exists (select 1 from pg_indexes
+                          where schemaname = 'public'
+                            and indexname = 'uq_schools_district_name')
+            then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

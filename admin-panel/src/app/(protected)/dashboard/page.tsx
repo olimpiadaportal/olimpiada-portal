@@ -1,11 +1,30 @@
 import { isSupabaseConfigured } from "@/lib/env";
 import { requirePanelAccess } from "@/lib/admin/guards";
+import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { AdminOverview, type AdminOverviewData } from "@/components/AdminOverview";
 
 export default async function DashboardPage() {
   // Same guard as every other protected page — never rely on the layout alone.
   const ctx = await requirePanelAccess();
   const t = await getT();
+
+  // R9 (T6) — real platform overview via the admin-only RPC (request-scoped
+  // client; the RPC re-checks admin in-body). Content managers pass the panel
+  // guard but would get an RPC error, so we don't even call it for them — the
+  // dashboard simply renders without the overview section. Any error → null.
+  let overview: AdminOverviewData | null = null;
+  if (ctx.isAdmin && isSupabaseConfigured) {
+    try {
+      const supabase = await createClient();
+      const { data, error } = await supabase.rpc("get_admin_platform_overview");
+      if (!error && data && typeof data === "object" && !Array.isArray(data)) {
+        overview = data as AdminOverviewData;
+      }
+    } catch {
+      overview = null;
+    }
+  }
 
   return (
     <div className="page">
@@ -40,6 +59,8 @@ export default async function DashboardPage() {
           <p className="muted">{t("dashboard.taxonomyCardDesc")}</p>
         </section>
       </div>
+
+      {overview && <AdminOverview data={overview} t={t} />}
     </div>
   );
 }

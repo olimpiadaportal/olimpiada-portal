@@ -1,7 +1,7 @@
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
-import { getSystemSetting } from "@/lib/flags";
+import { getSystemSetting, isFeatureEnabled } from "@/lib/flags";
 
 // Localized "anonymous student" label used when public display names are OFF.
 // Kept inline (no new i18n key) so this agent stays within its file scope.
@@ -18,6 +18,21 @@ export default async function ChildLeaderboardPage() {
   const child = await requireChild();
   const t = await getT();
   const locale = await getLocale();
+
+  // R10 (F13): the `leaderboard` FEATURE FLAG now actually gates this page
+  // (the nav tab is hidden by the layout when off; the direct URL shows a
+  // clear "ranking is currently disabled" notice — same pattern as the
+  // olympiad_module gate).
+  if (!(await isFeatureEnabled("leaderboard"))) {
+    return (
+      <section>
+        <p className="arena-eyebrow">{t("arena.nav.rank")}</p>
+        <h1 style={{ marginBottom: 20 }}>{t("arena.nav.rank")}</h1>
+        <div className="arena-panel arena-muted">{t("gate.leaderboardOff")}</div>
+      </section>
+    );
+  }
+
   const supabase = await createClient();
 
   // Admin setting gate: when leaderboard.public_display_names is not TRUE, other

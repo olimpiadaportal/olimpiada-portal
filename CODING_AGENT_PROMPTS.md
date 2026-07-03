@@ -224,8 +224,10 @@ Rules:
 - Do not let PostgreSQL store binary files. Store actual files in Supabase Storage only.
 - Do not implement SMS.
 - Do not implement optional bank transfer.
-- Do not implement the mobile app now.
+- Do not implement the mobile app unless the active stage in `STATUS.md` is a Mobile (M#) stage.
 - Keep the final report concise.
+
+If the active stage is a MOBILE stage (M0–M9), additionally read — in this order — `mobile-app/CLAUDE.md`, `mobile-app/markdowns/MOBILE_APP_MASTER_PLAN.md`, and the active stage's row in `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md`. Mobile DB work follows the same automatic Prompt 8 rules; mobile BFF work also runs the web-app typecheck+build gate. The mobile app never uses the service-role key.
 
 If this stage includes database/schema/Supabase/RLS/storage/migration work, do all of this automatically (no separate prompt needed):
 - apply Prompt 8 from this file and the database versioning workflow before writing SQL,

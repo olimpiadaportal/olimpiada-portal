@@ -70,6 +70,10 @@ const nextConfig = {
         pathname: "/storage/v1/object/public/**",
       },
     ],
+    // R10 (F9): optimized variants (news covers etc.) are immutable uploads —
+    // cache them for 31 days so revisits don't re-optimize and covers paint
+    // instantly instead of popping in late.
+    minimumCacheTTL: 2678400,
   },
   async headers() {
     return [

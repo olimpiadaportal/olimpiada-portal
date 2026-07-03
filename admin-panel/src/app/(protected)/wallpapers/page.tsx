@@ -1,11 +1,8 @@
 import { requireAdmin } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
-import {
-  listWallpapers,
-  createSolidWallpaper,
-  setWallpaperStatus,
-} from "@/lib/admin/wallpapers";
+import { listWallpapers, setWallpaperStatus } from "@/lib/admin/wallpapers";
 import { WallpaperImageUploader } from "@/components/WallpaperImageUploader";
+import { WallpaperColorForm } from "@/components/WallpaperColorForm";
 
 function statusPill(s: string): string {
   return s === "active" ? "pill-ok" : "pill-muted";
@@ -14,7 +11,7 @@ function statusPill(s: string): string {
 export default async function WallpapersPage() {
   await requireAdmin();
   const t = await getT();
-  const rows = await listWallpapers();
+  const { rows, loadError } = await listWallpapers();
 
   return (
     <div className="page">
@@ -23,34 +20,21 @@ export default async function WallpapersPage() {
         <p className="muted">{t("wallpaper.subtitle")}</p>
       </div>
 
+      {/* R9 (T9a): a failed list load is VISIBLE — never a silent empty list. */}
+      {loadError && <p className="form-error">{t("wallpaper.listError")}</p>}
+
       <div className="form-grid" style={{ marginBottom: 20 }}>
         <section className="card">
           <h3>{t("wallpaper.addColor")}</h3>
-          <form action={createSolidWallpaper} className="form">
-            <label className="field">
-              <span className="field-label">
-                {t("wallpaper.name")}
-                <span className="req"> *</span>
-              </span>
-              <input type="text" name="name" required maxLength={60} />
-            </label>
-            <label className="field">
-              <span className="field-label">
-                {t("wallpaper.hex")}
-                <span className="req"> *</span>
-              </span>
-              <input
-                type="color"
-                name="hex"
-                defaultValue="#3b82f6"
-                required
-                className="color-input"
-              />
-            </label>
-            <button className="btn" type="submit">
-              {t("wallpaper.addColor")}
-            </button>
-          </form>
+          <WallpaperColorForm
+            strings={{
+              name: t("wallpaper.name"),
+              hex: t("wallpaper.hex"),
+              submit: t("wallpaper.addColor"),
+              saving: t("manage.saving"),
+              saved: t("wallpaper.saved"),
+            }}
+          />
         </section>
 
         <section className="card">
@@ -61,6 +45,7 @@ export default async function WallpapersPage() {
               upload: t("wallpaper.upload"),
               uploading: t("manage.saving"),
               hint: t("wallpaper.imageHint"),
+              saved: t("wallpaper.saved"),
             }}
           />
         </section>

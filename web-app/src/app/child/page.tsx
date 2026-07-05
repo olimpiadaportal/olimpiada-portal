@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { isGiveawayActive } from "@/lib/paymentMode";
 import { ChildNewsPanel } from "@/components/ChildNewsPanel";
 import { startPractice } from "@/lib/auth/childActions";
 
@@ -9,6 +10,9 @@ export default async function ChildDashboard() {
   const child = await requireChild();
   const t = await getT();
   const supabase = await createClient();
+  // Round 11: during an active giveaway window the whole platform is free —
+  // the DB RPCs (start_practice_attempt) already allow it; this mirrors it.
+  const giveawayActive = await isGiveawayActive();
 
   const { data: student } = await supabase
     .from("students")
@@ -16,7 +20,7 @@ export default async function ChildDashboard() {
     .eq("profile_id", child.profileId)
     .maybeSingle();
   const access = (student as any)?.access_status ?? "inactive";
-  const hasAccess = access === "trialing" || access === "active";
+  const hasAccess = access === "trialing" || access === "active" || giveawayActive;
 
   // Subjects this child is subscribed to (for practice).
   const { data: subs } = await supabase
@@ -28,6 +32,19 @@ export default async function ChildDashboard() {
   for (const s of (subs ?? []) as any[]) {
     for (const ss of s.subscription_subjects ?? []) {
       if (ss.subjects) subjMap.set(ss.subjects.id, ss.subjects.name);
+    }
+  }
+  // Giveaway: every subject with ACTIVE pricing becomes practicable, merged
+  // over the subscribed set. RLS note: subjects_pricing active rows are
+  // readable by everyone (public pricing page policy), so the child's
+  // request-scoped client can query it directly.
+  if (giveawayActive) {
+    const { data: priced } = await supabase
+      .from("subjects_pricing")
+      .select("subjects(id, name)")
+      .eq("status", "active");
+    for (const row of (priced ?? []) as any[]) {
+      if (row.subjects) subjMap.set(row.subjects.id, row.subjects.name);
     }
   }
   const subjects = Array.from(subjMap, ([id, name]) => ({ id, name }));
@@ -75,7 +92,10 @@ export default async function ChildDashboard() {
       {/* ---- Hero ---- */}
       <section className="arena-hero">
         <div className="arena-hero-left">
-          <p className="arena-eyebrow">{t("arena.heroEyebrow")}</p>
+          <p className="arena-eyebrow">
+            {t("arena.heroEyebrow")}
+            {giveawayActive && <span className="gvw-chip">{t("gvw.chip")}</span>}
+          </p>
           <h1>
             {t("child.hello")}, {(student as any)?.first_name ?? ""} — {t("arena.heroTitle")}
           </h1>

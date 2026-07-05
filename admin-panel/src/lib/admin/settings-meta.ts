@@ -23,6 +23,14 @@ export const FLAG_META: Record<string, FlagMeta> = {
     labelKey: "settings.flag.payments.label",
     descKey: "settings.flag.payments.desc",
   },
+  demo_payments: {
+    labelKey: "settings.flag.demo_payments.label",
+    descKey: "settings.flag.demo_payments.desc",
+  },
+  giveaway_period: {
+    labelKey: "settings.flag.giveaway_period.label",
+    descKey: "settings.flag.giveaway_period.desc",
+  },
   leaderboard: {
     labelKey: "settings.flag.leaderboard.label",
     descKey: "settings.flag.leaderboard.desc",
@@ -69,6 +77,10 @@ export type SettingMeta = {
   // Format example shown inside the empty control (language-neutral, so it is
   // not a translated UI string).
   placeholder?: string;
+  // Inclusive bounds for "number" settings (mirrored server-side in
+  // updateSetting for keys that need hard validation).
+  min?: number;
+  max?: number;
 };
 
 export const SETTING_META: Record<string, SettingMeta> = {
@@ -117,6 +129,18 @@ export const SETTING_META: Record<string, SettingMeta> = {
     labelKey: "settings.sys.social_tiktok.label",
     helpKey: "settings.sys.social_tiktok.help",
     placeholder: "https://tiktok.com/@…",
+  },
+  // Giveaway window length in days (integer 1..730 — enforced server-side in
+  // updateSetting). NOTE: `giveaway.started_at` is INTERNAL (stamped by the DB
+  // trigger when the giveaway flag flips on) and deliberately has NO entry here,
+  // so it is never rendered as an editable setting.
+  "giveaway.duration_days": {
+    kind: "number",
+    labelKey: "settings.sys.giveaway_duration_days.label",
+    helpKey: "settings.sys.giveaway_duration_days.help",
+    placeholder: "7",
+    min: 1,
+    max: 730,
   },
   "leaderboard.public_display_names": {
     kind: "boolean",

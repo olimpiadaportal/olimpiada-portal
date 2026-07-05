@@ -39,6 +39,9 @@ type FieldProps = {
   exists: boolean; // whether the DB row exists yet
   localeOptions: readonly string[];
   placeholder?: string;
+  // Inclusive bounds for "number" fields (UX mirror of the server-side rule).
+  min?: number;
+  max?: number;
   strings: SettingEditorStrings;
 };
 
@@ -165,6 +168,8 @@ function TextField({
   value,
   exists,
   placeholder,
+  min,
+  max,
   strings,
   kind,
 }: FieldProps & { kind: "text" | "email" | "phone" | "url" | "number" }) {
@@ -182,7 +187,11 @@ function TextField({
 
   const trimmed = v.trim();
   const numeric = Number(trimmed);
-  const numberValid = trimmed !== "" && Number.isFinite(numeric);
+  const numberValid =
+    trimmed !== "" &&
+    Number.isFinite(numeric) &&
+    (min === undefined || numeric >= min) &&
+    (max === undefined || numeric <= max);
   // Strings may be saved empty (= unset); numbers require a valid value.
   const serialized =
     kind === "number"
@@ -212,6 +221,8 @@ function TextField({
         value={v}
         onChange={(e) => setV(e.target.value)}
         placeholder={placeholder}
+        min={kind === "number" ? min : undefined}
+        max={kind === "number" ? max : undefined}
       />
       <input type="hidden" name="value_json" value={serialized} />
     </FieldShell>

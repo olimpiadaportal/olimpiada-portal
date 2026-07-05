@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { AddChildWizard } from "@/components/AddChildWizard";
 
 // All i18n keys the (client) wizard needs, resolved server-side into a dict.
@@ -16,16 +17,26 @@ const KEYS = [
   // step nav + steps
   "addchild.step.info", "addchild.step.subjects", "addchild.step.plan",
   "addchild.step.payment", "addchild.step.done",
-  "addchild.next", "addchild.back",
+  "addchild.next", "addchild.back", "addchild.createChild",
   // subjects + plan (reused subscribe keys)
   "sub.subjects", "sub.noSubjectsAvailable", "sub.interval",
   "pricing.weekly", "pricing.monthly", "pricing.yearly",
+  // R11 plan cards — subscription-page parity copy. The popular-badge chain
+  // mirrors the Subscription page; missing keys resolve to themselves and the
+  // wizard's pick() skips them.
+  "pricing2.badge.popular", "pricing2.popular", "pricing2.mostPopular",
+  "billing.popular",
+  "billing.perWeek", "billing.perMonth", "billing.perYear",
+  "pricing.plan.weekly.note", "pricing.plan.monthly.note",
+  "pricing.plan.yearly.note",
   // payment (demo)
   "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",
   "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing", "pay.success",
   "pay.idRevealed", "pay.subtotal", "pay.discount", "pay.total",
   // done
   "parent.child.idNote", "parent.dash.title",
+  // R11 payment modes (giveaway / payments-off)
+  "addchild.giveawayGranted", "gate.paymentsOff",
   // validation-error keys returned by createChild / validateChildInfo:
   "auth.child.err.firstNameRequired", "auth.child.err.lastNameRequired",
   "auth.child.err.passwordTooShort", "auth.child.err.passwordEqualsId",
@@ -39,6 +50,10 @@ export default async function NewChildPage() {
   await requireParent();
   const t = await getT();
   const supabase = await createClient();
+
+  // R11: the payment mode decides which wizard steps exist (server-resolved;
+  // the wizard client only receives the string, never the flags themselves).
+  const { mode: paymentMode } = await getPaymentModeInfo();
 
   // Catalogs: cities (active districts), schools (active), grades.
   const [{ data: cityRows }, { data: schoolRows }, { data: gradeRows }, { data: pricing }] =
@@ -77,16 +92,11 @@ export default async function NewChildPage() {
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
 
+  // R11: .wiz-page centers the whole flow (heading row + wizard share one
+  // centered column) — no inline max-width so the plan-card step gets room.
   return (
-    <section className="prose" style={{ maxWidth: 600 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
+    <section className="prose wiz-page">
+      <div className="wiz-head">
         <h1>{t("parent.child.title")}</h1>
         <Link className="btn-ghost" href="/dashboard">
           {t("parent.dash.title")}
@@ -99,6 +109,7 @@ export default async function NewChildPage() {
         grades={grades}
         subjects={subjects}
         dict={dict}
+        paymentMode={paymentMode}
       />
     </section>
   );

@@ -1,9 +1,8 @@
 "use server";
 
 // Child-app server actions: login (8-digit ID + parent password → Stage-8
-// childLogin), logout, and wallpaper selection (child manages own; RLS-gated).
+// childLogin), logout, and practice/olympiad attempt start + grading.
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { childLogin, childLogout } from "@/lib/auth/childLoginService";
 import { requireChild } from "@/lib/auth/session";
@@ -31,34 +30,6 @@ export async function childLogoutAction(): Promise<void> {
   // R8 fix: after logout the student lands on the public landing page (was
   // /child-login).
   redirect("/");
-}
-
-export async function selectWallpaper(formData: FormData): Promise<void> {
-  const child = await requireChild();
-  const wallpaperId = String(formData.get("wallpaper_id") ?? "");
-  if (!wallpaperId) return;
-  const supabase = await createClient();
-  await supabase
-    .from("child_wallpaper_selections")
-    .upsert(
-      { student_profile_id: child.profileId, wallpaper_id: wallpaperId },
-      { onConflict: "student_profile_id" },
-    );
-  revalidatePath("/child");
-  revalidatePath("/child/profile");
-}
-
-// Reset wallpaper to the theme default: deleting the selection row IS the reset
-// — the arena falls back to the light/dark theme background when none exists.
-export async function resetWallpaper(): Promise<void> {
-  const child = await requireChild();
-  const supabase = await createClient();
-  await supabase
-    .from("child_wallpaper_selections")
-    .delete()
-    .eq("student_profile_id", child.profileId);
-  revalidatePath("/child");
-  revalidatePath("/child/profile");
 }
 
 // Stage 13 — start a random 25-question practice attempt (server picks the

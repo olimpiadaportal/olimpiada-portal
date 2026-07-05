@@ -2,12 +2,30 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { getLocaleSettings, isFeatureEnabled } from "@/lib/flags";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { ChildProfileDrawer } from "@/components/ChildProfileDrawer";
 import { ParentNavLinks } from "@/components/ProfileDrawer";
+import { GiveawayBanner } from "@/components/GiveawayBanner";
+import { StickerDecorations } from "@/components/StickerDecorations";
+
+// Giveaway-banner strings resolved server-side (GiveawayBanner is a client
+// component and must never touch i18n or the server-only payment-mode module).
+const GVW_KEYS = [
+  "gvw.title",
+  "gvw.sub",
+  "gvw.remaining",
+  "gvw.days",
+  "gvw.hours",
+  "gvw.minutes",
+  "gvw.seconds",
+  "gvw.ended",
+] as const;
 
 // Arena (Claude-Design) shell for the Student/Child app. Dark theme is scoped
 // to the `.arena` root so the parent/public areas and the admin panel are never
-// affected. Logic (auth, wallpaper, logout) is unchanged from the prior shell.
+// affected. Round 11: the wallpaper feature is retired — the arena always uses
+// its normal theme background; character STICKER decorations (owner item,
+// Agent F component) render inside the arena wrapper instead.
 export default async function ChildLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -17,41 +35,11 @@ export default async function ChildLayout({
   const { enabled: enabledLocales } = await getLocaleSettings();
   const supabase = await createClient();
 
-  const { data: sel } = await supabase
-    .from("child_wallpaper_selections")
-    .select("wallpapers(kind, value, media_asset_id, media_assets:media_asset_id(bucket, path))")
-    .eq("student_profile_id", child.profileId)
-    .maybeSingle();
-  const wp = (sel as any)?.wallpapers;
-  const bg = wp?.kind === "solid_color" ? (wp.value as string) : undefined;
-  // Image-kind wallpaper → resolve its public URL for the .arena background.
-  // R7 security: the URL is interpolated into inline CSS url('…'), so encode it
-  // and escape quote/paren breakers — a crafted storage path must not be able
-  // to escape the CSS string context (defense in depth; the catalog is
-  // admin-managed and the child only picks a wallpaper_id).
-  let wpImg: string | undefined;
-  if (wp?.kind === "image") {
-    const m = wp.media_assets;
-    if (m?.bucket && m?.path) {
-      const raw = supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
-      wpImg = encodeURI(raw).replace(
-        /['"()]/g,
-        (c) => `%${c.charCodeAt(0).toString(16)}`,
-      );
-    }
-  }
-
-  // Arena background props: image wallpaper wins, then solid color, else the
-  // theme default (no data-wallpaper → globals.css falls back to var(--bg)).
-  const arenaProps: Record<string, any> = {};
-  if (wpImg) {
-    arenaProps["data-wallpaper"] = "";
-    arenaProps["data-wp-kind"] = "image";
-    arenaProps.style = { ["--wp-img" as any]: `url('${wpImg}')` };
-  } else if (bg) {
-    arenaProps["data-wallpaper"] = "";
-    arenaProps.style = { ["--wp" as any]: bg };
-  }
+  // Round 11: while a giveaway window is active the student arena shows the
+  // celebratory countdown banner at the top of the panel content.
+  const { giveaway } = await getPaymentModeInfo();
+  const gvwStrings: Record<string, string> = {};
+  if (giveaway.active) for (const k of GVW_KEYS) gvwStrings[k] = t(k);
 
   const { data: student } = await supabase
     .from("students")
@@ -125,7 +113,10 @@ export default async function ChildLayout({
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap"
         rel="stylesheet"
       />
-      <div className="arena" {...arenaProps}>
+      <div className="arena">
+        {/* Self-contained async server component (fetches its own selection;
+            renders null when the child has no sticker theme selected). */}
+        <StickerDecorations />
         <header className="pnav">
           <ParentNavLinks items={navItems} />
           <div className="pnav-right">
@@ -153,7 +144,12 @@ export default async function ChildLayout({
             />
           </div>
         </header>
-        <main className="arena-main">{children}</main>
+        <main className="arena-main">
+          {giveaway.active && giveaway.endsAt && (
+            <GiveawayBanner endsAt={giveaway.endsAt} strings={gvwStrings} />
+          )}
+          {children}
+        </main>
       </div>
     </>
   );

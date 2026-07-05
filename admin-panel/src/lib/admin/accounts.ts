@@ -182,6 +182,213 @@ export async function createParent(
 }
 
 // =====================================================================
+// CREATE CHILD FOR A PARENT (Round 11, owner item 7 — admin payment bypass).
+//
+// Mirrors the web-app parent Add-Child flow (childAccountService.createChild):
+//   auth admin.createUser (temp pending-<uuid>@children.invalid email, parent-
+//   chosen password) → atomic create_child_account RPC → OPTIONAL comped access
+//   via admin_grant_child_access (service-role-only RPC: 0-amount ACTIVE
+//   subscription, provider 'admin_grant', allocates the 8-digit login ID) →
+//   canonical synthetic email c<8digits>@children.invalid.
+// Saga: on ANY failure after createUser the auth user is deleted (FK cascades
+// remove the profile/student/credentials/subscription rows) and a generic
+// trilingual error is returned — no raw DB/Auth text ever reaches the client.
+// =====================================================================
+export type CreateChildState =
+  | { error?: string; ok?: boolean; childUniqueId?: string | null }
+  | null;
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ALLOWED_INTERVALS = new Set(["week", "month", "year"]);
+const NAME_MAX = 80;
+const PASSWORD_MAX = 128;
+const SUBJECTS_MAX = 20;
+
+export async function createChildForParent(
+  _prev: CreateChildState,
+  formData: FormData,
+): Promise<CreateChildState> {
+  const ctx = await requireAdmin(); // authorize FIRST — before touching FormData
+  const t = await getT();
+
+  if (!hasServiceRole()) return { error: t("accounts.reset.noServiceKey") };
+
+  // ---- Validate every client-supplied field (server-side, hard) -------------
+  const parentProfileId = f(formData, "parent_profile_id");
+  const firstName = f(formData, "first_name");
+  const lastName = f(formData, "last_name");
+  const password = String(formData.get("password") ?? "");
+  const gradeId = f(formData, "grade_id");
+  const grantAccess = f(formData, "grant_access") === "true";
+
+  if (!UUID_RE.test(parentProfileId)) {
+    return { error: t("accounts.child.create.err.parent") };
+  }
+  if (
+    !firstName ||
+    !lastName ||
+    firstName.length > NAME_MAX ||
+    lastName.length > NAME_MAX
+  ) {
+    return { error: t("accounts.create.err.required") };
+  }
+  if (password.length < 8 || password.length > PASSWORD_MAX) {
+    return { error: t("accounts.create.err.password") };
+  }
+  if (gradeId && !UUID_RE.test(gradeId)) {
+    return { error: t("accounts.child.create.err.invalid") };
+  }
+
+  // Grant fields are validated only when the bypass grant is requested.
+  let interval = "";
+  let subjectIds: string[] = [];
+  let days: number | null = null;
+  if (grantAccess) {
+    interval = f(formData, "interval");
+    if (!ALLOWED_INTERVALS.has(interval)) {
+      return { error: t("accounts.child.create.err.invalid") };
+    }
+    subjectIds = Array.from(
+      new Set(
+        formData
+          .getAll("subject")
+          .map((v) => (typeof v === "string" ? v.trim() : "")),
+      ),
+    ).filter(Boolean);
+    if (
+      subjectIds.length < 1 ||
+      subjectIds.length > SUBJECTS_MAX ||
+      !subjectIds.every((s) => UUID_RE.test(s))
+    ) {
+      return { error: t("accounts.child.create.err.subjects") };
+    }
+    const daysRaw = f(formData, "days");
+    if (daysRaw) {
+      const n = Number(daysRaw);
+      if (!Number.isInteger(n) || n < 1 || n > 730) {
+        return { error: t("accounts.child.create.err.days") };
+      }
+      days = n;
+    }
+  }
+
+  const admin = createAdminClient();
+
+  // The target parent must be a REAL parent (parents row) — this action must
+  // never attach a child to an admin/content-manager/arbitrary profile.
+  const { data: parentRow, error: parentErr } = await admin
+    .from("parents")
+    .select("profile_id")
+    .eq("profile_id", parentProfileId)
+    .maybeSingle();
+  if (parentErr) {
+    console.error("[admin] parent lookup failed", parentErr.message);
+    return { error: t("err.server") };
+  }
+  if (!parentRow) return { error: t("accounts.child.create.err.parent") };
+
+  // ---- 1) Auth user (temporary pending email, parent-chosen password) -------
+  const { data: created, error: createErr } = await admin.auth.admin.createUser({
+    email: `pending-${crypto.randomUUID()}@children.invalid`,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      account_type: "child",
+      created_by_parent_profile_id: parentProfileId,
+    },
+  });
+  if (createErr || !created?.user) {
+    console.error("[admin] child auth create failed", createErr?.message);
+    return { error: t("accounts.child.create.err.failed") };
+  }
+  const authUserId = created.user.id;
+
+  try {
+    // ---- 2) Atomic DB provisioning (student + credentials + parent link) ----
+    const { data: rows, error: rpcErr } = await admin.rpc(
+      "create_child_account",
+      {
+        p_parent_profile_id: parentProfileId,
+        p_auth_user_id: authUserId,
+        p_first_name: firstName,
+        p_last_name: lastName,
+        p_city: null,
+        p_school_name: null,
+        p_class_grade: null,
+        p_grade_id: gradeId || null,
+        p_district_id: null,
+        p_school_id: null,
+      },
+    );
+    if (rpcErr) throw new Error(rpcErr.message);
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    const studentProfileId: string | undefined = row?.new_student_profile_id;
+    if (!studentProfileId) throw new Error("provisioning returned no student id");
+
+    let childUniqueId: string | null = null;
+    let subscriptionId: string | null = null;
+
+    if (grantAccess) {
+      // ---- 3) Comped access (0-amount ACTIVE subscription + login ID) -------
+      const { data: grantData, error: grantErr } = await admin.rpc(
+        "admin_grant_child_access",
+        {
+          p_student_profile_id: studentProfileId,
+          p_interval: interval,
+          p_subject_ids: subjectIds,
+          p_days: days,
+        },
+      );
+      if (grantErr) throw new Error(grantErr.message);
+      const grant = (grantData ?? {}) as {
+        subscription_id?: string;
+        new_child_unique_id?: string;
+      };
+      childUniqueId = grant.new_child_unique_id ?? null;
+      subscriptionId = grant.subscription_id ?? null;
+      if (!childUniqueId) throw new Error("grant returned no child id");
+
+      // ---- 4) Canonical synthetic login email (c<8digits>@children.invalid) —
+      // same updateUserById call as web-app applyAllocatedChildEmail; without it
+      // the child could never log in, so a failure here aborts the whole saga.
+      const { error: emailErr } = await admin.auth.admin.updateUserById(
+        authUserId,
+        { email: `c${childUniqueId}@children.invalid` },
+      );
+      if (emailErr) throw new Error(emailErr.message);
+    }
+
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.child.create",
+      targetTable: "students",
+      targetId: studentProfileId,
+      metadata: { parentProfileId },
+    });
+    if (grantAccess) {
+      await writeAuditLog({
+        actorProfileId: ctx.profileId,
+        action: "admin.child.access_grant",
+        targetTable: "child_subscriptions",
+        targetId: subscriptionId,
+        metadata: { interval, subjects: subjectIds.length, days },
+        severity: "warning",
+      });
+    }
+
+    revalidatePath("/accounts");
+    return { ok: true, childUniqueId };
+  } catch (e) {
+    // Saga cleanup: remove the orphaned auth user (cascades every DB row the
+    // flow created). Never surface raw DB/Auth details to the client.
+    console.error("[admin] child create flow failed", (e as Error).message);
+    await admin.auth.admin.deleteUser(authUserId).catch(() => {});
+    return { error: t("accounts.child.create.err.failed") };
+  }
+}
+
+// =====================================================================
 // UPDATE PARENT — display name + account status (active / suspended).
 // =====================================================================
 export type UpdateParentState = { error?: string; ok?: boolean } | null;

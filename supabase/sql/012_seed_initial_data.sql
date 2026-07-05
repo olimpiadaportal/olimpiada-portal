@@ -582,7 +582,11 @@ insert into public.system_settings (key, value_json) values
   ('social.facebook',               '""'::jsonb),
   ('social.instagram',              '""'::jsonb),
   ('social.youtube',                '""'::jsonb),
-  ('social.tiktok',                 '""'::jsonb)
+  ('social.tiktok',                 '""'::jsonb),
+  -- Round 11 (migration 025): giveaway window. duration_days is admin-editable;
+  -- started_at is stamped by the exclusivity trigger when the flag flips ON.
+  ('giveaway.duration_days',        '7'::jsonb),
+  ('giveaway.started_at',           '""'::jsonb)
 on conflict (key) do nothing;
 
 -- -----------------------------------------------------------------------------
@@ -596,7 +600,11 @@ insert into public.feature_flags (key, enabled) values
   ('notifications_email', false),
   ('launch_promo',    true),
   ('news_public',     true),
-  ('olympiad_module', true)
+  ('olympiad_module', true),
+  -- Round 11 (migration 025): payment modes. At most ONE of payments /
+  -- demo_payments / giveaway_period may be enabled (DB trigger in 011).
+  ('demo_payments',   false),
+  ('giveaway_period', false)
 on conflict (key) do nothing;
 
 -- =============================================================================

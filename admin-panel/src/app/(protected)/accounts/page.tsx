@@ -3,6 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { hasServiceRole } from "@/lib/supabase/admin";
 import { ChildPasswordReset } from "@/components/ChildPasswordReset";
 import { AccountCreateForm } from "@/components/AccountCreateForm";
+import {
+  CreateChildForm,
+  type GradeOption,
+  type ParentOption,
+  type SubjectOption,
+} from "@/components/CreateChildForm";
 import { AccountEditForm } from "@/components/AccountEditForm";
 import { AccountDeleteButton } from "@/components/AccountDeleteButton";
 import { getT } from "@/i18n/server";
@@ -113,6 +119,53 @@ export default async function AccountsPage({
     childrenByParent.set(pid, list);
   }
 
+  // ---- Create-child form data (Round 11, admin payment bypass) --------------
+  // The parent PICKER needs the FULL parent list (independent of the page's
+  // search filter). Grades feed the optional grade select; subjects are limited
+  // to those with ACTIVE pricing per interval (mirrors the grant RPC's check).
+  let childParents: ParentOption[] = [];
+  let childGrades: GradeOption[] = [];
+  let childSubjects: SubjectOption[] = [];
+  if (serviceReady) {
+    const [allParentsRes, gradesRes, pricingRes] = await Promise.all([
+      parentProfileIds.length
+        ? supabase
+            .from("profiles")
+            .select("id, display_name, email")
+            .in("id", parentProfileIds)
+            .order("display_name")
+        : Promise.resolve({ data: [] as any[] }),
+      supabase.from("grades").select("id, name, level").order("level"),
+      supabase
+        .from("subjects_pricing")
+        .select("subject_id, interval, subjects(name)")
+        .eq("status", "active"),
+    ]);
+    childParents = ((allParentsRes.data ?? []) as any[]).map((p) => ({
+      id: p.id,
+      label: [p.display_name, p.email].filter(Boolean).join(" — ") || p.id,
+    }));
+    childGrades = ((gradesRes.data ?? []) as any[]).map((g) => ({
+      id: g.id,
+      name: g.name,
+    }));
+    const bySubject = new Map<string, { name: string; intervals: Set<string> }>();
+    for (const r of (pricingRes.data ?? []) as any[]) {
+      const name = r.subjects?.name ?? "—";
+      const entry = bySubject.get(r.subject_id) ?? {
+        name,
+        intervals: new Set<string>(),
+      };
+      entry.intervals.add(r.interval);
+      bySubject.set(r.subject_id, entry);
+    }
+    childSubjects = Array.from(bySubject, ([id, s]) => ({
+      id,
+      name: s.name,
+      intervals: Array.from(s.intervals),
+    })).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   const resetStrings = {
     reset: t("accounts.reset.open"),
     cancel: t("action.cancel"),
@@ -121,6 +174,41 @@ export default async function AccountsPage({
     submit: t("accounts.reset.submit"),
     submitting: t("accounts.reset.submitting"),
     done: t("accounts.reset.done"),
+    showPassword: t("auth.showPassword"),
+    hidePassword: t("auth.hidePassword"),
+  };
+
+  const childCreateStrings = {
+    open: t("accounts.child.create.open"),
+    title: t("accounts.child.create.title"),
+    intro: t("accounts.child.create.intro"),
+    parent: t("accounts.child.create.parent"),
+    parentFilter: t("accounts.child.create.parentFilter"),
+    parentChoose: t("accounts.child.create.parentChoose"),
+    firstName: t("accounts.create.firstName"),
+    lastName: t("accounts.create.lastName"),
+    password: t("accounts.create.password"),
+    passwordHint: t("accounts.create.passwordHint"),
+    grade: t("accounts.child.create.grade"),
+    gradeNone: t("accounts.child.create.gradeNone"),
+    grant: t("accounts.child.create.grant"),
+    grantHelp: t("accounts.child.create.grantHelp"),
+    interval: t("accounts.child.create.interval"),
+    intervalWeek: t("accounts.child.interval.week"),
+    intervalMonth: t("accounts.child.interval.month"),
+    intervalYear: t("accounts.child.interval.year"),
+    subjects: t("accounts.child.create.subjects"),
+    subjectsNone: t("accounts.child.create.subjectsNone"),
+    days: t("accounts.child.create.days"),
+    daysHelp: t("accounts.child.create.daysHelp"),
+    submit: t("accounts.child.create.submit"),
+    submitting: t("accounts.child.create.submitting"),
+    done: t("accounts.child.create.done"),
+    idLabel: t("accounts.child.create.idLabel"),
+    idPending: t("accounts.child.create.idPending"),
+    bypassNote: t("accounts.child.create.bypassNote"),
+    close: t("accounts.child.create.close"),
+    cancel: t("action.cancel"),
     showPassword: t("auth.showPassword"),
     hidePassword: t("auth.hidePassword"),
   };
@@ -196,6 +284,14 @@ export default async function AccountsPage({
       {serviceReady && (
         <section className="card" style={{ marginBottom: 16 }}>
           <AccountCreateForm strings={createStrings} />
+          <div style={{ marginTop: 12 }}>
+            <CreateChildForm
+              parents={childParents}
+              grades={childGrades}
+              subjects={childSubjects}
+              strings={childCreateStrings}
+            />
+          </div>
         </section>
       )}
 

@@ -4,10 +4,14 @@
 //      subject chips, event date from event_starts_at, detail modal with the
 //      "ask your parent to buy" note). Children can NEVER purchase.
 //   2) "Olimpiadalarım": the existing owned-packages behavior (start attempt).
+// Round 11: during an active GIVEAWAY window every ACTIVE package is playable
+// for free — non-owned ones join the playable list with a small free chip and
+// the planned section is skipped (it would only duplicate those rows).
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
+import { isGiveawayActive } from "@/lib/paymentMode";
 import { startOlympiad } from "@/lib/auth/childActions";
 import {
   OlympiadPlannedCard,
@@ -32,6 +36,9 @@ export default async function ChildOlympiadsPage() {
     );
   }
   const supabase = await createClient();
+  // Round 11: during an active giveaway window every ACTIVE-catalog package is
+  // playable without a purchase (start_olympiad_attempt allows it server-side).
+  const giveawayActive = await isGiveawayActive();
 
   const [{ data: packages }, { data: purchases }] = await Promise.all([
     // Active listing is publicly browsable (RLS); covers resolve via the public
@@ -137,39 +144,68 @@ export default async function ChildOlympiadsPage() {
     );
   };
 
+  // Playable list ("Olimpiadalarım"): owned packages always; during the
+  // giveaway window every non-owned ACTIVE package joins it too, marked with
+  // the small free chip. The planned section is skipped then — its cards would
+  // duplicate the playable rows one panel above.
+  type Playable = { id: string; title: string; free: boolean };
+  const playable: Playable[] = owned.map((p) => ({
+    id: p.olympiad_package_id,
+    title: ownedTitle(p),
+    free: false,
+  }));
+  if (giveawayActive) {
+    for (const p of ((packages ?? []) as any[])) {
+      if (ownedIds.has(p.id)) continue;
+      playable.push({
+        id: p.id,
+        title: pickTr(p.olympiad_package_translations)?.title ?? "—",
+        free: true,
+      });
+    }
+  }
+
   return (
     <section>
-      <p className="arena-eyebrow">{t("oly4.eyebrow")}</p>
+      <p className="arena-eyebrow">
+        {t("oly4.eyebrow")}
+        {giveawayActive && <span className="gvw-chip">{t("gvw.chip")}</span>}
+      </p>
       <h1 style={{ marginBottom: 20 }}>{t("oly4.pageTitle")}</h1>
 
-      <section className="oly4-section">
-        <h2 className="oly4-h">{t("oly4.plannedTitle")}</h2>
-        {planned.length === 0 ? (
-          <div className="arena-panel arena-muted">{t("oly4.none")}</div>
-        ) : (
-          <div className="oly4-grid">
-            {planned.map(({ item }) => (
-              <OlympiadPlannedCard key={item.id} item={item} dict={dict} />
-            ))}
-          </div>
-        )}
-      </section>
+      {!giveawayActive && (
+        <section className="oly4-section">
+          <h2 className="oly4-h">{t("oly4.plannedTitle")}</h2>
+          {planned.length === 0 ? (
+            <div className="arena-panel arena-muted">{t("oly4.none")}</div>
+          ) : (
+            <div className="oly4-grid">
+              {planned.map(({ item }) => (
+                <OlympiadPlannedCard key={item.id} item={item} dict={dict} />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="oly4-section">
         <h2 className="oly4-h">{t("oly4.mineTitle")}</h2>
-        {owned.length === 0 ? (
+        {playable.length === 0 ? (
           <div className="arena-panel arena-muted">{t("oly3.childNone")}</div>
         ) : (
           <div className="arena-panel">
-            {owned.map((p) => (
-              <div className="arena-round" key={p.olympiad_package_id}>
+            {playable.map((p) => (
+              <div className="arena-round" key={p.id}>
                 <span className="arena-round-icon">★</span>
                 <div className="arena-round-body">
-                  <div className="arena-round-title">{ownedTitle(p)}</div>
+                  <div className="arena-round-title">
+                    {p.title}
+                    {p.free && <span className="gvw-chip">{t("gvw.chip")}</span>}
+                  </div>
                   <div className="arena-round-meta">25 {t("arena.questionsShort")}</div>
                 </div>
                 <form action={startOlympiad}>
-                  <input type="hidden" name="package_id" value={p.olympiad_package_id} />
+                  <input type="hidden" name="package_id" value={p.id} />
                   <button className="arena-btn arena-btn-sm" type="submit">
                     {t("oly3.start")}
                   </button>

@@ -52,6 +52,28 @@ alter table public.wallpapers drop constraint if exists fk_wallpapers_media;
 alter table public.wallpapers add constraint fk_wallpapers_media
   foreign key (media_asset_id) references public.media_assets (id) on delete set null;
 
+-- sticker_images (003) -> media_assets (008) + sticker_themes.created_by ->
+-- profiles (Round 11, migration 026). Guarded by RELATION-PAIR existence (not
+-- constraint name): migration 026 created these inline on dev with the default
+-- names, and a name-keyed drop+add here would produce a DUPLICATE FK — the
+-- exact PGRST201 embed-ambiguity bug fixed in Round 9 (check #30 class).
+do $$ begin
+  if not exists (select 1 from pg_constraint
+                  where contype = 'f'
+                    and conrelid = 'public.sticker_images'::regclass
+                    and confrelid = 'public.media_assets'::regclass) then
+    alter table public.sticker_images add constraint fk_sticker_images_media
+      foreign key (media_asset_id) references public.media_assets (id) on delete restrict;
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where contype = 'f'
+                    and conrelid = 'public.sticker_themes'::regclass
+                    and confrelid = 'public.profiles'::regclass) then
+    alter table public.sticker_themes add constraint fk_sticker_themes_created_by
+      foreign key (created_by) references public.profiles (id) on delete set null;
+  end if;
+end $$;
+
 -- -----------------------------------------------------------------------------
 -- Indexes (foreign-key lookups, status filters, search).
 -- -----------------------------------------------------------------------------
@@ -288,6 +310,65 @@ create trigger trg_set_updated_at before update on public.child_credentials
 drop trigger if exists trg_set_updated_at on public.wallpapers;
 create trigger trg_set_updated_at before update on public.wallpapers
   for each row execute function public.set_updated_at();
+drop trigger if exists trg_set_updated_at on public.sticker_themes;
+create trigger trg_set_updated_at before update on public.sticker_themes
+  for each row execute function public.set_updated_at();
+
+-- -----------------------------------------------------------------------------
+-- Character Sticker guard triggers (Round 11, migration 026; threshold raised
+-- 5 -> 6 in migration 028): a theme may be ENABLED only with >= 6 images; an
+-- enabled theme may not drop below 6. The child layer shows EXACTLY 6 unique
+-- stickers (3 per side), so 6 distinct images are guaranteed. Business
+-- invariants live in the DB, not only the admin UI.
+-- -----------------------------------------------------------------------------
+create or replace function public.fn_sticker_theme_enable_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_count int;
+begin
+  if new.is_enabled and not coalesce(old.is_enabled, false) then
+    select count(*) into v_count from public.sticker_images where theme_id = new.id;
+    if v_count < 6 then
+      raise exception 'sticker theme needs at least 6 images to be enabled (has %)', v_count
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_sticker_theme_enable_guard on public.sticker_themes;
+create trigger trg_sticker_theme_enable_guard
+  before update of is_enabled on public.sticker_themes
+  for each row execute function public.fn_sticker_theme_enable_guard();
+
+create or replace function public.fn_sticker_image_delete_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_enabled boolean; v_count int;
+begin
+  select is_enabled into v_enabled from public.sticker_themes where id = old.theme_id;
+  if coalesce(v_enabled, false) then
+    select count(*) into v_count from public.sticker_images where theme_id = old.theme_id;
+    if v_count - 1 < 6 then
+      raise exception 'an enabled sticker theme must keep at least 6 images — disable the theme first'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_sticker_image_delete_guard on public.sticker_images;
+create trigger trg_sticker_image_delete_guard
+  before delete on public.sticker_images
+  for each row execute function public.fn_sticker_image_delete_guard();
 
 -- -----------------------------------------------------------------------------
 -- Child-based subscriptions / subject pricing (Stage 7, increment 2).
@@ -1108,6 +1189,237 @@ revoke all on function public.remove_subscription_subject(uuid, uuid) from publi
 grant execute on function public.remove_subscription_subject(uuid, uuid) to service_role;
 
 -- -----------------------------------------------------------------------------
+-- Round 11 (migrations 2026_07_04_025 + 027): payment-mode exclusivity +
+-- free-access grants. Three payment modes exist as feature flags — payments
+-- (real/automatic), demo_payments, giveaway_period — and the DB guarantees at
+-- most ONE is enabled.
+-- -----------------------------------------------------------------------------
+
+-- is_giveaway_active() — single DB-side source of truth for the free window
+-- (used by start_practice_attempt / start_olympiad_attempt guards above).
+-- SECURITY DEFINER because feature_flags / system_settings are admin-only under
+-- RLS while this must be evaluable from child-session RPCs. Exception-safe: any
+-- malformed setting means "not active" (a config hiccup must never open or
+-- extend a free-access window). An elapsed window is INACTIVE even while the
+-- flag is still on — expiry needs no job.
+create or replace function public.is_giveaway_active()
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_enabled boolean;
+  v_started timestamptz;
+  v_days    int;
+begin
+  select enabled into v_enabled from public.feature_flags where key = 'giveaway_period';
+  if not coalesce(v_enabled, false) then return false; end if;
+
+  begin
+    select nullif(value_json #>> '{}', '')::timestamptz into v_started
+    from public.system_settings where key = 'giveaway.started_at';
+    select floor((value_json #>> '{}')::numeric)::int into v_days
+    from public.system_settings where key = 'giveaway.duration_days';
+  exception when others then
+    return false;
+  end;
+
+  if v_started is null or coalesce(v_days, 0) < 1 then return false; end if;
+  return now() < v_started + make_interval(days => v_days);
+end;
+$$;
+
+comment on function public.is_giveaway_active() is
+  'True while the admin giveaway window (giveaway_period flag + giveaway.started_at + giveaway.duration_days) is running. Elapsed window = false even if the flag is still on.';
+
+revoke all on function public.is_giveaway_active() from public, anon, authenticated;
+grant execute on function public.is_giveaway_active() to service_role;
+
+-- Enabling any one of the trio disables the other two; enabling giveaway_period
+-- (re)stamps system_settings 'giveaway.started_at' so the countdown restarts.
+-- SECURITY DEFINER so the cross-row/cross-table writes succeed for any
+-- authorized caller (admin session under RLS, or service role). The inner
+-- UPDATE sets enabled=false, which does not re-satisfy the trigger's WHEN
+-- clause — no recursion. An idempotent re-save of an already-enabled flag is
+-- ignored (no giveaway clock restart).
+create or replace function public.fn_payment_mode_exclusivity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'UPDATE' and old.enabled = true then
+    return new;
+  end if;
+
+  update public.feature_flags
+     set enabled = false, updated_at = now()
+   where key in ('payments', 'demo_payments', 'giveaway_period')
+     and key <> new.key
+     and enabled;
+
+  if new.key = 'giveaway_period' then
+    update public.system_settings
+       set value_json = to_jsonb(now()), updated_at = now()
+     where key = 'giveaway.started_at';
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.fn_payment_mode_exclusivity() is
+  'DB-layer guarantee that payments / demo_payments / giveaway_period are never enabled together; stamps giveaway.started_at when the giveaway flips on.';
+
+drop trigger if exists trg_payment_mode_exclusivity on public.feature_flags;
+create trigger trg_payment_mode_exclusivity
+  after insert or update of enabled on public.feature_flags
+  for each row
+  when (new.enabled = true and new.key in ('payments', 'demo_payments', 'giveaway_period'))
+  execute function public.fn_payment_mode_exclusivity();
+
+-- Allocate the deferred 8-digit login ID WITHOUT a subscription (giveaway
+-- add-child path — access during the giveaway comes from the server-side
+-- giveaway override, not from a subscription row, so it auto-reverts when the
+-- window ends). Mirrors the allocation block inside create_child_subscription.
+create or replace function public.activate_child_login_id(
+  p_student_profile_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner uuid;
+  v_child text;
+  v_auth  uuid;
+begin
+  select created_by_parent_profile_id, child_unique_id
+    into v_owner, v_child
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then
+    raise exception 'activate_login_id: child has no owning parent';
+  end if;
+
+  if v_child is null then
+    v_child := public.allocate_child_unique_id(p_student_profile_id);
+    update public.child_credentials
+       set child_unique_id = v_child, updated_at = now()
+     where student_profile_id = p_student_profile_id;
+  end if;
+
+  select auth_user_id into v_auth
+  from public.child_credentials where student_profile_id = p_student_profile_id;
+
+  return jsonb_build_object('new_child_unique_id', v_child, 'auth_user_id', v_auth);
+end;
+$$;
+
+comment on function public.activate_child_login_id(uuid) is
+  'Allocate the deferred 8-digit child login ID without a subscription (giveaway add-child path). service_role EXECUTE only; caller authorizes parent ownership first.';
+
+revoke all on function public.activate_child_login_id(uuid) from public, anon, authenticated;
+grant execute on function public.activate_child_login_id(uuid) to service_role;
+
+-- Administrator payment bypass: comped ACTIVE subscription (all amounts 0 —
+-- nothing was charged; subject pricing is validated to exist so granted
+-- subjects are real), provider 'admin_grant', period now → now + p_days
+-- (default week 7 / month 30 / year 365, capped 1..730). Allocates the 8-digit
+-- login ID exactly like create_child_subscription; NO sibling-discount row.
+-- service_role EXECUTE only — the admin-panel action runs requireAdmin() first
+-- and writes the audit row.
+create or replace function public.admin_grant_child_access(
+  p_student_profile_id uuid,
+  p_interval           public.plan_interval,
+  p_subject_ids        uuid[],
+  p_days               int default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner   uuid;
+  v_days    int;
+  v_missing int;
+  v_sub     uuid;
+  v_sid     uuid;
+  v_ids     jsonb;
+begin
+  if p_subject_ids is null or array_length(p_subject_ids, 1) is null then
+    raise exception 'admin_grant: no subjects selected';
+  end if;
+
+  select created_by_parent_profile_id into v_owner
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then
+    raise exception 'admin_grant: child has no owning parent';
+  end if;
+
+  v_days := coalesce(p_days,
+                     case p_interval when 'week' then 7 when 'month' then 30 else 365 end);
+  if v_days < 1 or v_days > 730 then
+    raise exception 'admin_grant: days out of range (1..730)';
+  end if;
+
+  select count(*) into v_missing
+  from unnest(p_subject_ids) s(sid)
+  where not exists (
+    select 1 from public.subjects_pricing sp
+    where sp.subject_id = s.sid and sp.interval = p_interval and sp.status = 'active'
+  );
+  if v_missing > 0 then
+    raise exception 'admin_grant: missing active pricing for % subject(s)', v_missing;
+  end if;
+
+  if exists (
+    select 1 from public.child_subscriptions
+    where student_profile_id = p_student_profile_id
+      and status in ('trialing', 'active', 'past_due')
+  ) then
+    raise exception 'admin_grant: child already has a live subscription';
+  end if;
+
+  insert into public.child_subscriptions
+    (student_profile_id, owner_parent_profile_id, interval, status,
+     current_period_start, current_period_end,
+     base_amount, sibling_discount_percent, discount_amount, total_amount,
+     currency, provider)
+  values
+    (p_student_profile_id, v_owner, p_interval, 'active',
+     now(), now() + (v_days || ' days')::interval,
+     0, 0, 0, 0, 'AZN', 'admin_grant')
+  returning id into v_sub;
+
+  foreach v_sid in array p_subject_ids loop
+    insert into public.subscription_subjects (child_subscription_id, subject_id)
+    values (v_sub, v_sid) on conflict do nothing;
+  end loop;
+
+  v_ids := public.activate_child_login_id(p_student_profile_id);
+
+  update public.students set access_status = 'active'
+   where profile_id = p_student_profile_id;
+
+  return jsonb_build_object(
+    'subscription_id', v_sub, 'status', 'active', 'days', v_days,
+    'current_period_end', to_jsonb(now() + (v_days || ' days')::interval))
+    || v_ids;
+end;
+$$;
+
+comment on function public.admin_grant_child_access(uuid, public.plan_interval, uuid[], int) is
+  'Administrator payment bypass: comped ACTIVE child subscription (amounts 0, provider admin_grant), allocates the 8-digit login ID, flips access_status to active. service_role EXECUTE only; admin-panel action guards + audits.';
+
+revoke all on function public.admin_grant_child_access(uuid, public.plan_interval, uuid[], int) from public, anon, authenticated;
+grant execute on function public.admin_grant_child_access(uuid, public.plan_interval, uuid[], int) to service_role;
+
+-- -----------------------------------------------------------------------------
 -- Test & daily task engine (Stage 13, increment 1).
 -- Backported from migrations/2026_06_28_013_test_engine.sql. Server-side RANDOM
 -- question selection + attempts + auto-grading. Users never choose difficulty and
@@ -1138,7 +1450,10 @@ begin
   select access_status, grade_id into v_access, v_grade
   from public.students where profile_id = v_student;
   if v_access is null then raise exception 'start_practice: not a student'; end if;
-  if v_access not in ('trialing', 'active') then
+  -- Round 11 (migration 027): an active GIVEAWAY window grants access without a
+  -- subscription (is_giveaway_active() is defined in the Round-11 section below;
+  -- plpgsql resolves it at call time, so definition order is irrelevant).
+  if v_access not in ('trialing', 'active') and not public.is_giveaway_active() then
     raise exception 'start_practice: no active access' using errcode = 'check_violation';
   end if;
 
@@ -1388,7 +1703,15 @@ begin
     select 1 from public.olympiad_purchases
     where student_profile_id = v_student and olympiad_package_id = p_package_id and status = 'active'
   ) then
-    raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
+    -- Round 11 (migration 027): an active GIVEAWAY window opens ACTIVE-catalog
+    -- packages for free. Archived packages stay purchaser-only (lifetime access);
+    -- the giveaway never mints purchase rows.
+    if not (public.is_giveaway_active() and exists (
+      select 1 from public.olympiad_packages
+      where id = p_package_id and catalog_status = 'active'
+    )) then
+      raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
+    end if;
   end if;
 
   select subject_id, questions_per_attempt into v_subject, v_n_per

@@ -1,8 +1,17 @@
 import Link from "next/link";
 import { getLocale, getT } from "@/i18n/server";
 import { getLocaleSettings, getPublicSiteSettings } from "@/lib/flags";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageDropdown } from "@/components/LanguageDropdown";
+import { GiveawayBanner } from "@/components/GiveawayBanner";
+
+// Giveaway promo strings surfaced to logged-OUT visitors on the public site
+// (item 1b — lure new customers). Same keys as the in-app banner.
+const GVW_KEYS = [
+  "gvw.title", "gvw.sub", "gvw.remaining",
+  "gvw.days", "gvw.hours", "gvw.minutes", "gvw.seconds", "gvw.ended",
+] as const;
 
 // Public top nav: Pricing, About, FAQ, Contact, News.
 const NAV: [string, string][] = [
@@ -102,6 +111,14 @@ export default async function PublicLayout({
       ["TikTok", social.tiktok],
     ] as const
   ).filter(([, url]) => Boolean(url));
+
+  // Public giveaway promo (item 1b): show the live countdown to visitors while
+  // an admin giveaway window is active. Resolved server-side (never client
+  // state); the same celebratory banner the in-app panels use.
+  const { giveaway } = await getPaymentModeInfo();
+  const gvwStrings: Record<string, string> = {};
+  if (giveaway.active) for (const k of GVW_KEYS) gvwStrings[k] = t(k);
+
   const year = new Date().getFullYear();
   return (
     <>
@@ -130,7 +147,12 @@ export default async function PublicLayout({
         </div>
       </header>
 
-      <main className="site-main">{children}</main>
+      <main className="site-main">
+        {giveaway.active && giveaway.endsAt && (
+          <GiveawayBanner endsAt={giveaway.endsAt} strings={gvwStrings} />
+        )}
+        {children}
+      </main>
 
       <footer className="site-foot">
         <div className="site-foot-inner">

@@ -3,8 +3,10 @@
 import { useActionState, useState } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
 import { ChildAvatarUploader } from "@/components/ChildAvatarUploader";
+import { ProfileNameEditor } from "@/components/ProfileNameEditor";
 import {
   childChangeOwnPassword,
+  childUpdateOwnName,
   type ChildProfileState,
 } from "@/lib/auth/childProfileActions";
 
@@ -17,12 +19,16 @@ import {
 // overrides so it reads well inside the dark student shell.
 export function ChildProfile({
   name,
+  firstName,
+  lastName,
   uniqueId,
   initial,
   avatarUrl,
   dict,
 }: {
   name: string;
+  firstName: string;
+  lastName: string;
   uniqueId: string;
   initial: string;
   avatarUrl: string | null;
@@ -58,6 +64,30 @@ export function ChildProfile({
           <span className="prof2-hint">{tt("prof2.idHint")}</span>
         </div>
         <ChildAvatarUploader hasAvatar={avatarUrl !== null} dict={dict} />
+      </section>
+
+      {/* Account information: editable name (first + last). */}
+      <section className="prof2-card" aria-label={tt("prof2.accountInfo")}>
+        <h2 className="prof2-sec-title">{tt("prof2.accountInfo")}</h2>
+        <div className="prof2-rows">
+          <ProfileNameEditor
+            mode="split"
+            current={name}
+            initialFirst={firstName}
+            initialLast={lastName}
+            action={childUpdateOwnName}
+            labels={{
+              valueLabel: tt("prof2.name"),
+              edit: tt("profile.editName"),
+              save: tt("profile.save"),
+              saving: tt("profile.saving"),
+              cancel: tt("profile.cancel"),
+              fullName: tt("profile.fullName"),
+              firstName: tt("profile.firstNameLabel"),
+              lastName: tt("profile.lastNameLabel"),
+            }}
+          />
+        </div>
       </section>
 
       {/* Security: change password (same childChangeOwnPassword action). */}

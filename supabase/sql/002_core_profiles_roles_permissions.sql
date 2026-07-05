@@ -34,7 +34,8 @@ create table if not exists public.profiles (
   auth_user_id     uuid not null unique references auth.users (id) on delete cascade,
   display_name     text,
   email            citext,
-  phone_optional   text,                      -- optional profile data only; never used for SMS/auth
+  phone_optional   text,                      -- LEGACY, unused by app code (kept non-destructively; superseded by phone)
+  phone            text,                      -- Round 11: parent contact phone, E.164 (+994…); required at parent registration (app-enforced)
   preferred_locale public.content_locale not null default 'az',
   avatar_media_id  uuid,                       -- FK to media_assets added in 011 (deferred)
   status           public.account_status not null default 'pending',
@@ -46,6 +47,16 @@ comment on table public.profiles is
   'Application profile linked 1:1 to a Supabase Auth user. No passwords or binary files are stored here.';
 comment on column public.profiles.phone_optional is
   'Optional contact phone. Profile metadata only. Never used for SMS or authentication (SMS is excluded).';
+
+-- Round 11 (migration 025): E.164 shape guard for the real phone column.
+do $$ begin
+  alter table public.profiles
+    add constraint chk_profiles_phone_e164
+    check (phone is null or phone ~ '^\+[1-9][0-9]{6,14}$');
+exception when duplicate_object then null; end $$;
+
+comment on column public.profiles.phone is
+  'Parent contact phone in E.164 (+<country><number>). Required at parent registration (app-enforced); null for children/admin/legacy rows. Never used for SMS/auth.';
 
 -- -----------------------------------------------------------------------------
 -- roles : role definitions (RBAC). Do not rely on a text role column alone.

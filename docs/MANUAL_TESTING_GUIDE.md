@@ -553,3 +553,107 @@ If anything here doesn't match, tell me the **X#** + what you saw.
 - Settings → Features → Leaderboard OFF → the student "Reytinq" tab disappears and the direct URL shows "ranking is currently unavailable — disabled by an administrator" (trilingual). ON → tab + page return.
 
 If anything here doesn't match, tell me the **Y#** + what you saw.
+
+---
+
+# Round 11 — payment modes, giveaway, phone, stickers, multi-child billing (Z1–Z14)
+
+Test with BOTH apps running (`web-app` :3000, `admin-panel` :3001) against dev. The three payment-mode flags live in Admin → Settings → Features → "Payment mode".
+
+## Z1. Payment-mode exclusivity (Settings → Features)
+- The trio (Automatic payments / Demo Payments / Giveaway Period) sits in its own "Payment mode" card with an exclusivity note.
+- Turn Demo Payments ON → Automatic payments visibly flips OFF after the toggle settles. Turn Giveaway ON → Demo flips OFF. Turn Automatic ON → Giveaway flips OFF. All three can be OFF together.
+- The duration-days input under Giveaway saves integers 1–730 only (try 0 and 9999 → rejected).
+- With Giveaway ON: a read-only line shows the start time and computed end (Asia/Baku); re-saving another flag does NOT restart the giveaway clock.
+
+## Z2. Demo Payments mode (parent)
+- Settings → Demo Payments ON. Parent → Subscription → a child with a plan → "Manage subjects": all subjects show as checkboxes with per-interval prices; active ones carry an "Aktiv" chip; note "price per 1 subject" visible.
+- CHECK an extra subject → Save → a clearly-labeled DEMO payment sheet opens FIRST showing base / sibling discount / total from the server quote. Cancel → nothing changes (subject still locked). Confirm → subject unlocks; dashboard/analytics reflect it.
+- UNCHECK a subject (keep ≥1) → Save applies directly (no payment sheet); price re-computed. The last remaining subject cannot be unchecked.
+
+## Z3. Giveaway Period (parent + child)
+- Settings → Giveaway ON (e.g. 7 days). Both parent panel and student arena show the celebratory countdown banner (days/hours/minutes ticking; gradient; trilingual).
+- Parent: Subscription page shows the free notice + "Pulsuz" chips instead of subscribe CTAs; olympiad buy buttons become "free during giveaway" chips; dashboard child pills read "Pulsuz kampaniya".
+- Add-Child during giveaway: wizard = 2 steps (Info → Done), no plan/payment, the 8-digit ID is revealed immediately with the celebration note.
+- Child: arena unlocked without a subscription; ALL actively-priced subjects appear for practice; active-catalog olympiads playable with a free chip; a practice round completes end-to-end.
+- Expiry: set duration to 1 day, then (dev-only) backdate `giveaway.started_at` by 2 days via SQL → banner disappears, child without a subscription is locked again, normal payment rules resume. (No job needed — checks are evaluated live.)
+
+## Z4. Payments fully OFF
+- All three flags OFF → subscribe page shows the payments-paused notice; wizard = Info → notice (child created, ID pending); hand-crafted POSTs to subscribe/add-subject fail server-side.
+
+## Z5. Parent registration phone
+- /register shows a country selector (default 🇦🇿 +994, all countries searchable in the list) + required number field. Submitting empty/short/letters → blocked with the trilingual error. Valid number → account created; Profile shows the phone read-only. DB stores E.164 (`+994501234567`).
+
+## Z6. Add-Child wizard visuals
+- The whole wizard is horizontally centered on desktop/tablet/mobile.
+- The password eye sits vertically centered in the input (also check /login and /register — the fix is global for `.form` fields).
+- Step 3 shows three plan CARDS (Weekly/Monthly/Yearly) with a "Most Popular" badge on Monthly, selected-state highlight, live totals; selection updates the quote below.
+
+## Z7. Admin create-child with payment bypass (Accounts)
+- Admin → Accounts → "Create child": pick a parent (filter box works), names + password + grade; "Grant free access" ON reveals interval + subjects + optional days. Create → the 8-digit ID is shown; the child appears under that parent with ACTIVE access and the granted subjects; NO payment anywhere. Audit log shows "Child account created" + "Free access granted to child".
+- With grant OFF → child is created ID-pending (parent subscribes later).
+- Normal parent flows still require the payment step (bypass is admin-only).
+
+## Z8. Subscription page multi-child
+- Parent with 2+ children: selector tabs at the top; the active child is highlighted; Plans/Billing/Invoices below show ONLY that child's data; switching tabs (and refreshing) keeps the right child; `?child=` with a foreign/invalid id safely falls back to the first child.
+- Buy/manage for child X → child Y's view is unchanged.
+
+## Z9. Analytics subject unlocking
+- For each child, only subjects covered by THAT child's live subscription are selectable; others show a lock + "subscribe to unlock" linking to that child's subscribe page. Hand-editing `?subject=` to a locked subject does not render its data.
+- During giveaway (or for an admin-granted child) the relevant subjects unlock automatically.
+
+## Z10. Sibling discount sanity
+- 2nd child's quote/payment sheet shows −15%, 3rd child −20% (1st child none) — in the wizard, in Manage subjects, and on totals. Amounts always come from the server quote.
+
+## Z11. Character stickers — admin (Stickers replaces Wallpapers)
+- Nav shows "Stickers"; /wallpapers is gone. Create a theme (e.g. "Ben 10") → starts disabled. Upload stickers: only PNG/WebP accepted (try a JPG → rejected before upload); previews render on a transparency-friendly backdrop.
+- **Enabling with <6 images fails** with the friendly "needs at least 6" message; the count hint shows "{n}/6"; at 6+ it enables. Deleting an image that would drop an ENABLED theme below 6 is blocked; disable first → delete works. Theme delete needs the typed theme name. All actions appear in the Audit log.
+
+## Z12. Character stickers — child (exactly 6, side gutters, hover wiggle)
+- Child → Profile: the old background-templates section is GONE; "Personaj stikerləri" shows enabled themes as cards (name + sample collage) plus an "off" card. Selecting persists across refresh/re-login.
+- On a **desktop-width** window (≥1280px), an active theme shows **exactly 6 UNIQUE** stickers — **3 down the left gutter, 3 down the right** — in a **triangular/staggered** pattern (top & bottom hug the outer edge; the middle one sits a bit closer to the content; never a straight vertical line). All 6 are different images; a theme with more than 6 shows a stable random 6.
+- **No overlap ever — including on hover:** stickers stay in the empty side margins and never cover cards/text/buttons/nav (the placement reserves room for the hover scale-up + tilt + shadow, so even a hovered sticker keeps ~15px clear of content). Content clicks are unaffected. Resize narrower → stickers shrink; below ~1280px (tablet/phone widths where the 1100px content fills the screen) they hide entirely — verify **no horizontal scrollbar** appears at any width.
+- **Hover** a sticker (desktop) → quick playful wiggle + slight scale-up, then it settles. With OS "reduce motion" on, the float/wiggle stop (only a tiny hover scale remains).
+- The "off" card removes stickers. Disabling a theme in admin makes its decorations stop rendering for children who had it selected.
+
+## Z13. Landing "What sets us apart"
+- The section spans full width with a centered heading + accent bar; 4 cards desktop / 2 tablet / 1 mobile with generous spacing, subtle shadows, hover lift; same texts/icons as before; both themes look right.
+
+## Z14. Regression sweep
+- Login/child-login/reset flows unchanged; arena background = plain theme (no leftover wallpaper), light + dark both fine; cancel-subscription flow still works during any payment mode.
+
+If anything here doesn't match, tell me the **Z#** + what you saw.
+
+---
+
+# Round 11 — owner fix pass (ZF1–ZF6)
+
+## ZF1. Giveaway countdown — live seconds
+- With a giveaway active (Admin → Settings → Giveaway ON), the countdown banner in BOTH the parent panel and the student arena now shows **days · hours · minutes · seconds** and the seconds tick every second (hours/minutes/seconds are 2-digit padded so nothing jitters). Trilingual unit labels.
+
+## ZF2. Giveaway on the public site
+- While the giveaway is active, open the **landing page while logged out** — the celebratory countdown banner appears at the top (and on other public pages). Turn the giveaway off → it disappears.
+
+## ZF3. Phone country selector (register)
+- On /register the country control is now COMPACT: it shows just the code (e.g. "AZ +994"), no long country name. Click it → a searchable list opens (type "aze" or "994" to filter); pick a country → the trigger updates and focus returns to the number field. Escape / click-outside closes it. Submitting still requires a valid number and stores E.164 (`+994…`).
+
+## ZF4. Demo-payment CVC no longer overflows
+- Add-Child → (demo/real payment mode) → the payment step: the **CVC** box sits fully inside the card next to Expiry on desktop and mobile — no part of it spills past the card edge.
+
+## ZF5. Analytics subject tabs show the child's real plan
+- Parent → Analytics → Detailed progress. For a child with an active subscription, the **Subject** tabs now show that child's REAL subscribed subjects (e.g. İnformatika, Azərbaycan dili) as selectable — matching what "Manage subjects"/subscribe shows. Subjects the child isn't subscribed to appear locked with a "subscribe to unlock" link. Switch children → the subjects update per child. (Previously subjects outside a hardcoded math/science/logic/english set were dropped, so some children showed no subjects at all.)
+
+## ZF6. Stickers a bit bigger
+- On a ≥1280px window with an active sticker theme, the 6 side stickers are noticeably larger than before but still tasteful — and STILL never overlap content (even on hover) and cause no horizontal scroll.
+
+## ZF7. Phone selector alignment + no bleed-through
+- On /register the country code control (`AZ +994`) is the SAME height and top-aligned with the number input. Opening it → the dropdown is fully OPAQUE (the password field / buttons / footer below no longer show through it) and sits above those sections.
+
+## ZF8. Profile avatar is a circle
+- Parent profile and child profile: an uploaded photo renders as a perfect CIRCLE (cropped to fill), never a stretched oval — regardless of the photo's aspect ratio.
+
+## ZF9. Editable full name in both profiles
+- Parent → Profile → Account information → "Name" row has an **Edit** button → shows a full-name field → Save updates it (persists after refresh; the header name updates too).
+- Child → Profile → Account information → **Edit** → First name + Last name fields → Save updates the child's name (persists). A child can only edit their OWN name.
+
+If anything here doesn't match, tell me the **ZF#** + what you saw.

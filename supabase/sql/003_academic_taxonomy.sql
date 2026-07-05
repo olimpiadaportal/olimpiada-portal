@@ -119,6 +119,58 @@ create table if not exists public.child_wallpaper_selections (
   selected_at        timestamptz not null default now()
 );
 
+-- Round 11 (migration 026): wallpapers are RETIRED at the app level — replaced
+-- by the Character Sticker themes below. Tables kept non-destructively (DEPRECATED).
+comment on table public.wallpapers is
+  'DEPRECATED (Round 11): replaced by sticker_themes/sticker_images. App code removed; table kept non-destructively pending explicit owner approval to drop.';
+comment on table public.child_wallpaper_selections is
+  'DEPRECATED (Round 11): replaced by child_sticker_selections. Kept non-destructively pending explicit owner approval to drop.';
+
+-- -----------------------------------------------------------------------------
+-- Character Sticker themes (Round 11, migration 026): admin-managed theme
+-- catalog + per-theme sticker images (metadata only; files live in the
+-- sticker-assets bucket) + the child's selection. A theme may be ENABLED only
+-- with >= 6 images and an enabled theme may not drop below 6 (guard triggers in
+-- 011; threshold raised 5→6 in migration 028). Children may only select ENABLED
+-- themes (RLS in 010).
+-- -----------------------------------------------------------------------------
+create table if not exists public.sticker_themes (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,               -- character/theme display name (proper noun, not localized)
+  is_enabled boolean not null default false,
+  created_by uuid,                        -- FK -> profiles(id) added in 011 (keeps this file profile-independent)
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists uq_sticker_themes_name
+  on public.sticker_themes (lower(name));
+
+comment on table public.sticker_themes is
+  'Child "Character Sticker" themes (admin-managed). A theme may be enabled only with >= 6 sticker images (DB-enforced).';
+
+create table if not exists public.sticker_images (
+  id             uuid primary key default gen_random_uuid(),
+  theme_id       uuid not null references public.sticker_themes (id) on delete cascade,
+  media_asset_id uuid not null,           -- FK -> media_assets(id) added in 011 (008 runs later)
+  order_index    int not null default 0,
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists ix_sticker_images_theme on public.sticker_images (theme_id, order_index);
+
+comment on table public.sticker_images is
+  'Sticker images of a theme — METADATA only (media_assets → sticker-assets bucket). Transparent PNG/WebP enforced at upload (byte-sniffed app-side; bucket mime whitelist).';
+
+create table if not exists public.child_sticker_selections (
+  student_profile_id uuid primary key references public.students (profile_id) on delete cascade,
+  theme_id           uuid not null references public.sticker_themes (id) on delete cascade,
+  selected_at        timestamptz not null default now()
+);
+
+comment on table public.child_sticker_selections is
+  'The child''s chosen sticker theme (1 per child). RLS: child writes own row and may only pick ENABLED themes.';
+
 -- =============================================================================
 -- End of 003_academic_taxonomy.sql
 -- =============================================================================

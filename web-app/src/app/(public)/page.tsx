@@ -100,7 +100,13 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <AboutUs t={t} />
+      {/* usp-values-scope: CSS scope for the redesigned "What sets us apart"
+          (about.values) card grid. The section markup lives in
+          components/AboutUs.tsx; this wrapper only namespaces the usp-
+          overrides in globals.css and carries no styles of its own. */}
+      <div className="usp-values-scope">
+        <AboutUs t={t} />
+      </div>
     </>
   );
 }

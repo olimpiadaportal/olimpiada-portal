@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
-import { isFeatureEnabled } from "@/lib/flags";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { SubscribeForm } from "@/components/SubscribeForm";
 import { ManageSubjects } from "@/components/ManageSubjects";
 
@@ -15,9 +15,15 @@ const KEYS = [
   "parent.child.idLabel", "parent.child.idNote",
   "pricing.weekly", "pricing.monthly", "pricing.yearly", "parent.dash.title",
   // Manage-subjects (existing subscription) keys:
-  "subjedit.title", "subjedit.current", "subjedit.add", "subjedit.remove",
-  "subjedit.addPick", "subjedit.none", "subjedit.minOne",
-  "subjedit.err.addFailed", "subjedit.err.removeFailed",
+  "subjedit.title", "subjedit.minOne",
+  // Round 11 — checkbox editor + demo-payment modal:
+  "pricing.perSubjectNote", "subjedit.activeChip", "subjedit.selectedCount",
+  "subjedit.pendingAdd", "subjedit.pendingRemove", "subjedit.estTotal",
+  "subjedit.save", "subjedit.saving", "subjedit.saved", "subjedit.noChanges",
+  "subjedit.demoModeNote", "dpay.cancel",
+  "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",
+  "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing",
+  "pay.subtotal", "pay.discount", "pay.total",
 ];
 
 export default async function SubscribePage({
@@ -56,7 +62,7 @@ export default async function SubscribePage({
   // the start-trial form (the child already has a plan + an allocated login ID).
   const { data: sub } = await supabase
     .from("child_subscriptions")
-    .select("id, status")
+    .select("id, status, interval")
     .eq("student_profile_id", id)
     .in("status", ["trialing", "active", "past_due"])
     .order("created_at", { ascending: false })
@@ -75,21 +81,31 @@ export default async function SubscribePage({
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
 
+  // Round 11: the page is PAYMENT-MODE aware (server-resolved; the mode string
+  // is passed down — client components never touch lib/paymentMode directly).
+  // The server actions enforce the same gates; these are the friendly notices.
+  const { mode } = await getPaymentModeInfo();
+
   return (
     <section className="prose" style={{ maxWidth: 600 }}>
       <h1>{t("sub.title")}</h1>
       <p className="muted">
         {(child as any).first_name} {(child as any).last_name}
       </p>
-      {!(await isFeatureEnabled("payments")) ? (
-        // payments flag OFF → no new plans and no billing edits (the server
-        // actions enforce the same gate; this is the friendly notice).
+      {mode === "off" ? (
+        // Payments off → no new plans and no billing edits.
         <div className="price-callout">{t("gate.paymentsOff")}</div>
+      ) : mode === "giveaway" ? (
+        // Free giveaway window → paid writes are blocked server-side; show the
+        // friendly "everything is free right now" notice instead of the forms.
+        <div className="price-callout">{t("gate.giveawayFree")}</div>
       ) : sub?.id ? (
         <ManageSubjects
           studentId={id}
           subjects={subjects}
           coveredIds={coveredIds}
+          interval={(sub as any).interval ?? "month"}
+          paymentMode={mode}
           dict={dict}
         />
       ) : (

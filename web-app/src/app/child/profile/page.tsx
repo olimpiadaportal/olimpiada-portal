@@ -1,13 +1,14 @@
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
-import { WallpaperPicker } from "@/components/WallpaperPicker";
+import { StickerThemePicker, type StickerThemeCard } from "@/components/StickerThemePicker";
 import { ChildProfile } from "@/components/ChildProfile";
 
 // Student profile page — Round 8 redesign. Same account-settings design
 // language as the parent /profile page but student-only: identity header
 // (avatar + name + 8-digit ID) and Security (change password) rendered by
-// <ChildProfile/>, plus the "background templates" gallery (WallpaperPicker).
+// <ChildProfile/>, plus the R11 "character stickers" theme gallery
+// (StickerThemePicker — replaces the old background-templates wallpapers).
 // A child can never delete their account and has no email — neither is shown.
 export default async function ChildProfilePage() {
   const child = await requireChild();
@@ -68,31 +69,66 @@ export default async function ChildProfilePage() {
     "prof2.security",
     "prof2.securityHint",
     "prof2.idHint",
+    "prof2.accountInfo",
+    "prof2.name",
+    // R11 fix — editable name
+    "profile.saving",
+    "profile.editName",
+    "profile.fullName",
+    "profile.firstNameLabel",
+    "profile.lastNameLabel",
+    "profile.err.nameRequired",
   ]) {
     profileDict[k] = t(k);
   }
 
-  const { data: wallpapers } = await supabase
-    .from("wallpapers")
-    .select("id, name, kind, value, media_asset_id, media_assets:media_asset_id(bucket, path)")
-    .eq("status", "active")
+  // R11 — Character-sticker themes. RLS already limits authenticated children
+  // to ENABLED themes; the explicit filter just keeps intent obvious.
+  const { data: themeRows } = await supabase
+    .from("sticker_themes")
+    .select("id, name")
+    .eq("is_enabled", true)
     .order("name");
-  // Resolve a public URL for image-kind wallpapers (color/gradient values keep
-  // their CSS `value` string and render as the swatch background directly).
-  const wallpaperList = ((wallpapers ?? []) as any[]).map((w) => {
-    let imageUrl: string | null = null;
-    const m = w.media_assets;
-    if (w.kind === "image" && m?.bucket && m?.path) {
-      imageUrl = supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
+  const themeIds = ((themeRows ?? []) as any[]).map((row) => row.id as string);
+
+  // One query for all themes' images; grouped below into ≤3 collage samples
+  // (by order_index) + a per-theme total count.
+  let imageRows: any[] = [];
+  if (themeIds.length > 0) {
+    const { data } = await supabase
+      .from("sticker_images")
+      .select("theme_id, order_index, media_assets:media_asset_id(bucket, path)")
+      .in("theme_id", themeIds)
+      .order("order_index");
+    imageRows = (data ?? []) as any[];
+  }
+  const byTheme = new Map<string, { samples: string[]; count: number }>();
+  for (const row of imageRows) {
+    const entry = byTheme.get(row.theme_id) ?? { samples: [], count: 0 };
+    entry.count += 1;
+    const m = row.media_assets;
+    if (entry.samples.length < 3 && m?.bucket && m?.path) {
+      entry.samples.push(
+        supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl,
+      );
     }
-    return { id: w.id, name: w.name, kind: w.kind, value: w.value, imageUrl };
-  });
-  const { data: sel } = await supabase
-    .from("child_wallpaper_selections")
-    .select("wallpaper_id")
+    byTheme.set(row.theme_id, entry);
+  }
+  const stickerThemes: StickerThemeCard[] = ((themeRows ?? []) as any[]).map(
+    (row) => ({
+      id: row.id,
+      name: row.name,
+      samples: byTheme.get(row.id)?.samples ?? [],
+      count: byTheme.get(row.id)?.count ?? 0,
+    }),
+  );
+
+  const { data: stickerSel } = await supabase
+    .from("child_sticker_selections")
+    .select("theme_id")
     .eq("student_profile_id", child.profileId)
     .maybeSingle();
-  const currentId = (sel as any)?.wallpaper_id ?? null;
+  const selectedThemeId = (stickerSel as any)?.theme_id ?? null;
 
   return (
     <div className="profile-page">
@@ -103,21 +139,27 @@ export default async function ChildProfilePage() {
       <div className="prof2-stack">
         <ChildProfile
           name={childName}
+          firstName={childFirst}
+          lastName={childLast}
           uniqueId={childId}
           initial={childInitial}
           avatarUrl={avatarUrl}
           dict={profileDict}
         />
 
-        {/* Background templates gallery. */}
-        <section className="prof2-card" aria-label={t("prof2.wallpaperTitle")}>
-          <h2 className="prof2-sec-title">{t("prof2.wallpaperTitle")}</h2>
-          <p className="prof2-sec-hint">{t("child.wallpaperNote")}</p>
-          <WallpaperPicker
-            wallpapers={wallpaperList}
-            currentId={currentId}
-            defaultLabel={t("child.wallpaperDefault")}
-            selectedLabel={t("prof2.selected")}
+        {/* Character-sticker theme gallery. */}
+        <section className="prof2-card" aria-label={t("stk.sectionTitle")}>
+          <h2 className="prof2-sec-title">{t("stk.sectionTitle")}</h2>
+          <p className="prof2-sec-hint">{t("stk.sectionDesc")}</p>
+          <StickerThemePicker
+            themes={stickerThemes}
+            selectedId={selectedThemeId}
+            dict={{
+              "stk.none": t("stk.none"),
+              "stk.empty": t("stk.empty"),
+              "stk.countTitle": t("stk.countTitle"),
+              "prof2.selected": t("prof2.selected"),
+            }}
           />
         </section>
       </div>

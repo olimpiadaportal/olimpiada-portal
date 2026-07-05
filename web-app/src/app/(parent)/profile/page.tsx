@@ -11,12 +11,14 @@ import { ParentProfile } from "@/components/ParentProfile";
 const PROFILE_KEYS = [
   "profile.title", "profile.account", "profile.logout", "profile.deleteAccount",
   "profile.changePassword", "profile.currentPassword", "profile.newPassword",
-  "profile.save", "profile.saved", "profile.cancel", "profile.passwordChanged",
+  "profile.save", "profile.saving", "profile.saved", "profile.cancel", "profile.passwordChanged",
+  "profile.editName", "profile.fullName", "profile.firstNameLabel", "profile.lastNameLabel",
+  "profile.err.nameRequired",
   "profile.avatar", "profile.uploadAvatar", "profile.changeAvatar",
   "profile.removeAvatar", "profile.avatarHint", "profile.noAvatar",
   "profile.err.passwordShort", "profile.err.passwordEqualsId",
   "profile.err.fileType", "profile.err.fileTooLarge", "profile.err.uploadFailed",
-  "profile.err.updateFailed", "account.deleteConfirm",
+  "profile.err.updateFailed", "account.deleteConfirm", "profile.phoneLabel",
   "auth.showPassword", "auth.hidePassword",
   // Round 8 account-settings sections (prof2.*)
   "prof2.accountInfo", "prof2.name", "prof2.email",
@@ -41,18 +43,20 @@ export default async function ParentProfilePage() {
   // still renders with an initials mark.
   let name = "";
   let email = "";
+  let phone: string | null = null;
   let avatarUrl: string | null = null;
   try {
     const { data: profile } = await supabase
       .from("profiles")
       .select(
-        "display_name, email, avatar_media_id, media_assets:avatar_media_id(bucket, path)",
+        "display_name, email, phone, avatar_media_id, media_assets:avatar_media_id(bucket, path)",
       )
       .eq("id", parent.profileId)
       .single();
     if (profile) {
       name = (profile as { display_name?: string }).display_name ?? "";
       email = (profile as { email?: string }).email ?? "";
+      phone = (profile as { phone?: string | null }).phone ?? null;
       const m = (profile as { media_assets?: { bucket?: string; path?: string } }).media_assets;
       if (m?.bucket && m?.path) {
         avatarUrl = supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
@@ -70,7 +74,9 @@ export default async function ParentProfilePage() {
       <h1 className="profile-page-title">{t("profile.title")}</h1>
       <ParentProfile
         name={name || email || t("profile.account")}
+        displayName={name}
         email={email}
+        phone={phone}
         initials={initialsOf(name, email)}
         avatarUrl={avatarUrl}
         dict={profileDict}

@@ -1,17 +1,34 @@
 "use client";
 
-// D2 — Add-Child WIZARD (new-child flow). A single 5-step client wizard that
-// drives the whole "create child → pick subjects → pick plan → demo payment →
+// D2/R11 — Add-Child WIZARD (new-child flow). A single client wizard that
+// drives the whole "create child → pick subjects → pick plan → payment →
 // reveal 8-digit ID" journey WITHOUT navigating away between steps.
 //
-//   1. INFO     — name, city, school (filtered to city), grade, child password.
-//                 "Next" calls the addChild server action (creates the child,
-//                 NO login ID yet) and stores the returned studentProfileId.
-//   2. SUBJECTS — per-subject pricing checkboxes (≥1 required).
-//   3. PLAN     — billing interval + a LIVE server quote (sibling discount).
-//   4. PAYMENT  — a DEMO card form (cosmetic, never charged). "Pay" calls
-//                 subscribeChild, which allocates + reveals the 8-digit ID.
-//   5. DONE     — success + the allocated login ID + a link back to /dashboard.
+// R11: the wizard is PAYMENT-MODE aware. The server page resolves the mode
+// (getPaymentModeInfo, server-only) and passes it down; the wizard only picks
+// which steps exist — every price/discount/grant stays server-authoritative.
+//
+//   mode 'real' | 'demo' — the full 5-step flow:
+//     1. INFO     — name, city, school (filtered to city), grade, password.
+//                   "Next" calls the addChild server action (creates the child,
+//                   NO login ID yet) and stores the returned studentProfileId.
+//     2. SUBJECTS — per-subject pricing checkboxes (≥1 required).
+//     3. PLAN     — modern plan CARDS (Weekly/Monthly/Yearly, subscription-page
+//                   contract classes) + a LIVE server quote (sibling discount).
+//     4. PAYMENT  — the DEMO card form (cosmetic, never charged). "Pay" calls
+//                   subscribeChild, which allocates + reveals the 8-digit ID.
+//                   NOTE: the future real provider replaces the SERVER seam
+//                   inside subscribeChild (webhook-verified charge) — this UI
+//                   step stays as the card-entry surface in both modes.
+//     5. DONE     — success + the allocated login ID + a link to /dashboard.
+//
+//   mode 'giveaway' — TWO steps (Info → Done): after addChild succeeds the
+//     same transition calls activateChildGiveaway (grants free access and
+//     allocates/reveals the 8-digit ID immediately). No subjects/plan/payment.
+//
+//   mode 'off' — TWO steps (Info → Done): the child is still created (ID stays
+//     pending), then a notice step shows gate.paymentsOff + a dashboard link
+//     (the dashboard already renders "ID pending — choose a plan").
 //
 // All amounts/discounts are computed server-side (quoteSubscription /
 // subscribeChild). The demo card fields are NOT validated against any processor.
@@ -23,6 +40,7 @@ import { addChild } from "@/lib/auth/parentService";
 import {
   subscribeChild,
   quoteSubscription,
+  activateChildGiveaway,
   type QuoteResult,
 } from "@/lib/auth/subscriptionService";
 
@@ -31,13 +49,24 @@ type School = { id: string; name: string; district_id: string | null };
 type Grade = { id: string; level: number; name: string };
 type Subj = { id: string; name: string; prices: Record<string, number> };
 
-const STEP_KEYS = [
-  "addchild.step.info",
-  "addchild.step.subjects",
-  "addchild.step.plan",
-  "addchild.step.payment",
-  "addchild.step.done",
-] as const;
+type StepId = "info" | "subjects" | "plan" | "payment" | "done";
+
+const STEP_KEY: Record<StepId, string> = {
+  info: "addchild.step.info",
+  subjects: "addchild.step.subjects",
+  plan: "addchild.step.plan",
+  payment: "addchild.step.payment",
+  done: "addchild.step.done",
+};
+
+// Ordered steps per payment mode. Unknown/missing mode falls back to the full
+// flow ('real') — the server actions still gate every mutation authoritatively.
+const FLOWS: Record<string, StepId[]> = {
+  real: ["info", "subjects", "plan", "payment", "done"],
+  demo: ["info", "subjects", "plan", "payment", "done"],
+  giveaway: ["info", "done"],
+  off: ["info", "done"],
+};
 
 const INTERVAL_KEY: Record<string, string> = {
   week: "pricing.weekly",
@@ -45,23 +74,56 @@ const INTERVAL_KEY: Record<string, string> = {
   year: "pricing.yearly",
 };
 
+// Plan-card copy per interval — reuses the public pricing / billing keys so the
+// wizard cards read exactly like the Subscription page cards.
+const PLAN_META: Record<string, { perKey: string; noteKey: string }> = {
+  week: { perKey: "billing.perWeek", noteKey: "pricing.plan.weekly.note" },
+  month: { perKey: "billing.perMonth", noteKey: "pricing.plan.monthly.note" },
+  year: { perKey: "billing.perYear", noteKey: "pricing.plan.yearly.note" },
+};
+
+const INTERVALS = ["week", "month", "year"] as const;
+
 export function AddChildWizard({
   cities,
   schools,
   grades,
   subjects,
   dict,
+  paymentMode,
 }: {
   cities: City[];
   schools: School[];
   grades: Grade[];
   subjects: Subj[];
   dict: Record<string, string>;
+  /** Server-resolved payment mode: 'real' | 'demo' | 'giveaway' | 'off'. */
+  paymentMode: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
+  // Same fallback chain the Subscription page uses for the popular badge:
+  // skip keys the dict doesn't resolve (getT returns the key itself when a
+  // key is missing, so `v === k` means "not translated").
+  const pick = (...keys: string[]): string => {
+    for (const k of keys) {
+      const v = dict[k];
+      if (v && v !== k) return v;
+    }
+    return "";
+  };
+  const popularBadge = pick(
+    "pricing2.badge.popular",
+    "pricing2.popular",
+    "pricing2.mostPopular",
+    "billing.popular",
+  );
 
-  // step: 0..4 → INFO, SUBJECTS, PLAN, PAYMENT, DONE.
-  const [step, setStep] = useState(0);
+  const flow: StepId[] = FLOWS[paymentMode] ?? FLOWS.real;
+
+  // stepIdx indexes into `flow`; `cur` is the step being rendered. Only steps
+  // present in the mode's flow are ever reachable.
+  const [stepIdx, setStepIdx] = useState(0);
+  const cur: StepId = flow[Math.min(stepIdx, flow.length - 1)];
   const [pending, startTransition] = useTransition();
 
   // Step 1 — info.
@@ -71,7 +133,8 @@ export function AddChildWizard({
   const [schoolId, setSchoolId] = useState("");
   const [gradeId, setGradeId] = useState("");
   const [infoErrors, setInfoErrors] = useState<string[]>([]);
-  // The created child's profile id (returned by addChild; used by subscribeChild).
+  // The created child's profile id (returned by addChild; used by
+  // subscribeChild / activateChildGiveaway).
   const [studentProfileId, setStudentProfileId] = useState<string | null>(null);
 
   // Step 2 — subjects.
@@ -92,13 +155,16 @@ export function AddChildWizard({
 
   // Live, AUTHORITATIVE quote whenever the plan step inputs change.
   useEffect(() => {
-    if (step !== 2 || !studentProfileId) return;
+    if (cur !== "plan" || !studentProfileId) return;
     const ids = Array.from(sel);
     if (ids.length === 0) {
       setQuote(null);
       return;
     }
     let cancelled = false;
+    // Drop a stale quote (fetched for another interval/subject set) so the
+    // selected card falls back to the honest client estimate while refetching.
+    setQuote(null);
     quoteSubscription({ studentId: studentProfileId, interval, subjectIds: ids }).then(
       (q) => {
         if (!cancelled) setQuote(q);
@@ -107,7 +173,7 @@ export function AddChildWizard({
     return () => {
       cancelled = true;
     };
-  }, [step, studentProfileId, sel, interval]);
+  }, [cur, studentProfileId, sel, interval]);
 
   function toggleSubject(id: string) {
     setSel((p) => {
@@ -118,7 +184,8 @@ export function AddChildWizard({
     });
   }
 
-  // STEP 1 → create the child (no login ID yet) and advance.
+  // STEP "info" → create the child (no login ID yet) and advance. In giveaway
+  // mode the SAME transition then grants free access + reveals the 8-digit ID.
   function submitInfo() {
     setInfoErrors([]);
     // Cheap client-side guards mirror the server validation (so we never call the
@@ -150,17 +217,40 @@ export function AddChildWizard({
     fd.set("password", pw);
 
     startTransition(async () => {
-      const res = await addChild(null, fd);
-      if (!res?.ok || !res.studentProfileId) {
-        setInfoErrors(res?.errors ?? ["auth.child.err.createFailed"]);
-        return; // stay on step 1; entered data preserved.
+      // The child may already exist (e.g. a giveaway activation failed on the
+      // previous try, or the parent stepped Back) — never create a duplicate.
+      let sid = studentProfileId;
+      if (!sid) {
+        const res = await addChild(null, fd);
+        if (!res?.ok || !res.studentProfileId) {
+          setInfoErrors(res?.errors ?? ["auth.child.err.createFailed"]);
+          return; // stay on the info step; entered data preserved.
+        }
+        sid = res.studentProfileId;
+        setStudentProfileId(sid);
       }
-      setStudentProfileId(res.studentProfileId);
-      setStep(1);
+
+      if (paymentMode === "giveaway") {
+        // Free-access grant + 8-digit ID allocation, server-verified (the
+        // action re-checks ownership AND that the giveaway window is live).
+        const gfd = new FormData();
+        gfd.set("student_id", sid);
+        const grant = await activateChildGiveaway(null, gfd);
+        if (!grant?.ok) {
+          // Already-translated message; tt() passes unknown strings through.
+          setInfoErrors([grant?.error ?? "sub.err.invalid"]);
+          return; // child exists — "Next" retries the activation only.
+        }
+        setChildUniqueId(grant.childUniqueId ?? null);
+      }
+
+      setStepIdx(1); // → subjects (real/demo) or done (giveaway/off).
     });
   }
 
-  // STEP 4 → confirm the demo payment: allocate the 8-digit ID, then reveal it.
+  // STEP "payment" → confirm the demo payment: allocate the 8-digit ID, then
+  // reveal it. (A real provider replaces the server seam inside subscribeChild —
+  // webhook-verified activation — not this UI step.)
   function confirmPayment() {
     if (!studentProfileId) return;
     setPayError(null);
@@ -176,32 +266,36 @@ export function AddChildWizard({
         return;
       }
       setChildUniqueId(res.result?.childUniqueId ?? null);
-      setStep(4);
+      setStepIdx(flow.length - 1);
     });
   }
 
-  const subtotal = Array.from(sel).reduce(
-    (sum, id) => sum + (subjects.find((s) => s.id === id)?.prices[interval] ?? 0),
-    0,
-  );
+  // Client-side ESTIMATE (subjects × per-interval price) — shown until the
+  // authoritative server quote arrives for the selected interval.
+  const intervalTotal = (iv: string) =>
+    Array.from(sel).reduce(
+      (sum, id) => sum + (subjects.find((s) => s.id === id)?.prices[iv] ?? 0),
+      0,
+    );
+  const subtotal = intervalTotal(interval);
 
   return (
     <div className="wizard">
-      {/* Progress indicator. */}
+      {/* Progress indicator — only the current mode's steps. */}
       <div className="wizard-steps">
-        {STEP_KEYS.map((k, i) => (
+        {flow.map((id, i) => (
           <span
-            key={k}
-            className={`wizard-step${i === step ? " active" : ""}${i < step ? " done" : ""}`}
+            key={id}
+            className={`wizard-step${i === stepIdx ? " active" : ""}${i < stepIdx ? " done" : ""}`}
           >
-            {tt(k)}
+            {tt(STEP_KEY[id])}
           </span>
         ))}
       </div>
 
       <div className="wizard-body">
-        {/* ============================ STEP 1 — INFO ============================ */}
-        {step === 0 && (
+        {/* ============================ STEP — INFO ============================ */}
+        {cur === "info" && (
           <div className="form">
             <label className="field">
               <span className="field-label">{tt("parent.child.first")} *</span>
@@ -301,8 +395,8 @@ export function AddChildWizard({
           </div>
         )}
 
-        {/* ========================= STEP 2 — SUBJECTS ========================= */}
-        {step === 1 && (
+        {/* ========================= STEP — SUBJECTS ========================= */}
+        {cur === "subjects" && (
           <div className="form">
             <span className="field-label">{tt("sub.subjects")}</span>
             {subjects.length === 0 ? (
@@ -333,30 +427,63 @@ export function AddChildWizard({
           </div>
         )}
 
-        {/* =========================== STEP 3 — PLAN =========================== */}
-        {step === 2 && (
-          <div className="form">
+        {/* =========================== STEP — PLAN =========================== */}
+        {/* R11: modern selectable plan CARDS (subscription-page contract classes).
+            Each card = a real <button> (keyboard: Tab + Enter/Space; state via
+            aria-pressed). Prices shown per card are the client estimate for the
+            CURRENT subject selection; the selected card switches to the live
+            server quote (sibling discount included) as soon as it arrives. */}
+        {cur === "plan" && (
+          <div className="wiz-plan-step">
             <span className="field-label">{tt("sub.interval")}</span>
-            <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
-              {["week", "month", "year"].map((iv) => (
-                <label key={iv} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input
-                    type="radio"
-                    name="interval_choice"
-                    value={iv}
-                    checked={interval === iv}
-                    onChange={() => setIntervalState(iv)}
-                  />
-                  {tt(INTERVAL_KEY[iv])}
-                </label>
-              ))}
+            <div
+              className="plans-grid wiz-plans"
+              role="group"
+              aria-label={tt("sub.interval")}
+            >
+              {INTERVALS.map((iv) => {
+                const selected = interval === iv;
+                const isPopular = iv === "month";
+                const amount =
+                  selected && quote && quote.ok ? quote.total : intervalTotal(iv);
+                const currency =
+                  selected && quote && quote.ok ? quote.currency : "AZN";
+                return (
+                  <button
+                    key={iv}
+                    type="button"
+                    className={`plan-card wiz-plan-card${selected ? " featured" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() => setIntervalState(iv)}
+                    disabled={pending}
+                  >
+                    {isPopular && popularBadge !== "" && (
+                      <span className="plan-badge">{popularBadge}</span>
+                    )}
+                    <span
+                      className={`wiz-plan-check${selected ? " on" : ""}`}
+                      aria-hidden="true"
+                    >
+                      ✓
+                    </span>
+                    <span className="plan-name">{tt(INTERVAL_KEY[iv])}</span>
+                    <span className="plan-price">
+                      {amount} {currency}
+                    </span>
+                    <span className="plan-per">{tt(PLAN_META[iv].perKey)}</span>
+                    <span className="plan-desc">{tt(PLAN_META[iv].noteKey)}</span>
+                  </button>
+                );
+              })}
             </div>
 
+            {/* Server-authoritative quote summary (unchanged contract). */}
             <div className="wizard-summary">
               <div className="quote-row">
                 <span className="q-label">{tt("pay.subtotal")}</span>
                 <span>
-                  {quote && quote.ok ? quote.base : subtotal} {quote && quote.ok ? quote.currency : "AZN"}
+                  {quote && quote.ok ? quote.base : subtotal}{" "}
+                  {quote && quote.ok ? quote.currency : "AZN"}
                 </span>
               </div>
               <div className="quote-row">
@@ -378,8 +505,8 @@ export function AddChildWizard({
           </div>
         )}
 
-        {/* ========================= STEP 4 — PAYMENT ========================= */}
-        {step === 3 && (
+        {/* ========================= STEP — PAYMENT ========================= */}
+        {cur === "payment" && (
           <div className="pay-card">
             <span className="pay-demo-badge">{tt("pay.demoBadge")}</span>
             <h2 style={{ margin: "12px 0 4px" }}>{tt("pay.title")}</h2>
@@ -423,43 +550,57 @@ export function AddChildWizard({
           </div>
         )}
 
-        {/* =========================== STEP 5 — DONE =========================== */}
-        {step === 4 && (
-          <div className="card">
-            <p>
-              <strong>{tt("pay.success")}</strong>
-            </p>
-            <p className="muted">{tt("pay.idRevealed")}</p>
-            {childUniqueId && (
-              <p
-                style={{
-                  fontSize: "2rem",
-                  fontWeight: 700,
-                  letterSpacing: "3px",
-                  margin: "12px 0",
-                }}
-              >
-                <code>{childUniqueId}</code>
-              </p>
+        {/* =========================== STEP — DONE =========================== */}
+        {cur === "done" && (
+          <div className="card wiz-done">
+            {paymentMode === "off" ? (
+              // Payments disabled: the child exists, the ID stays pending (the
+              // dashboard shows "ID pending — choose a plan").
+              <>
+                <p>
+                  <strong>{tt("gate.paymentsOff")}</strong>
+                </p>
+                <div className="site-cta wiz-done-cta">
+                  <Link className="btn" href="/dashboard">
+                    {tt("parent.dash.title")}
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <p>
+                  <strong>
+                    {paymentMode === "giveaway"
+                      ? tt("addchild.giveawayGranted")
+                      : tt("pay.success")}
+                  </strong>
+                </p>
+                <p className="muted">{tt("pay.idRevealed")}</p>
+                {childUniqueId && (
+                  <p className="wiz-id">
+                    <code>{childUniqueId}</code>
+                  </p>
+                )}
+                <p className="muted">{tt("parent.child.idNote")}</p>
+                <div className="site-cta wiz-done-cta">
+                  <Link className="btn" href="/dashboard">
+                    {tt("parent.dash.title")}
+                  </Link>
+                </div>
+              </>
             )}
-            <p className="muted">{tt("parent.child.idNote")}</p>
-            <div className="site-cta" style={{ marginTop: 12 }}>
-              <Link className="btn" href="/dashboard">
-                {tt("parent.dash.title")}
-              </Link>
-            </div>
           </div>
         )}
       </div>
 
       {/* Actions (hidden on the final DONE step). */}
-      {step < 4 && (
+      {cur !== "done" && (
         <div className="wizard-actions">
-          {step > 0 && step < 4 ? (
+          {stepIdx > 0 ? (
             <button
               type="button"
               className="btn-ghost"
-              onClick={() => setStep((s) => s - 1)}
+              onClick={() => setStepIdx((s) => Math.max(0, s - 1))}
               disabled={pending}
             >
               {tt("addchild.back")}
@@ -468,32 +609,36 @@ export function AddChildWizard({
             <span />
           )}
 
-          {step === 0 && (
+          {cur === "info" && (
             <button type="button" className="btn" onClick={submitInfo} disabled={pending}>
-              {pending ? tt("parent.child.submitting") : tt("addchild.next")}
+              {pending
+                ? tt("parent.child.submitting")
+                : flow.length === 2
+                  ? tt("addchild.createChild")
+                  : tt("addchild.next")}
             </button>
           )}
-          {step === 1 && (
+          {cur === "subjects" && (
             <button
               type="button"
               className="btn"
-              onClick={() => setStep(2)}
+              onClick={() => setStepIdx(2)}
               disabled={pending || sel.size === 0}
             >
               {tt("addchild.next")}
             </button>
           )}
-          {step === 2 && (
+          {cur === "plan" && (
             <button
               type="button"
               className="btn"
-              onClick={() => setStep(3)}
+              onClick={() => setStepIdx(3)}
               disabled={pending || sel.size === 0}
             >
               {tt("addchild.next")}
             </button>
           )}
-          {step === 3 && (
+          {cur === "payment" && (
             <button
               type="button"
               className="btn"

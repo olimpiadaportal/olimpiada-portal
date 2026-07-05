@@ -58,9 +58,19 @@ const ACTION_KEYS: Record<string, string> = {
   "admin.olympiad.cover_attach": "audit.action.olympiad_cover_attach",
   "admin.olympiad.cover_detach": "audit.action.olympiad_cover_detach",
   "admin.olympiad.archive": "audit.action.olympiad_archive",
-  // wallpapers.ts
+  // wallpapers.ts (module retired R11 — codes kept so HISTORICAL rows render)
   "admin.wallpaper.create": "audit.action.wallpaper_create",
   "admin.wallpaper.status": "audit.action.wallpaper_status",
+  // stickers.ts (R11)
+  "admin.sticker_theme.create": "audit.action.sticker_theme_create",
+  "admin.sticker_theme.rename": "audit.action.sticker_theme_rename",
+  "admin.sticker_theme.toggle": "audit.action.sticker_theme_toggle",
+  "admin.sticker_theme.delete": "audit.action.sticker_theme_delete",
+  "admin.sticker_image.add": "audit.action.sticker_image_add",
+  "admin.sticker_image.delete": "audit.action.sticker_image_delete",
+  // accounts.ts (R11 admin-created child + free-access grant)
+  "admin.child.create": "audit.action.child_create",
+  "admin.child.access_grant": "audit.action.child_access_grant",
   // settings.ts
   "admin.settings.flag_toggle": "audit.action.flag_toggle",
   "admin.settings.update": "audit.action.setting_update",
@@ -91,6 +101,8 @@ const ENTITY_KEYS: Record<string, string> = {
   olympiad_packages: "audit.entity.olympiad_packages",
   olympiad_purchases: "audit.entity.olympiad_purchases",
   wallpapers: "audit.entity.wallpapers",
+  sticker_themes: "audit.entity.sticker_themes",
+  sticker_images: "audit.entity.sticker_images",
   feature_flags: "audit.entity.feature_flags",
   system_settings: "audit.entity.system_settings",
 };

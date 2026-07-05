@@ -44,9 +44,19 @@ on conflict (id) do nothing;
 
 -- wallpaper-assets : predefined child-dashboard wallpaper images (public read,
 -- admin write). Solid-color wallpapers need no file; image wallpapers live here.
+-- DEPRECATED (Round 11): wallpapers retired at the app level; bucket kept
+-- non-destructively (existing objects untouched).
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('wallpaper-assets', 'wallpaper-assets', true, 3145728,
         array['image/png','image/jpeg','image/webp'])
+on conflict (id) do nothing;
+
+-- sticker-assets : Character Sticker theme images (Round 11, migration 026).
+-- Public read, admin write. PNG/WebP ONLY — stickers must support transparency
+-- (no JPEG/GIF; SVG is banned platform-wide as a stored-XSS vector).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('sticker-assets', 'sticker-assets', true, 2097152,
+        array['image/png','image/webp'])
 on conflict (id) do nothing;
 
 -- -----------------------------------------------------------------------------
@@ -120,6 +130,19 @@ create policy "admin manage wallpaper-assets"
   to authenticated
   using (bucket_id = 'wallpaper-assets' and public.is_admin())
   with check (bucket_id = 'wallpaper-assets' and public.is_admin());
+
+-- ===== sticker-assets: public read; admin manages the theme images ===========
+drop policy if exists "public read sticker-assets" on storage.objects;
+create policy "public read sticker-assets"
+  on storage.objects for select
+  using (bucket_id = 'sticker-assets');
+
+drop policy if exists "admin manage sticker-assets" on storage.objects;
+create policy "admin manage sticker-assets"
+  on storage.objects for all
+  to authenticated
+  using (bucket_id = 'sticker-assets' and public.is_admin())
+  with check (bucket_id = 'sticker-assets' and public.is_admin());
 
 -- ===== Private buckets: admin-imports, reports — no public access ============
 -- admin-imports: admins (and content importers) only.

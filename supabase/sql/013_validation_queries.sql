@@ -469,6 +469,87 @@ select '32_baku_schools_seed' as check_name,
                             and indexname = 'uq_schools_district_name')
             then 'PASS' else 'FAIL' end as status;
 
+-- 33) Round 11 (migration 025): payment-mode trio seeded + exclusivity trigger
+--     present. The DB — not the UI — guarantees at most one of payments /
+--     demo_payments / giveaway_period is enabled.
+select '33_payment_mode_exclusivity' as check_name,
+       case when (select count(*) from public.feature_flags
+                   where key in ('payments','demo_payments','giveaway_period')) = 3
+             and (select count(*) from public.feature_flags
+                   where key in ('payments','demo_payments','giveaway_period')
+                     and enabled) <= 1
+             and exists (select 1 from pg_trigger
+                          where tgname = 'trg_payment_mode_exclusivity'
+                            and tgrelid = 'public.feature_flags'::regclass)
+             and (select count(*) from public.system_settings
+                   where key in ('giveaway.duration_days','giveaway.started_at')) = 2
+            then 'PASS' else 'FAIL' end as status;
+
+-- 34) Round 11 (migration 025): free-access grant RPCs exist and are NOT
+--     executable by anon/authenticated (service_role only).
+select '34_admin_grant_rpcs_secure' as check_name,
+       case when has_function_privilege('anon',
+                   'public.admin_grant_child_access(uuid,public.plan_interval,uuid[],int)', 'EXECUTE') = false
+             and has_function_privilege('authenticated',
+                   'public.admin_grant_child_access(uuid,public.plan_interval,uuid[],int)', 'EXECUTE') = false
+             and has_function_privilege('anon',
+                   'public.activate_child_login_id(uuid)', 'EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- 35) Round 11 (migration 025): profiles.phone exists with the E.164 check
+--     constraint (parent registration stores +<country><number> only).
+select '35_profiles_phone_e164' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema = 'public' and table_name = 'profiles'
+                            and column_name = 'phone')
+             and exists (select 1 from pg_constraint
+                          where conname = 'chk_profiles_phone_e164'
+                            and conrelid = 'public.profiles'::regclass)
+            then 'PASS' else 'FAIL' end as status;
+
+-- 36) Round 11 (migration 026; threshold raised to 6 in migration 028):
+--     Character Sticker schema — 3 tables with RLS, both guard triggers
+--     enforcing the min-SIX rule (asserted in the function bodies), EXACTLY ONE
+--     sticker_images→media_assets FK (duplicate-FK/PGRST201 guard, same class as
+--     #30), and the sticker-assets bucket restricted to transparent-capable
+--     types (png/webp only).
+select '36_sticker_themes' as check_name,
+       case when (select count(*) from pg_tables
+                   where schemaname = 'public'
+                     and tablename in ('sticker_themes','sticker_images','child_sticker_selections')) = 3
+             and (select bool_and(rowsecurity) from pg_tables
+                   where schemaname = 'public'
+                     and tablename in ('sticker_themes','sticker_images','child_sticker_selections'))
+             and exists (select 1 from pg_trigger
+                          where tgname = 'trg_sticker_theme_enable_guard'
+                            and tgrelid = 'public.sticker_themes'::regclass)
+             and exists (select 1 from pg_trigger
+                          where tgname = 'trg_sticker_image_delete_guard'
+                            and tgrelid = 'public.sticker_images'::regclass)
+             and pg_get_functiondef('public.fn_sticker_theme_enable_guard()'::regprocedure)
+                 like '%< 6%'
+             and pg_get_functiondef('public.fn_sticker_image_delete_guard()'::regprocedure)
+                 like '%< 6%'
+             and (select count(*) from pg_constraint
+                   where contype = 'f'
+                     and conrelid = 'public.sticker_images'::regclass
+                     and confrelid = 'public.media_assets'::regclass) = 1
+             and exists (select 1 from storage.buckets
+                          where id = 'sticker-assets'
+                            and allowed_mime_types = array['image/png','image/webp'])
+            then 'PASS' else 'FAIL' end as status;
+
+-- 37) Round 11 (migration 027): the attempt engine honors the giveaway window
+--     at the DB layer — is_giveaway_active() exists (anon cannot execute) and
+--     BOTH attempt RPCs reference it in their guards.
+select '37_giveaway_attempt_access' as check_name,
+       case when has_function_privilege('anon', 'public.is_giveaway_active()', 'EXECUTE') = false
+             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+                 like '%is_giveaway_active%'
+             and pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)
+                 like '%is_giveaway_active%'
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

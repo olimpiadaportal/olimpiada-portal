@@ -29,6 +29,29 @@ const ALLOWED_MIME = new Set([
 
 export type ProfileActionState = { ok?: boolean; error?: string } | null;
 
+// Update the logged-in parent's display name (full name). Self-row update via
+// the SSR client — the profiles_update RLS policy allows id = current_profile.
+export async function updateOwnName(
+  _prev: ProfileActionState,
+  formData: FormData,
+): Promise<ProfileActionState> {
+  const parent = await requireParent();
+  const t = await getT();
+  const name = String(formData.get("display_name") ?? "").trim().slice(0, 120);
+  if (!name) return { error: t("profile.err.nameRequired") };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ display_name: name })
+    .eq("id", parent.profileId);
+  if (error) return { error: t("profile.err.updateFailed") };
+
+  revalidatePath("/profile");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
 // Change the logged-in parent's password. Validates min length 8 (matches the
 // parent registration rule) before calling supabase.auth.updateUser.
 export async function updateOwnPassword(

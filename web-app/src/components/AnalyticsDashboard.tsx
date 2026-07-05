@@ -2,9 +2,11 @@
 
 // R9 (T6) — Parent analytics dashboard (client). Renders the per-child,
 // per-subject progress area under the real top-level metric cards: child
-// selector (only when >1 child), subject tabs (active subjects come from the
-// child's live subscription; inactive subjects render disabled with a lock),
-// KPI tiles, hand-rolled inline-SVG charts and two topic tables.
+// selector (only when >1 child), subject tabs (unlocked subjects come from the
+// child's live subscription, resolved SERVER-side — during an active giveaway
+// the server unlocks all subjects; locked subjects render disabled with a lock
+// glyph plus a "subscribe to unlock" hint linking to the child's subscribe
+// page), KPI tiles, hand-rolled inline-SVG charts and two topic tables.
 //
 // Round 9 replaces the Round-8 demo data with REAL aggregates from the
 // get_child_subject_dashboard RPC: the server page resolves the URL selection
@@ -18,14 +20,14 @@ import { usePathname, useRouter } from "next/navigation";
 export type AnalyticsSubject = {
   /** Subject uuid (RPC filter + URL value). */
   id: string;
-  /** One of the 4 platform slugs: math | science | logic | english. */
-  slug: string;
+  /** Real subject name (the tab label — az, same as the subscribe page). */
+  name: string;
 };
 
 export type AnalyticsChild = {
   id: string;
   name: string;
-  /** Active subjects from the child's live subscription (canonical tab order). */
+  /** The subjects covered by the child's LIVE plan (real subjects, not slugs). */
   activeSubjects: AnalyticsSubject[];
 };
 
@@ -58,8 +60,6 @@ export type DashPayload = {
     accuracy: number | null;
   }[] | null;
 };
-
-const SUBJECTS = ["math", "science", "logic", "english"] as const;
 
 // Best/weakest topic need a minimum sample before they mean anything.
 const MIN_TOPIC_SAMPLE = 3;
@@ -310,12 +310,15 @@ function TrendLine({
 
 export function AnalyticsDashboard({
   kids,
+  allSubjects,
   dict,
   selectedChildId,
   selectedSubject,
   data,
 }: {
   kids: AnalyticsChild[];
+  /** All PURCHASABLE platform subjects (id + name) — the locked-tab universe. */
+  allSubjects: AnalyticsSubject[];
   dict: Record<string, string>;
   /** Resolved by the server from ?child= (defaults to the first child). */
   selectedChildId: string;
@@ -329,7 +332,25 @@ export function AnalyticsDashboard({
 
   if (kids.length === 0) return null;
   const kid = kids.find((k) => k.id === selectedChildId) ?? kids[0];
-  const activeBySlug = new Map(kid.activeSubjects.map((s) => [s.slug, s.id]));
+
+  // Real subject tabs: the child's covered subjects are SELECTABLE; the other
+  // purchasable subjects render LOCKED (with a subscribe hint). Ordered by the
+  // platform list, with any child-only extras (subject dropped from pricing but
+  // still on the plan) appended so nothing the child actually has disappears.
+  const activeIds = new Set(kid.activeSubjects.map((s) => s.id));
+  const tabList: { id: string; name: string; locked: boolean }[] = [];
+  const pushed = new Set<string>();
+  for (const s of allSubjects) {
+    tabList.push({ id: s.id, name: s.name, locked: !activeIds.has(s.id) });
+    pushed.add(s.id);
+  }
+  for (const s of kid.activeSubjects) {
+    if (!pushed.has(s.id)) {
+      tabList.push({ id: s.id, name: s.name, locked: false });
+      pushed.add(s.id);
+    }
+  }
+  const hasLocked = tabList.some((tb) => tb.locked);
 
   // Selection is URL state: replace (not push) so back doesn't step through
   // every tab click, and keep the scroll position while the server refetches.
@@ -608,24 +629,28 @@ export function AnalyticsDashboard({
                 {dict["ana.subject.all"]}
               </button>
             )}
-            {SUBJECTS.map((s) => {
-              const subjectId = activeBySlug.get(s);
-              const on = Boolean(subjectId);
+            {tabList.map((tb) => {
+              const on = !tb.locked;
               return (
                 <button
-                  key={s}
+                  key={tb.id}
                   type="button"
                   role="tab"
-                  aria-selected={on && selectedSubject === subjectId}
+                  aria-selected={on && selectedSubject === tb.id}
                   disabled={!on}
+                  aria-disabled={!on}
                   title={on ? undefined : dict["ana.locked"]}
                   className={
-                    on && selectedSubject === subjectId ? "ana-tab active" : "ana-tab"
+                    !on
+                      ? "ana-tab ana-lock-tab"
+                      : selectedSubject === tb.id
+                        ? "ana-tab active"
+                        : "ana-tab"
                   }
-                  onClick={() => on && go(kid.id, subjectId!)}
+                  onClick={() => on && go(kid.id, tb.id)}
                 >
                   {!on && <LockIcon />}
-                  {dict[`ana.subject.${s}`]}
+                  {tb.name}
                 </button>
               );
             })}
@@ -633,9 +658,12 @@ export function AnalyticsDashboard({
         </div>
       </div>
 
-      {activeBySlug.size > 0 && activeBySlug.size < SUBJECTS.length && (
+      {kid.activeSubjects.length > 0 && hasLocked && (
         <p className="ana-lockhint">
-          <LockIcon /> {dict["ana.locked"]}
+          <LockIcon /> {dict["ana.locked"]}{" "}
+          <Link className="ana-lock-link" href={`/children/${kid.id}/subscribe`}>
+            {dict["ana.goSubscribe"]}
+          </Link>
         </p>
       )}
 

@@ -41,6 +41,7 @@ begin
     'child_unique_ids','child_credentials','child_login_attempts',
     'districts','schools','grades','subjects','topics','subtopics',
     'wallpapers','child_wallpaper_selections',
+    'sticker_themes','sticker_images','child_sticker_selections',
     'question_types','difficulty_levels','olympiad_types','sources',
     'questions','question_translations','answer_options','answer_option_translations',
     'question_explanations','tests','test_questions','question_imports',
@@ -248,6 +249,50 @@ drop policy if exists "cws_write" on public.child_wallpaper_selections;
 create policy "cws_write" on public.child_wallpaper_selections for all to authenticated
   using (student_profile_id = public.current_profile_id() or public.is_admin())
   with check (student_profile_id = public.current_profile_id() or public.is_admin());
+
+-- -----------------------------------------------------------------------------
+-- Character Sticker themes (Round 11, migration 026).
+-- -----------------------------------------------------------------------------
+-- sticker_themes: ENABLED catalog readable by authenticated; admin sees all + writes.
+drop policy if exists "sticker_themes_select" on public.sticker_themes;
+create policy "sticker_themes_select" on public.sticker_themes for select to authenticated
+  using (is_enabled or public.is_admin());
+drop policy if exists "sticker_themes_write" on public.sticker_themes;
+create policy "sticker_themes_write" on public.sticker_themes for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- sticker_images: readable when their theme is visible; admin writes.
+drop policy if exists "sticker_images_select" on public.sticker_images;
+create policy "sticker_images_select" on public.sticker_images for select to authenticated
+  using (
+    public.is_admin()
+    or exists (select 1 from public.sticker_themes t
+               where t.id = theme_id and t.is_enabled)
+  );
+drop policy if exists "sticker_images_write" on public.sticker_images;
+create policy "sticker_images_write" on public.sticker_images for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- child_sticker_selections: child manages own row and may only pick ENABLED
+-- themes; parent (linked or creator)/admin read.
+drop policy if exists "css_select" on public.child_sticker_selections;
+create policy "css_select" on public.child_sticker_selections for select to authenticated
+  using (
+    student_profile_id = public.current_profile_id()
+    or public.is_parent_linked_to_student(student_profile_id)
+    or public.is_admin()
+    or exists (select 1 from public.students s
+               where s.profile_id = student_profile_id
+                 and s.created_by_parent_profile_id = public.current_profile_id())
+  );
+drop policy if exists "css_write" on public.child_sticker_selections;
+create policy "css_write" on public.child_sticker_selections for all to authenticated
+  using (student_profile_id = public.current_profile_id() or public.is_admin())
+  with check (
+    (student_profile_id = public.current_profile_id() or public.is_admin())
+    and exists (select 1 from public.sticker_themes t
+                where t.id = theme_id and (t.is_enabled or public.is_admin()))
+  );
 
 -- =============================================================================
 -- CONTENT CONFIG CATALOGS (read authenticated; admin write)

@@ -366,15 +366,6 @@ a {
 }
 
 /* Wallpaper catalog preview swatch (solid color or image thumbnail). */
-.wallpaper-swatch {
-  display: inline-block;
-  width: 56px;
-  height: 36px;
-  border-radius: 6px;
-  border: 1px solid var(--border, #e5e7eb);
-  object-fit: cover;
-  vertical-align: middle;
-}
 
 /* Native color picker sized to sit inside a .field. */
 .color-input {
@@ -1790,4 +1781,223 @@ a.qpage-link:hover {
 .audit2-filter select:focus {
   outline: 2px solid rgba(79, 70, 229, 0.35);
   border-color: var(--brand);
+}
+
+
+/* =====================  ROUND 11 — d-admin.css  ===================== */
+/* ============================================================================
+   Round 11 — Agent D fragment (append to admin-panel/src/app/globals.css)
+   1) Settings → Features → "Payment mode" card (exclusivity note + giveaway
+      window status line).
+   2) Accounts → "Create child" form (bypass intro, grant sub-section, success
+      panel with the prominent 8-digit ID).
+   Uses only existing admin tokens: --border, --muted, --text, --brand,
+   --ok-fg/--ok-bg, --warn-fg/--warn-bg, --surface.
+   ========================================================================== */
+
+/* ---- Settings: payment mode ---------------------------------------------- */
+
+/* Mutual-exclusivity explainer above the three payment-mode switches. */
+.pm-note {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Giveaway sub-block (duration field + window status) under the flag list. */
+.pm-giveaway {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+/* Read-only "started / ends" line, shown only while the giveaway flag is ON. */
+.pm-window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--ok-bg);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.pm-window-expired {
+  background: var(--warn-bg);
+}
+
+.pm-window-line strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-window-tz {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---- Accounts: create-child (payment bypass) ------------------------------ */
+
+/* "Bypass exists only here" intro under the form title. */
+.child-bypass-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Grant toggle chip + its helper line. */
+.child-grant-toggle {
+  align-self: flex-start;
+}
+
+.child-grant-help {
+  margin: -4px 0 0;
+  font-size: 12.5px;
+}
+
+/* Interval/days/subjects revealed while the grant toggle is ON. */
+.child-grant-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+/* Success panel: the 8-digit login ID must be unmissable + copy-friendly. */
+.child-created {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.child-created-idbox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--ok-bg);
+}
+
+.child-created-idlabel {
+  font-size: 12.5px;
+  color: var(--ok-fg);
+  font-weight: 600;
+}
+
+.child-created-id {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  user-select: all; /* one click selects the whole ID for copying */
+}
+
+.child-created-note {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn-fg);
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+
+/* =====================  ROUND 11 — g-admin.css  ===================== */
+/* =============================================================================
+   Round 11 — Agent G: Character Stickers admin module (admin-panel).
+   Fragment for admin-panel/src/app/globals.css (all classes prefixed stkadm-).
+   NOTE: globals.css also still contains the now-dead `.wallpaper-swatch` rule
+   (old Wallpapers module removed) — prune it during the central merge.
+   ============================================================================= */
+
+/* Sticker thumbnail grid on /stickers/[id]. */
+.stkadm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.stkadm-thumb-wrap {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--card-bg, #fff);
+}
+
+/* Transparent-checkerboard backdrop so PNG/WebP transparency is visible. */
+.stkadm-thumb {
+  display: block;
+  width: 100%;
+  height: 96px;
+  object-fit: contain;
+  border-radius: 6px;
+  background-color: #fff;
+  background-image: conic-gradient(
+    #e7e5e4 0 25%,
+    transparent 0 50%,
+    #e7e5e4 0 75%,
+    transparent 0
+  );
+  background-size: 16px 16px;
+}
+
+/* "needs N more" hint next to the image-count pill on /stickers. */
+.stkadm-count-hint {
+  margin-left: 8px;
+  font-size: 0.8rem;
+  color: var(--warn-fg, #b45309);
+}
+
+/* {n}/5 enable-progress text on the theme detail header. */
+.stkadm-progress {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Per-file result list under the multi-file uploader. */
+.stkadm-upload-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.stkadm-upload-ok {
+  color: var(--ok-fg, #16a34a);
+}
+
+.stkadm-upload-err {
+  color: var(--danger-fg, #dc2626);
+}
+
+.stkadm-upload-busy {
+  color: var(--muted-fg, #6b7280);
 }

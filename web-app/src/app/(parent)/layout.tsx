@@ -3,7 +3,22 @@ import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { getLocaleSettings } from "@/lib/flags";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { ProfileDrawer, ParentNavLinks } from "@/components/ProfileDrawer";
+import { GiveawayBanner } from "@/components/GiveawayBanner";
+
+// Giveaway-banner strings resolved server-side (GiveawayBanner is a client
+// component and must never touch i18n or the server-only payment-mode module).
+const GVW_KEYS = [
+  "gvw.title",
+  "gvw.sub",
+  "gvw.remaining",
+  "gvw.days",
+  "gvw.hours",
+  "gvw.minutes",
+  "gvw.seconds",
+  "gvw.ended",
+] as const;
 
 function initialsOf(name: string, email: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -20,6 +35,12 @@ export default async function ParentLayout({
   const locale = await getLocale();
   const { enabled: enabledLocales } = await getLocaleSettings();
   const supabase = await createClient();
+
+  // Round 11: while a giveaway window is active every parent page shows the
+  // celebratory countdown banner at the top of the panel content.
+  const { giveaway } = await getPaymentModeInfo();
+  const gvwStrings: Record<string, string> = {};
+  if (giveaway.active) for (const k of GVW_KEYS) gvwStrings[k] = t(k);
 
   // Parent profile display data for the drawer's ACCOUNT section. Degrade
   // gracefully on any failure so the shell still renders with an initials mark.
@@ -87,7 +108,12 @@ export default async function ParentLayout({
           />
         </div>
       </header>
-      <main className="site-main">{children}</main>
+      <main className="site-main">
+        {giveaway.active && giveaway.endsAt && (
+          <GiveawayBanner endsAt={giveaway.endsAt} strings={gvwStrings} />
+        )}
+        {children}
+      </main>
       <footer className="site-foot">
         <div className="site-foot-inner">
           <div className="site-foot-col">

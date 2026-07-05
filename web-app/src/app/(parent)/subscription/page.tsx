@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { CancelSubscription } from "@/components/CancelSubscription";
 import { BillingTabs } from "@/components/BillingTabs";
 import { InvoicesSection, type InvoiceRow } from "@/components/InvoicesSection";
@@ -106,10 +107,21 @@ function CardBrandIcon() {
   );
 }
 
-export default async function ParentSubscription() {
+export default async function ParentSubscription({
+  searchParams,
+}: {
+  searchParams: Promise<{ child?: string | string[] }>;
+}) {
   const parent = await requireParent();
   const t = await getT();
   const supabase = await createClient();
+
+  // Round 11: payment-mode awareness (server-resolved). During an active
+  // giveaway window every plan CTA becomes a disabled "free" chip and a slim
+  // notice bar renders above the Plans section — paid writes are blocked
+  // server-side anyway; this is the friendly surface.
+  const { mode } = await getPaymentModeInfo();
+  const giveaway = mode === "giveaway";
 
   // pricing2.* is owned by the public pricing page; fall back to the live
   // pricing.* keys (always present) so no raw key can ever render here.
@@ -193,6 +205,17 @@ export default async function ParentSubscription() {
     }
   })();
 
+  // Task 5 — URL-driven child selector (?child=<studentProfileId>). The
+  // requested id is validated against the parent's OWN children: `cards` is
+  // built from an ownership-filtered, RLS-scoped query, so a foreign or
+  // malformed id simply never matches and safely falls back to the first
+  // child. Server-driven <Link> tabs keep the selection refresh-/deep-link-
+  // safe with zero trust in client state.
+  const sp = await searchParams;
+  const requestedChild = typeof sp?.child === "string" ? sp.child : "";
+  const selectedCard =
+    cards.find((c) => c.studentProfileId === requestedChild) ?? cards[0] ?? null;
+
   // Parent's real email for the invoices section (demo fallback).
   let parentEmail = "parent@example.com";
   try {
@@ -236,11 +259,14 @@ export default async function ParentSubscription() {
   const invoiceStrings: Record<string, string> = {};
   for (const k of INVOICE_KEYS) invoiceStrings[k] = t(k);
 
-  const cancellable = cards.filter(
-    (c) =>
-      c.subscriptionId !== null &&
-      (c.status === "trialing" || c.status === "active"),
-  );
+  // Billing/cancel rows are scoped to the SELECTED child only (Task 5); the
+  // cancel action itself re-validates ownership + subscription id server-side.
+  const cancellable =
+    selectedCard &&
+    selectedCard.subscriptionId !== null &&
+    (selectedCard.status === "trialing" || selectedCard.status === "active")
+      ? [selectedCard]
+      : [];
 
   // Owner-approved static demo invoice history.
   const invoiceRows: InvoiceRow[] = [
@@ -296,16 +322,44 @@ export default async function ParentSubscription() {
         <p>{t("subscription.subtitle")}</p>
       </header>
 
+      {/* Task 5 — child selector tabs (only with 2+ children). URL-driven
+          <Link>s (?child=…) so a refresh/deep link keeps the right child. */}
+      {cards.length > 1 && (
+        <nav className="bkids-tabs" aria-label={t("billing.selectChild")}>
+          {cards.map((c) => {
+            const active = selectedCard?.studentProfileId === c.studentProfileId;
+            return (
+              <Link
+                key={c.studentProfileId}
+                href={`/subscription?child=${c.studentProfileId}`}
+                className={`bkids-tab${active ? " active" : ""}`}
+                aria-current={active ? "page" : undefined}
+              >
+                <span className="bkids-mark" aria-hidden="true">
+                  {(c.name.trim()[0] ?? "•").toUpperCase()}
+                </span>
+                <span className="bkids-name">{c.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      )}
+
       <BillingTabs tabs={tabs} ariaLabel={t("billing.tabsAria")} />
+
+      {/* Round 11 — slim free-notice bar during an active giveaway window. */}
+      {giveaway && (
+        <p className="subjedit-free-bar">{t("billing.giveawayNote")}</p>
+      )}
 
       {/* ---------------------------------------------------------- PLANS */}
       <section id="billing-plans" className="billing-section">
         <h2 className="billing-section-h">{t("billing.plansTitle")}</h2>
 
-        {cards.length === 0 ? (
+        {!selectedCard ? (
           <p className="muted">{t("parent.dash.noChildren")}</p>
         ) : (
-          cards.map((c) => {
+          [selectedCard].map((c) => {
             const hasPlan = c.subscriptionId !== null;
             const subscribeHref = `/children/${c.studentProfileId}/subscribe`;
             const initial = (c.name.trim()[0] ?? "•").toUpperCase();
@@ -343,6 +397,10 @@ export default async function ParentSubscription() {
                         <div className="plan-name">{copy.name}</div>
                         <div className="plan-price">{copy.price}</div>
                         <div className="plan-per">{copy.per}</div>
+                        {/* Owner item 5 — the price is per ONE subject. */}
+                        <div className="plan-per subjedit-per-note">
+                          {t("pricing.perSubjectNote")}
+                        </div>
                         <p className="plan-desc">{copy.desc}</p>
 
                         {c.subjects.length > 0 ? (
@@ -368,7 +426,16 @@ export default async function ParentSubscription() {
                           </p>
                         )}
 
-                        {hasPlan ? (
+                        {giveaway ? (
+                          // Giveaway window: no subscribe links — everything
+                          // is free; the chip is deliberately non-interactive.
+                          <span
+                            className="plan-cta subjedit-free-chip"
+                            aria-disabled="true"
+                          >
+                            {t("billing.freeChip")}
+                          </span>
+                        ) : hasPlan ? (
                           isCurrent ? (
                             <Link className="plan-cta primary" href={subscribeHref}>
                               {t("subscription.manageSubjects")}

@@ -135,6 +135,16 @@ export async function updateSetting(
     return { error: "settings.err.invalidJson", key };
   }
 
+  // Key-specific rule: the giveaway window length must be a whole number of
+  // days within 1..730 (same bounds the DB enforces for admin grants). Rejects
+  // fractions, zero, negatives and out-of-range values outright.
+  if (
+    key === "giveaway.duration_days" &&
+    (!Number.isInteger(parsed) || (parsed as number) < 1 || (parsed as number) > 730)
+  ) {
+    return { error: "settings.err.invalidJson", key };
+  }
+
   const supabase = await createClient();
 
   // Only update an EXISTING row — never create a new setting from the UI.

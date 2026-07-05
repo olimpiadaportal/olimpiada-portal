@@ -14,6 +14,31 @@ import { sniffImageMime, EXT_BY_SNIFFED } from "@/lib/imageSniff";
 
 export type ChildProfileState = { ok?: boolean; error?: string } | null;
 
+// Update the logged-in child's own first/last name. Self-row update via the SSR
+// client — the students_write RLS policy allows profile_id = current_profile.
+// Only the name columns are written (never access/subscription fields).
+export async function childUpdateOwnName(
+  _prev: ChildProfileState,
+  formData: FormData,
+): Promise<ChildProfileState> {
+  const t = await getT();
+  const child = await requireChild();
+  const first = String(formData.get("first_name") ?? "").trim().slice(0, 80);
+  const last = String(formData.get("last_name") ?? "").trim().slice(0, 80);
+  if (!first || !last) return { error: t("profile.err.nameRequired") };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("students")
+    .update({ first_name: first, last_name: last })
+    .eq("profile_id", child.profileId);
+  if (error) return { error: t("profile.err.updateFailed") };
+
+  revalidatePath("/child");
+  revalidatePath("/child/profile");
+  return { ok: true };
+}
+
 // Avatar upload constraints (mirror the 'profile-avatars' bucket: 2 MB, images).
 // The declared type is only a cheap early reject — the authoritative type comes
 // from byte sniffing (imageSniff) in the action itself.

@@ -7,13 +7,17 @@ import {
   type AuthFormState,
 } from "@/lib/auth/parentService";
 import { PasswordInput } from "@/components/PasswordInput";
+import { PhoneField } from "@/components/PhoneField";
 
 export function ParentAuthForm({
   mode,
   dict,
+  locale = "az",
 }: {
   mode: "login" | "register";
   dict: Record<string, string>;
+  /** Active UI locale — used for localized country names in the phone field. */
+  locale?: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const fn = mode === "register" ? registerParent : parentLogin;
@@ -53,6 +57,16 @@ export function ParentAuthForm({
           placeholder={tt("parent.auth.emailPh")}
         />
       </label>
+      {mode === "register" && (
+        <PhoneField
+          locale={locale}
+          label={tt("parent.auth.phone")}
+          countryLabel={tt("parent.auth.phoneCountry")}
+          searchLabel={tt("parent.auth.phoneSearch")}
+          placeholder={tt("parent.auth.phonePh")}
+          invalidMessage={tt("parent.err.phone")}
+        />
+      )}
       <label className="field">
         <span className="field-label">{tt("parent.auth.password")} *</span>
         <PasswordInput

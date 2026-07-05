@@ -202,12 +202,19 @@ export function OlympiadPurchase({
   childrenList,
   packages,
   canBuy,
+  giveawayNote = null,
   dict,
 }: {
   childrenList: PolyChild[];
   packages: PolyPackage[];
-  /** payments feature flag (server-evaluated) — hides buy buttons when off. */
+  /** payments availability (server-evaluated) — hides buy buttons when off. */
   canBuy: boolean;
+  /**
+   * Round 11: non-null while a giveaway window is active — cards show this
+   * translated "free during the campaign" note INSTEAD of a buy button (the
+   * purchase server action blocks paid writes during the giveaway anyway).
+   */
+  giveawayNote?: string | null;
   dict: PolyDict;
 }) {
   const router = useRouter();
@@ -311,6 +318,8 @@ export function OlympiadPurchase({
                     <span className="poly-price">{pkg.priceText}</span>
                     {owned ? (
                       <span className="poly-owned">{dict.owned}</span>
+                    ) : giveawayNote ? (
+                      <span className="gvw-oly-free">{giveawayNote}</span>
                     ) : canBuy && child ? (
                       <button
                         type="button"

@@ -10,21 +10,30 @@ import { useActionState, useState } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
 import { AvatarUploader } from "@/components/AvatarUploader";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
+import { ProfileNameEditor } from "@/components/ProfileNameEditor";
 import { parentLogout } from "@/lib/auth/parentService";
 import {
   updateOwnPassword,
+  updateOwnName,
   type ProfileActionState,
 } from "@/lib/auth/profileActions";
 
 export function ParentProfile({
   name,
+  displayName,
   email,
+  phone,
   initials,
   avatarUrl,
   dict,
 }: {
+  /** Header display name (falls back to email/account when blank). */
   name: string;
+  /** Raw profiles.display_name for the editable field (may be blank). */
+  displayName: string;
   email: string;
+  /** E.164 phone from profiles.phone; null for pre-Round-11 accounts. */
+  phone?: string | null;
   initials: string;
   avatarUrl: string | null;
   dict: Record<string, string>;
@@ -71,13 +80,28 @@ export function ParentProfile({
       <section className="prof2-card" aria-label={t("prof2.accountInfo")}>
         <h2 className="prof2-sec-title">{t("prof2.accountInfo")}</h2>
         <div className="prof2-rows">
-          <div className="prof2-row">
-            <span className="prof2-row-label">{t("prof2.name")}</span>
-            <span className="prof2-row-value">{name || "—"}</span>
-          </div>
+          <ProfileNameEditor
+            mode="single"
+            current={displayName}
+            action={updateOwnName}
+            labels={{
+              valueLabel: t("prof2.name"),
+              edit: t("profile.editName"),
+              save: t("profile.save"),
+              saving: t("profile.saving"),
+              cancel: t("profile.cancel"),
+              fullName: t("profile.fullName"),
+              firstName: t("profile.firstNameLabel"),
+              lastName: t("profile.lastNameLabel"),
+            }}
+          />
           <div className="prof2-row">
             <span className="prof2-row-label">{t("prof2.email")}</span>
             <span className="prof2-row-value">{email || "—"}</span>
+          </div>
+          <div className="prof2-row">
+            <span className="prof2-row-label">{t("profile.phoneLabel")}</span>
+            <span className="prof2-row-value">{phone || "—"}</span>
           </div>
         </div>
       </section>

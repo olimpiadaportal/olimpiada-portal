@@ -12,15 +12,20 @@ import { revalidatePath } from "next/cache";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { requireParent } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/flags";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { getT } from "@/i18n/server";
 
 export async function buyOlympiad(formData: FormData): Promise<void> {
   const parent = await requireParent();
-  // Server-side flag gates: a purchase needs BOTH the olympiad module and
-  // payments to be enabled (admin Settings). The pages hide the buy UI too;
-  // this stops hand-crafted POSTs.
+  // Server-side gates: a purchase needs the olympiad module AND a transactable
+  // payment mode ('real'/'demo'). During a GIVEAWAY window purchases are
+  // blocked too — olympiad access is free via the giveaway override, and a
+  // lifetime purchase row must not be minted by a temporary free period.
   if (!(await isFeatureEnabled("olympiad_module"))) return;
-  if (!(await isFeatureEnabled("payments"))) return;
+  {
+    const { mode } = await getPaymentModeInfo();
+    if (mode !== "real" && mode !== "demo") return;
+  }
   const studentId = String(formData.get("student_id") ?? "");
   const packageId = String(formData.get("package_id") ?? "");
   if (!studentId || !packageId) return;
@@ -84,10 +89,16 @@ export async function purchaseOlympiadForChild(
   const t = await getT();
   const fail: PurchaseOlympiadState = { ok: false, error: t("poly.err.generic") };
 
-  // Server-side flag gates — the page hides the buy UI too; this stops
-  // hand-crafted POSTs when an admin has switched a module off.
+  // Server-side gates — the page hides the buy UI too; this stops hand-crafted
+  // POSTs when an admin has switched a module off. Giveaway blocks purchases
+  // with the explicit "it's free right now" message (no lifetime rows minted
+  // by a temporary free window); 'off' keeps the payments-off message.
   if (!(await isFeatureEnabled("olympiad_module"))) return fail;
-  if (!(await isFeatureEnabled("payments"))) return fail;
+  {
+    const { mode } = await getPaymentModeInfo();
+    if (mode === "giveaway") return { ok: false, error: t("gate.giveawayFree") };
+    if (mode === "off") return { ok: false, error: t("gate.paymentsOff") };
+  }
 
   const studentId = String(formData.get("student_id") ?? "");
   const packageId = String(formData.get("package_id") ?? "");

@@ -10,6 +10,7 @@ import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
 import {
   OlympiadPurchase,
   type PolyChild,
@@ -22,7 +23,12 @@ export default async function ParentOlympiadCatalogPage() {
   const locale = await getLocale();
   const t = await getT();
   const olympiadOn = await isFeatureEnabled("olympiad_module");
-  const paymentsOn = await isFeatureEnabled("payments");
+  // Round 11 payment modes: buying is possible in real/demo mode; during an
+  // active GIVEAWAY the buy CTAs are replaced by a non-interactive "free
+  // during the campaign" chip (the purchase server action blocks paid writes
+  // then too); mode 'off' keeps the existing paymentsOff notice.
+  const { mode, giveaway } = await getPaymentModeInfo();
+  const paymentsOn = mode === "real" || mode === "demo";
 
   if (!olympiadOn) {
     return (
@@ -139,12 +145,13 @@ export default async function ParentOlympiadCatalogPage() {
         <p className="poly-sub">{t("poly.subtitle")}</p>
       </div>
 
-      {!paymentsOn && <div className="price-callout">{t("gate.paymentsOff")}</div>}
+      {mode === "off" && <div className="price-callout">{t("gate.paymentsOff")}</div>}
 
       <OlympiadPurchase
         childrenList={childList}
         packages={items}
         canBuy={paymentsOn}
+        giveawayNote={giveaway.active ? t("gvw.olyFree") : null}
         dict={dict}
       />
     </section>

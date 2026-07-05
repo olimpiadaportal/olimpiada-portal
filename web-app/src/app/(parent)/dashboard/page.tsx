@@ -3,6 +3,7 @@ import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
+import { isGiveawayActive } from "@/lib/paymentMode";
 import { ChildCardActions } from "@/components/ChildCardActions";
 import { InfoCarousel, type InfoSlide } from "@/components/InfoCarousel";
 import { ParentNewsPanel } from "@/components/ParentNewsPanel";
@@ -19,6 +20,10 @@ export default async function ParentDashboard() {
   const parent = await requireParent();
   const t = await getT();
   const olympiadOn = await isFeatureEnabled("olympiad_module");
+  // Round 11: during the giveaway window every child effectively has free
+  // access, so the cards show one highlighted "free giveaway" pill instead of
+  // the raw access status; the real status resumes automatically afterwards.
+  const giveawayActive = await isGiveawayActive();
   const supabase = await createClient();
 
   // Children list.
@@ -73,7 +78,11 @@ export default async function ParentDashboard() {
                   )}
                 </p>
                 <p>
-                  <span className="pill">{t(`access.${c.access_status}`)}</span>
+                  {giveawayActive ? (
+                    <span className="pill gvw-access">{t("access.giveaway")}</span>
+                  ) : (
+                    <span className="pill">{t(`access.${c.access_status}`)}</span>
+                  )}
                 </p>
                 <p style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <Link

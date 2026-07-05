@@ -855,11 +855,6 @@ ul.clean li {
 
 /* When the child picks a solid-color wallpaper we set it inline as --wp; let it
    tint the base so wallpaper choice still works under the dark theme. */
-.arena[data-wallpaper] {
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(47, 107, 255, 0.12), transparent 60%),
-    var(--wp, var(--bg));
-}
 
 .arena .mono {
   font-family: "JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
@@ -1564,26 +1559,6 @@ ul.clean li {
 }
 
 /* ---- Wallpaper picker (arena) ---- */
-.arena-wp {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.arena-wp form {
-  margin: 0;
-}
-.arena-wp-swatch {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  cursor: pointer;
-  padding: 0;
-}
-.arena-wp-swatch.current {
-  border: 2px solid var(--lime);
-  box-shadow: 0 0 0 3px rgba(196, 255, 0, 0.18);
-}
 
 /* =============================================================================
    ARENA — LIGHT theme override.
@@ -1616,11 +1591,6 @@ ul.clean li {
   color: var(--ink);
 }
 
-[data-theme="light"] .arena[data-wallpaper] {
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(47, 107, 255, 0.08), transparent 60%),
-    var(--wp, var(--bg));
-}
 
 [data-theme="light"] .arena ::selection {
   background: var(--lime);
@@ -1872,6 +1842,8 @@ ul.clean li {
   color: var(--text);
 }
 .pay-field input {
+  width: 100%;
+  box-sizing: border-box; /* keep padding+border INSIDE the field width */
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1884,11 +1856,16 @@ ul.clean li {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
 }
-/* Expiry + CVC side by side. */
+/* Expiry + CVC side by side. minmax(0,1fr) (not 1fr) lets the columns shrink
+   below the input's intrinsic ~20-char width; min-width:0 on the field lets the
+   grid item shrink too — together they stop CVC overflowing the card. */
 .pay-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
+}
+.pay-grid .pay-field {
+  min-width: 0;
 }
 
 /* =============================================================================
@@ -3888,39 +3865,12 @@ ul.clean li {
    The chosen photo URL is set inline as `--wp-img: url(...)`. We layer a dark
    linear-gradient scrim ABOVE the photo (first background layer paints on top)
    so the arena's light ink text stays legible over any image. Solid-color
-   wallpapers keep using the .arena[data-wallpaper] path above. */
-.arena[data-wp-kind="image"] {
-  background-image:
-    linear-gradient(180deg, rgba(6, 9, 18, 0.55), rgba(8, 12, 24, 0.74)),
-    var(--wp-img);
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-  background-repeat: no-repeat;
-}
 /* Light arena renders dark ink, so use a bright scrim instead of a dark one to
    keep text legible (child app defaults to dark, but stay correct either way). */
-[data-theme="light"] .arena[data-wp-kind="image"] {
-  background-image:
-    linear-gradient(180deg, rgba(246, 248, 252, 0.62), rgba(238, 242, 250, 0.8)),
-    var(--wp-img);
-}
 
 /* ---- Picker swatches (extends .arena-wp-swatch base) ---- */
 /* Photo thumbnail swatch — the image URL is set inline as background-image. */
-.arena-wp-swatch.wp-image {
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
 /* "Reset to theme default" swatch — a half-light / half-dark diagonal split. */
-.arena-wp-swatch.wp-default {
-  background:
-    linear-gradient(135deg,
-      var(--panel2) 0%, var(--panel2) 49.5%,
-      var(--line) 49.5%, var(--line) 50.5%,
-      var(--bg) 50.5%, var(--bg) 100%);
-}
 
 /* ---- News redesign — list (card grid) -------------------------------------
    Public + parent scope: uses the root theme tokens (--surface/--text/--muted/
@@ -4135,34 +4085,6 @@ ul.clean li {
 }
 
 /* Wallpaper picker: bigger, labeled swatches with room to breathe. */
-.arena-wp {
-  gap: 16px 14px;
-}
-.arena-wp-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  width: 64px;
-}
-.arena-wp-item .arena-wp-swatch {
-  width: 60px;
-  height: 60px;
-  border-radius: 14px;
-}
-.arena-wp-name {
-  font-size: 0.72rem;
-  color: var(--muted);
-  text-align: center;
-  max-width: 64px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.arena-wp-item .arena-wp-swatch.current + .arena-wp-name,
-.arena-wp-item:has(.current) .arena-wp-name {
-  color: var(--lime);
-}
 
 /* Student profile page — give the card + upload row + rows room to breathe. */
 .arena-panel {
@@ -4405,11 +4327,6 @@ ul.clean li {
     radial-gradient(900px 500px at -10% 110%, rgba(255, 138, 0, 0.06), transparent 55%),
     var(--bg);
 }
-[data-theme="light"] .arena[data-wallpaper] {
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(124, 58, 237, 0.08), transparent 60%),
-    var(--wp, var(--bg));
-}
 /* Text painted onto the (now purple) accent fill flips to white. */
 [data-theme="light"] .arena ::selection {
   background: #7c3aed;
@@ -4433,9 +4350,6 @@ ul.clean li {
 }
 [data-theme="light"] .arena-table tr.me td {
   background: rgba(124, 58, 237, 0.07);
-}
-[data-theme="light"] .arena-wp-swatch.current {
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
 }
 [data-theme="light"] .arena .pw-eye:focus-visible {
   box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35);
@@ -6525,9 +6439,10 @@ ul.clean li {
   flex-wrap: wrap;
 }
 .prof2-avatar {
-  flex: none;
+  flex: 0 0 72px; /* fixed basis so flex never squishes the width → no oval */
   width: 72px;
   height: 72px;
+  aspect-ratio: 1 / 1; /* guarantee a perfect square box at any layout width */
   border-radius: 50%;
   overflow: hidden;
   border: 2px solid var(--border);
@@ -6538,7 +6453,8 @@ ul.clean li {
 .prof2-avatar-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  aspect-ratio: 1 / 1;
+  object-fit: cover; /* crop (never stretch) the photo into the circle */
   display: block;
 }
 .prof2-avatar-fallback {
@@ -6745,6 +6661,46 @@ ul.clean li {
   font-weight: 600;
   color: var(--ok);
 }
+
+/* ---- R11 fix: inline editable name row (ProfileNameEditor) --------------- */
+.prof2-row-editable {
+  grid-template-columns: 180px 1fr auto; /* label · value · Edit button */
+  align-items: center;
+}
+.prof2-row-edit {
+  justify-self: end;
+  padding: 5px 14px;
+  font-size: 13px;
+}
+.prof2-name-form {
+  margin-top: 6px;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0;
+}
+.prof2-name-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.prof2-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+@media (max-width: 560px) {
+  .prof2-row-editable {
+    grid-template-columns: 1fr auto;
+  }
+  .prof2-row-editable .prof2-row-label {
+    grid-column: 1 / -1;
+  }
+  .prof2-name-split {
+    grid-template-columns: 1fr;
+  }
+}
 .prof2-error {
   margin: 0;
   font-size: 13.5px;
@@ -6877,87 +6833,9 @@ ul.clean li {
 }
 
 /* ---- wp2: background-templates gallery (arena-first, fallback tokens) ---- */
-.wp2-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
-  gap: 12px;
-  margin-top: 4px;
-}
-.wp2-item {
-  margin: 0;
-  min-width: 0;
-}
-.wp2-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  padding: 8px;
-  border-radius: 16px;
-  border: 1px solid var(--line, var(--border));
-  background: var(--panel2, var(--chip-bg));
-  cursor: pointer;
-  text-align: left;
-  transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.wp2-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--dim, var(--muted));
-}
-.wp2-card:focus-visible {
-  outline: 2px solid var(--lime, var(--accent));
-  outline-offset: 2px;
-}
-.wp2-swatch {
-  display: block;
-  width: 100%;
-  height: 80px;
-  border-radius: 10px;
-  background-size: cover;
-  background-position: center;
-  border: 1px solid color-mix(in srgb, var(--line, var(--border)) 60%, transparent);
-}
 /* Reset/theme-default preview: neutral surface gradient + reset icon. */
-.wp2-swatch-default {
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--panel2, var(--chip-bg)), var(--panel, var(--surface)));
-  color: var(--muted);
-}
-.wp2-name {
-  font-size: 12.5px;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--ink, var(--text));
-  overflow-wrap: anywhere;
-  padding: 0 2px 2px;
-}
-.wp2-card.wp2-selected {
-  border-color: var(--lime, var(--accent));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lime, var(--accent)) 40%, transparent);
-}
-.wp2-card.wp2-selected .wp2-name {
-  color: var(--lime, var(--accent));
-}
-.wp2-check {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--lime, var(--accent));
-  color: #0a0e1a;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-}
 /* On the light arena the lime token is a dark green — flip the check to white
    (on the dark arena the lime fill takes the dark check above). */
-[data-theme="light"] .arena .wp2-check {
-  color: #ffffff;
-}
 
 /* ---- Responsive: desktop grid → tablet wrap → mobile stack --------------- */
 @media (max-width: 900px) {
@@ -6993,13 +6871,6 @@ ul.clean li {
   }
   .prof2-btn {
     padding: 0 14px;
-  }
-  .wp2-grid {
-    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-    gap: 10px;
-  }
-  .wp2-swatch {
-    height: 72px;
   }
 }
 
@@ -7559,3 +7430,1292 @@ ul.clean li {
   to { background-position: -20% 0; }
 }
 /* End ROUND 10 main-session web fixes */
+
+
+/* =====================  ROUND 11 — a.css  ===================== */
+/* =============================================================================
+   ROUND 11 — Agent A: Manage-Subjects checkbox editor (subjedit-*) + demo
+   payment modal (dpay-*). Token-driven only (light/dark safe); no literals.
+   Reuses existing .wizard-summary/.quote-row/.quote-total/.pay-* primitives.
+   ========================================================================== */
+
+/* Small muted note lines (per-subject pricing note in the editor header). */
+.subjedit-note {
+  margin: 2px 0 10px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Checkbox list: every subject (active + additional) as one selectable row. */
+.subjedit-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.subjedit-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.subjedit-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.subjedit-item input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex: none;
+  cursor: pointer;
+}
+.subjedit-item:has(input[type="checkbox"]:focus-visible) {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+/* Any CHECKED row (kept-active or pending addition): accent border + tint. */
+.subjedit-item.is-checked {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+/* Currently ACTIVE subject that got UNCHECKED → pending removal hint. */
+.subjedit-item.is-active:not(.is-checked) {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 5%, var(--surface));
+}
+.subjedit-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+/* Small "Aktiv" chip on subjects covered by the live subscription. */
+.subjedit-chip-active {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.subjedit-price {
+  flex: none;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.subjedit-item.is-checked .subjedit-price {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* Pending-change chips inside the live summary. */
+.subjedit-pending {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 2px;
+}
+.subjedit-pending-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.subjedit-chip {
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--chip-text);
+}
+.subjedit-chip.add {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+.subjedit-chip.remove {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  text-decoration: line-through;
+}
+
+/* Save row + mode/success notes. */
+.subjedit-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+}
+.subjedit-mode-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--warn);
+}
+.subjedit-success {
+  margin: 8px 0 0;
+  font-weight: 600;
+  color: var(--ok);
+}
+
+/* "Price is per 1 subject" note under .plan-per on billing plan cards. */
+.subjedit-per-note {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Slim giveaway free-notice bar above the Plans section (/subscription). */
+.subjedit-free-bar {
+  display: block;
+  margin: 14px 0 4px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
+  background: color-mix(in srgb, var(--ok) 8%, var(--surface));
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+/* Disabled-looking "Pulsuz" chip replacing plan CTAs during a giveaway. */
+.subjedit-free-chip {
+  pointer-events: none;
+  opacity: 0.75;
+  cursor: default;
+}
+
+/* Demo-payment modal: reuse the wizard's .pay-* look, but drop the outer
+   card frame so it doesn't render as a card-inside-a-card in .modal-panel. */
+.dpay-card {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  max-width: none;
+}
+.dpay-total {
+  margin-top: 16px;
+}
+
+/* Mobile: let the price wrap to its own line under the subject name. */
+@media (max-width: 560px) {
+  .subjedit-item {
+    flex-wrap: wrap;
+  }
+  .subjedit-price {
+    width: 100%;
+    padding-left: 26px;
+  }
+}
+
+/* =============================================================================
+   ROUND 11 — Agent A (Task 5): /subscription child selector tabs (bkids-*).
+   URL-driven <Link> tabs (?child=…); shown only when the parent has 2+ kids.
+   ========================================================================== */
+.bkids-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0 6px;
+}
+.bkids-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.92rem;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.bkids-tab:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  text-decoration: none;
+}
+.bkids-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.bkids-tab.active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
+}
+/* Round initial mark (mirrors .billing-child-mark sizing, token-driven). */
+.bkids-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+.bkids-tab.active .bkids-mark {
+  background: var(--accent);
+  color: #fff;
+}
+.bkids-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .bkids-tab {
+    padding: 7px 12px 7px 7px;
+    font-size: 0.88rem;
+  }
+  .bkids-name {
+    max-width: 120px;
+  }
+}
+
+
+/* =====================  ROUND 11 — b.css  ===================== */
+/* ============================================================
+   R11 — Agent B: Add-Child wizard (plan cards, giveaway/off modes,
+   page centering, password-eye fix). Token-driven, both themes.
+   New classes are wiz-* ; the two fixes to EXISTING selectors are
+   marked with an R11 comment as agreed.
+   ============================================================ */
+
+/* ---- Owner item 8: center the whole Add-Child flow -------------------------
+   The page used to be a 600px-wide .prose block left-aligned inside the 960px
+   .site-main, which read as left-shifted. .wiz-page is a single centered
+   column; the H1 + dashboard-link row (.wiz-head) and the wizard share it. */
+.wiz-page {
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+}
+.wiz-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+/* R11: inside the centered page the wrapper owns the width — lift the old
+   560px cap so the plan-card step gets room; the block stays centered. */
+.wiz-page .wizard {
+  max-width: none;
+  margin-inline: auto;
+}
+/* Keep the narrow form steps (info/subjects) balanced inside the wider body. */
+.wiz-page .form {
+  width: 100%;
+  max-width: 520px;
+  margin-inline: auto;
+}
+.wiz-page .pay-card {
+  margin-inline: auto;
+}
+
+/* ---- Owner item 2: password eye vertical centering --------------------------
+   R11 root cause: `.form button { margin-top: 16px }` (generic submit-button
+   spacing, specificity 0,1,1) overrides `.pw-eye { margin: 0 }` (0,1,0).
+   On an absolutely-positioned box, margin-top adds to `top: 50%`, so the eye
+   sat 16px below the input's vertical center. Scoped to the wizard so the
+   login/register/reset/child-login pages keep their current rendering. */
+.wizard .pw-field .pw-eye {
+  margin: 0; /* R11 */
+}
+
+/* ---- Owner item 4: PLAN step — modern selectable plan cards -----------------
+   Reuses the shared subscription/pricing contract (.plans-grid/.plan-card/
+   .plan-badge/.plan-name/.plan-price/.plan-per/.plan-desc). The cards are real
+   <button>s here, so the global <button> and the light-theme "lifted button"
+   rules must be neutralized back to the plan-card look. */
+.wiz-plan-step > .field-label {
+  display: block;
+  margin-bottom: 4px;
+}
+.wizard .plans-grid {
+  gap: 14px;
+  /* Clearance for the .plan-badge pill that overlaps the card's top border. */
+  margin-top: 16px;
+}
+/* Keep three-up cards on tablet/desktop inside the ~700px wizard column
+   (the shared grid falls back to auto-fit at <=1020px viewport, which would
+   wrap 2+1 here); phones still stack via the shared 680px rule. */
+@media (min-width: 681px) {
+  .wizard .plans-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* R11: wizard-scoped plan-card tweaks — button reset + tighter geometry. */
+.wizard button.plan-card {
+  font: inherit;      /* drop the global <button> font-weight: 600 */
+  text-align: left;
+  width: 100%;
+  min-height: 216px;
+  padding: 26px 18px 20px;
+  border-radius: 16px;
+  cursor: pointer;
+}
+.wizard button.plan-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  filter: none;       /* the global button:hover brightness dims the card */
+}
+.wizard button.plan-card:disabled {
+  cursor: default;
+}
+.wizard button.plan-card.featured {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 1px 2px var(--shadow);
+}
+.wizard .plan-price {
+  font-size: 28px;
+}
+.wizard .plan-desc {
+  margin-top: 10px;
+}
+/* Light theme: undo the lifted-button purple glow + 14px radius that
+   [data-theme="light"] button:not(.arena-btn) would put on the card buttons,
+   so they match the subscription page's soft card shadow. */
+[data-theme="light"] .wizard button.plan-card {
+  border-radius: 16px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+[data-theme="light"] .wizard button.plan-card.featured {
+  box-shadow: 0 0 0 1px var(--accent), 0 1px 2px var(--shadow);
+}
+/* Keyboard focus ring (kept LAST among same-specificity card rules so it wins
+   the cascade tie in both themes). */
+.wizard button.plan-card:focus-visible,
+[data-theme="light"] .wizard button.plan-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Selected-state check indicator (top-right circle; empty = selectable). */
+.wiz-plan-check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 20px;
+  text-align: center;
+}
+.wiz-plan-check.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ---- DONE step (all modes): centered celebration card ----------------------- */
+.wiz-done {
+  text-align: center;
+}
+.wiz-done-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+/* The revealed 8-digit login ID (replaces the old inline styles). */
+.wiz-id {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  margin: 12px 0;
+  color: var(--text);
+}
+
+
+/* =====================  ROUND 11 — c.css  ===================== */
+/* ---- Phone field with country dial-code selector (Round 11, item 3) ----
+   Used by web-app/src/components/PhoneField.tsx inside .form/.auth-form.
+   Inherits the shared .form input/select look (padding, border, radius from
+   globals.css); these rules only handle the two-control row layout. */
+.phone-field .phone-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.phone-row input.phone-national {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* R11 item 2 — COMPACT country selector. The collapsed trigger shows only the
+   ISO code + dial (e.g. "AZ +994") — no long country name; names live in the
+   searchable popover. */
+.phone-cc {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex; /* lets the trigger stretch to the row (input) height */
+}
+.phone-cc-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Match the sibling input's box exactly (base .form input = 10px 14px + 1px
+     border) so the two controls are the SAME height and top-aligned. The row's
+     align-items:stretch + this flex parent equalize any sub-pixel rounding. */
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.phone-cc-trigger:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.phone-cc-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+  border-color: var(--accent);
+}
+.phone-cc-iso {
+  letter-spacing: 0.02em;
+}
+.phone-cc-dial {
+  color: var(--muted);
+  font-weight: 500;
+}
+.phone-cc-caret {
+  color: var(--muted);
+}
+.phone-cc-pop {
+  position: absolute;
+  z-index: 60; /* above the form controls + sections below */
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(320px, 78vw);
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  /* OPAQUE surface (was var(--card), which is undefined → transparent, so the
+     sections below bled through). --surface is a defined solid token. */
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+.phone-cc-search {
+  margin: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.phone-cc-search:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.phone-cc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 6px;
+  overflow-y: auto;
+}
+.phone-cc-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.phone-cc-opt.hl {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.phone-cc-opt.sel {
+  font-weight: 700;
+}
+.phone-cc-opt-dial {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.phone-cc-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--muted);
+}
+@media (max-width: 480px) {
+  .phone-field .phone-row {
+    flex-direction: column;
+  }
+  .phone-cc,
+  .phone-cc-trigger {
+    width: 100%;
+  }
+  .phone-cc-trigger {
+    justify-content: flex-start;
+  }
+  .phone-cc-pop {
+    width: 100%;
+  }
+}
+
+
+/* =====================  ROUND 11 — e.css  ===================== */
+/* =============================================================================
+   ROUND 11 — Giveaway free-access UI (Agent E). All new classes prefixed gvw-.
+   Token-driven: --accent / --accent-2 cascade from :root/[data-theme] into both
+   the parent shell AND the student .arena scope (.arena redefines --bg/--ink/
+   --muted/… but NOT the accent pair), so one gradient definition reads
+   correctly everywhere: light = purple #7c3aed → orange #ff8a00 (Energetic
+   reference), dark = blue #2f6bff → purple #7c3aed (owner's dark palette).
+   Text on the gradient is always white; shadows stay soft (no heavy purple).
+   ========================================================================== */
+
+/* ---- Celebratory countdown banner (top of parent + child panel content) ---- */
+.gvw-banner {
+  --gvw-a: var(--accent, #7c3aed);
+  --gvw-b: var(--accent-2, #ff8a00);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 22px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background:
+    radial-gradient(420px 140px at 12% -40%, rgba(255, 255, 255, 0.22), transparent 70%),
+    linear-gradient(120deg, var(--gvw-a), var(--gvw-b));
+  color: #ffffff;
+  box-shadow: 0 8px 22px var(--shadow-md, rgba(42, 26, 62, 0.12));
+}
+
+.gvw-ic {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.gvw-text {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.gvw-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+}
+
+.gvw-sub {
+  margin: 3px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.gvw-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.gvw-count-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.gvw-pills {
+  display: flex;
+  gap: 6px;
+}
+
+.gvw-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 54px;
+  padding: 6px 10px 5px;
+  border-radius: 11px;
+  background: rgba(23, 10, 40, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.gvw-num {
+  font-family: "JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.12rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #ffffff;
+}
+
+.gvw-unit {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* Graceful end note — shown briefly when the countdown hits zero, then the
+   component removes itself. */
+.gvw-banner.gvw-done {
+  justify-content: flex-start;
+}
+.gvw-banner.gvw-done .gvw-title {
+  font-weight: 700;
+}
+
+/* ---- Small "free campaign" chip (child hero eyebrow, playable olympiad
+   rows). Explicit Arial stack so it stays a chip even inside the mono
+   .arena-eyebrow context; white-on-gradient is legible in every theme. ---- */
+.gvw-chip {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 8px;
+  padding: 2px 10px 3px;
+  border-radius: 999px;
+  font-family: Arial, Helvetica, "Segoe UI", system-ui, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: linear-gradient(120deg, var(--accent, #7c3aed), var(--accent-2, #ff8a00));
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+/* ---- Highlighted access pill on the parent dashboard child cards (shown
+   instead of t("access.<status>") while the giveaway window runs). ---- */
+.pill.gvw-access {
+  background: linear-gradient(120deg, var(--accent, #7c3aed), var(--accent-2, #ff8a00));
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* ---- Non-interactive "free during the campaign" note replacing buy CTAs on
+   the parent olympiad purchase surfaces. ---- */
+.gvw-oly-free {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: linear-gradient(120deg, var(--accent, #7c3aed), var(--accent-2, #ff8a00));
+  color: #ffffff;
+}
+
+/* ---- Compact banner on small screens ---- */
+@media (max-width: 640px) {
+  .gvw-banner {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .gvw-ic {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+  }
+  .gvw-count {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    margin-left: 0;
+    width: 100%;
+  }
+  .gvw-pill {
+    min-width: 48px;
+    padding: 4px 8px;
+  }
+  .gvw-num {
+    font-size: 1rem;
+  }
+}
+
+
+/* =====================  ROUND 11 — f.css  ===================== */
+/* =============================================================================
+   ROUND 11 (Agent F) — CHARACTER STICKERS (stk-*)
+   Replaces the wp2-* background-templates gallery. Two parts:
+   1) stk-grid/stk-card…  — theme picker on /child/profile (R8 prof2 card
+      design language, arena-first tokens with parent-token fallbacks).
+   2) stk-layer/stk-sticker/stk-slot-* — fixed decorative sticker layer
+      rendered by <StickerDecorations/> inside the .arena shell.
+   NOTE for the central merge: the old wp2-* block (globals.css ~6879–6960 +
+   the .wp2-grid/.wp2-swatch rules inside the max-width:560px media query) is
+   now dead and can be pruned together with this merge.
+   ========================================================================== */
+
+/* ---- 1) Theme picker (child profile) ------------------------------------ */
+.stk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.stk-item {
+  margin: 0;
+  min-width: 0;
+}
+.stk-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line, var(--border));
+  background: var(--panel2, var(--chip-bg));
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.stk-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--dim, var(--muted));
+}
+.stk-card:focus-visible {
+  outline: 2px solid var(--lime, var(--accent));
+  outline-offset: 2px;
+}
+.stk-card:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+/* Collage: 2–3 transparent-PNG samples overlapping on a soft token backdrop. */
+.stk-collage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 92px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line, var(--border)) 60%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--lime, var(--accent)) 8%, var(--panel2, var(--chip-bg))),
+    var(--panel, var(--surface))
+  );
+}
+.stk-collage img {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  margin: 0 -9px;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.2));
+}
+.stk-collage img:nth-child(1) {
+  transform: rotate(-10deg) translateY(3px);
+}
+.stk-collage img:nth-child(2) {
+  transform: rotate(5deg) scale(1.14) translateY(-2px);
+  z-index: 1; /* middle sample pops in front of its two neighbours */
+}
+.stk-collage img:nth-child(3) {
+  transform: rotate(12deg) translateY(4px);
+}
+/* Off-card swatch: same backdrop, muted crossed-sparkle icon, no samples. */
+.stk-collage-off {
+  color: var(--muted);
+  background: linear-gradient(
+    135deg,
+    var(--panel2, var(--chip-bg)),
+    var(--panel, var(--surface))
+  );
+}
+/* Sticker-count chip (top-right of the collage). */
+.stk-count {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--muted, var(--muted));
+  background: color-mix(in srgb, var(--panel, var(--surface)) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line, var(--border)) 70%, transparent);
+}
+.stk-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink, var(--text));
+  overflow-wrap: anywhere;
+  padding: 0 2px 2px;
+}
+.stk-card.stk-selected {
+  border-color: var(--lime, var(--accent));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lime, var(--accent)) 40%, transparent);
+}
+.stk-card.stk-selected .stk-name {
+  color: var(--lime, var(--accent));
+}
+.stk-check {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--lime, var(--accent));
+  color: #0a0e1a;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  z-index: 3;
+}
+/* On the light arena the lime token resolves dark — flip the check to white
+   (same treatment the old wp2 check had). */
+[data-theme="light"] .arena .stk-check {
+  color: #ffffff;
+}
+/* Pending overlay + spinner on the clicked card. */
+.stk-spin {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--panel, var(--surface)) 45%, transparent);
+}
+.stk-spin::after {
+  content: "";
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--lime, var(--accent)) 30%, transparent);
+  border-top-color: var(--lime, var(--accent));
+  animation: stk-rotate 0.7s linear infinite;
+}
+@keyframes stk-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Empty state (no enabled themes yet). */
+.stk-empty {
+  margin: 4px 0 0;
+  padding: 18px 16px;
+  border: 1px dashed var(--line, var(--border));
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.stk-error {
+  margin: 10px 0 0;
+  color: var(--red, #c0392b);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---- 2) Decorative sticker layer (child shell) --------------------------- */
+/* Fixed viewport layer holding EXACTLY 6 stickers (3 left + 3 right) in the
+   empty side gutters. z-index 0 keeps it BELOW every interactive arena surface
+   (lang menu 40, drawer 60/61, overlays 90/120, sticky quiz bar 30). The LAYER
+   is pointer-events:none so it never blocks content; individual stickers
+   re-enable pointer-events ONLY on precise-pointer (desktop) devices for the
+   hover wiggle — and they live strictly in the side gutters, so even then they
+   sit BESIDE content, never over an interactive element. (z-index:-1 is
+   impossible: .arena paints an opaque background that would swallow the layer.)
+
+   Gutter geometry mirrors .arena-main (max-width 1100px, centred):
+     --stk-margin = empty margin each side; --stk-safe ≈ distance to the first
+     card; --stk-inmax = the farthest INWARD a sticker may sit. Crucially the
+     reservation folds in the RENDERED overshoot (scale + rotate + drop-shadow),
+     not just the layout box, so the VISIBLE sticker — even mid-hover — never
+     crosses the content edge (margin + 26px) at any shown width. The min()/max()
+     clamp is the real guarantee; hiding below 1280px is polish (no gutter can
+     hold an overlap-safe triangle at tablet/phone widths → hide). */
+.stk-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  --stk-cw: 1100px; /* arena-main box width */
+  --stk-margin: max(0px, (100vw - var(--stk-cw)) / 2); /* empty side margin */
+  --stk-safe: calc(var(--stk-margin) + 24px); /* ≈ distance to first card */
+  --stk-w: clamp(50px, 4.6vw, 100px); /* sticker width (item 5: a bit bigger) */
+  /* Reserve the RENDERED overshoot, not the layout box: a sticker grows by
+     scale (≤1.10 rest, ≤1.23 hover) + rotate (±17° peak) + the soft drop-shadow
+     (~10px). --stk-w * 1.2 covers the scaled/rotated corner and 22px covers the
+     shadow + safety, so even a hovered mid sticker's shadow stays clear of
+     content at every width ≥ 1280px (verified incl. shadow, 1280 → 2560). */
+  --stk-inmax: max(4px, calc(var(--stk-safe) - var(--stk-w) * 1.2 - 22px));
+  --stk-outer: min(
+    var(--stk-inmax),
+    clamp(6px, calc(var(--stk-margin) * 0.16), 30px)
+  );
+}
+.stk-sticker {
+  position: absolute;
+  width: var(--stk-w);
+  height: auto;
+  /* individual rotate/scale props compose with the float's transform */
+  rotate: var(--stk-rot, 0deg);
+  scale: var(--stk-scale, 1);
+  opacity: 0.92;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.22));
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: scale 0.18s ease;
+  animation: stk-float 6s ease-in-out infinite alternate;
+  animation-delay: calc(var(--stk-i, 0) * -0.9s); /* de-synced float */
+}
+@keyframes stk-float {
+  from {
+    transform: translateY(-5px);
+  }
+  to {
+    transform: translateY(7px);
+  }
+}
+/* Playful hover: a quick wiggle + gentle scale-up. precise-pointer (desktop)
+   only — touch never gets interactive stickers. */
+@media (hover: hover) and (pointer: fine) {
+  .stk-sticker {
+    pointer-events: auto;
+  }
+  .stk-sticker:hover {
+    scale: calc(var(--stk-scale, 1) * 1.12);
+    animation: stk-wiggle 0.5s ease-in-out;
+  }
+}
+@keyframes stk-wiggle {
+  0%,
+  100% {
+    rotate: var(--stk-rot, 0deg);
+  }
+  20% {
+    rotate: calc(var(--stk-rot, 0deg) - 7deg);
+  }
+  55% {
+    rotate: calc(var(--stk-rot, 0deg) + 7deg);
+  }
+  80% {
+    rotate: calc(var(--stk-rot, 0deg) - 3deg);
+  }
+}
+/* Six triangular slots. Outer (top/bottom) hug the edge; mid pokes toward the
+   content. Verticals are staggered + slightly asymmetric L↔R so the group
+   never reads as a straight vertical line. */
+.stk-l-top {
+  left: var(--stk-outer);
+  top: 15vh;
+}
+.stk-l-mid {
+  left: var(--stk-inmax);
+  top: 45vh;
+}
+.stk-l-bot {
+  left: var(--stk-outer);
+  top: 74vh;
+}
+.stk-r-top {
+  right: var(--stk-outer);
+  top: 18vh;
+}
+.stk-r-mid {
+  right: var(--stk-inmax);
+  top: 49vh;
+}
+.stk-r-bot {
+  right: var(--stk-outer);
+  top: 71vh;
+}
+/* Below 1280px the side gutter can't hold a real, overlap-safe triangle: the
+   1100px content column fills tablet/phone widths, leaving no room for a sticker
+   (let alone its hover growth + shadow) beside content. So hide entirely →
+   guarantees zero content overlap and no horizontal scroll. Hiding on
+   tablet/mobile is the OWNER-APPROVED fallback (the spec allows it for mobile;
+   extended to tablet because our centred 1100px arena has no side gutter until
+   the viewport exceeds the content width). */
+@media (max-width: 1279px) {
+  .stk-layer {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stk-sticker {
+    animation: none;
+  }
+  .stk-sticker:hover {
+    animation: none;
+    scale: calc(var(--stk-scale, 1) * 1.05);
+  }
+  .stk-spin::after {
+    animation-duration: 1.6s; /* keep the affordance, calm the spin */
+  }
+}
+
+/* ---- Responsive picker tweaks (mirrors the old wp2 560px rules) ---------- */
+@media (max-width: 560px) {
+  .stk-grid {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 10px;
+  }
+  .stk-collage {
+    height: 78px;
+  }
+  .stk-collage img {
+    width: 46px;
+    height: 46px;
+  }
+}
+
+
+/* =====================  ROUND 11 — h.css  ===================== */
+/* ============================================================================
+   ROUND 11 — Agent H: "What sets us apart" (about.values) section redesign.
+   Landing page only. Scope hook: .usp-values-scope wraps <AboutUs /> in
+   web-app/src/app/(public)/page.tsx. The section MARKUP lives in
+   web-app/src/components/AboutUs.tsx (NOT edited); these rules restyle the
+   existing .about-values-title / .about-values / .value-card / .value-ico
+   hooks at higher specificity than their globals.css base rules, so they are
+   order-independent when appended to globals.css.
+   NOTE: keep the rule order inside this block — the light-theme card rule
+   must precede the :hover rule (equal specificity).
+   ========================================================================== */
+
+/* --- Section placement fix (root cause of the cramped look): .about-hero is
+       a 2-column grid and the values block was auto-placed into ONE column,
+       squeezing 4 cards into ~57% of the page width. Let it span full width.
+       Two single-selector rules on purpose: browsers without :has() would
+       drop a combined selector list, so :last-child is the fallback. --- */
+.usp-values-scope .about-hero > div:last-child {
+  grid-column: 1 / -1;
+}
+.usp-values-scope .about-hero > div:has(> .about-values) {
+  grid-column: 1 / -1;
+}
+
+/* --- Section header: generous air above the block, centered heading with a
+       gradient accent bar for hierarchy (no copy changes — same h2). --- */
+.usp-values-scope .about-values-title {
+  margin: 56px 0 0;
+  text-align: center;
+  font-size: clamp(1.5rem, 2.8vw, 1.9rem);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.usp-values-scope .about-values-title::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 4px;
+  margin: 14px auto 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
+}
+
+/* --- Card grid: 4 per row desktop → 2 tablet → 1 mobile, gaps ≥ 20px,
+       clear whitespace between the heading block and the grid. --- */
+.usp-values-scope .about-values {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  align-items: stretch; /* equal-height cards per row */
+  margin: 32px 0 8px;
+}
+@media (max-width: 1024px) {
+  .usp-values-scope .about-values {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+}
+@media (max-width: 640px) {
+  .usp-values-scope .about-values {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .usp-values-scope .about-values-title {
+    margin-top: 44px;
+  }
+}
+
+/* --- Cards: token-driven surfaces, consistent ≥24px padding, 18–20px radii,
+       soft shadow. Flex column so icon/title/body align identically. --- */
+.usp-values-scope .value-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 26px 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+/* Light keeps the landing "Energetic" elevation language (soft, not heavy). */
+[data-theme="light"] .usp-values-scope .value-card {
+  border-radius: 20px;
+  border-color: var(--border);
+  box-shadow: 0 1px 2px var(--shadow), 0 12px 30px -18px var(--shadow-lg);
+}
+
+/* Hover feedback that still works under reduced motion (no movement here):
+   border accent + strengthened shadow. Must stay AFTER the light rule. */
+.usp-values-scope .value-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 2px 4px var(--shadow), 0 18px 40px -18px var(--shadow-lg);
+}
+
+/* --- Icon chip: 48px box, consistent top-left alignment. padding shrinks
+       the inline-SVG glyph to ~28px inside the chip (border-box sizing). --- */
+.usp-values-scope .value-ico {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  padding: 10px;
+  border-radius: 14px;
+  margin: 0 0 18px;
+  color: #fff;
+  background: linear-gradient(150deg, var(--accent), var(--accent-2, var(--accent)));
+}
+
+/* --- Card text hierarchy: block title + comfortable body line-height. --- */
+.usp-values-scope .value-card strong {
+  display: block;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+.usp-values-scope .value-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+/* --- Motion (gated): slight lift + subtle icon nudge on hover only for
+       users without a reduced-motion preference. --- */
+@media (prefers-reduced-motion: no-preference) {
+  .usp-values-scope .value-card {
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+  .usp-values-scope .value-card:hover {
+    transform: translateY(-4px);
+  }
+  .usp-values-scope .value-ico {
+    transition: transform 0.18s ease;
+  }
+  .usp-values-scope .value-card:hover .value-ico {
+    transform: scale(1.06);
+  }
+}
+
+
+/* =====================  ROUND 11 — i.css  ===================== */
+/* Round 11 — Agent I: parent Analytics subject-lock additions.
+   Merge into web-app/src/app/globals.css next to the existing
+   .ana-tab / .ana-lockhint rules (~line 4886). Token-driven: works in
+   both light and dark themes. */
+
+/* Locked subject tab. The button also carries disabled + aria-disabled, so
+   the existing .ana-tab:disabled rule already mutes it — this class makes the
+   locked style explicit and keeps it if the attribute strategy ever changes. */
+.ana-tab.ana-lock-tab {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: var(--chip-bg);
+  border-color: var(--border);
+  opacity: 0.75;
+}
+
+/* "Subscribe to unlock" link inside the lock hint under the subject tabs
+   (points to /children/<id>/subscribe). */
+.ana-lock-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ana-lock-link:hover,
+.ana-lock-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* =====================  ROUND 11 — main session fixes  ===================== */
+/* Password-eye centering (root cause, Agent B): the generic `.form button
+   { margin-top: 16px }` submit spacing leaks onto the absolutely-positioned
+   eye button and adds to its `top: 50%`, sinking it below center. Zeroing the
+   margin restores true centering for EVERY .form password field (login /
+   register / reset / child form) — the wizard-scoped rule in the R11 fragment
+   remains as a harmless duplicate. Arena/profile forms are outside .form. */
+.form .pw-field .pw-eye {
+  margin: 0;
+}
+
+/* Gate notices (.price-callout) had no rule — used by the payments-off and
+   giveaway-free callouts on the subscribe page and other gate surfaces. */
+.price-callout {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}

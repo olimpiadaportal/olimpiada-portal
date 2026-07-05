@@ -691,7 +691,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "nav.freeAccess": "Pulsuz giriş",
     "freeAccess.title": "Pulsuz giriş",
     "freeAccess.subtitle":
-      "Valideyn və ya konkret uşaq üçün müəyyən vaxt aralığında pulsuz giriş planlaşdırın.",
+      "Valideyn yaradın, uşaq əlavə edin və pulsuz giriş aralığını buradan planlaşdırın.",
+    "freeAccess.createParentHeading": "Valideyn yarat",
+    "freeAccess.createParentHelp":
+      "Yeni valideyn hesabı yaradın — dərhal aşağıdakı axtarışlarda görünəcək.",
+    "freeAccess.createChildHeading": "Uşaq yarat",
+    "freeAccess.createChildHelp":
+      "Mövcud və ya yeni yaradılmış valideyni axtarın, şəhər və məktəb seçib uşaq hesabı yaradın.",
     "freeAccess.createHeading": "Pulsuz giriş planlaşdır",
     "freeAccess.listHeading": "Planlaşdırılmış aralıqlar",
     "freeAccess.parent": "Valideyn",
@@ -1448,7 +1454,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "nav.freeAccess": "Free Access",
     "freeAccess.title": "Free Access",
     "freeAccess.subtitle":
-      "Schedule free access for a parent or a specific child over a fixed time window.",
+      "Create a parent, add a child and schedule their free-access window — all from here.",
+    "freeAccess.createParentHeading": "Create parent",
+    "freeAccess.createParentHelp":
+      "Create a new parent account — it becomes searchable below immediately.",
+    "freeAccess.createChildHeading": "Create child",
+    "freeAccess.createChildHelp":
+      "Search an existing or newly created parent, pick a city and school, and create the child account.",
     "freeAccess.createHeading": "Schedule free access",
     "freeAccess.listHeading": "Scheduled intervals",
     "freeAccess.parent": "Parent",
@@ -2212,7 +2224,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "nav.freeAccess": "Бесплатный доступ",
     "freeAccess.title": "Бесплатный доступ",
     "freeAccess.subtitle":
-      "Запланируйте бесплатный доступ для родителя или конкретного ребёнка на заданный период.",
+      "Создайте родителя, добавьте ребёнка и запланируйте окно бесплатного доступа — всё на этой странице.",
+    "freeAccess.createParentHeading": "Создать родителя",
+    "freeAccess.createParentHelp":
+      "Создайте новый аккаунт родителя — он сразу появится в поиске ниже.",
+    "freeAccess.createChildHeading": "Создать ребёнка",
+    "freeAccess.createChildHelp":
+      "Найдите существующего или только что созданного родителя, выберите город и школу и создайте аккаунт ребёнка.",
     "freeAccess.createHeading": "Запланировать бесплатный доступ",
     "freeAccess.listHeading": "Запланированные интервалы",
     "freeAccess.parent": "Родитель",

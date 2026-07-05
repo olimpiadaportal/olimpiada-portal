@@ -2,14 +2,6 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { createClient } from "@/lib/supabase/server";
 import { hasServiceRole } from "@/lib/supabase/admin";
 import { ChildPasswordReset } from "@/components/ChildPasswordReset";
-import { AccountCreateForm } from "@/components/AccountCreateForm";
-import {
-  CreateChildForm,
-  type GradeOption,
-  type SubjectOption,
-  type CityOption,
-  type SchoolOpt,
-} from "@/components/CreateChildForm";
 import { AccountEditForm } from "@/components/AccountEditForm";
 import { AccountDeleteButton } from "@/components/AccountDeleteButton";
 import { getT } from "@/i18n/server";
@@ -120,63 +112,6 @@ export default async function AccountsPage({
     childrenByParent.set(pid, list);
   }
 
-  // ---- Create-child form data (Round 11, admin payment bypass) --------------
-  // The parent picker now uses a LIVE server-search autocomplete (searchParents),
-  // so the full parent list is no longer pre-loaded. Grades feed the optional grade
-  // select; subjects are limited to ACTIVE-pricing per interval (mirrors the grant
-  // RPC). Round 12: cities + schools feed the mandatory City -> School cascade
-  // (schools ordered private-first + numeric, like the parent Add-Child flow).
-  let childGrades: GradeOption[] = [];
-  let childSubjects: SubjectOption[] = [];
-  let childCities: CityOption[] = [];
-  let childSchools: SchoolOpt[] = [];
-  if (serviceReady) {
-    const [gradesRes, pricingRes, citiesRes, schoolsRes] = await Promise.all([
-      supabase.from("grades").select("id, name, level").order("level"),
-      supabase
-        .from("subjects_pricing")
-        .select("subject_id, interval, subjects(name)")
-        .eq("status", "active"),
-      supabase.from("districts").select("id, name").eq("status", "active").order("name"),
-      supabase
-        .from("schools")
-        .select("id, name, district_id, is_private, school_number")
-        .eq("status", "active")
-        .order("is_private", { ascending: false })
-        .order("school_number", { ascending: true, nullsFirst: false })
-        .order("name"),
-    ]);
-    childGrades = ((gradesRes.data ?? []) as any[]).map((g) => ({
-      id: g.id,
-      name: g.name,
-    }));
-    childCities = ((citiesRes.data ?? []) as any[]).map((c) => ({
-      id: c.id,
-      name: c.name,
-    }));
-    childSchools = ((schoolsRes.data ?? []) as any[]).map((s) => ({
-      id: s.id,
-      name: s.name,
-      district_id: s.district_id,
-      is_private: !!s.is_private,
-    }));
-    const bySubject = new Map<string, { name: string; intervals: Set<string> }>();
-    for (const r of (pricingRes.data ?? []) as any[]) {
-      const name = r.subjects?.name ?? "—";
-      const entry = bySubject.get(r.subject_id) ?? {
-        name,
-        intervals: new Set<string>(),
-      };
-      entry.intervals.add(r.interval);
-      bySubject.set(r.subject_id, entry);
-    }
-    childSubjects = Array.from(bySubject, ([id, s]) => ({
-      id,
-      name: s.name,
-      intervals: Array.from(s.intervals),
-    })).sort((a, b) => a.name.localeCompare(b.name));
-  }
-
   const resetStrings = {
     reset: t("accounts.reset.open"),
     cancel: t("action.cancel"),
@@ -185,67 +120,6 @@ export default async function AccountsPage({
     submit: t("accounts.reset.submit"),
     submitting: t("accounts.reset.submitting"),
     done: t("accounts.reset.done"),
-    showPassword: t("auth.showPassword"),
-    hidePassword: t("auth.hidePassword"),
-  };
-
-  const childCreateStrings = {
-    open: t("accounts.child.create.open"),
-    title: t("accounts.child.create.title"),
-    intro: t("accounts.child.create.intro"),
-    parent: t("accounts.child.create.parent"),
-    parentSearch: t("accounts.child.create.parentSearch"),
-    parentSearching: t("accounts.child.create.parentSearching"),
-    parentEmpty: t("accounts.child.create.parentEmpty"),
-    parentChildren: t("accounts.child.create.parentChildren"),
-    parentClear: t("accounts.child.create.parentClear"),
-    firstName: t("accounts.create.firstName"),
-    lastName: t("accounts.create.lastName"),
-    password: t("accounts.create.password"),
-    passwordHint: t("accounts.create.passwordHint"),
-    grade: t("accounts.child.create.grade"),
-    gradeNone: t("accounts.child.create.gradeNone"),
-    city: t("accounts.child.create.city"),
-    cityChoose: t("accounts.child.create.cityChoose"),
-    school: t("accounts.child.create.school"),
-    schoolChoose: t("accounts.child.create.schoolChoose"),
-    cityFirst: t("accounts.child.create.cityFirst"),
-    privateSchools: t("accounts.child.create.privateSchools"),
-    publicSchools: t("accounts.child.create.publicSchools"),
-    grant: t("accounts.child.create.grant"),
-    grantHelp: t("accounts.child.create.grantHelp"),
-    interval: t("accounts.child.create.interval"),
-    intervalWeek: t("accounts.child.interval.week"),
-    intervalMonth: t("accounts.child.interval.month"),
-    intervalYear: t("accounts.child.interval.year"),
-    subjects: t("accounts.child.create.subjects"),
-    subjectsNone: t("accounts.child.create.subjectsNone"),
-    days: t("accounts.child.create.days"),
-    daysHelp: t("accounts.child.create.daysHelp"),
-    submit: t("accounts.child.create.submit"),
-    submitting: t("accounts.child.create.submitting"),
-    done: t("accounts.child.create.done"),
-    idLabel: t("accounts.child.create.idLabel"),
-    idPending: t("accounts.child.create.idPending"),
-    bypassNote: t("accounts.child.create.bypassNote"),
-    close: t("accounts.child.create.close"),
-    cancel: t("action.cancel"),
-    showPassword: t("auth.showPassword"),
-    hidePassword: t("auth.hidePassword"),
-  };
-
-  const createStrings = {
-    open: t("accounts.create.open"),
-    title: t("accounts.create.title"),
-    firstName: t("accounts.create.firstName"),
-    lastName: t("accounts.create.lastName"),
-    email: t("accounts.create.email"),
-    password: t("accounts.create.password"),
-    passwordHint: t("accounts.create.passwordHint"),
-    submit: t("accounts.create.submit"),
-    submitting: t("accounts.create.submitting"),
-    done: t("accounts.create.done"),
-    cancel: t("action.cancel"),
     showPassword: t("auth.showPassword"),
     hidePassword: t("auth.hidePassword"),
   };
@@ -302,21 +176,9 @@ export default async function AccountsPage({
         </section>
       )}
 
-      {serviceReady && (
-        <section className="card" style={{ marginBottom: 16 }}>
-          <AccountCreateForm strings={createStrings} />
-          <div style={{ marginTop: 12 }}>
-            <CreateChildForm
-              grades={childGrades}
-              subjects={childSubjects}
-              cities={childCities}
-              schools={childSchools}
-              strings={childCreateStrings}
-            />
-          </div>
-        </section>
-      )}
-
+      {/* Round 12.1: account CREATION moved to the Free Access page (the
+          admin's one-stop create-parent → create-child → schedule flow).
+          This section stays list/manage-only: search, edit, delete, reset. */}
       <FilterBar
         basePath="/accounts"
         search={{ value: q, placeholder: t("flt.accountSearch") }}

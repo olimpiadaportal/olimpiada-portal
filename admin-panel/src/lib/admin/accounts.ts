@@ -178,6 +178,7 @@ export async function createParent(
   });
 
   revalidatePath("/accounts");
+  revalidatePath("/free-access"); // creation now lives there (Round 12.1)
   return { ok: true };
 }
 
@@ -478,6 +479,7 @@ export async function createChildForParent(
     }
 
     revalidatePath("/accounts");
+    revalidatePath("/free-access"); // creation now lives there (Round 12.1)
     return { ok: true, childUniqueId };
   } catch (e) {
     // Saga cleanup: remove the orphaned auth user (cascades every DB row the
@@ -554,6 +556,7 @@ export async function updateParent(
   });
 
   revalidatePath("/accounts");
+  revalidatePath("/free-access"); // parent names render in the intervals table
   return { ok: true };
 }
 
@@ -609,6 +612,7 @@ export async function deleteChild(
   });
 
   revalidatePath("/accounts");
+  revalidatePath("/free-access"); // interval rows for this child cascade away
   return { ok: true };
 }
 
@@ -677,5 +681,6 @@ export async function deleteParent(
   });
 
   revalidatePath("/accounts");
+  revalidatePath("/free-access"); // interval rows for this parent cascade away
   return { ok: true };
 }

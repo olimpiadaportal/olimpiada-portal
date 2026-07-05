@@ -618,6 +618,18 @@ Post-review punch-list (web typecheck+build PASS; admin untouched; adversarial r
 - Docs: MANUAL_TESTING_GUIDE **BB1–BB7** (below).
 - **Adversarial review** (multi-agent, 4 lenses) found + **fixed** 4 real defects (migration `034` + web edits, re-typecheck+build both apps, from-zero 42/42): **(major)** the free-access gate + subscribe/subscription display used the PARENT-WIDE flag, so a window for one child wrongly blocked paying for an uncovered sibling → now **per-child** via a new caller-scoped `is_child_free_access_active(p_student)` RPC + `paidMutationGate(studentId)`; **(major, ×same-root)** the subscribe page's free state is now scoped to the specific child; **(major)** the admin `datetime-local` interval inputs were submitted naive and parsed as server-UTC (offset shift) → now converted to UTC ISO in the admin's browser before submit; **(minor)** `is_free_access_active_for_student` was over-granted to `authenticated` → revoked (internal SECURITY-DEFINER callers only; the scoped RPC is the authenticated entrypoint). Verified: base helper not authenticated-executable, scoped RPC authenticated-only, from-zero 42/42.
 
+### Round 12.1 (2026-07-05): Free Access page = single create→schedule workspace · full-codebase audit
+
+**Owner decisions this pass:** (1) free-access "add/remove subjects" model APPROVED as-is (interval = everything free, giveaway-style override; no comped subject rows); (2) account creation MOVES from Accounts to the Free Access page; (3) full security/logic/architecture audit → findings MD to work through later; the Test-engine → Leaderboard → Notifications order stays next after that.
+
+- [x] **Admin `/free-access` restructured into 4 sections** — Create parent → Create child → Schedule free access → Scheduled intervals. The creation forms are the SAME components/server actions the Accounts page used (`AccountCreateForm`→`createParent`, `CreateChildForm`→`createChildForParent` — moved, not duplicated; zero backend changes needed). A parent created in section 1 is immediately findable in the live `searchParents` autocomplete of sections 2–3.
+- [x] **Accounts page = list/manage only** — creation card + its grades/pricing/cities/schools loading + strings removed; search/edit/delete/child-password-reset untouched. Subtitle already described monitor/reset only.
+- [x] `createParent`/`createChildForParent`/`updateParent`/`deleteChild`/`deleteParent` now also `revalidatePath("/free-access")` (names/rows render there).
+- [x] i18n ×3: `freeAccess.createParentHeading/Help`, `freeAccess.createChildHeading/Help`, refreshed `freeAccess.subtitle`.
+- [x] **Validation:** admin typecheck + build PASS (23/23; `/free-access` 4.4 kB, `/accounts` slimmed). No web-app changes this pass.
+- [x] **Full-codebase audit** (6 read-only lenses: web security, admin security, SQL/RLS, business logic, architecture/connectivity, performance) → findings compiled in **`docs/CODEBASE_AUDIT_2026_07_05.md`** (to be worked through later, per owner).
+- Docs: MANUAL_TESTING_GUIDE **BB8**.
+
 ---
 ## 🗺️ FEATURE PLANS — Leaderboard · Test engine · Notifications (2026-07-05)
 

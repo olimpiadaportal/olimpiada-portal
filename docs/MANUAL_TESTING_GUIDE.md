@@ -709,4 +709,11 @@ If anything here doesn't match, tell me the **AA#** (or **ZF#/Z#**) + what you s
 - **Admin → Website Content**: pick a **Section** (Landing / Student / Parent), then a **Menu** → edit that menu's trilingual texts → **Save** (status flips Default → Custom). Open the matching **web-app** page → your text shows in that language; blank a locale → the built-in text returns. There is **no** font/colour/design editor anymore (removed).
 - **Rename**: the browser tab + headers read **OlympIQ**; package.json names are `olympiq-*`. Feature names like "Olimpiada Hazırlığı" are unchanged (AZ word). Nothing functional should break.
 
+## BB8. Free Access page = the whole create→schedule flow (Round 12.1)
+- **Admin → Free Access** now has **four sections on one page**: **Create parent** → **Create child** → **Schedule free access** → **Scheduled intervals**.
+  - **Create parent** (same form that used to live in Accounts): fill first/last/email/password → create. Immediately type that parent's name in the **Create child** or **Schedule** search boxes → they're found (live DB search, no reload needed).
+  - **Create child**: search the parent (name/email/phone, debounced, loading/empty states), City → School cascade (private-first, numeric), password, optional grade/comped grant → create → 8-digit ID revealed.
+  - **Schedule free access**: unchanged (BB3) — parent search, optional specific child, Start/End, note.
+- **Admin → Accounts** no longer has any **Create parent / Create child** buttons — it is list/manage only (search, edit name/status, reset child password, delete). Everything else there still works.
+
 If anything here doesn't match, tell me the **BB#** + what you saw.

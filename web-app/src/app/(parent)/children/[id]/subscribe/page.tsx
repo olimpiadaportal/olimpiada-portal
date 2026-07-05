@@ -3,6 +3,7 @@ import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { SubscribeForm } from "@/components/SubscribeForm";
 import { ManageSubjects } from "@/components/ManageSubjects";
 
@@ -85,6 +86,9 @@ export default async function SubscribePage({
   // is passed down — client components never touch lib/paymentMode directly).
   // The server actions enforce the same gates; these are the friendly notices.
   const { mode } = await getPaymentModeInfo();
+  // Round 12: a scheduled free-access interval FOR THIS CHILD blocks paid writes
+  // like a giveaway (scoped per-child so a sibling's window doesn't affect this one).
+  const freeIntervalActive = await isChildFreeAccessActive(id);
 
   return (
     <section className="prose" style={{ maxWidth: 600 }}>
@@ -95,10 +99,13 @@ export default async function SubscribePage({
       {mode === "off" ? (
         // Payments off → no new plans and no billing edits.
         <div className="price-callout">{t("gate.paymentsOff")}</div>
-      ) : mode === "giveaway" ? (
-        // Free giveaway window → paid writes are blocked server-side; show the
-        // friendly "everything is free right now" notice instead of the forms.
-        <div className="price-callout">{t("gate.giveawayFree")}</div>
+      ) : mode === "giveaway" || freeIntervalActive ? (
+        // Free giveaway window OR an active free-access interval → paid writes are
+        // blocked server-side; show the friendly "everything is free right now"
+        // notice instead of the forms.
+        <div className="price-callout">
+          {mode === "giveaway" ? t("gate.giveawayFree") : t("gate.freeAccess")}
+        </div>
       ) : sub?.id ? (
         <ManageSubjects
           studentId={id}

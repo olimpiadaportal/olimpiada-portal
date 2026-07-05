@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 002_core_profiles_roles_permissions.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 002 of 013.
+-- OlympIQ — canonical root SQL file 002 of 013.
 --
 -- Responsibility : Core identity & RBAC core tables:
 --                  profiles, roles, permissions, role_permissions, profile_roles,
@@ -132,6 +132,10 @@ create table if not exists public.students (
   class_grade        text,
   access_status      public.child_access_status not null default 'inactive',
   graduated          boolean not null default false, -- true once grade 11 is finished; promotion stops (advance_student_grades, 011)
+  -- Round 12 (migration 030): chosen child-friendly LIGHT-MODE palette slug (or
+  -- NULL for the default look). Applied via data-palette on .arena; dark mode
+  -- unaffected. CHECK is the server-side whitelist (palettes are CSS-only).
+  palette            text constraint students_palette_chk check (palette is null or palette in ('sky','bubblegum','mint','sunset','rainbow')),
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );

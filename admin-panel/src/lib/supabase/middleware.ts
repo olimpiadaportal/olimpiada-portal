@@ -11,7 +11,7 @@ type CookieToSet = { name: string; value: string; options: CookieOptions };
 // enforcement happens here: every authenticated request stamps an httpOnly
 // last-seen cookie, and a request arriving after >30 idle minutes gets the
 // session revoked server-side and is bounced to /login?timeout=1.
-const LAST_SEEN_COOKIE = "olimpiq-admin-last-seen";
+const LAST_SEEN_COOKIE = "olympiq-admin-last-seen";
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function updateSession(request: NextRequest) {

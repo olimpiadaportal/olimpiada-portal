@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 003_academic_taxonomy.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 003 of 013.
+-- OlympIQ — canonical root SQL file 003 of 013.
 --
 -- Responsibility : Academic taxonomy & future school/partner readiness:
 --                  districts, schools, grades, subjects, topics, subtopics.
@@ -32,15 +32,25 @@ create table if not exists public.districts (
 -- -----------------------------------------------------------------------------
 -- schools : a school MUST belong to a city (districts). district_id is MANDATORY.
 -- Admins create schools later; sample schools (under Bakı) are seeded in 012.
+-- Ordering everywhere: PRIVATE first (is_private), then numeric school_number
+-- ASCENDING (so "2" before "10"), NULL numbers last, then name. school_number is
+-- a stored sort key parsed from the AZ name ("N nömrəli ...") — backfilled in 012.
+-- (Round 12 / migration 029.)
 -- -----------------------------------------------------------------------------
 create table if not exists public.schools (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null,
-  district_id uuid not null references public.districts (id) on delete restrict,
-  status      public.catalog_status not null default 'active',
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null,
+  district_id   uuid not null references public.districts (id) on delete restrict,
+  status        public.catalog_status not null default 'active',
+  is_private    boolean not null default false,   -- private schools sort before public
+  school_number int,                              -- numeric sort key parsed from name; NULL = unnumbered
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
 );
+
+-- Display-ordering index (private first, number asc nulls last, name).
+create index if not exists ix_schools_display_order
+  on public.schools (is_private desc, school_number asc nulls last, name);
 
 -- -----------------------------------------------------------------------------
 -- grades : grade levels 1..11.

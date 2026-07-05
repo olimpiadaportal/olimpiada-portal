@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 013_validation_queries.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 013 of 013.
+-- OlympIQ — canonical root SQL file 013 of 013.
 --
 -- Responsibility : Read-only validation and smoke checks for the schema, RLS,
 --                  seeds, security helpers, and storage.
@@ -420,7 +420,7 @@ select '27_news_likes_round6' as check_name,
 --     PLAN time even inside an untaken CASE branch), so this check reports the
 --     extension's presence; the actual job row is asserted manually on dev:
 --       select jobname, schedule from cron.job
---        where jobname = 'olimpiq_advance_student_grades';
+--        where jobname = 'olympiq_advance_student_grades';   -- renamed R12 (migration 032)
 select '28_pg_cron_grade_promotion' as check_name,
        case when exists (select 1 from pg_extension where extname='pg_cron')
             then 'PASS (pg_cron present; job managed by 016)'
@@ -548,6 +548,75 @@ select '37_giveaway_attempt_access' as check_name,
                  like '%is_giveaway_active%'
              and pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)
                  like '%is_giveaway_active%'
+            then 'PASS' else 'FAIL' end as status;
+
+-- 38) Round 12 (migration 029): schools carry is_private + numeric school_number,
+--     the display-ordering index exists, private schools are seeded, and the
+--     numeric sort key is backfilled (so "2" sorts before "10", not lexically).
+select '38_schools_private_and_number' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='schools'
+                            and column_name='is_private')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='schools'
+                            and column_name='school_number')
+             and exists (select 1 from pg_indexes
+                          where schemaname='public' and indexname='ix_schools_display_order')
+             and (select count(*) from public.schools where is_private) >= 1
+             and (select count(*) from public.schools where school_number is not null) >= 300
+            then 'PASS' else 'FAIL' end as status;
+
+-- 39) Round 12 (migration 030): students.palette exists with the 5-value CHECK
+--     whitelist (server-side guard for the child light-mode palette picker).
+select '39_student_palette' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='palette')
+             and exists (select 1 from pg_constraint
+                          where conname='students_palette_chk'
+                            and conrelid='public.students'::regclass)
+            then 'PASS' else 'FAIL' end as status;
+
+-- 40) Round 12 (migration 031): admin-managed Site Content & Design — site_content
+--     table with RLS ON + admin-only policy, and the 7 design.* token settings.
+select '40_site_content_and_design' as check_name,
+       case when to_regclass('public.site_content') is not null
+             and (select relrowsecurity from pg_class where oid='public.site_content'::regclass)
+             and exists (select 1 from pg_policies
+                          where schemaname='public' and tablename='site_content'
+                            and policyname='site_content_admin')
+             -- Round 12 (migration 033): hierarchical section/menu columns added.
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='site_content' and column_name='section')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='site_content' and column_name='menu')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 41) Round 12 (migration 033): the design/font/colour editor was REMOVED — the
+--     Website Content Management module is TEXT-ONLY, so no design.* settings exist.
+select '41_design_tokens_removed' as check_name,
+       case when (select count(*) from public.system_settings where key like 'design.%') = 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 42) Round 12 (migration 033): per-parent/child free-access intervals — table with
+--     RLS ON + admin-only policy; the SECURITY DEFINER helpers are NOT anon-executable;
+--     both attempt-start RPCs honor is_free_access_active_for_student().
+select '42_free_access_intervals' as check_name,
+       case when to_regclass('public.free_access_intervals') is not null
+             and (select relrowsecurity from pg_class where oid='public.free_access_intervals'::regclass)
+             and exists (select 1 from pg_policies
+                          where schemaname='public' and tablename='free_access_intervals'
+                            and policyname='fai_admin')
+             and has_function_privilege('anon','public.is_free_access_active_for_student(uuid)','EXECUTE') = false
+             -- Round 12 pass-2 (migration 034): base helper is not even authenticated-executable;
+             -- the caller-scoped is_child_free_access_active is the authenticated entrypoint.
+             and has_function_privilege('authenticated','public.is_free_access_active_for_student(uuid)','EXECUTE') = false
+             and has_function_privilege('anon','public.is_child_free_access_active(uuid)','EXECUTE') = false
+             and has_function_privilege('anon','public.current_parent_free_access()','EXECUTE') = false
+             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+                 like '%is_free_access_active_for_student%'
+             and pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)
+                 like '%is_free_access_active_for_student%'
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

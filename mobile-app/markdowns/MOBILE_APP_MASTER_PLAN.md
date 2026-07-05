@@ -1,4 +1,4 @@
-# OlimpIQ Mobile App — Master Plan v2 (React Native + Expo)
+# OlympIQ Mobile App — Master Plan v2 (React Native + Expo)
 
 Status: **PLANNED (owner-approved direction). Implementation starts only when the owner activates a Mobile stage (M#) in `STATUS.md`.**
 Companions: root `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md` (stages M0–M9) · `docs/PRODUCT_COMPLETION_BACKLOG.md` (deferred web features — §20 maps every item into this plan).
@@ -61,7 +61,7 @@ Profile is NOT a tab (parity with web): the avatar button in every tab header op
 
 ## 4. Deep linking
 
-- **Schemes**: custom `olimpiq://` (always) + **universal/app links** on `https://olimpiq.ai/*` once the domain is live (Apple AASA + Android assetlinks published from the web-app's public dir — a web-app deliverable at M3, listed in the backlog's deploy items).
+- **Schemes**: custom `olympiq://` (always) + **universal/app links** on `https://olympiq.ai/*` once the domain is live (Apple AASA + Android assetlinks published from the web-app's public dir — a web-app deliverable at M3, listed in the backlog's deploy items).
 - **Route map** (web URL → app route; the app mirrors web paths so ONE link works on both platforms):
 ```
 /                    → public Welcome            /pricing|about|faq|contact → same-name public screens
@@ -209,7 +209,7 @@ Unchanged v1 recommendation: **read-only commerce on mobile** (subscription stat
 - **Versioning**: semver `MAJOR.MINOR.PATCH` + auto-incremented build numbers (EAS); `runtimeVersion: {policy: "appVersion"}` so OTA never crosses native-module boundaries.
 - **OTA policy**: JS-only fixes/copy/theme via signed expo-updates to `production` channel; anything touching native modules/permissions/SDK = store release; every OTA recorded in STATUS.md; instant rollback = republish previous update.
 - **Pipelines**: `eas build --profile preview` per stage-close; `eas build --profile production` + `eas submit` at M8/M9; CI script order: typecheck → lint → jest → audit → (tag) build.
-- **Suggested identifiers**: `ai.olimpiq.app` (iOS bundle id + Android applicationId), name "OlimpIQ", scheme `olimpiq`.
+- **Suggested identifiers**: `ai.olympiq.app` (iOS bundle id + Android applicationId), name "OlympIQ", scheme `olympiq`.
 
 ## 19. QA strategy & release checklist
 
@@ -256,4 +256,4 @@ Unchanged v1 recommendation: **read-only commerce on mobile** (subscription stat
 | Az string overflow on small screens | M0 pseudo-length test + wrap-first layouts (§14) |
 
 ## 23. Owner decisions needed (asked once, at activation / before M8)
-1. Store accounts (Apple Developer + Play Console) availability; 2. bundle id `ai.olimpiq.app` + name "OlimpIQ" confirm; 3. push notifications in v1 scope (M7 in or out); 4. §17 read-only-payments posture confirm; 5. sentry-expo on/off (§16); 6. Kids-Category posture confirm (§13).
+1. Store accounts (Apple Developer + Play Console) availability; 2. bundle id `ai.olympiq.app` + name "OlympIQ" confirm; 3. push notifications in v1 scope (M7 in or out); 4. §17 read-only-payments posture confirm; 5. sentry-expo on/off (§16); 6. Kids-Category posture confirm (§13).

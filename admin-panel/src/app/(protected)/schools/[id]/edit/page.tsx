@@ -39,6 +39,7 @@ export default async function EditSchoolPage({
             name: school.name,
             district_id: school.district_id,
             status: school.status,
+            is_private: school.is_private,
           }}
           labels={{
             name: lt("schools.schoolName"),
@@ -52,6 +53,8 @@ export default async function EditSchoolPage({
             errMissingName: lt("schools.errMissingName"),
             errMissingCity: lt("schools.errMissingCity"),
             errGeneric: lt("common.errGeneric"),
+            isPrivate: lt("schools.isPrivate"),
+            isPrivateHint: lt("schools.isPrivateHint"),
           }}
         />
       </section>

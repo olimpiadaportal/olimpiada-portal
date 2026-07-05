@@ -1,4 +1,4 @@
-# Readiness Review — Olimpiada Portal (2026-06-28)
+# Readiness Review — OlympIQ (2026-06-28)
 
 Honest assessment of what's implemented vs. the investor/product plan in
 `docs/master/*` and `IMPLEMENTATION_PRIORITY_SUMMARY.md`.

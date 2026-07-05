@@ -19,6 +19,8 @@ export type SchoolFormLabels = {
   errMissingName: string;
   errMissingCity: string;
   errGeneric: string;
+  isPrivate: string;
+  isPrivateHint: string;
 };
 
 function mapError(code: string | undefined, l: SchoolFormLabels): string | null {
@@ -36,7 +38,12 @@ export function SchoolForm({
 }: {
   labels: SchoolFormLabels;
   cityOptions: CityOption[];
-  defaultValues?: { name?: string; district_id?: string; status?: string };
+  defaultValues?: {
+    name?: string;
+    district_id?: string;
+    status?: string;
+    is_private?: boolean;
+  };
   id?: string;
 }) {
   const [state, formAction, pending] = useActionState<SchoolSaveState, FormData>(
@@ -89,6 +96,31 @@ export function SchoolForm({
           </select>
         </label>
       </div>
+
+      <label
+        className="field"
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          cursor: "pointer",
+        }}
+      >
+        <input
+          type="checkbox"
+          name="is_private"
+          value="1"
+          defaultChecked={defaultValues?.is_private ?? false}
+          style={{ width: "auto", margin: 0 }}
+        />
+        <span className="field-label" style={{ margin: 0 }}>
+          {labels.isPrivate}
+          <span className="muted" style={{ fontWeight: 400 }}>
+            {" "}
+            — {labels.isPrivateHint}
+          </span>
+        </span>
+      </label>
 
       {mapError(state?.error, labels) && (
         <p className="form-error">{mapError(state?.error, labels)}</p>

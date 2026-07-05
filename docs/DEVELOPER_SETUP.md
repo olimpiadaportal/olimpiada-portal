@@ -1,6 +1,6 @@
 # DEVELOPER_SETUP.md — New Machine Setup
 
-Concise, practical setup for moving Olimpiada Portal to a new laptop.
+Concise, practical setup for moving OlympIQ to a new laptop.
 Target environment: **Windows + VS Code + Claude Code**.
 
 > **No secrets in this file.** All values below are placeholders. Never paste real

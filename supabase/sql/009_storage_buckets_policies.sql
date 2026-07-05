@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 009_storage_buckets_policies.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 009 of 013.
+-- OlympIQ — canonical root SQL file 009 of 013.
 --
 -- Responsibility : Supabase Storage buckets and storage.objects RLS policies.
 -- Run order      : After 008 (uses helper functions from 002; pairs with

@@ -3,6 +3,7 @@ import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { CancelSubscription } from "@/components/CancelSubscription";
 import { BillingTabs } from "@/components/BillingTabs";
 import { InvoicesSection, type InvoiceRow } from "@/components/InvoicesSection";
@@ -121,7 +122,8 @@ export default async function ParentSubscription({
   // notice bar renders above the Plans section — paid writes are blocked
   // server-side anyway; this is the friendly surface.
   const { mode } = await getPaymentModeInfo();
-  const giveaway = mode === "giveaway";
+  // Round 12: `giveaway` (the free-surface flag) is finalized AFTER the selected
+  // child is known, so a per-child free-access interval scopes to that child.
 
   // pricing2.* is owned by the public pricing page; fall back to the live
   // pricing.* keys (always present) so no raw key can ever render here.
@@ -215,6 +217,13 @@ export default async function ParentSubscription({
   const requestedChild = typeof sp?.child === "string" ? sp.child : "";
   const selectedCard =
     cards.find((c) => c.studentProfileId === requestedChild) ?? cards[0] ?? null;
+
+  // Free surface = global giveaway OR a free-access interval FOR THE SELECTED CHILD
+  // (scoped per-child so a sibling's window doesn't turn this child's plans free).
+  const freeIntervalActive = selectedCard
+    ? await isChildFreeAccessActive(selectedCard.studentProfileId)
+    : false;
+  const giveaway = mode === "giveaway" || freeIntervalActive;
 
   // Parent's real email for the invoices section (demo fallback).
   let parentEmail = "parent@example.com";

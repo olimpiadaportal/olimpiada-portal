@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 008_notifications_support_audit.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 008 of 013.
+-- OlympIQ — canonical root SQL file 008 of 013.
 --
 -- Responsibility : Notifications, support, audit, content review, media metadata,
 --                  settings & feature flags:
@@ -167,6 +167,59 @@ create table if not exists public.feature_flags (
   updated_by uuid references public.profiles (id) on delete set null,
   updated_at timestamptz not null default now()
 );
+
+-- -----------------------------------------------------------------------------
+-- site_content : admin-managed TRILINGUAL site-text OVERRIDES keyed by i18n key
+-- (Round 12 / migration 031). Empty locale value = fall back to the app's built-in
+-- i18n. Read server-side via the service-role client; admin-only RLS (010).
+-- updated_at trigger lives in 011. group_key drives the admin UI grouping.
+-- -----------------------------------------------------------------------------
+create table if not exists public.site_content (
+  key        text primary key,
+  group_key  text not null default 'general',
+  -- Round 12 (migration 033): hierarchical Section -> Menu grouping for the admin
+  -- "Website Content Management" UI (e.g. section='landing', menu='hero'). The
+  -- editable-key registry lives in the admin app; these columns record the chosen
+  -- grouping per override row. NULL for legacy rows.
+  section    text,
+  menu       text,
+  az         text not null default '',
+  en         text not null default '',
+  ru         text not null default '',
+  updated_by uuid references public.profiles (id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
+-- free_access_intervals : admin-scheduled FREE-ACCESS windows (Round 12 / migration
+-- 033). Targets a specific child (student_profile_id) OR a whole parent's children
+-- (parent_profile_id); at least one is set. While now() is inside [starts_at,
+-- ends_at) and is_active, the parent's subscription content is FREE (prices 0, add/
+-- remove subjects free, no paid rows) and the child can practice/olympiad free.
+-- Access is evaluated LAZILY (helpers in 011) — no job, nothing to unwind. Writes
+-- are admin/service only (RLS in 010). Distinct from the GLOBAL giveaway and from
+-- the PERMANENT admin_grant_child_access comped subscription.
+-- -----------------------------------------------------------------------------
+create table if not exists public.free_access_intervals (
+  id                  uuid primary key default gen_random_uuid(),
+  parent_profile_id   uuid references public.profiles (id) on delete cascade,
+  student_profile_id  uuid references public.students (profile_id) on delete cascade,
+  starts_at           timestamptz not null,
+  ends_at             timestamptz not null,
+  is_active           boolean not null default true,
+  note                text,
+  created_by_admin_id uuid references public.profiles (id) on delete set null,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint chk_fai_target check (parent_profile_id is not null or student_profile_id is not null),
+  constraint chk_fai_window check (ends_at > starts_at)
+);
+create index if not exists ix_fai_parent  on public.free_access_intervals (parent_profile_id);
+create index if not exists ix_fai_student on public.free_access_intervals (student_profile_id);
+create index if not exists ix_fai_window  on public.free_access_intervals (starts_at, ends_at);
+
+comment on table public.free_access_intervals is
+  'Admin-scheduled per-parent/child free-access windows. Free (prices 0, no paid rows) while now() in [starts_at,ends_at) and is_active. Lazy expiry (helpers in 011). Admin/service write only.';
 
 -- =============================================================================
 -- End of 008_notifications_support_audit.sql

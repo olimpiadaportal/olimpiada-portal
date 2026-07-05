@@ -71,6 +71,9 @@ const ACTION_KEYS: Record<string, string> = {
   // accounts.ts (R11 admin-created child + free-access grant)
   "admin.child.create": "audit.action.child_create",
   "admin.child.access_grant": "audit.action.child_access_grant",
+  // freeAccess.ts (R12 admin-scheduled free-access windows)
+  "admin.free_access.create": "audit.action.free_access_create",
+  "admin.free_access.deactivate": "audit.action.free_access_deactivate",
   // settings.ts
   "admin.settings.flag_toggle": "audit.action.flag_toggle",
   "admin.settings.update": "audit.action.setting_update",
@@ -101,6 +104,7 @@ const ENTITY_KEYS: Record<string, string> = {
   olympiad_packages: "audit.entity.olympiad_packages",
   olympiad_purchases: "audit.entity.olympiad_purchases",
   wallpapers: "audit.entity.wallpapers",
+  free_access_intervals: "audit.entity.free_access_intervals",
   sticker_themes: "audit.entity.sticker_themes",
   sticker_images: "audit.entity.sticker_images",
   feature_flags: "audit.entity.feature_flags",

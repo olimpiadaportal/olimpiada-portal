@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 005_attempts_daily_tasks_progress.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 005 of 013.
+-- OlympIQ — canonical root SQL file 005 of 013.
 --
 -- Responsibility : Learning activity:
 --                  test_attempts, test_attempt_answers,

@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 006_leaderboards_analytics.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 006 of 013.
+-- OlympIQ — canonical root SQL file 006 of 013.
 --
 -- Responsibility : Leaderboard + analytics readiness:
 --                  leaderboard_periods, leaderboard_entries, leaderboard_snapshots,

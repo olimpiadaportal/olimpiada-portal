@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 004_content_questions_tests.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 004 of 013.
+-- OlympIQ — canonical root SQL file 004 of 013.
 --
 -- Responsibility : Content config catalogs + question bank + tests:
 --                  question_types, difficulty_levels, olympiad_types, sources,

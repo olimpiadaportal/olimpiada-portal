@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 016_scheduled_jobs.sql
 -- =============================================================================
--- Olimpiada Portal (OlimpIQ) — canonical module file 016 (scheduled jobs).
+-- OlympIQ (OlympIQ) — canonical module file 016 (scheduled jobs).
 --
 -- Responsibility : pg_cron schedules for recurring maintenance jobs. Currently:
 --                  yearly grade promotion (public.advance_student_grades(),
@@ -32,14 +32,14 @@ begin
   if v_has_cron then
     perform cron.unschedule(jobid)
        from cron.job
-      where jobname = 'olimpiq_advance_student_grades';
+      where jobname = 'olympiq_advance_student_grades';
 
     perform cron.schedule(
-      'olimpiq_advance_student_grades',
+      'olympiq_advance_student_grades',
       '0 3 1 9 *',                                   -- Sept 1, 03:00 UTC, yearly
       'select public.advance_student_grades();'
     );
-    raise notice 'pg_cron job olimpiq_advance_student_grades scheduled (Sept 1, 03:00 UTC yearly).';
+    raise notice 'pg_cron job olympiq_advance_student_grades scheduled (Sept 1, 03:00 UTC yearly).';
   else
     raise notice 'pg_cron absent — grade promotion NOT scheduled (skipped safely).';
   end if;

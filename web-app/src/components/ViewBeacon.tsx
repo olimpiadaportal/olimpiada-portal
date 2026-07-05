@@ -11,7 +11,7 @@ import { registerNewsView } from "@/lib/newsActions";
 export function ViewBeacon({ newsId, slug }: { newsId: string; slug: string }) {
   useEffect(() => {
     try {
-      const key = `olimpiq-viewed:${slug}`;
+      const key = `olympiq-viewed:${slug}`;
       if (sessionStorage.getItem(key)) return;
       sessionStorage.setItem(key, "1");
     } catch {

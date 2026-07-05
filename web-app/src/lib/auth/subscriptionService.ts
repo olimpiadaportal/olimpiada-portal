@@ -11,17 +11,23 @@ import { requireParent } from "@/lib/auth/session";
 import { applyAllocatedChildEmail } from "@/lib/auth/childAccountService";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { isChildFreeAccessActive } from "@/lib/freeAccess";
 
 // Round 11: paid mutations are gated by the PAYMENT MODE, not the raw flag —
 // 'real'/'demo' allow the transaction, 'off' blocks it (existing UX), and
 // 'giveaway' blocks paid WRITES with a friendly "it's free right now" message
 // (access during the window comes from the server-side giveaway override, so
-// nothing has to be unwound when the window expires).
-async function paidMutationGate(): Promise<string | null> {
+// nothing has to be unwound when the window expires). Round 12: an active
+// FREE-ACCESS interval blocks paid writes the same way — but scoped to THIS
+// child, so a window for one child never blocks paying for an uncovered sibling.
+async function paidMutationGate(studentId?: string): Promise<string | null> {
   const t = await getT();
   const { mode } = await getPaymentModeInfo();
   if (mode === "off") return t("gate.paymentsOff");
   if (mode === "giveaway") return t("gate.giveawayFree");
+  if (studentId && (await isChildFreeAccessActive(studentId))) {
+    return t("gate.freeAccess");
+  }
   return null;
 }
 
@@ -50,11 +56,12 @@ export async function subscribeChild(
 ): Promise<SubscribeState> {
   const parent = await requireParent();
   const t = await getT();
-  // Payment-mode gate (admin Settings): enforced SERVER-side so a hand-crafted
-  // POST can't start a subscription while payments are off / free.
-  const gateError = await paidMutationGate();
-  if (gateError) return { ok: false, error: gateError };
   const studentId = String(formData.get("student_id") ?? "");
+  // Payment-mode gate (admin Settings): enforced SERVER-side so a hand-crafted
+  // POST can't start a subscription while payments are off / free. Scoped to this
+  // child so a free window for a sibling doesn't block paying for this one.
+  const gateError = await paidMutationGate(studentId);
+  if (gateError) return { ok: false, error: gateError };
   const interval = String(formData.get("interval") ?? "");
   const subjectIds = formData.getAll("subject").map(String).filter(Boolean);
 
@@ -170,11 +177,11 @@ export async function addSubjectAction(
   formData: FormData,
 ): Promise<SubjectEditState> {
   const t = await getT();
-  // Adding a subject re-prices the live subscription — a billing change, so it
-  // is gated by the same payment-mode rules as starting one.
-  const gateError = await paidMutationGate();
-  if (gateError) return { error: gateError };
   const studentId = String(formData.get("student_id") ?? "");
+  // Adding a subject re-prices the live subscription — a billing change, so it
+  // is gated by the same payment-mode rules as starting one (scoped to this child).
+  const gateError = await paidMutationGate(studentId);
+  if (gateError) return { error: gateError };
   const subjectId = String(formData.get("subject_id") ?? "");
   if (!studentId || !subjectId) return { error: t("sub.err.invalid") };
   if (!(await ownsChild(studentId))) return { error: t("sub.err.notYourChild") };
@@ -195,11 +202,11 @@ export async function removeSubjectAction(
   formData: FormData,
 ): Promise<SubjectEditState> {
   const t = await getT();
-  // Also a billing change (re-price) — same payment-mode gate. Cancel stays
-  // OPEN: stopping billing must always be possible for the parent.
-  const gateError = await paidMutationGate();
-  if (gateError) return { error: gateError };
   const studentId = String(formData.get("student_id") ?? "");
+  // Also a billing change (re-price) — same payment-mode gate (scoped to this
+  // child). Cancel stays OPEN: stopping billing must always be possible.
+  const gateError = await paidMutationGate(studentId);
+  if (gateError) return { error: gateError };
   const subjectId = String(formData.get("subject_id") ?? "");
   if (!studentId || !subjectId) return { error: t("sub.err.invalid") };
   if (!(await ownsChild(studentId))) return { error: t("sub.err.notYourChild") };
@@ -293,10 +300,10 @@ export async function updateSubscriptionSubjectsAction(
   formData: FormData,
 ): Promise<SubjectsUpdateState> {
   const t = await getT();
-  const gateError = await paidMutationGate();
+  const studentId = String(formData.get("student_id") ?? "");
+  const gateError = await paidMutationGate(studentId);
   if (gateError) return { ok: false, error: gateError };
 
-  const studentId = String(formData.get("student_id") ?? "");
   const desired = formData
     .getAll("subject")
     .map(String)

@@ -18,8 +18,20 @@ export type SchoolRow = {
   name: string;
   district_id: string;
   status: string;
+  is_private: boolean;
+  school_number: number | null;
   city_name?: string;
 };
+
+// Parse the numeric sort key from an AZ school name ("N nömrəli ...") — mirrors the
+// SQL backfill (migration 029) so admin-entered names sort the same as seeds.
+// Returns null when there is no such number.
+function parseSchoolNumber(name: string): number | null {
+  const m = name.match(/(\d+)\s+nömrəli/);
+  if (!m) return null;
+  const n = Number.parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
 
 export type CityOption = { value: string; label: string };
 
@@ -35,15 +47,21 @@ function readStatus(formData: FormData): string {
 export async function listSchools(): Promise<SchoolRow[]> {
   await requireAdmin();
   const supabase = await createClient();
+  // Round 12: private schools first, then numeric school_number asc (nulls last),
+  // then name.
   const { data } = await supabase
     .from("schools")
-    .select("id, name, district_id, status, districts(name)")
+    .select("id, name, district_id, status, is_private, school_number, districts(name)")
+    .order("is_private", { ascending: false })
+    .order("school_number", { ascending: true, nullsFirst: false })
     .order("name");
   return (data ?? []).map((r: any) => ({
     id: r.id,
     name: r.name,
     district_id: r.district_id,
     status: r.status,
+    is_private: !!r.is_private,
+    school_number: r.school_number ?? null,
     city_name: r.districts?.name ?? "—",
   }));
 }
@@ -53,7 +71,7 @@ export async function getSchool(id: string): Promise<SchoolRow | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("schools")
-    .select("id, name, district_id, status")
+    .select("id, name, district_id, status, is_private, school_number")
     .eq("id", id)
     .maybeSingle();
   return (data as SchoolRow) ?? null;
@@ -83,6 +101,7 @@ export async function saveSchool(
   const name = String(formData.get("name") ?? "").trim();
   const district_id = String(formData.get("district_id") ?? "").trim();
   const status = readStatus(formData);
+  const is_private = formData.get("is_private") != null; // checkbox present => true
 
   if (!name) return { error: "missing.name" };
   // Cap: school name ≤ 200 (server-side). The form maps this unknown code to
@@ -102,7 +121,15 @@ export async function saveSchool(
     .maybeSingle();
   if (!city) return { error: "missing.city" };
 
-  const payload = { name, district_id, status };
+  // school_number is derived from the name (kept consistent with the SQL backfill),
+  // never trusted from the client. is_private comes from the checkbox.
+  const payload = {
+    name,
+    district_id,
+    status,
+    is_private,
+    school_number: parseSchoolNumber(name),
+  };
 
   if (id) {
     const { error } = await supabase

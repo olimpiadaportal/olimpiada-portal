@@ -1,6 +1,6 @@
 # MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md
 
-Staged execution plan for the **OlimpIQ mobile app** (React Native + Expo).
+Staged execution plan for the **OlympIQ mobile app** (React Native + Expo).
 Source of design truth: `mobile-app/markdowns/MOBILE_APP_MASTER_PLAN.md` (read it before ANY mobile stage).
 Workflow: identical to the web track — `STATUS.md` is the source of truth for the active stage; use Prompt 2 from `CODING_AGENT_PROMPTS.md`; database work follows the standard migration → dev-apply → canonical backport → `013` validation loop automatically.
 
@@ -15,7 +15,7 @@ Per-stage doc set (read ONLY these + the stage row):
 
 ## M0 — Foundation & design system
 **Goal:** compilable, brand-correct shell; zero business features.
-- Scaffold Expo (SDK 52+, TS strict, expo-router, Hermes/New Arch) inside `mobile-app/`; `app.config.ts` env (EAS secrets; only `SUPABASE_URL` + anon key — never service keys; scheme `olimpiq`, suggested id `ai.olimpiq.app`); eslint + jest-expo + npm scripts (`typecheck`, `lint`, `test`, `audit`); eas.json profiles (development/preview/production) + updates channels (master plan §18).
+- Scaffold Expo (SDK 52+, TS strict, expo-router, Hermes/New Arch) inside `mobile-app/`; `app.config.ts` env (EAS secrets; only `SUPABASE_URL` + anon key — never service keys; scheme `olympiq`, suggested id `ai.olympiq.app`); eslint + jest-expo + npm scripts (`typecheck`, `lint`, `test`, `audit`); eas.json profiles (development/preview/production) + updates channels (master plan §18).
 - `src/theme/tokens.ts` mirroring web palettes (light Energetic / dark / arena + arena-light remap) + spacing/radius/type scale; ThemeProvider (light/dark/system); app icon + splash assets (gradient mark, §2) for owner approval.
 - i18n sync script (`scripts/sync-i18n.mjs` copying web `messages.ts` + mobile overlay) + `getT`/locale store + the az pseudo-length overflow test (§14).
 - Supabase client with the SecureStore "large secure store" adapter; typed BFF client stub; deep-link allowlist router skeleton (§4) with unit tests.
@@ -40,7 +40,7 @@ Per-stage doc set (read ONLY these + the stage row):
 ## M3 — Public surface + News + deep links live
 **Goal:** unauthenticated value + shared news stack + link infrastructure.
 - Landing-lite (hero, pricing plan-cards with owner copy, about highlights, FAQ accordion, contact incl. admin-driven phone/socials), public News list/article (views beacon parity: once per session; likes hidden for anon).
-- Deep linking activated: `olimpiq://` scheme end-to-end + the universal-links WEB deliverable (AASA + assetlinks served from web-app public dir — pending the olimpiq.ai domain, tracked in the backlog deploy items); full §4 route map wired for public + news routes.
+- Deep linking activated: `olympiq://` scheme end-to-end + the universal-links WEB deliverable (AASA + assetlinks served from web-app public dir — pending the olympiq.ai domain, tracked in the backlog deploy items); full §4 route map wired for public + news routes.
 - Respect `news_public`, `launch_promo` flags from config.
 **Accept:** parity review vs web copy ×3 locales; images cached (expo-image) with placeholders; deep-link matrix test for public routes.
 

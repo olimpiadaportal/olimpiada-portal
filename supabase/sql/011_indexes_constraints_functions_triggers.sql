@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 011_indexes_constraints_functions_triggers.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 011 of 013.
+-- OlympIQ — canonical root SQL file 011 of 013.
 --
 -- Responsibility : Performance indexes, deferred cross-file foreign keys,
 --                  updated_at maintenance, and the audit-logging trigger
@@ -312,6 +312,14 @@ create trigger trg_set_updated_at before update on public.wallpapers
   for each row execute function public.set_updated_at();
 drop trigger if exists trg_set_updated_at on public.sticker_themes;
 create trigger trg_set_updated_at before update on public.sticker_themes
+  for each row execute function public.set_updated_at();
+-- site_content (Round 12, migration 031): keep updated_at fresh on edits.
+drop trigger if exists trg_set_updated_at on public.site_content;
+create trigger trg_set_updated_at before update on public.site_content
+  for each row execute function public.set_updated_at();
+-- free_access_intervals (Round 12, migration 033).
+drop trigger if exists trg_set_updated_at on public.free_access_intervals;
+create trigger trg_set_updated_at before update on public.free_access_intervals
   for each row execute function public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
@@ -1237,6 +1245,113 @@ comment on function public.is_giveaway_active() is
 revoke all on function public.is_giveaway_active() from public, anon, authenticated;
 grant execute on function public.is_giveaway_active() to service_role;
 
+-- -----------------------------------------------------------------------------
+-- Round 12 (migration 033): per-parent/child scheduled FREE-ACCESS intervals.
+-- An admin-created row in free_access_intervals (below in 008/010) grants free
+-- access to a specific child OR to a whole parent's children for a time window.
+-- Like the giveaway, access is evaluated LAZILY at use time (no state to unwind
+-- on expiry). SECURITY DEFINER because free_access_intervals is admin-only RLS but
+-- these must be evaluable from child-session RPCs and parent-session reads.
+-- -----------------------------------------------------------------------------
+-- True while a student has an active free interval (their own, or one targeting
+-- their creating parent). Used inside the attempt-start RPC guards.
+create or replace function public.is_free_access_active_for_student(p_student uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+    from public.free_access_intervals f
+    where f.is_active
+      and now() >= f.starts_at and now() < f.ends_at
+      and (
+        f.student_profile_id = p_student
+        or f.parent_profile_id = (
+          select s.created_by_parent_profile_id
+          from public.students s where s.profile_id = p_student
+        )
+      )
+  );
+$$;
+comment on function public.is_free_access_active_for_student(uuid) is
+  'True while an admin free-access interval covers this student (its own or its parent''s). Lazy expiry — an elapsed window is false.';
+-- Internal SECURITY DEFINER callers only (my_free_access_active, is_child_free_access_active,
+-- the attempt RPCs run as owner). Not directly authenticated-executable (migration 034).
+revoke all on function public.is_free_access_active_for_student(uuid) from public, anon, authenticated;
+grant execute on function public.is_free_access_active_for_student(uuid) to service_role;
+
+-- Per-child free status scoped to the caller (own child / self only) — the parent
+-- subscription gate + display use this so a per-child window never blocks an
+-- uncovered sibling. (Round 12 pass-2 / migration 034.)
+create or replace function public.is_child_free_access_active(p_student uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select case
+    when p_student is null then false
+    when p_student = public.current_profile_id()
+      then public.is_free_access_active_for_student(p_student)
+    when exists (
+      select 1 from public.students s
+      where s.profile_id = p_student
+        and s.created_by_parent_profile_id = public.current_profile_id()
+    ) then public.is_free_access_active_for_student(p_student)
+    else false
+  end;
+$$;
+comment on function public.is_child_free_access_active(uuid) is
+  'Per-child free-access flag, scoped to the caller (own child / self only). Parent subscription gate + display.';
+revoke all on function public.is_child_free_access_active(uuid) from public, anon;
+grant execute on function public.is_child_free_access_active(uuid) to authenticated, service_role;
+
+-- The current CHILD's own free-access flag (child dashboard gate).
+create or replace function public.my_free_access_active()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$ select public.is_free_access_active_for_student(public.current_profile_id()); $$;
+revoke all on function public.my_free_access_active() from public, anon;
+grant execute on function public.my_free_access_active() to authenticated, service_role;
+
+-- The current PARENT's free-access status: { active, ends_at } (max window end
+-- across intervals targeting the parent or any of their children). Powers the
+-- parent-page countdown + the free pricing gate. current_profile_id() scopes it
+-- so a parent can only read their OWN status.
+create or replace function public.current_parent_free_access()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_object('active', m.ends_at is not null, 'ends_at', m.ends_at)
+  from (
+    select max(f.ends_at) as ends_at
+    from public.free_access_intervals f
+    where f.is_active
+      and now() >= f.starts_at and now() < f.ends_at
+      and (
+        f.parent_profile_id = public.current_profile_id()
+        or f.student_profile_id in (
+          select s.profile_id from public.students s
+          where s.created_by_parent_profile_id = public.current_profile_id()
+        )
+      )
+  ) m;
+$$;
+comment on function public.current_parent_free_access() is
+  'Current parent free-access { active, ends_at } (max active window over the parent + their children). Scoped to current_profile_id().';
+revoke all on function public.current_parent_free_access() from public, anon;
+grant execute on function public.current_parent_free_access() to authenticated, service_role;
+
 -- Enabling any one of the trio disables the other two; enabling giveaway_period
 -- (re)stamps system_settings 'giveaway.started_at' so the countdown restarts.
 -- SECURITY DEFINER so the cross-row/cross-table writes succeed for any
@@ -1453,7 +1568,11 @@ begin
   -- Round 11 (migration 027): an active GIVEAWAY window grants access without a
   -- subscription (is_giveaway_active() is defined in the Round-11 section below;
   -- plpgsql resolves it at call time, so definition order is irrelevant).
-  if v_access not in ('trialing', 'active') and not public.is_giveaway_active() then
+  -- Round 12 (migration 033): an active per-parent/child FREE-ACCESS interval also
+  -- grants access (lazy check, no state to unwind on expiry — same philosophy).
+  if v_access not in ('trialing', 'active')
+     and not public.is_giveaway_active()
+     and not public.is_free_access_active_for_student(v_student) then
     raise exception 'start_practice: no active access' using errcode = 'check_violation';
   end if;
 
@@ -1705,8 +1824,11 @@ begin
   ) then
     -- Round 11 (migration 027): an active GIVEAWAY window opens ACTIVE-catalog
     -- packages for free. Archived packages stay purchaser-only (lifetime access);
-    -- the giveaway never mints purchase rows.
-    if not (public.is_giveaway_active() and exists (
+    -- the giveaway never mints purchase rows. Round 12 (migration 033): an active
+    -- per-parent/child FREE-ACCESS interval opens ACTIVE-catalog packages the same way.
+    if not ((public.is_giveaway_active()
+             or public.is_free_access_active_for_student(v_student))
+            and exists (
       select 1 from public.olympiad_packages
       where id = p_package_id and catalog_status = 'active'
     )) then

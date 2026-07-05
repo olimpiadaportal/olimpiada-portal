@@ -40,10 +40,12 @@ export function ProfileNameEditor({
   const [state, formAction, pending] = useActionState<State, FormData>(action, null);
 
   // Close the editor once the server confirms the save (props refresh with the
-  // new name after revalidation).
+  // new name after revalidation). Key on the state OBJECT identity (not the
+  // boolean) so a second consecutive successful save — which returns a fresh
+  // {ok:true} — still re-fires the effect and closes the editor.
   useEffect(() => {
     if (state?.ok) setEditing(false);
-  }, [state?.ok]);
+  }, [state]);
 
   if (!editing) {
     return (

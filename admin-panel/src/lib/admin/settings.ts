@@ -8,7 +8,11 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { SETTING_META, LOCALE_OPTIONS, type SettingEditorKind } from "@/lib/admin/settings-meta";
+import {
+  SETTING_META,
+  LOCALE_OPTIONS,
+  type SettingEditorKind,
+} from "@/lib/admin/settings-meta";
 import { getT } from "@/i18n/server";
 
 // Server-side caps (defence-in-depth): raw JSON text, short strings, long text.

@@ -1,8 +1,8 @@
 {
-  "name": "olimpiada-admin-panel",
+  "name": "olympiq-admin-panel",
   "version": "0.1.0",
   "private": true,
-  "description": "Olimpiada Portal — Administrator & Content Manager Admin Panel (Next.js).",
+  "description": "OlympIQ — Administrator & Content Manager Admin Panel (Next.js).",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",

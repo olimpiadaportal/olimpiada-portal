@@ -1,4 +1,4 @@
-# Olimpiada Portal — Admin Panel (Administrator & Content Manager)
+# OlympIQ — Admin Panel (Administrator & Content Manager)
 
 Next.js (App Router, TypeScript) skeleton for the Admin Panel. Shares the root
 `supabase/` backend. **No Student/Parent Web App features here.** Runs on port 3001

@@ -1,5 +1,5 @@
 /* =========================================================================
-   OlimpIQ Admin Panel — professional foundation theme.
+   OlympIQ Admin Panel — professional foundation theme.
    Dark sidebar + light content, refined spacing/typography. No business logic.
    ========================================================================= */
 :root {
@@ -1345,6 +1345,105 @@ select.sfield-select {
   color: var(--muted);
 }
 
+/* ---- Website Content CMS (section → menu → entries) --------------------- */
+.cms {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* The two step selectors (Section, then Menu). */
+.cms-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.cms-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cms-picker select {
+  min-width: 220px;
+}
+
+/* Editable entries for the chosen menu, plus the shared action footer. */
+.cms-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cms-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Separator line between successive entries. */
+.cms-entry + .cms-entry {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+/* Read-only i18n key shown as the entry label. */
+.cms-key {
+  font-family: var(--mono, ui-monospace, "JetBrains Mono", monospace);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+  word-break: break-all;
+}
+
+.cms-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cms-empty {
+  margin: 0;
+  padding: 20px 22px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Small muted status pill on a content editor's header (default vs custom). */
+.sc-pill {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: #f1f5f9;
+  white-space: nowrap;
+}
+
+.sc-pill-custom {
+  color: var(--brand);
+  background: rgba(124, 58, 237, 0.1);
+}
+
+/* Section heading separating the Content area from the Design cards. */
+.sc-area-head {
+  margin-top: 8px;
+}
+
+.sc-area-head h2 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
 /* ---- Boolean setting toggle row (label/desc left, pill + switch right) --- */
 .toggle-block {
   display: flex;
@@ -2000,4 +2099,52 @@ a.qpage-link:hover {
 
 .stkadm-upload-busy {
   color: var(--muted-fg, #6b7280);
+}
+
+/* Round 12 — Add-Child parent autocomplete dropdown. */
+.parent-picker {
+  position: relative;
+}
+.parent-results {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+}
+.parent-result-empty {
+  padding: 10px 12px;
+}
+.parent-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: inherit;
+}
+.parent-result:hover,
+.parent-result:focus-visible {
+  background: var(--chip-bg, rgba(120, 130, 150, 0.1));
+}
+.parent-result-name {
+  font-weight: 600;
+}
+.parent-result-contact,
+.parent-result-count {
+  font-size: 0.8rem;
 }

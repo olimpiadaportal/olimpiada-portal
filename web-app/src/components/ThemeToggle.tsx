@@ -3,18 +3,16 @@
 import { useEffect, useState } from "react";
 import { messages } from "@/i18n/messages";
 import { defaultLocale, type Locale } from "@/i18n/config";
+import { useT, useTFirst } from "@/i18n/I18nProvider";
 
 type Theme = "dark" | "light";
 
 const STORAGE_KEY = "theme";
 
-function tr(locale: Locale, key: string): string {
-  return messages[locale]?.[key] ?? messages[defaultLocale][key] ?? key;
-}
-
 // First catalog string that actually exists among `keys`, else `fallback`.
-// Lets the segmented variant prefer the drawer2.* strings once they are merged
-// into the catalog while degrading gracefully to the older theme.* strings.
+// Kept as a plain export for the account drawers (which pass a locale); NOT
+// override-aware. The ThemeToggle component itself uses the override-aware
+// useT()/useTFirst() from I18nProvider below.
 export function trFirst(
   locale: Locale,
   keys: string[],
@@ -101,16 +99,18 @@ function CheckIcon() {
  *    icons, used inside the account drawers. Same mechanism, explicit choice.
  */
 export function ThemeToggle({
-  locale,
   variant = "icon",
   labels,
 }: {
-  locale: Locale;
+  /** Accepted for caller compatibility; translation now uses the I18nProvider. */
+  locale?: Locale;
   /** Opt-in drawer rendering; omit for the original compact icon button. */
   variant?: "icon" | "segmented";
   /** Pre-translated labels for the segmented variant (server-resolved). */
   labels?: { light?: string; dark?: string };
 }) {
+  const t = useT();
+  const tf = useTFirst();
   // Start null so SSR and first client render agree (no hydration mismatch);
   // resolve the real theme after mount from the DOM the no-flash script set.
   const [theme, setTheme] = useState<Theme | null>(null);
@@ -138,14 +138,14 @@ export function ThemeToggle({
 
   if (variant === "segmented") {
     const lightLabel =
-      labels?.light ?? trFirst(locale, ["drawer2.themeLight", "theme.light"], "Light");
+      labels?.light ?? tf(["drawer2.themeLight", "theme.light"], "Light");
     const darkLabel =
-      labels?.dark ?? trFirst(locale, ["drawer2.themeDark", "theme.dark"], "Dark");
+      labels?.dark ?? tf(["drawer2.themeDark", "theme.dark"], "Dark");
     return (
       <div
         className="seg-group seg-theme"
         role="group"
-        aria-label={tr(locale, "theme.toggle")}
+        aria-label={t("theme.toggle")}
       >
         <button
           type="button"
@@ -176,8 +176,8 @@ export function ThemeToggle({
       type="button"
       className="theme-toggle"
       onClick={toggle}
-      aria-label={tr(locale, "theme.toggle")}
-      title={tr(locale, isDark ? "theme.light" : "theme.dark")}
+      aria-label={t("theme.toggle")}
+      title={t(isDark ? "theme.light" : "theme.dark")}
     >
       {isDark ? (
         // Sun: clicking switches TO light.

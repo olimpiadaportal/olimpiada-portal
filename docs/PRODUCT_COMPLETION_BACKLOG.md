@@ -25,7 +25,7 @@ Legend: 🔴 business-critical before real launch · 🟠 intended module not ye
 
 ## C. Platform / ops / deployment
 - 🔵 **Vercel deployment not connected** (both apps). Includes: prod env vars (incl. `NEXT_PUBLIC_SITE_URL`), CSP verification in prod, HSTS effective, image optimizer behavior in prod.
-- 🔵 **Domain (olimpiq.ai) + email**: domain not purchased/configured; Supabase Auth SMTP + "Confirm email" enforcement is an OWNER dashboard action (code supports both modes since Round 4/F2); auth-email templates ×3 locales.
+- 🔵 **Domain (olympiq.ai) + email**: domain not purchased/configured; Supabase Auth SMTP + "Confirm email" enforcement is an OWNER dashboard action (code supports both modes since Round 4/F2); auth-email templates ×3 locales.
 - 🔵 **web-app ESLint config missing** (Stage-4 gap; `next lint` prompts interactively). Add flat config aligned with admin panel.
 - 🔵 **No JS test framework** in web/admin (recorded assumption, Rounds 9–10). Mobile track introduces jest-expo + Maestro; decide whether to backfill Vitest for web/admin.
 - 🔵 **Admin MFA + stricter auth rate limiting** (pre-production hardening note since Stage 3); the Round-7 in-memory limiter's serverless caveat → durable store when deploying (documented).

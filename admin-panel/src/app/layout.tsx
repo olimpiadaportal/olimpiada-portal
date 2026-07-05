@@ -3,8 +3,8 @@ import "./globals.css";
 import { getLocale } from "@/i18n/server";
 
 export const metadata: Metadata = {
-  title: "OlimpIQ — Admin Panel",
-  description: "Administrator & Content Manager panel for OlimpIQ.",
+  title: "OlympIQ — Admin Panel",
+  description: "Administrator & Content Manager panel for OlympIQ.",
 };
 
 export default async function RootLayout({

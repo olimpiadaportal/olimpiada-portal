@@ -1,4 +1,4 @@
-# CLAUDE.md — Olimpiada Portal Root Instructions
+# CLAUDE.md — OlympIQ Root Instructions
 
 ## Purpose
 

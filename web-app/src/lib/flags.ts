@@ -62,6 +62,38 @@ export async function getSystemSetting(key: string): Promise<any> {
 }
 
 /**
+ * Admin-managed TRILINGUAL site-text OVERRIDES (admin "Site Content & Design").
+ * Reads every public.site_content row via the service-role client (the table is
+ * admin-only under RLS) and returns a { key -> {az,en,ru} } map. Empty per-locale
+ * strings mean "no override" and are dropped by the consumer (getT), so the app's
+ * built-in i18n keeps working. ONE query per request (React cache). Safe fallback
+ * = empty map (unconfigured/unreadable never breaks text rendering).
+ */
+export type ContentOverrides = Record<string, { az: string; en: string; ru: string }>;
+
+export const getContentOverrides = cache(async (): Promise<ContentOverrides> => {
+  const out: ContentOverrides = {};
+  if (!isServiceRoleConfigured) return out;
+  try {
+    const supabase = getAdminClient();
+    const { data, error } = await supabase
+      .from("site_content")
+      .select("key, az, en, ru");
+    if (error || !data) return out;
+    for (const row of data as { key: string; az: string; en: string; ru: string }[]) {
+      out[row.key] = {
+        az: typeof row.az === "string" ? row.az : "",
+        en: typeof row.en === "string" ? row.en : "",
+        ru: typeof row.ru === "string" ? row.ru : "",
+      };
+    }
+    return out;
+  } catch {
+    return out;
+  }
+});
+
+/**
  * Gate for OUTBOUND email notifications (admin Settings → notifications_email).
  * Nothing in the app sends email today — Supabase Auth's own emails (verify /
  * password reset) are sent by Supabase and are deliberately NOT gated here:

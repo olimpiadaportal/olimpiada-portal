@@ -45,7 +45,13 @@ import {
 } from "@/lib/auth/subscriptionService";
 
 type City = { id: string; name: string };
-type School = { id: string; name: string; district_id: string | null };
+type School = {
+  id: string;
+  name: string;
+  district_id: string | null;
+  is_private?: boolean;
+  school_number?: number | null;
+};
 type Grade = { id: string; level: number; name: string };
 type Subj = { id: string; name: string; prices: Record<string, number> };
 
@@ -346,11 +352,38 @@ export function AddChildWizard({
                     ? tt("addchild.field.selectSchool")
                     : tt("addchild.field.cityFirst")}
                 </option>
-                {citySchools.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
+                {/* Private schools first (their own group), then public — the
+                    server already ordered each group (numeric school no. asc). */}
+                {citySchools.some((s) => s.is_private) && (
+                  <optgroup label={tt("addchild.field.privateSchools")}>
+                    {citySchools
+                      .filter((s) => s.is_private)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
+                {citySchools.some((s) => !s.is_private) &&
+                  (citySchools.some((s) => s.is_private) ? (
+                    <optgroup label={tt("addchild.field.publicSchools")}>
+                      {citySchools
+                        .filter((s) => !s.is_private)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ) : (
+                    // No private schools in this city → flat list (no group header).
+                    citySchools.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))
+                  ))}
               </select>
             </label>
 

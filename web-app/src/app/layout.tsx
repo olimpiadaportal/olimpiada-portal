@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { getLocale, getT } from "@/i18n/server";
-import { getPublicSiteSettings } from "@/lib/flags";
+import { getPublicSiteSettings, getContentOverrides } from "@/lib/flags";
+import { I18nProvider } from "@/i18n/I18nProvider";
 
 export const metadata: Metadata = {
-  title: "OlimpIQ — Student & Parent",
-  description: "OlimpIQ — olympiad preparation web app for students and parents.",
+  title: "OlympIQ — Student & Parent",
+  description: "OlympIQ — olympiad preparation web app for students and parents.",
 };
 
 // No-flash theme script: runs before first paint. Reads localStorage "theme"
@@ -17,6 +18,15 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const locale = await getLocale();
+
+  // Admin "Website Content" text overrides for the current locale (small map),
+  // handed to the client I18nProvider so client components are override-aware too.
+  const contentOverrides = await getContentOverrides();
+  const localeOverrides: Record<string, string> = {};
+  for (const [key, tri] of Object.entries(contentOverrides)) {
+    const v = tri[locale];
+    if (v && v.trim()) localeOverrides[key] = v;
+  }
 
   // Maintenance mode (admin Settings → platform.maintenance_mode): the whole
   // web-app (public + parent + student) shows the maintenance notice. The
@@ -51,12 +61,14 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME }} />
       </head>
       <body>
-        <div className="app-shell">
-          {/* Theme + language controls live in each shell's own nav
-              (e.g. the public navbar's .navbar-controls), so the root
-              topbar no longer renders them — avoids duplicate controls. */}
-          {maintenance ?? children}
-        </div>
+        <I18nProvider locale={locale} overrides={localeOverrides}>
+          <div className="app-shell">
+            {/* Theme + language controls live in each shell's own nav
+                (e.g. the public navbar's .navbar-controls), so the root
+                topbar no longer renders them — avoids duplicate controls. */}
+            {maintenance ?? children}
+          </div>
+        </I18nProvider>
       </body>
     </html>
   );

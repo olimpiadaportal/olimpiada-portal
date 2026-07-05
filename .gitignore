@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Olimpiada Portal — root .gitignore
+# OlympIQ — root .gitignore
 # Covers Next.js (web-app, admin-panel), Node, Supabase tooling, OS and editor junk.
 # Individual apps may add their own .gitignore later; this is the safe baseline.
 # ---------------------------------------------------------------------------

@@ -40,6 +40,14 @@ export const messages: Record<Locale, Record<string, string>> = {
     "gvw.olyFree": "Kampaniya dövründə pulsuz açıqdır",
     "stk.sectionTitle": "Personaj stikerləri",
     "stk.sectionDesc": "Sevimli mövzunu seç — şən stikerlər səhifələrini bəzəsin.",
+    "pal.title": "Rəng dəsti (açıq rejim)",
+    "pal.hint": "Açıq rejim üçün uşaq üçün rəng dəsti seç. Qaranlıq rejimə təsir etmir.",
+    "pal.default": "Standart",
+    "pal.sky": "Səma mavisi",
+    "pal.bubblegum": "Çəhrayı-bənövşəyi",
+    "pal.mint": "Nanə yaşılı",
+    "pal.sunset": "Narıncı-krem",
+    "pal.rainbow": "Göy qurşağı",
     "stk.none": "Stikersiz",
     "stk.empty": "Hələ stiker mövzusu yoxdur — tezliklə!",
     "stk.countTitle": "Stiker sayı",
@@ -80,7 +88,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // ---- Round 8 (merged) ----
     "about2.hero.eyebrow": "Haqqımızda",
     "about2.hero.title": "Hər uşağın olimpiada yolu buradan başlayır",
-    "about2.hero.lead": "OlimpIQ — Azərbaycanda 1–11-ci sinif şagirdləri üçün olimpiada hazırlığı platformasıdır. Gündəlik məşq, real formatda cəhdlər və valideyn nəzarəti — hamısı bir yerdə.",
+    "about2.hero.lead": "OlympIQ — Azərbaycanda 1–11-ci sinif şagirdləri üçün olimpiada hazırlığı platformasıdır. Gündəlik məşq, real formatda cəhdlər və valideyn nəzarəti — hamısı bir yerdə.",
     "about2.hero.chip1": "1–11-ci siniflər",
     "about2.hero.chip2": "4 fənn",
     "about2.hero.chip3": "3 dildə interfeys",
@@ -99,7 +107,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "about2.b5.tag": "Təhlükəsizlik",
     "about2.b5.title": "Uşaqlar üçün təhlükəsiz mühit",
     "about2.b5.body": "Uşaq hesabları e-poçtsuz işləyir və heç vaxt ödəniş edə bilmir — bütün ödənişlər yalnız valideyn hesabından aparılır. Uşaq məlumatları qorunur və marketinq üçün istifadə olunmur.",
-    "about2.values.title": "Bir baxışda OlimpIQ",
+    "about2.values.title": "Bir baxışda OlympIQ",
     "about2.values.sub": "Dörd prinsip — bir platforma.",
     "about2.v1.title": "Missiyamız",
     "about2.v1.body": "Keyfiyyətli olimpiada hazırlığını Azərbaycandakı hər ailə üçün əlçatan etmək. Müntəzəm və ölçüləbilən hazırlıq — hər şagird üçün.",
@@ -290,7 +298,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "prof2.sessionHint": "Bu cihazda hesabınızdan çıxın.",
     "prof2.idHint": "Bu ID ilə hesabına daxil olursan.",
     "prof2.selected": "Seçilib",
-    "app.brand": "OlimpIQ",
+    "app.brand": "OlympIQ",
     "home.subtitle": "Şagird və Valideyn Veb Tətbiqi — ilkin versiya.",
     "supabase.heading": "Supabase bağlantısı",
     "supabase.configured": "qurulub ✓",
@@ -351,9 +359,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "home.f4Title": "Gündəlik məşq",
     "home.f4Desc":
       "Suallar sinifə uyğun serverdə seçilir — təxmin yox, davamlı irəliləyiş.",
-    "about.title": "OlimpIQ haqqında",
+    "about.title": "OlympIQ haqqında",
     "about.p1":
-      "OlimpIQ 1–11-ci sinif Azərbaycan şagirdlərinə olimpiadalara hazırlaşmağa və gündəlik məşqlə möhkəm təməl qurmağa kömək edir.",
+      "OlympIQ 1–11-ci sinif Azərbaycan şagirdlərinə olimpiadalara hazırlaşmağa və gündəlik məşqlə möhkəm təməl qurmağa kömək edir.",
     "about.p2":
       "Valideyn idarədədir: hər uşağın hesabını yaradır və idarə edir, fənləri seçir və irəliləyişi izləyir — hamısı bir yerdə.",
     "subjects.title": "Fənlər",
@@ -524,6 +532,10 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Ödənişlər müvəqqəti olaraq dayandırılıb. Yeni abunə və satınalmalar hazırda mümkün deyil.",
     "gate.giveawayFree":
       "Hazırda pulsuz kampaniya dövrü davam edir — bütün imkanlar ödənişsiz açıqdır, ödəniş tələb olunmur.",
+    "gate.freeAccess":
+      "Sizin üçün pulsuz giriş dövrü aktivdir — bütün abunə imkanları hazırda ödənişsiz açıqdır.",
+    "fa.title": "Pulsuz giriş",
+    "fa.sub": "Bütün abunə imkanları hazırda sizin üçün pulsuzdur.",
     "gate.olympiadOff": "Olimpiada modulu hazırda aktiv deyil.",
     "gate.leaderboardOff":
       "Reytinq bölməsi hazırda əlçatan deyil — funksiya administrator tərəfindən müvəqqəti deaktiv edilib.",
@@ -579,7 +591,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "kind.olympiad": "Olimpiada",
     "kind.test": "Test",
     "kind.daily": "Gündəlik",
-    "arena.brand": "OlimpIQ",
+    "arena.brand": "OlympIQ",
     "arena.nav.arena": "Ana səhifə",
     "arena.nav.tasks": "Olimpiadalar",
     "arena.nav.rank": "Reytinq",
@@ -652,6 +664,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "addchild.field.selectSchool": "Məktəb seçin",
     "addchild.field.selectGrade": "Sinif seçin",
     "addchild.field.cityFirst": "Əvvəlcə şəhəri seçin",
+    "addchild.field.privateSchools": "Özəl məktəblər",
+    "addchild.field.publicSchools": "Dövlət məktəbləri",
     "addchild.err.cityRequired": "Şəhəri seçin.",
     "addchild.err.schoolRequired": "Məktəbi seçin.",
     "addchild.err.gradeRequired": "Sinfi seçin.",
@@ -707,7 +721,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — About (official multi-section) —
     "about.mission.title": "Missiyamız",
     "about.mission.body":
-      "OlimpIQ Azərbaycanda 1–11-ci sinif şagirdlərinə güclü akademik təməl qurmağa və olimpiadalara inamla hazırlaşmağa kömək etmək üçün yaradılıb. Məqsədimiz keyfiyyətli, müntəzəm və ölçüləbilən hazırlığı hər ailə üçün əlçatan etməkdir.",
+      "OlympIQ Azərbaycanda 1–11-ci sinif şagirdlərinə güclü akademik təməl qurmağa və olimpiadalara inamla hazırlaşmağa kömək etmək üçün yaradılıb. Məqsədimiz keyfiyyətli, müntəzəm və ölçüləbilən hazırlığı hər ailə üçün əlçatan etməkdir.",
     "about.offer.title": "Platforma nə təklif edir",
     "about.offer.body":
       "Valideyn idarəli uşaq hesabları, fənn üzrə abunələr (Riyaziyyat, Elm, Məntiq və İngilis dili), birdəfəlik ömürlük girişli Olimpiada Hazırlığı paketləri, gündəlik məşq və irəliləyişin izlənməsi — hamısı bir yerdə. Bütün interfeys üç dildə işləyir: Azərbaycan, ingilis və rus.",
@@ -812,7 +826,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.unavailable": "Xəbərlər hazırda əlçatan deyil.",
 
     // — Round4 — Landing stats (labels only; numbers are illustrative) —
-    "stats.title": "Rəqəmlərlə OlimpIQ",
+    "stats.title": "Rəqəmlərlə OlympIQ",
     "stats.tests": "Həll edilən testlər",
     "stats.olympiads": "Olimpiada paketləri",
     "stats.students": "Fəal şagirdlər",
@@ -821,7 +835,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — Round4 — About Us (hero + vision + 4 values) —
     "about.hero.title": "Hər şagird üçün olimpiadaya aparan aydın yol",
     "about.hero.body":
-      "OlimpIQ Azərbaycanda 1–11-ci sinif şagirdləri üçün abunə əsaslı təhsil platformasıdır. Valideyn idarə edir, uşaq öyrənir: fənn üzrə abunələr, gündəlik məşq və olimpiada hazırlığı bir yerdə toplanır ki, ailələr keyfiyyətli hazırlığı sadə və şəffaf şəkildə əldə etsin.",
+      "OlympIQ Azərbaycanda 1–11-ci sinif şagirdləri üçün abunə əsaslı təhsil platformasıdır. Valideyn idarə edir, uşaq öyrənir: fənn üzrə abunələr, gündəlik məşq və olimpiada hazırlığı bir yerdə toplanır ki, ailələr keyfiyyətli hazırlığı sadə və şəffaf şəkildə əldə etsin.",
     "about.vision.title": "Baxışımız",
     "about.vision.body":
       "İnanırıq ki, güclü akademik hazırlıq hər ailə üçün əlçatan olmalıdır. Məqsədimiz Azərbaycan şagirdlərinə müntəzəm məşq, obyektiv qiymətləndirmə və ölçüləbilən irəliləyiş vasitəsilə öz potensialını açmağa və olimpiadalarda inamla iştirak etməyə kömək edən etibarlı platforma qurmaqdır.",
@@ -946,6 +960,14 @@ export const messages: Record<Locale, Record<string, string>> = {
     "gvw.olyFree": "Free to play during the giveaway",
     "stk.sectionTitle": "Character stickers",
     "stk.sectionDesc": "Pick a favorite theme and playful stickers will decorate your pages.",
+    "pal.title": "Color palette (light mode)",
+    "pal.hint": "Pick a child-friendly color palette for light mode. It doesn't affect dark mode.",
+    "pal.default": "Default",
+    "pal.sky": "Sky Blue",
+    "pal.bubblegum": "Pink & Purple",
+    "pal.mint": "Mint Green",
+    "pal.sunset": "Orange & Cream",
+    "pal.rainbow": "Rainbow Pastel",
     "stk.none": "No stickers",
     "stk.empty": "No sticker themes yet — coming soon!",
     "stk.countTitle": "Number of stickers",
@@ -986,7 +1008,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // ---- Round 8 (merged) ----
     "about2.hero.eyebrow": "About us",
     "about2.hero.title": "Where every child's olympiad journey begins",
-    "about2.hero.lead": "OlimpIQ is an olympiad preparation platform for grade 1–11 students in Azerbaijan. Daily practice, real-format attempts, and parent oversight — all in one place.",
+    "about2.hero.lead": "OlympIQ is an olympiad preparation platform for grade 1–11 students in Azerbaijan. Daily practice, real-format attempts, and parent oversight — all in one place.",
     "about2.hero.chip1": "Grades 1–11",
     "about2.hero.chip2": "4 subjects",
     "about2.hero.chip3": "3 interface languages",
@@ -1005,7 +1027,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "about2.b5.tag": "Safety",
     "about2.b5.title": "A safe space for children",
     "about2.b5.body": "Child accounts work without email and can never make payments — every purchase happens only from the parent account. Children's data is protected and never used for marketing.",
-    "about2.values.title": "OlimpIQ at a glance",
+    "about2.values.title": "OlympIQ at a glance",
     "about2.values.sub": "Four principles, one platform.",
     "about2.v1.title": "Our mission",
     "about2.v1.body": "To make high-quality olympiad preparation accessible to every family in Azerbaijan. Consistent, measurable preparation for every student.",
@@ -1196,7 +1218,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "prof2.sessionHint": "Sign out of your account on this device.",
     "prof2.idHint": "You use this ID to log in.",
     "prof2.selected": "Selected",
-    "app.brand": "OlimpIQ",
+    "app.brand": "OlympIQ",
     "home.subtitle": "Student & Parent Web App — foundation skeleton.",
     "supabase.heading": "Supabase connection",
     "supabase.configured": "configured ✓",
@@ -1257,9 +1279,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "home.f4Title": "Daily practice",
     "home.f4Desc":
       "Questions selected by grade on the server — no guesswork, just steady progress.",
-    "about.title": "About OlimpIQ",
+    "about.title": "About OlympIQ",
     "about.p1":
-      "OlimpIQ helps Azerbaijani students in grades 1–11 prepare for olympiads and build strong fundamentals through daily practice.",
+      "OlympIQ helps Azerbaijani students in grades 1–11 prepare for olympiads and build strong fundamentals through daily practice.",
     "about.p2":
       "Parents stay in control: they create and manage each child's account, choose subjects, and follow progress — all in one place.",
     "subjects.title": "Subjects",
@@ -1426,6 +1448,10 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Payments are temporarily paused. New subscriptions and purchases are unavailable right now.",
     "gate.giveawayFree":
       "A free giveaway period is running — everything is unlocked at no cost, so no payment is needed right now.",
+    "gate.freeAccess":
+      "A free-access period is active for you — all subscription features are unlocked at no cost right now.",
+    "fa.title": "Free access",
+    "fa.sub": "All subscription features are free for you right now.",
     "gate.olympiadOff": "The olympiad module is currently unavailable.",
     "gate.leaderboardOff":
       "Ranking is currently unavailable — the feature has been temporarily disabled by an administrator.",
@@ -1481,7 +1507,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "kind.olympiad": "Olympiad",
     "kind.test": "Test",
     "kind.daily": "Daily",
-    "arena.brand": "OlimpIQ",
+    "arena.brand": "OlympIQ",
     "arena.nav.arena": "Home",
     "arena.nav.tasks": "Olympiads",
     "arena.nav.rank": "Ranking",
@@ -1554,6 +1580,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "addchild.field.selectSchool": "Select a school",
     "addchild.field.selectGrade": "Select a grade",
     "addchild.field.cityFirst": "Choose a city first",
+    "addchild.field.privateSchools": "Private schools",
+    "addchild.field.publicSchools": "Public schools",
     "addchild.err.cityRequired": "Select a city.",
     "addchild.err.schoolRequired": "Select a school.",
     "addchild.err.gradeRequired": "Select a grade.",
@@ -1609,7 +1637,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — About (official multi-section) —
     "about.mission.title": "Our mission",
     "about.mission.body":
-      "OlimpIQ was created to help students in grades 1–11 across Azerbaijan build a strong academic foundation and prepare for olympiads with confidence. Our goal is to make high-quality, consistent, and measurable preparation accessible to every family.",
+      "OlympIQ was created to help students in grades 1–11 across Azerbaijan build a strong academic foundation and prepare for olympiads with confidence. Our goal is to make high-quality, consistent, and measurable preparation accessible to every family.",
     "about.offer.title": "What the platform offers",
     "about.offer.body":
       "Parent-managed child accounts, per-subject subscriptions (Mathematics, Science, Logic, and English), one-time Olympiad Preparation packages with lifetime access, daily practice, and progress tracking — all in one place. The entire interface works in three languages: Azerbaijani, English, and Russian.",
@@ -1714,7 +1742,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.unavailable": "News is currently unavailable.",
 
     // — Round4 — Landing stats (labels only; numbers are illustrative) —
-    "stats.title": "OlimpIQ in numbers",
+    "stats.title": "OlympIQ in numbers",
     "stats.tests": "Tests completed",
     "stats.olympiads": "Olympiad packages",
     "stats.students": "Active students",
@@ -1723,7 +1751,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — Round4 — About Us (hero + vision + 4 values) —
     "about.hero.title": "A clear path to the olympiad for every student",
     "about.hero.body":
-      "OlimpIQ is a subscription learning platform for students in grades 1–11 across Azerbaijan. Parents manage, children learn: per-subject subscriptions, daily practice, and olympiad preparation come together in one place, so families get high-quality preparation that is simple and transparent.",
+      "OlympIQ is a subscription learning platform for students in grades 1–11 across Azerbaijan. Parents manage, children learn: per-subject subscriptions, daily practice, and olympiad preparation come together in one place, so families get high-quality preparation that is simple and transparent.",
     "about.vision.title": "Our vision",
     "about.vision.body":
       "We believe strong academic preparation should be within reach of every family. Our goal is to build a trusted platform that helps students in Azerbaijan unlock their potential through regular practice, objective assessment, and measurable progress — and to compete in olympiads with confidence.",
@@ -1848,6 +1876,14 @@ export const messages: Record<Locale, Record<string, string>> = {
     "gvw.olyFree": "Бесплатно в период акции",
     "stk.sectionTitle": "Стикеры с персонажами",
     "stk.sectionDesc": "Выбери любимую тему — весёлые стикеры украсят твои страницы.",
+    "pal.title": "Цветовая палитра (светлый режим)",
+    "pal.hint": "Выбери детскую цветовую палитру для светлого режима. На тёмный режим не влияет.",
+    "pal.default": "По умолчанию",
+    "pal.sky": "Небесно-голубая",
+    "pal.bubblegum": "Розово-фиолетовая",
+    "pal.mint": "Мятно-зелёная",
+    "pal.sunset": "Оранжево-кремовая",
+    "pal.rainbow": "Радужная пастель",
     "stk.none": "Без стикеров",
     "stk.empty": "Тем со стикерами пока нет — скоро появятся!",
     "stk.countTitle": "Количество стикеров",
@@ -1888,7 +1924,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // ---- Round 8 (merged) ----
     "about2.hero.eyebrow": "О нас",
     "about2.hero.title": "Здесь начинается путь каждого ребёнка к олимпиадам",
-    "about2.hero.lead": "OlimpIQ — платформа подготовки к олимпиадам для учеников 1–11 классов в Азербайджане. Ежедневная практика, попытки в реальном формате и родительский контроль — всё в одном месте.",
+    "about2.hero.lead": "OlympIQ — платформа подготовки к олимпиадам для учеников 1–11 классов в Азербайджане. Ежедневная практика, попытки в реальном формате и родительский контроль — всё в одном месте.",
     "about2.hero.chip1": "1–11 классы",
     "about2.hero.chip2": "4 предмета",
     "about2.hero.chip3": "Интерфейс на 3 языках",
@@ -1907,7 +1943,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "about2.b5.tag": "Безопасность",
     "about2.b5.title": "Безопасная среда для детей",
     "about2.b5.body": "Детские аккаунты работают без электронной почты и не могут совершать платежи — все покупки проходят только через аккаунт родителя. Данные детей защищены и не используются в маркетинговых целях.",
-    "about2.values.title": "OlimpIQ в двух словах",
+    "about2.values.title": "OlympIQ в двух словах",
     "about2.values.sub": "Четыре принципа — одна платформа.",
     "about2.v1.title": "Наша миссия",
     "about2.v1.body": "Сделать качественную подготовку к олимпиадам доступной каждой семье в Азербайджане. Регулярная и измеримая подготовка — для каждого ученика.",
@@ -2098,7 +2134,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "prof2.sessionHint": "Выйти из аккаунта на этом устройстве.",
     "prof2.idHint": "Этот ID нужен для входа в аккаунт.",
     "prof2.selected": "Выбрано",
-    "app.brand": "OlimpIQ",
+    "app.brand": "OlympIQ",
     "home.subtitle": "Веб-приложение для учеников и родителей — основа.",
     "supabase.heading": "Подключение Supabase",
     "supabase.configured": "настроено ✓",
@@ -2159,9 +2195,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "home.f4Title": "Ежедневная практика",
     "home.f4Desc":
       "Вопросы подбираются по классу на сервере — без догадок, стабильный прогресс.",
-    "about.title": "Об OlimpIQ",
+    "about.title": "Об OlympIQ",
     "about.p1":
-      "OlimpIQ помогает ученикам 1–11 классов Азербайджана готовиться к олимпиадам и строить прочную базу через ежедневную практику.",
+      "OlympIQ помогает ученикам 1–11 классов Азербайджана готовиться к олимпиадам и строить прочную базу через ежедневную практику.",
     "about.p2":
       "Родитель сохраняет контроль: создаёт и ведёт аккаунт каждого ребёнка, выбирает предметы и следит за прогрессом — всё в одном месте.",
     "subjects.title": "Предметы",
@@ -2328,6 +2364,10 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Платежи временно приостановлены. Новые подписки и покупки сейчас недоступны.",
     "gate.giveawayFree":
       "Сейчас идёт бесплатный акционный период — все возможности открыты бесплатно, оплата не требуется.",
+    "gate.freeAccess":
+      "Для вас активен период бесплатного доступа — все возможности подписки сейчас открыты бесплатно.",
+    "fa.title": "Бесплатный доступ",
+    "fa.sub": "Все возможности подписки сейчас для вас бесплатны.",
     "gate.olympiadOff": "Модуль олимпиад в данный момент недоступен.",
     "gate.leaderboardOff":
       "Рейтинг сейчас недоступен — функция временно отключена администратором.",
@@ -2383,7 +2423,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "kind.olympiad": "Олимпиада",
     "kind.test": "Тест",
     "kind.daily": "Ежедневное",
-    "arena.brand": "OlimpIQ",
+    "arena.brand": "OlympIQ",
     "arena.nav.arena": "Главная",
     "arena.nav.tasks": "Олимпиады",
     "arena.nav.rank": "Рейтинг",
@@ -2456,6 +2496,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "addchild.field.selectSchool": "Выберите школу",
     "addchild.field.selectGrade": "Выберите класс",
     "addchild.field.cityFirst": "Сначала выберите город",
+    "addchild.field.privateSchools": "Частные школы",
+    "addchild.field.publicSchools": "Государственные школы",
     "addchild.err.cityRequired": "Выберите город.",
     "addchild.err.schoolRequired": "Выберите школу.",
     "addchild.err.gradeRequired": "Выберите класс.",
@@ -2511,7 +2553,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — About (official multi-section) —
     "about.mission.title": "Наша миссия",
     "about.mission.body":
-      "OlimpIQ создан, чтобы помочь ученикам 1–11 классов по всему Азербайджану заложить прочную академическую базу и уверенно готовиться к олимпиадам. Наша цель — сделать качественную, регулярную и измеримую подготовку доступной каждой семье.",
+      "OlympIQ создан, чтобы помочь ученикам 1–11 классов по всему Азербайджану заложить прочную академическую базу и уверенно готовиться к олимпиадам. Наша цель — сделать качественную, регулярную и измеримую подготовку доступной каждой семье.",
     "about.offer.title": "Что предлагает платформа",
     "about.offer.body":
       "Детские аккаунты под управлением родителя, подписки на отдельные предметы (математика, наука, логика и английский), разовые пакеты подготовки к олимпиадам с пожизненным доступом, ежедневная практика и отслеживание прогресса — всё в одном месте. Весь интерфейс работает на трёх языках: азербайджанском, английском и русском.",
@@ -2616,7 +2658,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "news.unavailable": "Новости сейчас недоступны.",
 
     // — Round4 — Landing stats (labels only; numbers are illustrative) —
-    "stats.title": "OlimpIQ в цифрах",
+    "stats.title": "OlympIQ в цифрах",
     "stats.tests": "Пройдено тестов",
     "stats.olympiads": "Олимпиадных пакетов",
     "stats.students": "Активных учеников",
@@ -2625,7 +2667,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — Round4 — About Us (hero + vision + 4 values) —
     "about.hero.title": "Понятный путь к олимпиаде для каждого ученика",
     "about.hero.body":
-      "OlimpIQ — это образовательная платформа по подписке для учеников 1–11 классов по всему Азербайджану. Родитель управляет, ребёнок учится: подписки на отдельные предметы, ежедневная практика и подготовка к олимпиадам собраны в одном месте, чтобы семьи получали качественную подготовку — просто и прозрачно.",
+      "OlympIQ — это образовательная платформа по подписке для учеников 1–11 классов по всему Азербайджану. Родитель управляет, ребёнок учится: подписки на отдельные предметы, ежедневная практика и подготовка к олимпиадам собраны в одном месте, чтобы семьи получали качественную подготовку — просто и прозрачно.",
     "about.vision.title": "Наше видение",
     "about.vision.body":
       "Мы верим, что сильная академическая подготовка должна быть доступна каждой семье. Наша цель — создать надёжную платформу, которая помогает ученикам Азербайджана раскрыть свой потенциал через регулярную практику, объективную оценку и измеримый прогресс, а также уверенно участвовать в олимпиадах.",

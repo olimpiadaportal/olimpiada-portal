@@ -43,11 +43,18 @@ export default async function ChildLayout({
 
   const { data: student } = await supabase
     .from("students")
-    .select("first_name")
+    .select("first_name, palette")
     .eq("profile_id", child.profileId)
     .maybeSingle();
   const firstName = (student as any)?.first_name ?? "";
   const initial = (firstName.trim()[0] ?? "?").toUpperCase();
+
+  // Round 12: the child's chosen LIGHT-MODE palette (data-palette drives the
+  // [data-theme="light"] .arena[data-palette] overrides in globals.css). Only a
+  // whitelisted slug is applied; anything else = the default look (no attribute).
+  const PALETTES = ["sky", "bubblegum", "mint", "sunset", "rainbow"] as const;
+  const rawPalette = (student as any)?.palette;
+  const palette = PALETTES.includes(rawPalette) ? (rawPalette as string) : null;
 
   // Avatar public URL for the drawer trigger (degrades to initials on any
   // failure — never blocks the shell from rendering).
@@ -113,7 +120,7 @@ export default async function ChildLayout({
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap"
         rel="stylesheet"
       />
-      <div className="arena">
+      <div className="arena" data-palette={palette ?? undefined}>
         {/* Self-contained async server component (fetches its own selection;
             renders null when the child has no sticker theme selected). */}
         <StickerDecorations />

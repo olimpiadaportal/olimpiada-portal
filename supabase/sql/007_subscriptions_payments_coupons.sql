@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 007_subscriptions_payments_coupons.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 007 of 013.
+-- OlympIQ — canonical root SQL file 007 of 013.
 --
 -- Responsibility : Subscription & payment SCHEMA (Stripe-first, provider-agnostic):
 --                  subscription_plans, subscriptions, payments, payment_events,

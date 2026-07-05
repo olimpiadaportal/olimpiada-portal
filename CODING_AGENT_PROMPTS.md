@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This file contains the exact **Claude Code-only** prompts for building the Olimpiada Portal without losing project context.
+This file contains the exact **Claude Code-only** prompts for building the OlympIQ without losing project context.
 
 Use one coding agent: **Claude Code**.
 

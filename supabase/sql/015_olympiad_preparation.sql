@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 015_olympiad_preparation.sql
 -- =============================================================================
--- Olimpiada Portal — canonical module file 015 (Olympiad Preparation).
+-- OlympIQ — canonical module file 015 (Olympiad Preparation).
 --
 -- Responsibility : "Olimpiada Hazırlığı" paid add-on — Admin-only packages + a
 --                  curated question pool; PARENT one-time purchase grants the CHILD

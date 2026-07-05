@@ -13,6 +13,7 @@ const KEYS = [
   "addchild.field.city", "addchild.field.school", "addchild.field.grade",
   "addchild.field.selectCity", "addchild.field.selectSchool",
   "addchild.field.selectGrade", "addchild.field.cityFirst",
+  "addchild.field.privateSchools", "addchild.field.publicSchools",
   "auth.showPassword", "auth.hidePassword",
   // step nav + steps
   "addchild.step.info", "addchild.step.subjects", "addchild.step.plan",
@@ -59,10 +60,14 @@ export default async function NewChildPage() {
   const [{ data: cityRows }, { data: schoolRows }, { data: gradeRows }, { data: pricing }] =
     await Promise.all([
       supabase.from("districts").select("id, name").eq("status", "active").order("name"),
+      // Round 12: schools sort PRIVATE first, then by numeric school_number
+      // ascending (2 before 10), unnumbered last, then name.
       supabase
         .from("schools")
-        .select("id, name, district_id")
+        .select("id, name, district_id, is_private, school_number")
         .eq("status", "active")
+        .order("is_private", { ascending: false })
+        .order("school_number", { ascending: true, nullsFirst: false })
         .order("name"),
       supabase.from("grades").select("id, level, name").order("level", { ascending: true }),
       supabase
@@ -76,6 +81,8 @@ export default async function NewChildPage() {
     id: string;
     name: string;
     district_id: string | null;
+    is_private: boolean;
+    school_number: number | null;
   }[];
   const grades = (gradeRows ?? []) as { id: string; level: number; name: string }[];
 

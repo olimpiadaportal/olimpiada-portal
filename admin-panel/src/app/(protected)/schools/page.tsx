@@ -12,6 +12,7 @@ import { FilterBar } from "@/components/FilterBar";
 // select, debounced name search). The filtered read-only query lives here
 // (mirrors listSchools' shape); mutations still use the guarded lib actions.
 const SCHOOL_STATUSES = ["active", "inactive"] as const;
+const SCHOOL_TYPES = ["private", "public"] as const;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,23 +44,32 @@ export default async function SchoolsPage({
   const status = (SCHOOL_STATUSES as readonly string[]).includes(statusRaw)
     ? statusRaw
     : "";
+  const typeRaw = first(sp, "type");
+  const type = (SCHOOL_TYPES as readonly string[]).includes(typeRaw) ? typeRaw : "";
 
   // Filtered list (same shape as lib/admin/schools.listSchools, plus filters).
+  // Round 12: private schools first, then numeric school_number asc (nulls last),
+  // then name — so "2" sorts before "10" and private schools stay on top.
   const loadSchools = async () => {
     let qb = supabase
       .from("schools")
-      .select("id, name, district_id, status, districts(name)");
+      .select("id, name, district_id, status, is_private, school_number, districts(name)");
     if (q) {
       const escaped = q.replace(/[\\%_]/g, (m) => `\\${m}`);
       qb = qb.ilike("name", `%${escaped}%`);
     }
     if (city) qb = qb.eq("district_id", city);
     if (status) qb = qb.eq("status", status);
-    const { data } = await qb.order("name");
+    if (type) qb = qb.eq("is_private", type === "private");
+    const { data } = await qb
+      .order("is_private", { ascending: false })
+      .order("school_number", { ascending: true, nullsFirst: false })
+      .order("name");
     return ((data ?? []) as any[]).map((r) => ({
       id: r.id as string,
       name: r.name as string,
       status: r.status as string,
+      is_private: !!r.is_private,
       city_name: (r.districts?.name as string) ?? "—",
     }));
   };
@@ -71,7 +81,7 @@ export default async function SchoolsPage({
     supabase.from("districts").select("id, name").order("name"),
   ]);
 
-  const hasFilters = Boolean(q || city || status);
+  const hasFilters = Boolean(q || city || status || type);
 
   return (
     <div className="page">
@@ -96,6 +106,8 @@ export default async function SchoolsPage({
             errMissingName: lt("schools.errMissingName"),
             errMissingCity: lt("schools.errMissingCity"),
             errGeneric: lt("common.errGeneric"),
+            isPrivate: lt("schools.isPrivate"),
+            isPrivateHint: lt("schools.isPrivateHint"),
           }}
         />
       </section>
@@ -124,6 +136,16 @@ export default async function SchoolsPage({
               label: t(`status.${s}`),
             })),
           },
+          {
+            key: "type",
+            value: type,
+            allLabel: lt("schools.allTypes"),
+            ariaLabel: lt("schools.type"),
+            options: SCHOOL_TYPES.map((tp) => ({
+              value: tp,
+              label: lt(`schools.${tp}`),
+            })),
+          },
         ]}
         clearLabel={t("qfilter.clear")}
       />
@@ -135,6 +157,7 @@ export default async function SchoolsPage({
               <tr>
                 <th>{lt("schools.schoolName")}</th>
                 <th>{lt("schools.city")}</th>
+                <th>{lt("schools.type")}</th>
                 <th>{t("field.status")}</th>
                 <th aria-label="actions" />
               </tr>
@@ -142,7 +165,7 @@ export default async function SchoolsPage({
             <tbody>
               {schools.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={5} className="muted">
                     {hasFilters ? t("flt.noMatches") : lt("schools.noRecords")}
                   </td>
                 </tr>
@@ -151,6 +174,25 @@ export default async function SchoolsPage({
                 <tr key={s.id}>
                   <td>{s.name}</td>
                   <td>{s.city_name}</td>
+                  <td className="nowrap">
+                    <span
+                      style={{
+                        display: "inline-block",
+                        padding: "2px 9px",
+                        borderRadius: 999,
+                        fontSize: "0.78rem",
+                        fontWeight: 600,
+                        background: s.is_private
+                          ? "var(--pill-bg, rgba(124,58,237,0.12))"
+                          : "var(--chip-bg, rgba(120,130,150,0.12))",
+                        color: s.is_private
+                          ? "var(--pill-text, #7c3aed)"
+                          : "var(--muted, #667)",
+                      }}
+                    >
+                      {s.is_private ? lt("schools.private") : lt("schools.public")}
+                    </span>
+                  </td>
                   <td className="nowrap">{t(`status.${s.status}`)}</td>
                   <td className="row-actions nowrap">
                     <Link href={`/schools/${s.id}/edit`}>{t("action.edit")}</Link>

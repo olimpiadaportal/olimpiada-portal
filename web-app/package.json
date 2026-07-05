@@ -1,8 +1,8 @@
 {
-  "name": "olimpiada-web-app",
+  "name": "olympiq-web-app",
   "version": "0.1.0",
   "private": true,
-  "description": "Olimpiada Portal — Student & Parent Web App (Next.js).",
+  "description": "OlympIQ — Student & Parent Web App (Next.js).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

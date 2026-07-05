@@ -1,4 +1,4 @@
-# Manual Testing Guide — Olimpiada Portal (Investor Review Round 2)
+# Manual Testing Guide — OlympIQ (Investor Review Round 2)
 
 Tests **everything implemented** across the **Admin Panel** (:3001) and **Web App** (:3000) —
 parent, child/student, and public site. Mobile is future-only (not in this build).
@@ -257,7 +257,7 @@ If anything in §1–§5 doesn't match its **Expect**, report it and I'll fix it
 - **Session:** being logged in no longer bounces you to **/unauthorized**; you're only signed out after **~30 min of inactivity** (then redirected to /login). Status text reads **Public / Private** (not Active/Inactive).
 
 ## R6. Parent & Student panels
-- **Compact** "Olimpiada Portal" brand top-left (both panels).
+- **Compact** "OlympIQ" brand top-left (both panels).
 - **Profile section** (parent dashboard + child Arena): **avatar upload** (pick an image ≤2 MB → it shows; initials fallback otherwise), **change password** (child: must differ from the 8-digit ID), parent also has **delete account** + logout.
 - **Parent dashboard** shows the **information carousel** (5 numbered slides, prev/next + dots) and a **latest-News** panel.
 - **Child Arena** shows a **News** panel too.
@@ -306,7 +306,7 @@ If anything here doesn't match its **Expect**, tell me which **R#** + what you s
 - **News:** sort chips **Latest / Oldest / Most viewed** + **pagination** (prev/next); each item shows a **views** badge; opening an article increments its view count.
 
 ## S4. Parent panel
-- **Nav** (no "Olimpiada Portal" wordmark): **Home · Analytics · Subscription · FAQ · Contact** + a round **profile icon** far right → opens a **drawer** with **Account** (avatar/change-password/delete/logout), **Language**, **Theme**.
+- **Nav** (no "OlympIQ" wordmark): **Home · Analytics · Subscription · FAQ · Contact** + a round **profile icon** far right → opens a **drawer** with **Account** (avatar/change-password/delete/logout), **Language**, **Theme**.
 - **FAQ/Contact** from the parent nav stay **inside the parent app** (no jump to the public/landing site).
 - **Home:** first the **information carousel** (now working — one slide, arrows + dots), then **My children** with the **Add child** button on the **right**.
 - **Analytics** page shows real metrics (children, active subscriptions, attempts, avg score).
@@ -323,8 +323,8 @@ If anything here doesn't match its **Expect**, tell me the **S#** + what you saw
 
 > **No DB or terminal work needed** — no SQL changed this round (the wallpaper backend already existed). Just **restart both dev servers** so the new code loads (no re-login needed this time — cookie names unchanged).
 
-## T1. Rebrand → OlimpIQ
-- Everywhere the brand appears (landing header/footer, login/register, student header, admin sidebar/login, browser tab titles) now reads **OlimpIQ** — no more "Olimpiada Portal" / "OLIMP·ARENA".
+## T1. Rebrand → OlympIQ
+- Everywhere the brand appears (landing header/footer, login/register, student header, admin sidebar/login, browser tab titles) now reads **OlympIQ** — no more "OlympIQ" / "OLIMP·ARENA".
 - **But** the olympiad *feature* wording is intentionally kept: "Olimpiada Hazırlığı" / "Olympiad preparation" / nav "Olimpiada hazırlığı" etc. stay (that's the competition word, not the brand).
 
 ## T2. Energetic LIGHT theme (toggle to Light in the navbar)
@@ -389,7 +389,7 @@ If anything here doesn't match its **Expect**, tell me the **T#** + what you saw
 - /news list: cards show ♥ counts and the toolbar has a **"Most liked"** sort.
 
 ## U8. Grade promotion is scheduled (pg_cron)
-- Nothing to click — the dev DB now has a pg_cron job `olimpiq_advance_student_grades` running `advance_student_grades()` every **September 1, 03:00 UTC**. (Verified present on dev.)
+- Nothing to click — the dev DB now has a pg_cron job `olympiq_advance_student_grades` running `advance_student_grades()` every **September 1, 03:00 UTC**. (Verified present on dev.)
 
 If anything here doesn't match, tell me the **U#** + what you saw.
 
@@ -656,4 +656,57 @@ If anything here doesn't match, tell me the **Z#** + what you saw.
 - Parent → Profile → Account information → "Name" row has an **Edit** button → shows a full-name field → Save updates it (persists after refresh; the header name updates too).
 - Child → Profile → Account information → **Edit** → First name + Last name fields → Save updates the child's name (persists). A child can only edit their OWN name.
 
-If anything here doesn't match, tell me the **ZF#** + what you saw.
+---
+# Round 12 — owner update pass (2026-07-05)
+
+## AA1. Private schools + numeric school ordering
+- **Admin → Schools:** the list now shows a **Type** column (Private/Public badge). Private schools appear **at the top**; below them public schools sort by number **1, 2, 3, … 10, 11** (NOT "10" before "2"), unnumbered schools last. The new **Type** filter (All / Private / Public) works alongside the city/status/name filters and pagination.
+- **Admin → Schools → Add / Edit:** a **Private school** checkbox. Add a school named like "Bakı 12 nömrəli tam orta məktəb" → it slots into the numeric order automatically. Mark one Private → it jumps to the top group.
+- **Web → Parent → Add child → city step:** pick Bakı → the **school** dropdown shows a **Private schools** group first (Dünya Məktəbi, Landau, …), then a **Public schools** group ordered numerically. Other cities with no private schools show a flat numeric list.
+
+## AA2. Admin "Site Content & Design"
+- **Admin → (Operations) → Site Content & Design** (Administrator only — hidden for a Content Manager).
+- **Design → Typography:** change the base **font size** (13–22) and **font family** (whitelisted AZ-safe options) → Save → the **web-app** (public/parent) light+dark text updates; a **Clear** returns to the default. **Colours:** change Accent / Background / Text / Surface → the **web-app light mode** re-skins; **dark mode does NOT change** (owner's frozen reference). Clear a colour → default returns. Invalid values are rejected.
+- **Content:** edit e.g. `home.heroTitle` (az/en/ru) → Save (status pill flips **Default → Custom**) → the public home page shows your text in that language; other keys keep their built-in text. Blank a locale → it falls back to the built-in string. (v1 overrides apply to SERVER-rendered text.)
+- Every save writes an **audit row** (`admin.site_content.update` / settings update).
+
+## AA3. 5 child-friendly light-mode palettes
+- **Web → Child → Profile:** next to **Character stickers** there's a **Color palette (light mode)** section with 6 swatch cards (Default + Sky / Pink&Purple / Mint / Orange&Cream / Rainbow).
+- In **light mode**, click a palette → the whole student panel re-skins (backgrounds, buttons, tabs, cards, selected states) and the choice is **saved** (log out + back in → still applied). Text stays readable (white on the accent buttons).
+- Switch to **dark mode** (drawer) → palettes have **no effect** (dark is unchanged). Default card → back to the standard purple look.
+
+## AA4. Rename OlimpIQ → OlympIQ
+- Brand now reads **OlympIQ** everywhere user-facing: browser tab titles (web + admin), public header/footer, login/admin headers, "OlympIQ in numbers" section, metadata. No "OlimpIQ" (with i) remains.
+- Nothing functional should break from the rename (sessions, news view counts, grade-promotion cron still work). Feature names like "Olimpiada Hazırlığı" are unchanged (that's the Azerbaijani word for "olympiad").
+
+If anything here doesn't match, tell me the **AA#** (or **ZF#/Z#**) + what you saw.
+
+---
+# Round 12 — pass 2 (2026-07-05)
+
+## BB1. Admin Add-Child — live parent search
+- **Admin → Accounts → Create child**: the parent field is now a **search box**. Type part of a parent's **name, email, or phone** → matching parents appear live (debounced) with their **contact + child count**. No match → "No parent found". Pick one → it's selected (Clear to reset).
+
+## BB2. Admin Add-Child — City + School
+- Same form now has **City** and **School** (both required). Pick a city → the school dropdown enables and lists **Private schools** first, then Public, in numeric order. Create the child → it saves with that city/school (and, if you left "Grant free access" on, still reveals the 8-digit ID).
+
+## BB3. Admin → Free Access (new)
+- **Admin → Free Access** (Administrator only): create an interval — search a **parent**, optionally pick **one specific child** (default = all their children), set **Start** and **End** (End must be after Start), optional note → **Create**. It appears in the list with a status pill (**Scheduled / Active / Expired**). **Deactivate** ends it early. Every create/deactivate writes an audit row.
+
+## BB4. Free access — parent sees everything free + countdown
+- Create an **Active** interval for a test parent (start in the past, end in a few days). Log in as that **parent**:
+  - A **countdown banner** ("Free access — ends in …") shows at the top of the parent pages, ticking live.
+  - **Subscription** page shows the **free** notice (no paid CTAs / prices as free).
+  - Trying to subscribe/add a subject shows the "free right now" message (no charge, no paid record).
+
+## BB5. Free access — child can use everything free
+- Log in as that parent's **child** (8-digit ID): the dashboard shows **access granted**, all subjects are practicable, and starting a practice/olympiad works — **without any paid subscription**.
+
+## BB6. Free access — expiry is automatic
+- Set the interval's **End** to a moment in the near future (or Deactivate it). After it passes: the parent countdown disappears, prices return to normal paid state, and the child reverts to their real subscription state — **no admin action needed** (lazy expiry).
+
+## BB7. Website Content (text-only CMS) + rename
+- **Admin → Website Content**: pick a **Section** (Landing / Student / Parent), then a **Menu** → edit that menu's trilingual texts → **Save** (status flips Default → Custom). Open the matching **web-app** page → your text shows in that language; blank a locale → the built-in text returns. There is **no** font/colour/design editor anymore (removed).
+- **Rename**: the browser tab + headers read **OlympIQ**; package.json names are `olympiq-*`. Feature names like "Olimpiada Hazırlığı" are unchanged (AZ word). Nothing functional should break.
+
+If anything here doesn't match, tell me the **BB#** + what you saw.

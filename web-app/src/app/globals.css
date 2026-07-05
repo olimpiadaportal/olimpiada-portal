@@ -4363,6 +4363,101 @@ ul.clean li {
 }
 /* End ROUND 8 student light theme */
 
+/* =============================================================================
+   ROUND 12 — CHILD-FRIENDLY LIGHT-MODE PALETTES (Prompt 3).
+   Five selectable palettes for the student panel, chosen in the profile. Each
+   overrides the SAME .arena local tokens the whole panel is built on, scoped to
+   [data-theme="light"] .arena[data-palette="<slug>"] — so:
+     * DARK MODE IS NEVER TOUCHED (these rules only match in light mode), and
+     * the choice is orthogonal to the theme toggle (a `data-palette` attribute
+       set SSR on the .arena wrapper from students.palette).
+   The accent (--lime) stays vivid enough that the existing white-on-accent rules
+   (buttons/active tab/selected key) keep AA contrast. The hardcoded-purple accent
+   TINTS from the base light block are re-pointed per palette (higher specificity).
+   ========================================================================== */
+
+/* 1) Sky Blue / Soft Yellow */
+[data-theme="light"] .arena[data-palette="sky"] {
+  --bg: #f2f8ff; --bg2: #e9f3ff; --panel: #ffffff; --panel2: #eaf4ff;
+  --line: #d7e8fb; --ink: #16324a; --muted: #5f7a93; --dim: #9fb4c9;
+  --lime: #1e88e5; --blue: #0f6fd6; --gold: #f6b93b; --red: #ff5a5f;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(30, 136, 229, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(246, 185, 59, 0.10), transparent 55%),
+    var(--bg);
+}
+[data-theme="light"] .arena[data-palette="sky"] ::selection { background: #1e88e5; color: #fff; }
+[data-theme="light"] .arena[data-palette="sky"] .arena-opt.selected { background: rgba(30, 136, 229, 0.10); }
+[data-theme="light"] .arena[data-palette="sky"] .arena-table tr.me td { background: rgba(30, 136, 229, 0.09); }
+[data-theme="light"] .arena[data-palette="sky"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.35); }
+[data-theme="light"] .arena[data-palette="sky"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.18); }
+
+/* 2) Pink / Purple (Bubblegum) */
+[data-theme="light"] .arena[data-palette="bubblegum"] {
+  --bg: #fff2fb; --bg2: #fce9f8; --panel: #ffffff; --panel2: #fbeaf9;
+  --line: #f4d6ec; --ink: #3a1436; --muted: #8a5f83; --dim: #c09bb8;
+  --lime: #e0399e; --blue: #9b34e0; --gold: #ff9f43; --red: #ff5a7a;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(224, 57, 158, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(155, 52, 224, 0.08), transparent 55%),
+    var(--bg);
+}
+[data-theme="light"] .arena[data-palette="bubblegum"] ::selection { background: #e0399e; color: #fff; }
+[data-theme="light"] .arena[data-palette="bubblegum"] .arena-opt.selected { background: rgba(224, 57, 158, 0.10); }
+[data-theme="light"] .arena[data-palette="bubblegum"] .arena-table tr.me td { background: rgba(224, 57, 158, 0.09); }
+[data-theme="light"] .arena[data-palette="bubblegum"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(224, 57, 158, 0.35); }
+[data-theme="light"] .arena[data-palette="bubblegum"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(224, 57, 158, 0.18); }
+
+/* 3) Mint / Green */
+[data-theme="light"] .arena[data-palette="mint"] {
+  --bg: #f0fbf6; --bg2: #e6f8ef; --panel: #ffffff; --panel2: #e8f9f1;
+  --line: #cdeede; --ink: #123a2c; --muted: #5a8073; --dim: #9dc4b5;
+  --lime: #12b886; --blue: #0ca678; --gold: #f6b93b; --red: #ff5a5f;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(18, 184, 134, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(246, 185, 59, 0.09), transparent 55%),
+    var(--bg);
+}
+[data-theme="light"] .arena[data-palette="mint"] ::selection { background: #12b886; color: #fff; }
+[data-theme="light"] .arena[data-palette="mint"] .arena-opt.selected { background: rgba(18, 184, 134, 0.11); }
+[data-theme="light"] .arena[data-palette="mint"] .arena-table tr.me td { background: rgba(18, 184, 134, 0.10); }
+[data-theme="light"] .arena[data-palette="mint"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(18, 184, 134, 0.35); }
+[data-theme="light"] .arena[data-palette="mint"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(18, 184, 134, 0.18); }
+
+/* 4) Orange / Cream (Sunset) */
+[data-theme="light"] .arena[data-palette="sunset"] {
+  --bg: #fff8f0; --bg2: #fff1e2; --panel: #ffffff; --panel2: #fff0df;
+  --line: #f6e0c8; --ink: #43260f; --muted: #8a6c50; --dim: #c7a888;
+  --lime: #f5731f; --blue: #e0561a; --gold: #ffb23e; --red: #ff5a5f;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(245, 115, 31, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(255, 178, 62, 0.10), transparent 55%),
+    var(--bg);
+}
+[data-theme="light"] .arena[data-palette="sunset"] ::selection { background: #f5731f; color: #fff; }
+[data-theme="light"] .arena[data-palette="sunset"] .arena-opt.selected { background: rgba(245, 115, 31, 0.11); }
+[data-theme="light"] .arena[data-palette="sunset"] .arena-table tr.me td { background: rgba(245, 115, 31, 0.10); }
+[data-theme="light"] .arena[data-palette="sunset"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(245, 115, 31, 0.35); }
+[data-theme="light"] .arena[data-palette="sunset"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(245, 115, 31, 0.18); }
+
+/* 5) Rainbow Pastel */
+[data-theme="light"] .arena[data-palette="rainbow"] {
+  --bg: #fbf6ff; --bg2: #f3f0ff; --panel: #ffffff; --panel2: #f2ecff;
+  --line: #e6def7; --ink: #2b1f45; --muted: #6f6690; --dim: #b3a9cf;
+  --lime: #7c5cff; --blue: #ff6bad; --gold: #ffb03a; --red: #ff5d73;
+  background:
+    radial-gradient(900px 500px at 82% -12%, rgba(124, 92, 255, 0.10), transparent 60%),
+    radial-gradient(800px 480px at 12% -8%, rgba(255, 107, 173, 0.09), transparent 58%),
+    radial-gradient(900px 520px at -10% 112%, rgba(255, 176, 58, 0.08), transparent 55%),
+    var(--bg);
+}
+[data-theme="light"] .arena[data-palette="rainbow"] ::selection { background: #7c5cff; color: #fff; }
+[data-theme="light"] .arena[data-palette="rainbow"] .arena-opt.selected { background: rgba(124, 92, 255, 0.11); }
+[data-theme="light"] .arena[data-palette="rainbow"] .arena-table tr.me td { background: rgba(124, 92, 255, 0.10); }
+[data-theme="light"] .arena[data-palette="rainbow"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.35); }
+[data-theme="light"] .arena[data-palette="rainbow"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18); }
+/* End ROUND 12 child palettes */
+
 
 /* ============ ROUND 8 MERGE: about.css ============ */
 /* ==========================================================================
@@ -6691,7 +6786,9 @@ ul.clean li {
   gap: 4px;
 }
 @media (max-width: 560px) {
-  .prof2-row-editable {
+  /* Beat the later `.prof2-row { grid-template-columns: 1fr }` mobile rule with
+     a 2-class selector so the Edit button keeps sitting beside the value. */
+  .prof2-row.prof2-row-editable {
     grid-template-columns: 1fr auto;
   }
   .prof2-row-editable .prof2-row-label {
@@ -8254,6 +8351,28 @@ ul.clean li {
   object-fit: contain;
   margin: 0 -9px;
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.2));
+}
+/* Round 12 — palette picker swatch (reuses .stk-card/.stk-grid). The swatch is a
+   mini preview of a palette's page background + two accent dots. */
+.pal-grid {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+.pal-sw {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 92px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line, var(--border)) 60%, transparent);
+}
+.pal-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
 .stk-collage img:nth-child(1) {
   transform: rotate(-10deg) translateY(3px);

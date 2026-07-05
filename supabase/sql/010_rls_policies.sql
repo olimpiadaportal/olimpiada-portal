@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 010_rls_policies.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 010 of 013.
+-- OlympIQ — canonical root SQL file 010 of 013.
 --
 -- Responsibility : Enable Row Level Security on all application tables and define
 --                  ownership/role policies.
@@ -55,7 +55,7 @@ begin
     'subscription_subjects','checkout_sessions','sibling_discounts',
     'media_assets','notification_templates','notifications','notification_deliveries',
     'support_requests','audit_logs','admin_actions','content_reviews',
-    'system_settings','feature_flags'
+    'system_settings','feature_flags','site_content','free_access_intervals'
   ]
   loop
     execute format('alter table public.%I enable row level security;', t);
@@ -749,6 +749,19 @@ create policy "settings_admin" on public.system_settings for all to authenticate
   using (public.is_admin()) with check (public.is_admin());
 drop policy if exists "flags_admin" on public.feature_flags;
 create policy "flags_admin" on public.feature_flags for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- site_content: admin only (web-app reads it via the service-role client, which
+-- bypasses RLS, so no public read policy is needed). (Round 12 / migration 031.)
+drop policy if exists "site_content_admin" on public.site_content;
+create policy "site_content_admin" on public.site_content for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- free_access_intervals: admin only. Parents/children never read this table
+-- directly — scoped reads go through the SECURITY DEFINER helpers in 011
+-- (current_parent_free_access / my_free_access_active). (Round 12 / migration 033.)
+drop policy if exists "fai_admin" on public.free_access_intervals;
+create policy "fai_admin" on public.free_access_intervals for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 
 -- =============================================================================

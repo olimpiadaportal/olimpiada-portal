@@ -21,8 +21,8 @@ export async function childUpdateOwnName(
   _prev: ChildProfileState,
   formData: FormData,
 ): Promise<ChildProfileState> {
+  const child = await requireChild(); // authorize FIRST (before any FormData read)
   const t = await getT();
-  const child = await requireChild();
   const first = String(formData.get("first_name") ?? "").trim().slice(0, 80);
   const last = String(formData.get("last_name") ?? "").trim().slice(0, 80);
   if (!first || !last) return { error: t("profile.err.nameRequired") };
@@ -31,6 +31,43 @@ export async function childUpdateOwnName(
   const { error } = await supabase
     .from("students")
     .update({ first_name: first, last_name: last })
+    .eq("profile_id", child.profileId);
+  if (error) return { error: t("profile.err.updateFailed") };
+
+  // Keep profiles.display_name in sync (create_child_account seeds it from
+  // first+last; other surfaces may read it). Best-effort — the students update
+  // is the authoritative name and already succeeded.
+  await supabase
+    .from("profiles")
+    .update({ display_name: `${first} ${last}`.trim() })
+    .eq("id", child.profileId);
+
+  revalidatePath("/child");
+  revalidatePath("/child/profile");
+  return { ok: true };
+}
+
+// The 5 child-friendly LIGHT-MODE palette slugs (must match the students.palette
+// CHECK and the [data-theme="light"] .arena[data-palette] CSS in globals.css).
+// "" / "default" clears the choice (NULL = default look).
+const PALETTE_SLUGS = new Set(["sky", "bubblegum", "mint", "sunset", "rainbow"]);
+
+// Set (or clear) the logged-in child's own light-mode palette. Self-row update via
+// the SSR client — students_write RLS allows profile_id = current_profile; only the
+// palette column is written, and only a whitelisted slug (or NULL) ever reaches it.
+export async function selectPalette(
+  _prev: ChildProfileState,
+  formData: FormData,
+): Promise<ChildProfileState> {
+  const child = await requireChild(); // authorize FIRST
+  const t = await getT();
+  const raw = String(formData.get("palette") ?? "").trim();
+  const palette = PALETTE_SLUGS.has(raw) ? raw : null; // "" / unknown -> default
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("students")
+    .update({ palette })
     .eq("profile_id", child.profileId);
   if (error) return { error: t("profile.err.updateFailed") };
 

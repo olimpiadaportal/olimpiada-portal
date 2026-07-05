@@ -2,6 +2,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { StickerThemePicker, type StickerThemeCard } from "@/components/StickerThemePicker";
+import { PalettePicker } from "@/components/PalettePicker";
 import { ChildProfile } from "@/components/ChildProfile";
 
 // Student profile page — Round 8 redesign. Same account-settings design
@@ -17,9 +18,11 @@ export default async function ChildProfilePage() {
 
   const { data: student } = await supabase
     .from("students")
-    .select("first_name, last_name, child_unique_id")
+    .select("first_name, last_name, child_unique_id, palette")
     .eq("profile_id", child.profileId)
     .maybeSingle();
+  const currentPalette = ((student as any)?.palette ?? null) as
+    | "sky" | "bubblegum" | "mint" | "sunset" | "rainbow" | null;
   const childFirst = (student as any)?.first_name ?? "";
   const childLast = (student as any)?.last_name ?? "";
   const childName = `${childFirst} ${childLast}`.trim();
@@ -158,6 +161,24 @@ export default async function ChildProfilePage() {
               "stk.none": t("stk.none"),
               "stk.empty": t("stk.empty"),
               "stk.countTitle": t("stk.countTitle"),
+              "prof2.selected": t("prof2.selected"),
+            }}
+          />
+        </section>
+
+        {/* Round 12 — child-friendly light-mode palette picker. */}
+        <section className="prof2-card" aria-label={t("pal.title")}>
+          <h2 className="prof2-sec-title">{t("pal.title")}</h2>
+          <p className="prof2-sec-hint">{t("pal.hint")}</p>
+          <PalettePicker
+            selected={currentPalette}
+            dict={{
+              "pal.default": t("pal.default"),
+              "pal.sky": t("pal.sky"),
+              "pal.bubblegum": t("pal.bubblegum"),
+              "pal.mint": t("pal.mint"),
+              "pal.sunset": t("pal.sunset"),
+              "pal.rainbow": t("pal.rainbow"),
               "prof2.selected": t("prof2.selected"),
             }}
           />

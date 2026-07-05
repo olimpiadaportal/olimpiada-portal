@@ -3,6 +3,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { isGiveawayActive } from "@/lib/paymentMode";
+import { getChildFreeAccessActive } from "@/lib/freeAccess";
 import { ChildNewsPanel } from "@/components/ChildNewsPanel";
 import { startPractice } from "@/lib/auth/childActions";
 
@@ -13,6 +14,9 @@ export default async function ChildDashboard() {
   // Round 11: during an active giveaway window the whole platform is free —
   // the DB RPCs (start_practice_attempt) already allow it; this mirrors it.
   const giveawayActive = await isGiveawayActive();
+  // Round 12: a per-parent/child free-access interval also grants full access.
+  const freeAccessActive = await getChildFreeAccessActive();
+  const freeNow = giveawayActive || freeAccessActive;
 
   const { data: student } = await supabase
     .from("students")
@@ -20,7 +24,7 @@ export default async function ChildDashboard() {
     .eq("profile_id", child.profileId)
     .maybeSingle();
   const access = (student as any)?.access_status ?? "inactive";
-  const hasAccess = access === "trialing" || access === "active" || giveawayActive;
+  const hasAccess = access === "trialing" || access === "active" || freeNow;
 
   // Subjects this child is subscribed to (for practice).
   const { data: subs } = await supabase
@@ -38,7 +42,7 @@ export default async function ChildDashboard() {
   // over the subscribed set. RLS note: subjects_pricing active rows are
   // readable by everyone (public pricing page policy), so the child's
   // request-scoped client can query it directly.
-  if (giveawayActive) {
+  if (freeNow) {
     const { data: priced } = await supabase
       .from("subjects_pricing")
       .select("subjects(id, name)")
@@ -147,7 +151,7 @@ export default async function ChildDashboard() {
             <span key={i}>
               <b>{t("arena.tickerLive")}</b> · {t("arena.statPoints")} {points} &nbsp;·&nbsp;{" "}
               {t("arena.statAccuracy")} {accuracy}% &nbsp;·&nbsp; {t("arena.statRounds")} {roundsCount}{" "}
-              &nbsp;·&nbsp; <b>{t("arena.tickerToday")}</b> · OlimpIQ &nbsp;·&nbsp;{" "}
+              &nbsp;·&nbsp; <b>{t("arena.tickerToday")}</b> · OlympIQ &nbsp;·&nbsp;{" "}
             </span>
           ))}
         </div>

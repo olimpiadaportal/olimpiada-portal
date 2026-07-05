@@ -1,4 +1,4 @@
-# Olimpiada Portal — Web App (Student & Parent)
+# OlympIQ — Web App (Student & Parent)
 
 Next.js (App Router, TypeScript) skeleton for the Student/Parent web app. Shares the
 root `supabase/` backend. **No Admin Panel features here.**

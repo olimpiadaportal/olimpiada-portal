@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 001_extensions_and_enums.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 001 of 013.
+-- OlympIQ — canonical root SQL file 001 of 013.
 --
 -- Responsibility : PostgreSQL extensions, enum types and common domains.
 -- Run order      : FIRST. Must run before any table that uses these enums.

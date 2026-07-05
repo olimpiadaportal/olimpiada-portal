@@ -6,8 +6,9 @@ import { AccountCreateForm } from "@/components/AccountCreateForm";
 import {
   CreateChildForm,
   type GradeOption,
-  type ParentOption,
   type SubjectOption,
+  type CityOption,
+  type SchoolOpt,
 } from "@/components/CreateChildForm";
 import { AccountEditForm } from "@/components/AccountEditForm";
 import { AccountDeleteButton } from "@/components/AccountDeleteButton";
@@ -120,34 +121,44 @@ export default async function AccountsPage({
   }
 
   // ---- Create-child form data (Round 11, admin payment bypass) --------------
-  // The parent PICKER needs the FULL parent list (independent of the page's
-  // search filter). Grades feed the optional grade select; subjects are limited
-  // to those with ACTIVE pricing per interval (mirrors the grant RPC's check).
-  let childParents: ParentOption[] = [];
+  // The parent picker now uses a LIVE server-search autocomplete (searchParents),
+  // so the full parent list is no longer pre-loaded. Grades feed the optional grade
+  // select; subjects are limited to ACTIVE-pricing per interval (mirrors the grant
+  // RPC). Round 12: cities + schools feed the mandatory City -> School cascade
+  // (schools ordered private-first + numeric, like the parent Add-Child flow).
   let childGrades: GradeOption[] = [];
   let childSubjects: SubjectOption[] = [];
+  let childCities: CityOption[] = [];
+  let childSchools: SchoolOpt[] = [];
   if (serviceReady) {
-    const [allParentsRes, gradesRes, pricingRes] = await Promise.all([
-      parentProfileIds.length
-        ? supabase
-            .from("profiles")
-            .select("id, display_name, email")
-            .in("id", parentProfileIds)
-            .order("display_name")
-        : Promise.resolve({ data: [] as any[] }),
+    const [gradesRes, pricingRes, citiesRes, schoolsRes] = await Promise.all([
       supabase.from("grades").select("id, name, level").order("level"),
       supabase
         .from("subjects_pricing")
         .select("subject_id, interval, subjects(name)")
         .eq("status", "active"),
+      supabase.from("districts").select("id, name").eq("status", "active").order("name"),
+      supabase
+        .from("schools")
+        .select("id, name, district_id, is_private, school_number")
+        .eq("status", "active")
+        .order("is_private", { ascending: false })
+        .order("school_number", { ascending: true, nullsFirst: false })
+        .order("name"),
     ]);
-    childParents = ((allParentsRes.data ?? []) as any[]).map((p) => ({
-      id: p.id,
-      label: [p.display_name, p.email].filter(Boolean).join(" — ") || p.id,
-    }));
     childGrades = ((gradesRes.data ?? []) as any[]).map((g) => ({
       id: g.id,
       name: g.name,
+    }));
+    childCities = ((citiesRes.data ?? []) as any[]).map((c) => ({
+      id: c.id,
+      name: c.name,
+    }));
+    childSchools = ((schoolsRes.data ?? []) as any[]).map((s) => ({
+      id: s.id,
+      name: s.name,
+      district_id: s.district_id,
+      is_private: !!s.is_private,
     }));
     const bySubject = new Map<string, { name: string; intervals: Set<string> }>();
     for (const r of (pricingRes.data ?? []) as any[]) {
@@ -183,14 +194,24 @@ export default async function AccountsPage({
     title: t("accounts.child.create.title"),
     intro: t("accounts.child.create.intro"),
     parent: t("accounts.child.create.parent"),
-    parentFilter: t("accounts.child.create.parentFilter"),
-    parentChoose: t("accounts.child.create.parentChoose"),
+    parentSearch: t("accounts.child.create.parentSearch"),
+    parentSearching: t("accounts.child.create.parentSearching"),
+    parentEmpty: t("accounts.child.create.parentEmpty"),
+    parentChildren: t("accounts.child.create.parentChildren"),
+    parentClear: t("accounts.child.create.parentClear"),
     firstName: t("accounts.create.firstName"),
     lastName: t("accounts.create.lastName"),
     password: t("accounts.create.password"),
     passwordHint: t("accounts.create.passwordHint"),
     grade: t("accounts.child.create.grade"),
     gradeNone: t("accounts.child.create.gradeNone"),
+    city: t("accounts.child.create.city"),
+    cityChoose: t("accounts.child.create.cityChoose"),
+    school: t("accounts.child.create.school"),
+    schoolChoose: t("accounts.child.create.schoolChoose"),
+    cityFirst: t("accounts.child.create.cityFirst"),
+    privateSchools: t("accounts.child.create.privateSchools"),
+    publicSchools: t("accounts.child.create.publicSchools"),
     grant: t("accounts.child.create.grant"),
     grantHelp: t("accounts.child.create.grantHelp"),
     interval: t("accounts.child.create.interval"),
@@ -286,9 +307,10 @@ export default async function AccountsPage({
           <AccountCreateForm strings={createStrings} />
           <div style={{ marginTop: 12 }}>
             <CreateChildForm
-              parents={childParents}
               grades={childGrades}
               subjects={childSubjects}
+              cities={childCities}
+              schools={childSchools}
               strings={childCreateStrings}
             />
           </div>

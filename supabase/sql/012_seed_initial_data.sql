@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 012_seed_initial_data.sql
 -- =============================================================================
--- Olimpiada Portal — canonical root SQL file 012 of 013.
+-- OlympIQ — canonical root SQL file 012 of 013.
 --
 -- Responsibility : Initial reference/seed data: roles, permissions, role grants,
 --                  grades, starter subjects, content catalogs, subscription plans,
@@ -566,6 +566,30 @@ select v.name, d.id, 'active'
   cross join (select id from public.districts where name = 'Bakı' limit 1) d
 on conflict (district_id, lower(name)) do nothing;
 
+-- Round 12 (migration 029): curated starter set of well-known Bakı PRIVATE schools
+-- (is_private = true; no number -> school_number NULL, sorted by name within the
+-- private group). Demonstrative starter list — admins add/rename/remove via the
+-- admin panel. Private schools sort BEFORE public everywhere.
+insert into public.schools (name, district_id, status, is_private)
+select v.name, d.id, 'active'::public.catalog_status, true
+  from (values
+    ('Dünya Məktəbi'),
+    ('Landau Məktəbi'),
+    ('Təfəkkür Liseyi'),
+    ('Zəkalar Liseyi'),
+    ('Avropa Liseyi'),
+    ('Xəzər Universiteti nəzdində lisey')
+  ) as v(name)
+  cross join (select id from public.districts where country_code = 'AZ' and name = 'Bakı' limit 1) d
+on conflict (district_id, lower(name)) do nothing;
+
+-- Backfill the numeric sort key from the AZ name ("N nömrəli ..."); idempotent
+-- (only fills NULLs). Named institutions with no number stay NULL (sort last).
+update public.schools
+   set school_number = nullif(substring(name from '([0-9]+)[[:space:]]+nömrəli'), '')::int
+ where school_number is null
+   and name ~ '[0-9]+[[:space:]]+nömrəli';
+
 -- -----------------------------------------------------------------------------
 -- Base system settings.
 -- -----------------------------------------------------------------------------
@@ -587,6 +611,9 @@ insert into public.system_settings (key, value_json) values
   -- started_at is stamped by the exclusivity trigger when the flag flips ON.
   ('giveaway.duration_days',        '7'::jsonb),
   ('giveaway.started_at',           '""'::jsonb)
+  -- Round 12 note: the design.* tokens seeded by migration 031 were REMOVED in
+  -- migration 033 (the "Site Content & Design" design/font/colour editor was
+  -- dropped in favour of a TEXT-ONLY Website Content Management module).
 on conflict (key) do nothing;
 
 -- -----------------------------------------------------------------------------

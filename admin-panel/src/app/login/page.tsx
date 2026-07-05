@@ -13,7 +13,7 @@ export default async function LoginPage({
     <div className="login-wrap">
       <div className="auth-card">
         <div className="brand-row">
-          <span className="brand-dot" aria-hidden /> OlimpIQ{" "}
+          <span className="brand-dot" aria-hidden /> OlympIQ{" "}
           <span className="brand-sub">Admin</span>
         </div>
         <h1>{t("login.title")}</h1>

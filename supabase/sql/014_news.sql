@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 014_news.sql
 -- =============================================================================
--- Olimpiada Portal — canonical module file 014 (News).
+-- OlympIQ — canonical module file 014 (News).
 --
 -- Responsibility : News module — public + in-app general news, Admin-only CRUD.
 --                  Trilingual content via news_translations (az/en/ru). Images live

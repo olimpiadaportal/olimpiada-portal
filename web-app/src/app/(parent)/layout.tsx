@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { getLocaleSettings } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { getParentFreeAccess } from "@/lib/freeAccess";
 import { ProfileDrawer, ParentNavLinks } from "@/components/ProfileDrawer";
 import { GiveawayBanner } from "@/components/GiveawayBanner";
 
@@ -41,6 +42,24 @@ export default async function ParentLayout({
   const { giveaway } = await getPaymentModeInfo();
   const gvwStrings: Record<string, string> = {};
   if (giveaway.active) for (const k of GVW_KEYS) gvwStrings[k] = t(k);
+
+  // Round 12: a scheduled per-parent/child FREE-ACCESS interval also shows a
+  // top-of-page countdown (only when the global giveaway isn't already showing
+  // one). Reuses GiveawayBanner with free-access title/subtitle + the shared
+  // countdown labels.
+  const freeAccess = await getParentFreeAccess();
+  const showFreeBanner = !giveaway.active && freeAccess.active && !!freeAccess.endsAt;
+  const faStrings: Record<string, string> = {};
+  if (showFreeBanner) {
+    faStrings["gvw.title"] = t("fa.title");
+    faStrings["gvw.sub"] = t("fa.sub");
+    faStrings["gvw.remaining"] = t("gvw.remaining");
+    faStrings["gvw.days"] = t("gvw.days");
+    faStrings["gvw.hours"] = t("gvw.hours");
+    faStrings["gvw.minutes"] = t("gvw.minutes");
+    faStrings["gvw.seconds"] = t("gvw.seconds");
+    faStrings["gvw.ended"] = t("gvw.ended");
+  }
 
   // Parent profile display data for the drawer's ACCOUNT section. Degrade
   // gracefully on any failure so the shell still renders with an initials mark.
@@ -111,6 +130,9 @@ export default async function ParentLayout({
       <main className="site-main">
         {giveaway.active && giveaway.endsAt && (
           <GiveawayBanner endsAt={giveaway.endsAt} strings={gvwStrings} />
+        )}
+        {showFreeBanner && freeAccess.endsAt && (
+          <GiveawayBanner endsAt={freeAccess.endsAt} strings={faStrings} />
         )}
         {children}
       </main>

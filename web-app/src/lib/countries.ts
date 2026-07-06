@@ -268,8 +268,3 @@ const RAW: Country[] = [
 export const COUNTRIES: readonly Country[] = [...RAW].sort((a, b) =>
   a.name.localeCompare(b.name, "en"),
 );
-
-/** Lookup by ISO2 (uppercase). */
-export function countryByIso2(iso2: string): Country | undefined {
-  return COUNTRIES.find((c) => c.iso2 === iso2.toUpperCase());
-}

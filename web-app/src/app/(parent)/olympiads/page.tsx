@@ -23,12 +23,11 @@ export default async function ParentOlympiadCatalogPage() {
   const locale = await getLocale();
   const t = await getT();
   const olympiadOn = await isFeatureEnabled("olympiad_module");
-  // Round 11 payment modes: buying is possible in real/demo mode; during an
-  // active GIVEAWAY the buy CTAs are replaced by a non-interactive "free
-  // during the campaign" chip (the purchase server action blocks paid writes
-  // then too); mode 'off' keeps the existing paymentsOff notice.
-  const { mode, giveaway } = await getPaymentModeInfo();
-  const paymentsOn = mode === "real" || mode === "demo";
+  // Payment modes: buying is possible in real/demo/giveaway (giveaways cover
+  // free SUBJECT access only — olympiad packages are always purchase-only);
+  // mode 'off' keeps the existing paymentsOff notice.
+  const { mode } = await getPaymentModeInfo();
+  const paymentsOn = mode !== "off";
 
   if (!olympiadOn) {
     return (
@@ -115,6 +114,9 @@ export default async function ParentOlympiadCatalogPage() {
       questionsText: `${n} ${t("poly.questions")}`,
       priceText: price > 0 ? `${price} ${p.currency ?? "AZN"}` : t("poly.free"),
       ownedBy: ownedByPackage.get(p.id) ?? [],
+      // M12: the event already happened → archived for purchase display
+      // (no buy CTA; purchasers keep their access as before).
+      past: Number.isFinite(ts) && ts <= Date.now(),
     };
   });
 
@@ -136,6 +138,7 @@ export default async function ParentOlympiadCatalogPage() {
     modalPending: t("poly.modal.pending"),
     modalSuccess: t("poly.modal.success"),
     modalAlready: t("poly.modal.already"),
+    pastLabel: t("oly4.status.held"),
   };
 
   return (
@@ -151,7 +154,6 @@ export default async function ParentOlympiadCatalogPage() {
         childrenList={childList}
         packages={items}
         canBuy={paymentsOn}
-        giveawayNote={giveaway.active ? t("gvw.olyFree") : null}
         dict={dict}
       />
     </section>

@@ -40,8 +40,36 @@ begin
       'select public.advance_student_grades();'
     );
     raise notice 'pg_cron job olympiq_advance_student_grades scheduled (Sept 1, 03:00 UTC yearly).';
+
+    -- Audit C1 (migration 036): hourly access-lifecycle reconciliation —
+    -- expires ended subscriptions + syncs students.access_status. The attempt
+    -- RPCs check dates lazily, so correctness never depends on this job.
+    perform cron.unschedule(jobid)
+       from cron.job
+      where jobname = 'olympiq_recompute_child_access';
+
+    perform cron.schedule(
+      'olympiq_recompute_child_access',
+      '17 * * * *',                                  -- hourly at :17 UTC
+      'select public.recompute_child_access();'
+    );
+    raise notice 'pg_cron job olympiq_recompute_child_access scheduled (hourly).';
+
+    -- Test engine (migration 037): expire timed tests past deadline (+5 min
+    -- grace) and abandon >24h-stale practice/olympiad attempts. Lazy deadline
+    -- checks in the RPCs keep correctness even without this job.
+    perform cron.unschedule(jobid)
+       from cron.job
+      where jobname = 'olympiq_expire_stale_attempts';
+
+    perform cron.schedule(
+      'olympiq_expire_stale_attempts',
+      '*/15 * * * *',                                -- every 15 minutes
+      'select public.expire_stale_test_attempts();'
+    );
+    raise notice 'pg_cron job olympiq_expire_stale_attempts scheduled (every 15 min).';
   else
-    raise notice 'pg_cron absent — grade promotion NOT scheduled (skipped safely).';
+    raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry NOT scheduled (skipped safely).';
   end if;
 end
 $$;

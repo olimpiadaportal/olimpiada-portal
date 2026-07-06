@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getResource, type Resource } from "@/lib/admin/resources";
 import { requireAdmin, requirePanelAccess } from "@/lib/admin/guards";
+import { writeAuditLog } from "@/lib/admin/audit";
 import { getT } from "@/i18n/server";
 
 export type SaveState = { error?: string } | null;
@@ -30,11 +31,6 @@ function slugifyCode(input: string): string {
       .replace(/^_+|_+$/g, "")
       .slice(0, 48) || "item"
   );
-}
-
-async function authorize(res: Resource) {
-  if (res.adminOnly) await requireAdmin();
-  else await requirePanelAccess();
 }
 
 type BuiltPayload =
@@ -82,11 +78,16 @@ export async function saveRow(
   _prev: SaveState,
   formData: FormData,
 ): Promise<SaveState> {
+  // L8: guard FIRST — the cheapest gate (panel access) runs before ANY
+  // client-supplied FormData is read; escalation to admin happens as soon as
+  // the registry flag is known. getAuthContext is request-memoized, so the
+  // second guard reuses the same lookup.
+  const ctx = await requirePanelAccess();
   const slug = String(formData.get("__slug") ?? "");
   const id = String(formData.get("__id") ?? "");
   const res = getResource(slug);
   if (!res) return { error: "Unknown resource." };
-  await authorize(res);
+  if (res.adminOnly) await requireAdmin();
   const t = await getT();
 
   const supabase = await createClient();
@@ -102,37 +103,78 @@ export async function saveRow(
       console.error("[admin] resource update failed", slug, error.message);
       return { error: t("err.server") };
     }
+    // M5: best-effort audit trail (never fails the mutation — handled inside).
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.resource.update",
+      targetTable: res.table,
+      targetId: id,
+      metadata: { resource: slug, id },
+    });
     revalidatePath(`/manage/${slug}`);
     redirect(`/manage/${slug}`);
   } else {
     if (res.autoCode && !payload.code) {
       payload.code = slugifyCode(String(payload.name ?? ""));
     }
-    let { error } = await supabase.from(res.table).insert(payload);
+    let { data: created, error } = await supabase
+      .from(res.table)
+      .insert(payload)
+      .select("id")
+      .single();
     if (error && res.autoCode && (error as { code?: string }).code === "23505") {
       // `code` collided — retry once with a short random suffix.
       payload.code = `${slugifyCode(String(payload.name ?? ""))}_${Math.random()
         .toString(36)
         .slice(2, 6)}`;
-      ({ error } = await supabase.from(res.table).insert(payload));
+      ({ data: created, error } = await supabase
+        .from(res.table)
+        .insert(payload)
+        .select("id")
+        .single());
     }
     if (error) {
       console.error("[admin] resource insert failed", slug, error.message);
       return { error: t("err.server") };
     }
+    const newId = (created as { id?: string } | null)?.id ?? null;
+    // M5: best-effort audit trail (never fails the mutation — handled inside).
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.resource.create",
+      targetTable: res.table,
+      targetId: newId,
+      metadata: { resource: slug, id: newId ?? undefined },
+    });
     revalidatePath(`/manage/${slug}`);
     return null;
   }
 }
 
 export async function deleteRow(formData: FormData): Promise<void> {
+  // L8: guard FIRST — panel access before any FormData is read; escalate to
+  // admin once the registry flag is known (memoized context, no extra lookup).
+  const ctx = await requirePanelAccess();
   const slug = String(formData.get("__slug") ?? "");
   const id = String(formData.get("__id") ?? "");
   const res = getResource(slug);
   if (!res || !id) return;
-  await authorize(res);
+  if (res.adminOnly) await requireAdmin();
 
   const supabase = await createClient();
-  await supabase.from(res.table).delete().eq("id", id);
+  const { error } = await supabase.from(res.table).delete().eq("id", id);
+
+  if (!error) {
+    // M5: best-effort audit trail (never fails the mutation — handled inside).
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.resource.delete",
+      targetTable: res.table,
+      targetId: id,
+      metadata: { resource: slug, id },
+      severity: "warning",
+    });
+  }
+
   revalidatePath(`/manage/${slug}`);
 }

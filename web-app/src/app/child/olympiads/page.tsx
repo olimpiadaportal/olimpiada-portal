@@ -4,14 +4,13 @@
 //      subject chips, event date from event_starts_at, detail modal with the
 //      "ask your parent to buy" note). Children can NEVER purchase.
 //   2) "Olimpiadalarım": the existing owned-packages behavior (start attempt).
-// Round 11: during an active GIVEAWAY window every ACTIVE package is playable
-// for free — non-owned ones join the playable list with a small free chip and
-// the planned section is skipped (it would only duplicate those rows).
+// Business ruling (2026-07-06): olympiad packages are ALWAYS purchase-only —
+// giveaway windows / free-access intervals cover SUBJECT access only, never
+// olympiad play. Playable = owned purchases; the planned section always shows.
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
-import { isGiveawayActive } from "@/lib/paymentMode";
 import { startOlympiad } from "@/lib/auth/childActions";
 import {
   OlympiadPlannedCard,
@@ -21,8 +20,13 @@ import {
 
 type StatusKind = PlannedOlympiad["statusKind"];
 
-export default async function ChildOlympiadsPage() {
+export default async function ChildOlympiadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ err?: string }>;
+}) {
   const child = await requireChild();
+  const { err } = await searchParams;
   const locale = await getLocale();
   const t = await getT();
   // Module gate (admin Settings): friendly notice instead of the package list.
@@ -36,9 +40,6 @@ export default async function ChildOlympiadsPage() {
     );
   }
   const supabase = await createClient();
-  // Round 11: during an active giveaway window every ACTIVE-catalog package is
-  // playable without a purchase (start_olympiad_attempt allows it server-side).
-  const giveawayActive = await isGiveawayActive();
 
   const [{ data: packages }, { data: purchases }] = await Promise.all([
     // Active listing is publicly browsable (RLS); covers resolve via the public
@@ -53,7 +54,7 @@ export default async function ChildOlympiadsPage() {
     supabase
       .from("olympiad_purchases")
       .select(
-        "olympiad_package_id, status, olympiad_packages(olympiad_package_translations(locale, title))",
+        "olympiad_package_id, status, olympiad_packages(questions_per_attempt, olympiad_package_translations(locale, title))",
       )
       .eq("student_profile_id", child.profileId)
       .eq("status", "active"),
@@ -144,49 +145,40 @@ export default async function ChildOlympiadsPage() {
     );
   };
 
-  // Playable list ("Olimpiadalarım"): owned packages always; during the
-  // giveaway window every non-owned ACTIVE package joins it too, marked with
-  // the small free chip. The planned section is skipped then — its cards would
-  // duplicate the playable rows one panel above.
-  type Playable = { id: string; title: string; free: boolean };
+  // Playable list ("Olimpiadalarım"): owned purchases ONLY — packages are
+  // purchase-only in every payment mode (free windows cover subjects, not
+  // olympiads; start_olympiad_attempt enforces the same server-side).
+  // L16: each row shows the package's real questions_per_attempt.
+  type Playable = { id: string; title: string; questions: number };
   const playable: Playable[] = owned.map((p) => ({
     id: p.olympiad_package_id,
     title: ownedTitle(p),
-    free: false,
+    questions: Number(p.olympiad_packages?.questions_per_attempt ?? 25) || 25,
   }));
-  if (giveawayActive) {
-    for (const p of ((packages ?? []) as any[])) {
-      if (ownedIds.has(p.id)) continue;
-      playable.push({
-        id: p.id,
-        title: pickTr(p.olympiad_package_translations)?.title ?? "—",
-        free: true,
-      });
-    }
-  }
 
   return (
     <section>
-      <p className="arena-eyebrow">
-        {t("oly4.eyebrow")}
-        {giveawayActive && <span className="gvw-chip">{t("gvw.chip")}</span>}
-      </p>
+      <p className="arena-eyebrow">{t("oly4.eyebrow")}</p>
       <h1 style={{ marginBottom: 20 }}>{t("oly4.pageTitle")}</h1>
 
-      {!giveawayActive && (
-        <section className="oly4-section">
-          <h2 className="oly4-h">{t("oly4.plannedTitle")}</h2>
-          {planned.length === 0 ? (
-            <div className="arena-panel arena-muted">{t("oly4.none")}</div>
-          ) : (
-            <div className="oly4-grid">
-              {planned.map(({ item }) => (
-                <OlympiadPlannedCard key={item.id} item={item} dict={dict} />
-              ))}
-            </div>
-          )}
-        </section>
+      {err && (
+        <div className="arena-panel arena-muted" role="alert" style={{ marginBottom: 16 }}>
+          {t("test.err.generic")}
+        </div>
       )}
+
+      <section className="oly4-section">
+        <h2 className="oly4-h">{t("oly4.plannedTitle")}</h2>
+        {planned.length === 0 ? (
+          <div className="arena-panel arena-muted">{t("oly4.none")}</div>
+        ) : (
+          <div className="oly4-grid">
+            {planned.map(({ item }) => (
+              <OlympiadPlannedCard key={item.id} item={item} dict={dict} />
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="oly4-section">
         <h2 className="oly4-h">{t("oly4.mineTitle")}</h2>
@@ -198,11 +190,10 @@ export default async function ChildOlympiadsPage() {
               <div className="arena-round" key={p.id}>
                 <span className="arena-round-icon">★</span>
                 <div className="arena-round-body">
-                  <div className="arena-round-title">
-                    {p.title}
-                    {p.free && <span className="gvw-chip">{t("gvw.chip")}</span>}
+                  <div className="arena-round-title">{p.title}</div>
+                  <div className="arena-round-meta">
+                    {p.questions} {t("arena.questionsShort")}
                   </div>
-                  <div className="arena-round-meta">25 {t("arena.questionsShort")}</div>
                 </div>
                 <form action={startOlympiad}>
                   <input type="hidden" name="package_id" value={p.id} />

@@ -10,6 +10,7 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
   IMAGE_FILENAME_RE,
+  sniffVerifiedImage,
   splitStoragePath,
   verifyStorageObject,
 } from "@/lib/admin/media-verify";
@@ -220,6 +221,13 @@ export async function attachNewsCover(
     return { error: "File too large (max 5 MB)." };
   }
 
+  // Byte-sniff the (size-capped) object: metadata mimetype is client-claimed,
+  // so the recorded type comes from the actual magic numbers (M19).
+  const sniffed = await sniffVerifiedImage(supabase, bucket, path, obj.mime);
+  if (!sniffed || !COVER_MIME.includes(sniffed)) {
+    return { error: "Unsupported file type." };
+  }
+
   // Remember any previous cover so we can clean it up after re-linking.
   const { data: prev } = await supabase
     .from("news")
@@ -234,8 +242,8 @@ export async function attachNewsCover(
       bucket,
       path,
       owner_profile_id: ctx.profileId,
-      // Server-derived values only (never the client-submitted form fields).
-      mime_type: obj.mime,
+      // Server-derived values only — mime comes from the SNIFFED bytes.
+      mime_type: sniffed,
       file_size_bytes: obj.size,
       visibility: "public",
     })
@@ -270,7 +278,7 @@ export async function attachNewsCover(
     action: "admin.news.cover_attach",
     targetTable: "news",
     targetId: newsId,
-    metadata: { path, mime: obj.mime, size: obj.size },
+    metadata: { path, mime: sniffed, size: obj.size },
   });
 
   revalidatePath(`/news/${newsId}/edit`);

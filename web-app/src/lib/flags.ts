@@ -13,8 +13,17 @@
 // by accident.
 import "server-only";
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { defaultLocale, locales, type Locale } from "@/i18n/config";
+
+// M25: the admin-edited public CHROME (site_content overrides, public site
+// settings, locale settings, feature flags) used to be re-read from the DB on
+// EVERY request. The fetchers below are wrapped in unstable_cache(revalidate:
+// 60) so each key hits the DB at most once a minute. RULES: nothing cookie- or
+// header-bound may run inside a cached function (locale resolution stays
+// outside, in i18n/server), and MONEY GATES (payment mode, free-access) are
+// deliberately NOT cached — they live in paymentMode.ts / freeAccess.ts.
 
 /**
  * Returns whether a feature flag is enabled.
@@ -24,20 +33,28 @@ import { defaultLocale, locales, type Locale } from "@/i18n/config";
  * only closes when an explicit `enabled = false` row exists — i.e. when an
  * administrator has deliberately turned the feature off.
  */
+const fetchFlagEnabled = unstable_cache(
+  async (key: string): Promise<boolean> => {
+    try {
+      const supabase = getAdminClient();
+      const { data, error } = await supabase
+        .from("feature_flags")
+        .select("enabled")
+        .eq("key", key)
+        .maybeSingle();
+      if (error || !data) return true;
+      return (data as { enabled: boolean | null }).enabled === true;
+    } catch {
+      return true;
+    }
+  },
+  ["feature-flag-enabled"],
+  { revalidate: 60 },
+);
+
 export async function isFeatureEnabled(key: string): Promise<boolean> {
   if (!isServiceRoleConfigured) return true;
-  try {
-    const supabase = getAdminClient();
-    const { data, error } = await supabase
-      .from("feature_flags")
-      .select("enabled")
-      .eq("key", key)
-      .maybeSingle();
-    if (error || !data) return true;
-    return (data as { enabled: boolean | null }).enabled === true;
-  } catch {
-    return true;
-  }
+  return fetchFlagEnabled(key);
 }
 
 /**
@@ -71,39 +88,40 @@ export async function getSystemSetting(key: string): Promise<any> {
  */
 export type ContentOverrides = Record<string, { az: string; en: string; ru: string }>;
 
-export const getContentOverrides = cache(async (): Promise<ContentOverrides> => {
-  const out: ContentOverrides = {};
-  if (!isServiceRoleConfigured) return out;
-  try {
-    const supabase = getAdminClient();
-    const { data, error } = await supabase
-      .from("site_content")
-      .select("key, az, en, ru");
-    if (error || !data) return out;
-    for (const row of data as { key: string; az: string; en: string; ru: string }[]) {
-      out[row.key] = {
-        az: typeof row.az === "string" ? row.az : "",
-        en: typeof row.en === "string" ? row.en : "",
-        ru: typeof row.ru === "string" ? row.ru : "",
-      };
+const fetchContentOverrides = unstable_cache(
+  async (): Promise<ContentOverrides> => {
+    const out: ContentOverrides = {};
+    try {
+      const supabase = getAdminClient();
+      const { data, error } = await supabase
+        .from("site_content")
+        .select("key, az, en, ru");
+      if (error || !data) return out;
+      for (const row of data as { key: string; az: string; en: string; ru: string }[]) {
+        out[row.key] = {
+          az: typeof row.az === "string" ? row.az : "",
+          en: typeof row.en === "string" ? row.en : "",
+          ru: typeof row.ru === "string" ? row.ru : "",
+        };
+      }
+      return out;
+    } catch {
+      return out;
     }
-    return out;
-  } catch {
-    return out;
-  }
+  },
+  ["site-content-overrides"],
+  { revalidate: 60 },
+);
+
+export const getContentOverrides = cache(async (): Promise<ContentOverrides> => {
+  if (!isServiceRoleConfigured) return {};
+  return fetchContentOverrides();
 });
 
-/**
- * Gate for OUTBOUND email notifications (admin Settings → notifications_email).
- * Nothing in the app sends email today — Supabase Auth's own emails (verify /
- * password reset) are sent by Supabase and are deliberately NOT gated here:
- * they are security flows, not notifications. Any future email sender
- * (subscription receipts, expiry warnings, news digests, …) MUST call this
- * first and skip sending when it returns false.
- */
-export async function canSendEmailNotifications(): Promise<boolean> {
-  return isFeatureEnabled("notifications_email");
-}
+// NOTE: any future email sender (receipts, expiry warnings, digests, …) must
+// gate on isFeatureEnabled("notifications_email") before sending. Supabase
+// Auth's own emails (verify / password reset) are security flows and are NOT
+// gated. (The old canSendEmailNotifications wrapper was removed as dead code.)
 
 /**
  * Public-site settings surfaced by the redesigned admin Settings (Round 6):
@@ -119,7 +137,8 @@ export type PublicSiteSettings = {
   social: { facebook: string; instagram: string; youtube: string; tiktok: string };
 };
 
-export const getPublicSiteSettings = cache(async (): Promise<PublicSiteSettings> => {
+const fetchPublicSiteSettings = unstable_cache(
+  async (): Promise<PublicSiteSettings> => {
   const out: PublicSiteSettings = {
     maintenanceMode: false,
     maintenanceMessage: {},
@@ -127,7 +146,6 @@ export const getPublicSiteSettings = cache(async (): Promise<PublicSiteSettings>
     supportPhone: "",
     social: { facebook: "", instagram: "", youtube: "", tiktok: "" },
   };
-  if (!isServiceRoleConfigured) return out;
   try {
     const supabase = getAdminClient();
     const { data, error } = await supabase
@@ -183,6 +201,22 @@ export const getPublicSiteSettings = cache(async (): Promise<PublicSiteSettings>
   } catch {
     return out;
   }
+  },
+  ["public-site-settings"],
+  { revalidate: 60 },
+);
+
+export const getPublicSiteSettings = cache(async (): Promise<PublicSiteSettings> => {
+  if (!isServiceRoleConfigured) {
+    return {
+      maintenanceMode: false,
+      maintenanceMessage: {},
+      supportEmail: "",
+      supportPhone: "",
+      social: { facebook: "", instagram: "", youtube: "", tiktok: "" },
+    };
+  }
+  return fetchPublicSiteSettings();
 });
 
 /**
@@ -195,39 +229,48 @@ export const getPublicSiteSettings = cache(async (): Promise<PublicSiteSettings>
  * Safe fallbacks: all locales / az. Guarantees: `enabled` is never empty and
  * always contains `fallback` (a misconfigured row can't brick the UI).
  */
-export const getLocaleSettings = cache(
+const fetchLocaleSettings = unstable_cache(
   async (): Promise<{ enabled: Locale[]; fallback: Locale }> => {
     let enabled: Locale[] = [...locales];
     let fallback: Locale = defaultLocale;
-    if (isServiceRoleConfigured) {
-      try {
-        const supabase = getAdminClient();
-        const { data, error } = await supabase
-          .from("system_settings")
-          .select("key, value_json")
-          .in("key", ["platform.supported_locales", "platform.default_locale"]);
-        if (!error && data) {
-          for (const row of data as { key: string; value_json: unknown }[]) {
-            if (row.key === "platform.supported_locales" && Array.isArray(row.value_json)) {
-              const filtered = locales.filter((l) => (row.value_json as unknown[]).includes(l));
-              if (filtered.length > 0) enabled = filtered;
-            }
-            if (
-              row.key === "platform.default_locale" &&
-              typeof row.value_json === "string" &&
-              (locales as readonly string[]).includes(row.value_json)
-            ) {
-              fallback = row.value_json as Locale;
-            }
+    try {
+      const supabase = getAdminClient();
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("key, value_json")
+        .in("key", ["platform.supported_locales", "platform.default_locale"]);
+      if (!error && data) {
+        for (const row of data as { key: string; value_json: unknown }[]) {
+          if (row.key === "platform.supported_locales" && Array.isArray(row.value_json)) {
+            const filtered = locales.filter((l) => (row.value_json as unknown[]).includes(l));
+            if (filtered.length > 0) enabled = filtered;
+          }
+          if (
+            row.key === "platform.default_locale" &&
+            typeof row.value_json === "string" &&
+            (locales as readonly string[]).includes(row.value_json)
+          ) {
+            fallback = row.value_json as Locale;
           }
         }
-      } catch {
-        // keep fallbacks
       }
+    } catch {
+      // keep fallbacks
     }
     if (!enabled.includes(fallback)) {
       fallback = enabled.includes(defaultLocale) ? defaultLocale : enabled[0];
     }
     return { enabled, fallback };
+  },
+  ["locale-settings"],
+  { revalidate: 60 },
+);
+
+export const getLocaleSettings = cache(
+  async (): Promise<{ enabled: Locale[]; fallback: Locale }> => {
+    if (!isServiceRoleConfigured) {
+      return { enabled: [...locales], fallback: defaultLocale };
+    }
+    return fetchLocaleSettings();
   },
 );

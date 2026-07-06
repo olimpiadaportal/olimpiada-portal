@@ -1,14 +1,22 @@
 import Link from "next/link";
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
+import { getPerSubjectPrices, type PlanInterval } from "@/lib/pricing";
 
-const PLANS = ["weekly", "monthly", "yearly"] as const;
+const PLANS: { key: "weekly" | "monthly" | "yearly"; interval: PlanInterval }[] = [
+  { key: "weekly", interval: "week" },
+  { key: "monthly", interval: "month" },
+  { key: "yearly", interval: "year" },
+];
 
 export default async function PricingPage() {
   const t = await getT();
   // launch_promo flag gates the promotional/trial MESSAGING. The actual trial
   // behavior stays governed server-side by launch_promo_config (the RPCs).
   const promoOn = await isFeatureEnabled("launch_promo");
+  // M8: real per-subject prices from subjects_pricing (the table checkout
+  // prices from) — the copy strings carry a {price} placeholder, never numbers.
+  const prices = await getPerSubjectPrices();
 
   return (
     <section className="pricing2-page">
@@ -21,7 +29,7 @@ export default async function PricingPage() {
       </header>
 
       <div className="plans-grid">
-        {PLANS.map((key) => {
+        {PLANS.map(({ key, interval }) => {
           const featured = key === "monthly";
           return (
             <article
@@ -32,7 +40,12 @@ export default async function PricingPage() {
                 <span className="plan-badge">{t("pricing2.popular")}</span>
               )}
               <h2 className="plan-name">{t(`pricing2.${key}.name`)}</h2>
-              <div className="plan-price">{t(`pricing2.${key}.price`)}</div>
+              <div className="plan-price">
+                {t(`pricing2.${key}.price`).replace(
+                  "{price}",
+                  String(prices[interval]),
+                )}
+              </div>
               <div className="plan-per">{t(`pricing2.${key}.per`)}</div>
               <p className="plan-desc">{t(`pricing2.${key}.desc`)}</p>
               <ul className="plan-benefits">

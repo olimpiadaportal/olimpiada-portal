@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
+import { writeAuditLog } from "@/lib/admin/audit";
 
 export type CityRow = {
   id: string;
@@ -61,7 +62,7 @@ export async function saveCity(
   _prev: CitySaveState,
   formData: FormData,
 ): Promise<CitySaveState> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const id = String(formData.get("__id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const status = readStatus(formData);
@@ -77,6 +78,7 @@ export async function saveCity(
   // constraint keeps working (the column stays in the districts table).
   const payload = { name, country_code: "AZ", status };
 
+  let targetId = id || null;
   if (id) {
     const { error } = await supabase
       .from("districts")
@@ -88,7 +90,11 @@ export async function saveCity(
       return { error: "err.server" };
     }
   } else {
-    const { error } = await supabase.from("districts").insert(payload);
+    const { data: created, error } = await supabase
+      .from("districts")
+      .insert(payload)
+      .select("id")
+      .single();
     if (error) {
       // unique(country_code, name) collision
       if ((error as { code?: string }).code === "23505")
@@ -96,7 +102,18 @@ export async function saveCity(
       console.error("[admin] city insert failed", error.message);
       return { error: "err.server" };
     }
+    targetId = created?.id ?? null;
   }
+
+  // M5: best-effort audit trail (never fails the mutation — handled inside).
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: id ? "admin.city.update" : "admin.city.create",
+    targetTable: "districts",
+    targetId,
+    metadata: { name, status },
+  });
+
   revalidatePath("/cities");
   redirect("/cities");
 }
@@ -107,7 +124,7 @@ export async function deleteCity(
   _prev: CityDeleteState,
   formData: FormData,
 ): Promise<CityDeleteState> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const id = String(formData.get("__id") ?? "").trim();
   if (!id) return { error: "missing.id" };
 
@@ -123,6 +140,16 @@ export async function deleteCity(
     console.error("[admin] city delete failed", error.message);
     return { error: "err.server" };
   }
+
+  // M5: best-effort audit trail (never fails the mutation — handled inside).
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.city.delete",
+    targetTable: "districts",
+    targetId: id,
+    severity: "warning",
+  });
+
   revalidatePath("/cities");
   redirect("/cities");
 }

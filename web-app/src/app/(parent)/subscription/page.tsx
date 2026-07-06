@@ -7,6 +7,7 @@ import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { CancelSubscription } from "@/components/CancelSubscription";
 import { BillingTabs } from "@/components/BillingTabs";
 import { InvoicesSection, type InvoiceRow } from "@/components/InvoicesSection";
+import { getPerSubjectPrices } from "@/lib/pricing";
 
 // R8 billing — one-page SaaS subscription center with internal tabs
 // [Plans | Billing | Invoices] that smooth-scroll to same-page sections.
@@ -61,11 +62,13 @@ type Card = {
   status: SubStatus;
 };
 
-// Demo-grade plan math — matches the public pricing page copy (≈ AZN/subject).
+// M8: per-subject prices come from the DB (subjects_pricing via getPerSubjectPrices)
+// — never hardcoded here. Totals shown are the pre-discount subject×price sum;
+// the sibling discount is applied server-side at checkout (sub.siblingNote).
 const PLANS = [
-  { interval: "week", slug: "weekly", price: 2 },
-  { interval: "month", slug: "monthly", price: 6 },
-  { interval: "year", slug: "yearly", price: 50 },
+  { interval: "week", slug: "weekly" },
+  { interval: "month", slug: "monthly" },
+  { interval: "year", slug: "yearly" },
 ] as const;
 
 // Cancel-flow copy passed to the client component so it never touches i18n.
@@ -124,6 +127,8 @@ export default async function ParentSubscription({
   const { mode } = await getPaymentModeInfo();
   // Round 12: `giveaway` (the free-surface flag) is finalized AFTER the selected
   // child is known, so a per-child free-access interval scopes to that child.
+  // M8: real per-interval, per-subject prices from subjects_pricing.
+  const prices = await getPerSubjectPrices();
 
   // pricing2.* is owned by the public pricing page; fall back to the live
   // pricing.* keys (always present) so no raw key can ever render here.
@@ -240,9 +245,13 @@ export default async function ParentSubscription({
   }
 
   // Shared plan-card copy (pricing2.* from the contract, pricing.* fallback).
-  const planCopy = PLANS.map(({ slug }) => ({
+  // The .price strings carry a {price} placeholder filled with the DB price.
+  const planCopy = PLANS.map(({ slug, interval }) => ({
     name: pick(`pricing2.plan.${slug}.name`, `pricing.plan.${slug}.name`),
-    price: pick(`pricing2.plan.${slug}.price`, `pricing.plan.${slug}.price`),
+    price: pick(`pricing2.plan.${slug}.price`, `pricing.plan.${slug}.price`).replace(
+      "{price}",
+      String(prices[interval]),
+    ),
     per: pick(`pricing2.plan.${slug}.per`, `pricing.plan.${slug}.unit`),
     desc: pick(
       `pricing2.plan.${slug}.desc`,
@@ -270,10 +279,13 @@ export default async function ParentSubscription({
 
   // Billing/cancel rows are scoped to the SELECTED child only (Task 5); the
   // cancel action itself re-validates ownership + subscription id server-side.
+  // L6: past_due is cancellable too (the server action already accepts it).
   const cancellable =
     selectedCard &&
     selectedCard.subscriptionId !== null &&
-    (selectedCard.status === "trialing" || selectedCard.status === "active")
+    (selectedCard.status === "trialing" ||
+      selectedCard.status === "active" ||
+      selectedCard.status === "past_due")
       ? [selectedCard]
       : [];
 
@@ -390,7 +402,10 @@ export default async function ParentSubscription({
                     const isCurrent = hasPlan && c.interval === p.interval;
                     const isPopular = p.interval === "month";
                     const featured = isCurrent || (!hasPlan && isPopular);
-                    const total = c.subjects.length * p.price;
+                    // M8: DB per-subject price; the sibling discount is NOT
+                    // fake-mathed here — it applies at checkout (siblingNote).
+                    const perSubject = prices[p.interval];
+                    const total = c.subjects.length * perSubject;
                     return (
                       <div
                         key={p.interval}
@@ -420,13 +435,17 @@ export default async function ParentSubscription({
                               ))}
                             </ul>
                             <div className="billing-calc">
-                              {c.subjects.length} × {p.price} AZN{" "}
+                              {c.subjects.length} × {perSubject} AZN{" "}
                               {perSuffix[p.interval]}
                             </div>
                             <div className="billing-total">
                               {t("billing.totalLabel")}:{" "}
                               <strong>≈ {total} AZN</strong>{" "}
                               <span>{perSuffix[p.interval]}</span>
+                            </div>
+                            {/* Sibling discount applies at checkout, server-side. */}
+                            <div className="plan-per subjedit-per-note">
+                              {t("sub.siblingNote")}
                             </div>
                           </>
                         ) : (

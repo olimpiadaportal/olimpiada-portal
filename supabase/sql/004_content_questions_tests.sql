@@ -24,9 +24,20 @@ create table if not exists public.question_types (
   code                  text not null unique,
   name                  text not null,
   supports_auto_grading boolean not null default true,
+  -- Migration 037 (MCQ-only launch): per-type structure rules, managed on the
+  -- admin question-types page and enforced by assert_question_type_rules (011)
+  -- + the admin form. status active = selectable for NEW questions.
+  status                public.catalog_status not null default 'active',
+  options_required      int,   -- exact option count for new questions (NULL = 2..10)
+  correct_required      int,   -- exact number of correct options (NULL = at least 1)
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );
+-- Idempotent for databases created before migration 037.
+alter table public.question_types
+  add column if not exists status public.catalog_status not null default 'active',
+  add column if not exists options_required int,
+  add column if not exists correct_required int;
 
 -- -----------------------------------------------------------------------------
 -- difficulty_levels : difficulty catalog with relative weight.

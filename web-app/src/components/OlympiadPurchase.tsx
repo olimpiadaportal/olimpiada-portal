@@ -34,6 +34,8 @@ export type PolyPackage = {
   priceText: string;
   /** student profile ids that already own this package (status active). */
   ownedBy: string[];
+  /** M12: event date already passed → archived for purchase (no buy CTA). */
+  past: boolean;
 };
 
 export type PolyDict = {
@@ -55,6 +57,8 @@ export type PolyDict = {
   modalPending: string;
   modalSuccess: string;
   modalAlready: string;
+  /** M12: label shown on past-event (archived) packages instead of a buy CTA. */
+  pastLabel: string;
 };
 
 // Inline-SVG medal for the branded gradient placeholder (no external images —
@@ -202,19 +206,12 @@ export function OlympiadPurchase({
   childrenList,
   packages,
   canBuy,
-  giveawayNote = null,
   dict,
 }: {
   childrenList: PolyChild[];
   packages: PolyPackage[];
   /** payments availability (server-evaluated) — hides buy buttons when off. */
   canBuy: boolean;
-  /**
-   * Round 11: non-null while a giveaway window is active — cards show this
-   * translated "free during the campaign" note INSTEAD of a buy button (the
-   * purchase server action blocks paid writes during the giveaway anyway).
-   */
-  giveawayNote?: string | null;
   dict: PolyDict;
 }) {
   const router = useRouter();
@@ -318,8 +315,9 @@ export function OlympiadPurchase({
                     <span className="poly-price">{pkg.priceText}</span>
                     {owned ? (
                       <span className="poly-owned">{dict.owned}</span>
-                    ) : giveawayNote ? (
-                      <span className="gvw-oly-free">{giveawayNote}</span>
+                    ) : pkg.past ? (
+                      // M12: the event was already held — archived; never buyable.
+                      <span className="poly-chip">{dict.pastLabel}</span>
                     ) : canBuy && child ? (
                       <button
                         type="button"

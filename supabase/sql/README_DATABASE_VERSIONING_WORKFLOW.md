@@ -35,11 +35,14 @@ supabase/sql/
 ├── 010_rls_policies.sql
 ├── 011_indexes_constraints_functions_triggers.sql
 ├── 012_seed_initial_data.sql
-├── 013_validation_queries.sql
+├── 014_news.sql
+├── 015_olympiad_preparation.sql
+├── 016_scheduled_jobs.sql
+├── 013_validation_queries.sql   # runs LAST (read-only), after 014/015/016
 └── migrations/
     ├── README_MIGRATIONS.md
-    ├── 2026_01_15_001_add_question_review_indexes.sql
-    └── 2026_01_18_001_fix_parent_student_rls.sql
+    ├── 2026_06_27_001_auth_user_provisioning.sql
+    └── ...                       # chronological change log, already backported above
 ```
 
 The root SQL files are canonical. The migration files are the chronological change log.
@@ -108,7 +111,9 @@ If a migration is not backported, the repository is no longer able to recreate t
 
 ## Production Workflow
 
-Production must be migration-controlled.
+**First-time production build (bootstrap):** production does not exist yet. When the production Supabase project is created, build its schema by running the **canonical root SQL files in numeric order** — `001` → `012`, then `014`, `015`, `016`, then `013` (validation) last. Do **not** replay the files in `supabase/sql/migrations/` against a fresh production DB: every migration is already backported into the canonical files, so replaying them would double-apply changes. Enable the `pg_cron` extension (Supabase Dashboard → Database → Extensions) before running `016`, or re-run `016` after enabling it, so the cron jobs actually register. Full step-by-step: see "First-Time Production Database Build" in `supabase/README_RUN_ORDER.md`.
+
+**Ongoing changes after production is live** must be migration-controlled.
 
 Before production:
 

@@ -49,16 +49,34 @@ export async function loadQuestionOptions(
   };
 }
 
-// Maps each question type id → its stable `code` (single_choice, multiple_choice,
-// true_false, …). Used to drive type-aware option validation (server) and the
-// per-type option hints in the editor (client). Codes are stable identifiers, so
-// validation never depends on translated labels.
-export async function loadQuestionTypeCodes(): Promise<Record<string, string>> {
+// Per-type structure rules for the question editor. Maps each question type id
+// → its stable `code` (single_choice, multiple_choice, true_false, …) plus the
+// per-type structure config columns (status / options_required /
+// correct_required). Used to drive type-aware option editing on the client and
+// the authoritative validation in saveQuestion. Codes are stable identifiers,
+// so validation never depends on translated labels.
+export type QuestionTypeRule = {
+  code: string;
+  status: string; // 'active' = selectable for NEW questions
+  options_required: number | null; // exact option count (null = flexible 2..10)
+  correct_required: number | null; // exact correct count (null = at least 1)
+};
+
+export async function loadQuestionTypeRules(): Promise<
+  Record<string, QuestionTypeRule>
+> {
   const supabase = await createClient();
-  const { data } = await supabase.from("question_types").select("id, code");
-  const map: Record<string, string> = {};
-  for (const r of (data ?? []) as { id: string; code: string }[]) {
-    map[r.id] = r.code;
+  const { data } = await supabase
+    .from("question_types")
+    .select("id, code, status, options_required, correct_required");
+  const map: Record<string, QuestionTypeRule> = {};
+  for (const r of (data ?? []) as ({ id: string } & QuestionTypeRule)[]) {
+    map[r.id] = {
+      code: r.code,
+      status: r.status,
+      options_required: r.options_required,
+      correct_required: r.correct_required,
+    };
   }
   return map;
 }

@@ -179,14 +179,21 @@ on conflict (code) do nothing;
 -- -----------------------------------------------------------------------------
 -- Question types.
 -- -----------------------------------------------------------------------------
-insert into public.question_types (code, name, supports_auto_grading) values
-  ('single_choice',   'Single choice',   true),
-  ('multiple_choice', 'Multiple choice', true),
-  ('true_false',      'True / False',    true),
-  ('numeric_input',   'Numeric input',   true),
-  ('short_text',      'Short text',      false),
-  ('open_text',       'Open / essay',    false)
+-- MCQ-only launch (migration 037, owner 2026-07-06): multiple_choice IS the MCQ
+-- (exactly 5 options, exactly 1 correct) and the only type selectable for new
+-- questions; the rest are seeded inactive until their structure rules are defined.
+insert into public.question_types (code, name, supports_auto_grading, status, options_required, correct_required) values
+  ('single_choice',   'Single choice',   true,  'inactive', null, null),
+  ('multiple_choice', 'Multiple choice', true,  'active',   5,    1),
+  ('true_false',      'True / False',    true,  'inactive', 2,    1),
+  ('numeric_input',   'Numeric input',   true,  'inactive', null, null),
+  ('short_text',      'Short text',      false, 'inactive', null, null),
+  ('open_text',       'Open / essay',    false, 'inactive', null, null)
 on conflict (code) do nothing;
+-- Idempotent config for databases seeded before migration 037.
+update public.question_types set options_required = 5, correct_required = 1 where code = 'multiple_choice';
+update public.question_types set status = 'inactive' where code <> 'multiple_choice';
+update public.question_types set status = 'active'   where code = 'multiple_choice';
 
 -- -----------------------------------------------------------------------------
 -- Difficulty levels.

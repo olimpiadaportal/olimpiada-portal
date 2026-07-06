@@ -1,29 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { messages } from "@/i18n/messages";
-import { defaultLocale, type Locale } from "@/i18n/config";
+import { type Locale } from "@/i18n/config";
 import { useT, useTFirst } from "@/i18n/I18nProvider";
+
+// M21: no direct `messages` import here — all translation goes through the
+// override-aware I18nProvider (the old trFirst export moved to useTFirst).
 
 type Theme = "dark" | "light";
 
 const STORAGE_KEY = "theme";
-
-// First catalog string that actually exists among `keys`, else `fallback`.
-// Kept as a plain export for the account drawers (which pass a locale); NOT
-// override-aware. The ThemeToggle component itself uses the override-aware
-// useT()/useTFirst() from I18nProvider below.
-export function trFirst(
-  locale: Locale,
-  keys: string[],
-  fallback: string,
-): string {
-  for (const key of keys) {
-    const v = messages[locale]?.[key] ?? messages[defaultLocale]?.[key];
-    if (v) return v;
-  }
-  return fallback;
-}
 
 function getInitialTheme(): Theme {
   if (typeof document !== "undefined") {

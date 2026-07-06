@@ -1,5 +1,16 @@
 # OlympIQ — Full Codebase Audit (2026-07-05)
 
+> ## ✅ REMEDIATION — Round 13 (2026-07-06)
+>
+> **Every Critical/High and all actionable Medium/Low findings below are FIXED** (migrations `2026_07_06_035` + `036` + backports to canonical 001–016; app fixes across both apps). Validation: from-zero rebuild **49/49 PASS**, dev smoke tests, typecheck both apps.
+>
+> - **Fixed — DB (migration 035):** C2, H1, H2, H3, H4, H5, H6, H7, M12(+RPC guard), M14, M23, M26, L12 (raw-row RLS; the pseudonymized public board RPC lands with the Leaderboard plan), L17.
+> - **Fixed — DB (migration 036):** C1 (lazy `current_period_end` checks in the attempt RPCs + hourly `recompute_child_access` pg_cron; trial-once enforced in `create_child_subscription`), M13+L13 (financial FKs → SET NULL, records survive account deletion).
+> - **Fixed — web-app:** H8, H9-web, H11-web, M6, M7, M8, M9, M10, M12-listings, M15, M16, M17, M20 (owner: add to nav), M21, M24, M25, L1–L7, L16, L19, L20 (uuid helper + trFirst), L21.
+> - **Fixed — admin-panel:** H9-admin, H10, H11, M1, M2, M3, M4, M5, M15, M18, M19, M22, L8, L9 (sanitized at the exposure point), L10, L11, L21.
+> - **Owner-ruled:** M11 — olympiad packages STAY purchasable during a free-access window (deliberate; the child plays listed packages free meanwhile). M20 — page added to the public nav.
+> - **Still open (tracked):** L14 (launch-promo sequencing — Stage 11 payments), L15 (subject seed set — owner to confirm), `locked` access state wiring (needs the real payment provider; `expired` is fully wired), the two opportunistic L22 leftovers (olympiad covers via plain `<img>`, admin slugify triplication), and the **"Needs live verification" list** (§ below — esp. the in-memory rate limiter on serverless and `NEXT_PUBLIC_SITE_URL` in prod).
+
 **Scope:** `web-app/`, `admin-panel/`, `supabase/sql/` (canonical 001–016 + migrations 029–034), configs, middleware, i18n — the state of the working tree on 2026-07-05 (Round 12.1, uncommitted).
 **Method:** six independent read-only review lenses (web security, admin security, SQL/RLS, business logic, architecture/connectivity, performance), findings then hand-verified where marked. Nothing was changed by this audit — this document is the work list.
 

@@ -6,6 +6,7 @@ import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { SubscribeForm } from "@/components/SubscribeForm";
 import { ManageSubjects } from "@/components/ManageSubjects";
+import { FreeActivation } from "@/components/FreeActivation";
 
 const KEYS = [
   "sub.interval", "sub.subjects", "sub.subtotal", "sub.siblingNote",
@@ -25,6 +26,8 @@ const KEYS = [
   "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",
   "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing",
   "pay.subtotal", "pay.discount", "pay.total",
+  // H8 — free-window login-ID activation callout:
+  "freeact.note", "freeact.cta", "freeact.activating", "freeact.done",
 ];
 
 export default async function SubscribePage({
@@ -39,7 +42,7 @@ export default async function SubscribePage({
 
   const { data: child } = await supabase
     .from("students")
-    .select("profile_id, first_name, last_name, created_by_parent_profile_id")
+    .select("profile_id, first_name, last_name, child_unique_id, created_by_parent_profile_id")
     .eq("profile_id", id)
     .maybeSingle();
   if (!child || (child as any).created_by_parent_profile_id !== parent.profileId) {
@@ -102,10 +105,18 @@ export default async function SubscribePage({
       ) : mode === "giveaway" || freeIntervalActive ? (
         // Free giveaway window OR an active free-access interval → paid writes are
         // blocked server-side; show the friendly "everything is free right now"
-        // notice instead of the forms.
-        <div className="price-callout">
-          {mode === "giveaway" ? t("gate.giveawayFree") : t("gate.freeAccess")}
-        </div>
+        // notice instead of the forms. H8: a child with NO live subscription and
+        // NO allocated 8-digit login ID also gets the free activation button here
+        // (same server action as the wizard's free path) so the free window never
+        // dead-ends a new child without a login ID.
+        <>
+          <div className="price-callout">
+            {mode === "giveaway" ? t("gate.giveawayFree") : t("gate.freeAccess")}
+          </div>
+          {!sub?.id && !(child as any).child_unique_id && (
+            <FreeActivation studentId={id} dict={dict} />
+          )}
+        </>
       ) : sub?.id ? (
         <ManageSubjects
           studentId={id}

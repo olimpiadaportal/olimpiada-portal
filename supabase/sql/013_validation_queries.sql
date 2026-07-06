@@ -539,15 +539,16 @@ select '36_sticker_themes' as check_name,
                             and allowed_mime_types = array['image/png','image/webp'])
             then 'PASS' else 'FAIL' end as status;
 
--- 37) Round 11 (migration 027): the attempt engine honors the giveaway window
---     at the DB layer — is_giveaway_active() exists (anon cannot execute) and
---     BOTH attempt RPCs reference it in their guards.
+-- 37) Round 11 (migration 027) + owner ruling (migration 038): the giveaway
+--     window opens SUBJECTS only — is_giveaway_active() exists (anon cannot
+--     execute), the PRACTICE guard references it, and the OLYMPIAD guard does
+--     NOT (olympiad packages are purchase-only in every mode).
 select '37_giveaway_attempt_access' as check_name,
        case when has_function_privilege('anon', 'public.is_giveaway_active()', 'EXECUTE') = false
              and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
                  like '%is_giveaway_active%'
              and pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)
-                 like '%is_giveaway_active%'
+                 not like '%is_giveaway_active%'
             then 'PASS' else 'FAIL' end as status;
 
 -- 38) Round 12 (migration 029): schools carry is_private + numeric school_number,
@@ -600,7 +601,8 @@ select '41_design_tokens_removed' as check_name,
 
 -- 42) Round 12 (migration 033): per-parent/child free-access intervals — table with
 --     RLS ON + admin-only policy; the SECURITY DEFINER helpers are NOT anon-executable;
---     both attempt-start RPCs honor is_free_access_active_for_student().
+--     the PRACTICE guard honors is_free_access_active_for_student() while the
+--     OLYMPIAD guard does NOT (migration 038: packages are purchase-only).
 select '42_free_access_intervals' as check_name,
        case when to_regclass('public.free_access_intervals') is not null
              and (select relrowsecurity from pg_class where oid='public.free_access_intervals'::regclass)
@@ -616,7 +618,105 @@ select '42_free_access_intervals' as check_name,
              and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
                  like '%is_free_access_active_for_student%'
              and pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)
-                 like '%is_free_access_active_for_student%'
+                 not like '%is_free_access_active_for_student%'
+            then 'PASS' else 'FAIL' end as status;
+
+-- 43) Audit Batch 1 (migration 035, H1+M26): the 8-digit ID allocator is
+--     service-role only — the ONE DEFINER RPC that previously had no revoke.
+select '43_child_id_allocator_locked' as check_name,
+       case when has_function_privilege('anon','public.allocate_child_unique_id(uuid)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.allocate_child_unique_id(uuid)','EXECUTE') = false
+             and has_function_privilege('service_role','public.allocate_child_unique_id(uuid)','EXECUTE') = true
+            then 'PASS' else 'FAIL' end as status;
+
+-- 44) Audit Batch 1 (migration 035, H2+H4): the olympiad bulk-pool RPC is
+--     Administrator-only (no content.create fallback a content manager holds),
+--     and no attempt RPC references the phantom catalog_status column.
+select '44_olympiad_rpc_hardening' as check_name,
+       case when position('content.create' in
+                 pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb)'::regprocedure)) = 0
+             and position('catalog_status = ' in
+                 pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) = 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 45) Audit Batch 1 (migration 035, H3): learners cannot SELECT answer_options
+--     (is_correct is the answer key) — the read policy no longer opens published
+--     rows; options reach students only via the DEFINER attempt RPCs.
+select '45_answer_key_not_readable' as check_name,
+       case when exists (select 1 from pg_policies
+                          where schemaname='public' and tablename='answer_options'
+                            and policyname='aopt_select'
+                            and qual not like '%published%')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 46) Audit Batch 1 (migration 035, C2+H6): one live subscription per child is
+--     DB-enforced, and start_practice_attempt gates on subscription_subjects
+--     (per-subject access) + current_period_end (lazy expiry).
+select '46_subscription_invariants' as check_name,
+       case when exists (select 1 from pg_indexes
+                          where schemaname='public' and indexname='uq_child_subscriptions_live')
+             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+                 like '%subscription_subjects%'
+             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+                 like '%current_period_end%'
+            then 'PASS' else 'FAIL' end as status;
+
+-- 47) Audit Batch 1 (migration 035, M23+L12): questions list indexes exist, and
+--     leaderboard entries/snapshots are no longer world-readable.
+select '47_indexes_and_leaderboard_rls' as check_name,
+       case when exists (select 1 from pg_indexes where schemaname='public' and indexname='idx_questions_pool_created')
+             and exists (select 1 from pg_indexes where schemaname='public' and indexname='idx_questions_type')
+             and exists (select 1 from pg_indexes where schemaname='public' and indexname='idx_questions_subtopic')
+             and not exists (select 1 from pg_policies
+                              where schemaname='public' and tablename='leaderboard_entries'
+                                and policyname='leaderboard_entries_select' and qual = 'true')
+             and exists (select 1 from pg_policies
+                          where schemaname='public' and tablename='leaderboard_snapshots'
+                            and policyname='leaderboard_snapshots_select' and qual like '%is_admin%')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 48) Audit Batch 2 (migration 036, C1+M13): the access-lifecycle recompute
+--     function exists (service-role only), and financial records survive account
+--     deletion (payments/olympiad_purchases FKs are ON DELETE SET NULL).
+select '48_access_lifecycle_and_retention' as check_name,
+       case when to_regprocedure('public.recompute_child_access()') is not null
+             and has_function_privilege('authenticated','public.recompute_child_access()','EXECUTE') = false
+             and exists (select 1 from pg_constraint
+                          where conname = 'payments_profile_id_fkey' and confdeltype = 'n')
+             and exists (select 1 from pg_constraint
+                          where conname = 'olympiad_purchases_student_profile_id_fkey' and confdeltype = 'n')
+             and exists (select 1 from pg_constraint
+                          where conname = 'olympiad_purchases_owner_parent_profile_id_fkey' and confdeltype = 'n')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 49) Test engine T0 + MCQ-only launch (migration 037): the six learner RPCs +
+--     expiry sweep exist with the right grant posture; the single-open index and
+--     attempt columns exist; the MCQ (multiple_choice) is the ONLY active
+--     question type (exactly 5 options / 1 correct) and both bulk RPCs enforce
+--     the per-type structure rules.
+select '49_test_engine_and_mcq_rules' as check_name,
+       case when to_regprocedure('public.start_topic_test_attempt(uuid,uuid[],uuid[])') is not null
+             and to_regprocedure('public.get_test_attempt(uuid,text)') is not null
+             and to_regprocedure('public.save_test_answers(uuid,jsonb)') is not null
+             and to_regprocedure('public.submit_test_attempt(uuid,jsonb)') is not null
+             and to_regprocedure('public.cancel_test_attempt(uuid)') is not null
+             and to_regprocedure('public.get_test_review(uuid,text)') is not null
+             and has_function_privilege('anon','public.start_topic_test_attempt(uuid,uuid[],uuid[])','EXECUTE') = false
+             and has_function_privilege('authenticated','public.expire_stale_test_attempts()','EXECUTE') = false
+             and has_function_privilege('authenticated','public.test_attempt_result(uuid)','EXECUTE') = false
+             and exists (select 1 from pg_indexes
+                          where schemaname='public' and indexname='uq_test_attempts_open_test')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='test_attempts' and column_name='deadline_at')
+             and exists (select 1 from public.question_types
+                          where code='multiple_choice' and status='active'
+                            and options_required=5 and correct_required=1)
+             and not exists (select 1 from public.question_types
+                              where code <> 'multiple_choice' and status='active')
+             and position('assert_question_type_rules' in
+                   pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure)) > 0
+             and position('assert_question_type_rules' in
+                   pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

@@ -3,6 +3,8 @@ import "./globals.css";
 import { getLocale, getT } from "@/i18n/server";
 import { getPublicSiteSettings, getContentOverrides } from "@/lib/flags";
 import { I18nProvider } from "@/i18n/I18nProvider";
+import { messages } from "@/i18n/messages";
+import { defaultLocale } from "@/i18n/config";
 
 export const metadata: Metadata = {
   title: "OlympIQ — Student & Parent",
@@ -19,13 +21,18 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const locale = await getLocale();
 
-  // Admin "Website Content" text overrides for the current locale (small map),
-  // handed to the client I18nProvider so client components are override-aware too.
+  // M21: build the SINGLE-locale client dictionary on the server — the bundled
+  // catalog for the current locale (over the default-locale fallback) merged
+  // with the admin "Website Content" DB overrides. The client I18nProvider
+  // receives only this dict, so the trilingual catalog never ships client-side.
   const contentOverrides = await getContentOverrides();
-  const localeOverrides: Record<string, string> = {};
+  const clientDict: Record<string, string> = {
+    ...messages[defaultLocale],
+    ...messages[locale],
+  };
   for (const [key, tri] of Object.entries(contentOverrides)) {
     const v = tri[locale];
-    if (v && v.trim()) localeOverrides[key] = v;
+    if (v && v.trim()) clientDict[key] = v;
   }
 
   // Maintenance mode (admin Settings → platform.maintenance_mode): the whole
@@ -61,7 +68,7 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME }} />
       </head>
       <body>
-        <I18nProvider locale={locale} overrides={localeOverrides}>
+        <I18nProvider locale={locale} dict={clientDict}>
           <div className="app-shell">
             {/* Theme + language controls live in each shell's own nav
                 (e.g. the public navbar's .navbar-controls), so the root

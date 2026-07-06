@@ -9,6 +9,7 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
   IMAGE_FILENAME_RE,
+  sniffVerifiedImage,
   splitStoragePath,
   verifyStorageObject,
 } from "@/lib/admin/media-verify";
@@ -26,6 +27,10 @@ const UUID_RE =
 const COVER_BUCKET = "olympiad-media";
 const COVER_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const COVER_MAX_SIZE = 5 * 1024 * 1024;
+
+// Server-side length caps on free text (defence-in-depth; mirrors news.ts).
+const TITLE_MAX = 200;
+const DESC_MAX = 20000;
 
 function s(fd: FormData, n: string): string {
   const v = fd.get(n);
@@ -73,6 +78,12 @@ export async function saveOlympiadPackage(
   const status = ["active", "inactive", "archived"].includes(statusRaw) ? statusRaw : "inactive";
   const titleAz = s(fd, "title_az");
   if (!titleAz) return { error: t("oly2.err.titleAz") };
+
+  // L11: server-side length caps — title ≤ 200, description ≤ 20000 per locale.
+  for (const loc of LOCALES) {
+    if (s(fd, `title_${loc}`).length > TITLE_MAX) return { error: t("err.tooLong") };
+    if (s(fd, `desc_${loc}`).length > DESC_MAX) return { error: t("err.tooLong") };
+  }
 
   // Optional planned event date/time (Round 8). The form submits an ISO string
   // (client-side timezone-correct); empty clears the date back to NULL.
@@ -187,7 +198,27 @@ export async function bulkImportOlympiadQuestions(
   const ctx = await requireAdmin();
   const t = await getT();
   const pkgId = s(fd, "__id");
-  if (!pkgId) return { ok: false, error: t("bulk.pickFile") };
+  if (!pkgId || !UUID_RE.test(pkgId)) {
+    return { ok: false, error: t("err.server") };
+  }
+
+  // Batch-level Grade comes from the modal select (NOT from the file). The RPC
+  // resolves grades by grades.level, so that is the value injected into every
+  // item's meta below. Subject is scoped by the package inside the RPC.
+  const gradeId = s(fd, "grade_id");
+  if (!UUID_RE.test(gradeId)) {
+    return { ok: false, error: t("qerr.gradeRequired") };
+  }
+  const supabase = await createClient();
+  const { data: grade } = await supabase
+    .from("grades")
+    .select("id, level")
+    .eq("id", gradeId)
+    .maybeSingle();
+  if (!grade || grade.level == null) {
+    return { ok: false, error: t("qerr.gradeRequired") };
+  }
+
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: t("bulk.pickFile") };
@@ -205,21 +236,50 @@ export async function bulkImportOlympiadQuestions(
     return { ok: false, error: t("bulk.notArray") };
   }
 
-  const supabase = await createClient();
+  // Override every item's meta.grade_level with the selected grade's level.
+  // Old-format files that still carry grade_level are superseded (backward
+  // compatible by design).
+  const items = payload.map((item) => {
+    const obj =
+      item && typeof item === "object" && !Array.isArray(item)
+        ? (item as Record<string, unknown>)
+        : {};
+    const meta =
+      obj.meta && typeof obj.meta === "object" && !Array.isArray(obj.meta)
+        ? (obj.meta as Record<string, unknown>)
+        : {};
+    return { ...obj, meta: { ...meta, grade_level: grade.level } };
+  });
+
   const { data, error } = await supabase.rpc("bulk_insert_olympiad_package_questions", {
     p_package_id: pkgId,
-    p_questions: payload,
+    p_questions: items,
   });
   if (error) {
     console.error("[admin] olympiad bulk import failed", error.message);
     return { ok: false, error: t("err.server") };
   }
 
-  const result = data as {
+  const raw = data as {
     total: number;
     successful: number;
     failed: number;
     errors: { index: number; error: string }[];
+  };
+  // L9: the RPC records raw SQLERRM per failed row. Keep only our deliberate
+  // "bulk_insert…" validation raises; replace anything else with a generic
+  // trilingual message so DB internals never reach the client.
+  const result = {
+    ...raw,
+    errors: ((raw?.errors ?? []) as { index: number; error: string }[]).map(
+      (e) => ({
+        index: e.index,
+        error:
+          typeof e.error === "string" && e.error.startsWith("bulk_insert")
+            ? e.error
+            : t("bulk.rowFailed"),
+      }),
+    ),
   };
 
   await writeAuditLog({
@@ -272,6 +332,13 @@ export async function attachOlympiadCover(
     return { error: "File too large (max 5 MB)." };
   }
 
+  // Byte-sniff the (size-capped) object: metadata mimetype is client-claimed,
+  // so the recorded type comes from the actual magic numbers (M19).
+  const sniffed = await sniffVerifiedImage(supabase, bucket, path, obj.mime);
+  if (!sniffed || !COVER_MIME.includes(sniffed)) {
+    return { error: "Unsupported file type." };
+  }
+
   // Remember any previous cover so we can clean it up after re-linking.
   const { data: prev } = await supabase
     .from("olympiad_packages")
@@ -286,8 +353,8 @@ export async function attachOlympiadCover(
       bucket,
       path,
       owner_profile_id: ctx.profileId,
-      // Server-derived values only (never the client-submitted form fields).
-      mime_type: obj.mime,
+      // Server-derived values only — mime comes from the SNIFFED bytes.
+      mime_type: sniffed,
       file_size_bytes: obj.size,
       visibility: "public",
     })
@@ -322,7 +389,7 @@ export async function attachOlympiadCover(
     action: "admin.olympiad.cover_attach",
     targetTable: "olympiad_packages",
     targetId: pkgId,
-    metadata: { path, mime: obj.mime, size: obj.size },
+    metadata: { path, mime: sniffed, size: obj.size },
   });
 
   revalidatePath(`/olympiad/${pkgId}/edit`);

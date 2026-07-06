@@ -12,6 +12,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
+import { writeAuditLog } from "@/lib/admin/audit";
 
 export type SchoolRow = {
   id: string;
@@ -96,7 +97,7 @@ export async function saveSchool(
   _prev: SchoolSaveState,
   formData: FormData,
 ): Promise<SchoolSaveState> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const id = String(formData.get("__id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const district_id = String(formData.get("district_id") ?? "").trim();
@@ -131,6 +132,7 @@ export async function saveSchool(
     school_number: parseSchoolNumber(name),
   };
 
+  let targetId = id || null;
   if (id) {
     const { error } = await supabase
       .from("schools")
@@ -142,21 +144,48 @@ export async function saveSchool(
       return { error: "err.server" };
     }
   } else {
-    const { error } = await supabase.from("schools").insert(payload);
+    const { data: created, error } = await supabase
+      .from("schools")
+      .insert(payload)
+      .select("id")
+      .single();
     if (error) {
       console.error("[admin] school insert failed", error.message);
       return { error: "err.server" };
     }
+    targetId = created?.id ?? null;
   }
+
+  // M5: best-effort audit trail (never fails the mutation — handled inside).
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: id ? "admin.school.update" : "admin.school.create",
+    targetTable: "schools",
+    targetId,
+    metadata: { name, district_id, status },
+  });
+
   revalidatePath("/schools");
   redirect("/schools");
 }
 
 export async function deleteSchool(formData: FormData): Promise<void> {
-  await requireAdmin();
+  const ctx = await requireAdmin();
   const id = String(formData.get("__id") ?? "").trim();
   if (!id) return;
   const supabase = await createClient();
-  await supabase.from("schools").delete().eq("id", id);
+  const { error } = await supabase.from("schools").delete().eq("id", id);
+
+  if (!error) {
+    // M5: best-effort audit trail.
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.school.delete",
+      targetTable: "schools",
+      targetId: id,
+      severity: "warning",
+    });
+  }
+
   revalidatePath("/schools");
 }

@@ -7,9 +7,11 @@
 // them a plain counter instead of the button.
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/uuid";
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// L3: slugs are lowercase kebab-case, capped — anything else never reaches
+// revalidatePath (no attacker-shaped path segments).
+const SLUG_RE = /^[a-z0-9-]{1,80}$/;
 
 // Round 7: views are registered by a client beacon ONCE per browser session
 // (sessionStorage-guarded in <ViewBeacon/>), NOT during the server render.
@@ -18,7 +20,7 @@ const UUID_RE =
 // PUBLISHED articles (SECURITY DEFINER, no UPDATE grant needed). Deliberately
 // no revalidatePath here: the counter refreshes on the next natural render.
 export async function registerNewsView(newsId: string): Promise<void> {
-  if (typeof newsId !== "string" || !UUID_RE.test(newsId)) return;
+  if (typeof newsId !== "string" || !isUuid(newsId)) return;
   const supabase = await createClient();
   await supabase.rpc("bump_news_view", { p_news_id: newsId });
 }
@@ -26,7 +28,8 @@ export async function registerNewsView(newsId: string): Promise<void> {
 export async function toggleNewsLike(formData: FormData): Promise<void> {
   const newsId = String(formData.get("news_id") ?? "");
   const slug = String(formData.get("slug") ?? "");
-  if (!newsId) return;
+  // L3: UUID-shape gate like registerNewsView; RLS remains the real gate.
+  if (!isUuid(newsId)) return;
 
   const supabase = await createClient();
   const { data: profileId } = await supabase.rpc("current_profile_id");
@@ -52,6 +55,6 @@ export async function toggleNewsLike(formData: FormData): Promise<void> {
       .insert({ news_id: newsId, profile_id: profileId });
   }
 
-  if (slug) revalidatePath(`/news/${slug}`);
+  if (slug && SLUG_RE.test(slug)) revalidatePath(`/news/${slug}`);
   revalidatePath("/news");
 }

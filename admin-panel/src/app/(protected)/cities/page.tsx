@@ -6,6 +6,7 @@ import { CityDeleteButton } from "@/components/CityDeleteButton";
 import { getT, getLocale } from "@/i18n/server";
 import { localStrings } from "./labels";
 import { FilterBar } from "@/components/FilterBar";
+import { sanitizeSearchTerm } from "@/lib/admin/search";
 
 // Round 10 — server-side list filters (status select + debounced name search).
 // The filtered read-only query lives here (mirrors listCities' shape); all
@@ -43,8 +44,8 @@ export default async function CitiesPage({
   let qb = supabase
     .from("districts")
     .select("id, name, status, schools(count)");
-  if (q) {
-    const escaped = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+  const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
+  if (escaped) {
     qb = qb.ilike("name", `%${escaped}%`);
   }
   if (status) qb = qb.eq("status", status);

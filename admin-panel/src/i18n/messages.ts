@@ -195,6 +195,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "login.submitting": "Daxil olunur…",
     "login.required": "E-poçt və şifrə tələb olunur.",
     "login.invalid": "E-poçt və ya şifrə yanlışdır.",
+    "login.tooMany":
+      "Cəhdlərin sayı həddi keçdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.",
     "login.timeout":
       "Uzun müddət əməliyyat olmadığı üçün sessiya bağlandı. Zəhmət olmasa yenidən daxil olun.",
     "err.server": "Əməliyyat alınmadı. Yenidən cəhd edin.",
@@ -343,6 +345,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Bu sual silinsin? Bu əməliyyat geri qaytarıla bilməz.",
     "qedit.title": "Sualı redaktə et",
     "qnew.title": "Yeni sual",
+    "qnew.mediaHint":
+      "Şəkil və ya audio əlavə etmək üçün sualı yadda saxladıqdan sonra onun redaktə səhifəsini açın.",
     "qedit.statusLabel": "Cari status",
     "qerr.subjectRequired": "Fənn tələb olunur.",
     "qerr.gradeRequired": "Sinif tələb olunur.",
@@ -363,6 +367,40 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qhint.multiple": "Bir və ya bir neçə düz cavab seçin.",
     "qhint.trueFalse":
       "Doğru / Yanlış: dəqiq iki variant, düz olanı qeyd edin.",
+    "qval.typeInactive":
+      "Bu sual növü qeyri-aktivdir və yeni sual üçün istifadə oluna bilməz.",
+    "qval.exactOptions": "Bu sual növü dəqiq {n} cavab variantı tələb edir.",
+    "qval.exactCorrect": "Bu sual növü dəqiq {n} doğru cavab tələb edir.",
+    "qrule.exactOptions": "{n} cavab variantı",
+    "qrule.rangeOptions": "2–10 cavab variantı",
+    "qrule.exactCorrect": "{n} doğru cavab",
+    "qrule.minCorrect": "ən azı 1 doğru cavab",
+    "qform.typeLocked":
+      "Bu sual növü artıq qeyri-aktivdir; mövcud sualda saxlanılır və dəyişdirilə bilməz.",
+    "qt.subtitle":
+      "Sual növlərini və onların struktur qaydalarını idarə edin (variant sayı, doğru cavab sayı, status).",
+    "qt.addHeading": "Yeni sual növü",
+    "qt.editHeading": "Sual növünü redaktə et",
+    "qt.code": "Kod",
+    "qt.codeHint": "Kod sistemdaxili sabit identifikatordur və dəyişdirilə bilməz.",
+    "qt.statusHint":
+      "Aktiv növlər yeni sual yaradılarkən seçilə bilir; qeyri-aktiv növlər yalnız mövcud suallarda qalır.",
+    "qt.pillActive": "Aktiv",
+    "qt.pillInactive": "Qeyri-aktiv",
+    "qt.optionsRequired": "Cavab variantlarının dəqiq sayı",
+    "qt.optionsHint": "Boş buraxsanız 2–10 arası sərbəst say mümkündür.",
+    "qt.correctRequired": "Doğru cavabların dəqiq sayı",
+    "qt.correctHint": "Boş buraxsanız ən azı 1 doğru cavab tələb olunur.",
+    "qt.rules": "Qaydalar",
+    "qt.questionsCol": "Suallar",
+    "qt.noRecords": "Sual növü yoxdur.",
+    "qt.errName": "Ad tələb olunur.",
+    "qt.errRangeOptions": "Variant sayı 2–10 aralığında tam ədəd olmalıdır.",
+    "qt.errRangeCorrect":
+      "Doğru cavab sayı 1-dən variant sayınadək tam ədəd olmalıdır.",
+    "qt.errDuplicate": "Bu adla sual növü artıq mövcuddur.",
+    "qt.errInUse":
+      "Bu növdə suallar var — silmək əvəzinə statusu qeyri-aktiv edin.",
     "qfield.language": "Sualın dili",
     "qtype.single_choice": "Tək seçim",
     "qtype.multiple_choice": "Çox seçim",
@@ -388,6 +426,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.subtitle": "JSON faylından çoxlu sualı bir dəfəyə əlavə edin.",
     "bulk.fileLabel": "Suallar JSON faylı",
     "bulk.fileHint": ".json fayl yükləyin (sualların massivi). Maksimum 2 MB.",
+    "bulk.mcqRule":
+      "Çox seçimli suallarda dəqiq 5 cavab variantı və dəqiq 1 doğru cavab olmalıdır — bu qaydaya uyğun olmayan sətirlər rədd edilir.",
     "bulk.template": "Şablonu yüklə",
     "bulk.submit": "İdxal et",
     "bulk.submitting": "İdxal olunur…",
@@ -395,6 +435,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.invalidJson": "Fayl düzgün JSON deyil.",
     "bulk.notArray": "Fayl sualların JSON massivini ehtiva etməlidir.",
     "bulk.tooLarge": "Fayl çox böyükdür (maksimum 2 MB).",
+    "bulk.rowFailed": "Bu sətri idxal etmək mümkün olmadı.",
     "bulk.resultTitle": "İdxalın nəticəsi",
     "bulk.total": "Ümumi",
     "bulk.successful": "İdxal edildi",
@@ -405,6 +446,24 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.historyNone": "Hələ idxal yoxdur.",
     "bulk.colWhen": "Tarix",
     "bulk.colFile": "Fayl",
+    "bulk.chooseSubject": "Fənn seçin.",
+    "bulk.chooseGrade": "Sinif seçin.",
+    "bulk.batchNote":
+      "Seçilmiş fənn və sinif fayldakı bütün suallara tətbiq olunur.",
+    "bulk.batchNoteGrade":
+      "Seçilmiş sinif fayldakı bütün suallara tətbiq olunur.",
+    "bulk.overrideHint":
+      "Köhnə formatlı faylda meta.subject və ya meta.grade_level qalıbsa, burada seçilmiş fənn və sinif üstünlük təşkil edir.",
+    "bulk.codesHint":
+      "Mövzu və alt-mövzu ada görə tapılır, tapılmadıqda avtomatik yaradılır. type sahəsi sual növünün adı ilə eyni olmalıdır: {types}.",
+    "bulk.fileProblems": "Fayldakı problemlər",
+    "bulk.fixFile": "İdxaldan əvvəl göstərilən sətirləri düzəldin.",
+    "bulk.rowNotObject": "sətir sual obyekti deyil",
+    "bulk.rowNeedAzBody": "Azərbaycanca mətn (translations.az.body) tələb olunur",
+    "bulk.rowNeedOptions": "cavab variantları massivi (options) tələb olunur",
+    "bulk.itemsFound": "{n} sual tapıldı.",
+    "bulk.emptyArray": "Fayl boşdur — heç bir sual tapılmadı.",
+    "modal.close": "Bağla",
     "qbulk.selected": "seçildi",
     "qbulk.chooseAction": "— əməliyyat seçin —",
     "qbulk.apply": "Tətbiq et",
@@ -426,6 +485,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qpage.prev": "Əvvəlki",
     "qpage.next": "Növbəti",
     "qpage.showing": "{total} nəticədən {from}–{to} göstərilir",
+    "qpage.pageOf": "Səhifə {page} / {total}",
     "qpage.perPage": "Səhifədə",
     // Round 10 — shared list filters (news/olympiad/manage/cities/schools/accounts)
     "flt.titleSearch": "Başlığa görə axtar…",
@@ -502,6 +562,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.cover.hint": "PNG, JPEG, WEBP və ya GIF. Maksimum 5 MB.",
     "olybulk.note": "Bu paketə məxsus özəl sualları JSON faylı ilə toplu yükləyin. Bu suallar yalnız bu paketdə görünür və ümumi sual bankına düşmür.",
     "olybulk.count": "Bu paketdəki özəl suallar",
+    "olybulk.subjectFromPkg": "Fənn paketdən götürülür.",
     "lang.label": "Dil",
     "settings.subtitle": "Funksiya bayraqlarını və sistem parametrlərini idarə edin.",
     "settings.flagsTitle": "Funksiya bayraqları",
@@ -965,6 +1026,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "login.submitting": "Signing in…",
     "login.required": "Email and password are required.",
     "login.invalid": "Incorrect email or password.",
+    "login.tooMany": "Too many sign-in attempts. Please try again later.",
     "login.timeout": "You were signed out due to inactivity. Please sign in again.",
     "err.server": "The operation failed. Please try again.",
     "err.tooLong": "The text is too long. Please shorten it and try again.",
@@ -1109,6 +1171,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qact.confirmDelete": "Delete this question? This cannot be undone.",
     "qedit.title": "Edit question",
     "qnew.title": "New question",
+    "qnew.mediaHint":
+      "To attach an image or audio, open the question's edit page after saving.",
     "qedit.statusLabel": "Current status",
     "qerr.subjectRequired": "Subject is required.",
     "qerr.gradeRequired": "Grade is required.",
@@ -1128,6 +1192,40 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qhint.single": "Select exactly one correct answer.",
     "qhint.multiple": "Select one or more correct answers.",
     "qhint.trueFalse": "True / False: exactly two options, mark the correct one.",
+    "qval.typeInactive":
+      "This question type is inactive and cannot be used for new questions.",
+    "qval.exactOptions": "This question type requires exactly {n} answer options.",
+    "qval.exactCorrect": "This question type requires exactly {n} correct answer(s).",
+    "qrule.exactOptions": "{n} answer options",
+    "qrule.rangeOptions": "2–10 answer options",
+    "qrule.exactCorrect": "{n} correct",
+    "qrule.minCorrect": "at least 1 correct",
+    "qform.typeLocked":
+      "This question type is no longer active; it is kept for this existing question and cannot be changed.",
+    "qt.subtitle":
+      "Manage question types and their structure rules (option count, correct-answer count, status).",
+    "qt.addHeading": "New question type",
+    "qt.editHeading": "Edit question type",
+    "qt.code": "Code",
+    "qt.codeHint": "The code is a stable internal identifier and cannot be changed.",
+    "qt.statusHint":
+      "Active types can be picked when creating new questions; inactive types remain only on existing questions.",
+    "qt.pillActive": "Active",
+    "qt.pillInactive": "Inactive",
+    "qt.optionsRequired": "Exact number of answer options",
+    "qt.optionsHint": "Leave empty to allow any count from 2 to 10.",
+    "qt.correctRequired": "Exact number of correct answers",
+    "qt.correctHint": "Leave empty to require at least 1 correct answer.",
+    "qt.rules": "Rules",
+    "qt.questionsCol": "Questions",
+    "qt.noRecords": "No question types yet.",
+    "qt.errName": "Name is required.",
+    "qt.errRangeOptions": "Option count must be a whole number between 2 and 10.",
+    "qt.errRangeCorrect":
+      "Correct-answer count must be a whole number between 1 and the option count.",
+    "qt.errDuplicate": "A question type with this name already exists.",
+    "qt.errInUse":
+      "This type still has questions — set it to inactive instead of deleting.",
     "qfield.language": "Question language",
     "qtype.single_choice": "Single choice",
     "qtype.multiple_choice": "Multiple choice",
@@ -1153,6 +1251,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.subtitle": "Import many questions at once from a JSON file.",
     "bulk.fileLabel": "Questions JSON file",
     "bulk.fileHint": "Upload a .json file (an array of questions). Max 2 MB.",
+    "bulk.mcqRule":
+      "Multiple-choice questions must have exactly 5 answer options and exactly 1 correct answer — rows that break this rule are rejected.",
     "bulk.template": "Download template",
     "bulk.submit": "Import",
     "bulk.submitting": "Importing…",
@@ -1160,6 +1260,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.invalidJson": "The file is not valid JSON.",
     "bulk.notArray": "The file must contain a JSON array of questions.",
     "bulk.tooLarge": "File is too large (max 2 MB).",
+    "bulk.rowFailed": "This row could not be imported.",
     "bulk.resultTitle": "Import result",
     "bulk.total": "Total",
     "bulk.successful": "Imported",
@@ -1170,6 +1271,24 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.historyNone": "No imports yet.",
     "bulk.colWhen": "When",
     "bulk.colFile": "File",
+    "bulk.chooseSubject": "Choose a subject.",
+    "bulk.chooseGrade": "Choose a grade.",
+    "bulk.batchNote":
+      "The selected subject and grade apply to every question in the file.",
+    "bulk.batchNoteGrade":
+      "The selected grade applies to every question in the file.",
+    "bulk.overrideHint":
+      "If the file still contains meta.subject or meta.grade_level (old format), the subject and grade selected here take precedence.",
+    "bulk.codesHint":
+      "Topics and subtopics are matched by name and created automatically when missing. The type field must match a question type name: {types}.",
+    "bulk.fileProblems": "Problems in the file",
+    "bulk.fixFile": "Fix the listed rows before importing.",
+    "bulk.rowNotObject": "the row is not a question object",
+    "bulk.rowNeedAzBody": "the Azerbaijani text (translations.az.body) is required",
+    "bulk.rowNeedOptions": "an options array is required",
+    "bulk.itemsFound": "{n} question(s) found.",
+    "bulk.emptyArray": "The file is empty — no questions found.",
+    "modal.close": "Close",
     "qbulk.selected": "selected",
     "qbulk.chooseAction": "— choose action —",
     "qbulk.apply": "Apply",
@@ -1191,6 +1310,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qpage.prev": "Previous",
     "qpage.next": "Next",
     "qpage.showing": "Showing {from}–{to} of {total}",
+    "qpage.pageOf": "Page {page} of {total}",
     "qpage.perPage": "Per page",
     // Round 10 — shared list filters (news/olympiad/manage/cities/schools/accounts)
     "flt.titleSearch": "Search by title…",
@@ -1265,6 +1385,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.cover.hint": "PNG, JPEG, WEBP or GIF. Max 5 MB.",
     "olybulk.note": "Bulk-upload this package's private questions from a JSON file. These questions appear only in this package and never enter the general question bank.",
     "olybulk.count": "Private questions in this package",
+    "olybulk.subjectFromPkg": "The subject comes from the package.",
     "lang.label": "Language",
     "settings.subtitle": "Manage feature flags and system settings.",
     "settings.flagsTitle": "Feature flags",
@@ -1727,6 +1848,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "login.submitting": "Вход…",
     "login.required": "Укажите эл. почту и пароль.",
     "login.invalid": "Неверная эл. почта или пароль.",
+    "login.tooMany": "Слишком много попыток входа. Пожалуйста, попробуйте позже.",
     "login.timeout": "Сеанс завершён из-за неактивности. Пожалуйста, войдите снова.",
     "err.server": "Не удалось выполнить операцию. Попробуйте ещё раз.",
     "err.tooLong": "Текст слишком длинный. Сократите его и попробуйте ещё раз.",
@@ -1872,6 +1994,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qact.confirmDelete": "Удалить этот вопрос? Это действие необратимо.",
     "qedit.title": "Редактировать вопрос",
     "qnew.title": "Новый вопрос",
+    "qnew.mediaHint":
+      "Чтобы добавить изображение или аудио, откройте страницу редактирования вопроса после сохранения.",
     "qedit.statusLabel": "Текущий статус",
     "qerr.subjectRequired": "Требуется предмет.",
     "qerr.gradeRequired": "Требуется класс.",
@@ -1892,6 +2016,43 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qhint.multiple": "Выберите один или несколько верных ответов.",
     "qhint.trueFalse":
       "Верно / Неверно: ровно два варианта, отметьте верный.",
+    "qval.typeInactive":
+      "Этот тип вопроса неактивен, его нельзя использовать для новых вопросов.",
+    "qval.exactOptions":
+      "Для этого типа вопроса число вариантов ответа должно быть ровно {n}.",
+    "qval.exactCorrect":
+      "Для этого типа вопроса число правильных ответов должно быть ровно {n}.",
+    "qrule.exactOptions": "вариантов ответа: {n}",
+    "qrule.rangeOptions": "вариантов ответа: 2–10",
+    "qrule.exactCorrect": "правильных: {n}",
+    "qrule.minCorrect": "правильных: не менее 1",
+    "qform.typeLocked":
+      "Этот тип вопроса больше не активен; он сохранён для существующего вопроса, и его нельзя изменить.",
+    "qt.subtitle":
+      "Управляйте типами вопросов и их структурными правилами (число вариантов, число правильных ответов, статус).",
+    "qt.addHeading": "Новый тип вопроса",
+    "qt.editHeading": "Редактировать тип вопроса",
+    "qt.code": "Код",
+    "qt.codeHint": "Код — стабильный внутренний идентификатор, его нельзя изменить.",
+    "qt.statusHint":
+      "Активные типы доступны при создании новых вопросов; неактивные остаются только в существующих вопросах.",
+    "qt.pillActive": "Активен",
+    "qt.pillInactive": "Неактивен",
+    "qt.optionsRequired": "Точное число вариантов ответа",
+    "qt.optionsHint": "Оставьте пустым, чтобы разрешить от 2 до 10 вариантов.",
+    "qt.correctRequired": "Точное число правильных ответов",
+    "qt.correctHint":
+      "Оставьте пустым, чтобы требовать не менее 1 правильного ответа.",
+    "qt.rules": "Правила",
+    "qt.questionsCol": "Вопросы",
+    "qt.noRecords": "Типов вопросов пока нет.",
+    "qt.errName": "Укажите название.",
+    "qt.errRangeOptions": "Число вариантов должно быть целым числом от 2 до 10.",
+    "qt.errRangeCorrect":
+      "Число правильных ответов должно быть целым числом от 1 до числа вариантов.",
+    "qt.errDuplicate": "Тип вопроса с таким названием уже существует.",
+    "qt.errInUse":
+      "У этого типа ещё есть вопросы — вместо удаления сделайте его неактивным.",
     "qfield.language": "Язык вопроса",
     "qtype.single_choice": "Один вариант",
     "qtype.multiple_choice": "Несколько вариантов",
@@ -1917,6 +2078,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.subtitle": "Импортируйте много вопросов сразу из JSON-файла.",
     "bulk.fileLabel": "JSON-файл вопросов",
     "bulk.fileHint": "Загрузите файл .json (массив вопросов). Максимум 2 МБ.",
+    "bulk.mcqRule":
+      "Вопросы с несколькими вариантами должны содержать ровно 5 вариантов ответа и ровно 1 правильный — строки, нарушающие это правило, отклоняются.",
     "bulk.template": "Скачать шаблон",
     "bulk.submit": "Импортировать",
     "bulk.submitting": "Импорт…",
@@ -1924,6 +2087,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.invalidJson": "Файл не является корректным JSON.",
     "bulk.notArray": "Файл должен содержать JSON-массив вопросов.",
     "bulk.tooLarge": "Файл слишком большой (максимум 2 МБ).",
+    "bulk.rowFailed": "Не удалось импортировать эту строку.",
     "bulk.resultTitle": "Результат импорта",
     "bulk.total": "Всего",
     "bulk.successful": "Импортировано",
@@ -1934,6 +2098,24 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.historyNone": "Импортов пока нет.",
     "bulk.colWhen": "Когда",
     "bulk.colFile": "Файл",
+    "bulk.chooseSubject": "Выберите предмет.",
+    "bulk.chooseGrade": "Выберите класс.",
+    "bulk.batchNote":
+      "Выбранные предмет и класс применяются ко всем вопросам в файле.",
+    "bulk.batchNoteGrade":
+      "Выбранный класс применяется ко всем вопросам в файле.",
+    "bulk.overrideHint":
+      "Если файл в старом формате всё ещё содержит meta.subject или meta.grade_level, приоритет имеют выбранные здесь предмет и класс.",
+    "bulk.codesHint":
+      "Темы и подтемы находятся по названию и создаются автоматически, если отсутствуют. Поле type должно совпадать с названием типа вопроса: {types}.",
+    "bulk.fileProblems": "Проблемы в файле",
+    "bulk.fixFile": "Исправьте указанные строки перед импортом.",
+    "bulk.rowNotObject": "строка не является объектом вопроса",
+    "bulk.rowNeedAzBody": "требуется текст на азербайджанском (translations.az.body)",
+    "bulk.rowNeedOptions": "требуется массив вариантов ответа (options)",
+    "bulk.itemsFound": "Найдено вопросов: {n}.",
+    "bulk.emptyArray": "Файл пуст — вопросы не найдены.",
+    "modal.close": "Закрыть",
     "qbulk.selected": "выбрано",
     "qbulk.chooseAction": "— выберите действие —",
     "qbulk.apply": "Применить",
@@ -1955,6 +2137,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qpage.prev": "Назад",
     "qpage.next": "Вперёд",
     "qpage.showing": "Показано {from}–{to} из {total}",
+    "qpage.pageOf": "Страница {page} из {total}",
     "qpage.perPage": "На странице",
     // Round 10 — shared list filters (news/olympiad/manage/cities/schools/accounts)
     "flt.titleSearch": "Поиск по заголовку…",
@@ -2030,6 +2213,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.cover.hint": "PNG, JPEG, WEBP или GIF. Максимум 5 МБ.",
     "olybulk.note": "Загрузите частные вопросы этого пакета из файла JSON. Эти вопросы видны только в данном пакете и не попадают в общий банк вопросов.",
     "olybulk.count": "Частных вопросов в этом пакете",
+    "olybulk.subjectFromPkg": "Предмет берётся из пакета.",
     "lang.label": "Язык",
     "settings.subtitle": "Управление флагами функций и системными настройками.",
     "settings.flagsTitle": "Флаги функций",

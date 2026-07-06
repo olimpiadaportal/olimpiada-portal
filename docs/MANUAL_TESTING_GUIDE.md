@@ -208,6 +208,13 @@ cd web-app     && npm install && npm run dev   # http://localhost:3000
   analytics** *(close-future; a read-only self leaderboard + streak chip already ship).* 
 - **Vercel deployment**, **Mobile app** *(future).* 
 
+> **Production database (when you build it):** there is currently only the dev/staging Supabase project.
+> To build production, run the **canonical** SQL files in `supabase/sql/` in order — `001`→`012`, then
+> `014`, `015`, `016`, then `013` last. Do **not** run the `supabase/sql/migrations/` files on a fresh
+> production DB (they are already backported into the canonical files). Enable the `pg_cron` extension in
+> the Supabase Dashboard before `016`. Full procedure: `supabase/README_RUN_ORDER.md` →
+> "First-Time Production Database Build".
+
 If anything in §1–§5 doesn't match its **Expect**, report it and I'll fix it.
 
 ---
@@ -717,3 +724,72 @@ If anything here doesn't match, tell me the **AA#** (or **ZF#/Z#**) + what you s
 - **Admin → Accounts** no longer has any **Create parent / Create child** buttons — it is list/manage only (search, edit name/status, reset child password, delete). Everything else there still works.
 
 If anything here doesn't match, tell me the **BB#** + what you saw.
+
+---
+# Round 13 — audit remediation + Test Engine (2026-07-06)
+
+## CC1. Audit fixes you can SEE
+- **Admin idle logout is real now**: leave the admin panel untouched ~31 minutes → next click bounces you to login (the middleware had never been registered before this round).
+- **Admin → Accounts** is paginated (20 parents/page, prev/next keep your search).
+- **Admin login** throttles after ~10 rapid wrong passwords ("too many attempts").
+- **Web**: prices on `/pricing` and the parent **Subscription → Plans** tab now come from the DB (`subjects_pricing`, seeded 1/3/30 AZN — change a price in admin → the pages follow within a minute). The public nav/footer now link **Olimpiada Hazırlığı** (`/olympiad-preparation`).
+- **Parent dashboard**: a child covered by a free-access window shows the **free** pill (not "expired"). The child **Olimpiadalar** tab during a giveaway/free window can actually START free packages (this was broken by a DB typo — never worked before). Packages whose event date passed show **Held** and can't be bought.
+- **Add-Child during a free window**: the wizard skips payment (like the giveaway) and the subscribe page offers **Activate login ID** — the child gets their 8-digit ID without any paid plan.
+
+## CC2. Subscription lifecycle (now enforced)
+- A **trial actually ends**: trials/paid periods past their end date lose access (checked live at every practice/test start + an hourly cleanup job syncs the dashboard pills).
+- **Cancel** keeps access until the paid period ends, then it really ends.
+- **Re-subscribe after cancel/expiry → NO second free trial** (the plan starts as a paid period immediately — demo payment).
+- Double-clicking subscribe can no longer create two plans (DB-enforced: one live plan per child).
+
+## CC3. Child TEST ENGINE (the big new feature)
+- Child app → new **Sınaq** tab: subject cards (locked ones show the subscribe hint), recent test history, and a **Continue test** card if one is running.
+- Pick a subject → **topic/subtopic picker** (tri-state checkboxes; selecting nothing = whole subject) → **instructions** (25 questions / 25 minutes, rules) → tick **"I understand"** → Start.
+- **Player**: live countdown (orange ≤5 min, red ≤1 min), question **palette** (answered/flagged/unanswered, click to jump), prev/next, **flag for review**, autosave every 30 s. **Refresh the page mid-test** → you land back in the same test with your answers and the clock still running from the server deadline (resume). Starting a "new" test while one runs resumes it instead.
+- **Submit** (confirm shows unanswered count) → **Results**: score + percent + per-topic bars → **Review**: every question with your answer (green/red), the correct answer marked, and the explanation.
+- **Cancel** (confirm) → counts for nothing; the attempt shows as *canceled* in history. Letting the clock hit 0 auto-submits; an abandoned tab gets expired server-side within ~20 minutes.
+- Anti-cheat you can verify: view-source/network during a test never contains `is_correct`; answers appear in the review payload only AFTER grading.
+
+## CC4. MCQ-only question management (admin)
+- **Questions → New**: the type dropdown offers only **Multiple choice**; the form renders **exactly 5 option rows** (no add/remove) and the correct-checkboxes behave like radios (exactly 1). Try saving with 2 correct or an empty option → clear error.
+- **Bulk import** (questions + olympiad pool): the downloadable template now has 5 options / 1 correct; a rules note sits by the upload. A row with 4 options is rejected with a per-row error.
+- **New sidebar page: Question types** — list with status pill + rules summary ("5 options / 1 correct"); edit name/status/options-required/correct-required (code is locked); deleting a type that has questions is blocked ("deactivate instead"). Other seed types (single choice, true/false…) sit **inactive** until you enable + configure them.
+
+If anything here doesn't match, tell me the **CC#** + what you saw.
+
+---
+
+# Round 13.1 — pre-commit owner changes (2026-07-06)
+
+## DD1. Bulk Upload is now a modal (questions + olympiad pool)
+- **Admin → Questions**: the toolbar's **Bulk import** opens a MODAL (the `/questions/import` page is gone).
+  **Subject and Grade are mandatory dropdowns** — the upload button stays disabled until both are
+  chosen and a JSON file is selected. The downloaded template no longer contains `subject` /
+  `grade_level` per question (your modal selection applies to the whole batch; old-format files still
+  import — the modal's choice wins).
+- Pick a file with a bad row (4 options, or 2 marked correct) → the modal lists **per-row problems**
+  BEFORE uploading and blocks submit until the file is fixed. A clean 5-option/1-correct file imports,
+  the modal reports total/успешно/failed, and the questions list refreshes without a reload.
+- **Admin → Olympiad → edit package**: the private-pool import is the same modal; **Subject shows
+  read-only from the package**, **Grade is a mandatory dropdown**, same validation + template shape.
+
+## DD2. New question = modal (no page navigation)
+- **Admin → Questions → New question** opens the FULL creation form in a modal (the `/questions/new`
+  page is gone): all fields, taxonomy dropdowns, exactly-5 options with radio-like correct marking, same
+  errors. On save the modal closes and the new question appears in the list **without a page reload**.
+  Images are still added on the question's edit page (hint inside the modal says so).
+
+## DD3. Olympiad packages are purchase-only in EVERY mode
+- **Free access / trial / giveaway now cover SUBJECTS only.** With an active free-access interval or
+  giveaway window: the child **Olimpiadalar** tab no longer lists non-owned packages as playable (no
+  free chips) — planned packages show as cards with the "ask your parent" note; only PURCHASED
+  packages are startable. Subjects/tests remain free as before (unchanged).
+- **Buying during a giveaway now WORKS** (it used to be blocked with an "it's free right now" note):
+  parent → Olimpiadalar catalog and the per-child page show the normal buy button in real/demo/giveaway
+  modes; only payments **off** hides it. The public `/olympiad-preparation` page is REMOVED — check the
+  public site nav + footer have no link and the URL 404s.
+- DB proof (optional): a child calling the start RPC on a non-purchased package gets
+  `olympiad: no active purchase` even mid-giveaway; validation checks #37/#42 assert the free-window
+  helpers are absent from the olympiad guard (49/49 PASS).
+
+If anything here doesn't match, tell me the **DD#** + what you saw.

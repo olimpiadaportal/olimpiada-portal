@@ -26,7 +26,7 @@ Web App and Admin Panel use the same Auth users, profiles, roles, permissions, c
 
 `supabase/sql/` uses two layers:
 
-1. Root SQL files `001` through `015` are canonical consolidated files. They must represent the latest full database definition and should be enough to rebuild a clean database from zero. Files `001`–`013` already exist and are applied; `014_news.sql` and `015_olympiad_preparation.sql` are the new canonical domains for News and the Olimpiada Hazırlığı / Olympiad Preparation module.
+1. Root SQL files `001` through `016` are canonical consolidated files. They must represent the latest full database definition and should be enough to rebuild a clean database from zero. Files `001`–`015` cover schema/RLS/seed/domains; `016_scheduled_jobs.sql` holds the pg_cron maintenance schedules (grade promotion, child-access recompute, stale test-attempt expiry). The read-only validation file `013_validation_queries.sql` always runs **last**, after `014`/`015`/`016`.
 2. `supabase/sql/migrations/` stores incremental changes made after the canonical files exist, including hotfixes, production patches, new feature schema changes, RLS fixes, indexes, and backfills. The series already runs `2026_06_27_001`..`005`; new business-requirement extensions to existing files (002/007/009/010/011/012/013) land here first as `YYYY_MM_DD_NNN` migrations, then get backported.
 
 Every migration must be backported into the relevant canonical root SQL file after validation. Production changes must be migration-script controlled. The Supabase Dashboard SQL Editor may be used in development/staging, but the repository remains the source of truth. See `supabase/sql/README_DATABASE_VERSIONING_WORKFLOW.md`.
@@ -56,13 +56,14 @@ Business modules added by the new requirements (and where they live):
 | 012 | `supabase/sql/012_seed_initial_data.sql` | Initial roles, permissions, grades, subjects, settings (+ wallpapers, pricing/trial/promo config, News/Olympiad permissions) | Yes if upsert-based |
 | 014 | `supabase/sql/014_news.sql` | **NEW.** News articles + media metadata; public/in-app read, Admin-only CRUD | Mostly yes |
 | 015 | `supabase/sql/015_olympiad_preparation.sql` | **NEW.** Olympiad packages, grade/class targeting, question pool, purchases (lifetime access), attempts, random-selection records, archive status | Mostly yes |
-| 013 | `supabase/sql/013_validation_queries.sql` | Read-only validation queries and smoke checks — runs **LAST**, after `014`/`015` | Yes; read-only |
+| 016 | `supabase/sql/016_scheduled_jobs.sql` | pg_cron maintenance schedules: yearly grade promotion, hourly child-access recompute, 15-min stale-test-attempt expiry. Self-guards where pg_cron is absent (skips with a NOTICE) | Yes; re-schedules by name |
+| 013 | `supabase/sql/013_validation_queries.sql` | Read-only validation queries and smoke checks — runs **LAST**, after `014`/`015`/`016` | Yes; read-only |
 
 
 ## Manual Supabase SQL Editor Instructions
 
 1. Open staging Supabase first, never production first.
-2. Run files in numeric order, with one exception: run `014_news.sql` and `015_olympiad_preparation.sql` before the read-only validation file `013_validation_queries.sql`, which always runs last.
+2. Run files in numeric order, with one exception: run `014_news.sql`, `015_olympiad_preparation.sql`, and `016_scheduled_jobs.sql` before the read-only validation file `013_validation_queries.sql`, which always runs last. Full order: `001` → `012`, then `014`, `015`, `016`, then `013`.
 3. Read the header comments in each SQL file before running.
 4. Do not run destructive statements unless explicitly approved. Purchased olympiad packages and payment/purchase records are never deleted — listings are soft-archived only.
 5. After each group, run validation queries.
@@ -95,6 +96,17 @@ Business modules added by the new requirements (and where they live):
 ## Rollback Notes
 
 For MVP planning scripts, prefer additive migrations. Rollback should usually disable new feature flags or revert app code. If schema rollback is required, create a separate reviewed rollback script, not an automatic destructive block.
+
+## First-Time Production Database Build (from canonical files)
+
+There is currently **only a development/staging Supabase project**. Production does not exist yet. When the production Supabase project is created, build its schema by running the **canonical root SQL files in numeric order** — this is a from-zero bootstrap, not a migration replay:
+
+1. `001` → `012` in order, then `014`, `015`, `016`, then `013` (validation) **last**.
+2. Do **not** run the files under `supabase/sql/migrations/` against a fresh production database. Every migration is already backported into the canonical files above; the `migrations/` folder is the historical dev/staging change log, and replaying it on a clean DB would double-apply changes.
+3. **pg_cron:** before running `016`, enable the extension in the Supabase Dashboard (Database → Extensions → `pg_cron`). If `016` runs before the extension is on, it self-skips with a NOTICE and schedules nothing — re-run `016` after enabling so the three cron jobs (`olympiq_advance_student_grades`, `olympiq_recompute_child_access`, `olympiq_expire_stale_attempts`) are actually registered.
+4. Run `013_validation_queries.sql` last and confirm all checks PASS (the same set the dev from-zero rebuild passes).
+
+**After** production is live, all further schema changes are migration-controlled per the Production Workflow in `supabase/sql/README_DATABASE_VERSIONING_WORKFLOW.md`: write a timestamped migration, validate on staging, apply the reviewed migration to production, then backport it into the canonical file. New canonical files created after `016` are numbered `017`+ and inserted before `013` in the build order.
 
 ## Production Caution
 

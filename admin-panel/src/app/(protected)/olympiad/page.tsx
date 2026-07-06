@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
+import { sanitizeSearchTerm } from "@/lib/admin/search";
 
 // Round 10 — server-side list filters (status + subject selects, debounced
 // title search over olympiad_package_translations) + F4 aligned-table fix
@@ -45,8 +46,8 @@ export default async function OlympiadListPage({
 
   // ---- Title search: resolve matching package ids first -------------------
   let searchIds: string[] | null = null;
-  if (q) {
-    const escaped = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+  const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
+  if (escaped) {
     const { data: trs } = await supabase
       .from("olympiad_package_translations")
       .select("olympiad_package_id")

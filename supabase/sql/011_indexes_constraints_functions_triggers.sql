@@ -97,6 +97,11 @@ create index if not exists idx_questions_grade on public.questions (grade_id);
 create index if not exists idx_questions_topic on public.questions (topic_id);
 create index if not exists idx_questions_created_by on public.questions (created_by);
 create index if not exists idx_questions_primary_locale on public.questions (primary_locale);
+-- Audit M23 (migration 035): the admin list's type/subtopic filters need index
+-- support. The companion (olympiad_package_id, created_at desc) index lives in
+-- 015 — questions.olympiad_package_id is added there (FKs olympiad_packages).
+create index if not exists idx_questions_type on public.questions (type_id);
+create index if not exists idx_questions_subtopic on public.questions (subtopic_id);
 -- trigram search over localized question bodies (pg_trgm from 001).
 create index if not exists idx_qtrans_body_trgm
   on public.question_translations using gin (body gin_trgm_ops);
@@ -111,6 +116,13 @@ create index if not exists idx_attempts_status on public.test_attempts (status);
 -- Practice/daily attempts filtered by subject (Stage 13 test engine).
 create index if not exists idx_test_attempts_subject on public.test_attempts (subject_id);
 create index if not exists idx_answers_attempt on public.test_attempt_answers (attempt_id);
+-- Timed topic tests (migration 037): one open test per child + expiry sweep.
+create unique index if not exists uq_test_attempts_open_test
+  on public.test_attempts (student_profile_id)
+  where kind = 'test' and status = 'in_progress';
+create index if not exists idx_test_attempts_deadline
+  on public.test_attempts (deadline_at)
+  where status = 'in_progress';
 
 create index if not exists idx_dtp_publish on public.daily_task_packages (publish_date, status);
 create index if not exists idx_sdtp_student on public.student_daily_task_progress (student_profile_id);
@@ -135,6 +147,11 @@ create index if not exists idx_payments_status on public.payments (status);
 create index if not exists idx_child_subs_student on public.child_subscriptions (student_profile_id);
 create index if not exists idx_child_subs_owner on public.child_subscriptions (owner_parent_profile_id);
 create index if not exists idx_child_subs_status on public.child_subscriptions (status);
+-- Audit C2 (migration 035): at most ONE live subscription per child, enforced
+-- by the DB (create_child_subscription also guards + advisory-locks per family).
+create unique index if not exists uq_child_subscriptions_live
+  on public.child_subscriptions (student_profile_id)
+  where status in ('trialing', 'active', 'past_due');
 create index if not exists idx_sub_subjects_subject on public.subscription_subjects (subject_id);
 create index if not exists idx_checkout_owner on public.checkout_sessions (owner_parent_profile_id);
 create index if not exists idx_sibling_discounts_owner on public.sibling_discounts (owner_parent_profile_id);
@@ -273,7 +290,10 @@ create trigger trg_audit_daily_task_packages
 -- 8-digit child ID generator: random, collision-safe, server-side. Inserts into
 -- the child_unique_ids registry (002) under uniqueness and retries on collision,
 -- then stamps students.child_unique_id. SECURITY DEFINER so it can write the
--- RLS-protected registry; never trust a client-provided ID.
+-- RLS-protected registry; never trust a client-provided ID. Idempotent for an
+-- already-allocated child (audit M26) and service-role only (audit H1 — this was
+-- the one DEFINER RPC without an explicit revoke, so 010's default privileges
+-- made it anon/authenticated-executable).
 create or replace function public.allocate_child_unique_id(p_student_profile_id uuid)
 returns text
 language plpgsql
@@ -284,6 +304,17 @@ declare
   v_id text;
   tries int := 0;
 begin
+  -- Idempotent: a child that already holds a registry row keeps its ID.
+  select child_unique_id into v_id
+  from public.child_unique_ids
+  where student_profile_id = p_student_profile_id;
+  if v_id is not null then
+    update public.students set child_unique_id = v_id
+     where profile_id = p_student_profile_id
+       and child_unique_id is distinct from v_id;
+    return v_id;
+  end if;
+
   loop
     tries := tries + 1;
     -- 10000000..99999999 (no leading zero), ~90M space.
@@ -297,11 +328,14 @@ begin
       if tries > 50 then
         raise exception 'Could not allocate a unique child ID after 50 attempts';
       end if;
-      -- loop and retry
+      -- random-ID collision: loop and retry
     end;
   end loop;
 end;
 $$;
+
+revoke all on function public.allocate_child_unique_id(uuid) from public, anon, authenticated;
+grant execute on function public.allocate_child_unique_id(uuid) to service_role;
 
 -- updated_at triggers for the child-account tables (not in the bulk array above).
 drop trigger if exists trg_set_updated_at on public.child_credentials;
@@ -690,6 +724,60 @@ grant usage, select on sequence public.child_login_attempts_id_seq to service_ro
 create index if not exists idx_question_imports_imported_by
   on public.question_imports (imported_by, created_at desc);
 
+-- assert_question_type_rules (migration 037, MCQ-only launch): per-type structure
+-- validation shared by BOTH bulk-import RPCs (the admin single-question form
+-- applies the same rules app-side from question_types.status/options_required/
+-- correct_required). MCQ (multiple_choice) = exactly 5 options, exactly 1 correct.
+create or replace function public.assert_question_type_rules(
+  p_type_id uuid,
+  p_options jsonb
+)
+returns void
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_req         int;
+  v_correct_req int;
+  v_status      public.catalog_status;
+  v_name        text;
+  v_n           int;
+  v_ncorrect    int;
+begin
+  select options_required, correct_required, status, name
+    into v_req, v_correct_req, v_status, v_name
+  from public.question_types where id = p_type_id;
+  if not found then
+    raise exception 'unknown question type';
+  end if;
+  if v_status <> 'active' then
+    raise exception 'question type "%" is not enabled for new questions', v_name;
+  end if;
+
+  select count(*),
+         count(*) filter (where coalesce((o->>'is_correct')::boolean, false))
+    into v_n, v_ncorrect
+  from jsonb_array_elements(coalesce(p_options, '[]'::jsonb)) o;
+
+  if v_req is not null and v_n <> v_req then
+    raise exception 'type "%" requires exactly % answer options (got %)', v_name, v_req, v_n;
+  end if;
+  if v_req is null and (v_n < 2 or v_n > 10) then
+    raise exception 'between 2 and 10 answer options required (got %)', v_n;
+  end if;
+  if v_correct_req is not null and v_ncorrect <> v_correct_req then
+    raise exception 'type "%" requires exactly % correct option(s) (got %)', v_name, v_correct_req, v_ncorrect;
+  end if;
+  if v_correct_req is null and v_ncorrect < 1 then
+    raise exception 'at least one correct option is required';
+  end if;
+end;
+$$;
+
+revoke all on function public.assert_question_type_rules(uuid, jsonb) from public, anon;
+grant execute on function public.assert_question_type_rules(uuid, jsonb) to authenticated, service_role;
+
 -- bulk_insert_questions : atomic, per-item fault-tolerant batch insert across the
 -- normalized trilingual question tables. Resolves taxonomy by code/level/name and
 -- auto-creates missing topics/subtopics/sources. Each item runs in its own
@@ -746,6 +834,10 @@ begin
 
       select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
       if v_type is null then raise exception 'unknown type %', coalesce(v_item->'meta'->>'type','(null)'); end if;
+
+      -- Per-type structure rules (migration 037): active type + exact option /
+      -- correct-option counts (MCQ = 5 options, exactly 1 correct).
+      perform public.assert_question_type_rules(v_type, coalesce(v_item->'options','[]'::jsonb));
 
       -- difficulty removed from the platform (difficulty_id left null).
 
@@ -1012,29 +1104,66 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_owner uuid;
-  v_q     jsonb;
-  v_sub   uuid;
-  v_sid   uuid;
-  v_trial int;
-  v_child text;
-  v_auth  uuid;
+  v_owner   uuid;
+  v_q       jsonb;
+  v_sub     uuid;
+  v_sid     uuid;
+  v_trial   int;
+  v_child   text;
+  v_auth    uuid;
+  v_had_any boolean;
+  v_status  public.subscription_status;
+  v_end     timestamptz;
 begin
   select created_by_parent_profile_id, child_unique_id
     into v_owner, v_child
   from public.students where profile_id = p_student_profile_id;
   if v_owner is null then raise exception 'create: child has no owning parent'; end if;
 
+  -- Serialize all subscription writes of ONE family: prevents the double-submit
+  -- duplicate row and the concurrent sibling-rank race (audit C2 + M14).
+  perform pg_advisory_xact_lock(hashtextextended(v_owner::text, 42));
+
+  if exists (
+    select 1 from public.child_subscriptions
+    where student_profile_id = p_student_profile_id
+      and status in ('trialing', 'active', 'past_due')
+  ) then
+    raise exception 'create: child already has a live subscription'
+      using errcode = 'unique_violation';
+  end if;
+
   v_q := public.quote_child_subscription(p_student_profile_id, p_interval, p_subject_ids);
-  v_trial := (v_q->>'trial_days')::int;
+
+  -- Trial once per child: any prior subscription row (canceled/expired included)
+  -- means no new free trial — the new plan starts as a paid period (audit C2).
+  v_had_any := exists (
+    select 1 from public.child_subscriptions
+    where student_profile_id = p_student_profile_id
+  );
+  if v_had_any then
+    v_trial  := 0;
+    v_status := 'active';
+    v_end    := now() + case p_interval
+                          when 'week'  then interval '7 days'
+                          when 'month' then interval '1 month'
+                          else              interval '1 year'
+                        end;
+  else
+    v_trial  := (v_q->>'trial_days')::int;
+    v_status := 'trialing';
+    v_end    := now() + (v_trial || ' days')::interval;
+  end if;
 
   insert into public.child_subscriptions
     (student_profile_id, owner_parent_profile_id, interval, status,
      trial_started_at, trial_ends_at, current_period_start, current_period_end,
      base_amount, sibling_discount_percent, discount_amount, total_amount, currency, provider)
   values
-    (p_student_profile_id, v_owner, p_interval, 'trialing',
-     now(), now() + (v_trial || ' days')::interval, now(), now() + (v_trial || ' days')::interval,
+    (p_student_profile_id, v_owner, p_interval, v_status,
+     case when v_status = 'trialing' then now() end,
+     case when v_status = 'trialing' then v_end end,
+     now(), v_end,
      (v_q->>'base')::numeric, (v_q->>'discount_percent')::numeric,
      (v_q->>'discount')::numeric, (v_q->>'total')::numeric, 'AZN', 'none')
   returning id into v_sub;
@@ -1062,10 +1191,12 @@ begin
   select auth_user_id into v_auth
   from public.child_credentials where student_profile_id = p_student_profile_id;
 
-  update public.students set access_status = 'trialing' where profile_id = p_student_profile_id;
+  update public.students
+     set access_status = case when v_status = 'trialing' then 'trialing' else 'active' end::public.child_access_status
+   where profile_id = p_student_profile_id;
 
   return v_q || jsonb_build_object(
-    'subscription_id', v_sub, 'status', 'trialing',
+    'subscription_id', v_sub, 'status', v_status::text, 'trial_days', v_trial,
     'new_child_unique_id', v_child, 'auth_user_id', v_auth);
 end;
 $$;
@@ -1084,15 +1215,17 @@ set search_path = public, pg_temp
 as $$
 declare
   v_sub      uuid;
+  v_owner    uuid;
   v_interval public.plan_interval;
+  v_rank     int;
   v_pct      numeric(5,2);
   v_subjects uuid[];
   v_base     numeric(12,2);
   v_amt      numeric(12,2);
   v_total    numeric(12,2);
 begin
-  select id, interval, sibling_discount_percent
-    into v_sub, v_interval, v_pct
+  select id, interval, owner_parent_profile_id
+    into v_sub, v_interval, v_owner
   from public.child_subscriptions
   where student_profile_id = p_student_profile_id
     and status in ('trialing', 'active', 'past_due')
@@ -1117,11 +1250,21 @@ begin
   from public.subjects_pricing sp
   where sp.subject_id = any (v_subjects) and sp.interval = v_interval and sp.status = 'active';
 
+  -- Audit H7: recompute the sibling rank NOW (same formula as the quote RPC) so
+  -- the previewed and the stored totals always match; the percent is stored back.
+  select count(distinct cs.student_profile_id) + 1 into v_rank
+  from public.child_subscriptions cs
+  where cs.owner_parent_profile_id = v_owner
+    and cs.student_profile_id <> p_student_profile_id
+    and cs.status in ('trialing', 'active', 'past_due');
+  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 15 else 20 end;
+
   v_amt   := round(v_base * v_pct / 100.0, 2);
   v_total := v_base - v_amt;
 
   update public.child_subscriptions
-     set base_amount = v_base, discount_amount = v_amt, total_amount = v_total, updated_at = now()
+     set base_amount = v_base, sibling_discount_percent = v_pct,
+         discount_amount = v_amt, total_amount = v_total, updated_at = now()
    where id = v_sub;
 
   return jsonb_build_object(
@@ -1141,7 +1284,9 @@ set search_path = public, pg_temp
 as $$
 declare
   v_sub      uuid;
+  v_owner    uuid;
   v_interval public.plan_interval;
+  v_rank     int;
   v_pct      numeric(5,2);
   v_count    int;
   v_subjects uuid[];
@@ -1149,8 +1294,8 @@ declare
   v_amt      numeric(12,2);
   v_total    numeric(12,2);
 begin
-  select id, interval, sibling_discount_percent
-    into v_sub, v_interval, v_pct
+  select id, interval, owner_parent_profile_id
+    into v_sub, v_interval, v_owner
   from public.child_subscriptions
   where student_profile_id = p_student_profile_id
     and status in ('trialing', 'active', 'past_due')
@@ -1174,11 +1319,20 @@ begin
   from public.subjects_pricing sp
   where sp.subject_id = any (v_subjects) and sp.interval = v_interval and sp.status = 'active';
 
+  -- Audit H7: live sibling rank (see add_subscription_subject).
+  select count(distinct cs.student_profile_id) + 1 into v_rank
+  from public.child_subscriptions cs
+  where cs.owner_parent_profile_id = v_owner
+    and cs.student_profile_id <> p_student_profile_id
+    and cs.status in ('trialing', 'active', 'past_due');
+  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 15 else 20 end;
+
   v_amt   := round(v_base * v_pct / 100.0, 2);
   v_total := v_base - v_amt;
 
   update public.child_subscriptions
-     set base_amount = v_base, discount_amount = v_amt, total_amount = v_total, updated_at = now()
+     set base_amount = v_base, sibling_discount_percent = v_pct,
+         discount_amount = v_amt, total_amount = v_total, updated_at = now()
    where id = v_sub;
 
   return jsonb_build_object(
@@ -1556,24 +1710,36 @@ set search_path = public, pg_temp
 as $$
 declare
   v_student uuid := public.current_profile_id();
-  v_access  public.child_access_status;
   v_grade   uuid;
   v_attempt uuid;
   v_n       int;
 begin
   if v_student is null then raise exception 'start_practice: not authenticated'; end if;
-  select access_status, grade_id into v_access, v_grade
+  select grade_id into v_grade
   from public.students where profile_id = v_student;
-  if v_access is null then raise exception 'start_practice: not a student'; end if;
+  if not found then raise exception 'start_practice: not a student'; end if;
   -- Round 11 (migration 027): an active GIVEAWAY window grants access without a
-  -- subscription (is_giveaway_active() is defined in the Round-11 section below;
-  -- plpgsql resolves it at call time, so definition order is irrelevant).
-  -- Round 12 (migration 033): an active per-parent/child FREE-ACCESS interval also
-  -- grants access (lazy check, no state to unwind on expiry — same philosophy).
-  if v_access not in ('trialing', 'active')
-     and not public.is_giveaway_active()
+  -- subscription. Round 12 (migration 033): an active per-parent/child FREE-ACCESS
+  -- interval does the same. Otherwise (migration 035, audit H6 + C1): the child
+  -- needs a live, DATE-VALID subscription covering THIS subject — one paid subject
+  -- must not unlock the rest, and expiry is checked lazily against
+  -- current_period_end (students.access_status is a display cache, not authority).
+  -- trialing/active = live until current_period_end; canceled keeps access until
+  -- the already-paid period ends; past_due (failed charge) blocks.
+  if not public.is_giveaway_active()
      and not public.is_free_access_active_for_student(v_student) then
-    raise exception 'start_practice: no active access' using errcode = 'check_violation';
+    if not exists (
+      select 1
+      from public.child_subscriptions cs
+      join public.subscription_subjects ss
+        on ss.child_subscription_id = cs.id and ss.subject_id = p_subject_id
+      where cs.student_profile_id = v_student
+        and cs.status in ('trialing', 'active', 'canceled')
+        and cs.current_period_end is not null
+        and cs.current_period_end > now()
+    ) then
+      raise exception 'start_practice: no active access' using errcode = 'check_violation';
+    end if;
   end if;
 
   insert into public.test_attempts (student_profile_id, subject_id, kind, status)
@@ -1689,6 +1855,8 @@ declare
   v_sel     uuid[];
   v_correct uuid[];
   v_ok      boolean;
+  v_rows    int;
+  v_seen    uuid[] := '{}';
   v_score   numeric := 0;
   v_max     int;
 begin
@@ -1699,7 +1867,12 @@ begin
 
   for v_item in select * from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb))
   loop
-    v_qid := (v_item->>'question_id')::uuid;
+    v_qid := nullif(v_item->>'question_id', '')::uuid;
+    -- Audit H5 (migration 035): each question counts once; ids outside the attempt
+    -- are ignored (the UPDATE below matches zero rows and awards nothing).
+    if v_qid is null or v_qid = any (v_seen) then continue; end if;
+    v_seen := v_seen || v_qid;
+
     select coalesce(array_agg(e::uuid), '{}')
       into v_sel
       from jsonb_array_elements_text(coalesce(v_item->'selected_option_ids', '[]'::jsonb)) e;
@@ -1717,7 +1890,8 @@ begin
            points_awarded = case when v_ok then 1 else 0 end,
            updated_at = now()
      where attempt_id = p_attempt_id and question_id = v_qid;
-    if v_ok then v_score := v_score + 1; end if;
+    get diagnostics v_rows = row_count;
+    if v_rows > 0 and v_ok then v_score := v_score + 1; end if;
   end loop;
 
   select count(*) into v_max from public.test_attempt_answers where attempt_id = p_attempt_id;
@@ -1762,30 +1936,39 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_owner    uuid;
-  v_price    numeric(10,2);
-  v_currency text;
-  v_status   public.catalog_status;
-  v_existing uuid;
-  v_id       uuid;
+  v_owner     uuid;
+  v_price     numeric(10,2);
+  v_currency  text;
+  v_status    public.catalog_status;
+  v_event     timestamptz;
+  v_existing  uuid;
+  v_ex_status text;
+  v_id        uuid;
 begin
   select created_by_parent_profile_id into v_owner
   from public.students where profile_id = p_student_profile_id;
   if v_owner is null then raise exception 'purchase: child has no owning parent'; end if;
 
-  select price_amount, currency, status into v_price, v_currency, v_status
+  select price_amount, currency, status, event_starts_at
+    into v_price, v_currency, v_status, v_event
   from public.olympiad_packages where id = p_package_id;
   if v_price is null then raise exception 'purchase: package not found'; end if;
-  if v_status <> 'active' then
+  -- Audit M12 (migration 035): past-event packages are treated as archived for sale.
+  if v_status <> 'active' or (v_event is not null and v_event <= now()) then
     raise exception 'purchase: package not available' using errcode = 'check_violation';
   end if;
 
   -- Lifetime: one purchase per child/package (idempotent).
-  select id into v_existing from public.olympiad_purchases
+  select id, status into v_existing, v_ex_status from public.olympiad_purchases
   where student_profile_id = p_student_profile_id and olympiad_package_id = p_package_id;
   if v_existing is not null then
+    if v_ex_status = 'active' then
+      return jsonb_build_object('purchase_id', v_existing, 'status', 'active', 'existing', true);
+    end if;
+    -- Audit L17 (migration 035): re-buying after a refund records the CURRENT price/date.
     update public.olympiad_purchases
-       set status = 'active', purchased_at = coalesce(purchased_at, now()), updated_at = now()
+       set status = 'active', amount = v_price, currency = v_currency,
+           purchased_at = now(), updated_at = now()
      where id = v_existing;
     return jsonb_build_object('purchase_id', v_existing, 'status', 'active', 'existing', true);
   end if;
@@ -1802,7 +1985,7 @@ end;
 $$;
 
 comment on function public.purchase_olympiad(uuid, uuid) is
-  'Parent one-time LIFETIME purchase of an olympiad package for a child. service_role only (payment stubbed).';
+  'Parent one-time LIFETIME purchase of an olympiad package for a child. service_role only (payment stubbed). Past-event packages are not sellable.';
 
 create or replace function public.start_olympiad_attempt(p_package_id uuid)
 returns uuid
@@ -1818,22 +2001,15 @@ declare
   v_n       int;
 begin
   if v_student is null then raise exception 'olympiad: not authenticated'; end if;
+  -- Purchase-only (owner ruling 2026-07-06, migration 038): free-access/trial/
+  -- giveaway windows cover SUBJECTS only — olympiad packages are always bought.
+  -- The Round-11/12 free-play fallback (giveaway or free-access interval opened
+  -- ACTIVE-catalog packages without a purchase) was removed.
   if not exists (
     select 1 from public.olympiad_purchases
     where student_profile_id = v_student and olympiad_package_id = p_package_id and status = 'active'
   ) then
-    -- Round 11 (migration 027): an active GIVEAWAY window opens ACTIVE-catalog
-    -- packages for free. Archived packages stay purchaser-only (lifetime access);
-    -- the giveaway never mints purchase rows. Round 12 (migration 033): an active
-    -- per-parent/child FREE-ACCESS interval opens ACTIVE-catalog packages the same way.
-    if not ((public.is_giveaway_active()
-             or public.is_free_access_active_for_student(v_student))
-            and exists (
-      select 1 from public.olympiad_packages
-      where id = p_package_id and catalog_status = 'active'
-    )) then
-      raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
-    end if;
+    raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
   end if;
 
   select subject_id, questions_per_attempt into v_subject, v_n_per
@@ -1868,6 +2044,9 @@ begin
 end;
 $$;
 
+comment on function public.start_olympiad_attempt(uuid) is
+  'Child starts an olympiad attempt on a PURCHASED package (25 random from the package''s private pool). Purchase-only in every mode — free-access/trial/giveaway never open packages (owner ruling 2026-07-06).';
+
 revoke all on function public.purchase_olympiad(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.purchase_olympiad(uuid, uuid) to service_role;
 revoke all on function public.start_olympiad_attempt(uuid) from public, anon;
@@ -1879,7 +2058,7 @@ grant execute on function public.start_olympiad_attempt(uuid) to authenticated, 
 -- but every inserted question gets olympiad_package_id = p_package_id and is
 -- published immediately (the attempt engine requires status='published'), so it
 -- stays out of the general pool. Subject defaults to the package's subject; type
--- resolved by name. Admin/content.create gated; never anon-executable.
+-- resolved by name. Administrator-only (audit H2); never anon-executable.
 -- ---------------------------------------------------------------------------
 create or replace function public.bulk_insert_olympiad_package_questions(
   p_package_id uuid,
@@ -1903,7 +2082,9 @@ declare
   v_qid      uuid; v_optid uuid;
   v_pl       text; v_loc text; v_opt jsonb; v_order int;
 begin
-  if v_profile is null or not (public.is_admin() or public.has_permission('content.create')) then
+  -- Audit H2 (migration 035): olympiad pools are an Admin-only module (content
+  -- managers must never manage Olympiad Preparation) — no permission fallback.
+  if v_profile is null or not public.is_admin() then
     raise exception 'bulk_insert_olympiad_package_questions: forbidden' using errcode = 'insufficient_privilege';
   end if;
   if jsonb_typeof(p_questions) <> 'array' then
@@ -1930,6 +2111,9 @@ begin
 
       select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
       if v_type is null then raise exception 'unknown type %', coalesce(v_item->'meta'->>'type','(null)'); end if;
+
+      -- Per-type structure rules (migration 037).
+      perform public.assert_question_type_rules(v_type, coalesce(v_item->'options','[]'::jsonb));
 
       v_oly := null;
       if coalesce(v_item->'meta'->>'olympiad_type','') <> '' then
@@ -2021,7 +2205,7 @@ end;
 $$;
 
 comment on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) is
-  'Bulk import of PRIVATE trilingual questions for one olympiad package (sets questions.olympiad_package_id, status published). Caller must hold content.create (checked internally). Not anon-executable.';
+  'Bulk import of PRIVATE trilingual questions for one olympiad package (sets questions.olympiad_package_id, status published). Administrators only (checked internally). Not anon-executable.';
 
 revoke all on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) from public, anon;
 grant execute on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) to authenticated, service_role;
@@ -2222,6 +2406,656 @@ comment on function public.get_admin_platform_overview() is
 
 revoke all on function public.get_admin_platform_overview() from public, anon;
 grant execute on function public.get_admin_platform_overview() to authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
+-- Access lifecycle reconciliation (audit C1, migration 036). Expires live
+-- subscriptions whose trial/paid period ended and syncs the students.access_status
+-- display cache both directions. Scheduled hourly in 016; correctness never
+-- depends on it — the attempt RPCs above check current_period_end lazily.
+-- -----------------------------------------------------------------------------
+create or replace function public.recompute_child_access()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_expired    int;
+  v_downgraded int;
+  v_restored   int;
+begin
+  -- 1) Expire live subscriptions whose trial/paid period has ended.
+  update public.child_subscriptions
+     set status = 'expired', updated_at = now()
+   where status in ('trialing', 'active', 'past_due')
+     and current_period_end is not null
+     and current_period_end <= now();
+  get diagnostics v_expired = row_count;
+
+  -- 2) Downgrade students whose access flag claims access but who have no live,
+  --    date-valid subscription left (canceled keeps access until the already-
+  --    paid period ends — same rule as the attempt-RPC guards).
+  update public.students s
+     set access_status = 'expired'::public.child_access_status
+   where s.access_status in ('trialing', 'active')
+     and not exists (
+       select 1 from public.child_subscriptions cs
+       where cs.student_profile_id = s.profile_id
+         and cs.status in ('trialing', 'active', 'canceled')
+         and cs.current_period_end is not null
+         and cs.current_period_end > now()
+     );
+  get diagnostics v_downgraded = row_count;
+
+  -- 3) Repair the reverse direction: a live dated subscription with a stale
+  --    non-access flag.
+  update public.students s
+     set access_status = case when exists (
+             select 1 from public.child_subscriptions cs
+             where cs.student_profile_id = s.profile_id
+               and cs.status = 'trialing'
+               and cs.current_period_end > now())
+           then 'trialing'::public.child_access_status
+           else 'active'::public.child_access_status end
+   where s.access_status not in ('trialing', 'active')
+     and exists (
+       select 1 from public.child_subscriptions cs
+       where cs.student_profile_id = s.profile_id
+         and cs.status in ('trialing', 'active')
+         and cs.current_period_end is not null
+         and cs.current_period_end > now()
+     );
+  get diagnostics v_restored = row_count;
+
+  return jsonb_build_object(
+    'subscriptions_expired', v_expired,
+    'students_downgraded',   v_downgraded,
+    'students_restored',     v_restored);
+end;
+$$;
+
+comment on function public.recompute_child_access() is
+  'Hourly reconciliation (audit C1): expires ended subscriptions and syncs students.access_status. Access CORRECTNESS never depends on this job — the attempt RPCs check current_period_end lazily.';
+
+revoke all on function public.recompute_child_access() from public, anon, authenticated;
+grant execute on function public.recompute_child_access() to service_role;
+
+-- -----------------------------------------------------------------------------
+-- TIMED TOPIC-TEST ENGINE (migration 037; docs/plans/TEST_ENGINE_PLAN.md T0).
+-- Owner decisions 2026-07-06: FIXED 25 questions / 25 minutes, TRUE resume,
+-- unlimited attempts with a fresh re-draw. Server-authoritative everything:
+-- draw, deadline, grading, single-open, expiry. Answer keys are revealed ONLY
+-- by get_test_review (status='graded').
+-- -----------------------------------------------------------------------------
+
+-- start_topic_test_attempt: access-guarded (same rule as start_practice_attempt),
+-- topic/subtopic scope validated, 25 random published MCQ-family questions
+-- (fallback to subject-wide when the scope has none), deadline = now()+25min.
+create or replace function public.start_topic_test_attempt(
+  p_subject_id   uuid,
+  p_topic_ids    uuid[] default '{}',
+  p_subtopic_ids uuid[] default '{}'
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  c_count    constant int := 25;    -- owner decision: fixed
+  c_duration constant int := 1500;  -- 25 minutes (60s/question)
+  v_student  uuid := public.current_profile_id();
+  v_grade    uuid;
+  v_topics   uuid[] := coalesce(p_topic_ids, '{}');
+  v_subs     uuid[] := coalesce(p_subtopic_ids, '{}');
+  v_existing record;
+  v_qids     uuid[];
+  v_attempt  uuid;
+  v_deadline timestamptz;
+begin
+  if v_student is null then raise exception 'start_test: not authenticated'; end if;
+  select grade_id into v_grade
+  from public.students where profile_id = v_student;
+  if not found then raise exception 'start_test: not a student'; end if;
+
+  -- Access: same rule as start_practice_attempt (035 — per-subject, lazy-dated).
+  if not public.is_giveaway_active()
+     and not public.is_free_access_active_for_student(v_student) then
+    if not exists (
+      select 1
+      from public.child_subscriptions cs
+      join public.subscription_subjects ss
+        on ss.child_subscription_id = cs.id and ss.subject_id = p_subject_id
+      where cs.student_profile_id = v_student
+        and cs.status in ('trialing', 'active', 'canceled')
+        and cs.current_period_end is not null
+        and cs.current_period_end > now()
+    ) then
+      raise exception 'start_test: no active access' using errcode = 'check_violation';
+    end if;
+  end if;
+
+  -- Scope validation: topics must belong to the subject; subtopics to the
+  -- chosen topics (and require topics when subtopics are given).
+  if cardinality(v_topics) > 50 or cardinality(v_subs) > 100 then
+    raise exception 'start_test: scope too large';
+  end if;
+  if cardinality(v_topics) > 0 and exists (
+    select 1 from unnest(v_topics) t(id)
+    where not exists (select 1 from public.topics tp where tp.id = t.id and tp.subject_id = p_subject_id)
+  ) then
+    raise exception 'start_test: topic does not belong to subject';
+  end if;
+  if cardinality(v_subs) > 0 then
+    if cardinality(v_topics) = 0 then
+      raise exception 'start_test: subtopics given without topics';
+    end if;
+    if exists (
+      select 1 from unnest(v_subs) s(id)
+      where not exists (select 1 from public.subtopics st where st.id = s.id and st.topic_id = any (v_topics))
+    ) then
+      raise exception 'start_test: subtopic does not belong to the chosen topics';
+    end if;
+  end if;
+
+  -- TRUE resume: one open timed test at a time. Still-running → return it;
+  -- past-deadline → expire it and start fresh.
+  select id, deadline_at into v_existing
+  from public.test_attempts
+  where student_profile_id = v_student and kind = 'test' and status = 'in_progress'
+  order by started_at desc
+  limit 1;
+  if v_existing.id is not null then
+    if v_existing.deadline_at is not null and v_existing.deadline_at > now() then
+      return jsonb_build_object(
+        'attempt_id', v_existing.id, 'resumed', true,
+        'deadline_at', v_existing.deadline_at, 'duration_seconds', c_duration);
+    end if;
+    update public.test_attempts
+       set status = 'expired', updated_at = now()
+     where id = v_existing.id;
+  end if;
+
+  -- Server-random draw, published MCQ-family, general pool, grade-matched;
+  -- scoped to the selection, falling back to subject-wide when the scope has
+  -- no questions.
+  select coalesce(array_agg(id), '{}') into v_qids from (
+    select q.id
+    from public.questions q
+    where q.subject_id = p_subject_id
+      and q.status = 'published'
+      and q.olympiad_package_id is null
+      and q.type_id in (
+        select id from public.question_types where code in ('single_choice', 'multiple_choice', 'true_false')
+      )
+      and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct)
+      and (v_grade is null or q.grade_id = v_grade or q.grade_id is null)
+      and (cardinality(v_topics) = 0 or q.topic_id = any (v_topics))
+      and (cardinality(v_subs) = 0 or q.subtopic_id = any (v_subs))
+    order by random()
+    limit c_count
+  ) picked;
+
+  if cardinality(v_qids) = 0 and (cardinality(v_topics) > 0 or cardinality(v_subs) > 0) then
+    select coalesce(array_agg(id), '{}') into v_qids from (
+      select q.id
+      from public.questions q
+      where q.subject_id = p_subject_id
+        and q.status = 'published'
+        and q.olympiad_package_id is null
+        and q.type_id in (
+          select id from public.question_types where code in ('single_choice', 'multiple_choice', 'true_false')
+        )
+        and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct)
+        and (v_grade is null or q.grade_id = v_grade or q.grade_id is null)
+      order by random()
+      limit c_count
+    ) picked;
+  end if;
+
+  if cardinality(v_qids) = 0 then
+    raise exception 'start_test: no questions available for this subject'
+      using errcode = 'no_data_found';
+  end if;
+
+  v_deadline := now() + make_interval(secs => c_duration);
+
+  insert into public.test_attempts
+    (student_profile_id, subject_id, kind, status,
+     question_ids, deadline_at, duration_seconds, topic_ids, subtopic_ids)
+  values
+    (v_student, p_subject_id, 'test', 'in_progress',
+     v_qids, v_deadline, c_duration, v_topics, v_subs)
+  returning id into v_attempt;
+
+  insert into public.test_attempt_answers (attempt_id, question_id)
+  select v_attempt, unnest(v_qids);
+
+  return jsonb_build_object(
+    'attempt_id', v_attempt, 'resumed', false,
+    'deadline_at', v_deadline, 'duration_seconds', c_duration,
+    'count', cardinality(v_qids));
+end;
+$$;
+
+-- get_test_attempt: rehydration payload (questions + options WITHOUT is_correct,
+-- saved answers + flags, server deadline → remaining seconds).
+create or replace function public.get_test_attempt(
+  p_attempt_id uuid,
+  p_locale     text default 'az'
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student  uuid := public.current_profile_id();
+  v_att      record;
+  v_loc      text := case when p_locale in ('az', 'en', 'ru') then p_locale else 'az' end;
+  v_result   jsonb;
+begin
+  select id, student_profile_id, status, kind, subject_id,
+         deadline_at, duration_seconds, score, max_score
+    into v_att
+  from public.test_attempts where id = p_attempt_id;
+  if v_att.id is null or v_att.student_profile_id <> v_student then
+    raise exception 'forbidden';
+  end if;
+
+  select jsonb_build_object(
+           'attempt_id', p_attempt_id,
+           'status', v_att.status,
+           'kind', v_att.kind,
+           'subject_id', v_att.subject_id,
+           'deadline_at', v_att.deadline_at,
+           'duration_seconds', v_att.duration_seconds,
+           'remaining_seconds',
+             case when v_att.deadline_at is null then null
+                  else greatest(0, floor(extract(epoch from (v_att.deadline_at - now()))))::int end,
+           'score', v_att.score,
+           'max_score', v_att.max_score,
+           'questions', coalesce(jsonb_agg(q order by ord), '[]'::jsonb))
+  into v_result
+  from (
+    select
+      row_number() over (order by taa.created_at, taa.id) as ord,
+      jsonb_build_object(
+        'question_id', taa.question_id,
+        'type', qtp.code,
+        'topic_id', qq.topic_id,
+        'body', coalesce(qt.body, qt_az.body),
+        'prompt', coalesce(qt.prompt, qt_az.prompt),
+        'selected_option_ids', coalesce(to_jsonb(taa.selected_option_ids), '[]'::jsonb),
+        'is_marked', taa.is_marked,
+        'options', (
+          select coalesce(jsonb_agg(
+            jsonb_build_object('option_id', ao.id,
+                               'text', coalesce(aot.text, aot_az.text))
+            order by ao.order_index), '[]'::jsonb)
+          from public.answer_options ao
+          left join public.answer_option_translations aot
+            on aot.option_id = ao.id and aot.locale = v_loc::public.content_locale
+          left join public.answer_option_translations aot_az
+            on aot_az.option_id = ao.id and aot_az.locale = 'az'
+          where ao.question_id = taa.question_id
+        )
+      ) as q
+    from public.test_attempt_answers taa
+    left join public.questions qq on qq.id = taa.question_id
+    left join public.question_types qtp on qtp.id = qq.type_id
+    left join public.question_translations qt
+      on qt.question_id = taa.question_id and qt.locale = v_loc::public.content_locale
+    left join public.question_translations qt_az
+      on qt_az.question_id = taa.question_id and qt_az.locale = 'az'
+    where taa.attempt_id = p_attempt_id
+  ) s;
+
+  return v_result;
+end;
+$$;
+
+-- save_test_answers: idempotent autosave. Only attempt-member rows are touched;
+-- rejected once the server deadline has passed.
+create or replace function public.save_test_answers(
+  p_attempt_id uuid,
+  p_answers    jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student  uuid := public.current_profile_id();
+  v_att      record;
+  v_item     jsonb;
+  v_qid      uuid;
+  v_sel      uuid[];
+  v_seen     uuid[] := '{}';
+  v_rows     int;
+  v_saved    int := 0;
+  v_n        int := 0;
+begin
+  select id, student_profile_id, status, deadline_at into v_att
+  from public.test_attempts where id = p_attempt_id;
+  if v_att.id is null or v_att.student_profile_id <> v_student then
+    raise exception 'forbidden';
+  end if;
+  if v_att.status <> 'in_progress' then
+    raise exception 'save: attempt is not in progress' using errcode = 'check_violation';
+  end if;
+  if v_att.deadline_at is not null and now() > v_att.deadline_at then
+    raise exception 'save: deadline passed' using errcode = 'check_violation';
+  end if;
+
+  for v_item in select * from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb))
+  loop
+    v_n := v_n + 1;
+    exit when v_n > 100;  -- payload cap
+    v_qid := nullif(v_item->>'question_id', '')::uuid;
+    if v_qid is null or v_qid = any (v_seen) then continue; end if;
+    v_seen := v_seen || v_qid;
+
+    select coalesce(array_agg(e::uuid), '{}')
+      into v_sel
+      from jsonb_array_elements_text(coalesce(v_item->'selected_option_ids', '[]'::jsonb)) e;
+
+    update public.test_attempt_answers
+       set selected_option_ids = v_sel,
+           is_marked = coalesce((v_item->>'is_marked')::boolean, is_marked),
+           time_spent_ms = least(coalesce(nullif(v_item->>'time_spent_ms','')::bigint, time_spent_ms, 0), 86400000),
+           updated_at = now()
+     where attempt_id = p_attempt_id and question_id = v_qid;
+    get diagnostics v_rows = row_count;
+    v_saved := v_saved + v_rows;
+  end loop;
+
+  return jsonb_build_object(
+    'saved', v_saved,
+    'remaining_seconds',
+      case when v_att.deadline_at is null then null
+           else greatest(0, floor(extract(epoch from (v_att.deadline_at - now()))))::int end);
+end;
+$$;
+
+-- submit_test_attempt: merge final answers (60s grace past the deadline; later
+-- answers are IGNORED, saved ones still grade), then grade FROM THE STORED ROWS
+-- (never from the client array — audit-H5 posture). Idempotent when graded.
+create or replace function public.submit_test_attempt(
+  p_attempt_id uuid,
+  p_answers    jsonb default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student  uuid := public.current_profile_id();
+  v_att      record;
+  v_item     jsonb;
+  v_qid      uuid;
+  v_sel      uuid[];
+  v_seen     uuid[] := '{}';
+  v_r        record;
+  v_correct  uuid[];
+  v_ok       boolean;
+  v_score    numeric := 0;
+  v_max      int;
+  v_n        int := 0;
+begin
+  select id, student_profile_id, status, deadline_at, score, max_score into v_att
+  from public.test_attempts where id = p_attempt_id;
+  if v_att.id is null or v_att.student_profile_id <> v_student then
+    raise exception 'forbidden';
+  end if;
+
+  -- Idempotent: an already-graded attempt returns its stored result.
+  if v_att.status = 'graded' then
+    return public.test_attempt_result(p_attempt_id);
+  end if;
+  if v_att.status <> 'in_progress' then
+    raise exception 'submit: attempt is not in progress' using errcode = 'check_violation';
+  end if;
+
+  -- Merge the final client answers only within deadline + 60s grace.
+  if p_answers is not null
+     and (v_att.deadline_at is null or now() <= v_att.deadline_at + interval '60 seconds') then
+    for v_item in select * from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb))
+    loop
+      v_n := v_n + 1;
+      exit when v_n > 100;
+      v_qid := nullif(v_item->>'question_id', '')::uuid;
+      if v_qid is null or v_qid = any (v_seen) then continue; end if;
+      v_seen := v_seen || v_qid;
+      select coalesce(array_agg(e::uuid), '{}')
+        into v_sel
+        from jsonb_array_elements_text(coalesce(v_item->'selected_option_ids', '[]'::jsonb)) e;
+      update public.test_attempt_answers
+         set selected_option_ids = v_sel, updated_at = now()
+       where attempt_id = p_attempt_id and question_id = v_qid;
+    end loop;
+  end if;
+
+  -- Grade from the STORED rows.
+  for v_r in
+    select question_id, selected_option_ids
+    from public.test_attempt_answers where attempt_id = p_attempt_id
+  loop
+    select coalesce(array_agg(ao.id), '{}')
+      into v_correct
+      from public.answer_options ao
+      where ao.question_id = v_r.question_id and ao.is_correct;
+
+    v_ok := (array_length(v_correct, 1) is not null)
+        and (coalesce(v_r.selected_option_ids, '{}') <@ v_correct)
+        and (v_correct <@ coalesce(v_r.selected_option_ids, '{}'))
+        and coalesce(array_length(v_r.selected_option_ids, 1), 0) = array_length(v_correct, 1);
+
+    update public.test_attempt_answers
+       set is_correct = v_ok,
+           points_awarded = case when v_ok then 1 else 0 end,
+           updated_at = now()
+     where attempt_id = p_attempt_id and question_id = v_r.question_id;
+    if v_ok then v_score := v_score + 1; end if;
+  end loop;
+
+  select count(*) into v_max from public.test_attempt_answers where attempt_id = p_attempt_id;
+  update public.test_attempts
+     set status = 'graded', score = v_score, max_score = v_max,
+         submitted_at = now(), graded_at = now(), updated_at = now()
+   where id = p_attempt_id;
+
+  return public.test_attempt_result(p_attempt_id);
+end;
+$$;
+
+-- Shared result payload (score + per-question + per-topic breakdown). Internal
+-- helper for submit (and re-reads); owner check lives in the callers.
+create or replace function public.test_attempt_result(p_attempt_id uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_object(
+    'attempt_id', ta.id,
+    'status', ta.status,
+    'score', ta.score,
+    'max', ta.max_score,
+    'submitted_at', ta.submitted_at,
+    'results', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'question_id', taa.question_id, 'is_correct', taa.is_correct)), '[]'::jsonb)
+      from public.test_attempt_answers taa where taa.attempt_id = ta.id),
+    'topics', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'topic_id', b.tid, 'name', b.tname, 'total', b.total, 'correct', b.correct)), '[]'::jsonb)
+      from (
+        select q.topic_id as tid, tp.name as tname,
+               count(*) as total,
+               count(*) filter (where taa.is_correct) as correct
+        from public.test_attempt_answers taa
+        join public.questions q on q.id = taa.question_id
+        left join public.topics tp on tp.id = q.topic_id
+        where taa.attempt_id = ta.id
+        group by q.topic_id, tp.name
+      ) b))
+  from public.test_attempts ta
+  where ta.id = p_attempt_id;
+$$;
+
+-- cancel_test_attempt: counts for NOTHING (no score, no points, no streak).
+create or replace function public.cancel_test_attempt(p_attempt_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student uuid := public.current_profile_id();
+  v_att     record;
+begin
+  select id, student_profile_id, status into v_att
+  from public.test_attempts where id = p_attempt_id;
+  if v_att.id is null or v_att.student_profile_id <> v_student then
+    raise exception 'forbidden';
+  end if;
+  if v_att.status <> 'in_progress' then
+    raise exception 'cancel: attempt is not in progress' using errcode = 'check_violation';
+  end if;
+
+  update public.test_attempts
+     set status = 'canceled', canceled_at = now(), updated_at = now()
+   where id = p_attempt_id;
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+-- get_test_review: the ONLY place answer keys are revealed, and only for the
+-- owner's GRADED attempt (works for practice attempts too).
+create or replace function public.get_test_review(
+  p_attempt_id uuid,
+  p_locale     text default 'az'
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student uuid := public.current_profile_id();
+  v_att     record;
+  v_loc     text := case when p_locale in ('az', 'en', 'ru') then p_locale else 'az' end;
+  v_result  jsonb;
+begin
+  select id, student_profile_id, status, score, max_score into v_att
+  from public.test_attempts where id = p_attempt_id;
+  if v_att.id is null or v_att.student_profile_id <> v_student then
+    raise exception 'forbidden';
+  end if;
+  if v_att.status <> 'graded' then
+    raise exception 'review: attempt not graded yet' using errcode = 'check_violation';
+  end if;
+
+  select jsonb_build_object(
+           'attempt_id', p_attempt_id,
+           'score', v_att.score,
+           'max', v_att.max_score,
+           'questions', coalesce(jsonb_agg(q order by ord), '[]'::jsonb))
+  into v_result
+  from (
+    select
+      row_number() over (order by taa.created_at, taa.id) as ord,
+      jsonb_build_object(
+        'question_id', taa.question_id,
+        'body', coalesce(qt.body, qt_az.body),
+        'prompt', coalesce(qt.prompt, qt_az.prompt),
+        'is_correct', taa.is_correct,
+        'selected_option_ids', coalesce(to_jsonb(taa.selected_option_ids), '[]'::jsonb),
+        'explanation', coalesce(qe.explanation_body, qe_az.explanation_body),
+        'options', (
+          select coalesce(jsonb_agg(
+            jsonb_build_object('option_id', ao.id,
+                               'text', coalesce(aot.text, aot_az.text),
+                               'is_correct', ao.is_correct)
+            order by ao.order_index), '[]'::jsonb)
+          from public.answer_options ao
+          left join public.answer_option_translations aot
+            on aot.option_id = ao.id and aot.locale = v_loc::public.content_locale
+          left join public.answer_option_translations aot_az
+            on aot_az.option_id = ao.id and aot_az.locale = 'az'
+          where ao.question_id = taa.question_id
+        )
+      ) as q
+    from public.test_attempt_answers taa
+    left join public.question_translations qt
+      on qt.question_id = taa.question_id and qt.locale = v_loc::public.content_locale
+    left join public.question_translations qt_az
+      on qt_az.question_id = taa.question_id and qt_az.locale = 'az'
+    left join public.question_explanations qe
+      on qe.question_id = taa.question_id and qe.locale = v_loc::public.content_locale
+    left join public.question_explanations qe_az
+      on qe_az.question_id = taa.question_id and qe_az.locale = 'az'
+    where taa.attempt_id = p_attempt_id
+  ) s;
+
+  return v_result;
+end;
+$$;
+
+-- expire_stale_test_attempts (cron, 016): timed tests 5 min past deadline →
+-- 'expired'; practice/olympiad attempts stuck in_progress >24h → 'abandoned'.
+create or replace function public.expire_stale_test_attempts()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_tests int;
+  v_other int;
+begin
+  update public.test_attempts
+     set status = 'expired', updated_at = now()
+   where kind = 'test' and status = 'in_progress'
+     and deadline_at is not null
+     and deadline_at + interval '5 minutes' < now();
+  get diagnostics v_tests = row_count;
+
+  update public.test_attempts
+     set status = 'abandoned', updated_at = now()
+   where kind in ('practice', 'olympiad', 'daily') and status = 'in_progress'
+     and started_at < now() - interval '24 hours';
+  get diagnostics v_other = row_count;
+
+  return jsonb_build_object('tests_expired', v_tests, 'others_abandoned', v_other);
+end;
+$$;
+
+-- Grants: learner-facing RPCs are authenticated (owner-checked in body);
+-- the sweep + result helper are service-role only.
+revoke all on function public.start_topic_test_attempt(uuid, uuid[], uuid[]) from public, anon;
+grant execute on function public.start_topic_test_attempt(uuid, uuid[], uuid[]) to authenticated, service_role;
+revoke all on function public.get_test_attempt(uuid, text) from public, anon;
+grant execute on function public.get_test_attempt(uuid, text) to authenticated, service_role;
+revoke all on function public.save_test_answers(uuid, jsonb) from public, anon;
+grant execute on function public.save_test_answers(uuid, jsonb) to authenticated, service_role;
+revoke all on function public.submit_test_attempt(uuid, jsonb) from public, anon;
+grant execute on function public.submit_test_attempt(uuid, jsonb) to authenticated, service_role;
+revoke all on function public.cancel_test_attempt(uuid) from public, anon;
+grant execute on function public.cancel_test_attempt(uuid) to authenticated, service_role;
+revoke all on function public.get_test_review(uuid, text) from public, anon;
+grant execute on function public.get_test_review(uuid, text) to authenticated, service_role;
+revoke all on function public.test_attempt_result(uuid) from public, anon, authenticated;
+grant execute on function public.test_attempt_result(uuid) to service_role;
+revoke all on function public.expire_stale_test_attempts() from public, anon, authenticated;
+grant execute on function public.expire_stale_test_attempts() to service_role;
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

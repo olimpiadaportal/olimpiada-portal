@@ -11,27 +11,43 @@ export default async function ChildDashboard() {
   const child = await requireChild();
   const t = await getT();
   const supabase = await createClient();
-  // Round 11: during an active giveaway window the whole platform is free —
-  // the DB RPCs (start_practice_attempt) already allow it; this mirrors it.
-  const giveawayActive = await isGiveawayActive();
-  // Round 12: a per-parent/child free-access interval also grants full access.
-  const freeAccessActive = await getChildFreeAccessActive();
+
+  // M24: these reads are independent of each other — one concurrent batch
+  // instead of five serial awaits. (The free-subjects merge below stays
+  // sequential: it genuinely depends on freeNow.)
+  const [giveawayActive, freeAccessActive, { data: student }, { data: subs }, { data: attempts }] =
+    await Promise.all([
+      // Round 11: during an active giveaway window the whole platform is free —
+      // the DB RPCs (start_practice_attempt) already allow it; this mirrors it.
+      isGiveawayActive(),
+      // Round 12: a per-parent/child free-access interval also grants full access.
+      getChildFreeAccessActive(),
+      supabase
+        .from("students")
+        .select("first_name, access_status")
+        .eq("profile_id", child.profileId)
+        .maybeSingle(),
+      // Subjects this child is subscribed to (for practice).
+      supabase
+        .from("child_subscriptions")
+        .select("status, subscription_subjects(subjects(id, name))")
+        .eq("student_profile_id", child.profileId)
+        .in("status", ["trialing", "active"]),
+      // Graded attempts → real mini-stats + per-subject strength (no
+      // fabrication; all 0 / empty until the child actually finishes rounds).
+      supabase
+        .from("test_attempts")
+        .select("id, kind, score, max_score, subject_id, subjects(name)")
+        .eq("student_profile_id", child.profileId)
+        .eq("status", "graded")
+        .order("submitted_at", { ascending: false })
+        .limit(200),
+    ]);
   const freeNow = giveawayActive || freeAccessActive;
 
-  const { data: student } = await supabase
-    .from("students")
-    .select("first_name, access_status")
-    .eq("profile_id", child.profileId)
-    .maybeSingle();
   const access = (student as any)?.access_status ?? "inactive";
   const hasAccess = access === "trialing" || access === "active" || freeNow;
 
-  // Subjects this child is subscribed to (for practice).
-  const { data: subs } = await supabase
-    .from("child_subscriptions")
-    .select("status, subscription_subjects(subjects(id, name))")
-    .eq("student_profile_id", child.profileId)
-    .in("status", ["trialing", "active"]);
   const subjMap = new Map<string, string>();
   for (const s of (subs ?? []) as any[]) {
     for (const ss of s.subscription_subjects ?? []) {
@@ -53,15 +69,6 @@ export default async function ChildDashboard() {
   }
   const subjects = Array.from(subjMap, ([id, name]) => ({ id, name }));
 
-  // Graded attempts → real mini-stats + per-subject strength (no fabrication;
-  // all 0 / empty until the child actually finishes rounds).
-  const { data: attempts } = await supabase
-    .from("test_attempts")
-    .select("id, kind, score, max_score, subject_id, subjects(name)")
-    .eq("student_profile_id", child.profileId)
-    .eq("status", "graded")
-    .order("submitted_at", { ascending: false })
-    .limit(200);
   const graded = (attempts ?? []) as any[];
 
   let totalScore = 0;

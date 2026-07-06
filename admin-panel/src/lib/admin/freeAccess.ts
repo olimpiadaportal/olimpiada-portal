@@ -107,12 +107,16 @@ export async function listFreeAccessIntervals(): Promise<FreeAccessRow[]> {
   if (!hasServiceRole()) return [];
 
   const admin = createAdminClient();
+  // M22: newest 100 intervals only — older (typically expired) rows are cut
+  // off so the list can never grow unbounded. Raise the cap or add pagination
+  // if admins ever need the full history.
   const { data, error } = await admin
     .from("free_access_intervals")
     .select(
       "id, parent_profile_id, student_profile_id, starts_at, ends_at, is_active, note",
     )
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(100);
   if (error || !data) return [];
 
   const rows = data as {

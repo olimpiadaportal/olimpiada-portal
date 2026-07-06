@@ -3,16 +3,21 @@
 // Derive the Supabase host from the public project URL so next/image is
 // permitted to optimize + resize public-bucket assets (news covers, wallpapers)
 // and so the CSP below can allow API/storage calls to exactly our project.
-// Falls back to the shared Supabase domain wildcard when the env var is unset
-// at build time.
+// L5: a missing/malformed NEXT_PUBLIC_SUPABASE_URL is a hard configuration
+// error — THROW at config evaluation instead of silently widening the CSP and
+// image allow-list to the shared *.supabase.co wildcard (any Supabase project
+// would have been allowed).
 function supabaseHost() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     if (url) return new URL(url).hostname;
   } catch {
-    // ignore malformed / missing URL and fall through to the wildcard
+    // fall through to the explicit error below
   }
-  return "*.supabase.co";
+  throw new Error(
+    "NEXT_PUBLIC_SUPABASE_URL must be set to the project URL (e.g. https://xyz.supabase.co) " +
+      "before building/starting web-app — the CSP and image allow-list are derived from it.",
+  );
 }
 
 const SUPABASE_HOST = supabaseHost();
@@ -23,7 +28,7 @@ const isDev = process.env.NODE_ENV === "development";
 //   our no-flash theme script; 'unsafe-eval' is DEV-ONLY (react-refresh).
 //   (Future hardening: nonce-based CSP via middleware.)
 // - style-src 'unsafe-inline' — Next injects inline styles; Google Fonts CSS.
-// - fonts: the student area loads Chivo/JetBrains Mono from Google Fonts.
+// - fonts: the student area loads JetBrains Mono from Google Fonts.
 // - connect-src: Supabase REST/Auth/Storage (+ websocket) only.
 // - frame-src: the Google Maps embed on the Contact page.
 // - frame-ancestors 'self': the site must not be framed by other origins.

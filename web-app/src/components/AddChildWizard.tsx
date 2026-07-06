@@ -25,6 +25,9 @@
 //   mode 'giveaway' — TWO steps (Info → Done): after addChild succeeds the
 //     same transition calls activateChildGiveaway (grants free access and
 //     allocates/reveals the 8-digit ID immediately). No subjects/plan/payment.
+//     H8: an ACTIVE parent free-access window (freeAccessActive prop, server-
+//     resolved) takes the SAME two-step free path — the server action re-checks
+//     that a free window really covers the child before allocating the ID.
 //
 //   mode 'off' — TWO steps (Info → Done): the child is still created (ID stays
 //     pending), then a notice step shows gate.paymentsOff + a dashboard link
@@ -97,6 +100,7 @@ export function AddChildWizard({
   subjects,
   dict,
   paymentMode,
+  freeAccessActive = false,
 }: {
   cities: City[];
   schools: School[];
@@ -105,6 +109,8 @@ export function AddChildWizard({
   dict: Record<string, string>;
   /** Server-resolved payment mode: 'real' | 'demo' | 'giveaway' | 'off'. */
   paymentMode: string;
+  /** H8: server-resolved active free-access window for this parent. */
+  freeAccessActive?: boolean;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   // Same fallback chain the Subscription page uses for the popular badge:
@@ -124,7 +130,11 @@ export function AddChildWizard({
     "billing.popular",
   );
 
-  const flow: StepId[] = FLOWS[paymentMode] ?? FLOWS.real;
+  // H8: a live free-access window rides the giveaway flow (Info → Done, free
+  // activation). Payments-off keeps its own flow: nothing to activate there.
+  const freeFlow =
+    paymentMode === "giveaway" || (freeAccessActive && paymentMode !== "off");
+  const flow: StepId[] = freeFlow ? FLOWS.giveaway : (FLOWS[paymentMode] ?? FLOWS.real);
 
   // stepIdx indexes into `flow`; `cur` is the step being rendered. Only steps
   // present in the mode's flow are ever reachable.
@@ -236,9 +246,10 @@ export function AddChildWizard({
         setStudentProfileId(sid);
       }
 
-      if (paymentMode === "giveaway") {
+      if (freeFlow) {
         // Free-access grant + 8-digit ID allocation, server-verified (the
-        // action re-checks ownership AND that the giveaway window is live).
+        // action re-checks ownership AND that a giveaway/free-access window
+        // is live for this child).
         const gfd = new FormData();
         gfd.set("student_id", sid);
         const grant = await activateChildGiveaway(null, gfd);
@@ -605,7 +616,9 @@ export function AddChildWizard({
                   <strong>
                     {paymentMode === "giveaway"
                       ? tt("addchild.giveawayGranted")
-                      : tt("pay.success")}
+                      : freeFlow
+                        ? tt("addchild.freeAccessGranted")
+                        : tt("pay.success")}
                   </strong>
                 </p>
                 <p className="muted">{tt("pay.idRevealed")}</p>

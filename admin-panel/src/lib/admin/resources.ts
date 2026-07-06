@@ -101,21 +101,11 @@ export const RESOURCES: Record<string, Resource> = {
     ],
     listColumns: ["topic_id", "name", "order_index", "status"],
   },
-  "question-types": {
-    slug: "question-types",
-    table: "question_types",
-    label: "Question type",
-    labelPlural: "Question types",
-    group: "Content config",
-    adminOnly: true,
-    orderBy: "name",
-    autoCode: true,
-    fields: [
-      { name: "name", label: "Name", type: "text", required: true },
-      { name: "supports_auto_grading", label: "Supports auto-grading", type: "boolean" },
-    ],
-    listColumns: ["name", "supports_auto_grading"],
-  },
+  // NOTE: question-types moved OUT of this registry to a dedicated advanced
+  // page (/question-types + lib/admin/question-types.ts): the per-type
+  // structure rules (status, options_required, correct_required) need range
+  // validation, an immutable code and a delete guard the generic form
+  // cannot express.
   "olympiad-types": {
     slug: "olympiad-types",
     table: "olympiad_types",

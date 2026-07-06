@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/admin/guards";
 import { createAdminClient, hasServiceRole } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { sanitizeSearchTerm } from "@/lib/admin/search";
 import { getT } from "@/i18n/server";
 
 // --------------------------------------------------------------------------
@@ -31,6 +32,29 @@ import { getT } from "@/i18n/server";
 function f(formData: FormData, name: string): string {
   const v = formData.get(name);
   return typeof v === "string" ? v.trim() : "";
+}
+
+// L10: shared fail-CLOSED parent-role check. Returns true ONLY when the target
+// profile verifiably holds the 'parent' role; a failed/empty roles lookup (bad
+// seed, transient error) counts as "not a parent" and refuses the mutation —
+// so an admin/content-manager profile id can never be fed to these actions.
+async function holdsParentRole(
+  admin: ReturnType<typeof createAdminClient>,
+  profileId: string,
+): Promise<boolean> {
+  const { data: parentRole, error: roleErr } = await admin
+    .from("roles")
+    .select("id")
+    .eq("code", "parent")
+    .maybeSingle();
+  if (roleErr || !parentRole?.id) return false;
+  const { data: isParent, error: linkErr } = await admin
+    .from("profile_roles")
+    .select("profile_id")
+    .eq("profile_id", profileId)
+    .eq("role_id", parentRole.id)
+    .maybeSingle();
+  return !linkErr && !!isParent;
 }
 
 // =====================================================================
@@ -54,6 +78,8 @@ export async function resetChildPassword(
 
   if (!studentProfileId) return { error: t("accounts.reset.err.missing") };
   if (password.length < 8) return { error: t("accounts.reset.err.short") };
+  // L11: cap the password length server-side as well.
+  if (password.length > PASSWORD_MAX) return { error: t("err.tooLong") };
 
   const admin = createAdminClient();
 
@@ -130,9 +156,15 @@ export async function createParent(
   const email = f(formData, "email").toLowerCase();
   const password = String(formData.get("password") ?? "");
 
+  // L11: server-side length caps (client maxLength is UX, not security).
   if (!firstName || !lastName) return { error: t("accounts.create.err.required") };
+  if (firstName.length > 100 || lastName.length > 100) {
+    return { error: t("err.tooLong") };
+  }
   if (!email || !email.includes("@")) return { error: t("accounts.create.err.email") };
+  if (email.length > 254) return { error: t("err.tooLong") };
   if (password.length < 8) return { error: t("accounts.create.err.password") };
+  if (password.length > PASSWORD_MAX) return { error: t("err.tooLong") };
 
   const admin = createAdminClient();
 
@@ -220,13 +252,10 @@ export type ParentSearchResult = {
 export async function searchParents(query: string): Promise<ParentSearchResult[]> {
   await requireAdmin(); // authorize FIRST
   if (!hasServiceRole()) return [];
-  // Sanitize: strip PostgREST-significant chars, escape LIKE wildcards, cap length.
-  const term = String(query ?? "")
-    .replace(/[,()]/g, " ")
-    .trim()
-    .slice(0, 100);
-  if (term.length < 1) return [];
-  const esc = term.replace(/[\\%_]/g, (m) => `\\${m}`);
+  // M18: shared sanitizer — strips PostgREST or()-grammar chars (incl. quotes),
+  // escapes LIKE wildcards, caps length.
+  const esc = sanitizeSearchTerm(query);
+  if (!esc) return [];
   const admin = createAdminClient();
 
   // Match profiles by name/email/phone, then keep only those that are parents.
@@ -520,19 +549,10 @@ export async function updateParent(
 
   // Confirm the target is actually a parent (defence-in-depth: do not let this
   // become a generic profile-status editor for admins/content managers).
-  const { data: parentRole } = await admin
-    .from("roles")
-    .select("id")
-    .eq("code", "parent")
-    .maybeSingle();
-  if (parentRole?.id) {
-    const { data: isParent } = await admin
-      .from("profile_roles")
-      .select("profile_id")
-      .eq("profile_id", parentProfileId)
-      .eq("role_id", parentRole.id)
-      .maybeSingle();
-    if (!isParent) return { error: t("accounts.edit.err.failed") };
+  // L10: fail CLOSED — if the role lookup yields nothing (missing seed row,
+  // transient error), the mutation is refused rather than skipping the check.
+  if (!(await holdsParentRole(admin, parentProfileId))) {
+    return { error: t("accounts.edit.err.failed") };
   }
 
   const patch: Record<string, unknown> = {
@@ -637,6 +657,12 @@ export async function deleteParent(
   }
 
   const admin = createAdminClient();
+
+  // L10: the target MUST verifiably hold the parent role (fail closed) —
+  // deleteParent must never be usable against an admin/content-manager profile.
+  if (!(await holdsParentRole(admin, parentProfileId))) {
+    return { error: t("accounts.delete.err.failed") };
+  }
 
   // Resolve the parent's auth user id.
   const { data: parentProfile } = await admin

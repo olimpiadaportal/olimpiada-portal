@@ -58,11 +58,19 @@ follow the same migration-first, backport-after rule.
 | 012 | `supabase/sql/012_seed_initial_data.sql` | Initial roles, permissions, grades, subjects, settings. **Extend:** four MVP subjects; predefined wallpapers catalog; subject-pricing/trial/launch-promo config rows; News/Olympiad admin permissions (no Discount-Settings module) | Yes if upsert-based |
 | 014 | `supabase/sql/014_news.sql` | **NEW.** News articles (title, body with inline links, image metadata, created_at/updated_at, publish/active status), news media metadata. Public + in-app readable; Admin-only CRUD | Mostly yes |
 | 015 | `supabase/sql/015_olympiad_preparation.sql` | **NEW.** Olympiad Preparation: packages (name, subject/domain, grade/class target field, description, start/end dates, price, status, optional banner), package question pool, package purchases (=lifetime access), purchase/attempt records, per-attempt random 25-question selection records, package archive status | Mostly yes |
+| 016 | `supabase/sql/016_scheduled_jobs.sql` | **NEW.** pg_cron maintenance schedules: yearly grade promotion, hourly child-access recompute, 15-min stale-test-attempt expiry. Self-guards where pg_cron is absent (skips with a NOTICE). Enable `pg_cron` in the Supabase Dashboard for production | Yes; re-schedules by name |
 | 013 | `supabase/sql/013_validation_queries.sql` | Read-only validation queries and smoke checks (run LAST). **Extend:** child-ID uniqueness, parent/child RLS boundaries, payment service-role-only, News admin-only, olympiad lifetime-access, sibling-discount audit presence | Yes; read-only |
 
 Note on ordering: `013_validation_queries.sql` is read-only and always runs **last**, after the new
-`014`/`015` files, even though its number is lower. New data-bearing canonical files are numbered
-`014`+ and inserted before the validation file in execution order.
+`014`/`015`/`016` files, even though its number is lower. New data-bearing canonical files are numbered
+`014`+ and inserted before the validation file in execution order. Full build order:
+`001` → `012`, then `014`, `015`, `016`, then `013`.
+
+**Building a fresh production database:** run the canonical files above in that order (a from-zero
+bootstrap). Do **not** replay `supabase/sql/migrations/` on a clean production DB — every migration is
+already backported into the canonical files. Enable the `pg_cron` extension in the Supabase Dashboard
+before `016` so the cron jobs register (otherwise `016` self-skips; re-run it after enabling). See the
+"First-Time Production Database Build" section in `supabase/README_RUN_ORDER.md`.
 
 
 ## Dependencies

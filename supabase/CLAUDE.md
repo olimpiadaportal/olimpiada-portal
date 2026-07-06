@@ -38,7 +38,7 @@ Before Supabase work:
 - Every accepted migration must be backported into the relevant root SQL file.
 - The Supabase Dashboard SQL Editor is allowed for development/staging, but repository SQL files remain the source of truth.
 - Production changes must be migration-script controlled.
-- Follow this numeric run order exactly (canonical files `001`–`015`; validation `013` runs LAST):
+- Follow this numeric run order exactly (canonical files `001`–`016`; validation `013` runs LAST):
 
   - `001_extensions_and_enums.sql`
   - `002_core_profiles_roles_permissions.sql` — also parent/child profiles, child 8-digit unique ID, child credential strategy, per-child subject selections, wallpapers catalog + per-child selection
@@ -54,7 +54,8 @@ Before Supabase work:
   - `012_seed_initial_data.sql` — also wallpapers, pricing/trial/promo config, News/Olympiad permissions
   - `014_news.sql` — News articles + media metadata (Admin-only CRUD; public/in-app read)
   - `015_olympiad_preparation.sql` — Olympiad packages, grade/class targeting, question pools, purchases (lifetime access), attempts, random-selection records, archive status
-  - `013_validation_queries.sql` — runs LAST, after `014`/`015`
+  - `016_scheduled_jobs.sql` — pg_cron maintenance schedules (grade promotion, child-access recompute, stale test-attempt expiry); self-skips where pg_cron is absent
+  - `013_validation_queries.sql` — runs LAST, after `014`/`015`/`016`
 - Table groups and which file they belong to:
   - Core identity + parent/child accounts, child 8-digit ID, credentials, subject selections, wallpapers → `002`.
   - Child-based subscriptions, subject pricing, trial/launch-promo, payments, checkout, sibling-discount audit → `007`.

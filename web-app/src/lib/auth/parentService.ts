@@ -209,9 +209,23 @@ export async function updatePassword(
   _prev: AuthFormState,
   formData: FormData,
 ): Promise<AuthFormState> {
+  // L1: PARENT-only — children change their password through
+  // childChangeOwnPassword, so a child (or any non-parent) session must never
+  // reach auth.updateUser here. getParent (not requireParent) so a failed
+  // lookup returns an in-form generic error instead of a redirect that would
+  // discard the submission.
+  const parent = await getParent();
   const t = await getT();
+  if (!parent) return { error: t("parent.err.invalid") };
+  // L1: throttle per profile — password updates are credential-adjacent.
+  if (!rateLimitAllow("pwupdate", parent.profileId, 5, WINDOW_15_MIN)) {
+    return { error: t("parent.err.tooMany") };
+  }
   const password = String(formData.get("password") ?? "");
-  if (password.length < 8) return { error: t("parent.err.password") };
+  // L1: same bounds as registration (>128 rejected, never silently truncated).
+  if (password.length < 8 || password.length > PASSWORD_MAX) {
+    return { error: t("parent.err.password") };
+  }
   const supabase = await createServerSupabase();
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { error: t("parent.err.invalid") };

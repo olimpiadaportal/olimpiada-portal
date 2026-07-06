@@ -8,6 +8,7 @@ import { DeleteButton } from "@/components/DeleteButton";
 import { getT, type T } from "@/i18n/server";
 import { localizeFields, resourceTitle } from "@/i18n/resources-i18n";
 import { FilterBar, type FilterBarSelect } from "@/components/FilterBar";
+import { sanitizeSearchTerm } from "@/lib/admin/search";
 
 // Round 10 — generic server-side list filters for every managed resource:
 // name search (.ilike) + status select (only for resources that HAVE a status
@@ -124,8 +125,8 @@ export default async function ManageResourcePage({
   let list: any[] = [];
   if (!subjectHasNoTopics) {
     let qb = supabase.from(res.table).select(selectStr);
-    if (q) {
-      const escaped = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
+    if (escaped) {
       qb = qb.ilike("name", `%${escaped}%`);
     }
     if (status) qb = qb.eq("status", status);

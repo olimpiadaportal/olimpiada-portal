@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
+import { sanitizeSearchTerm } from "@/lib/admin/search";
 
 // Round 10 — server-side list filters (status select + debounced title search)
 // following the questions-page pattern: searchParams validated server-side,
@@ -43,8 +44,8 @@ export default async function NewsListPage({
 
   // ---- Title search: resolve matching news ids first ----------------------
   let searchIds: string[] | null = null;
-  if (q) {
-    const escaped = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+  const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
+  if (escaped) {
     const { data: trs } = await supabase
       .from("news_translations")
       .select("news_id")

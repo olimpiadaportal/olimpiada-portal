@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
+import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { ChildCardActions } from "@/components/ChildCardActions";
 import { InfoCarousel, type InfoSlide } from "@/components/InfoCarousel";
 import { ParentNewsPanel } from "@/components/ParentNewsPanel";
@@ -33,6 +34,18 @@ export default async function ParentDashboard() {
     .eq("created_by_parent_profile_id", parent.profileId)
     .order("created_at", { ascending: true });
   const list = (children ?? []) as any[];
+
+  // M10: a per-child FREE-ACCESS interval shows the same "free" pill the
+  // giveaway uses instead of the raw access_status. Per-child check (small N)
+  // so a window for one child never re-labels an uncovered sibling.
+  const freeAccessByChild = new Map<string, boolean>(
+    await Promise.all(
+      list.map(
+        async (c) =>
+          [c.profile_id as string, await isChildFreeAccessActive(c.profile_id)] as const,
+      ),
+    ),
+  );
 
   const childDict: Record<string, string> = {};
   for (const k of CHILD_KEYS) childDict[k] = t(k);
@@ -80,6 +93,9 @@ export default async function ParentDashboard() {
                 <p>
                   {giveawayActive ? (
                     <span className="pill gvw-access">{t("access.giveaway")}</span>
+                  ) : freeAccessByChild.get(c.profile_id) ? (
+                    // M10: active free-access interval for THIS child.
+                    <span className="pill gvw-access">{t("access.freeAccess")}</span>
                   ) : (
                     <span className="pill">{t(`access.${c.access_status}`)}</span>
                   )}

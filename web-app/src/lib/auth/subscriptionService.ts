@@ -12,6 +12,7 @@ import { applyAllocatedChildEmail } from "@/lib/auth/childAccountService";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
+import { isUuid } from "@/lib/uuid";
 
 // Round 11: paid mutations are gated by the PAYMENT MODE, not the raw flag —
 // 'real'/'demo' allow the transaction, 'off' blocks it (existing UX), and
@@ -30,8 +31,6 @@ async function paidMutationGate(studentId?: string): Promise<string | null> {
   }
   return null;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type SubscribeState =
   | {
@@ -63,9 +62,10 @@ export async function subscribeChild(
   const gateError = await paidMutationGate(studentId);
   if (gateError) return { ok: false, error: gateError };
   const interval = String(formData.get("interval") ?? "");
-  const subjectIds = formData.getAll("subject").map(String).filter(Boolean);
+  // L4: only UUID-shaped subject ids, hard cap 20 (mirrors updateSubscriptionSubjectsAction).
+  const subjectIds = formData.getAll("subject").map(String).filter(isUuid);
 
-  if (!studentId || !["week", "month", "year"].includes(interval)) {
+  if (!studentId || !["week", "month", "year"].includes(interval) || subjectIds.length > 20) {
     return { ok: false, error: t("sub.err.invalid") };
   }
   if (subjectIds.length === 0) return { ok: false, error: t("sub.err.noSubjects") };
@@ -103,9 +103,19 @@ export async function subscribeChild(
   }
 
   revalidatePath("/dashboard");
+  // L2: whitelist-copy the typed fields only — never spread the raw RPC payload
+  // (it may carry internal fields like auth_user_id) back to the client.
   return {
     ok: true,
-    result: { ...(result as any), childUniqueId },
+    result: {
+      base: Number(result.base ?? 0),
+      discount_percent: Number(result.discount_percent ?? 0),
+      discount: Number(result.discount ?? 0),
+      total: Number(result.total ?? 0),
+      trial_days: Number(result.trial_days ?? 0),
+      currency: String(result.currency ?? "AZN"),
+      childUniqueId,
+    },
   };
 }
 
@@ -130,11 +140,13 @@ export async function quoteSubscription(args: {
   subjectIds: string[];
 }): Promise<QuoteResult> {
   const t = await getT();
-  const { studentId, interval, subjectIds } = args;
-  if (!studentId || !["week", "month", "year"].includes(interval)) {
+  const { studentId, interval } = args;
+  // L4: only UUID-shaped subject ids, hard cap 20 (mirrors updateSubscriptionSubjectsAction).
+  const subjectIds = (args.subjectIds ?? []).filter(isUuid);
+  if (!studentId || !["week", "month", "year"].includes(interval) || subjectIds.length > 20) {
     return { ok: false, error: t("sub.err.invalid") };
   }
-  if (!subjectIds || subjectIds.length === 0) {
+  if (subjectIds.length === 0) {
     return { ok: false, error: t("sub.err.noSubjects") };
   }
   if (!(await ownsChild(studentId))) return { ok: false, error: t("sub.err.notYourChild") };
@@ -159,8 +171,8 @@ export async function quoteSubscription(args: {
 }
 
 // ---- Batch H: edit subjects on an existing child's live subscription ----------
-export type SubjectEditState = { ok?: boolean; error?: string } | null;
-
+// (Single entry point: updateSubscriptionSubjectsAction below — the old
+// per-subject add/remove actions were removed as dead code.)
 async function ownsChild(studentId: string): Promise<boolean> {
   const parent = await requireParent();
   const admin = getAdminClient();
@@ -172,56 +184,6 @@ async function ownsChild(studentId: string): Promise<boolean> {
   return !!student && student.created_by_parent_profile_id === parent.profileId;
 }
 
-export async function addSubjectAction(
-  _prev: SubjectEditState,
-  formData: FormData,
-): Promise<SubjectEditState> {
-  const t = await getT();
-  const studentId = String(formData.get("student_id") ?? "");
-  // Adding a subject re-prices the live subscription — a billing change, so it
-  // is gated by the same payment-mode rules as starting one (scoped to this child).
-  const gateError = await paidMutationGate(studentId);
-  if (gateError) return { error: gateError };
-  const subjectId = String(formData.get("subject_id") ?? "");
-  if (!studentId || !subjectId) return { error: t("sub.err.invalid") };
-  if (!(await ownsChild(studentId))) return { error: t("sub.err.notYourChild") };
-
-  const admin = getAdminClient();
-  const { error } = await admin.rpc("add_subscription_subject", {
-    p_student_profile_id: studentId,
-    p_subject_id: subjectId,
-  });
-  if (error) return { error: t("subjedit.err.addFailed") };
-  revalidatePath(`/children/${studentId}/subscribe`);
-  revalidatePath("/dashboard");
-  return { ok: true };
-}
-
-export async function removeSubjectAction(
-  _prev: SubjectEditState,
-  formData: FormData,
-): Promise<SubjectEditState> {
-  const t = await getT();
-  const studentId = String(formData.get("student_id") ?? "");
-  // Also a billing change (re-price) — same payment-mode gate (scoped to this
-  // child). Cancel stays OPEN: stopping billing must always be possible.
-  const gateError = await paidMutationGate(studentId);
-  if (gateError) return { error: gateError };
-  const subjectId = String(formData.get("subject_id") ?? "");
-  if (!studentId || !subjectId) return { error: t("sub.err.invalid") };
-  if (!(await ownsChild(studentId))) return { error: t("sub.err.notYourChild") };
-
-  const admin = getAdminClient();
-  const { error } = await admin.rpc("remove_subscription_subject", {
-    p_student_profile_id: studentId,
-    p_subject_id: subjectId,
-  });
-  if (error) return { error: t("subjedit.err.removeFailed") };
-  revalidatePath(`/children/${studentId}/subscribe`);
-  revalidatePath("/dashboard");
-  return { ok: true };
-}
-
 // ---- W2: cancel a child's current subscription (parent-initiated) -------------
 // Demo-safe: no real payment reversal. We authorize that the parent owns the child
 // (same ownsChild gate as the other privileged parent actions), then flip the
@@ -231,13 +193,15 @@ export async function removeSubjectAction(
 // access-recompute job downgrades access to 'expired' once current_period_end
 // passes. RLS restricts a parent to reading their own children only and does not
 // grant UPDATE on child_subscriptions, so we use the service-role admin client
-// AFTER verifying ownership (mirrors subscribeChild / add/removeSubjectAction).
+// AFTER verifying ownership (mirrors subscribeChild / updateSubscriptionSubjectsAction).
 export type CancelSubscriptionState = { ok?: boolean; error?: string } | null;
 
 export async function cancelChildSubscription(
   _prev: CancelSubscriptionState,
   formData: FormData,
 ): Promise<CancelSubscriptionState> {
+  // M7: authorize FIRST — before touching FormData.
+  await requireParent();
   const t = await getT();
   const studentId = String(formData.get("student_id") ?? "");
   const subscriptionId = String(formData.get("subscription_id") ?? "");
@@ -299,20 +263,26 @@ export async function updateSubscriptionSubjectsAction(
   _prev: SubjectsUpdateState,
   formData: FormData,
 ): Promise<SubjectsUpdateState> {
+  // M7: authorize FIRST — before touching FormData; the billing gate runs only
+  // after ownership is proven (it still receives this child's id).
+  await requireParent();
   const t = await getT();
   const studentId = String(formData.get("student_id") ?? "");
-  const gateError = await paidMutationGate(studentId);
-  if (gateError) return { ok: false, error: gateError };
 
   const desired = formData
     .getAll("subject")
     .map(String)
-    .filter((id) => UUID_RE.test(id));
-  if (!UUID_RE.test(studentId) || desired.length > 20) {
+    .filter(isUuid);
+  if (!isUuid(studentId) || desired.length > 20) {
     return { ok: false, error: t("sub.err.invalid") };
   }
   if (desired.length === 0) return { ok: false, error: t("subjedit.minOne") };
   if (!(await ownsChild(studentId))) return { ok: false, error: t("sub.err.notYourChild") };
+
+  // Billing change → same payment-mode / free-access gate as starting a plan,
+  // scoped to this child.
+  const gateError = await paidMutationGate(studentId);
+  if (gateError) return { ok: false, error: gateError };
 
   const admin = getAdminClient();
 
@@ -367,7 +337,9 @@ export async function updateSubscriptionSubjectsAction(
 // 8-digit login ID immediately (activate_child_login_id — NO subscription row)
 // and platform access comes from the server-side giveaway override. When the
 // window ends the override stops applying and normal payment rules resume on
-// their own — nothing to unwind.
+// their own — nothing to unwind. H8: an ACTIVE per-child FREE-ACCESS interval
+// qualifies the same way (same override model), so a new child added during a
+// free window isn't dead-ended without a login ID.
 export type GiveawayActivateState =
   | { ok: true; childUniqueId: string | null }
   | { ok: false; error: string }
@@ -380,12 +352,8 @@ export async function activateChildGiveaway(
   const parent = await requireParent();
   const t = await getT();
 
-  // Only valid while the giveaway window is actually running (server-computed).
-  const { mode } = await getPaymentModeInfo();
-  if (mode !== "giveaway") return { ok: false, error: t("sub.err.invalid") };
-
   const studentId = String(formData.get("student_id") ?? "");
-  if (!UUID_RE.test(studentId)) return { ok: false, error: t("sub.err.invalid") };
+  if (!isUuid(studentId)) return { ok: false, error: t("sub.err.invalid") };
 
   const admin = getAdminClient();
   const { data: student } = await admin
@@ -395,6 +363,13 @@ export async function activateChildGiveaway(
     .maybeSingle();
   if (!student || student.created_by_parent_profile_id !== parent.profileId) {
     return { ok: false, error: t("sub.err.notYourChild") };
+  }
+
+  // Only valid while a free window is actually running (server-computed): the
+  // global giveaway OR an active free-access interval covering THIS child.
+  const { mode } = await getPaymentModeInfo();
+  if (mode !== "giveaway" && !(await isChildFreeAccessActive(studentId))) {
+    return { ok: false, error: t("sub.err.invalid") };
   }
 
   const { data, error } = await admin.rpc("activate_child_login_id", {

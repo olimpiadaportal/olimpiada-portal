@@ -9,13 +9,11 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireChild } from "@/lib/auth/session";
 import { getT } from "@/i18n/server";
-
-export type StickerState = { ok?: boolean; error?: string } | null;
-
 // UUID-shape gate for the client-supplied theme id (R7 input rule); RLS is
 // still the real enabled-only/ownership gate behind it.
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from "@/lib/uuid";
+
+export type StickerState = { ok?: boolean; error?: string } | null;
 
 export async function selectStickerTheme(
   _prev: StickerState,
@@ -24,7 +22,7 @@ export async function selectStickerTheme(
   const child = await requireChild();
   const themeId = String(formData.get("theme_id") ?? "").trim();
   const t = await getT();
-  if (!UUID_RE.test(themeId)) return { error: t("stk.err.generic") };
+  if (!isUuid(themeId)) return { error: t("stk.err.generic") };
   const supabase = await createClient();
   const { error } = await supabase.from("child_sticker_selections").upsert(
     { student_profile_id: child.profileId, theme_id: themeId },

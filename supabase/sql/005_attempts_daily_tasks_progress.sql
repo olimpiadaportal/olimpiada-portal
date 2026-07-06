@@ -31,9 +31,24 @@ create table if not exists public.test_attempts (
   started_at         timestamptz not null default now(),
   submitted_at       timestamptz,
   graded_at          timestamptz,
+  -- Migration 037 (timed topic tests, kind='test'):
+  question_ids       uuid[] not null default '{}', -- fixed server-drawn set (stable on resume)
+  deadline_at        timestamptz,                  -- server-authoritative deadline
+  duration_seconds   int,
+  topic_ids          uuid[] not null default '{}', -- selected scope (results breakdown)
+  subtopic_ids       uuid[] not null default '{}',
+  canceled_at        timestamptz,                  -- explicit cancel (counts nothing)
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
+-- Idempotent for databases created before migration 037.
+alter table public.test_attempts
+  add column if not exists question_ids     uuid[] not null default '{}',
+  add column if not exists deadline_at      timestamptz,
+  add column if not exists duration_seconds int,
+  add column if not exists topic_ids        uuid[] not null default '{}',
+  add column if not exists subtopic_ids     uuid[] not null default '{}',
+  add column if not exists canceled_at      timestamptz;
 
 comment on column public.test_attempts.score is
   'Authoritative score computed server-side. Clients must never write this value directly.';
@@ -51,10 +66,14 @@ create table if not exists public.test_attempt_answers (
   is_correct         boolean,                      -- set by grading, not client
   points_awarded     numeric(6,2),
   time_spent_ms      integer,
+  is_marked          boolean not null default false, -- flag-for-review (migration 037)
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
   constraint uq_attempt_question unique (attempt_id, question_id)
 );
+-- Idempotent for databases created before migration 037.
+alter table public.test_attempt_answers
+  add column if not exists is_marked boolean not null default false;
 
 -- -----------------------------------------------------------------------------
 -- daily_task_packages : scheduled daily practice package.

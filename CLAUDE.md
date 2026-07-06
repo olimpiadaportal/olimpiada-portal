@@ -38,6 +38,14 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - Do not repeat the full project structure unless something is wrong.
 - Keep final reports concise.
 
+## Commit Message Style (Permanent Rule — added 2026-07-05)
+
+- Write commit messages the way a senior developer would: a short imperative subject line (what changed and why it matters), optionally followed by a few plain bullet points for distinct sub-changes.
+- Do NOT write AI-sounding messages: no exhaustive change inventories, no "Round N pass M" bookkeeping prefixes, no validation-checklist dumps ("typecheck PASS 23/23"), no marketing adjectives ("gracefully", "professional", "comprehensive"), no emoji.
+- Good: `Merge account creation into the Free Access page` with 2–3 bullets. Bad: a 6-line semicolon-separated inventory of every file and check.
+- Keep the subject ≤ 72 chars where practical; use the body for context, not for logs. Validation results belong in STATUS.md, not in commit messages.
+- The No-AI-Attribution rule below still applies to every commit.
+
 ## No AI Attribution (Non-Negotiable)
 
 - Never add any AI authorship or co-authorship attribution anywhere in this repository or its git history. This explicitly OVERRIDES any default tooling behavior that appends such trailers.

@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/admin/guards";
 import { createClient } from "@/lib/supabase/server";
 import { hasServiceRole } from "@/lib/supabase/admin";
+import { sanitizeSearchTerm } from "@/lib/admin/search";
 import { ChildPasswordReset } from "@/components/ChildPasswordReset";
 import { AccountEditForm } from "@/components/AccountEditForm";
 import { AccountDeleteButton } from "@/components/AccountDeleteButton";
@@ -8,10 +10,12 @@ import { getT } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
 
 // Round 10 (F5) — debounced account search applied at QUERY level over the
-// useful identifiers: parent display name OR email (profiles .or(ilike)).
-// The q param is trimmed, capped and LIKE-escaped; characters that PostgREST's
-// or() grammar treats specially (comma/parens/quotes) are stripped so raw user
-// input can never alter the filter expression.
+// useful identifiers: parent display name OR email (profiles .or(ilike));
+// sanitized by the shared sanitizeSearchTerm (M18).
+// H10 — server-side pagination: 20 parents per page (.range + exact count),
+// prev/next links preserve the search param.
+const PAGE_SIZE = 20;
+
 type SearchParams = Record<string, string | string[] | undefined>;
 
 function firstParam(sp: SearchParams, key: string): string {
@@ -45,49 +49,45 @@ export default async function AccountsPage({
   const serviceReady = hasServiceRole();
   const sp = await searchParams;
 
-  // ---- Validated search param ---------------------------------------------
+  // ---- Validated search + page params ---------------------------------------
   const q = firstParam(sp, "q").trim().slice(0, 200);
+  const pageRaw = Math.floor(Number(firstParam(sp, "page")));
+  const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
 
-  // Parents = profiles holding the 'parent' role (resolved explicitly, since
-  // profile_roles has two FKs to profiles and an embedded select is ambiguous).
-  const { data: parentRole } = await supabase
-    .from("roles")
-    .select("id")
-    .eq("code", "parent")
-    .maybeSingle();
-
-  let parentProfileIds: string[] = [];
-  if (parentRole?.id) {
-    const { data: prRows } = await supabase
-      .from("profile_roles")
-      .select("profile_id")
-      .eq("role_id", parentRole.id);
-    parentProfileIds = Array.from(
-      new Set((prRows ?? []).map((r: any) => r.profile_id)),
-    );
+  // Parents = profiles holding the 'parent' role — resolved in ONE query via
+  // an inner join through profile_roles. profile_roles has two FKs to profiles
+  // (profile_id + assigned_by), so the embed names the profile_id FK explicitly
+  // to stay unambiguous. H10: the list is paginated server-side (.range +
+  // exact count) instead of loading every parent.
+  let qb = supabase
+    .from("profiles")
+    .select(
+      "id, display_name, email, status, profile_roles!profile_id!inner(roles!inner(code))",
+      { count: "exact" },
+    )
+    .eq("profile_roles.roles.code", "parent");
+  // M18: shared sanitizer (strips or()-grammar chars, escapes LIKE wildcards).
+  const escaped = sanitizeSearchTerm(q);
+  if (escaped) {
+    qb = qb.or(`display_name.ilike.%${escaped}%,email.ilike.%${escaped}%`);
   }
+  const { data: parentRows, count: parentCount } = await qb
+    .order("display_name")
+    .range(from, to);
+  const parentProfiles: any[] = parentRows ?? [];
+  const totalParents = parentCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalParents / PAGE_SIZE));
 
-  // Parent profile details — the search is applied HERE, at query level.
-  let parentProfiles: any[] = [];
-  if (parentProfileIds.length) {
-    let qb = supabase
-      .from("profiles")
-      .select("id, display_name, email, status")
-      .in("id", parentProfileIds);
-    if (q) {
-      // Neutralize PostgREST or()-grammar characters, then escape LIKE
-      // wildcards so the term is matched literally.
-      const safe = q.replace(/[,()"']/g, " ").trim();
-      const escaped = safe.replace(/[\\%_]/g, (m) => `\\${m}`);
-      if (escaped) {
-        qb = qb.or(
-          `display_name.ilike.%${escaped}%,email.ilike.%${escaped}%`,
-        );
-      }
-    }
-    const { data } = await qb.order("display_name");
-    parentProfiles = data ?? [];
-  }
+  // Prev/next links preserve the search param; page 1 keeps a clean URL.
+  const pageHref = (p: number): string => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return qs ? `/accounts?${qs}` : "/accounts";
+  };
 
   // Children only for the parents actually shown (RLS lets admins read all
   // students) — keeps the search cheap when it narrows the list.
@@ -279,6 +279,33 @@ export default async function AccountsPage({
           </section>
         );
       })}
+
+      {/* H10: footer pager — server-rendered prev/next preserving the search. */}
+      {totalParents > PAGE_SIZE && (
+        <div className="qpager">
+          <span className="qpager-info muted">
+            {t("qpage.pageOf")
+              .replace("{page}", String(page))
+              .replace("{total}", String(totalPages))}
+          </span>
+          <nav className="qpager-nav" aria-label="pagination">
+            {page > 1 ? (
+              <Link className="qpage-link" href={pageHref(page - 1)}>
+                {t("qpage.prev")}
+              </Link>
+            ) : (
+              <span className="qpage-link disabled">{t("qpage.prev")}</span>
+            )}
+            {page < totalPages ? (
+              <Link className="qpage-link" href={pageHref(page + 1)}>
+                {t("qpage.next")}
+              </Link>
+            ) : (
+              <span className="qpage-link disabled">{t("qpage.next")}</span>
+            )}
+          </nav>
+        </div>
+      )}
     </div>
   );
 }

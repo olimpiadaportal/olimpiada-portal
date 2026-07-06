@@ -28,7 +28,8 @@ import {
   LanguageDropdown,
   LanguageSegmented,
 } from "@/components/LanguageDropdown";
-import { ThemeToggle, trFirst } from "@/components/ThemeToggle";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { useTFirst } from "@/i18n/I18nProvider";
 import { childLogoutAction } from "@/lib/auth/childActions";
 import type { Locale } from "@/i18n/config";
 
@@ -75,16 +76,16 @@ export function ChildProfileDrawer({
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const tf = useTFirst();
 
-  // Section titles: explicit prop → merged drawer2.* catalog string → fallback.
+  // Section titles: explicit prop → merged drawer2.* catalog string → fallback
+  // (override-aware via the I18nProvider dict).
   const accountLabel =
-    drawer.account ??
-    trFirst(locale, ["drawer2.account", "drawer.account"], drawer.title);
+    drawer.account ?? tf(["drawer2.account", "drawer.account"], drawer.title);
   const appearanceLabel =
-    drawer.appearance ?? trFirst(locale, ["drawer2.appearance"], drawer.theme);
+    drawer.appearance ?? tf(["drawer2.appearance"], drawer.theme);
   const sessionLabel =
-    drawer.session ??
-    trFirst(locale, ["drawer2.session"], SESSION_FALLBACK[locale] ?? "Session");
+    drawer.session ?? tf(["drawer2.session"], SESSION_FALLBACK[locale] ?? "Session");
 
   // Close on Escape; move focus into the panel when opened.
   useEffect(() => {

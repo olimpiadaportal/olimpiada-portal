@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/admin/guards";
 import { createAdminClient, hasServiceRole } from "@/lib/supabase/admin";
+import { writeAuditLog } from "@/lib/admin/audit";
 import { getT } from "@/i18n/server";
 
 const ALLOWED_ROLES = ["administrator", "content_manager"] as const;
@@ -18,7 +19,7 @@ export async function createPanelUser(
   _prev: CreateUserState,
   formData: FormData,
 ): Promise<CreateUserState> {
-  await requireAdmin(); // ONLY administrators can create panel users
+  const ctx = await requireAdmin(); // ONLY administrators can create panel users
 
   if (!hasServiceRole()) {
     return {
@@ -84,6 +85,17 @@ export async function createPanelUser(
     const t = await getT();
     return { error: t("err.server") };
   }
+
+  // M3: privileged-account creation is a sensitive mutation — always audited
+  // (small metadata; NEVER the password).
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.panel_user.create",
+    targetTable: "profiles",
+    targetId: profile.id,
+    metadata: { email, role },
+    severity: "warning",
+  });
 
   revalidatePath("/users");
   return { ok: true };

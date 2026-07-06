@@ -135,14 +135,3 @@ export const getPaymentModeInfo = cache(async (): Promise<PaymentModeInfo> => {
 export async function isGiveawayActive(): Promise<boolean> {
   return (await getPaymentModeInfo()).giveaway.active;
 }
-
-/**
- * May a PAID mutation (subscribe, re-price subjects, olympiad purchase) run?
- * 'real' and 'demo' → yes. 'giveaway' → no (access is free — blocking paid
- * writes during the free window keeps expiry clean: nothing to unwind).
- * 'off' → no.
- */
-export async function canTransact(): Promise<boolean> {
-  const { mode } = await getPaymentModeInfo();
-  return mode === "real" || mode === "demo";
-}

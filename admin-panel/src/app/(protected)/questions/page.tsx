@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
-import { getT } from "@/i18n/server";
+import { getDict, getT } from "@/i18n/server";
 import { localeNames, locales, type Locale } from "@/i18n/config";
 import {
   QuestionsTable,
@@ -13,6 +13,13 @@ import {
   type FilterCurrent,
   type FilterOption,
 } from "@/components/QuestionFilters";
+import { BulkUploadModal } from "@/components/BulkUploadModal";
+import { NewQuestionModal } from "@/components/NewQuestionModal";
+import {
+  loadQuestionOptions,
+  loadQuestionTypeRules,
+} from "@/lib/admin/question-options";
+import { sanitizeSearchTerm } from "@/lib/admin/search";
 
 // ---------------------------------------------------------------------------
 // Round 9 — Questions upgrades: server pagination, text search, cascading
@@ -95,8 +102,8 @@ export default async function QuestionsPage({
   // an inner join, so we query question_translations directly, then .in() on
   // the main query. Empty match list short-circuits to an empty result.
   let searchIds: string[] | null = null;
-  if (q) {
-    const escaped = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+  const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
+  if (escaped) {
     const { data: trs } = await supabase
       .from("question_translations")
       .select("question_id")
@@ -156,18 +163,25 @@ export default async function QuestionsPage({
     { count: statReview },
     { count: statPublished },
     { count: statArchived },
+    // For the New-question and Bulk-import modals.
+    fullDict,
+    selectOptions,
+    typeRules,
   ] = await Promise.all([
     loadRows(),
-    supabase.from("subjects").select("id, name").order("name"),
+    supabase.from("subjects").select("id, name, status").order("name"),
     supabase.from("topics").select("id, subject_id, name").order("name"),
     supabase.from("subtopics").select("id, topic_id, name").order("name"),
     supabase.from("grades").select("id, name, level").order("level"),
-    supabase.from("question_types").select("id, code, name").order("code"),
+    supabase.from("question_types").select("id, code, name, status").order("code"),
     countByStatus(),
     countByStatus("draft"),
     countByStatus("in_review"),
     countByStatus("published"),
     countByStatus("archived"),
+    getDict(),
+    loadQuestionOptions(t),
+    loadQuestionTypeRules(),
   ]);
   const list = main.rows;
   const total = main.count;
@@ -223,6 +237,15 @@ export default async function QuestionsPage({
     value: s,
     label: t(`qstatus.${s}`),
   }));
+
+  // Bulk-import modal inputs: ACTIVE subjects only (grades have no status) and
+  // active question-type names for the short reference hint.
+  const bulkSubjects: FilterOption[] = ((subjects ?? []) as any[])
+    .filter((s) => s.status === "active")
+    .map((s) => ({ value: s.id, label: String(s.name) }));
+  const activeTypeNames: string[] = ((qtypes ?? []) as any[])
+    .filter((r) => r.status === "active")
+    .map((r) => String(r.name));
 
   // Canonical (validated) params — the base for every link on this page.
   const current: FilterCurrent = {
@@ -298,12 +321,17 @@ export default async function QuestionsPage({
             <p className="muted">{t("questions.subtitle")}</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <Link className="btn-ghost" href="/questions/import">
-              {t("bulk.title")}
-            </Link>
-            <Link className="btn" href="/questions/new">
-              {t("questions.new")}
-            </Link>
+            <BulkUploadModal
+              dict={fullDict}
+              subjects={bulkSubjects}
+              grades={gradeOptions}
+              typeNames={activeTypeNames}
+            />
+            <NewQuestionModal
+              dict={fullDict}
+              options={selectOptions}
+              typeRules={typeRules}
+            />
           </div>
         </div>
       </div>

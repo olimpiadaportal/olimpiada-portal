@@ -1,7 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { saveQuestion, type QuestionState } from "@/lib/admin/questions";
+import type { QuestionTypeRule } from "@/lib/admin/question-options";
+import { typeRuleSummary } from "@/lib/admin/type-rules";
 import { localeNames, locales } from "@/i18n/config";
 
 type Opt = { value: string; label: string };
@@ -25,29 +27,62 @@ const META: { name: string; key: string; required?: boolean }[] = [
   { name: "source_id", key: "qfield.source" },
 ];
 
+type OptRow = { text: string; correct: boolean };
+
+// Resize the option rows to an exact count (fixed-structure types): keep
+// existing texts, pad with empty rows, truncate extras.
+function resizeOpts(rows: OptRow[], n: number): OptRow[] {
+  if (rows.length === n) return rows;
+  if (rows.length > n) return rows.slice(0, n);
+  return [
+    ...rows,
+    ...Array.from({ length: n - rows.length }, () => ({
+      text: "",
+      correct: false,
+    })),
+  ];
+}
+
 export function QuestionForm({
   dict,
   options,
-  typeCodes,
+  typeRules,
   defaults,
   id,
   submitLabel,
+  stay,
+  onSaved,
 }: {
   dict: Record<string, string>;
   options: Options;
-  // Maps each question type id → its stable `code` (single_choice,
-  // multiple_choice, true_false, …) so the editor can show the right per-type
-  // hint and adapt the True/False options without depending on translated labels.
-  typeCodes: Record<string, string>;
+  // Maps each question type id → its stable `code` + structure rules (status,
+  // options_required, correct_required) so the editor can restrict NEW
+  // questions to active types, render a fixed option count, and show the
+  // per-type rules line — all from the same config saveQuestion enforces.
+  typeRules: Record<string, QuestionTypeRule>;
   defaults?: Defaults;
   id?: string;
   submitLabel: string;
+  // Embedded (modal) mode: saveQuestion returns { ok } instead of redirecting;
+  // `onSaved` fires so the host can close the modal and refresh the list.
+  stay?: boolean;
+  onSaved?: () => void;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [state, action, pending] = useActionState<QuestionState, FormData>(
     saveQuestion,
     null,
   );
+
+  // Notify the host exactly once per successful stay-mode save (ref keeps the
+  // effect from re-firing when only the callback identity changes).
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
+  useEffect(() => {
+    if (state?.ok) onSavedRef.current?.();
+  }, [state]);
+
+  const initialTypeId = (defaults?.meta?.type_id ?? "") as string;
 
   // All inputs are controlled so values PERSIST across a validation error
   // (React resets uncontrolled form fields after a form action).
@@ -60,55 +95,92 @@ export function QuestionForm({
   const [body, setBody] = useState(defaults?.body ?? "");
   const [prompt, setPrompt] = useState(defaults?.prompt ?? "");
   const [explanation, setExplanation] = useState(defaults?.explanation ?? "");
-  const [opts, setOpts] = useState<{ text: string; correct: boolean }[]>(
-    defaults?.options?.map((o) => ({ text: o.text, correct: o.is_correct })) ?? [
-      { text: "", correct: false },
-      { text: "", correct: false },
-    ],
+  const [opts, setOpts] = useState<OptRow[]>(() => {
+    const initial: OptRow[] =
+      defaults?.options?.map((o) => ({ text: o.text, correct: o.is_correct })) ?? [
+        { text: "", correct: false },
+        { text: "", correct: false },
+      ];
+    // A fixed-structure type (options_required set) always shows exactly that
+    // many rows — including legacy questions saved before the rule existed.
+    const req = typeRules[initialTypeId]?.options_required;
+    return req != null ? resizeOpts(initial, req) : initial;
+  });
+
+  // The chosen type's structure rules drive the option editor.
+  const rule = typeRules[meta.type_id ?? ""];
+  const typeCode = rule?.code ?? "";
+  const isTrueFalse = typeCode === "true_false";
+  const fixedCount = rule?.options_required ?? null;
+  // Exactly-one-correct types behave like radios: checking one unchecks the
+  // rest. (single_choice/true_false keep this even without the config column.)
+  const exclusiveCorrect =
+    rule?.correct_required === 1 ||
+    typeCode === "single_choice" ||
+    isTrueFalse;
+
+  // The rules line under the type select, built from the config values
+  // ("5 answer options, 1 correct answer" style).
+  const rulesLine = rule ? typeRuleSummary(tt, rule) : "";
+
+  // An existing question may carry a type that has since been deactivated: it
+  // stays visible but LOCKED (muted hint below). New questions only ever see
+  // active types in the select.
+  const currentTypeInactive = Boolean(
+    id && initialTypeId && typeRules[initialTypeId] &&
+      typeRules[initialTypeId].status !== "active",
+  );
+  const typeOptions = (options.type_id ?? []).filter(
+    (o) => typeRules[o.value]?.status === "active" || o.value === initialTypeId,
   );
 
-  // The chosen type's stable code drives type-aware option editing/hints.
-  const typeCode = typeCodes[meta.type_id ?? ""] ?? "";
-  const isTrueFalse = typeCode === "true_false";
-  const isSingle = typeCode === "single_choice";
   const optionHint = isTrueFalse
     ? tt("qhint.trueFalse")
-    : isSingle
+    : typeCode === "single_choice"
       ? tt("qhint.single")
       : typeCode === "multiple_choice"
         ? tt("qhint.multiple")
         : "";
 
-  // For single_choice & true_false at most one option may be correct: marking a
-  // new one clears the others so the editor matches what saveQuestion accepts.
   function markCorrect(i: number, checked: boolean) {
-    const exclusive = isSingle || isTrueFalse;
     setOpts((p) =>
       p.map((x, idx) =>
         idx === i
           ? { ...x, correct: checked }
-          : exclusive && checked
+          : exclusiveCorrect && checked
             ? { ...x, correct: false }
             : x,
       ),
     );
   }
 
-  // True/False is a fixed two-option question. Seed the two locale-labelled
-  // options once (without clobbering an existing saved pair) and lock add/remove.
-  function applyTrueFalse() {
-    setOpts((p) => {
-      if (p.length === 2 && p[0].text && p[1].text) return p;
-      return [
-        { text: tt("qopt.true"), correct: p[0]?.correct ?? false },
-        { text: tt("qopt.false"), correct: p[1]?.correct ?? false },
-      ];
-    });
+  // Apply a newly selected type's structure: True/False seeds its fixed
+  // locale-labelled pair; fixed-count types resize to exactly N rows.
+  function applyTypeStructure(typeId: string) {
+    const next = typeRules[typeId];
+    if (next?.code === "true_false") {
+      setOpts((p) => {
+        const base = p.length === 2 && p[0].text && p[1].text
+          ? p
+          : [
+              { text: tt("qopt.true"), correct: p[0]?.correct ?? false },
+              { text: tt("qopt.false"), correct: p[1]?.correct ?? false },
+            ];
+        return next.options_required != null
+          ? resizeOpts(base, next.options_required)
+          : base;
+      });
+      return;
+    }
+    if (next?.options_required != null) {
+      setOpts((p) => resizeOpts(p, next.options_required as number));
+    }
   }
 
   return (
     <form action={action} className="form">
       {id && <input type="hidden" name="__id" value={id} />}
+      {stay && <input type="hidden" name="__stay" value="1" />}
 
       <h3>{tt("qsection.metadata")}</h3>
       <div className="form-grid">
@@ -136,26 +208,37 @@ export function QuestionForm({
               {tt(m.key)}
               {m.required && <span className="req"> *</span>}
             </span>
+            {m.name === "type_id" && currentTypeInactive && (
+              // The locked select would not post a value — submit the current
+              // type explicitly so edits keep it unchanged.
+              <input type="hidden" name="type_id" value={initialTypeId} />
+            )}
             <select
-              name={m.name}
+              name={m.name === "type_id" && currentTypeInactive ? undefined : m.name}
               required={m.required}
+              disabled={m.name === "type_id" && currentTypeInactive}
               value={meta[m.name] ?? ""}
               onChange={(e) => {
                 const value = e.target.value;
                 setMeta((p) => ({ ...p, [m.name]: value }));
-                // Switching INTO True/False seeds its fixed two-option pair.
-                if (m.name === "type_id" && typeCodes[value] === "true_false") {
-                  applyTrueFalse();
-                }
+                if (m.name === "type_id") applyTypeStructure(value);
               }}
             >
               <option value="">{tt("manage.select")}</option>
-              {(options[m.name] ?? []).map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
+              {(m.name === "type_id" ? typeOptions : options[m.name] ?? []).map(
+                (o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ),
+              )}
             </select>
+            {m.name === "type_id" && rulesLine && (
+              <span className="hint">{rulesLine}</span>
+            )}
+            {m.name === "type_id" && currentTypeInactive && (
+              <span className="hint muted">{tt("qform.typeLocked")}</span>
+            )}
           </label>
         ))}
       </div>
@@ -223,7 +306,7 @@ export function QuestionForm({
               />
               {tt("qopt.correct")}
             </label>
-            {!isTrueFalse && (
+            {fixedCount == null && !isTrueFalse && (
               <button
                 type="button"
                 className="link-danger"
@@ -235,11 +318,15 @@ export function QuestionForm({
           </div>
         ))}
       </div>
-      {!isTrueFalse && (
+      {fixedCount == null && !isTrueFalse && (
         <button
           type="button"
           className="btn-ghost"
-          onClick={() => setOpts((p) => [...p, { text: "", correct: false }])}
+          onClick={() =>
+            setOpts((p) =>
+              p.length >= 10 ? p : [...p, { text: "", correct: false }],
+            )
+          }
         >
           {tt("qopt.add")}
         </button>

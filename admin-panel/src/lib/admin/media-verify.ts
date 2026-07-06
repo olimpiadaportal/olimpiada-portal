@@ -7,6 +7,7 @@ import "server-only";
 // PLAIN module (no "use server") so it can export sync helpers/types and be
 // imported by "use server" action files.
 import type { createClient } from "@/lib/supabase/server";
+import { sniffImageMime, type SniffedImageMime } from "@/lib/imageSniff";
 
 type ServerClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -53,4 +54,34 @@ export async function verifyStorageObject(
   const mime = typeof meta.mimetype === "string" ? meta.mimetype : "";
   if (!Number.isFinite(size) || size <= 0 || !mime) return null;
   return { size, mime };
+}
+
+// Byte-level verification (audit finding M19). Storage `mimetype` metadata is
+// set from the client's upload contentType, so it is attacker-controlled;
+// after the metadata + size-cap checks the attach actions download the object
+// and type it from its ACTUAL first bytes. Returns the sniffed mime when the
+// bytes are one of our accepted raster formats (png/jpeg/webp/gif — SVG stays
+// banned) AND they do not contradict the metadata-claimed type; null otherwise.
+// Callers MUST enforce their size cap BEFORE calling (never download an
+// unbounded object) and must record the SNIFFED mime, not the claimed one.
+export async function sniffVerifiedImage(
+  supabase: ServerClient,
+  bucket: string,
+  path: string,
+  claimedMime: string,
+): Promise<SniffedImageMime | null> {
+  const { data, error } = await supabase.storage.from(bucket).download(path);
+  if (error || !data) return null;
+  let bytes: Uint8Array;
+  try {
+    // Only the magic-number prefix is needed to type the file.
+    bytes = new Uint8Array(await data.slice(0, 16).arrayBuffer());
+  } catch {
+    return null;
+  }
+  const sniffed = sniffImageMime(bytes);
+  if (!sniffed) return null;
+  // Reject when the stored/claimed type contradicts the real bytes.
+  if (claimedMime && claimedMime !== sniffed) return null;
+  return sniffed;
 }

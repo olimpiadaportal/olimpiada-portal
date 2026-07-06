@@ -2,9 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
-import { getT } from "@/i18n/server";
+import { getDict, getT } from "@/i18n/server";
 import { OlympiadForm } from "@/components/OlympiadForm";
-import { OlympiadBulkImport } from "@/components/OlympiadBulkImport";
+import { BulkUploadModal } from "@/components/BulkUploadModal";
 import { OlympiadCoverUploader } from "@/components/OlympiadCoverUploader";
 import { archiveOlympiadPackage } from "@/lib/admin/olympiad";
 
@@ -14,12 +14,6 @@ const FORM_KEYS = [
   "oly2.title", "oly2.desc", "manage.select", "manage.saving",
   "oly2.err.subject", "oly2.err.titleAz",
   "oly2.eventAt", "oly2.eventAtHint", "oly2.eventClear",
-];
-const BULK_KEYS = [
-  "olybulk.note", "bulk.fileLabel", "bulk.fileHint", "bulk.template",
-  "bulk.submit", "bulk.submitting", "bulk.pickFile", "bulk.invalidJson",
-  "bulk.notArray", "bulk.tooLarge", "bulk.resultTitle", "bulk.total",
-  "bulk.successful", "bulk.failed", "bulk.noErrors", "bulk.row",
 ];
 
 export default async function EditOlympiadPage({
@@ -60,21 +54,30 @@ export default async function EditOlympiadPage({
   const tr: Record<string, { title: string; desc: string }> = {};
   for (const x of (trs ?? []) as any[]) tr[x.locale] = { title: x.title, desc: x.description ?? "" };
 
-  const [{ data: subjects }, { data: grades }, { count: poolCount }] =
+  const [{ data: subjects }, { data: grades }, { data: qtypes }, { count: poolCount }, fullDict] =
     await Promise.all([
       supabase.from("subjects").select("id, name").order("name"),
       supabase.from("grades").select("id, name, level").order("level"),
+      supabase.from("question_types").select("name, status").order("code"),
       // PRIVATE pool size: questions owned by THIS package only.
       supabase
         .from("questions")
         .select("id", { count: "exact", head: true })
         .eq("olympiad_package_id", id),
+      getDict(),
     ]);
 
   const formDict: Record<string, string> = {};
   for (const k of FORM_KEYS) formDict[k] = t(k);
-  const bulkDict: Record<string, string> = {};
-  for (const k of BULK_KEYS) bulkDict[k] = t(k);
+
+  // Bulk-import modal inputs: the package's subject is READ-ONLY (the pool RPC
+  // scopes by package); grade is chosen per batch in the modal.
+  const packageSubjectName =
+    ((subjects ?? []) as any[]).find((s) => s.id === (pkg as any).subject_id)
+      ?.name ?? null;
+  const activeTypeNames = ((qtypes ?? []) as any[])
+    .filter((r) => r.status === "active")
+    .map((r) => String(r.name));
 
   return (
     <div className="page">
@@ -123,7 +126,17 @@ export default async function EditOlympiadPage({
         <p className="muted">
           {t("olybulk.count")}: <b>{poolCount ?? 0}</b>
         </p>
-        <OlympiadBulkImport packageId={(pkg as any).id} dict={bulkDict} />
+        <BulkUploadModal
+          dict={fullDict}
+          packageId={(pkg as any).id}
+          subjectName={packageSubjectName}
+          grades={((grades ?? []) as any[]).map((g) => ({
+            value: g.id,
+            label: String(g.name),
+          }))}
+          typeNames={activeTypeNames}
+          triggerClassName="btn"
+        />
       </section>
       <section className="card" style={{ marginTop: 16 }}>
         <form action={archiveOlympiadPackage}>

@@ -1,3 +1,7 @@
+// NOTE: this app uses the src/ layout, so the middleware file MUST live at
+// src/middleware.ts — at the package root Next.js silently never registers it
+// (audit finding H9-admin). It refreshes the Supabase session cookie and
+// enforces the 30-minute idle logout (see lib/supabase/middleware.ts).
 import { type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 

@@ -5,7 +5,7 @@ import { requirePermission } from "@/lib/admin/guards";
 import { getDict, getT } from "@/i18n/server";
 import {
   loadQuestionOptions,
-  loadQuestionTypeCodes,
+  loadQuestionTypeRules,
 } from "@/lib/admin/question-options";
 import { QuestionForm } from "@/components/QuestionForm";
 import { QuestionLifecycle } from "@/components/QuestionLifecycle";
@@ -28,6 +28,11 @@ export default async function EditQuestionPage({
     .eq("id", id)
     .maybeSingle();
   if (!q) notFound();
+
+  // M1: PRIVATE olympiad-pool questions (olympiad_package_id set) are
+  // Admin-only. The list already excludes them for content managers; a direct
+  // URL to the edit page must behave as if the question does not exist.
+  if (!ctx.isAdmin && q.olympiad_package_id) notFound();
 
   const loc: string = q.primary_locale ?? "az";
 
@@ -72,7 +77,7 @@ export default async function EditQuestionPage({
   }));
 
   const selectOptions = await loadQuestionOptions(t);
-  const typeCodes = await loadQuestionTypeCodes();
+  const typeRules = await loadQuestionTypeRules();
   const defaults = {
     meta: {
       subject_id: q.subject_id,
@@ -114,7 +119,7 @@ export default async function EditQuestionPage({
         <QuestionForm
           dict={dict}
           options={selectOptions}
-          typeCodes={typeCodes}
+          typeRules={typeRules}
           defaults={defaults}
           id={id}
           submitLabel={t("qform.save")}

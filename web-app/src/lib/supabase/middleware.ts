@@ -1,5 +1,6 @@
 // Session refresh for SSR. Keeps the Supabase auth cookie fresh on each request.
-// No business logic here — route protection is added in later stages.
+// No business logic here — route protection is enforced server-side by the
+// requireParent/requireChild guards (src/lib/auth/session.ts) and Supabase RLS.
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseUrl, supabaseAnonKey, isSupabaseConfigured } from "@/lib/env";

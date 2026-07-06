@@ -37,7 +37,9 @@ export const NAV: NavGroup[] = [
   {
     label: "group.contentConfig",
     items: [
-      { label: "nav.questionTypes", href: "/manage/question-types", adminOnly: true },
+      // Dedicated advanced page (structure rules: status / option & correct
+      // counts) — replaced the generic /manage registry page.
+      { label: "nav.questionTypes", href: "/question-types", adminOnly: true },
       { label: "nav.olympiadTypes", href: "/manage/olympiad-types", adminOnly: true },
     ],
   },

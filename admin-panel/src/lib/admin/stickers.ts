@@ -22,7 +22,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { splitStoragePath, verifyStorageObject } from "@/lib/admin/media-verify";
+import {
+  sniffVerifiedImage,
+  splitStoragePath,
+  verifyStorageObject,
+} from "@/lib/admin/media-verify";
 
 export type StickerActionState = { ok?: boolean; error?: string } | null;
 
@@ -394,14 +398,19 @@ export async function attachStickerImage(
   if (!ALLOWED_MIME.includes(obj.mime)) return { error: "err.type" };
   if (obj.size > MAX_SIZE) return { error: "err.size" };
 
+  // Byte-sniff the (size-capped) object: metadata mimetype is client-claimed,
+  // so the recorded type comes from the actual magic numbers (M19).
+  const sniffed = await sniffVerifiedImage(supabase, BUCKET, path, obj.mime);
+  if (!sniffed || !ALLOWED_MIME.includes(sniffed)) return { error: "err.type" };
+
   const { data: media, error: mediaErr } = await supabase
     .from("media_assets")
     .insert({
       bucket: BUCKET,
       path,
       owner_profile_id: ctx.profileId,
-      // Server-derived values only.
-      mime_type: obj.mime,
+      // Server-derived values only — mime comes from the SNIFFED bytes.
+      mime_type: sniffed,
       file_size_bytes: obj.size,
       visibility: "public",
     })
@@ -444,7 +453,7 @@ export async function attachStickerImage(
     action: "admin.sticker_image.add",
     targetTable: "sticker_images",
     targetId: created.id,
-    metadata: { theme_id: themeId, path, mime: obj.mime, size: obj.size },
+    metadata: { theme_id: themeId, path, mime: sniffed, size: obj.size },
   });
 
   revalidatePath(`/stickers/${themeId}`);

@@ -368,11 +368,16 @@ create policy "qtrans_write" on public.question_translations for all to authenti
   with check (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
          or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.current_profile_id()));
 
+-- Audit H3 (migration 035): answer_options carries is_correct (the answer key),
+-- so learners must NEVER read rows directly — options reach students only via
+-- the SECURITY DEFINER attempt RPCs, which strip is_correct. Direct SELECT is
+-- for content authors (own questions), reviewers and admins only. Option TEXT
+-- stays readable via answer_option_translations (not secret).
 drop policy if exists "aopt_select" on public.answer_options;
 create policy "aopt_select" on public.answer_options for select to authenticated
   using (exists (
     select 1 from public.questions q where q.id = question_id
-      and (q.status = 'published' or q.created_by = public.current_profile_id()
+      and (q.created_by = public.current_profile_id()
            or public.is_admin() or public.has_permission('content.review'))));
 drop policy if exists "aopt_write" on public.answer_options;
 create policy "aopt_write" on public.answer_options for all to authenticated
@@ -515,18 +520,31 @@ create policy "snap_write" on public.progress_snapshots for all to authenticated
 -- =============================================================================
 -- LEADERBOARD & ANALYTICS
 -- =============================================================================
+-- Periods + achievements are catalogs (no student data) → world-readable.
+-- Entries/snapshots carry student ids + points (audit L12, migration 035):
+-- entries are own/parent/admin; snapshots (rendered entries_json) admin-only
+-- until the Leaderboard plan ships its pseudonymized public serving RPC.
 do $$
 declare t text;
 begin
   foreach t in array array['leaderboard_periods','leaderboard_entries','leaderboard_snapshots','achievements'] loop
     execute format('drop policy if exists "%1$s_select" on public.%1$I;', t);
-    execute format(
-      'create policy "%1$s_select" on public.%1$I for select to authenticated using (true);', t);
     execute format('drop policy if exists "%1$s_write" on public.%1$I;', t);
     execute format(
       'create policy "%1$s_write" on public.%1$I for all to authenticated using (public.is_admin()) with check (public.is_admin());', t);
   end loop;
 end $$;
+create policy "leaderboard_periods_select" on public.leaderboard_periods
+  for select to authenticated using (true);
+create policy "achievements_select" on public.achievements
+  for select to authenticated using (true);
+create policy "leaderboard_entries_select" on public.leaderboard_entries
+  for select to authenticated
+  using (student_profile_id = public.current_profile_id()
+         or public.is_parent_linked_to_student(student_profile_id)
+         or public.is_admin());
+create policy "leaderboard_snapshots_select" on public.leaderboard_snapshots
+  for select to authenticated using (public.is_admin());
 
 -- student_achievements: own/parent/admin read; admin/service write.
 drop policy if exists "stach_select" on public.student_achievements;

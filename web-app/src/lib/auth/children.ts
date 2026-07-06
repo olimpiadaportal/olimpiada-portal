@@ -5,6 +5,8 @@
 // Validation returns i18n KEYS (not localized text) so the UI layer localizes
 // errors per locale (az/en/ru). See messages.ts `auth.child.*`.
 
+import { isUuid } from "@/lib/uuid";
+
 export const CHILD_ID_RE = /^\d{8}$/;
 export const CHILD_PASSWORD_MIN = 8;
 
@@ -45,10 +47,6 @@ function result(errors: string[]): ValidationResult {
   return errors.length === 0 ? { ok: true } : { ok: false, errors };
 }
 
-export function validateChildId(childUniqueId: string): ValidationResult {
-  return result(CHILD_ID_RE.test(childUniqueId) ? [] : ["auth.child.err.idFormat"]);
-}
-
 export function validateChildPassword(
   password: string,
   opts?: { childUniqueId?: string },
@@ -64,8 +62,6 @@ export function validateChildPassword(
 // R7 security: server-side bounds — names capped (client maxLength is not a
 // guarantee) and the picker ids must LOOK like UUIDs before reaching the RPC.
 const CHILD_NAME_MAX = 80;
-const UUID_LIKE_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function validateChildInfo(info: ChildInfo): ValidationResult {
   const errors: string[] = [];
@@ -80,13 +76,13 @@ export function validateChildInfo(info: ChildInfo): ValidationResult {
   // D2 wizard: structured city (district), school and grade are MANDATORY.
   // (The DB keeps them optional for back-compat; the app enforces them here.)
   // A malformed (non-UUID) id is treated the same as a missing one.
-  if (!UUID_LIKE_RE.test(info.districtId?.trim() ?? "")) {
+  if (!isUuid(info.districtId?.trim() ?? "")) {
     errors.push("addchild.err.cityRequired");
   }
-  if (!UUID_LIKE_RE.test(info.schoolId?.trim() ?? "")) {
+  if (!isUuid(info.schoolId?.trim() ?? "")) {
     errors.push("addchild.err.schoolRequired");
   }
-  if (!UUID_LIKE_RE.test(info.gradeId?.trim() ?? "")) {
+  if (!isUuid(info.gradeId?.trim() ?? "")) {
     errors.push("addchild.err.gradeRequired");
   }
   return result(errors);

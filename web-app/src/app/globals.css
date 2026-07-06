@@ -8838,3 +8838,597 @@ ul.clean li {
   font-size: 0.95rem;
   line-height: 1.55;
 }
+
+
+/* =============================================================================
+   TEST ENGINE (T1/T2) — timed topic tests, child arena only. Token-driven
+   (var(--…)) so the frozen dark palette AND the light-mode remaps both apply
+   automatically. Prefix: .tst-*
+   ========================================================================== */
+
+/* ---- shared notice banner (resume / time-up / closed-attempt) ---- */
+.arena .tst-notice {
+  background: color-mix(in srgb, var(--blue) 12%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--blue) 40%, var(--line));
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 0 0 18px;
+  font-size: 0.92rem;
+}
+.arena .tst-notice.warn {
+  background: color-mix(in srgb, var(--gold) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--line));
+}
+
+/* ---- status pills (test home history) ---- */
+.arena .tst-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--panel2);
+}
+.arena .tst-pill.ok {
+  color: var(--lime);
+  border-color: color-mix(in srgb, var(--lime) 50%, transparent);
+  background: color-mix(in srgb, var(--lime) 10%, var(--panel2));
+}
+.arena .tst-pill.bad {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 50%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, var(--panel2));
+}
+.arena .tst-pill.run {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+  background: color-mix(in srgb, var(--gold) 10%, var(--panel2));
+}
+.arena .tst-pill.off {
+  opacity: 0.8;
+}
+
+/* ---- test home: subject grid + continue card ---- */
+.arena .tst-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.arena .tst-subject {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  transition: border-color 0.12s ease, transform 0.08s ease;
+}
+.arena .tst-subject:hover {
+  border-color: var(--lime);
+  transform: translateY(-1px);
+}
+.arena .tst-subject-body {
+  flex: 1;
+  min-width: 0;
+}
+.arena .tst-continue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: color-mix(in srgb, var(--lime) 9%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--lime) 55%, var(--line));
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin: 0 0 26px;
+}
+.arena .tst-continue-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  .arena .tst-continue {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ---- setup: tri-state topic picker ---- */
+.arena .tst-topics-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.arena .tst-topics-count {
+  margin-left: auto;
+  font-size: 0.74rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.arena .tst-topic-list,
+.arena .tst-sub-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.arena .tst-topic {
+  border-top: 1px solid var(--line);
+  padding: 10px 2px;
+}
+.arena .tst-topic:first-child {
+  border-top: 0;
+}
+.arena .tst-topic-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.arena .tst-topic-name {
+  font-weight: 700;
+}
+.arena .tst-sub-list {
+  margin: 8px 0 4px 30px;
+  display: grid;
+  gap: 8px;
+}
+.arena .tst-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  padding: 4px 11px;
+  cursor: pointer;
+}
+.arena .tst-expand:hover {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+.arena .tst-caret {
+  display: inline-block;
+  transition: transform 0.12s ease;
+  transform: rotate(-90deg);
+}
+.arena .tst-caret.open {
+  transform: rotate(0deg);
+}
+
+/* Custom checkbox: the native input stays for a11y/keyboard, visually the
+   .tst-box paints unchecked / checked / indeterminate ("some") states. */
+.arena .tst-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  position: relative;
+}
+.arena .tst-check input {
+  position: absolute;
+  opacity: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+.arena .tst-box {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid var(--line);
+  background: var(--panel2);
+  display: inline-grid;
+  place-items: center;
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+.arena .tst-check input:focus-visible + .tst-box {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+.arena .tst-box.all {
+  background: var(--lime);
+  border-color: var(--lime);
+}
+.arena .tst-box.all::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translateY(-1px);
+}
+.arena .tst-box.some {
+  border-color: var(--lime);
+}
+.arena .tst-box.some::after {
+  content: "";
+  width: 8px;
+  height: 2px;
+  background: var(--lime);
+}
+
+/* ---- setup: instructions gate ---- */
+.arena .tst-facts {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.arena .tst-fact {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--lime);
+  border: 1px solid color-mix(in srgb, var(--lime) 45%, var(--line));
+  background: color-mix(in srgb, var(--lime) 8%, var(--panel2));
+  border-radius: 999px;
+  padding: 6px 13px;
+}
+.arena .tst-rules {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+}
+.arena .tst-rules li::marker {
+  color: var(--lime);
+}
+.arena .tst-scoring {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+.arena .tst-scoring b {
+  color: var(--ink);
+}
+.arena .tst-consent {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  position: relative;
+  font-weight: 700;
+}
+.arena .tst-consent input {
+  position: absolute;
+  opacity: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+.arena .tst-consent input:focus-visible + .tst-box {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+/* ---- player: top bar + timer ---- */
+.arena .tst-run {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.arena .tst-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+}
+.arena .tst-topbar-left,
+.arena .tst-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.arena .tst-run-title {
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.86rem;
+}
+.arena .tst-savestate {
+  font-size: 0.74rem;
+  color: var(--dim);
+}
+.arena .tst-savestate .err {
+  color: var(--red);
+}
+.arena .tst-timer {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ink);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 12px;
+  min-width: 86px;
+  text-align: center;
+}
+.arena .tst-timer.warn {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--line));
+}
+.arena .tst-timer.crit {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 60%, var(--line));
+  animation: tst-blink 1s steps(2, start) infinite;
+}
+@keyframes tst-blink {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (max-width: 560px) {
+  .arena .tst-topbar {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---- player: layout (question + palette sidebar) ---- */
+.arena .tst-run-grid {
+  display: grid;
+  grid-template-columns: 1fr 250px;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .arena .tst-run-grid {
+    grid-template-columns: 1fr;
+  }
+  .arena .tst-side {
+    order: -1; /* palette collapses ABOVE the question on mobile */
+  }
+}
+.arena .tst-q-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.arena .tst-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: color 0.1s ease, border-color 0.1s ease;
+}
+.arena .tst-flag:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.arena .tst-flag.on {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 60%, var(--line));
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+}
+
+/* ---- player: question palette ---- */
+.arena .tst-side {
+  display: grid;
+  gap: 12px;
+}
+.arena .tst-side-h {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+.arena .tst-palette {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+@media (max-width: 860px) {
+  .arena .tst-palette {
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  }
+}
+.arena .tst-cell {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.1s ease;
+}
+.arena .tst-cell:hover {
+  border-color: var(--lime);
+}
+.arena .tst-cell.answered {
+  background: color-mix(in srgb, var(--lime) 16%, var(--panel2));
+  border-color: color-mix(in srgb, var(--lime) 55%, var(--line));
+  color: var(--ink);
+}
+.arena .tst-cell.flagged::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+.arena .tst-cell.current {
+  outline: 2px solid var(--lime);
+  outline-offset: 1px;
+  color: var(--ink);
+}
+.arena .tst-legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  margin-top: 12px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.arena .tst-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.arena .tst-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+}
+.arena .tst-dot.answered {
+  background: color-mix(in srgb, var(--lime) 40%, var(--panel2));
+  border-color: var(--lime);
+}
+.arena .tst-dot.flagged {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+.arena .tst-dot.current {
+  outline: 2px solid var(--lime);
+  outline-offset: 1px;
+}
+.arena .tst-side-actions {
+  display: grid;
+  gap: 10px;
+}
+.arena .tst-side-actions .arena-btn,
+.arena .tst-side-actions .arena-btn-ghost {
+  justify-content: center;
+}
+.arena .tst-cancel:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ---- results ---- */
+.arena .tst-percent {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+.arena .tst-result-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+/* ---- review ---- */
+.arena .tst-review-list {
+  display: grid;
+  gap: 16px;
+}
+.arena .tst-review-q.correct {
+  border-color: color-mix(in srgb, var(--lime) 45%, var(--line));
+}
+.arena .tst-review-q.wrong {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--line));
+}
+.arena .tst-review-opts {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.arena .tst-review-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.arena .tst-review-opt-text {
+  flex: 1;
+  min-width: 0;
+}
+.arena .tst-review-opt.correct {
+  border-color: color-mix(in srgb, var(--lime) 60%, var(--line));
+  background: color-mix(in srgb, var(--lime) 10%, var(--panel2));
+}
+.arena .tst-review-opt.wrong {
+  border-color: color-mix(in srgb, var(--red) 60%, var(--line));
+  background: color-mix(in srgb, var(--red) 10%, var(--panel2));
+}
+.arena .tst-review-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.arena .tst-review-tags em {
+  font-style: normal;
+  color: var(--muted);
+}
+.arena .tst-review-tags b {
+  color: var(--lime);
+}
+.arena .tst-review-opt.wrong .tst-review-tags em {
+  color: var(--red);
+}
+.arena .tst-explain {
+  margin-top: 14px;
+  border-left: 3px solid var(--blue);
+  background: color-mix(in srgb, var(--blue) 8%, var(--panel2));
+  border-radius: 0 10px 10px 0;
+  padding: 10px 14px;
+}
+.arena .tst-explain b {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--blue);
+}
+.arena .tst-explain p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}

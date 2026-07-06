@@ -1,6 +1,7 @@
 // Server-side session helpers for the parent app. Uses the SSR client (the
 // signed-in user's cookies) and the SECURITY DEFINER helpers current_profile_id()
 // / has_role() to resolve the parent's profile and role. RLS is the real gate.
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,13 +25,20 @@ async function resolveRole(
   return null;
 }
 
-export async function getParent(): Promise<{ profileId: string } | null> {
+// React cache(): layout + page (and any nested server components) share ONE
+// parent/child resolution per request instead of re-running the auth + RPC
+// round-trips for every caller. Scoped per-request, so no cross-user leakage.
+const getParentCached = cache(async (): Promise<{ profileId: string } | null> => {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
   return resolveRole(supabase, "parent");
+});
+
+export async function getParent(): Promise<{ profileId: string } | null> {
+  return getParentCached();
 }
 
 export async function requireParent(): Promise<{ profileId: string }> {
@@ -39,7 +47,7 @@ export async function requireParent(): Promise<{ profileId: string }> {
   return parent;
 }
 
-export async function getChild(): Promise<{ profileId: string } | null> {
+const getChildCached = cache(async (): Promise<{ profileId: string } | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -52,6 +60,10 @@ export async function getChild(): Promise<{ profileId: string } | null> {
   ]);
   if (!pid || isStudent !== true) return null;
   return { profileId: pid as string };
+});
+
+export async function getChild(): Promise<{ profileId: string } | null> {
+  return getChildCached();
 }
 
 export async function requireChild(): Promise<{ profileId: string }> {

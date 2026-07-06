@@ -74,11 +74,16 @@ do $$ begin
     ('pending', 'approved', 'rejected', 'changes_requested');
 exception when duplicate_object then null; end $$;
 
--- Test attempt lifecycle.
+-- Test attempt lifecycle. canceled/expired added by migration 037 (test engine):
+-- canceled = explicit student cancel (counts nothing); expired = deadline passed
+-- without submit (swept by cron / lazily).
 do $$ begin
   create type public.attempt_status as enum
-    ('in_progress', 'submitted', 'graded', 'abandoned');
+    ('in_progress', 'submitted', 'graded', 'abandoned', 'canceled', 'expired');
 exception when duplicate_object then null; end $$;
+-- Idempotent for databases created before migration 037.
+alter type public.attempt_status add value if not exists 'canceled';
+alter type public.attempt_status add value if not exists 'expired';
 
 -- Student daily task progress state.
 do $$ begin

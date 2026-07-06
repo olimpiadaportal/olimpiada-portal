@@ -7,6 +7,7 @@ import { SchoolDeleteButton } from "@/components/SchoolDeleteButton";
 import { getT, getLocale } from "@/i18n/server";
 import { localStrings } from "../cities/labels";
 import { FilterBar } from "@/components/FilterBar";
+import { sanitizeSearchTerm } from "@/lib/admin/search";
 
 // Round 10 — server-side list filters (city select on district_id, status
 // select, debounced name search). The filtered read-only query lives here
@@ -54,8 +55,8 @@ export default async function SchoolsPage({
     let qb = supabase
       .from("schools")
       .select("id, name, district_id, status, is_private, school_number, districts(name)");
-    if (q) {
-      const escaped = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
+    if (escaped) {
       qb = qb.ilike("name", `%${escaped}%`);
     }
     if (city) qb = qb.eq("district_id", city);

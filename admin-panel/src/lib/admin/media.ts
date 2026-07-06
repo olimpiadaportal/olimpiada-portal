@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
 import {
   QUESTION_MEDIA_FILENAME_RE,
+  sniffVerifiedImage,
   splitStoragePath,
   verifyStorageObject,
 } from "@/lib/admin/media-verify";
@@ -68,6 +69,17 @@ export async function attachQuestionMedia(
   if (!ALLOWED_MIME.includes(obj.mime)) return { error: "Unsupported file type." };
   if (obj.size > MAX_SIZE) return { error: "File too large (max 5 MB)." };
 
+  // Byte-sniff image objects (M19): metadata mimetype is client-claimed, so
+  // image types are re-derived from the actual magic numbers and the SNIFFED
+  // mime is what gets recorded. Audio stays metadata-verified (the sniffer is
+  // image-only; the bucket + filename whitelist still constrain audio).
+  let recordedMime = obj.mime;
+  if (obj.mime.startsWith("image/")) {
+    const sniffed = await sniffVerifiedImage(supabase, bucket, path, obj.mime);
+    if (!sniffed) return { error: "Unsupported file type." };
+    recordedMime = sniffed;
+  }
+
   // Remember any previous media so we can clean it up after re-linking.
   const { data: prev } = await supabase
     .from("question_translations")
@@ -83,8 +95,8 @@ export async function attachQuestionMedia(
       bucket,
       path,
       owner_profile_id: ctx.profileId,
-      // Server-derived values only (never the client-submitted form fields).
-      mime_type: obj.mime,
+      // Server-derived values only — images use the SNIFFED mime.
+      mime_type: recordedMime,
       file_size_bytes: obj.size,
       visibility: "public",
     })

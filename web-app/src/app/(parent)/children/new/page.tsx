@@ -3,6 +3,7 @@ import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { getParentFreeAccess } from "@/lib/freeAccess";
 import { AddChildWizard } from "@/components/AddChildWizard";
 
 // All i18n keys the (client) wizard needs, resolved server-side into a dict.
@@ -36,8 +37,8 @@ const KEYS = [
   "pay.idRevealed", "pay.subtotal", "pay.discount", "pay.total",
   // done
   "parent.child.idNote", "parent.dash.title",
-  // R11 payment modes (giveaway / payments-off)
-  "addchild.giveawayGranted", "gate.paymentsOff",
+  // R11 payment modes (giveaway / payments-off) + R-audit H8 free-access window
+  "addchild.giveawayGranted", "addchild.freeAccessGranted", "gate.paymentsOff",
   // validation-error keys returned by createChild / validateChildInfo:
   "auth.child.err.firstNameRequired", "auth.child.err.lastNameRequired",
   "auth.child.err.passwordTooShort", "auth.child.err.passwordEqualsId",
@@ -55,6 +56,10 @@ export default async function NewChildPage() {
   // R11: the payment mode decides which wizard steps exist (server-resolved;
   // the wizard client only receives the string, never the flags themselves).
   const { mode: paymentMode } = await getPaymentModeInfo();
+  // H8: an ACTIVE free-access window for this parent takes the same free path
+  // as the giveaway (no plan/payment steps; the server action re-verifies that
+  // a free window really covers the child before allocating the login ID).
+  const { active: freeAccessActive } = await getParentFreeAccess();
 
   // Catalogs: cities (active districts), schools (active), grades.
   const [{ data: cityRows }, { data: schoolRows }, { data: gradeRows }, { data: pricing }] =
@@ -117,6 +122,7 @@ export default async function NewChildPage() {
         subjects={subjects}
         dict={dict}
         paymentMode={paymentMode}
+        freeAccessActive={freeAccessActive}
       />
     </section>
   );

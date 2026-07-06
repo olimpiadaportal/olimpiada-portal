@@ -87,8 +87,11 @@ create table if not exists public.olympiad_package_questions (
 create table if not exists public.olympiad_purchases (
   id                      uuid primary key default gen_random_uuid(),
   olympiad_package_id     uuid not null references public.olympiad_packages (id) on delete restrict, -- never delete purchased packages
-  owner_parent_profile_id uuid not null references public.profiles (id) on delete restrict,
-  student_profile_id      uuid not null references public.students (profile_id) on delete cascade,
+  -- Audit M13/L13 (migration 036): purchase records survive account deletion —
+  -- owner/student FKs anonymize (SET NULL) instead of blocking (old RESTRICT)
+  -- or cascading the financial row away.
+  owner_parent_profile_id uuid references public.profiles (id) on delete set null,
+  student_profile_id      uuid references public.students (profile_id) on delete set null,
   checkout_session_id     uuid references public.checkout_sessions (id) on delete set null,
   amount                  numeric(10,2) not null default 0,
   currency                text not null default 'AZN',
@@ -125,6 +128,12 @@ alter table public.questions
 
 comment on column public.questions.olympiad_package_id is
   'When set, this question is PRIVATE to that olympiad package and is excluded from the general question list and from practice random selection. NULL = general question.';
+
+-- Audit M23 (migration 035): supports the admin questions list's default order
+-- (general-pool filter + created_at desc). Lives here because the column above
+-- is added in this file (after 011's index section).
+create index if not exists idx_questions_pool_created
+  on public.questions (olympiad_package_id, created_at desc);
 
 create index if not exists idx_questions_olympiad_package
   on public.questions (olympiad_package_id);

@@ -1,5 +1,10 @@
 // Curated, editable public-site content keys (Website Content CMS, text-only).
 //
+// DRIFT WARNING (L21): every `defaults` record below MIRRORS the live text in
+// web-app/src/i18n/messages.ts for the same key. The two files must be updated
+// TOGETHER — if a web-app string changes, update its defaults here in the same
+// change (and vice versa), otherwise admins see stale "current live" text.
+//
 // PLAIN module (no "use server"): a Server Actions file may only export async
 // functions, so this registry + its types live here and are imported by both
 // the site-content server action and the admin UI.

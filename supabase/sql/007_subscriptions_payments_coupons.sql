@@ -62,7 +62,9 @@ comment on table public.subscriptions is
 -- -----------------------------------------------------------------------------
 create table if not exists public.payments (
   id              uuid primary key default gen_random_uuid(),
-  profile_id      uuid not null references public.profiles (id) on delete cascade,
+  -- Audit M13 (migration 036): payment records survive account deletion — the
+  -- profile FK anonymizes (SET NULL) instead of cascading the row away.
+  profile_id      uuid references public.profiles (id) on delete set null,
   subscription_id uuid references public.subscriptions (id) on delete set null,
   provider        text not null default 'stripe',
   provider_ref    text,                          -- e.g. payment intent / charge id

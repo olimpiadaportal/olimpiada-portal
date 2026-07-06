@@ -28,7 +28,8 @@ import {
   LanguageDropdown,
   LanguageSegmented,
 } from "@/components/LanguageDropdown";
-import { ThemeToggle, trFirst } from "@/components/ThemeToggle";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { useTFirst } from "@/i18n/I18nProvider";
 import { parentLogout } from "@/lib/auth/parentService";
 import type { Locale } from "@/i18n/config";
 
@@ -115,13 +116,14 @@ export function ProfileDrawer({
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const tf = useTFirst();
 
-  // Section titles: explicit prop → merged drawer2.* catalog string → fallback.
+  // Section titles: explicit prop → merged drawer2.* catalog string → fallback
+  // (override-aware via the I18nProvider dict).
   const appearanceLabel =
-    drawer.appearance ?? trFirst(locale, ["drawer2.appearance"], drawer.theme);
+    drawer.appearance ?? tf(["drawer2.appearance"], drawer.theme);
   const sessionLabel =
-    drawer.session ??
-    trFirst(locale, ["drawer2.session"], SESSION_FALLBACK[locale] ?? "Session");
+    drawer.session ?? tf(["drawer2.session"], SESSION_FALLBACK[locale] ?? "Session");
 
   // Close on Escape; restore focus to the trigger when the drawer closes.
   useEffect(() => {

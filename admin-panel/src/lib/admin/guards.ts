@@ -1,5 +1,6 @@
 // Server-side auth + permission resolution for the Admin Panel.
 // Authorization is ALWAYS enforced here (and by RLS) — never by hiding UI.
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,7 +25,13 @@ async function withRetry<R extends { error: unknown }>(
   return await fn();
 }
 
-export async function getAuthContext(): Promise<AuthContext | null> {
+// Wrapped in React cache() so the layout guard + page guard (+ any server
+// action guard rendered in the same request) share ONE auth/role/permission
+// lookup per request instead of repeating the full chain. The roles →
+// permissions lookups stay sequential on purpose: permissions depend on the
+// resolved role ids, so there is nothing independent to parallelize.
+export const getAuthContext = cache(
+  async (): Promise<AuthContext | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -78,7 +85,8 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     isAdmin: roleCodes.includes("administrator"),
     isContentManager: roleCodes.includes("content_manager"),
   };
-}
+  },
+);
 
 // No authenticated user/session → send to /login (NOT /unauthorized). A missing
 // or transiently-stale session is an auth problem, not an authorization failure;

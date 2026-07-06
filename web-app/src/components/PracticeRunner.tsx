@@ -4,15 +4,24 @@ import Link from "next/link";
 import { useActionState, useRef, useState } from "react";
 import { gradePractice, type GradeState } from "@/lib/auth/childActions";
 
-type Opt = { option_id: string; text: string };
-type Q = {
+// L7: exported so the practice page can type the get_practice_attempt RPC
+// payload instead of passing `as any`.
+export type PracticeOption = { option_id: string; text: string };
+export type PracticeQuestion = {
   question_id: string;
   type: string;
   body: string;
   prompt: string | null;
-  options: Opt[];
+  options: PracticeOption[];
 };
-type Data = { attempt_id: string; status: string; questions: Q[] };
+export type PracticeAttemptData = {
+  attempt_id: string;
+  status: string;
+  questions: PracticeQuestion[];
+};
+
+type Q = PracticeQuestion;
+type Data = PracticeAttemptData;
 
 const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 

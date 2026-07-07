@@ -68,8 +68,22 @@ begin
       'select public.expire_stale_test_attempts();'
     );
     raise notice 'pg_cron job olympiq_expire_stale_attempts scheduled (every 15 min).';
+
+    -- Leaderboard (migration 039): daily runner that acts only on the 1st
+    -- (Asia/Baku) — archives the closed month FROM THE LEDGER into
+    -- leaderboard_snapshots and zeroes stale points_month caches.
+    perform cron.unschedule(jobid)
+       from cron.job
+      where jobname = 'olympiq_leaderboard_rollover';
+
+    perform cron.schedule(
+      'olympiq_leaderboard_rollover',
+      '25 20 * * *',                                 -- 00:25 Asia/Baku, daily
+      'select public.leaderboard_rollover_if_month_start();'
+    );
+    raise notice 'pg_cron job olympiq_leaderboard_rollover scheduled (daily; acts on the 1st, Baku).';
   else
-    raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry NOT scheduled (skipped safely).';
+    raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry / leaderboard rollover NOT scheduled (skipped safely).';
   end if;
 end
 $$;

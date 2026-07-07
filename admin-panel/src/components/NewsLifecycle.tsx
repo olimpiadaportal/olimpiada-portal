@@ -25,14 +25,16 @@ export function NewsLifecycle({
 
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-      {(status === "draft" || status === "archived") && (
+      {/* Three-state model: in_review → publish/reject; published → reject/to_review;
+          rejected → publish/to_review. */}
+      {(status === "in_review" || status === "rejected") && (
         <Action action="publish" label={tt("news.act.publish")} />
       )}
-      {status === "published" && (
-        <Action action="unpublish" label={tt("news.act.unpublish")} />
+      {(status === "in_review" || status === "published") && (
+        <Action action="reject" label={tt("news.act.reject")} />
       )}
-      {(status === "draft" || status === "published") && (
-        <Action action="archive" label={tt("news.act.archive")} />
+      {(status === "published" || status === "rejected") && (
+        <Action action="to_review" label={tt("news.act.to_review")} />
       )}
       <form
         action={deleteNews}

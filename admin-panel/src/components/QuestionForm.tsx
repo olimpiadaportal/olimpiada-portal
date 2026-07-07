@@ -24,7 +24,6 @@ const META: { name: string; key: string; required?: boolean }[] = [
   { name: "topic_id", key: "qfield.topic" },
   { name: "subtopic_id", key: "qfield.subtopic" },
   { name: "olympiad_type_id", key: "qfield.olympiad" },
-  { name: "source_id", key: "qfield.source" },
 ];
 
 type OptRow = { text: string; correct: boolean };

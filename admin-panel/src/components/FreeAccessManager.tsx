@@ -24,7 +24,8 @@ import {
 
 // Convert a naive <input type="datetime-local"> value ("2026-07-05T14:30") to a
 // UTC ISO string, interpreting it in the admin's OWN browser timezone. "" stays "".
-function toUtcIso(local: string): string {
+// Exported so the Free-Access wizard shares the exact same TZ conversion.
+export function toUtcIso(local: string): string {
   if (!local) return "";
   const d = new Date(local);
   return Number.isNaN(d.getTime()) ? "" : d.toISOString();
@@ -366,7 +367,9 @@ function statusLabel(s: IntervalStatus, strings: FreeAccessStrings): string {
   }
 }
 
-function IntervalsTable({
+// Exported so the Free-Access wizard can render the same scheduled/active
+// windows table (with the Deactivate action) below its stepper.
+export function IntervalsTable({
   intervals,
   locale,
   strings,

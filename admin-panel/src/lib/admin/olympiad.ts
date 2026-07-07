@@ -13,6 +13,13 @@ import {
   splitStoragePath,
   verifyStorageObject,
 } from "@/lib/admin/media-verify";
+import {
+  validateBulkItem,
+  normTypeName,
+  mapRpcRowError,
+  overrideItemMeta,
+  type ActiveTypeRule,
+} from "@/lib/admin/bulk-validate";
 import { getT } from "@/i18n/server";
 
 export type OlympiadState = { error?: string } | null;
@@ -236,51 +243,62 @@ export async function bulkImportOlympiadQuestions(
     return { ok: false, error: t("bulk.notArray") };
   }
 
-  // Override every item's meta.grade_level with the selected grade's level.
-  // Old-format files that still carry grade_level are superseded (backward
-  // compatible by design).
-  const items = payload.map((item) => {
-    const obj =
-      item && typeof item === "object" && !Array.isArray(item)
-        ? (item as Record<string, unknown>)
-        : {};
-    const meta =
-      obj.meta && typeof obj.meta === "object" && !Array.isArray(obj.meta)
-        ? (obj.meta as Record<string, unknown>)
-        : {};
-    return { ...obj, meta: { ...meta, grade_level: grade.level } };
+  // Strict per-row validation (shared with the general bank) BEFORE the RPC, so
+  // each bad row gets a specific trilingual reason instead of a generic message.
+  // Subject is package-scoped (not in meta); only grade_level is injected. The
+  // active-type rules drive option/correct counts (MCQ = 4 options / 1 correct).
+  const { data: typeRows } = await supabase
+    .from("question_types")
+    .select("name, options_required, correct_required")
+    .eq("status", "active")
+    .order("name");
+  const activeTypes: ActiveTypeRule[] = ((typeRows ?? []) as any[]).map((r) => ({
+    name: String(r.name),
+    options_required: r.options_required ?? null,
+    correct_required: r.correct_required ?? null,
+  }));
+  const activeByNorm = new Map<string, ActiveTypeRule>();
+  for (const r of activeTypes) activeByNorm.set(normTypeName(r.name), r);
+  const defaultType = activeTypes[0] ?? null;
+
+  const total = payload.length;
+  const errors: { index: number; error: string }[] = [];
+  const validItems: Record<string, unknown>[] = [];
+  const validFileIndex: number[] = [];
+  payload.forEach((item, i) => {
+    const msg = validateBulkItem(item, t, activeByNorm, defaultType);
+    if (msg) {
+      errors.push({ index: i + 1, error: msg });
+      return;
+    }
+    validItems.push(overrideItemMeta(item, { grade_level: grade.level }));
+    validFileIndex.push(i + 1);
   });
 
-  const { data, error } = await supabase.rpc("bulk_insert_olympiad_package_questions", {
-    p_package_id: pkgId,
-    p_questions: items,
-  });
-  if (error) {
-    console.error("[admin] olympiad bulk import failed", error.message);
-    return { ok: false, error: t("err.server") };
+  let successful = 0;
+  if (validItems.length > 0) {
+    const { data, error } = await supabase.rpc(
+      "bulk_insert_olympiad_package_questions",
+      { p_package_id: pkgId, p_questions: validItems },
+    );
+    if (error) {
+      console.error("[admin] olympiad bulk import failed", error.message);
+      return { ok: false, error: t("err.server") };
+    }
+    const rpc = data as {
+      total: number;
+      successful: number;
+      failed: number;
+      errors: { index: number; error: string }[];
+    };
+    successful = rpc?.successful ?? 0;
+    for (const e of rpc?.errors ?? []) {
+      const fileIdx = validFileIndex[e.index - 1] ?? e.index;
+      errors.push({ index: fileIdx, error: mapRpcRowError(e.error, t) });
+    }
   }
-
-  const raw = data as {
-    total: number;
-    successful: number;
-    failed: number;
-    errors: { index: number; error: string }[];
-  };
-  // L9: the RPC records raw SQLERRM per failed row. Keep only our deliberate
-  // "bulk_insert…" validation raises; replace anything else with a generic
-  // trilingual message so DB internals never reach the client.
-  const result = {
-    ...raw,
-    errors: ((raw?.errors ?? []) as { index: number; error: string }[]).map(
-      (e) => ({
-        index: e.index,
-        error:
-          typeof e.error === "string" && e.error.startsWith("bulk_insert")
-            ? e.error
-            : t("bulk.rowFailed"),
-      }),
-    ),
-  };
+  errors.sort((a, b) => a.index - b.index);
+  const result = { total, successful, failed: total - successful, errors };
 
   await writeAuditLog({
     actorProfileId: ctx.profileId,

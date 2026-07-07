@@ -77,6 +77,14 @@ const ACTION_KEYS: Record<string, string> = {
   // settings.ts
   "admin.settings.flag_toggle": "audit.action.flag_toggle",
   "admin.settings.update": "audit.action.setting_update",
+  // leaderboard.ts (L2 season close / hard reset)
+  "admin.leaderboard.reset": "audit.action.leaderboard_reset",
+  // leaderboard.ts (named-season CRUD)
+  "admin.leaderboard.season.create": "audit.action.lbseason_create",
+  "admin.leaderboard.season.update": "audit.action.lbseason_update",
+  "admin.leaderboard.season.delete": "audit.action.lbseason_delete",
+  "admin.leaderboard.season.close": "audit.action.lbseason_close",
+  "admin.leaderboard.season.reopen": "audit.action.lbseason_reopen",
 };
 
 const TRIGGER_OP_KEYS: Record<string, string> = {
@@ -105,6 +113,7 @@ const ENTITY_KEYS: Record<string, string> = {
   olympiad_purchases: "audit.entity.olympiad_purchases",
   wallpapers: "audit.entity.wallpapers",
   free_access_intervals: "audit.entity.free_access_intervals",
+  leaderboard_seasons: "audit.entity.leaderboard_seasons",
   sticker_themes: "audit.entity.sticker_themes",
   sticker_images: "audit.entity.sticker_images",
   feature_flags: "audit.entity.feature_flags",

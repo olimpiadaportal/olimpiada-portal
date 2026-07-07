@@ -793,3 +793,92 @@ If anything here doesn't match, tell me the **CC#** + what you saw.
   helpers are absent from the olympiad guard (49/49 PASS).
 
 If anything here doesn't match, tell me the **DD#** + what you saw.
+
+---
+
+# Round 14 — Leaderboard (2026-07-06)
+
+> Prereq: turn the **leaderboard** feature flag ON (Admin → Settings). Points only start
+> accumulating from NOW (they come from newly graded attempts — old attempts don't backfill).
+
+## EE1. Child earns points + streak (the engine)
+- As a child, finish a **topic test** (Sınaq) or a practice round → open the **Liderlər** tab:
+  your points appear on the Points board (This month + All time), and the **streak flame shows 1**
+  (also in the header chip — it now shows the real consecutive-day streak, not the old day count).
+- Points math: 10 × difficulty weight per correct answer (easy 1 / medium 2 / hard 3), olympiad
+  attempts ×1.5 and uncapped; practice+tests together cap at 150/subject/day (grinding stops adding).
+- Re-submitting/regrading the same attempt NEVER adds points twice. Doing nothing for a full local
+  day puts the streak **at risk** ("~N h left"); missing it resets to 0 on next view.
+
+## EE2. Child board UX
+- Tabs **Points | Streak**; scope chips **Qlobal | Fənn | Sinif | Şəhər | Məktəb** — a chip only
+  shows if the child actually has that grade/city/school set; several subjects → subject chip row.
+- Top-50 list: medals for 1–3, your row highlighted "· Siz". Turn **leaderboard.public_display_names
+  OFF** (Admin → Settings) → other children become "Şagird •1234" while you still see your own name.
+- **Your rank** card shows `#rank / total` for the selected board/scope/period (and an encouraging
+  line when you're not ranked yet). Streak board is global-only (no scope/period chips).
+
+## EE3. Admin management
+- **Admin → Leaderboard** (Administrator only — a Content Manager must NOT see the nav entry, and
+  the URL must bounce them): boards viewer with board/scope/period filters + scope pickers
+  (subjects/grades/cities/schools), top-100 table.
+- **Points formula** editors (per-correct 1–1000, daily cap 0–100000, olympiad multiplier 0.1–10) —
+  out-of-range values are rejected server-side; every save writes an audit row.
+- **Close season now** (confirm) → current month archived to snapshots + month points zeroed,
+  all-time kept. **Hard reset** (double confirm w/ checkbox) → everything zeroed (ledger + streaks).
+  Both appear in the Audit log as "Leaderboard reset (season/hard)".
+
+If anything here doesn't match, tell me the **EE#** + what you saw.
+
+---
+
+# Round 15 — MCQ=4, statuses, leaderboard visibility, seasons, Free-Access wizard (2026-07-07)
+
+## FF1. MCQ = 4 options + strict bulk-import errors
+- **Admin → Questions → New**: the type is Multiple choice and the form shows **exactly 4** answer
+  rows (was 5), one correct. There is **no "Source"** field anymore.
+- **Bulk import** (Questions toolbar, and Olympiad → edit package → import): upload a file whose rows
+  break the schema and confirm the modal now shows a **specific reason per row** in your language —
+  e.g. "Row 3: exactly 4 options required (got 5)", "Row 5: exactly 1 correct answer required",
+  "Row 7: missing Azerbaijani text", "unknown question type" — **not** the old generic "row could not
+  be imported". A clean 4-option file imports; the template you download has 4 options and no Source.
+- **Admin → Question types → Multiple choice**: the **"Exact number of answer options"** field is gone
+  (it's a fixed rule now); the rule summary reads "4 answer options / 1 correct".
+
+## FF2. Three statuses only (In review / Published / Rejected) + working bulk actions
+- **Questions**: a new/imported question is **In review**. Select several → bulk action **Publish**
+  (or Reject) → they move, and a **banner reports "N updated, M skipped"** (previously the bulk action
+  silently did nothing). Row quick-actions and the status filter show only the 3 statuses. Draft /
+  Approved / Archived are gone.
+- **News** follows the same 3 statuses (In review → Publish / Reject; a published article can be sent
+  back To review or Rejected). Public news still shows only Published items.
+
+## FF3. Leaderboard is visible
+- As a **child**: the **Reytinq/Rank** tab now appears in the arena nav, and the **home tab** shows a
+  compact leaderboard card (this-month rank + points + 🔥 streak, "See full leaderboard →").
+- As a **parent**: each child's **dashboard** card shows a rank/points/streak chip, and **Analytics**
+  shows a per-child leaderboard panel (rank this month + all-time, points, current + best streak).
+  *(The whole thing is behind the `leaderboard` flag, now ON by default; turning it off in Settings
+  hides all of it.)*
+
+## FF4. Admin Season management (CRUD)
+- **Admin → Leaderboard → Seasons**: **New season** (name + start + end) → it appears with a status
+  pill (upcoming/active/ended/closed). **View standings** shows live rankings from the points ledger.
+  **Edit** works while open; **Close** freezes the standings (edit disabled after); **Reopen** clears
+  the freeze; **Delete** removes it. Every action shows up in the Audit log. The separate "reset this
+  month's board" + hard-reset controls are unchanged.
+
+## FF5. Free Access = a guided Parent → Child → Schedule wizard
+- **Admin → Free Access** is now ONE sequential flow, not three stacked forms:
+  - **Step 1 Parent**: create a new parent OR pick an existing one. Until a parent is chosen, Step 2
+    is locked.
+  - **Step 2 Child**: create a new child (the parent is **locked** to your Step-1 choice — no parent
+    search), OR pick an existing child **of that parent**, OR choose "all children of this parent".
+    Until this is set, Step 3 is locked.
+  - **Step 3 Schedule**: pick start/end (+ note) → schedule the free-access window for the chosen
+    parent/child. Success lets you "Schedule another" or "Start over".
+  - The scheduled-intervals table (with Deactivate) still shows below.
+- Verify you **cannot** reach the child or schedule steps without completing the previous one, and that
+  the existing-child list only ever contains children of the selected parent.
+
+If anything here doesn't match, tell me the **FF#** + what you saw.

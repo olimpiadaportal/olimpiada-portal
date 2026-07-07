@@ -28,17 +28,8 @@ import { sanitizeSearchTerm } from "@/lib/admin/search";
 // ---------------------------------------------------------------------------
 
 const PAGE_SIZES = [25, 50, 100] as const;
-const LIFECYCLE_STATUSES = [
-  "draft",
-  "in_review",
-  "approved",
-  "published",
-  "rejected",
-  "archived",
-] as const;
-// Stat cards shown above the table (per design: Draft / In review / Published /
-// Archived + Total).
-const STAT_STATUSES = ["draft", "in_review", "published", "archived"] as const;
+// Three-state content lifecycle: in_review / published / rejected.
+const LIFECYCLE_STATUSES = ["in_review", "published", "rejected"] as const;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -159,10 +150,9 @@ export default async function QuestionsPage({
     { data: grades },
     { data: qtypes },
     { count: statTotal },
-    { count: statDraft },
     { count: statReview },
     { count: statPublished },
-    { count: statArchived },
+    { count: statRejected },
     // For the New-question and Bulk-import modals.
     fullDict,
     selectOptions,
@@ -173,12 +163,14 @@ export default async function QuestionsPage({
     supabase.from("topics").select("id, subject_id, name").order("name"),
     supabase.from("subtopics").select("id, topic_id, name").order("name"),
     supabase.from("grades").select("id, name, level").order("level"),
-    supabase.from("question_types").select("id, code, name, status").order("code"),
+    supabase
+      .from("question_types")
+      .select("id, code, name, status, options_required, correct_required")
+      .order("code"),
     countByStatus(),
-    countByStatus("draft"),
     countByStatus("in_review"),
     countByStatus("published"),
-    countByStatus("archived"),
+    countByStatus("rejected"),
     getDict(),
     loadQuestionOptions(t),
     loadQuestionTypeRules(),
@@ -246,6 +238,14 @@ export default async function QuestionsPage({
   const activeTypeNames: string[] = ((qtypes ?? []) as any[])
     .filter((r) => r.status === "active")
     .map((r) => String(r.name));
+  // Structure rules for the bulk-import client-side pre-validation mirror.
+  const activeTypeRules = ((qtypes ?? []) as any[])
+    .filter((r) => r.status === "active")
+    .map((r) => ({
+      name: String(r.name),
+      options_required: r.options_required ?? null,
+      correct_required: r.correct_required ?? null,
+    }));
 
   // Canonical (validated) params — the base for every link on this page.
   const current: FilterCurrent = {
@@ -293,10 +293,9 @@ export default async function QuestionsPage({
     "qfield.subject", "qfield.grade", "qfield.language", "qfield.type",
     "qfield.topic", "qfield.subtopic", "qfield.bodyAz", "qfield.status",
     "questions.none",
-    "qact.submit", "qact.approve", "qact.reject", "qact.publish",
-    "qact.unpublish", "qact.archive",
-    "qstatus.draft", "qstatus.in_review", "qstatus.approved",
-    "qstatus.published", "qstatus.archived", "qstatus.rejected",
+    "qact.publish", "qact.reject", "qact.to_review",
+    "qstatus.in_review", "qstatus.published", "qstatus.rejected",
+    "qbulk.applied", "qbulk.updated", "qbulk.skipped",
     "qfilter.search", "qfilter.allSubjects", "qfilter.allTopics",
     "qfilter.allSubtopics", "qfilter.allTypes", "qfilter.allGrades",
     "qfilter.allStatuses", "qfilter.clear", "qpage.perPage",
@@ -306,10 +305,9 @@ export default async function QuestionsPage({
 
   const statCards: { key: string; label: string; count: number; status: string }[] = [
     { key: "total", label: t("qstat.total"), count: statTotal ?? 0, status: "" },
-    { key: "draft", label: t("qstatus.draft"), count: statDraft ?? 0, status: "draft" },
     { key: "in_review", label: t("qstatus.in_review"), count: statReview ?? 0, status: "in_review" },
     { key: "published", label: t("qstatus.published"), count: statPublished ?? 0, status: "published" },
-    { key: "archived", label: t("qstatus.archived"), count: statArchived ?? 0, status: "archived" },
+    { key: "rejected", label: t("qstatus.rejected"), count: statRejected ?? 0, status: "rejected" },
   ];
 
   return (
@@ -326,6 +324,7 @@ export default async function QuestionsPage({
               subjects={bulkSubjects}
               grades={gradeOptions}
               typeNames={activeTypeNames}
+              typeRules={activeTypeRules}
             />
             <NewQuestionModal
               dict={fullDict}

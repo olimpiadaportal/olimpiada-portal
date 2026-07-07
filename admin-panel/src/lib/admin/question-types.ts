@@ -128,24 +128,19 @@ export async function saveQuestionType(
   const statusRaw = String(formData.get("status") ?? "").trim();
   const status = STATUSES.has(statusRaw) ? statusRaw : "active";
 
-  // options_required: empty (flexible 2..10) or an exact integer 2..10.
-  const optionsRequired = intOrNull(formData.get("options_required"), 2, 10);
-  if (optionsRequired === undefined) return { error: "range.options" };
-  // correct_required: empty (at least 1) or an exact integer
-  // 1..options_required (1..10 when the option count is flexible).
-  const correctRequired = intOrNull(
-    formData.get("correct_required"),
-    1,
-    optionsRequired ?? 10,
-  );
+  // options_required is a FIXED business rule now (MCQ = 4) — this form no longer
+  // edits it, and the save NEVER writes it so the DB value is preserved.
+  // correct_required: empty (at least 1) or an exact integer 1..10.
+  const correctRequired = intOrNull(formData.get("correct_required"), 1, 10);
   if (correctRequired === undefined) return { error: "range.correct" };
 
   const supportsAutoGrading = formData.get("supports_auto_grading") != null;
 
+  // Deliberately omits options_required from the payload (create + update) so
+  // the DB-controlled value is never overwritten.
   const payload: Record<string, unknown> = {
     name,
     status,
-    options_required: optionsRequired,
     correct_required: correctRequired,
     supports_auto_grading: supportsAutoGrading,
   };
@@ -199,7 +194,6 @@ export async function saveQuestionType(
     metadata: {
       name,
       status,
-      options_required: optionsRequired,
       correct_required: correctRequired,
       supports_auto_grading: supportsAutoGrading,
     },

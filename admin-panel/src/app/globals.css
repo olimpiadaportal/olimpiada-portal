@@ -2258,3 +2258,178 @@ a.qpage-link:hover {
     max-height: 94vh;
   }
 }
+
+/* =====================  Free-Access guided wizard (Round 12.2)  ============ */
+/* Sequential stepper: Parent → Child → Schedule. Each step card is active
+   (expanded form), done (collapsed summary + Change), or locked (muted hint). */
+.fawiz {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.fawiz-intro {
+  margin: 0;
+}
+
+/* Compact top progress strip (1 Parent · 2 Child · 3 Schedule). */
+.fawiz-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fawiz-stepchip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.fawiz-stepchip-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.fawiz-stepchip-active {
+  border-color: var(--brand);
+  color: var(--brand-600);
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+}
+.fawiz-stepchip-active .fawiz-stepchip-num {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.fawiz-stepchip-done {
+  color: var(--ok-fg);
+  border-color: color-mix(in srgb, var(--ok-fg) 35%, var(--border));
+}
+.fawiz-stepchip-done .fawiz-stepchip-num {
+  background: var(--ok-bg);
+  border-color: color-mix(in srgb, var(--ok-fg) 35%, var(--border));
+  color: var(--ok-fg);
+}
+
+/* Step cards. */
+.fawiz-step-locked {
+  opacity: 0.7;
+}
+.fawiz-step-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fawiz-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.fawiz-step-done .fawiz-step-num {
+  background: var(--ok-bg);
+  color: var(--ok-fg);
+}
+.fawiz-step-locked .fawiz-step-num {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.fawiz-step-title {
+  margin: 0;
+  font-size: 1.02rem;
+}
+.fawiz-change {
+  margin-left: auto;
+}
+.fawiz-summary-text {
+  margin: 8px 0 0;
+  font-weight: 600;
+}
+.fawiz-locked-hint {
+  margin: 8px 0 0;
+}
+.fawiz-step-body {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Segmented mode toggle (New parent / Existing, New child / Existing / All). */
+.fawiz-modes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  align-self: flex-start;
+}
+.fawiz-mode {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 7px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.fawiz-mode:hover {
+  color: var(--text);
+}
+.fawiz-mode.active {
+  background: var(--surface);
+  color: var(--brand-600);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+}
+
+/* Read-only locked parent value inside the wizard's child form. */
+.fawiz-locked-value {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-weight: 600;
+}
+
+/* "Choose existing child" / "All children" sub-panels + schedule recap. */
+.fawiz-existing-child,
+.fawiz-all-children {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fawiz-recap {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.9rem;
+}

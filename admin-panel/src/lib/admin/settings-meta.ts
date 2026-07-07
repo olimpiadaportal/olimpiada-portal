@@ -147,6 +147,34 @@ export const SETTING_META: Record<string, SettingMeta> = {
     labelKey: "settings.sys.public_display_names.label",
     helpKey: "settings.sys.public_display_names.help",
   },
+  // Leaderboard points formula (edited on the /leaderboard page, not on
+  // /settings — the Settings page renders keys explicitly per card). Ranges are
+  // enforced server-side in updateSetting via these min/max bounds. Difficulty
+  // weights are intentionally NOT here: they live on difficulty_levels.weight.
+  "leaderboard.points.per_correct": {
+    kind: "number",
+    labelKey: "settings.sys.lb_per_correct.label",
+    helpKey: "settings.sys.lb_per_correct.help",
+    placeholder: "10",
+    min: 1,
+    max: 1000,
+  },
+  "leaderboard.points.practice_daily_cap_per_subject": {
+    kind: "number",
+    labelKey: "settings.sys.lb_daily_cap.label",
+    helpKey: "settings.sys.lb_daily_cap.help",
+    placeholder: "150",
+    min: 0,
+    max: 100000,
+  },
+  "leaderboard.points.olympiad_multiplier": {
+    kind: "number",
+    labelKey: "settings.sys.lb_olympiad_multiplier.label",
+    helpKey: "settings.sys.lb_olympiad_multiplier.help",
+    placeholder: "1.5",
+    min: 0.1,
+    max: 10,
+  },
   "platform.default_locale": {
     kind: "locale",
     labelKey: "settings.sys.default_locale.label",

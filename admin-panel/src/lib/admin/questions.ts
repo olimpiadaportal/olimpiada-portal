@@ -10,6 +10,13 @@ import {
   requirePermission,
 } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
+import {
+  validateBulkItem,
+  normTypeName,
+  mapRpcRowError,
+  overrideItemMeta,
+  type ActiveTypeRule,
+} from "@/lib/admin/bulk-validate";
 
 // `ok` is set only on the modal ("stay") path: the create-question modal needs
 // a success result instead of a redirect so it can close and refresh in place.
@@ -27,7 +34,6 @@ const META_FIELDS = [
   "subtopic_id",
   "type_id",
   "olympiad_type_id",
-  "source_id",
 ] as const;
 
 const UUID_RE =
@@ -152,7 +158,7 @@ export async function saveQuestion(
       .insert({
         ...meta,
         primary_locale: locale,
-        status: "draft",
+        status: "in_review",
         created_by: ctx.profileId,
         updated_by: ctx.profileId,
       })
@@ -239,21 +245,18 @@ export async function saveQuestion(
   redirect(`/questions/${questionId}/edit`);
 }
 
-// Lifecycle transitions with role rules (also enforced by RLS).
+// Lifecycle transitions with role rules (also enforced by RLS). Three-state
+// model: in_review ⇄ published ⇄ rejected. Creation lands in in_review.
+//   publish   → 'published'  (content.publish)   from in_review / rejected
+//   reject    → 'rejected'   (content.review)    from in_review / published
+//   to_review → 'in_review'  (content.review)    from published / rejected
 const TRANSITIONS: Record<
   string,
   { from: string[]; to: string; perm?: string }
 > = {
-  submit: { from: ["draft", "rejected"], to: "in_review" },
-  approve: { from: ["in_review"], to: "approved", perm: "content.review" },
-  reject: { from: ["in_review"], to: "rejected", perm: "content.review" },
-  publish: { from: ["approved"], to: "published", perm: "content.publish" },
-  unpublish: { from: ["published"], to: "approved", perm: "content.publish" },
-  archive: {
-    from: ["draft", "in_review", "approved", "published", "rejected"],
-    to: "archived",
-    perm: "content.archive",
-  },
+  publish: { from: ["in_review", "rejected"], to: "published", perm: "content.publish" },
+  reject: { from: ["in_review", "published"], to: "rejected", perm: "content.review" },
+  to_review: { from: ["published", "rejected"], to: "in_review", perm: "content.review" },
 };
 
 export async function transitionQuestion(formData: FormData): Promise<void> {
@@ -271,7 +274,7 @@ export async function transitionQuestion(formData: FormData): Promise<void> {
   const supabase = await createClient();
   const { data: q } = await supabase
     .from("questions")
-    .select("status, created_by, olympiad_package_id")
+    .select("status, olympiad_package_id")
     .eq("id", id)
     .maybeSingle();
   if (!q || !tr.from.includes(q.status)) return;
@@ -279,11 +282,6 @@ export async function transitionQuestion(formData: FormData): Promise<void> {
   // M1: olympiad-pool questions are Admin-only — content managers must not
   // transition them even with a direct id.
   if (!ctx.isAdmin && q.olympiad_package_id) return;
-
-  // Submitting is allowed for the creator (or an admin).
-  if (action === "submit" && !ctx.isAdmin && q.created_by !== ctx.profileId) {
-    redirect("/unauthorized");
-  }
 
   await supabase
     .from("questions")
@@ -323,6 +321,7 @@ export type BulkImportState =
       error?: string;
     }
   | null;
+
 
 export async function bulkImportQuestions(
   _prev: BulkImportState,
@@ -370,76 +369,82 @@ export async function bulkImportQuestions(
     return { ok: false, error: t("bulk.notArray") };
   }
 
-  // Override every item's meta.subject / meta.grade_level with the values
-  // resolved from the selected ids. Old-format files that still carry these
-  // fields are silently superseded (backward compatible by design).
-  const items = payload.map((item) =>
-    overrideItemMeta(item, {
-      subject: subj.name,
-      grade_level: grade.level,
-    }),
-  );
+  // Load the ACTIVE question types + their structure rules (there is one at
+  // launch: Multiple choice, 4 options / 1 correct). Validation is driven by
+  // these rules, never a hardcoded count, so future types adapt automatically.
+  const { data: typeRows } = await supabase
+    .from("question_types")
+    .select("name, options_required, correct_required")
+    .eq("status", "active")
+    .order("name");
+  const activeTypes: ActiveTypeRule[] = ((typeRows ?? []) as any[]).map((r) => ({
+    name: String(r.name),
+    options_required: r.options_required ?? null,
+    correct_required: r.correct_required ?? null,
+  }));
+  const activeByNorm = new Map<string, ActiveTypeRule>();
+  for (const r of activeTypes) activeByNorm.set(normTypeName(r.name), r);
+  // Default (for items that omit meta.type) = the sole active type.
+  const defaultType = activeTypes[0] ?? null;
 
-  const { data, error } = await supabase.rpc("bulk_insert_questions", {
-    p_questions: items,
-    p_filename: file.name,
+  const total = payload.length;
+  const errors: { index: number; error: string }[] = [];
+  // Structurally valid rows, with their 1-based file index preserved so the
+  // per-row error index stays consistent across TS-rejected + RPC rows.
+  const validItems: Record<string, unknown>[] = [];
+  const validFileIndex: number[] = [];
+
+  payload.forEach((item, i) => {
+    const msg = validateBulkItem(item, t, activeByNorm, defaultType);
+    if (msg) {
+      errors.push({ index: i + 1, error: msg });
+      return;
+    }
+    // Inject batch subject/grade (superseding any stale file values).
+    validItems.push(
+      overrideItemMeta(item, { subject: subj.name, grade_level: grade.level }),
+    );
+    validFileIndex.push(i + 1);
   });
-  if (error) {
-    console.error("[admin] question bulk import failed", error.message);
-    return { ok: false, error: t("err.server") };
+
+  let successful = 0;
+  if (validItems.length > 0) {
+    const { data, error } = await supabase.rpc("bulk_insert_questions", {
+      p_questions: validItems,
+      p_filename: file.name,
+    });
+    if (error) {
+      console.error("[admin] question bulk import failed", error.message);
+      return { ok: false, error: t("err.server") };
+    }
+    const rpc = data as {
+      total: number;
+      successful: number;
+      failed: number;
+      errors: { index: number; error: string }[];
+    };
+    successful = rpc?.successful ?? 0;
+    for (const e of rpc?.errors ?? []) {
+      // The RPC's index is 1-based over the filtered array we sent — map it back
+      // to the original file position so the row number the admin sees is right.
+      const fileIdx = validFileIndex[e.index - 1] ?? e.index;
+      errors.push({ index: fileIdx, error: mapRpcRowError(e.error, t) });
+    }
   }
 
-  const result = data as {
-    total: number;
-    successful: number;
-    failed: number;
-    errors: { index: number; error: string }[];
-  };
-
+  errors.sort((a, b) => a.index - b.index);
   revalidatePath("/questions");
   return {
     ok: true,
     result: {
-      ...result,
-      errors: sanitizeRowErrors(result?.errors, t("bulk.rowFailed")),
+      total,
+      successful,
+      failed: total - successful,
+      errors,
     },
   };
 }
 
-// Merges batch-level meta values (subject name / grade level) into one import
-// item, preserving everything else. Non-object items pass through as a bare
-// meta wrapper — the RPC then reports them as per-row failures.
-function overrideItemMeta(
-  item: unknown,
-  patch: Record<string, unknown>,
-): Record<string, unknown> {
-  const obj =
-    item && typeof item === "object" && !Array.isArray(item)
-      ? (item as Record<string, unknown>)
-      : {};
-  const meta =
-    obj.meta && typeof obj.meta === "object" && !Array.isArray(obj.meta)
-      ? (obj.meta as Record<string, unknown>)
-      : {};
-  return { ...obj, meta: { ...meta, ...patch } };
-}
-
-// L9: the RPC records raw SQLERRM per failed row. Our own validation raises
-// start with "bulk_insert" and are safe/useful; anything else (constraint
-// violations, internal Postgres text) is replaced with a generic trilingual
-// message so DB internals never reach the client.
-function sanitizeRowErrors(
-  errors: { index: number; error: string }[] | null | undefined,
-  generic: string,
-): { index: number; error: string }[] {
-  return (errors ?? []).map((e) => ({
-    index: e.index,
-    error:
-      typeof e.error === "string" && e.error.startsWith("bulk_insert")
-        ? e.error
-        : generic,
-  }));
-}
 
 // L11: only UUID-shaped entries survive (never feed arbitrary strings into
 // .in() filters) and the list is capped at 500 ids per bulk call.
@@ -460,13 +465,20 @@ export async function bulkDeleteQuestions(formData: FormData): Promise<void> {
   revalidatePath("/questions");
 }
 
-export async function bulkTransitionQuestions(formData: FormData): Promise<void> {
+// useActionState result so the table can show "N updated, M skipped" feedback
+// (the owner reported bulk actions felt like silent no-ops).
+export type BulkTransitionState = { updated: number; skipped: number } | null;
+
+export async function bulkTransitionQuestions(
+  _prev: BulkTransitionState,
+  formData: FormData,
+): Promise<BulkTransitionState> {
   // Guard FIRST — before touching any client-supplied FormData.
   const ctx = await requirePanelAccess();
   const action = s(formData, "__action");
   const tr = TRANSITIONS[action];
   const ids = idList(formData);
-  if (!tr || ids.length === 0) return;
+  if (!tr || ids.length === 0) return { updated: 0, skipped: ids.length };
 
   if (tr.perm && !ctx.isAdmin && !ctx.permissions.includes(tr.perm)) {
     redirect("/unauthorized");
@@ -475,34 +487,30 @@ export async function bulkTransitionQuestions(formData: FormData): Promise<void>
   const supabase = await createClient();
   const { data: qs } = await supabase
     .from("questions")
-    .select("id, status, created_by, olympiad_package_id")
+    .select("id, status, olympiad_package_id")
     .in("id", ids);
 
-  // Only transition rows whose current status allows it (submit also needs
-  // creator/admin; M1: olympiad-pool rows stay Admin-only). RLS additionally
-  // restricts which rows actually update.
+  // Only transition rows whose current status allows it (M1: olympiad-pool rows
+  // stay Admin-only). RLS additionally restricts which rows actually update.
   const eligible = (qs ?? [])
     .filter(
-      (q: {
-        status: string;
-        created_by: string | null;
-        olympiad_package_id: string | null;
-      }) =>
-        tr.from.includes(q.status) &&
-        (ctx.isAdmin || !q.olympiad_package_id) &&
-        (action !== "submit" || ctx.isAdmin || q.created_by === ctx.profileId),
+      (q: { status: string; olympiad_package_id: string | null }) =>
+        tr.from.includes(q.status) && (ctx.isAdmin || !q.olympiad_package_id),
     )
     .map((q: { id: string }) => q.id);
+  const skipped = ids.length - eligible.length;
+
   if (eligible.length === 0) {
     revalidatePath("/questions");
-    return;
+    return { updated: 0, skipped };
   }
 
-  await supabase
+  const { error } = await supabase
     .from("questions")
     .update({ status: tr.to, updated_by: ctx.profileId })
     .in("id", eligible);
   revalidatePath("/questions");
+  return error ? { updated: 0, skipped: ids.length } : { updated: eligible.length, skipped };
 }
 
 export async function bulkAssignTopic(formData: FormData): Promise<void> {

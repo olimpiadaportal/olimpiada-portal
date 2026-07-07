@@ -828,6 +828,38 @@ grant  update (selected_option_ids, answer_text, time_spent_ms)
 revoke insert, update on public.student_daily_task_progress from anon, authenticated;
 grant  insert (student_profile_id, package_id) on public.student_daily_task_progress to authenticated;
 
+
+-- -----------------------------------------------------------------------------
+-- LEADERBOARD ENGINE (backported from migrations/2026_07_06_039_leaderboard_engine.sql)
+-- Read-own/parent/admin; NO client write path on either table.
+-- -----------------------------------------------------------------------------
+alter table public.student_points_ledger enable row level security;
+alter table public.student_activity_days enable row level security;
+
+drop policy if exists spl_select on public.student_points_ledger;
+create policy spl_select on public.student_points_ledger for select to authenticated
+  using (student_profile_id = public.current_profile_id()
+         or public.is_parent_linked_to_student(student_profile_id)
+         or public.is_admin());
+
+drop policy if exists sad_select on public.student_activity_days;
+create policy sad_select on public.student_activity_days for select to authenticated
+  using (student_profile_id = public.current_profile_id()
+         or public.is_parent_linked_to_student(student_profile_id)
+         or public.is_admin());
+
+--
+
+
+-- -----------------------------------------------------------------------------
+-- LEADERBOARD SEASONS (backported from migrations/2026_07_07_041)
+-- Seasons: admin-only select; writes via service-role RPCs.
+-- -----------------------------------------------------------------------------
+alter table public.leaderboard_seasons enable row level security;
+drop policy if exists lseasons_admin on public.leaderboard_seasons;
+create policy lseasons_admin on public.leaderboard_seasons for select to authenticated
+  using (public.is_admin());   -- writes go through the service-role RPCs below
+
 -- =============================================================================
 -- End of 010_rls_policies.sql
 -- =============================================================================

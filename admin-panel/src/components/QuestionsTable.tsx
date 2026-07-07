@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import {
   bulkAssignTopic,
   bulkDeleteQuestions,
@@ -26,42 +26,43 @@ export type Taxonomy = {
 };
 
 // Lifecycle actions a user may apply in bulk; perm gates which appear.
+// Three-state model: publish / reject / to_review.
 const ACTIONS: { action: string; perm?: string }[] = [
-  { action: "submit" },
-  { action: "approve", perm: "content.review" },
-  { action: "reject", perm: "content.review" },
   { action: "publish", perm: "content.publish" },
-  { action: "unpublish", perm: "content.publish" },
-  { action: "archive", perm: "content.archive" },
+  { action: "reject", perm: "content.review" },
+  { action: "to_review", perm: "content.review" },
 ];
 
 function statusPill(s: string): string {
   if (s === "published") return "pill-ok";
-  if (s === "archived" || s === "rejected") return "pill-warn";
-  return "pill-muted";
+  if (s === "rejected") return "pill-warn";
+  return "pill-muted"; // in_review
 }
 
 // Per-row quick actions — mirrors the allowed-transitions logic of the edit
-// page (QuestionLifecycle). The server action re-checks permissions, current
-// status and (for submit) creatorship; RLS is the final gate.
+// page (QuestionLifecycle). The server action re-checks permissions and current
+// status; RLS is the final gate.
+//   in_review → publish / reject
+//   published → reject / to_review
+//   rejected  → publish / to_review
 function rowTransitions(
   status: string,
   can: (p: string) => boolean,
 ): { action: string; key: string }[] {
   const buttons: { action: string; key: string }[] = [];
-  if (status === "draft" || status === "rejected")
-    buttons.push({ action: "submit", key: "qact.submit" });
-  if (status === "in_review" && can("content.review"))
-    buttons.push(
-      { action: "approve", key: "qact.approve" },
-      { action: "reject", key: "qact.reject" },
-    );
-  if (status === "approved" && can("content.publish"))
-    buttons.push({ action: "publish", key: "qact.publish" });
-  if (status === "published" && can("content.publish"))
-    buttons.push({ action: "unpublish", key: "qact.unpublish" });
-  if (status !== "archived" && can("content.archive"))
-    buttons.push({ action: "archive", key: "qact.archive" });
+  if (status === "in_review") {
+    if (can("content.publish")) buttons.push({ action: "publish", key: "qact.publish" });
+    if (can("content.review")) buttons.push({ action: "reject", key: "qact.reject" });
+  } else if (status === "published") {
+    if (can("content.review"))
+      buttons.push(
+        { action: "reject", key: "qact.reject" },
+        { action: "to_review", key: "qact.to_review" },
+      );
+  } else if (status === "rejected") {
+    if (can("content.publish")) buttons.push({ action: "publish", key: "qact.publish" });
+    if (can("content.review")) buttons.push({ action: "to_review", key: "qact.to_review" });
+  }
   return buttons;
 }
 
@@ -81,6 +82,9 @@ export function QuestionsTable({
   const tt = (k: string) => dict[k] ?? k;
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [action, setAction] = useState("");
+  // Bulk transition returns { updated, skipped } so we can show real feedback
+  // (the owner reported bulk actions felt like silent no-ops).
+  const [bulkState, bulkAction] = useActionState(bulkTransitionQuestions, null);
   const [showAssign, setShowAssign] = useState(false);
   const [aSubject, setASubject] = useState("");
   const [aTopic, setATopic] = useState("");
@@ -116,7 +120,7 @@ export function QuestionsTable({
             </span>
             <form
               className="bulk-group"
-              action={bulkTransitionQuestions}
+              action={bulkAction}
               onSubmit={(e) => {
                 if (!action || !confirm(tt("qbulk.confirmAction"))) e.preventDefault();
               }}
@@ -219,6 +223,14 @@ export function QuestionsTable({
             </form>
           )}
         </>
+      )}
+
+      {bulkState && (
+        <p className="form-ok" role="status">
+          {tt("qbulk.applied")}{" "}
+          {tt("qbulk.updated").replace("{n}", String(bulkState.updated))} ·{" "}
+          {tt("qbulk.skipped").replace("{m}", String(bulkState.skipped))}
+        </p>
       )}
 
       <div className="table-wrap">

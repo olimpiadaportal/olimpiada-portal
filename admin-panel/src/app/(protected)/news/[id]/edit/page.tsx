@@ -14,7 +14,7 @@ const FORM_KEYS = [
   "news.field.title", "news.field.body", "manage.saving",
 ];
 const LIFE_KEYS = [
-  "news.act.publish", "news.act.unpublish", "news.act.archive",
+  "news.act.publish", "news.act.reject", "news.act.to_review",
   "news.act.delete", "news.act.confirmDelete",
 ];
 

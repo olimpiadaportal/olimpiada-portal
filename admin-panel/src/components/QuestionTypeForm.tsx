@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import {
   saveQuestionType,
   type QuestionTypeSaveState,
@@ -9,6 +9,10 @@ import {
 // Error codes returned by saveQuestionType mapped to localized strings passed
 // from the server page (this client component holds no i18n dictionary itself
 // — same pattern as CityForm).
+//
+// NOTE: the "exact number of answer options" editor was removed — options_required
+// is now a FIXED business rule (MCQ = 4) preserved by the DB. This form only
+// edits the name, status, correct-answers count and auto-grading flag.
 export type QuestionTypeFormLabels = {
   code: string;
   codeHint: string;
@@ -17,8 +21,6 @@ export type QuestionTypeFormLabels = {
   statusHint: string;
   statusActive: string;
   statusInactive: string;
-  optionsRequired: string;
-  optionsHint: string;
   correctRequired: string;
   correctHint: string;
   autoGrading: string;
@@ -26,7 +28,6 @@ export type QuestionTypeFormLabels = {
   saving: string;
   errMissingName: string;
   errTooLong: string;
-  errRangeOptions: string;
   errRangeCorrect: string;
   errDuplicate: string;
   errGeneric: string;
@@ -39,7 +40,6 @@ function mapError(
   if (!code) return null;
   if (code === "missing.name") return l.errMissingName;
   if (code === "err.tooLong") return l.errTooLong;
-  if (code === "range.options") return l.errRangeOptions;
   if (code === "range.correct") return l.errRangeCorrect;
   if (code === "duplicate") return l.errDuplicate;
   return l.errGeneric;
@@ -65,14 +65,6 @@ export function QuestionTypeForm({
     QuestionTypeSaveState,
     FormData
   >(saveQuestionType, null);
-
-  // Controlled so correct_required's max hint can track options_required. The
-  // server independently re-validates both ranges.
-  const [optionsRequired, setOptionsRequired] = useState(
-    defaultValues?.options_required != null
-      ? String(defaultValues.options_required)
-      : "",
-  );
 
   const err = mapError(state?.error, labels);
 
@@ -113,26 +105,12 @@ export function QuestionTypeForm({
         </label>
 
         <label className="field">
-          <span className="field-label">{labels.optionsRequired}</span>
-          <input
-            type="number"
-            name="options_required"
-            min={2}
-            max={10}
-            step={1}
-            value={optionsRequired}
-            onChange={(e) => setOptionsRequired(e.target.value)}
-          />
-          <span className="hint muted">{labels.optionsHint}</span>
-        </label>
-
-        <label className="field">
           <span className="field-label">{labels.correctRequired}</span>
           <input
             type="number"
             name="correct_required"
             min={1}
-            max={optionsRequired !== "" ? Number(optionsRequired) : 10}
+            max={10}
             step={1}
             defaultValue={
               defaultValues?.correct_required != null

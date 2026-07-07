@@ -58,6 +58,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "nav.accounts", href: "/accounts", adminOnly: true },
       { label: "nav.freeAccess", href: "/free-access", adminOnly: true },
+      { label: "nav.leaderboard", href: "/leaderboard", adminOnly: true },
       { label: "nav.audit", href: "/audit", adminOnly: true },
       { label: "nav.settings", href: "/settings", adminOnly: true },
       { label: "nav.siteContent", href: "/site-content", adminOnly: true },

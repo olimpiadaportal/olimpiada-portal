@@ -58,7 +58,10 @@ export default async function EditOlympiadPage({
     await Promise.all([
       supabase.from("subjects").select("id, name").order("name"),
       supabase.from("grades").select("id, name, level").order("level"),
-      supabase.from("question_types").select("name, status").order("code"),
+      supabase
+        .from("question_types")
+        .select("name, status, options_required, correct_required")
+        .order("code"),
       // PRIVATE pool size: questions owned by THIS package only.
       supabase
         .from("questions")
@@ -78,6 +81,14 @@ export default async function EditOlympiadPage({
   const activeTypeNames = ((qtypes ?? []) as any[])
     .filter((r) => r.status === "active")
     .map((r) => String(r.name));
+  // Structure rules for the shared bulk-import modal's client-side validation.
+  const activeTypeRules = ((qtypes ?? []) as any[])
+    .filter((r) => r.status === "active")
+    .map((r) => ({
+      name: String(r.name),
+      options_required: r.options_required ?? null,
+      correct_required: r.correct_required ?? null,
+    }));
 
   return (
     <div className="page">
@@ -135,6 +146,7 @@ export default async function EditOlympiadPage({
             label: String(g.name),
           }))}
           typeNames={activeTypeNames}
+          typeRules={activeTypeRules}
           triggerClassName="btn"
         />
       </section>

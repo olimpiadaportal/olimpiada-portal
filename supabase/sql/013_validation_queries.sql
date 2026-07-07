@@ -710,13 +710,80 @@ select '49_test_engine_and_mcq_rules' as check_name,
                           where table_schema='public' and table_name='test_attempts' and column_name='deadline_at')
              and exists (select 1 from public.question_types
                           where code='multiple_choice' and status='active'
-                            and options_required=5 and correct_required=1)
+                            and options_required=4 and correct_required=1)
              and not exists (select 1 from public.question_types
                               where code <> 'multiple_choice' and status='active')
              and position('assert_question_type_rules' in
                    pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure)) > 0
              and position('assert_question_type_rules' in
                    pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 50) Leaderboard engine (migration 039) — ledger + activity tables with RLS ON,
+--     the once-per-attempt uniqueness, the single-writer trigger on the graded
+--     transition, and the students column-protection trigger (row RLS alone
+--     cannot protect the cached points/streak columns).
+select '50_leaderboard_engine' as check_name,
+       case when to_regclass('public.student_points_ledger') is not null
+             and to_regclass('public.student_activity_days') is not null
+             and (select relrowsecurity from pg_class where oid='public.student_points_ledger'::regclass)
+             and (select relrowsecurity from pg_class where oid='public.student_activity_days'::regclass)
+             and exists (select 1 from pg_constraint
+                          where conname='uq_points_per_attempt'
+                            and conrelid='public.student_points_ledger'::regclass)
+             and exists (select 1 from pg_trigger
+                          where tgname='trg_award_points_on_graded'
+                            and tgrelid='public.test_attempts'::regclass)
+             and exists (select 1 from pg_trigger
+                          where tgname='trg_protect_student_progress'
+                            and tgrelid='public.students'::regclass)
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='points_all_time')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 51) Leaderboard privileges + config — board reads are authenticated-only (not
+--     anon); the writer and admin reset are service-role only; the 3 formula
+--     settings are seeded (difficulty weights come from difficulty_levels.weight).
+select '51_leaderboard_privileges' as check_name,
+       case when has_function_privilege('anon', 'public.get_leaderboard(text,text,uuid,text,int)', 'EXECUTE') = false
+             and has_function_privilege('authenticated', 'public.get_leaderboard(text,text,uuid,text,int)', 'EXECUTE') = true
+             and has_function_privilege('anon', 'public.get_my_leaderboard_rank(text,text,uuid,text)', 'EXECUTE') = false
+             and has_function_privilege('anon', 'public.get_streak_status()', 'EXECUTE') = false
+             and has_function_privilege('authenticated', 'public.award_attempt_points(uuid)', 'EXECUTE') = false
+             and has_function_privilege('authenticated', 'public.admin_reset_leaderboard(text)', 'EXECUTE') = false
+             and has_function_privilege('authenticated', 'public.lb_rows(text,text,uuid,text)', 'EXECUTE') = false
+             and (select count(*) from public.system_settings where key like 'leaderboard.points.%') >= 3
+            then 'PASS' else 'FAIL' end as status;
+
+-- 52) Content lifecycle = 3 statuses (migration 040): questions & news default
+--     to 'in_review'; MCQ (multiple_choice) requires exactly 4 options / 1 correct.
+select '52_status_and_mcq' as check_name,
+       case when (select column_default from information_schema.columns
+                   where table_schema='public' and table_name='questions' and column_name='status')
+                 like '%in_review%'
+             and (select column_default from information_schema.columns
+                   where table_schema='public' and table_name='news' and column_name='status')
+                 like '%in_review%'
+             and (select options_required from public.question_types where code='multiple_choice') = 4
+             and (select correct_required from public.question_types where code='multiple_choice') = 1
+             and pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure) like '%''in_review''%'
+            then 'PASS' else 'FAIL' end as status;
+
+-- 53) Leaderboard seasons (migration 041): table with admin-only RLS; season CRUD
+--     RPCs are service-role only; the parent child-summary RPC is authenticated
+--     (not anon); the 'leaderboard' feature flag is enabled.
+select '53_leaderboard_seasons' as check_name,
+       case when to_regclass('public.leaderboard_seasons') is not null
+             and (select relrowsecurity from pg_class where oid='public.leaderboard_seasons'::regclass)
+             and exists (select 1 from pg_policies where schemaname='public'
+                          and tablename='leaderboard_seasons' and policyname='lseasons_admin')
+             and has_function_privilege('authenticated','public.create_leaderboard_season(text,timestamptz,timestamptz)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.close_leaderboard_season(uuid)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.get_season_standings(uuid,int)','EXECUTE') = false
+             and has_function_privilege('anon','public.get_child_leaderboard_summary(uuid)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.get_child_leaderboard_summary(uuid)','EXECUTE') = true
+             and (select enabled from public.feature_flags where key='leaderboard') = true
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

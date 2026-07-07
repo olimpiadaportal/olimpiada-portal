@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
 import { ChildNewsPanel } from "@/components/ChildNewsPanel";
@@ -15,8 +16,16 @@ export default async function ChildDashboard() {
   // M24: these reads are independent of each other — one concurrent batch
   // instead of five serial awaits. (The free-subjects merge below stays
   // sequential: it genuinely depends on freeNow.)
-  const [giveawayActive, freeAccessActive, { data: student }, { data: subs }, { data: attempts }] =
-    await Promise.all([
+  const [
+    giveawayActive,
+    freeAccessActive,
+    { data: student },
+    { data: subs },
+    { data: attempts },
+    leaderboardOn,
+    { data: lbRank },
+    { data: streakStatus },
+  ] = await Promise.all([
       // Round 11: during an active giveaway window the whole platform is free —
       // the DB RPCs (start_practice_attempt) already allow it; this mirrors it.
       isGiveawayActive(),
@@ -42,6 +51,18 @@ export default async function ChildDashboard() {
         .eq("status", "graded")
         .order("submitted_at", { ascending: false })
         .limit(200),
+      // L-quick: leaderboard feature gate + this-month GLOBAL rank + streak,
+      // read through the child's OWN RLS-scoped RPCs (never service role). Both
+      // resolve to { data: null } on any error, so the card degrades to the
+      // encouraging "not ranked yet" state and never throws.
+      isFeatureEnabled("leaderboard"),
+      supabase.rpc("get_my_leaderboard_rank", {
+        p_board: "points",
+        p_scope: "global",
+        p_scope_id: null,
+        p_period: "month",
+      }),
+      supabase.rpc("get_streak_status"),
     ]);
   const freeNow = giveawayActive || freeAccessActive;
 
@@ -97,6 +118,18 @@ export default async function ChildDashboard() {
   });
 
   const recent = graded.slice(0, 5);
+
+  // L-quick — real leaderboard snapshot for the home card (safe on null/error).
+  const lbMe = (lbRank ?? null) as
+    | { rank: number | null; total: number; value: number }
+    | null;
+  const streakInfo = (streakStatus ?? null) as
+    | { current: number; best: number }
+    | null;
+  const lbRanked = !!lbMe && lbMe.rank !== null;
+  const lbMonthPoints = lbMe ? Math.round(Number(lbMe.value ?? 0)) : 0;
+  const streakCurrent = Number(streakInfo?.current ?? 0) || 0;
+  const streakBest = Number(streakInfo?.best ?? 0) || 0;
 
   return (
     <>
@@ -163,6 +196,54 @@ export default async function ChildDashboard() {
           ))}
         </div>
       </div>
+
+      {/* ---- Leaderboard quick-look (L-quick) ----
+          Gated by the `leaderboard` feature flag (hidden entirely when off).
+          Real this-month GLOBAL rank + month points + streak from the child's
+          own RLS-scoped RPCs; encouraging fallback when not ranked yet. */}
+      {leaderboardOn && (
+        <section className="lbq-card">
+          <div className="lbq-head">
+            <p className="arena-eyebrow" style={{ margin: 0 }}>
+              {"\u{1F3C6}"} {t("plb.title")}
+            </p>
+            <Link className="lbq-link" href="/child/leaderboard">
+              {t("plb.seeFull")} →
+            </Link>
+          </div>
+          {lbRanked ? (
+            <div className="lbq-stats">
+              <div className="lbq-stat">
+                <div className="lbq-val mono">
+                  #{lbMe!.rank}
+                  <span className="lbq-total"> / {lbMe!.total}</span>
+                </div>
+                <div className="lbq-key">{t("plb.rankThisMonth")}</div>
+              </div>
+              <div className="lbq-stat">
+                <div className="lbq-val mono">{lbMonthPoints}</div>
+                <div className="lbq-key">{t("plb.points")}</div>
+              </div>
+              <div className="lbq-stat">
+                <div className="lbq-val mono">🔥 {streakCurrent}</div>
+                <div className="lbq-key">
+                  {t("plb.streak")} · {t("plb.best")} {streakBest}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="lbq-none-row">
+              <p className="lbq-none">{t("plb.notRanked")}</p>
+              <div className="lbq-stat">
+                <div className="lbq-val mono">🔥 {streakCurrent}</div>
+                <div className="lbq-key">
+                  {t("plb.streak")} · {t("plb.best")} {streakBest}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {!hasAccess && (
         <div className="arena-locked" style={{ marginBottom: 26 }}>

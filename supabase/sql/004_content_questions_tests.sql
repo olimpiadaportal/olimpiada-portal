@@ -86,7 +86,8 @@ create table if not exists public.questions (
   difficulty_id  uuid references public.difficulty_levels (id) on delete set null,
   olympiad_type_id uuid references public.olympiad_types (id) on delete set null,
   source_id      uuid references public.sources (id) on delete set null,
-  status         public.content_status not null default 'draft',
+  -- 3-status lifecycle (migration 040, owner 2026-07-07): in_review/published/rejected.
+  status         public.content_status not null default 'in_review',
   primary_locale public.content_locale not null default 'az',  -- question presentation language
   created_by     uuid references public.profiles (id) on delete set null,
   updated_by     uuid references public.profiles (id) on delete set null,

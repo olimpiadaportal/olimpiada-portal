@@ -45,7 +45,6 @@ export async function loadQuestionOptions(
     type_id: await coded("question_types", "qtype", "code"),
     difficulty_id: await coded("difficulty_levels", "diff", "weight"),
     olympiad_type_id: await coded("olympiad_types", "olympiad", "code"),
-    source_id: await named("sources"),
   };
 }
 

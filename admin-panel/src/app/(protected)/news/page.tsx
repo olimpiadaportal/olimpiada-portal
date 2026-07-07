@@ -8,7 +8,7 @@ import { sanitizeSearchTerm } from "@/lib/admin/search";
 // Round 10 — server-side list filters (status select + debounced title search)
 // following the questions-page pattern: searchParams validated server-side,
 // title search resolved via news_translations → ids → .in().
-const NEWS_STATUSES = ["draft", "published", "archived"] as const;
+const NEWS_STATUSES = ["in_review", "published", "rejected"] as const;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -21,8 +21,8 @@ function first(sp: SearchParams, key: string): string {
 
 function statusPill(s: string): string {
   if (s === "published") return "pill-ok";
-  if (s === "archived") return "pill-warn";
-  return "pill-muted";
+  if (s === "rejected") return "pill-warn";
+  return "pill-muted"; // in_review
 }
 
 export default async function NewsListPage({

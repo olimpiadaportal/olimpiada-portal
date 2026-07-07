@@ -82,19 +82,33 @@ export function CreateChildForm({
   cities,
   schools,
   strings,
+  lockedParent,
+  embedded = false,
+  hideGrant = false,
+  onCreated,
 }: {
   grades: GradeOption[];
   subjects: SubjectOption[];
   cities: CityOption[];
   schools: SchoolOpt[];
   strings: CreateChildStrings;
+  // When set, the parent is fixed (its picker is hidden) — used by the
+  // Free-Access wizard so a child is always created under the chosen parent.
+  lockedParent?: { id: string; name: string };
+  // Render inline (no open button) — the wizard already gates this step.
+  embedded?: boolean;
+  // Hide the built-in grant-free-access toggle: the wizard grants via its own
+  // dedicated Schedule step, so granting here would double-grant.
+  hideGrant?: boolean;
+  // Fired once when the child is created, handing it up to the caller.
+  onCreated?: (child: { id: string; name: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
   // Remount key: closing after a success clears the finished action state so
   // the next open starts with a fresh, empty form.
   const [formKey, setFormKey] = useState(0);
 
-  if (!open) {
+  if (!embedded && !open) {
     return (
       <button type="button" className="btn" onClick={() => setOpen(true)}>
         {strings.open}
@@ -110,6 +124,10 @@ export function CreateChildForm({
       cities={cities}
       schools={schools}
       strings={strings}
+      lockedParent={lockedParent}
+      embedded={embedded}
+      hideGrant={hideGrant}
+      onCreated={onCreated}
       onClose={() => {
         setOpen(false);
         setFormKey((k) => k + 1);
@@ -225,6 +243,10 @@ function InnerForm({
   cities,
   schools,
   strings,
+  lockedParent,
+  embedded = false,
+  hideGrant = false,
+  onCreated,
   onClose,
 }: {
   grades: GradeOption[];
@@ -232,6 +254,10 @@ function InnerForm({
   cities: CityOption[];
   schools: SchoolOpt[];
   strings: CreateChildStrings;
+  lockedParent?: { id: string; name: string };
+  embedded?: boolean;
+  hideGrant?: boolean;
+  onCreated?: (child: { id: string; name: string }) => void;
   onClose: () => void;
 }) {
   const [state, action, pending] = useActionState<CreateChildState, FormData>(
@@ -239,8 +265,20 @@ function InnerForm({
     null,
   );
 
-  const [grant, setGrant] = useState(true); // "Grant free access" defaults ON
+  // "Grant free access" defaults ON, but is forced OFF (and hidden) when the
+  // wizard owns granting via its Schedule step — never double-grant.
+  const [grant, setGrant] = useState(!hideGrant);
   const [interval, setInterval] = useState<"week" | "month" | "year">("month");
+
+  // Report the created child up exactly once (studentProfileId comes only from
+  // the server action result — never fabricated client-side).
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (state?.ok && state.studentProfileId && !firedRef.current) {
+      firedRef.current = true;
+      onCreated?.({ id: state.studentProfileId, name: state.name ?? "" });
+    }
+  }, [state, onCreated]);
 
   // City -> School cascade (schools arrive pre-ordered private-first + numeric).
   const [districtId, setDistrictId] = useState("");
@@ -259,6 +297,16 @@ function InnerForm({
 
   // ---- Success panel (child created) ----------------------------------------
   if (state?.ok) {
+    // Embedded (wizard) mode: the wizard advances to its Schedule step via
+    // onCreated and collapses this step to a summary — a brief inline
+    // confirmation is all that's needed here.
+    if (embedded) {
+      return (
+        <div className="child-created">
+          <p className="form-ok">{strings.done}</p>
+        </div>
+      );
+    }
     return (
       <div className="card child-created">
         <p className="form-ok">{strings.done}</p>
@@ -283,13 +331,27 @@ function InnerForm({
   return (
     <form
       action={action}
-      className="card"
-      style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}
+      className={embedded ? undefined : "card"}
+      style={{
+        marginTop: embedded ? 0 : 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
     >
-      <h3>{strings.title}</h3>
-      <p className="muted child-bypass-intro">{strings.intro}</p>
+      {!embedded && <h3>{strings.title}</h3>}
+      {!hideGrant && <p className="muted child-bypass-intro">{strings.intro}</p>}
 
-      <ParentPicker strings={strings} />
+      {lockedParent ? (
+        <div className="field">
+          <span>{strings.parent}</span>
+          {/* Parent is fixed by the wizard — submit it hidden, show read-only. */}
+          <input type="hidden" name="parent_profile_id" value={lockedParent.id} />
+          <div className="fawiz-locked-value">{lockedParent.name}</div>
+        </div>
+      ) : (
+        <ParentPicker strings={strings} />
+      )}
 
       <div className="form-grid">
         <label className="field">
@@ -390,19 +452,24 @@ function InnerForm({
         </label>
       </div>
 
-      {/* Grant free access (payment bypass) — default ON. */}
+      {/* Grant free access (payment bypass) — default ON. Hidden entirely when
+          the wizard owns granting via its Schedule step (grant forced OFF). */}
       <input type="hidden" name="grant_access" value={grant ? "true" : "false"} />
-      <label className="checkbox-chip child-grant-toggle">
-        <input
-          type="checkbox"
-          checked={grant}
-          onChange={(e) => setGrant(e.target.checked)}
-        />
-        <span>{strings.grant}</span>
-      </label>
-      <p className="muted child-grant-help">{strings.grantHelp}</p>
+      {!hideGrant && (
+        <>
+          <label className="checkbox-chip child-grant-toggle">
+            <input
+              type="checkbox"
+              checked={grant}
+              onChange={(e) => setGrant(e.target.checked)}
+            />
+            <span>{strings.grant}</span>
+          </label>
+          <p className="muted child-grant-help">{strings.grantHelp}</p>
+        </>
+      )}
 
-      {grant && (
+      {!hideGrant && grant && (
         <div className="child-grant-fields">
           <div className="form-grid">
             <label className="field">
@@ -455,9 +522,11 @@ function InnerForm({
         <button className="btn" type="submit" disabled={pending}>
           {pending ? strings.submitting : strings.submit}
         </button>
-        <button type="button" className="btn-ghost" onClick={onClose}>
-          {strings.cancel}
-        </button>
+        {!embedded && (
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            {strings.cancel}
+          </button>
+        )}
         {state?.error && <span className="form-error">{state.error}</span>}
       </div>
     </form>

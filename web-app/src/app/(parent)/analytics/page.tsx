@@ -2,12 +2,25 @@ import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import {
   AnalyticsDashboard,
   type AnalyticsChild,
   type DashPayload,
 } from "@/components/AnalyticsDashboard";
+
+// get_child_leaderboard_summary payload (defensive-optional: any RPC error/null
+// is treated as "no leaderboard activity" and renders the honest empty state).
+type LbSummary = {
+  points_month?: number | null;
+  points_all_time?: number | null;
+  current_streak?: number | null;
+  best_streak?: number | null;
+  rank_month?: number | null;
+  total_month?: number | null;
+  rank_all_time?: number | null;
+};
 
 // R9 (T6) — Parent analytics: the single place parents see statistics AND
 // detailed per-child progress. Top: 4 metric cards computed from REAL data
@@ -250,6 +263,27 @@ export default async function ParentAnalytics({
     }
   }
 
+  // L-quick — leaderboard/improvement summary for the SAME selected child the
+  // dashboard scopes to. Gated by the `leaderboard` flag; RLS inside the RPC
+  // authorizes the parent↔child link. Any error/null → honest empty state.
+  const leaderboardOn = await isFeatureEnabled("leaderboard");
+  let lbSummary: LbSummary | null = null;
+  if (leaderboardOn && selectedChild) {
+    try {
+      const { data, error } = await supabase.rpc("get_child_leaderboard_summary", {
+        p_student: selectedChild.id,
+      });
+      if (!error && data) lbSummary = data as LbSummary;
+    } catch {
+      lbSummary = null;
+    }
+  }
+  const lbHasActivity =
+    !!lbSummary &&
+    (Number(lbSummary.points_all_time ?? 0) > 0 ||
+      Number(lbSummary.points_month ?? 0) > 0 ||
+      Number(lbSummary.best_streak ?? 0) > 0);
+
   const dict: Record<string, string> = {};
   for (const k of ANA_KEYS) dict[k] = t(k);
 
@@ -290,6 +324,64 @@ export default async function ParentAnalytics({
           selectedSubject={selectedSubject}
           data={dash}
         />
+      )}
+
+      {/* L-quick — leaderboard / improvement for the selected child. Gated by
+          the `leaderboard` flag; hidden entirely when off. Server-rendered from
+          get_child_leaderboard_summary, so it re-resolves whenever the
+          dashboard's ?child= selection changes. */}
+      {leaderboardOn && kids.length > 0 && selectedChild && (
+        <div className="plb-section">
+          <div className="ana-section-head">
+            <h2>{t("plb.improvementTitle")}</h2>
+            <p className="muted">{t("plb.improvementSub")}</p>
+          </div>
+          {lbHasActivity ? (
+            <div className="ana-kpis">
+              <div className="ana-kpi">
+                <span className="ana-kpi-val">
+                  {lbSummary!.rank_month != null ? `#${lbSummary!.rank_month}` : "—"}
+                </span>
+                <span className="ana-kpi-label">{t("plb.rankThisMonth")}</span>
+              </div>
+              <div className="ana-kpi">
+                <span className="ana-kpi-val">
+                  {lbSummary!.rank_all_time != null ? `#${lbSummary!.rank_all_time}` : "—"}
+                </span>
+                <span className="ana-kpi-label">{t("plb.rankAllTime")}</span>
+              </div>
+              <div className="ana-kpi">
+                <span className="ana-kpi-val">
+                  {Math.round(Number(lbSummary!.points_month ?? 0))}
+                </span>
+                <span className="ana-kpi-label">{t("plb.pointsMonth")}</span>
+              </div>
+              <div className="ana-kpi">
+                <span className="ana-kpi-val">
+                  {Math.round(Number(lbSummary!.points_all_time ?? 0))}
+                </span>
+                <span className="ana-kpi-label">{t("plb.pointsAllTime")}</span>
+              </div>
+              <div className="ana-kpi">
+                <span className="ana-kpi-val">
+                  🔥 {Number(lbSummary!.current_streak ?? 0) || 0}
+                </span>
+                <span className="ana-kpi-label">{t("plb.currentStreak")}</span>
+              </div>
+              <div className="ana-kpi">
+                <span className="ana-kpi-val">
+                  🔥 {Number(lbSummary!.best_streak ?? 0) || 0}
+                </span>
+                <span className="ana-kpi-label">{t("plb.bestStreak")}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="ana-locked-panel">
+              <p>{t("plb.emptyTitle")}</p>
+              <p className="ana-locked-sub">{t("plb.emptySub")}</p>
+            </div>
+          )}
+        </div>
       )}
     </section>
   );

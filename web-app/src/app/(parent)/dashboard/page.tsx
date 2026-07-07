@@ -17,10 +17,24 @@ const CHILD_KEYS = [
 
 const NEWS_KEYS = ["news.latest", "news.viewAll", "news.none"];
 
+// get_child_leaderboard_summary payload (all fields optional-defensive: any RPC
+// error/null is treated as "no leaderboard data" for that child).
+type LbSummary = {
+  points_month?: number | null;
+  points_all_time?: number | null;
+  current_streak?: number | null;
+  best_streak?: number | null;
+  rank_month?: number | null;
+  total_month?: number | null;
+  rank_all_time?: number | null;
+};
+
 export default async function ParentDashboard() {
   const parent = await requireParent();
   const t = await getT();
   const olympiadOn = await isFeatureEnabled("olympiad_module");
+  // L-quick: the child leaderboard chip is gated by the `leaderboard` flag.
+  const leaderboardOn = await isFeatureEnabled("leaderboard");
   // Round 11: during the giveaway window every child effectively has free
   // access, so the cards show one highlighted "free giveaway" pill instead of
   // the raw access status; the real status resumes automatically afterwards.
@@ -46,6 +60,28 @@ export default async function ParentDashboard() {
       ),
     ),
   );
+
+  // L-quick: each child's leaderboard summary (rank/points/streak) via the
+  // parent-scoped RPC — RLS inside the RPC verifies the parent↔child link, so
+  // it is safe to call per child. Only fetched when the flag is on. Any
+  // error/null → no chip data for that child (rendered as "not ranked yet").
+  const lbByChild = new Map<string, LbSummary | null>();
+  if (leaderboardOn && list.length > 0) {
+    const results = await Promise.all(
+      list.map(async (c) => {
+        try {
+          const { data, error } = await supabase.rpc("get_child_leaderboard_summary", {
+            p_student: c.profile_id,
+          });
+          if (error || !data) return [c.profile_id, null] as const;
+          return [c.profile_id, data as LbSummary] as const;
+        } catch {
+          return [c.profile_id, null] as const;
+        }
+      }),
+    );
+    for (const [id, s] of results) lbByChild.set(id, s);
+  }
 
   const childDict: Record<string, string> = {};
   for (const k of CHILD_KEYS) childDict[k] = t(k);
@@ -77,7 +113,11 @@ export default async function ParentDashboard() {
           <p className="muted">{t("parent.dash.noChildren")}</p>
         ) : (
           <div className="children-grid">
-            {list.map((c) => (
+            {list.map((c) => {
+              const lb = leaderboardOn ? lbByChild.get(c.profile_id) : null;
+              const lbRanked =
+                !!lb && lb.rank_month != null && Number(lb.points_month ?? 0) > 0;
+              return (
               <div className="card" key={c.profile_id}>
                 <strong>
                   {c.first_name} {c.last_name}
@@ -100,6 +140,25 @@ export default async function ParentDashboard() {
                     <span className="pill">{t(`access.${c.access_status}`)}</span>
                   )}
                 </p>
+                {/* L-quick: compact leaderboard chip (rank / points / streak). */}
+                {leaderboardOn && (
+                  <div className="lbchip" title={t("plb.title")}>
+                    {lbRanked ? (
+                      <>
+                        <span className="lbchip-rank">#{lb!.rank_month}</span>
+                        <span className="lbchip-item">
+                          {Math.round(Number(lb!.points_month ?? 0))}{" "}
+                          <span className="lbchip-u">{t("plb.pts")}</span>
+                        </span>
+                        <span className="lbchip-item">
+                          🔥 {Number(lb!.current_streak ?? 0) || 0}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="lbchip-none">{t("plb.notRankedShort")}</span>
+                    )}
+                  </div>
+                )}
                 <p style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <Link
                     className={c.child_unique_id ? "btn-ghost" : "btn"}
@@ -115,7 +174,8 @@ export default async function ParentDashboard() {
                 </p>
                 <ChildCardActions studentProfileId={c.profile_id} dict={childDict} />
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

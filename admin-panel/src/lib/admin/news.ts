@@ -87,7 +87,7 @@ export async function saveNews(
   if (!newsId) {
     const { data, error } = await supabase
       .from("news")
-      .insert({ slug, status: "draft", created_by: ctx.profileId })
+      .insert({ slug, status: "in_review", created_by: ctx.profileId })
       .select("id")
       .single();
     if (error || !data) {
@@ -146,13 +146,17 @@ export async function saveNews(
   redirect(`/news/${newsId}/edit`);
 }
 
+// Three-state model (mirrors questions): in_review / published / rejected.
+//   publish   → 'published'  (sets published_at)  from in_review / rejected
+//   reject    → 'rejected'                          from in_review / published
+//   to_review → 'in_review'                         from published / rejected
 const NEWS_TRANSITIONS: Record<
   string,
   { from: string[]; to: string; setPublished?: boolean }
 > = {
-  publish: { from: ["draft", "archived"], to: "published", setPublished: true },
-  unpublish: { from: ["published"], to: "draft" },
-  archive: { from: ["draft", "published"], to: "archived" },
+  publish: { from: ["in_review", "rejected"], to: "published", setPublished: true },
+  reject: { from: ["in_review", "published"], to: "rejected" },
+  to_review: { from: ["published", "rejected"], to: "in_review" },
 };
 
 export async function transitionNews(formData: FormData): Promise<void> {

@@ -24,7 +24,7 @@
 create table if not exists public.news (
   id            uuid primary key default gen_random_uuid(),
   slug          text not null unique,                 -- for /news/[slug]
-  status        public.content_status not null default 'draft', -- draft/published/archived
+  status        public.content_status not null default 'in_review', -- 3-status (migration 040): in_review/published/rejected
   cover_media_id uuid references public.media_assets (id) on delete set null,
   created_by    uuid references public.profiles (id) on delete set null,
   published_at  timestamptz,

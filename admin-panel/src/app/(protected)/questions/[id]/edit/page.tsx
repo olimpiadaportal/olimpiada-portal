@@ -86,7 +86,6 @@ export default async function EditQuestionPage({
       topic_id: q.topic_id,
       subtopic_id: q.subtopic_id,
       olympiad_type_id: q.olympiad_type_id,
-      source_id: q.source_id,
     },
     primary_locale: loc,
     body: tr?.body ?? "",

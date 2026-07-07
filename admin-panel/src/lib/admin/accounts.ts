@@ -139,7 +139,11 @@ export async function resetChildPassword(
 // email auto-confirm (an administrator creates the account directly) followed
 // by the existing setup_parent RPC (profile → parent role + parents row).
 // =====================================================================
-export type CreateParentState = { error?: string; ok?: boolean } | null;
+// On success the new parent's profile id + display name are surfaced so the
+// Free-Access wizard can hand the created parent straight to the child step.
+export type CreateParentState =
+  | { error?: string; ok?: boolean; parentProfileId?: string; name?: string }
+  | null;
 
 export async function createParent(
   _prev: CreateParentState,
@@ -211,7 +215,9 @@ export async function createParent(
 
   revalidatePath("/accounts");
   revalidatePath("/free-access"); // creation now lives there (Round 12.1)
-  return { ok: true };
+  // Surface the new parent's profile id + name so the wizard's child step can
+  // lock onto this parent (the id flows ONLY from here, never client-fabricated).
+  return { ok: true, parentProfileId: prof?.id ?? "", name: displayName };
 }
 
 // =====================================================================
@@ -227,8 +233,16 @@ export async function createParent(
 // remove the profile/student/credentials/subscription rows) and a generic
 // trilingual error is returned — no raw DB/Auth text ever reaches the client.
 // =====================================================================
+// On success the new student's profile id + display name are surfaced too so the
+// Free-Access wizard can target this exact child in its schedule step.
 export type CreateChildState =
-  | { error?: string; ok?: boolean; childUniqueId?: string | null }
+  | {
+      error?: string;
+      ok?: boolean;
+      childUniqueId?: string | null;
+      studentProfileId?: string;
+      name?: string;
+    }
   | null;
 
 const UUID_RE =
@@ -509,7 +523,13 @@ export async function createChildForParent(
 
     revalidatePath("/accounts");
     revalidatePath("/free-access"); // creation now lives there (Round 12.1)
-    return { ok: true, childUniqueId };
+    // studentProfileId + name flow up so the wizard can schedule for this child.
+    return {
+      ok: true,
+      childUniqueId,
+      studentProfileId,
+      name: `${firstName} ${lastName}`.trim(),
+    };
   } catch (e) {
     // Saga cleanup: remove the orphaned auth user (cascades every DB row the
     // flow created). Never surface raw DB/Auth details to the client.

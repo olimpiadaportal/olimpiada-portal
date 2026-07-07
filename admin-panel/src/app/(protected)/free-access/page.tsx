@@ -2,25 +2,26 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { hasServiceRole } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { listFreeAccessIntervals } from "@/lib/admin/freeAccess";
-import { AccountCreateForm } from "@/components/AccountCreateForm";
+import { type AccountCreateStrings } from "@/components/AccountCreateForm";
 import {
-  CreateChildForm,
   type GradeOption,
   type SubjectOption,
   type CityOption,
   type SchoolOpt,
+  type CreateChildStrings,
 } from "@/components/CreateChildForm";
+import { type FreeAccessStrings } from "@/components/FreeAccessManager";
 import {
-  FreeAccessManager,
-  type FreeAccessStrings,
-} from "@/components/FreeAccessManager";
+  FreeAccessWizard,
+  type FreeAccessWizardStrings,
+} from "@/components/FreeAccessWizard";
 import { getT, getLocale } from "@/i18n/server";
 
-// Admin-only Free-Access module. Round 12.1: this page is now the single
-// admin workspace for the whole flow — create the parent, create the child
-// (live parent search + City→School cascade), then schedule the free-access
-// window — four clear sections on one page. The creation forms are the SAME
-// components/server actions the Accounts section used (moved, not duplicated).
+// Admin-only Free-Access module. Round 12.2: this page is now a single GUIDED,
+// SEQUENTIAL wizard — Step 1 Parent → Step 2 Child → Step 3 Schedule — where
+// each step unlocks only once the previous one is satisfied (you cannot pick a
+// child without a parent; scheduling waits for both). The creation forms are the
+// SAME components/server actions the Accounts section used (reused, embedded).
 // All strings are resolved here (via getT) and passed down — clients never call t().
 export default async function FreeAccessPage() {
   await requireAdmin();
@@ -86,7 +87,7 @@ export default async function FreeAccessPage() {
     })).sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  const createParentStrings = {
+  const createParentStrings: AccountCreateStrings = {
     open: t("accounts.create.open"),
     title: t("accounts.create.title"),
     firstName: t("accounts.create.firstName"),
@@ -102,7 +103,7 @@ export default async function FreeAccessPage() {
     hidePassword: t("auth.hidePassword"),
   };
 
-  const childCreateStrings = {
+  const childCreateStrings: CreateChildStrings = {
     open: t("accounts.child.create.open"),
     title: t("accounts.child.create.title"),
     intro: t("accounts.child.create.intro"),
@@ -180,6 +181,27 @@ export default async function FreeAccessPage() {
     none: t("freeAccess.none"),
   };
 
+  const wizardStrings: FreeAccessWizardStrings = {
+    intro: t("fawiz.intro"),
+    step1Title: t("fawiz.step1Title"),
+    step2Title: t("fawiz.step2Title"),
+    step3Title: t("fawiz.step3Title"),
+    parentNew: t("fawiz.parentNew"),
+    parentExisting: t("fawiz.parentExisting"),
+    childNew: t("fawiz.childNew"),
+    childExisting: t("fawiz.childExisting"),
+    childAllMode: t("fawiz.childAllMode"),
+    childChoose: t("fawiz.childChoose"),
+    childNone: t("fawiz.childNone"),
+    lockedParent: t("fawiz.lockedParent"),
+    lockedChild: t("fawiz.lockedChild"),
+    allChildrenOf: t("fawiz.allChildrenOf"),
+    change: t("fawiz.change"),
+    startOver: t("fawiz.startOver"),
+    continue: t("fawiz.continue"),
+    scheduleFor: t("fawiz.scheduleFor"),
+  };
+
   return (
     <div className="page">
       <div className="page-head">
@@ -192,31 +214,18 @@ export default async function FreeAccessPage() {
           <p className="form-error">{t("accounts.reset.noServiceKey")}</p>
         </section>
       ) : (
-        <>
-          <section className="card" style={{ marginBottom: 20 }}>
-            <h3>{t("freeAccess.createParentHeading")}</h3>
-            <p className="muted">{t("freeAccess.createParentHelp")}</p>
-            <AccountCreateForm strings={createParentStrings} />
-          </section>
-
-          <section className="card" style={{ marginBottom: 20 }}>
-            <h3>{t("freeAccess.createChildHeading")}</h3>
-            <p className="muted">{t("freeAccess.createChildHelp")}</p>
-            <CreateChildForm
-              grades={childGrades}
-              subjects={childSubjects}
-              cities={childCities}
-              schools={childSchools}
-              strings={childCreateStrings}
-            />
-          </section>
-
-          <FreeAccessManager
-            intervals={intervals}
-            locale={locale}
-            strings={strings}
-          />
-        </>
+        <FreeAccessWizard
+          grades={childGrades}
+          subjects={childSubjects}
+          cities={childCities}
+          schools={childSchools}
+          intervals={intervals}
+          locale={locale}
+          accountStrings={createParentStrings}
+          childStrings={childCreateStrings}
+          freeAccessStrings={strings}
+          wizardStrings={wizardStrings}
+        />
       )}
     </div>
   );

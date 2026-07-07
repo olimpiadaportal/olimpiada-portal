@@ -179,19 +179,21 @@ on conflict (code) do nothing;
 -- -----------------------------------------------------------------------------
 -- Question types.
 -- -----------------------------------------------------------------------------
--- MCQ-only launch (migration 037, owner 2026-07-06): multiple_choice IS the MCQ
--- (exactly 5 options, exactly 1 correct) and the only type selectable for new
--- questions; the rest are seeded inactive until their structure rules are defined.
+-- MCQ-only launch (migration 037; MCQ = 4 options since migration 040, owner
+-- 2026-07-07): multiple_choice IS the MCQ (exactly 4 options, exactly 1 correct)
+-- and the only type selectable for new questions; the option count is a FIXED
+-- business rule (the admin question-types page no longer edits it). The rest are
+-- seeded inactive until their structure rules are defined.
 insert into public.question_types (code, name, supports_auto_grading, status, options_required, correct_required) values
   ('single_choice',   'Single choice',   true,  'inactive', null, null),
-  ('multiple_choice', 'Multiple choice', true,  'active',   5,    1),
+  ('multiple_choice', 'Multiple choice', true,  'active',   4,    1),
   ('true_false',      'True / False',    true,  'inactive', 2,    1),
   ('numeric_input',   'Numeric input',   true,  'inactive', null, null),
   ('short_text',      'Short text',      false, 'inactive', null, null),
   ('open_text',       'Open / essay',    false, 'inactive', null, null)
 on conflict (code) do nothing;
--- Idempotent config for databases seeded before migration 037.
-update public.question_types set options_required = 5, correct_required = 1 where code = 'multiple_choice';
+-- Idempotent config for databases seeded before migration 040 (MCQ = 4 options).
+update public.question_types set options_required = 4, correct_required = 1 where code = 'multiple_choice';
 update public.question_types set status = 'inactive' where code <> 'multiple_choice';
 update public.question_types set status = 'active'   where code = 'multiple_choice';
 
@@ -624,13 +626,13 @@ insert into public.system_settings (key, value_json) values
 on conflict (key) do nothing;
 
 -- -----------------------------------------------------------------------------
--- Base feature flags (payments/leaderboard/notifications off by default;
--- launch_promo/news_public/olympiad_module ship enabled — Round 6 backport of
--- flags that previously existed only on dev).
+-- Base feature flags (payments/notifications off by default; leaderboard ON
+-- since migration 041, owner 2026-07-07; launch_promo/news_public/olympiad_module
+-- ship enabled — Round 6 backport of flags that previously existed only on dev).
 -- -----------------------------------------------------------------------------
 insert into public.feature_flags (key, enabled) values
   ('payments',    false),
-  ('leaderboard', false),
+  ('leaderboard', true),
   ('notifications_email', false),
   ('launch_promo',    true),
   ('news_public',     true),
@@ -640,6 +642,23 @@ insert into public.feature_flags (key, enabled) values
   ('demo_payments',   false),
   ('giveaway_period', false)
 on conflict (key) do nothing;
+
+
+-- -----------------------------------------------------------------------------
+-- LEADERBOARD ENGINE (backported from migrations/2026_07_06_039_leaderboard_engine.sql)
+-- Points formula settings (weights come from difficulty_levels.weight).
+-- -----------------------------------------------------------------------------
+-- per_correct: base points per correct answer (× difficulty_levels.weight);
+-- practice_daily_cap_per_subject: max practice+topic-test points per subject per
+-- local day (anti-grind; olympiads uncapped); olympiad_multiplier: olympiad boost.
+insert into public.system_settings (key, value_json)
+values
+  ('leaderboard.points.per_correct', '10'::jsonb),
+  ('leaderboard.points.practice_daily_cap_per_subject', '150'::jsonb),
+  ('leaderboard.points.olympiad_multiplier', '1.5'::jsonb)
+on conflict (key) do nothing;
+
+--
 
 -- =============================================================================
 -- End of 012_seed_initial_data.sql

@@ -19,20 +19,22 @@ export function QuestionLifecycle({
   const tt = (k: string) => dict[k] ?? k;
   const can = (p: string) => isAdmin || permissions.includes(p);
 
+  // Three-state model: in_review → publish/reject; published → reject/to_review;
+  // rejected → publish/to_review.
   const buttons: { action: string; key: string }[] = [];
-  if (status === "draft" || status === "rejected")
-    buttons.push({ action: "submit", key: "qact.submit" });
-  if (status === "in_review" && can("content.review"))
-    buttons.push(
-      { action: "approve", key: "qact.approve" },
-      { action: "reject", key: "qact.reject" },
-    );
-  if (status === "approved" && can("content.publish"))
-    buttons.push({ action: "publish", key: "qact.publish" });
-  if (status === "published" && can("content.publish"))
-    buttons.push({ action: "unpublish", key: "qact.unpublish" });
-  if (status !== "archived" && can("content.archive"))
-    buttons.push({ action: "archive", key: "qact.archive" });
+  if (status === "in_review") {
+    if (can("content.publish")) buttons.push({ action: "publish", key: "qact.publish" });
+    if (can("content.review")) buttons.push({ action: "reject", key: "qact.reject" });
+  } else if (status === "published") {
+    if (can("content.review"))
+      buttons.push(
+        { action: "reject", key: "qact.reject" },
+        { action: "to_review", key: "qact.to_review" },
+      );
+  } else if (status === "rejected") {
+    if (can("content.publish")) buttons.push({ action: "publish", key: "qact.publish" });
+    if (can("content.review")) buttons.push({ action: "to_review", key: "qact.to_review" });
+  }
 
   return (
     <div className="lifecycle">

@@ -45,7 +45,7 @@ export default async function ChildLayout({
     { giveaway },
     { data: student },
     avatarUrl,
-    { data: subs },
+    { data: streakStatus },
     olympiadOn,
     leaderboardOn,
   ] = await Promise.all([
@@ -75,14 +75,10 @@ export default async function ChildLayout({
         return null;
       }
     })(),
-    // Streak source: recent graded attempts (real data; 0 when none yet).
-    supabase
-      .from("test_attempts")
-      .select("submitted_at")
-      .eq("student_profile_id", child.profileId)
-      .eq("status", "graded")
-      .order("submitted_at", { ascending: false })
-      .limit(60),
+    // Streak source (L1): the real leaderboard engine RPC — students.current_
+    // streak maintained by award_attempt_points, with lazy zeroing of a lost
+    // streak. Replaces the old distinct-active-days approximation.
+    supabase.rpc("get_streak_status"),
     // Module gates (admin Settings) hide the tabs; the pages/actions are gated
     // server-side as well.
     isFeatureEnabled("olympiad_module"),
@@ -102,13 +98,9 @@ export default async function ChildLayout({
   const rawPalette = (student as any)?.palette;
   const palette = PALETTES.includes(rawPalette) ? (rawPalette as string) : null;
 
-  // Streak: count of distinct recent days the child submitted a graded attempt
-  // (derived from real data; 0 when none yet — never fabricated).
-  const days = new Set<string>();
-  for (const r of (subs ?? []) as any[]) {
-    if (r.submitted_at) days.add(String(r.submitted_at).slice(0, 10));
-  }
-  const streak = days.size;
+  // Streak: the engine's real consecutive-day streak (0 when none/on error —
+  // never fabricated).
+  const streak = Number((streakStatus as any)?.current ?? 0) || 0;
 
   // Same header structure as the parent shell (.pnav + ParentNavLinks +
   // .pnav-right drawer trigger). The drawer must NOT live inside a header with

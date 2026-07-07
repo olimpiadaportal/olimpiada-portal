@@ -3210,6 +3210,40 @@ ul.clean li {
   gap: 18px;
 }
 
+/* L-quick — compact leaderboard chip on each child card (parent dashboard).
+   Gated by the `leaderboard` flag in the page; theme-aware tokens only. */
+.lbchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--pill-bg);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.lbchip-rank {
+  font-weight: 800;
+  color: var(--accent);
+}
+.lbchip-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+.lbchip-u {
+  color: var(--muted);
+  font-weight: 500;
+}
+.lbchip-none {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 /* ---- Parent analytics ---- */
 .analytics-grid {
   display: grid;
@@ -3238,6 +3272,16 @@ ul.clean li {
   font-size: 0.9rem;
   color: var(--muted);
   font-weight: 500;
+}
+
+/* L-quick — parent analytics "leaderboard / improvement" section (reuses the
+   .ana-section-head + .ana-kpis tiles). Only spacing is new here. */
+.plb-section {
+  margin-top: 8px;
+}
+.plb-section .ana-kpis,
+.plb-section .ana-locked-panel {
+  margin-top: 16px;
 }
 
 /* ---- In-app help (FAQ / Contact) ---- */
@@ -9431,4 +9475,233 @@ ul.clean li {
 .arena .tst-explain p {
   margin: 6px 0 0;
   white-space: pre-wrap;
+}
+
+/* =====================  L1 Child leaderboard (.lb-*)  =====================
+   Real-leaderboard additions on top of the .arena-* system. Token-driven only
+   (--panel/--panel2/--line/--ink/--muted/--dim/--lime/--gold/--red/--bg), so
+   the arena dark theme, the light theme and every light palette re-skin them
+   automatically. */
+
+/* Board tabs (Points | Streak) */
+.lb-boards {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 16px;
+  flex-wrap: wrap;
+}
+.lb-board {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  text-decoration: none;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.lb-board:hover {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+.lb-board.active {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--bg);
+}
+
+/* Scope / subject / period chips reuse .arena-chip; links need the button
+   look without an underline. */
+.arena a.arena-chip {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.lb-subchips {
+  margin-top: -8px;
+}
+
+/* Medal ranks 1–3 */
+.lb-medal {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+/* Streak status card (streak board, above the list) */
+.lb-streak-card {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.lb-flame {
+  font-size: 2rem;
+  line-height: 1;
+}
+.lb-streak-num {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--gold);
+}
+.lb-streak-best {
+  color: var(--ink);
+}
+.lb-streak-label {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  margin-top: 4px;
+}
+.lb-streak-msg {
+  flex: 1 1 220px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.lb-streak-card.at-risk {
+  border-color: var(--red);
+}
+.lb-streak-card.at-risk .lb-streak-msg {
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* Sticky "Your rank" card (current board/scope/period) */
+.lb-me-card {
+  position: sticky;
+  bottom: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--panel2);
+  border: 1px solid var(--lime);
+  border-radius: 14px;
+  padding: 14px 20px;
+  margin-top: 16px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+}
+.lb-me-label {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+.lb-me-rank {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--lime);
+}
+.lb-me-total {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--dim);
+}
+.lb-me-none {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.lb-me-val {
+  margin-left: auto;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--gold);
+}
+
+/* ==========================================================================
+   L-quick — child HOME leaderboard quick-look card (.lbq-*). Token-driven so
+   it works in the arena dark theme, the light theme, and all 5 palettes.
+   Rendered ONLY inside `.arena`, so the arena CSS vars resolve by inheritance
+   (same pattern as the .lb-* classes above). Gated by the `leaderboard` flag.
+   ========================================================================== */
+.lbq-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 26px;
+}
+.lbq-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.lbq-link {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--lime);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lbq-link:hover {
+  text-decoration: underline;
+}
+.lbq-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 560px) {
+  .lbq-stats {
+    grid-template-columns: 1fr;
+  }
+}
+.lbq-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lbq-val {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 800;
+  font-size: 1.4rem;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.lbq-total {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--dim);
+}
+.lbq-key {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+.lbq-none-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.lbq-none {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  flex: 1 1 240px;
 }

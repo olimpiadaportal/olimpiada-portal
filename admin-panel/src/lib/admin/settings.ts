@@ -149,6 +149,20 @@ export async function updateSetting(
     return { error: "settings.err.invalidJson", key };
   }
 
+  // Generic numeric range rule: any "number" setting with min/max bounds in
+  // SETTING_META is hard-validated here (client min/max attributes are UX only).
+  // Covers the leaderboard points-formula keys (per_correct 1..1000,
+  // daily cap 0..100000, olympiad multiplier 0.1..10).
+  if (meta.kind === "number") {
+    const n = parsed as number; // isValidForKind already guaranteed finite number
+    if (
+      (meta.min !== undefined && n < meta.min) ||
+      (meta.max !== undefined && n > meta.max)
+    ) {
+      return { error: "settings.err.invalidJson", key };
+    }
+  }
+
   const supabase = await createClient();
 
   // Only update an EXISTING row — never create a new setting from the UI.
@@ -179,6 +193,9 @@ export async function updateSetting(
   });
 
   revalidatePath("/settings");
+  // The leaderboard points-formula keys are edited on /leaderboard, not on
+  // /settings — refresh that page too so the saved values re-render there.
+  if (key.startsWith("leaderboard.")) revalidatePath("/leaderboard");
   return { ok: true, key };
 }
 

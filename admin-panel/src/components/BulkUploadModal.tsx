@@ -19,8 +19,9 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 // The downloadable template: per-item meta intentionally has NO subject and NO
 // grade_level — the modal supplies both for the whole batch. Multiple choice
-// (the only ACTIVE type at launch) requires exactly 5 options with exactly 1
-// correct; the template models exactly that shape.
+// (the only ACTIVE type at launch) requires exactly 4 options with exactly 1
+// correct; the template models exactly that shape. The "source" field was
+// removed from the question model, so it is no longer part of the template.
 const TEMPLATE = [
   {
     primary_locale: "az",
@@ -29,7 +30,6 @@ const TEMPLATE = [
       olympiad_type: "School",
       topic: "Toplama",
       subtopic: "Birrəqəmli ədədlər",
-      source: "Nümunə",
     },
     translations: {
       az: { body: "2 + 2 = ?", prompt: "Düzgün cavabı seçin", explanation: "2 + 2 = 4" },
@@ -41,19 +41,21 @@ const TEMPLATE = [
       { is_correct: false, order_index: 1, text: { az: "3", en: "3", ru: "3" } },
       { is_correct: false, order_index: 2, text: { az: "5", en: "5", ru: "5" } },
       { is_correct: false, order_index: 3, text: { az: "6", en: "6", ru: "6" } },
-      { is_correct: false, order_index: 4, text: { az: "7", en: "7", ru: "7" } },
     ],
   },
 ];
 
-// MCQ detection mirror of the server rule: the item is treated as multiple
-// choice when meta.type is omitted/empty OR names the MCQ type
-// ("Multiple choice" / "multiple_choice", case-insensitive).
-function isMcqType(typeRaw: unknown): boolean {
-  if (typeRaw == null) return true;
-  if (typeof typeRaw !== "string") return false;
-  const norm = typeRaw.trim().toLowerCase().replace(/\s+/g, "_");
-  return norm === "" || norm === "multiple_choice";
+// Active question type + its structure rules, mirrored from the server.
+type TypeRule = {
+  name: string;
+  options_required: number | null;
+  correct_required: number | null;
+};
+
+// Case/space-insensitive normalization so "Multiple choice", "multiple_choice"
+// and "Multiple  Choice" all resolve to the same active type.
+function normType(v: string): string {
+  return v.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 export function BulkUploadModal({
@@ -63,6 +65,7 @@ export function BulkUploadModal({
   packageId,
   subjectName,
   typeNames,
+  typeRules,
   triggerClassName = "btn-ghost",
 }: {
   dict: Record<string, string>;
@@ -74,11 +77,22 @@ export function BulkUploadModal({
   subjectName?: string | null;
   // Active question-type names, for the short reference hint.
   typeNames?: string[];
+  // Active question types + their structure rules (options_required /
+  // correct_required) for the client-side pre-validation mirror. The server is
+  // the authority; this only spares the admin an obviously-broken upload.
+  typeRules?: TypeRule[];
   triggerClassName?: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const router = useRouter();
   const olympiad = Boolean(packageId);
+
+  // Rule lookup (by normalized name) + the default type for items that omit
+  // meta.type (the sole active type = Multiple choice).
+  const rules = typeRules ?? [];
+  const activeByNorm = new Map<string, TypeRule>();
+  for (const r of rules) activeByNorm.set(normType(r.name), r);
+  const defaultType: TypeRule | null = rules[0] ?? null;
 
   const [open, setOpen] = useState(false);
   const [subjectId, setSubjectId] = useState("");
@@ -150,38 +164,75 @@ export function BulkUploadModal({
     data.forEach((item, i) => {
       const row = i + 1;
       if (!item || typeof item !== "object" || Array.isArray(item)) {
-        issues.push({ row, message: tt("bulk.rowNotObject") });
+        issues.push({ row, message: tt("bulk.err.notObject") });
         return;
       }
       const it = item as {
+        primary_locale?: unknown;
         meta?: { type?: unknown };
-        translations?: { az?: { body?: unknown } };
+        translations?: Record<string, { body?: unknown } | undefined>;
         options?: unknown;
       };
-      const body = it.translations?.az?.body;
+
+      // Required primary-locale body (defaults to az).
+      const plRaw = typeof it.primary_locale === "string" ? it.primary_locale : "az";
+      const pl = ["az", "en", "ru"].includes(plRaw) ? plRaw : "az";
+      const body = it.translations?.[pl]?.body;
       if (typeof body !== "string" || body.trim() === "") {
-        issues.push({ row, message: tt("bulk.rowNeedAzBody") });
+        issues.push({ row, message: tt("bulk.err.noAzBody") });
       }
+
       if (!Array.isArray(it.options)) {
-        issues.push({ row, message: tt("bulk.rowNeedOptions") });
+        issues.push({ row, message: tt("bulk.err.optionsArray") });
         return;
       }
-      // Client-side mirror of assert_question_type_rules for the MCQ type:
-      // exactly 5 options, exactly 1 correct.
-      if (isMcqType(it.meta?.type)) {
-        const opts = it.options as { is_correct?: unknown }[];
+      const opts = it.options as { is_correct?: unknown; text?: { az?: unknown } }[];
+
+      // Resolve the type rule (mirror of the server). Missing/empty type →
+      // sole active type; a named type must match an active one.
+      const typeRaw = it.meta?.type;
+      let rule: TypeRule | null;
+      if (typeRaw == null || (typeof typeRaw === "string" && typeRaw.trim() === "")) {
+        rule = defaultType;
+      } else if (typeof typeRaw === "string") {
+        rule = activeByNorm.get(normType(typeRaw)) ?? null;
+        if (!rule) {
+          issues.push({ row, message: tt("bulk.err.unknownType") });
+          return;
+        }
+      } else {
+        issues.push({ row, message: tt("bulk.err.unknownType") });
+        return;
+      }
+
+      if (rule?.options_required != null && opts.length !== rule.options_required) {
+        issues.push({
+          row,
+          message: tt("bulk.err.optionCount")
+            .replace("{n}", String(rule.options_required))
+            .replace("{got}", String(opts.length)),
+        });
+      }
+      if (rule?.correct_required != null) {
         const correct = opts.filter((o) => o && o.is_correct === true).length;
-        if (opts.length !== 5) {
+        if (correct !== rule.correct_required) {
           issues.push({
             row,
-            message: tt("qval.exactOptions").replace("{n}", "5"),
+            message: tt("bulk.err.correctCount")
+              .replace("{n}", String(rule.correct_required))
+              .replace("{got}", String(correct)),
           });
         }
-        if (correct !== 1) {
+      }
+      // Each option needs a non-empty az text.
+      for (let k = 0; k < opts.length; k++) {
+        const az = opts[k]?.text?.az;
+        if (typeof az !== "string" || az.trim() === "") {
           issues.push({
             row,
-            message: tt("qval.exactCorrect").replace("{n}", "1"),
+            message: tt("bulk.err.optionText").replace("{i}", String(k + 1)),
           });
+          break;
         }
       }
     });

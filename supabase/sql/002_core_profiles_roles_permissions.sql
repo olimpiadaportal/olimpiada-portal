@@ -321,6 +321,21 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+
+-- -----------------------------------------------------------------------------
+-- LEADERBOARD ENGINE (backported from migrations/2026_07_06_039_leaderboard_engine.sql)
+-- Cached points/streak columns on students (server-managed; see 011 protection trigger).
+-- -----------------------------------------------------------------------------
+alter table public.students
+  add column if not exists points_all_time  numeric(12,2) not null default 0,
+  add column if not exists points_month     numeric(12,2) not null default 0,
+  add column if not exists points_month_key text,
+  add column if not exists last_points_at   timestamptz,
+  add column if not exists current_streak   int not null default 0,
+  add column if not exists best_streak      int not null default 0,
+  add column if not exists last_active_date date,
+  add column if not exists streak_tz        text not null default 'Asia/Baku';
+
 -- =============================================================================
 -- End of 002_core_profiles_roles_permissions.sql
 -- =============================================================================

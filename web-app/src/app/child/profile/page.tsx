@@ -18,7 +18,10 @@ export default async function ChildProfilePage() {
 
   const { data: student } = await supabase
     .from("students")
-    .select("first_name, last_name, child_unique_id, palette")
+    .select(
+      "first_name, last_name, child_unique_id, palette, city, school_name, class_grade, " +
+        "grade:grade_id(name, level), district:district_id(name), school:school_id(name)",
+    )
     .eq("profile_id", child.profileId)
     .maybeSingle();
   const currentPalette = ((student as any)?.palette ?? null) as
@@ -28,6 +31,16 @@ export default async function ChildProfilePage() {
   const childName = `${childFirst} ${childLast}`.trim();
   const childId = (student as any)?.child_unique_id ?? "";
   const childInitial = (childFirst.trim()[0] ?? childName.trim()[0] ?? "?").toUpperCase();
+
+  // Read-only school details (structured catalog names, with the free-text
+  // columns as fallback). The child SEES these but can never edit them — only a
+  // parent can (parent /children/[id]/edit). "—" when nothing is on record.
+  const s = (student as any) ?? {};
+  const gradeInfo = s.grade
+    ? `${s.grade.level} — ${s.grade.name}`
+    : (s.class_grade ?? "").trim() || "—";
+  const cityInfo = (s.district?.name ?? s.city ?? "").trim() || "—";
+  const schoolInfo = (s.school?.name ?? s.school_name ?? "").trim() || "—";
 
   // Avatar public URL (degrades to initials when none / on any read failure).
   let avatarUrl: string | null = null;
@@ -149,6 +162,26 @@ export default async function ChildProfilePage() {
           avatarUrl={avatarUrl}
           dict={profileDict}
         />
+
+        {/* Read-only school details — the child can see but not change these. */}
+        <section className="prof2-card" aria-label={t("prof2.schoolInfo")}>
+          <h2 className="prof2-sec-title">{t("prof2.schoolInfo")}</h2>
+          <p className="prof2-sec-hint">{t("prof2.schoolInfoHint")}</p>
+          <div className="prof2-rows">
+            <div className="prof2-row">
+              <span className="prof2-row-label">{t("prof2.grade")}</span>
+              <span className="prof2-row-value">{gradeInfo}</span>
+            </div>
+            <div className="prof2-row">
+              <span className="prof2-row-label">{t("prof2.city")}</span>
+              <span className="prof2-row-value">{cityInfo}</span>
+            </div>
+            <div className="prof2-row">
+              <span className="prof2-row-label">{t("prof2.school")}</span>
+              <span className="prof2-row-value">{schoolInfo}</span>
+            </div>
+          </div>
+        </section>
 
         {/* Character-sticker theme gallery. */}
         <section className="prof2-card" aria-label={t("stk.sectionTitle")}>

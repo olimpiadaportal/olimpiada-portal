@@ -6,7 +6,6 @@ import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
 import { ChildNewsPanel } from "@/components/ChildNewsPanel";
-import { startPractice } from "@/lib/auth/childActions";
 
 export default async function ChildDashboard() {
   const child = await requireChild();
@@ -146,12 +145,11 @@ export default async function ChildDashboard() {
           <div className="arena-hero-cta">
             {hasAccess && subjects.length > 0 ? (
               <>
-                <form action={startPractice}>
-                  <input type="hidden" name="subject_id" value={subjects[0].id} />
-                  <button className="arena-btn" type="submit">
-                    {t("arena.startRound")}
-                  </button>
-                </form>
+                {/* Land on the real test engine's subject page (topic picker →
+                    instructions → start); never the practice bounce-home path. */}
+                <Link className="arena-btn" href={`/child/test/${subjects[0].id}`}>
+                  {t("arena.startRound")}
+                </Link>
                 <Link className="arena-btn-ghost" href="/child/leaderboard">
                   {t("arena.join")}
                 </Link>
@@ -267,12 +265,10 @@ export default async function ChildDashboard() {
                     <div className="arena-round-title">{s.name}</div>
                     <div className="arena-round-meta">25 {t("arena.questionsShort")}</div>
                   </div>
-                  <form action={startPractice}>
-                    <input type="hidden" name="subject_id" value={s.id} />
-                    <button className="arena-btn arena-btn-sm" type="submit">
-                      {t("arena.go")}
-                    </button>
-                  </form>
+                  {/* → subject test page (topic picker → instructions → start). */}
+                  <Link className="arena-btn arena-btn-sm" href={`/child/test/${s.id}`}>
+                    {t("arena.go")}
+                  </Link>
                 </div>
               ))}
             </div>

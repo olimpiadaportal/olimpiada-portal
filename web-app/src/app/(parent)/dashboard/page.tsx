@@ -166,6 +166,9 @@ export default async function ParentDashboard() {
                   >
                     {c.child_unique_id ? t("parent.dash.manage") : t("parent.dash.choosePlan")}
                   </Link>
+                  <Link className="btn-ghost" href={`/children/${c.profile_id}/edit`}>
+                    {t("parent.dash.editInfo")}
+                  </Link>
                   {olympiadOn && (
                     <Link className="btn-ghost" href={`/children/${c.profile_id}/olympiads`}>
                       {t("parent.dash.olympiads")}

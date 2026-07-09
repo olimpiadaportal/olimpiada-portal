@@ -13,6 +13,7 @@ import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { isUuid } from "@/lib/uuid";
+import { notifySubscriptionCanceled } from "@/lib/notifications/events";
 
 // Round 11: paid mutations are gated by the PAYMENT MODE, not the raw flag —
 // 'real'/'demo' allow the transaction, 'off' blocks it (existing UX), and
@@ -201,7 +202,7 @@ export async function cancelChildSubscription(
   formData: FormData,
 ): Promise<CancelSubscriptionState> {
   // M7: authorize FIRST — before touching FormData.
-  await requireParent();
+  const parent = await requireParent();
   const t = await getT();
   const studentId = String(formData.get("student_id") ?? "");
   const subscriptionId = String(formData.get("subscription_id") ?? "");
@@ -243,6 +244,14 @@ export async function cancelChildSubscription(
 
   // reason is captured for demo UX only; there is no cancel_reason column to persist to.
   void reason;
+
+  // Notify the parent that the plan will end at the period end (best-effort;
+  // idempotency keyed on the subscription id).
+  await notifySubscriptionCanceled({
+    parentProfileId: parent.profileId,
+    studentProfileId: studentId,
+    subscriptionId,
+  });
 
   revalidatePath("/subscription");
   revalidatePath("/dashboard");

@@ -51,16 +51,43 @@ function fmtClock(total: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+// Instagram-style SAVE/BOOKMARK glyph — OUTLINE when not saved, FILLED when
+// saved. Inherits the button's currentColor so both themes / all palettes work.
+function BookmarkIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
 export function TestRunner({
   attemptId,
   data,
   resumed,
   dict,
+  subjectName = "",
+  topicNames = [],
 }: {
   attemptId: string;
   data: TestAttemptData;
   resumed: boolean;
   dict: Record<string, string>;
+  /** Subject name for the header (fetched server-side; not in the RPC payload). */
+  subjectName?: string;
+  /** Distinct topic names for the header (fetched server-side). */
+  topicNames?: string[];
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const router = useRouter();
@@ -310,6 +337,27 @@ export function TestRunner({
         </div>
       </div>
 
+      {/* Subject + topic(s) for this attempt (from server-fetched names). */}
+      {(subjectName || topicNames.length > 0) && (
+        <div className="tst-meta">
+          {subjectName && (
+            <span className="tst-meta-item">
+              <b>{tt("test.run.subject")}:</b> {subjectName}
+            </span>
+          )}
+          {subjectName && topicNames.length > 0 && (
+            <span className="tst-meta-sep" aria-hidden="true">
+              ·
+            </span>
+          )}
+          {topicNames.length > 0 && (
+            <span className="tst-meta-item">
+              <b>{tt("test.run.topic")}:</b> {topicNames.join(", ")}
+            </span>
+          )}
+        </div>
+      )}
+
       {resumed && <div className="tst-notice">{tt("test.run.resumed")}</div>}
       {timeUp && <div className="tst-notice warn">{tt("test.run.timeUp")}</div>}
       {fatal && <p className="arena-error">{fatal}</p>}
@@ -327,7 +375,8 @@ export function TestRunner({
                   aria-pressed={flags.has(q.question_id)}
                   onClick={() => toggleFlag(q.question_id)}
                 >
-                  ⚑ {flags.has(q.question_id) ? tt("test.run.unflag") : tt("test.run.flag")}
+                  <BookmarkIcon filled={flags.has(q.question_id)} />
+                  {flags.has(q.question_id) ? tt("test.run.unflag") : tt("test.run.flag")}
                 </button>
               </div>
               <div className="arena-q-body">{q.body}</div>

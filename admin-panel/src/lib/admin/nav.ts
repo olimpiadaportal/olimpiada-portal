@@ -59,6 +59,14 @@ export const NAV: NavGroup[] = [
       { label: "nav.accounts", href: "/accounts", adminOnly: true },
       { label: "nav.freeAccess", href: "/free-access", adminOnly: true },
       { label: "nav.leaderboard", href: "/leaderboard", adminOnly: true },
+      // Administrator-only (requires notifications.send, which only admins hold —
+      // Content Managers never see or reach it, same posture as News/Olympiad).
+      {
+        label: "nav.notifications",
+        href: "/notifications",
+        adminOnly: true,
+        permission: "notifications.send",
+      },
       { label: "nav.audit", href: "/audit", adminOnly: true },
       { label: "nav.settings", href: "/settings", adminOnly: true },
       { label: "nav.siteContent", href: "/site-content", adminOnly: true },

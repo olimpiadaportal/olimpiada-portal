@@ -114,8 +114,9 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 -- Notification channels. NOTE: no 'sms' value — SMS is excluded by project rule.
+-- 'push' added in migration 042 (mobile-ready; delivery gated by notifications_push).
 do $$ begin
-  create type public.notification_channel as enum ('in_app', 'email');
+  create type public.notification_channel as enum ('in_app', 'email', 'push');
 exception when duplicate_object then null; end $$;
 
 -- Notification / email delivery status.

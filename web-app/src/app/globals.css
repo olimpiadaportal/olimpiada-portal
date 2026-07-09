@@ -9234,10 +9234,28 @@ ul.clean li {
   }
 }
 
+/* ---- player: subject + topic meta line (under the sticky top bar) ---- */
+.arena .tst-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: -6px 0 14px;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.arena .tst-meta-item b {
+  font-weight: 700;
+  color: var(--ink);
+}
+.arena .tst-meta-sep {
+  color: var(--dim);
+}
+
 /* ---- player: layout (question + palette sidebar) ---- */
 .arena .tst-run-grid {
   display: grid;
-  grid-template-columns: 1fr 250px;
+  grid-template-columns: 1fr 264px;
   gap: 18px;
   align-items: start;
 }
@@ -9307,8 +9325,13 @@ ul.clean li {
   position: relative;
   aspect-ratio: 1;
   min-width: 0;
-  display: grid;
-  place-items: center;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+  padding: 0;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.78rem;
   font-weight: 700;
@@ -9343,22 +9366,24 @@ ul.clean li {
   color: var(--ink);
 }
 .arena .tst-legend {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   margin-top: 12px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--muted);
 }
 .arena .tst-legend span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  /* Never split a single legend item across lines — items wrap as a whole. */
+  white-space: nowrap;
 }
 .arena .tst-dot {
   flex: none;
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 3px;
   border: 1px solid var(--line);
   background: var(--panel2);
@@ -9404,6 +9429,53 @@ ul.clean li {
 }
 
 /* ---- review ---- */
+/* Segmented filter tabs (All · Correct · Wrong · Skipped), pill/arena styling,
+   token-driven so both themes + every light palette re-skin them. */
+.arena .tst-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.arena .tst-filter-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.arena .tst-filter-tab:hover {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+.arena .tst-filter-tab.active {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--bg);
+}
+.arena .tst-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.arena .tst-filter-tab.active .tst-filter-count {
+  background: color-mix(in srgb, var(--bg) 30%, transparent);
+}
 .arena .tst-review-list {
   display: grid;
   gap: 16px;
@@ -9704,4 +9776,577 @@ ul.clean li {
   color: var(--muted);
   font-size: 0.95rem;
   flex: 1 1 240px;
+}
+
+/* ==========================================================================
+   NOTIFICATIONS (.ntf-*) — in-app notification center
+   --------------------------------------------------------------------------
+   Token-driven so ONE base ruleset works on every surface. The parent/public
+   shells resolve --surface/--border/--text/--accent/--danger from the root
+   [data-theme] tokens; inside the student arena the `.arena .ntf` remap points
+   those same custom properties at the arena palette (dark + light + all 5
+   palettes) — the exact trick used by .arena .arena-controls.
+   ========================================================================== */
+.ntf {
+  position: relative;
+  display: inline-flex;
+}
+/* Arena token remap: base .ntf rules below reference --surface/--border/etc,
+   which the arena redefines only as --panel/--line/--ink. Map them here so the
+   notification UI reads correctly on dark, light-arena, and every palette. */
+.arena .ntf {
+  --surface: var(--panel, #141d33);
+  --border: var(--line, #26314f);
+  --text: var(--ink, #eef3ff);
+  --muted: var(--muted, #7e8db5);
+  --chip-bg: var(--panel2, #1a2542);
+  --accent: var(--blue, #2f6bff);
+  --danger: var(--red, #ff4d6d);
+  --shadow: rgba(0, 0, 0, 0.5);
+}
+
+/* ---- Bell trigger + unread badge ---- */
+.ntf-trigger {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--chip-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  line-height: 0;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.ntf-trigger:hover {
+  border-color: var(--accent);
+}
+.ntf-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* ---- Dropdown ---- */
+.ntf-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 70;
+  width: 340px;
+  max-width: 92vw;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 18px 44px var(--shadow, rgba(0, 0, 0, 0.18));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.ntf-menu-head,
+.ntf-menu-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.ntf-menu-head {
+  border-bottom: 1px solid var(--border);
+}
+.ntf-menu-foot {
+  border-top: 1px solid var(--border);
+  justify-content: center;
+}
+.ntf-menu-title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.ntf-linkbtn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: 8px;
+}
+.ntf-linkbtn:hover {
+  background: var(--chip-bg);
+}
+
+/* ---- List + item ---- */
+.ntf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.ntf-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.12s ease;
+}
+.ntf-list li:last-child .ntf-item {
+  border-bottom: none;
+}
+.ntf-item:hover {
+  background: var(--chip-bg);
+}
+.ntf-item.unread {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.ntf-ic {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--chip-bg);
+  font-size: 1rem;
+  line-height: 1;
+}
+.ntf-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.ntf-item-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.ntf-item-text {
+  font-size: 0.83rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.ntf-time {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.ntf-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ---- Empty state ---- */
+.ntf-empty {
+  padding: 26px 18px;
+  text-align: center;
+}
+.ntf-empty-title {
+  margin: 0;
+  font-weight: 700;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+.ntf-empty-hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.ntf-empty-lg {
+  padding: 60px 24px;
+}
+.ntf-empty-ic {
+  display: block;
+  font-size: 2.4rem;
+  margin-bottom: 10px;
+}
+
+/* ---- Toast (live insert) ---- */
+.ntf-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 120;
+  width: 340px;
+  max-width: calc(100vw - 40px);
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px var(--shadow, rgba(0, 0, 0, 0.22));
+  animation: ntf-toast-in 0.24s ease;
+}
+@keyframes ntf-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.ntf-toast-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+.ntf-toast-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.ntf-toast-x {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ntf-toast-x:hover {
+  background: var(--chip-bg);
+  color: var(--text);
+}
+
+/* ---- Detail modal (no-deeplink notifications) ---- */
+.ntf-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ntf-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ntf-detail-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.ntf-detail-time {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.ntf-detail-body {
+  font-size: 0.95rem;
+  line-height: 1.62;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.ntf-detail-body strong {
+  font-weight: 800;
+}
+.ntf-detail-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.ntf-detail-nolink {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.ntf-detail-data {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ntf-detail-data-head {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ntf-detail-data-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.ntf-detail-data-key {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.ntf-detail-data-val {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+/* ---- Full page ---- */
+.ntf-page {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.ntf-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ntf-page-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.ntf-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.ntf-chip {
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.ntf-chip:hover {
+  color: var(--text);
+  background: var(--chip-bg);
+}
+.ntf-chip.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ntf-list-lg {
+  max-height: none;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.ntf-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+}
+.ntf-row:last-child {
+  border-bottom: none;
+}
+.ntf-item-lg {
+  border-bottom: none;
+  padding: 15px 16px;
+}
+.ntf-del {
+  flex: none;
+  width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.ntf-del:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+/* ---- Preferences (parent profile) ---- */
+.ntf-prefs {
+  display: block;
+  margin-top: 24px;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.ntf-prefs-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.ntf-prefs-desc {
+  margin: 6px 0 18px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.ntf-prefs-group {
+  margin-top: 18px;
+}
+.ntf-prefs-group-label {
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.ntf-prefs-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.ntf-prefrow {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+.ntf-prefrow:last-child {
+  margin-bottom: 0;
+}
+.ntf-prefrow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.ntf-prefrow-name {
+  font-weight: 700;
+  color: var(--text);
+}
+.ntf-prefrow-status {
+  font-size: 0.76rem;
+  color: var(--muted);
+  min-height: 1em;
+}
+.ntf-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.ntf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  user-select: none;
+}
+.ntf-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.ntf-switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ntf-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.ntf-toggle input:checked + .ntf-switch {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ntf-toggle input:checked + .ntf-switch::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+.ntf-toggle input:focus-visible + .ntf-switch {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.ntf-toggle-label {
+  display: inline-flex;
+  flex-direction: column;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.25;
+}
+.ntf-toggle-note {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--muted);
 }

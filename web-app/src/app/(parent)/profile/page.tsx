@@ -1,7 +1,11 @@
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { isFeatureEnabled } from "@/lib/flags";
 import { ParentProfile } from "@/components/ParentProfile";
+import { NotificationPreferences } from "@/components/NotificationPreferences";
+import { getNotificationPreferences } from "@/lib/notifications/prefsActions";
+import { NOTIF_KEYS } from "@/lib/notifications/types";
 
 // Dedicated full-width parent profile page (Round 5). Profile EDITING moved off
 // the cramped 360px drawer onto this .profile-page: avatar upload/change/remove,
@@ -69,6 +73,53 @@ export default async function ParentProfilePage() {
   const profileDict: Record<string, string> = {};
   for (const k of PROFILE_KEYS) profileDict[k] = t(k);
 
+  // Notification preferences section (gated by the `notifications` flag). Parent
+  // manages their own channels + one row per child (prefs read via the
+  // owner-checked RPC). Any failure degrades to hiding the section.
+  const notifOn = await isFeatureEnabled("notifications");
+  let notifBlock: React.ReactNode = null;
+  if (notifOn) {
+    try {
+      const { data: childrenData } = await supabase
+        .from("students")
+        .select("profile_id, first_name, last_name")
+        .eq("created_by_parent_profile_id", parent.profileId)
+        .order("created_at", { ascending: true });
+      const childRows = ((childrenData ?? []) as {
+        profile_id: string;
+        first_name: string | null;
+        last_name: string | null;
+      }[]).filter((k) => !!k.profile_id);
+
+      const [selfPrefs, ...childPrefs] = await Promise.all([
+        getNotificationPreferences(),
+        ...childRows.map((k) => getNotificationPreferences(k.profile_id)),
+      ]);
+
+      const kids = childRows.map((k, i) => ({
+        profileId: k.profile_id,
+        name:
+          `${k.first_name ?? ""} ${k.last_name ?? ""}`.trim() ||
+          t("notif.prefs.children"),
+        prefs: childPrefs[i],
+      }));
+
+      const notifDict: Record<string, string> = {};
+      for (const k of NOTIF_KEYS) notifDict[k] = t(k);
+
+      notifBlock = (
+        <NotificationPreferences
+          self={selfPrefs}
+          selfLabel={name || email || t("profile.account")}
+          kids={kids}
+          strings={notifDict}
+        />
+      );
+    } catch {
+      notifBlock = null;
+    }
+  }
+
   return (
     <div className="profile-page">
       <h1 className="profile-page-title">{t("profile.title")}</h1>
@@ -81,6 +132,7 @@ export default async function ParentProfilePage() {
         avatarUrl={avatarUrl}
         dict={profileDict}
       />
+      {notifBlock}
     </div>
   );
 }

@@ -2,11 +2,14 @@ import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
-import { getLocaleSettings } from "@/lib/flags";
+import { getLocaleSettings, isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { getParentFreeAccess } from "@/lib/freeAccess";
 import { ProfileDrawer, ParentNavLinks } from "@/components/ProfileDrawer";
 import { GiveawayBanner } from "@/components/GiveawayBanner";
+import { NotificationBell } from "@/components/NotificationBell";
+import { getInboxSnapshot } from "@/lib/notifications/inbox";
+import { NOTIF_KEYS, BELL_LIMIT } from "@/lib/notifications/types";
 
 // Giveaway-banner strings resolved server-side (GiveawayBanner is a client
 // component and must never touch i18n or the server-only payment-mode module).
@@ -86,6 +89,15 @@ export default async function ParentLayout({
     // keep defaults
   }
 
+  // In-app notification center (gated by the `notifications` feature flag). The
+  // bell + the /notifications nav link only appear when the flag is ON.
+  const notifOn = await isFeatureEnabled("notifications");
+  const notifSnapshot = notifOn
+    ? await getInboxSnapshot(BELL_LIMIT)
+    : { items: [], unread: 0 };
+  const notifDict: Record<string, string> = {};
+  if (notifOn) for (const k of NOTIF_KEYS) notifDict[k] = t(k);
+
   // Home is exact-matched: /dashboard/news lives under it (R10 in-panel news)
   // and must not keep the Home tab highlighted.
   const navItems = [
@@ -94,6 +106,7 @@ export default async function ParentLayout({
     { href: "/olympiads", label: t("poly.nav") },
     { href: "/subscription", label: t("nav.subscription") },
     { href: "/dashboard/news", label: t("nav.news") },
+    ...(notifOn ? [{ href: "/notifications", label: t("notif.title") }] : []),
     { href: "/help/faq", label: t("help.faqTitle") },
     { href: "/help/contact", label: t("help.contactTitle") },
   ];
@@ -103,6 +116,15 @@ export default async function ParentLayout({
       <header className="pnav">
         <ParentNavLinks items={navItems} />
         <div className="pnav-right">
+          {notifOn && (
+            <NotificationBell
+              me={parent.profileId}
+              initialItems={notifSnapshot.items}
+              initialUnread={notifSnapshot.unread}
+              seeAllHref="/notifications"
+              strings={notifDict}
+            />
+          )}
           <ProfileDrawer
             locale={locale}
             availableLocales={enabledLocales}

@@ -5,6 +5,12 @@ import { hasServiceRole } from "@/lib/supabase/admin";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
 import { ChildPasswordReset } from "@/components/ChildPasswordReset";
 import { AccountEditForm } from "@/components/AccountEditForm";
+import { ChildEditForm } from "@/components/ChildEditForm";
+import type {
+  GradeOption,
+  CityOption,
+  SchoolOpt,
+} from "@/components/CreateChildForm";
 import { AccountDeleteButton } from "@/components/AccountDeleteButton";
 import { getT } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
@@ -64,7 +70,7 @@ export default async function AccountsPage({
   let qb = supabase
     .from("profiles")
     .select(
-      "id, display_name, email, status, profile_roles!profile_id!inner(roles!inner(code))",
+      "id, display_name, email, phone, status, profile_roles!profile_id!inner(roles!inner(code))",
       { count: "exact" },
     )
     .eq("profile_roles.roles.code", "parent");
@@ -97,11 +103,49 @@ export default async function AccountsPage({
     const { data } = await supabase
       .from("students")
       .select(
-        "profile_id, created_by_parent_profile_id, first_name, last_name, child_unique_id, access_status",
+        "profile_id, created_by_parent_profile_id, first_name, last_name, child_unique_id, access_status, grade_id, district_id, school_id, class_grade",
       )
       .in("created_by_parent_profile_id", shownParentIds)
       .order("created_at", { ascending: true });
     children = data ?? [];
+  }
+
+  // Grades + city→school lists feed the child editor's dropdowns (same sources
+  // and ordering as the parent Add-Child flow / Free-Access page). Loaded only
+  // when the service key is present (children editing needs it anyway).
+  let editGrades: GradeOption[] = [];
+  let editCities: CityOption[] = [];
+  let editSchools: SchoolOpt[] = [];
+  if (serviceReady && children.length) {
+    const [gradesRes, citiesRes, schoolsRes] = await Promise.all([
+      supabase.from("grades").select("id, name, level").order("level"),
+      supabase
+        .from("districts")
+        .select("id, name")
+        .eq("status", "active")
+        .order("name"),
+      supabase
+        .from("schools")
+        .select("id, name, district_id, is_private, school_number")
+        .eq("status", "active")
+        .order("is_private", { ascending: false })
+        .order("school_number", { ascending: true, nullsFirst: false })
+        .order("name"),
+    ]);
+    editGrades = ((gradesRes.data ?? []) as any[]).map((g) => ({
+      id: g.id,
+      name: g.name,
+    }));
+    editCities = ((citiesRes.data ?? []) as any[]).map((c) => ({
+      id: c.id,
+      name: c.name,
+    }));
+    editSchools = ((schoolsRes.data ?? []) as any[]).map((s) => ({
+      id: s.id,
+      name: s.name,
+      district_id: s.district_id,
+      is_private: !!s.is_private,
+    }));
   }
 
   const childrenByParent = new Map<string, any[]>();
@@ -128,12 +172,42 @@ export default async function AccountsPage({
     open: t("accounts.edit.open"),
     title: t("accounts.edit.title"),
     displayName: t("accounts.edit.displayName"),
+    phone: t("accounts.edit.phone"),
+    phoneHint: t("accounts.edit.phoneHint"),
+    email: t("accounts.edit.email"),
     status: t("accounts.edit.status"),
     statusActive: t("accounts.status.active"),
     statusSuspended: t("accounts.status.suspended"),
+    profileId: t("accounts.edit.profileId"),
     submit: t("accounts.edit.submit"),
     submitting: t("accounts.edit.submitting"),
     done: t("accounts.edit.done"),
+    cancel: t("action.cancel"),
+  };
+
+  const childEditStrings = {
+    open: t("accounts.childEdit.open"),
+    title: t("accounts.childEdit.title"),
+    firstName: t("accounts.create.firstName"),
+    lastName: t("accounts.create.lastName"),
+    grade: t("accounts.child.create.grade"),
+    gradeNone: t("accounts.child.create.gradeNone"),
+    city: t("accounts.child.create.city"),
+    cityChoose: t("accounts.child.create.cityChoose"),
+    school: t("accounts.child.create.school"),
+    schoolChoose: t("accounts.child.create.schoolChoose"),
+    cityFirst: t("accounts.child.create.cityFirst"),
+    privateSchools: t("accounts.child.create.privateSchools"),
+    publicSchools: t("accounts.child.create.publicSchools"),
+    classGrade: t("accounts.childEdit.classGrade"),
+    classGradeHint: t("accounts.childEdit.classGradeHint"),
+    idLabel: t("accounts.childEdit.idLabel"),
+    idPending: t("accounts.child.create.idPending"),
+    profileId: t("accounts.childEdit.profileId"),
+    readOnlyNote: t("accounts.childEdit.readOnlyNote"),
+    submit: t("accounts.childEdit.submit"),
+    submitting: t("accounts.childEdit.submitting"),
+    done: t("accounts.childEdit.done"),
     cancel: t("action.cancel"),
   };
 
@@ -216,6 +290,8 @@ export default async function AccountsPage({
                 <AccountEditForm
                   parentProfileId={p.id}
                   currentName={p.display_name ?? ""}
+                  currentEmail={p.email ?? ""}
+                  currentPhone={p.phone ?? ""}
                   currentStatus={status}
                   strings={editStrings}
                 />
@@ -258,6 +334,24 @@ export default async function AccountsPage({
                           </span>
                         </td>
                         <td className="row-actions nowrap">
+                          {serviceReady && (
+                            <ChildEditForm
+                              studentProfileId={c.profile_id}
+                              childUniqueId={c.child_unique_id ?? null}
+                              current={{
+                                firstName: c.first_name ?? "",
+                                lastName: c.last_name ?? "",
+                                gradeId: c.grade_id ?? "",
+                                districtId: c.district_id ?? "",
+                                schoolId: c.school_id ?? "",
+                                classGrade: c.class_grade ?? "",
+                              }}
+                              grades={editGrades}
+                              cities={editCities}
+                              schools={editSchools}
+                              strings={childEditStrings}
+                            />
+                          )}
                           <ChildPasswordReset
                             studentProfileId={c.profile_id}
                             strings={resetStrings}

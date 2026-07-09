@@ -7,6 +7,9 @@ import { ChildProfileDrawer } from "@/components/ChildProfileDrawer";
 import { ParentNavLinks } from "@/components/ProfileDrawer";
 import { GiveawayBanner } from "@/components/GiveawayBanner";
 import { StickerDecorations } from "@/components/StickerDecorations";
+import { NotificationBell } from "@/components/NotificationBell";
+import { getInboxSnapshot } from "@/lib/notifications/inbox";
+import { NOTIF_KEYS, BELL_LIMIT } from "@/lib/notifications/types";
 
 // Giveaway-banner strings resolved server-side (GiveawayBanner is a client
 // component and must never touch i18n or the server-only payment-mode module).
@@ -48,6 +51,7 @@ export default async function ChildLayout({
     { data: streakStatus },
     olympiadOn,
     leaderboardOn,
+    notifOn,
   ] = await Promise.all([
     // Round 11: while a giveaway window is active the student arena shows the
     // celebratory countdown banner at the top of the panel content.
@@ -83,10 +87,20 @@ export default async function ChildLayout({
     // server-side as well.
     isFeatureEnabled("olympiad_module"),
     isFeatureEnabled("leaderboard"),
+    isFeatureEnabled("notifications"),
   ]);
 
   const gvwStrings: Record<string, string> = {};
   if (giveaway.active) for (const k of GVW_KEYS) gvwStrings[k] = t(k);
+
+  // In-app notification bell (gated by the `notifications` feature flag). The
+  // arena keeps its nav uncluttered — the child reaches the full center via the
+  // bell's "See all"; preferences are parent-managed (not editable here).
+  const notifSnapshot = notifOn
+    ? await getInboxSnapshot(BELL_LIMIT)
+    : { items: [], unread: 0 };
+  const notifDict: Record<string, string> = {};
+  if (notifOn) for (const k of NOTIF_KEYS) notifDict[k] = t(k);
 
   const firstName = (student as any)?.first_name ?? "";
   const initial = (firstName.trim()[0] ?? "?").toUpperCase();
@@ -143,6 +157,15 @@ export default async function ChildLayout({
             <span className="arena-streak" title={t("arena.streak")}>
               🔥 {streak} {t("arena.streak")}
             </span>
+            {notifOn && (
+              <NotificationBell
+                me={child.profileId}
+                initialItems={notifSnapshot.items}
+                initialUnread={notifSnapshot.unread}
+                seeAllHref="/child/notifications"
+                strings={notifDict}
+              />
+            )}
             <ChildProfileDrawer
               locale={locale}
               availableLocales={enabledLocales}

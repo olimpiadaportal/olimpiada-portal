@@ -660,6 +660,66 @@ on conflict (key) do nothing;
 
 --
 
+
+-- -----------------------------------------------------------------------------
+-- NOTIFICATIONS ENGINE (backported from migrations/2026_07_07_042)
+-- notifications.send permission + flags + retention settings + trilingual templates.
+-- -----------------------------------------------------------------------------
+-- ---- E) permission + flags + retention settings ------------------------------
+insert into public.permissions (code, description)
+values ('notifications.send', 'Send/broadcast notifications (Admin only)')
+on conflict (code) do nothing;
+-- Administrator holds ALL permissions (cross-join seed in 012); re-assert here so
+-- an already-seeded DB grants the new code to administrators (never to CMs).
+insert into public.role_permissions (role_id, permission_id)
+select r.id, p.id from public.roles r cross join public.permissions p
+where r.code = 'administrator' and p.code = 'notifications.send'
+on conflict do nothing;
+
+insert into public.feature_flags (key, enabled) values
+  ('notifications', true),          -- in-app center master switch (ON)
+  ('notifications_push', false)     -- mobile push (OFF until the mobile app)
+on conflict (key) do nothing;
+-- notifications_email already seeded (OFF).
+
+insert into public.system_settings (key, value_json) values
+  ('notifications.retention_days', '180'::jsonb),
+  ('notifications.max_per_user',   '500'::jsonb)
+on conflict (key) do nothing;
+
+insert into public.notification_templates (code, locale, subject, body) values
+  ('news_published','az','Yeni xəbər','{{title}} — yeni xəbər dərc olundu.'),
+  ('news_published','en','New article','{{title}} — a new article was published.'),
+  ('news_published','ru','Новая новость','{{title}} — опубликована новая новость.'),
+  ('olympiad_purchased','az','Olimpiada paketi alındı','{{package}} paketi {{child}} üçün aktivdir.'),
+  ('olympiad_purchased','en','Olympiad package purchased','{{package}} is now active for {{child}}.'),
+  ('olympiad_purchased','ru','Олимпиадный пакет куплен','{{package}} активен для {{child}}.'),
+  ('attempt_graded','az','Nəticə hazırdır','Sınağın qiymətləndirildi: {{score}}/{{max}}.'),
+  ('attempt_graded','en','Your result is ready','Your test was graded: {{score}}/{{max}}.'),
+  ('attempt_graded','ru','Результат готов','Тест оценён: {{score}}/{{max}}.'),
+  ('personal_best','az','Yeni rekord!','Yeni şəxsi rekordun: {{points}} xal 🎉'),
+  ('personal_best','en','New personal best!','New personal best: {{points}} points 🎉'),
+  ('personal_best','ru','Новый рекорд!','Новый личный рекорд: {{points}} очков 🎉'),
+  ('streak_milestone','az','Seriya davam edir 🔥','{{days}} günlük seriya! Davam et.'),
+  ('streak_milestone','en','Streak milestone 🔥','{{days}}-day streak! Keep it up.'),
+  ('streak_milestone','ru','Серия дней 🔥','Серия {{days}} дней! Так держать.'),
+  ('subject_expiring','az','Abunə bitmək üzrədir','{{child}} üçün {{subject}} abunəsi {{days}} gün sonra bitir.'),
+  ('subject_expiring','en','Subscription ending soon','{{subject}} for {{child}} ends in {{days}} days.'),
+  ('subject_expiring','ru','Подписка скоро закончится','{{subject}} для {{child}} закончится через {{days}} дн.'),
+  ('subject_charge_failed','az','Ödəniş alınmadı','{{child}} üçün ödəniş uğursuz oldu — giriş bloklandı.'),
+  ('subject_charge_failed','en','Payment failed','Payment for {{child}} failed — access is blocked.'),
+  ('subject_charge_failed','ru','Платёж не прошёл','Оплата за {{child}} не удалась — доступ заблокирован.'),
+  ('subscription_canceled','az','Abunə ləğv edildi','{{child}} üçün abunə cari dövrün sonunda bitəcək.'),
+  ('subscription_canceled','en','Subscription canceled','{{child}}''s subscription ends at the period end.'),
+  ('subscription_canceled','ru','Подписка отменена','Подписка {{child}} закончится в конце периода.'),
+  ('giveaway_ending','az','Kampaniya bitir','Pulsuz kampaniya {{time}} sonra başa çatır.'),
+  ('giveaway_ending','en','Giveaway ending','The free campaign ends in {{time}}.'),
+  ('giveaway_ending','ru','Акция заканчивается','Бесплатная акция закончится через {{time}}.'),
+  ('admin_announcement','az','Elan','{{body}}'),
+  ('admin_announcement','en','Announcement','{{body}}'),
+  ('admin_announcement','ru','Объявление','{{body}}')
+on conflict (code, locale) do nothing;
+
 -- =============================================================================
 -- End of 012_seed_initial_data.sql
 -- =============================================================================

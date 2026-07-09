@@ -14,6 +14,7 @@ import { requireParent } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { getT } from "@/i18n/server";
+import { notifyOlympiadPurchased } from "@/lib/notifications/events";
 
 export async function buyOlympiad(formData: FormData): Promise<void> {
   const parent = await requireParent();
@@ -42,6 +43,14 @@ export async function buyOlympiad(formData: FormData): Promise<void> {
     p_student_profile_id: studentId,
     p_package_id: packageId,
   });
+
+  // Notify the child + the owning parent (best-effort; never blocks the buy).
+  await notifyOlympiadPurchased({
+    studentProfileId: studentId,
+    parentProfileId: parent.profileId,
+    packageId,
+  });
+
   revalidatePath(`/children/${studentId}/olympiads`);
 }
 
@@ -145,6 +154,14 @@ export async function purchaseOlympiadForChild(
       /duplicate key|unique/i.test(error.message ?? "");
     if (!already) return fail;
   }
+
+  // Notify the child + the owning parent (best-effort; idempotency keys dedupe a
+  // re-purchase of an already-owned package, so this never double-notifies).
+  await notifyOlympiadPurchased({
+    studentProfileId: studentId,
+    parentProfileId: parent.profileId,
+    packageId,
+  });
 
   revalidatePath("/olympiads");
   revalidatePath(`/children/${studentId}/olympiads`);

@@ -786,6 +786,43 @@ select '53_leaderboard_seasons' as check_name,
              and (select enabled from public.feature_flags where key='leaderboard') = true
             then 'PASS' else 'FAIL' end as status;
 
+-- 54) Notifications engine (migration 042): new tables + non-forgeable posture —
+--     no client INSERT/UPDATE policy on notifications; the producer + processor
+--     RPCs are service-role only; end-user mark-read is authenticated.
+select '54_notifications_engine' as check_name,
+       case when to_regclass('public.admin_notifications') is not null
+             and to_regclass('public.notification_preferences') is not null
+             and to_regclass('public.push_tokens') is not null
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='notifications' and column_name='idempotency_key')
+             and not exists (select 1 from pg_policies where schemaname='public'
+                              and tablename='notifications' and policyname in ('notif_insert','notif_update'))
+             and has_function_privilege('authenticated','public.create_notification(uuid,text,text,text,jsonb,text[],text,int,text,text,timestamptz)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.claim_pending_deliveries(int,text)','EXECUTE') = false
+             and has_function_privilege('anon','public.mark_notification_read(uuid)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.mark_notification_read(uuid)','EXECUTE') = true
+            then 'PASS' else 'FAIL' end as status;
+
+-- 55) Notifications config: 'notifications.send' permission exists (admin has it,
+--     content_manager does NOT); flags 'notifications'(on)/'notifications_push'(off);
+--     retention settings + trilingual templates seeded; 'push' channel enum value.
+select '55_notifications_config' as check_name,
+       case when exists (select 1 from public.permissions where code='notifications.send')
+             and exists (select 1 from public.role_permissions rp
+                          join public.roles r on r.id=rp.role_id
+                          join public.permissions p on p.id=rp.permission_id
+                          where r.code='administrator' and p.code='notifications.send')
+             and not exists (select 1 from public.role_permissions rp
+                          join public.roles r on r.id=rp.role_id
+                          join public.permissions p on p.id=rp.permission_id
+                          where r.code='content_manager' and p.code='notifications.send')
+             and (select enabled from public.feature_flags where key='notifications') = true
+             and exists (select 1 from public.feature_flags where key='notifications_push')
+             and exists (select 1 from public.system_settings where key='notifications.retention_days')
+             and (select count(*) from public.notification_templates where code='attempt_graded') >= 3
+             and 'push' = any (enum_range(null::public.notification_channel)::text[])
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

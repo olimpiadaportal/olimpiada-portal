@@ -882,3 +882,83 @@ If anything here doesn't match, tell me the **EE#** + what you saw.
   the existing-child list only ever contains children of the selected parent.
 
 If anything here doesn't match, tell me the **FF#** + what you saw.
+
+---
+
+# Round 16 — Notifications (2026-07-07)
+
+> The in-app center is ON (`notifications` flag). Email + push are OFF by design
+> (no SMTP provider / no mobile app yet) — the inbox works fully without them.
+
+## GG1. Child + parent in-app inbox
+- A **bell** appears in the parent header and the child arena header (next to 🔥),
+  with an unread badge. Click it → dropdown of the latest notifications; "See all"
+  opens `/notifications` (parent) or `/child/notifications` (child).
+- Full page: filter by category, click a notification → it marks read and deep-links
+  (e.g. an "attempt graded" one opens that result). "Mark all read" clears the badge;
+  delete removes a row. Honest empty state when there's nothing.
+- **Realtime**: with two tabs open (or after an event), a new notification appears
+  **without refresh** with a toast. (If your Supabase project didn't have the
+  `notifications` table in the `supabase_realtime` publication, migration 043 adds
+  it — a refresh always shows new rows regardless.)
+
+## GG2. Events that create notifications (do the action, then check the bell)
+- **Buy an olympiad package** for a child → the **child** gets "package purchased"
+  and the **parent** gets one too (deep-links to the olympiad pages).
+- **Finish a test** as a child → the child gets "your result is ready" with the
+  score, linking to the result page.
+- **Cancel a subscription** as a parent → the parent gets "subscription canceled".
+- *(Time/payment-driven ones — trial ending, charge failed, giveaway ending — are
+  intentionally not wired yet; they'll light up when the payment provider + daily
+  scanners land, using the same producer.)*
+
+## GG3. Preferences (parent manages the family)
+- Parent **/profile** → Notifications section: in-app / email / push toggles for the
+  parent AND a row per child. Toggle a child's email off → it's saved
+  (email/push only take effect once those channels are enabled globally). The child
+  arena has no preferences editor (parents manage them).
+
+## GG4. Admin — compose, history, templates, settings
+- **Admin → Notifications** (Administrator only — a Content Manager must not see the
+  nav item or reach the page):
+  - **Compose**: pick an audience (all parents / all children / a specific parent /
+    children by subject / one person) → a **live recipient count** shows; type a
+    title + body (or load a template), optionally schedule, preview, Send. The
+    targeted users get it in their inbox. The send appears in the **Audit log**.
+  - **History**: your broadcasts with status + delivered/total.
+  - **Templates**: the trilingual per-event templates (edit/create/delete).
+  - **Settings**: retention (days + max per user) and the channel master switches
+    (`notifications`, `notifications_email`, `notifications_push`).
+- **Publish a news article** → all parents and all children receive a "new article"
+  notification linking to it. (Publishing never breaks if the notify fails.)
+
+If anything here doesn't match, tell me the **GG#** + what you saw.
+
+---
+
+# Round 17 — notification/test/profile fixes + admin editing (2026-07-08)
+
+## HH1. Notifications actually persist now
+- Open a notification → it's read → **refresh / navigate away and back → still read** (previously it went unread again). Mark-all-read clears the badge and stays cleared after refresh. **Delete → refresh → still gone.** The bell badge count is correct after a refresh.
+- A notification **with no link** (e.g. an admin announcement) → clicking opens a **detail modal** with the full content (title, formatted body, category, time) instead of doing nothing. Bold/italic/links in an admin message render correctly.
+
+## HH2. Scheduled notifications + multi-parent send (admin)
+- **Admin → Notifications**: the **"Individual person"** audience is gone. The push channel now reads **"Mobil tətbiq"**. The message box has a **B / I / Link** toolbar with a live preview.
+- **Specific parents**: search and add **several** parents (chips, each removable); the recipient count updates as you add/remove. Send → all selected parents receive it.
+- **Schedule** a notification a couple minutes out → it now **sends when the time arrives** (the dispatch cron was fixed; on dev it runs every 5 min). Any already-overdue scheduled one was flushed.
+
+## HH3. Test player
+- In a running test, the mark-for-review control is now a **bookmark/Save** icon (fills when saved); labels read **Save / Unsave / Saved**. The header shows **Fənn: … · Mövzu: …** (subject + topic, from the real test data). The palette numbers are **centered** in their circles (check single- and double-digit), and the legend sits cleanly (no "Current Question" wrapping to a second line). Check it on a narrow phone width too.
+
+## HH4. Test results filter
+- Finish a test → **Review**: filter tabs **All · Correct · Wrong · Skipped** (with counts) at the top filter the question list.
+
+## HH5. Profiles + account editing
+- **Child profile**: a read-only Grade / City / School section (the child can see but not edit it).
+- **Parent dashboard → a child card → "Edit info"**: edit the child's name, grade, city→school, class; the 8-digit ID + internal id are shown read-only. Save persists.
+- **Admin → Accounts**: edit a **parent** (name, phone, email, status) and a **child** (name, grade, city→school, class); internal IDs are read-only; both are audited.
+
+## HH6. Today's Round Start
+- Child home → **Today's Round → Start** on a subject → it now **opens the test page for that subject** (`/child/test/<subject>`) instead of bouncing back to the home screen.
+
+If anything here doesn't match, tell me the **HH#** + what you saw.

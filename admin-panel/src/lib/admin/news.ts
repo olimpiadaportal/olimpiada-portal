@@ -169,7 +169,7 @@ export async function transitionNews(formData: FormData): Promise<void> {
   const supabase = await createClient();
   const { data: n } = await supabase
     .from("news")
-    .select("status")
+    .select("status, slug")
     .eq("id", id)
     .maybeSingle();
   if (!n || !tr.from.includes(n.status)) return;
@@ -186,10 +186,67 @@ export async function transitionNews(formData: FormData): Promise<void> {
       targetId: id,
       metadata: { transition: action, from: n.status, to: tr.to },
     });
+
+    // N3: on publish, broadcast an in-app "new article" notification to all
+    // parents AND all children. The publisher is an administrator (holds
+    // notifications.send), so admin_send_notification authorizes. BOTH sends are
+    // wrapped so a notify failure can NEVER break publishing.
+    if (tr.to === "published") {
+      await notifyNewsPublished(supabase, id, n.slug as string);
+    }
   }
 
   revalidatePath("/news");
   revalidatePath(`/news/${id}/edit`);
+}
+
+// N3: fire-and-forget "new article published" in-app broadcast. Sends once to
+// all parents and once to all children (children get News too). Each send is
+// independently wrapped: a failure is logged and swallowed so it can never break
+// the publish transition. Uses the news item's az title (short), a generic body
+// and a same-origin relative deep link (/news/<slug>).
+async function notifyNewsPublished(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  newsId: string,
+  slug: string,
+): Promise<void> {
+  let title = "";
+  try {
+    const { data: az } = await supabase
+      .from("news_translations")
+      .select("title")
+      .eq("news_id", newsId)
+      .eq("locale", "az")
+      .maybeSingle();
+    title = ((az?.title as string | undefined) ?? "").trim();
+  } catch {
+    // ignore — fall back to a generic title below
+  }
+  if (!title) title = "Yeni xəbər";
+  const shortTitle = title.slice(0, 200);
+  const body = `${shortTitle} — portalda yeni xəbər dərc olundu.`.slice(0, 2000);
+  const actionUrl = `/news/${slug}`;
+
+  for (const audience of ["all_parents", "all_children"] as const) {
+    try {
+      await supabase.rpc("admin_send_notification", {
+        p_title: shortTitle,
+        p_body: body,
+        p_channels: ["in_app"],
+        p_audience_type: audience,
+        p_audience_filter: {},
+        p_scheduled_at: null,
+        p_template_code: "news_published",
+        p_action_url: actionUrl,
+      });
+    } catch (e) {
+      console.error(
+        "[admin] news publish notify failed",
+        audience,
+        (e as Error).message,
+      );
+    }
+  }
 }
 
 // Records a cover image: inserts a media_assets row and links it on

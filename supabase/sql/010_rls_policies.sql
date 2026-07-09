@@ -860,6 +860,57 @@ drop policy if exists lseasons_admin on public.leaderboard_seasons;
 create policy lseasons_admin on public.leaderboard_seasons for select to authenticated
   using (public.is_admin());   -- writes go through the service-role RPCs below
 
+
+-- -----------------------------------------------------------------------------
+-- NOTIFICATIONS ENGINE (backported from migrations/2026_07_07_042)
+-- notifications no-forge hardening + admin_notifications/prefs/push_tokens RLS.
+-- -----------------------------------------------------------------------------
+-- notifications: NO client insert/update; select own/admin; delete own/admin.
+drop policy if exists "notif_insert" on public.notifications;   -- DEFINER RPCs only
+drop policy if exists "notif_update" on public.notifications;   -- mark-read via RPC only
+drop policy if exists "notif_delete" on public.notifications;
+create policy "notif_delete" on public.notifications for delete to authenticated
+  using (recipient_profile_id = public.current_profile_id() or public.is_admin());
+-- notif_select (recipient or admin) is kept as-is.
+
+alter table public.admin_notifications enable row level security;
+drop policy if exists "adminnotif_select" on public.admin_notifications;
+create policy "adminnotif_select" on public.admin_notifications for select to authenticated
+  using (public.is_admin() or public.has_permission('notifications.send'));
+-- writes only via admin_send_notification (DEFINER) → no client write policy.
+
+alter table public.notification_preferences enable row level security;
+drop policy if exists "notifprefs_select" on public.notification_preferences;
+create policy "notifprefs_select" on public.notification_preferences for select to authenticated
+  using (profile_id = public.current_profile_id()
+         or public.is_parent_linked_to_student(profile_id) or public.is_admin());
+-- writes via set_notification_preferences (DEFINER) → no client write policy.
+
+alter table public.push_tokens enable row level security;
+drop policy if exists "pushtokens_own" on public.push_tokens;
+create policy "pushtokens_own" on public.push_tokens for select to authenticated
+  using (profile_id = public.current_profile_id() or public.is_admin());
+drop policy if exists "pushtokens_del" on public.push_tokens;
+create policy "pushtokens_del" on public.push_tokens for delete to authenticated
+  using (profile_id = public.current_profile_id() or public.is_admin());
+-- writes via upsert_push_token (DEFINER) → no client write policy.
+
+-- -----------------------------------------------------------------------------
+-- Realtime (migration 043): the in-app notification center subscribes to
+-- per-user INSERTs on public.notifications. Guarded — the supabase_realtime
+-- publication exists only on Supabase (not on the local from-zero PG), and
+-- re-adding a table is a no-op.
+-- -----------------------------------------------------------------------------
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin
+      alter publication supabase_realtime add table public.notifications;
+    exception when duplicate_object then null;
+    end;
+  end if;
+end $$;
+
 -- =============================================================================
 -- End of 010_rls_policies.sql
 -- =============================================================================

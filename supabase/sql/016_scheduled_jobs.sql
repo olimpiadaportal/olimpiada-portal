@@ -82,8 +82,18 @@ begin
       'select public.leaderboard_rollover_if_month_start();'
     );
     raise notice 'pg_cron job olympiq_leaderboard_rollover scheduled (daily; acts on the 1st, Baku).';
+
+    -- Notifications (migration 042): dispatch due scheduled broadcasts every 5
+    -- minutes, and prune old/read notifications nightly (retention settings).
+    perform cron.unschedule(jobid) from cron.job where jobname = 'olympiq_dispatch_scheduled_notifications';
+    perform cron.schedule('olympiq_dispatch_scheduled_notifications', '*/5 * * * *',
+                          'select public.dispatch_scheduled_notifications();');
+    perform cron.unschedule(jobid) from cron.job where jobname = 'olympiq_prune_notifications';
+    perform cron.schedule('olympiq_prune_notifications', '40 20 * * *',   -- 00:40 Asia/Baku
+                          'select public.prune_notifications();');
+    raise notice 'pg_cron jobs olympiq_dispatch_scheduled_notifications + olympiq_prune_notifications scheduled.';
   else
-    raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry / leaderboard rollover NOT scheduled (skipped safely).';
+    raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry / leaderboard rollover / notifications NOT scheduled (skipped safely).';
   end if;
 end
 $$;

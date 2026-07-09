@@ -35,9 +35,17 @@ export const FLAG_META: Record<string, FlagMeta> = {
     labelKey: "settings.flag.leaderboard.label",
     descKey: "settings.flag.leaderboard.desc",
   },
+  notifications: {
+    labelKey: "settings.flag.notifications.label",
+    descKey: "settings.flag.notifications.desc",
+  },
   notifications_email: {
     labelKey: "settings.flag.notifications_email.label",
     descKey: "settings.flag.notifications_email.desc",
+  },
+  notifications_push: {
+    labelKey: "settings.flag.notifications_push.label",
+    descKey: "settings.flag.notifications_push.desc",
   },
 };
 
@@ -146,6 +154,26 @@ export const SETTING_META: Record<string, SettingMeta> = {
     kind: "boolean",
     labelKey: "settings.sys.public_display_names.label",
     helpKey: "settings.sys.public_display_names.help",
+  },
+  // Notifications retention (edited on the /notifications page, Settings tab —
+  // the same typed SettingEditor/updateSetting path). Ranges enforced server-side
+  // via these min/max bounds. retention_days: prune READ notifications older than
+  // this; max_per_user: cap each inbox (trim oldest READ beyond it).
+  "notifications.retention_days": {
+    kind: "number",
+    labelKey: "settings.sys.ntf_retention_days.label",
+    helpKey: "settings.sys.ntf_retention_days.help",
+    placeholder: "180",
+    min: 1,
+    max: 3650,
+  },
+  "notifications.max_per_user": {
+    kind: "number",
+    labelKey: "settings.sys.ntf_max_per_user.label",
+    helpKey: "settings.sys.ntf_max_per_user.help",
+    placeholder: "500",
+    min: 10,
+    max: 100000,
   },
   // Leaderboard points formula (edited on the /leaderboard page, not on
   // /settings — the Settings page renders keys explicitly per card). Ranges are

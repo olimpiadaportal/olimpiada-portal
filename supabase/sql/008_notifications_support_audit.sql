@@ -221,6 +221,78 @@ create index if not exists ix_fai_window  on public.free_access_intervals (start
 comment on table public.free_access_intervals is
   'Admin-scheduled per-parent/child free-access windows. Free (prices 0, no paid rows) while now() in [starts_at,ends_at) and is_active. Lazy expiry (helpers in 011). Admin/service write only.';
 
+
+-- -----------------------------------------------------------------------------
+-- NOTIFICATIONS ENGINE (backported from migrations/2026_07_07_042)
+-- notifications columns + admin_notifications + preferences + push_tokens.
+-- -----------------------------------------------------------------------------
+-- ---- A) extend notifications --------------------------------------------------
+alter table public.notifications
+  add column if not exists idempotency_key text,
+  add column if not exists priority        int not null default 5,
+  add column if not exists category        text,
+  add column if not exists action_url      text,     -- same-origin RELATIVE deep link
+  add column if not exists expires_at      timestamptz;
+
+do $$ begin
+  alter table public.notifications add constraint uq_notifications_idempotency unique (idempotency_key);
+exception when duplicate_table then null; when duplicate_object then null; end $$;
+
+create index if not exists idx_notifications_recipient_created
+  on public.notifications (recipient_profile_id, created_at desc);
+create index if not exists idx_notifications_unread
+  on public.notifications (recipient_profile_id) where read_at is null;
+
+-- ---- B) admin broadcast records ----------------------------------------------
+create table if not exists public.admin_notifications (
+  id                uuid primary key default gen_random_uuid(),
+  actor_profile_id  uuid references public.profiles (id) on delete set null,
+  title             text not null,
+  body              text not null,
+  template_code     text,
+  channels          text[] not null default '{in_app}',
+  audience_type     text not null,   -- all_parents|all_children|parent|by_subject|individual
+  audience_filter   jsonb not null default '{}'::jsonb,
+  status            text not null default 'sent'
+                      check (status in ('draft','scheduled','sending','sent','failed','canceled')),
+  total_recipients  int not null default 0,
+  delivered_count   int not null default 0,
+  failed_count      int not null default 0,
+  scheduled_at      timestamptz,
+  sent_at           timestamptz,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+create index if not exists idx_admin_notifications_created on public.admin_notifications (created_at desc);
+create index if not exists idx_admin_notifications_scheduled
+  on public.admin_notifications (scheduled_at) where status = 'scheduled';
+
+-- ---- C) per-user preferences (coarse per-channel; parent manages child) -------
+create table if not exists public.notification_preferences (
+  profile_id        uuid primary key references public.profiles (id) on delete cascade,
+  in_app_enabled    boolean not null default true,
+  email_enabled     boolean not null default true,
+  push_enabled      boolean not null default true,
+  quiet_hours_start int,     -- optional (0..23), reserved for a later stage
+  quiet_hours_end   int,
+  updated_at        timestamptz not null default now()
+);
+
+-- ---- D) push tokens (mobile-ready; schema from the mobile master plan) --------
+create table if not exists public.push_tokens (
+  id            uuid primary key default gen_random_uuid(),
+  profile_id    uuid not null references public.profiles (id) on delete cascade,
+  token         text not null unique,
+  platform      text not null check (platform in ('ios','android','web')),
+  is_valid      boolean not null default true,
+  failure_count int not null default 0,
+  device_info   jsonb not null default '{}'::jsonb,
+  last_used_at  timestamptz,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create index if not exists idx_push_tokens_profile on public.push_tokens (profile_id) where is_valid;
+
 -- =============================================================================
 -- End of 008_notifications_support_audit.sql
 -- =============================================================================

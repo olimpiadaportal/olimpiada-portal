@@ -4,6 +4,10 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
+import {
+  TestReviewList,
+  type ReviewListQuestion,
+} from "@/components/TestReviewList";
 
 type ReviewOption = { option_id: string; text: string | null; is_correct: boolean };
 type ReviewQuestion = {
@@ -22,11 +26,12 @@ type ReviewPayload = {
   questions: ReviewQuestion[];
 };
 
-const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
-
 // TEST ENGINE (T2) — post-grading answer review. get_test_review is the ONLY
 // RPC that reveals answer keys, and only for the owner's GRADED attempt (it
-// raises otherwise → we bounce to the test home). Pure server rendering.
+// raises otherwise → we bounce to the test home). The server shapes each
+// question (computed state + per-option selected/correct flags) and hands the
+// list to <TestReviewList/> which adds client-side All/Correct/Wrong/Skipped
+// filter tabs. The score header + bottom links stay in this server page.
 export default async function TestReviewPage({
   params,
 }: {
@@ -56,6 +61,38 @@ export default async function TestReviewPage({
   const score = Math.round(Number(review.score ?? 0));
   const max = Math.round(Number(review.max ?? 0));
 
+  // Shape each question once (server-side) into the client list's contract:
+  // computed state + per-option selected/correct flags (no answer-key RPC or
+  // Set crosses the server→client boundary).
+  const shaped: ReviewListQuestion[] = review.questions.map((q) => {
+    const selected = new Set(q.selected_option_ids ?? []);
+    const skipped = selected.size === 0;
+    const state = skipped ? "skipped" : q.is_correct ? "correct" : "wrong";
+    return {
+      question_id: q.question_id,
+      body: q.body,
+      prompt: q.prompt,
+      state,
+      explanation: q.explanation,
+      options: q.options.map((o) => ({
+        option_id: o.option_id,
+        text: o.text,
+        is_correct: o.is_correct,
+        is_selected: selected.has(o.option_id),
+      })),
+    };
+  });
+
+  const reviewDict: Record<string, string> = {};
+  for (const k of [
+    "test.review.correct", "test.review.wrong", "test.review.skipped",
+    "test.review.your", "test.review.correctAnswer", "test.review.explanation",
+    "test.review.filterAll", "test.review.filterCorrect",
+    "test.review.filterWrong", "test.review.filterSkipped",
+  ]) {
+    reviewDict[k] = t(k);
+  }
+
   return (
     <>
       <section style={{ marginBottom: 22 }}>
@@ -68,54 +105,7 @@ export default async function TestReviewPage({
         </p>
       </section>
 
-      <div className="tst-review-list">
-        {review.questions.map((q, qi) => {
-          const selected = new Set(q.selected_option_ids ?? []);
-          const skipped = selected.size === 0;
-          const state = skipped ? "skipped" : q.is_correct ? "correct" : "wrong";
-          return (
-            <div className={`arena-q-card tst-review-q ${state}`} key={q.question_id}>
-              <div className="tst-q-head">
-                <div className="arena-q-code mono">Q{String(qi + 1).padStart(2, "0")}</div>
-                <span className={`tst-pill ${state === "correct" ? "ok" : state === "wrong" ? "bad" : "off"}`}>
-                  {t(`test.review.${state}`)}
-                </span>
-              </div>
-              <div className="arena-q-body">{q.body}</div>
-              {q.prompt && <p className="arena-q-prompt">{q.prompt}</p>}
-              <div className="tst-review-opts">
-                {q.options.map((o, i) => {
-                  const isSel = selected.has(o.option_id);
-                  const cls = [
-                    "tst-review-opt",
-                    o.is_correct ? "correct" : "",
-                    isSel && !o.is_correct ? "wrong" : "",
-                    isSel ? "chosen" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ");
-                  return (
-                    <div className={cls} key={o.option_id}>
-                      <span className="arena-opt-key">{LETTERS[i] ?? i + 1}</span>
-                      <span className="tst-review-opt-text">{o.text}</span>
-                      <span className="tst-review-tags mono">
-                        {isSel && <em>{t("test.review.your")}</em>}
-                        {o.is_correct && <b>✓ {t("test.review.correctAnswer")}</b>}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              {q.explanation && (
-                <div className="tst-explain">
-                  <b>{t("test.review.explanation")}</b>
-                  <p>{q.explanation}</p>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <TestReviewList questions={shaped} dict={reviewDict} />
 
       <div style={{ marginTop: 24, display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Link className="arena-btn" href={`/child/test/result/${attemptId}`}>

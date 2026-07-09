@@ -540,11 +540,17 @@ export async function createChildForParent(
 }
 
 // =====================================================================
-// UPDATE PARENT — display name + account status (active / suspended).
+// UPDATE PARENT — full profile edit: display name, phone, status
+// (active / suspended) and EMAIL. Email changes go through the service-role
+// Auth admin API (auth.users is the source of truth for the login email);
+// profiles.email is kept in sync so the panel list reflects the change.
 // =====================================================================
 export type UpdateParentState = { error?: string; ok?: boolean } | null;
 
 const ALLOWED_PARENT_STATUSES = new Set(["active", "suspended"]);
+// E.164 shape, matching the profiles.phone DB check (chk_profiles_phone_e164).
+const PHONE_RE = /^\+[1-9][0-9]{6,14}$/;
+const NAME_MAX_PARENT = 160;
 
 export async function updateParent(
   _prev: UpdateParentState,
@@ -557,26 +563,70 @@ export async function updateParent(
 
   const parentProfileId = f(formData, "parent_profile_id");
   const displayName = f(formData, "display_name");
+  const phone = f(formData, "phone");
+  const email = f(formData, "email").toLowerCase();
   const status = f(formData, "status");
 
-  if (!parentProfileId) return { error: t("accounts.edit.err.failed") };
+  // The profile id is server-verified, never editable — it only identifies the
+  // target row (a hidden field). Reject anything that is not a UUID.
+  if (!UUID_RE.test(parentProfileId)) return { error: t("accounts.edit.err.failed") };
   // Never trust a client-submitted status outside the allowed transitions.
   if (status && !ALLOWED_PARENT_STATUSES.has(status)) {
     return { error: t("accounts.edit.err.failed") };
   }
+  if (displayName.length > NAME_MAX_PARENT) return { error: t("err.tooLong") };
+  // Email is required and validated server-side (client attrs are UX only).
+  if (!email || !email.includes("@")) return { error: t("accounts.edit.err.email") };
+  if (email.length > 254) return { error: t("err.tooLong") };
+  // Phone is optional; when present it must satisfy the E.164 DB constraint
+  // (otherwise the profiles UPDATE below would be rejected by the check).
+  if (phone && !PHONE_RE.test(phone)) return { error: t("accounts.edit.err.phone") };
 
   const admin = createAdminClient();
 
   // Confirm the target is actually a parent (defence-in-depth: do not let this
-  // become a generic profile-status editor for admins/content managers).
+  // become a generic profile editor for admins/content managers).
   // L10: fail CLOSED — if the role lookup yields nothing (missing seed row,
   // transient error), the mutation is refused rather than skipping the check.
   if (!(await holdsParentRole(admin, parentProfileId))) {
     return { error: t("accounts.edit.err.failed") };
   }
 
+  // Resolve the parent's auth user + current contact fields (the auth user id is
+  // read from the DB — never client-supplied — before any Auth admin call).
+  const { data: prof, error: profErr } = await admin
+    .from("profiles")
+    .select("auth_user_id, email, phone, display_name")
+    .eq("id", parentProfileId)
+    .maybeSingle();
+  if (profErr || !prof?.auth_user_id) {
+    if (profErr) console.error("[admin] parent lookup failed", profErr.message);
+    return { error: t("accounts.edit.err.failed") };
+  }
+
+  const emailChanged = (prof.email ?? "").toLowerCase() !== email;
+  const phoneChanged = (prof.phone ?? "") !== phone;
+
+  // Apply the email change via the Auth admin API first (auth.users owns the
+  // login email). email_confirm keeps the account confirmed (admin-driven).
+  if (emailChanged) {
+    const { error: authErr } = await admin.auth.admin.updateUserById(
+      prof.auth_user_id,
+      { email, email_confirm: true },
+    );
+    if (authErr) {
+      if (/already|registered|exists|duplicate/i.test(authErr.message)) {
+        return { error: t("accounts.edit.err.emailExists") };
+      }
+      console.error("[admin] parent email update failed", authErr.message);
+      return { error: t("accounts.edit.err.failed") };
+    }
+  }
+
   const patch: Record<string, unknown> = {
     display_name: displayName || null,
+    phone: phone || null,
+    email,
     updated_at: new Date().toISOString(),
   };
   if (status) patch.status = status;
@@ -585,18 +635,153 @@ export async function updateParent(
     .from("profiles")
     .update(patch)
     .eq("id", parentProfileId);
-  if (updErr) return { error: t("accounts.edit.err.failed") };
+  if (updErr) {
+    console.error("[admin] parent profile update failed", updErr.message);
+    return { error: t("accounts.edit.err.failed") };
+  }
 
   await writeAuditLog({
     actorProfileId: ctx.profileId,
-    action: "admin.parent.update",
+    action: "admin.account.parent.update",
     targetTable: "profiles",
     targetId: parentProfileId,
-    metadata: { status: status || undefined },
+    // Metadata records WHICH fields changed (booleans/status only) — never the
+    // email/phone/name values themselves.
+    metadata: {
+      status: status || undefined,
+      emailChanged,
+      phoneChanged,
+      nameChanged: (prof.display_name ?? "") !== (displayName || ""),
+    },
   });
 
   revalidatePath("/accounts");
   revalidatePath("/free-access"); // parent names render in the intervals table
+  return { ok: true };
+}
+
+// =====================================================================
+// UPDATE CHILD ACCOUNT — profile fields on the students row: names, grade,
+// city (district) + school cascade, and optional class_grade. The 8-digit
+// child_unique_id and every internal id stay READ-ONLY (never accepted here).
+// =====================================================================
+export type UpdateChildState = { error?: string; ok?: boolean } | null;
+
+const CLASS_GRADE_MAX = 40;
+
+export async function updateChildAccount(
+  _prev: UpdateChildState,
+  formData: FormData,
+): Promise<UpdateChildState> {
+  const ctx = await requireAdmin(); // authorize FIRST — before touching FormData
+  const t = await getT();
+
+  if (!hasServiceRole()) return { error: t("accounts.reset.noServiceKey") };
+
+  const studentProfileId = f(formData, "student_profile_id");
+  const firstName = f(formData, "first_name");
+  const lastName = f(formData, "last_name");
+  const gradeId = f(formData, "grade_id");
+  const districtId = f(formData, "district_id");
+  const schoolId = f(formData, "school_id");
+  const classGrade = f(formData, "class_grade");
+
+  // The student profile id only identifies the target row (hidden field). It is
+  // never editable; reject anything that is not a UUID.
+  if (!UUID_RE.test(studentProfileId)) {
+    return { error: t("accounts.childEdit.err.failed") };
+  }
+  if (
+    !firstName ||
+    !lastName ||
+    firstName.length > NAME_MAX ||
+    lastName.length > NAME_MAX
+  ) {
+    return { error: t("accounts.create.err.required") };
+  }
+  if (gradeId && !UUID_RE.test(gradeId)) {
+    return { error: t("accounts.childEdit.err.invalid") };
+  }
+  // City + school are required (parity with admin child creation); both UUIDs.
+  if (!UUID_RE.test(districtId) || !UUID_RE.test(schoolId)) {
+    return { error: t("accounts.child.create.err.cityschool") };
+  }
+  if (classGrade.length > CLASS_GRADE_MAX) return { error: t("err.tooLong") };
+
+  const admin = createAdminClient();
+
+  // Verify the target is genuinely a student (never let this edit an arbitrary
+  // profile — defence-in-depth on top of the UUID check).
+  const { data: student, error: stErr } = await admin
+    .from("students")
+    .select("profile_id")
+    .eq("profile_id", studentProfileId)
+    .maybeSingle();
+  if (stErr) {
+    console.error("[admin] student lookup failed", stErr.message);
+    return { error: t("err.server") };
+  }
+  if (!student) return { error: t("accounts.childEdit.err.failed") };
+
+  // Resolve + validate city/school server-side (never trust display names; the
+  // school MUST belong to the chosen city).
+  const { data: cityRow } = await admin
+    .from("districts")
+    .select("name")
+    .eq("id", districtId)
+    .maybeSingle();
+  const { data: schoolRow } = await admin
+    .from("schools")
+    .select("name, district_id")
+    .eq("id", schoolId)
+    .maybeSingle();
+  if (
+    !cityRow ||
+    !schoolRow ||
+    (schoolRow as { district_id: string }).district_id !== districtId
+  ) {
+    return { error: t("accounts.child.create.err.cityschool") };
+  }
+
+  // If a grade was chosen, confirm it exists (a client could post any UUID).
+  if (gradeId) {
+    const { data: gradeRow } = await admin
+      .from("grades")
+      .select("id")
+      .eq("id", gradeId)
+      .maybeSingle();
+    if (!gradeRow) return { error: t("accounts.childEdit.err.invalid") };
+  }
+
+  const { error: updErr } = await admin
+    .from("students")
+    .update({
+      first_name: firstName,
+      last_name: lastName,
+      grade_id: gradeId || null,
+      district_id: districtId,
+      school_id: schoolId,
+      city: (cityRow as { name: string }).name,
+      school_name: (schoolRow as { name: string }).name, // keep in sync
+      class_grade: classGrade || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("profile_id", studentProfileId);
+  if (updErr) {
+    console.error("[admin] child account update failed", updErr.message);
+    return { error: t("accounts.childEdit.err.failed") };
+  }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.account.child.update",
+    targetTable: "students",
+    targetId: studentProfileId,
+    metadata: { gradeSet: !!gradeId, classGradeSet: !!classGrade },
+  });
+
+  revalidatePath("/accounts");
+  revalidatePath("/free-access"); // child names render in the intervals table
   return { ok: true };
 }
 

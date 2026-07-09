@@ -44,6 +44,9 @@ const ACTION_KEYS: Record<string, string> = {
   "admin.parent.create": "audit.action.parent_create",
   "admin.parent.update": "audit.action.parent_update",
   "admin.parent.delete": "audit.action.parent_delete",
+  // Full parent/child profile edits (Accounts section editors).
+  "admin.account.parent.update": "audit.action.account_parent_update",
+  "admin.account.child.update": "audit.action.account_child_update",
   // news.ts
   "admin.news.create": "audit.action.news_create",
   "admin.news.update": "audit.action.news_update",
@@ -77,6 +80,10 @@ const ACTION_KEYS: Record<string, string> = {
   // settings.ts
   "admin.settings.flag_toggle": "audit.action.flag_toggle",
   "admin.settings.update": "audit.action.setting_update",
+  // notifications.ts
+  "admin.notification.send": "audit.action.notification_send",
+  "admin.notification.template.upsert": "audit.action.notification_template_upsert",
+  "admin.notification.template.delete": "audit.action.notification_template_delete",
   // leaderboard.ts (L2 season close / hard reset)
   "admin.leaderboard.reset": "audit.action.leaderboard_reset",
   // leaderboard.ts (named-season CRUD)
@@ -116,6 +123,8 @@ const ENTITY_KEYS: Record<string, string> = {
   leaderboard_seasons: "audit.entity.leaderboard_seasons",
   sticker_themes: "audit.entity.sticker_themes",
   sticker_images: "audit.entity.sticker_images",
+  admin_notifications: "audit.entity.admin_notifications",
+  notification_templates: "audit.entity.notification_templates",
   feature_flags: "audit.entity.feature_flags",
   system_settings: "audit.entity.system_settings",
 };

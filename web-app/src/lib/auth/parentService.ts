@@ -13,8 +13,9 @@ import {
   createChild,
   resetChildPassword as svcResetChildPassword,
 } from "@/lib/auth/childAccountService";
-import { type ChildInfo } from "@/lib/auth/children";
+import { type ChildInfo, validateChildInfo } from "@/lib/auth/children";
 import { getT } from "@/i18n/server";
+import { isUuid } from "@/lib/uuid";
 import { rateLimitAllow } from "@/lib/rateLimit";
 
 export type AuthFormState = { error?: string } | null;
@@ -328,6 +329,79 @@ export async function resetChildPasswordAction(
     newPassword,
   });
   if (!result.ok) return { error: t(result.errors[0] ?? "auth.child.err.updateFailed") };
+  return { ok: true };
+}
+
+// ---- Parent edits a child's profile info AFTER creation --------------------
+// Internal identifiers (child_unique_id, profile/DB ids) are NEVER editable
+// here — only the human-facing info a parent may correct.
+export type UpdateChildState =
+  | { ok?: boolean; error?: string; errors?: string[] }
+  | null;
+
+const SCHOOL_NAME_MAX = 160;
+const CLASS_GRADE_MAX = 40;
+
+export async function updateChildProfile(
+  _prev: UpdateChildState,
+  formData: FormData,
+): Promise<UpdateChildState> {
+  // Authorize FIRST. getParent (not requireParent) so a lookup miss returns an
+  // in-form error and preserves the submission instead of redirecting.
+  const parent = await getParent();
+  const t = await getT();
+  if (!parent) return { error: t("childedit.err.generic") };
+
+  const studentProfileId = f(formData, "student_profile_id");
+  if (!isUuid(studentProfileId)) return { error: t("childedit.err.generic") };
+
+  const admin = getAdminClient();
+  // Re-verify OWNERSHIP server-side (the parent must have created this child).
+  // RLS also enforces this, but we never trust the client-supplied id.
+  const { data: student } = await admin
+    .from("students")
+    .select("created_by_parent_profile_id")
+    .eq("profile_id", studentProfileId)
+    .maybeSingle();
+  if (!student || student.created_by_parent_profile_id !== parent.profileId) {
+    return { error: t("childedit.err.notYourChild") };
+  }
+
+  const firstName = f(formData, "first_name").slice(0, NAME_MAX);
+  const lastName = f(formData, "last_name").slice(0, NAME_MAX);
+  const districtId = f(formData, "district_id") || null;
+  const schoolId = f(formData, "school_id") || null;
+  const gradeId = f(formData, "grade_id") || null;
+  const schoolName = f(formData, "school_name").slice(0, SCHOOL_NAME_MAX) || null;
+  const classGrade = f(formData, "class_grade").slice(0, CLASS_GRADE_MAX) || null;
+
+  // Same server-side validation the create flow uses (names present + capped,
+  // city/school/grade ids UUID-shaped). Returns i18n keys the UI localizes.
+  const check = validateChildInfo({ firstName, lastName, districtId, schoolId, gradeId });
+  if (!check.ok) return { errors: check.errors };
+
+  const { error } = await admin
+    .from("students")
+    .update({
+      first_name: firstName,
+      last_name: lastName,
+      grade_id: gradeId,
+      district_id: districtId,
+      school_id: schoolId,
+      school_name: schoolName,
+      class_grade: classGrade,
+    })
+    .eq("profile_id", studentProfileId);
+  if (error) return { error: t("childedit.err.generic") };
+
+  // Keep the child's display_name (used e.g. on the leaderboard) in sync with
+  // the edited names. Best-effort — never fail the edit on this.
+  const display = `${firstName} ${lastName}`.trim();
+  if (display) {
+    await admin.from("profiles").update({ display_name: display }).eq("id", studentProfileId);
+  }
+
+  revalidatePath("/dashboard");
   return { ok: true };
 }
 

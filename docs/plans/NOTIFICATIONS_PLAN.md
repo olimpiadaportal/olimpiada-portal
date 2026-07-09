@@ -119,7 +119,7 @@ Server actions/RPCs call `create_notification` idempotently at these events (eac
 
 ## 9. Mobile readiness (push)
 
-Everything is already push-ready: `push_tokens` (schema from mobile master plan §10), `notification_deliveries` with a `push` channel, the payload→deeplink contract, the `notifications_push` flag. When the mobile app reaches stage **M7** (master plan), it registers Expo tokens (`upsert_push_token` RPC), the processor's push branch sends via Expo with dedup + token hygiene (`update_token_usage`, invalidate `DeviceNotRegistered`), and tap-routing uses the same `action_url`. No web-push in v1.
+Everything is already push-ready: `push_tokens` (schema from mobile master plan §10), `notification_deliveries` with a `push` channel, the payload→deeplink contract, the `notifications_push` flag. When the mobile app reaches stage **M4** (of the restructured `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md`), it registers Expo tokens (`upsert_push_token` RPC), the processor's push branch sends via Expo with dedup + token hygiene (`update_token_usage`, invalidate `DeviceNotRegistered`), and tap-routing uses the same `action_url`. No web-push in v1.
 
 ## 10. Owner decisions (resolve when we start this plan)
 
@@ -129,7 +129,7 @@ Everything is already push-ready: `push_tokens` (schema from mobile master plan 
 4. **Preferences depth:** coarse per-channel toggles (recommended v1) vs granular per-type + quiet hours. Parents managing children's prefs?
 5. **Retention:** adopt `retention_days` + `max_per_user` auto-prune? values?
 6. **Async vs inline for email:** queue+processor+cron (robust) vs inline send in the creating action (simpler, low volume). Recommend queue only once email/push are in scope; cron via web-app BFF route + API key (or pg_cron + pg_net).
-7. **Push timing:** confirm push is deferred to the mobile M7 stage (recommended).
+7. **Push timing:** confirm push is deferred to the mobile M4 stage (recommended).
 
 ## 11. Staged implementation
 
@@ -138,6 +138,6 @@ Everything is already push-ready: `push_tokens` (schema from mobile master plan 
 - **N2 — Admin send module**: composer + audience + templates + history + settings + audit.
 - **N3 — Event generators**: wire the §8 events (idempotent) with templates.
 - **N4 — Email channel** (optional): processor + SMTP + trilingual email templates + prefs/quiet-hours gate, behind `notifications_email`.
-- **N5 — Push** (mobile stage M7): `push_tokens` registration + Expo processor branch + tap-routing, behind `notifications_push`.
+- **N5 — Push** (mobile stage M4): `push_tokens` registration + Expo processor branch + tap-routing, behind `notifications_push`.
 
 Each stage: typecheck+build both apps, dev migration + backport + `013`, non-destructive from-zero rebuild, trilingual, audit on admin mutations, STATUS + MANUAL_TESTING_GUIDE updates.

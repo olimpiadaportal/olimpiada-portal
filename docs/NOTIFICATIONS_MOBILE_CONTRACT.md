@@ -2,8 +2,10 @@
 
 Status: the notification foundation is **implemented and mobile-ready** (DB engine
 migration `2026_07_07_042`). The mobile app (React Native + Expo) needs **no schema
-changes** to plug in at stage **M7**; it registers tokens and consumes the same
-RPCs the web app uses. This document is the exact contract.
+changes** to plug in: the in-app inbox/bell/prefs ship with the parent/student
+stages (M2/M3), and PUSH is wired at stage **M4** of
+`MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md`; it registers tokens and consumes
+the same RPCs the web app uses. This document is the exact contract.
 
 ## 1. What already exists (server side)
 
@@ -16,7 +18,7 @@ RPCs the web app uses. This document is the exact contract.
 - `push_tokens` (`profile_id, token, platform ∈ {ios,android,web}, is_valid,
   failure_count, device_info, last_used_at`).
 - Feature flags: `notifications` (in-app master, ON), `notifications_email` (OFF),
-  `notifications_push` (OFF — flip ON at M7).
+  `notifications_push` (OFF — flip ON at M4).
 - The delivery **processor** (`web-app` BFF `POST /api/notifications/process`,
   guarded by `NOTIFICATIONS_PROCESSOR_KEY`) already claims pending deliveries and
   has a `push` branch calling `sendPushDelivery(...)` — a seam that becomes live
@@ -43,7 +45,7 @@ only the caller's rows). **Realtime**: subscribe to `postgres_changes` INSERT on
 Producers (`create_notification` / `admin_send_notification`) are **service-role
 only**; the mobile app never creates notifications directly (no forgery).
 
-## 3. Token lifecycle (M7)
+## 3. Token lifecycle (M4)
 
 1. On sign-in, get the Expo push token → `upsert_push_token(token, platform, {model,…})`.
 2. Enable the `notifications_push` flag + set `EXPO_ACCESS_TOKEN` on the web BFF.

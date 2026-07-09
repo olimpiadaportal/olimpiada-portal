@@ -1,5 +1,6 @@
 # Future Mobile Readiness
 
+> **SUPERSEDED (2026-07-09).** This file is HISTORICAL only — it predates the framework decision and still says "Flutter". The framework is React Native + Expo, the backend readiness it asked for is now SHIPPED (notifications engine incl. `push_tokens` + `push` channel, real leaderboard, attempt engine with idempotent submissions, provider-agnostic payments schema), and the current plans are `MOBILE_APP_MASTER_PLAN.md` v3 (design truth) + root `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md` (build stages M1–M4). Do not implement from this file.
 
 ## Repository Placement and Related Files
 

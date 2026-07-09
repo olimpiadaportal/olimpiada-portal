@@ -101,7 +101,7 @@ Then read the stage-specific files listed in `IMPLEMENTATION_EXECUTION_PLAN.md`.
 - `supabase/` is the shared backend, database, Auth, Storage, RLS, SQL planning, and security area.
 - `web-app/` is only the Student/Parent Next.js Web App.
 - `admin-panel/` is only the Administrator and Content Manager Next.js Admin Panel.
-- `mobile-app/` is PLANNED (React Native + Expo — confirmed 2026-07-03) but DORMANT: implement it ONLY when a Mobile stage (M0–M9) is the active stage in `STATUS.md`. Plans: `mobile-app/markdowns/MOBILE_APP_MASTER_PLAN.md` (design truth) + root `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md` (stages). The mobile app never receives the service-role key; privileged flows go through web-app BFF route handlers (`/api/mobile/v1/*`) wrapping the existing audited service functions.
+- `mobile-app/` is PLANNED (React Native + Expo — confirmed 2026-07-03; plans rewritten v3 2026-07-09 against the shipped platform) but DORMANT: implement it ONLY when a Mobile stage (M1–M4) is the active stage in `STATUS.md`. Plans: `mobile-app/markdowns/MOBILE_APP_MASTER_PLAN.md` (design truth) + root `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md` (the 4 big build stages — this is the plan the owner activates). The mobile app never receives the service-role key; privileged flows go through web-app BFF route handlers (`/api/mobile/v1/*`) wrapping the existing audited service functions.
 - `docs/master/` contains the highest-level source of truth.
 - `*_CLAUDE_CODE_RULES.md` files are detailed rule references. This `CLAUDE.md` file is the short operational entrypoint.
 

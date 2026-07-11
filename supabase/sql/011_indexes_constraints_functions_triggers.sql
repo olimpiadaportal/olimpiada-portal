@@ -357,6 +357,169 @@ create trigger trg_set_updated_at before update on public.free_access_intervals
   for each row execute function public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
+-- MOBILE CONTROL PLANE (Stage M1, migration 045): mobile_app_versions triggers +
+-- the two anon-callable whitelist readers the mobile app boots against.
+-- feature_flags / system_settings / site_content are admin-RLS-locked, so these
+-- SECURITY DEFINER functions are the ONLY public read path (never `select *`).
+-- -----------------------------------------------------------------------------
+drop trigger if exists trg_set_updated_at on public.mobile_app_versions;
+create trigger trg_set_updated_at before update on public.mobile_app_versions
+  for each row execute function public.set_updated_at();
+drop trigger if exists trg_audit_mobile_app_versions on public.mobile_app_versions;
+create trigger trg_audit_mobile_app_versions
+  after insert or update or delete on public.mobile_app_versions
+  for each row execute function public.fn_audit_row();
+
+-- get_mobile_config(): one JSON of everything the app gates itself with. The
+-- payment MODE is resolved here with web paymentMode.ts parity: missing
+-- `payments` flag -> real (legacy), missing demo/giveaway -> off; the giveaway
+-- window expires LAZILY (flag alone is never enough); precedence
+-- giveaway(active) > demo > real > off.
+create or replace function public.get_mobile_config()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_flags        jsonb;
+  v_real         boolean;
+  v_demo         boolean;
+  v_gvw_flag     boolean;
+  v_gvw_days     int := 0;
+  v_gvw_start    timestamptz;
+  v_gvw_end      timestamptz;
+  v_gvw_active   boolean := false;
+  v_mode         text;
+  v_maint_on     boolean := false;
+  v_maint_msg    jsonb := jsonb_build_object('az','','en','','ru','');
+  v_locales      jsonb := jsonb_build_array('az','en','ru');
+  v_default_loc  text := 'az';
+  v_setting      jsonb;
+  v_version      jsonb;
+begin
+  select jsonb_object_agg(key, enabled) into v_flags
+  from public.feature_flags
+  where key in ('payments','demo_payments','giveaway_period','news_public',
+                'olympiad_module','leaderboard','notifications',
+                'notifications_push','launch_promo');
+  v_flags    := coalesce(v_flags, '{}'::jsonb);
+  v_real     := coalesce((v_flags->>'payments')::boolean, true);
+  v_demo     := coalesce((v_flags->>'demo_payments')::boolean, false);
+  v_gvw_flag := coalesce((v_flags->>'giveaway_period')::boolean, false);
+
+  select value_json into v_setting from public.system_settings where key = 'giveaway.duration_days';
+  if v_setting is not null and jsonb_typeof(v_setting) = 'number' then
+    v_gvw_days := greatest(0, floor((v_setting)::text::numeric)::int);
+  end if;
+  select value_json into v_setting from public.system_settings where key = 'giveaway.started_at';
+  if v_setting is not null and jsonb_typeof(v_setting) = 'string'
+     and length(trim(v_setting->>0)) > 0 then
+    begin
+      v_gvw_start := (trim(v_setting->>0))::timestamptz;
+    exception when others then
+      v_gvw_start := null;
+    end;
+  end if;
+  if v_gvw_flag and v_gvw_start is not null and v_gvw_days > 0 then
+    v_gvw_end    := v_gvw_start + make_interval(days => v_gvw_days);
+    v_gvw_active := now() < v_gvw_end;
+  end if;
+  v_mode := case
+    when v_gvw_active then 'giveaway'
+    when v_demo       then 'demo'
+    when v_real       then 'real'
+    else 'off'
+  end;
+
+  select value_json into v_setting from public.system_settings where key = 'platform.maintenance_mode';
+  if v_setting is not null and jsonb_typeof(v_setting) = 'boolean' then
+    v_maint_on := (v_setting)::text::boolean;
+  end if;
+  select value_json into v_setting from public.system_settings where key = 'platform.maintenance_message';
+  if v_setting is not null and jsonb_typeof(v_setting) = 'object' then
+    v_maint_msg := jsonb_build_object(
+      'az', coalesce(v_setting->>'az',''),
+      'en', coalesce(v_setting->>'en',''),
+      'ru', coalesce(v_setting->>'ru',''));
+  end if;
+
+  select value_json into v_setting from public.system_settings where key = 'platform.supported_locales';
+  if v_setting is not null and jsonb_typeof(v_setting) = 'array' and jsonb_array_length(v_setting) > 0 then
+    v_locales := v_setting;
+  end if;
+  select value_json into v_setting from public.system_settings where key = 'platform.default_locale';
+  if v_setting is not null and jsonb_typeof(v_setting) = 'string'
+     and length(trim(v_setting->>0)) > 0 then
+    v_default_loc := trim(v_setting->>0);
+  end if;
+
+  select jsonb_object_agg(platform, jsonb_build_object(
+           'min',       min_version,
+           'latest',    latest_version,
+           'force',     force_update,
+           'store_url', store_url,
+           'message',   jsonb_build_object('az', message_az, 'en', message_en, 'ru', message_ru)))
+    into v_version
+  from public.mobile_app_versions;
+
+  return jsonb_build_object(
+    'payment', jsonb_build_object(
+        'mode', v_mode,
+        'giveaway_ends_at', case when v_gvw_active then to_jsonb(v_gvw_end) else 'null'::jsonb end),
+    'flags', jsonb_build_object(
+        'news_public',        coalesce((v_flags->>'news_public')::boolean, false),
+        'olympiad_module',    coalesce((v_flags->>'olympiad_module')::boolean, false),
+        'leaderboard',        coalesce((v_flags->>'leaderboard')::boolean, false),
+        'notifications',      coalesce((v_flags->>'notifications')::boolean, false),
+        'notifications_push', coalesce((v_flags->>'notifications_push')::boolean, false),
+        'launch_promo',       coalesce((v_flags->>'launch_promo')::boolean, false)),
+    'maintenance', jsonb_build_object('on', v_maint_on, 'message', v_maint_msg),
+    'locales', jsonb_build_object('supported', v_locales, 'default', v_default_loc),
+    'contact', jsonb_build_object(
+        'email', coalesce((select value_json->>0 from public.system_settings where key='contact.support_email'), ''),
+        'phone', coalesce((select value_json->>0 from public.system_settings where key='contact.support_phone'), '')),
+    'social', jsonb_build_object(
+        'facebook',  coalesce((select value_json->>0 from public.system_settings where key='social.facebook'), ''),
+        'instagram', coalesce((select value_json->>0 from public.system_settings where key='social.instagram'), ''),
+        'youtube',   coalesce((select value_json->>0 from public.system_settings where key='social.youtube'), ''),
+        'tiktok',    coalesce((select value_json->>0 from public.system_settings where key='social.tiktok'), '')),
+    'version', coalesce(v_version, '{}'::jsonb)
+  );
+end;
+$$;
+revoke all on function public.get_mobile_config() from public;
+grant execute on function public.get_mobile_config() to anon, authenticated, service_role;
+
+-- get_mobile_content(locale): the site_content override map for ONE locale so
+-- the admin "Website Content" CMS reaches the mobile app with zero releases
+-- (web getT()/I18nProvider parity). Empty values are fallbacks and are omitted;
+-- rows are registry-allowlisted at write time; a hard cap bounds the payload.
+create or replace function public.get_mobile_content(p_locale text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(jsonb_object_agg(s.key, s.val), '{}'::jsonb)
+  from (
+    select key,
+           case when p_locale = 'en' then en
+                when p_locale = 'ru' then ru
+                else az
+           end as val
+    from public.site_content
+    order by key
+    limit 500
+  ) s
+  where length(s.val) > 0;
+$$;
+revoke all on function public.get_mobile_content(text) from public;
+grant execute on function public.get_mobile_content(text) to anon, authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
 -- Character Sticker guard triggers (Round 11, migration 026; threshold raised
 -- 5 -> 6 in migration 028): a theme may be ENABLED only with >= 6 images; an
 -- enabled theme may not drop below 6. The child layer shows EXACTLY 6 unique

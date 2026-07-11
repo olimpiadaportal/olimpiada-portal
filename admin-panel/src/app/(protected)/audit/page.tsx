@@ -92,6 +92,8 @@ const ACTION_KEYS: Record<string, string> = {
   "admin.leaderboard.season.delete": "audit.action.lbseason_delete",
   "admin.leaderboard.season.close": "audit.action.lbseason_close",
   "admin.leaderboard.season.reopen": "audit.action.lbseason_reopen",
+  // mobileApp.ts
+  "admin.mobile_version.update": "audit.action.mobile_version_update",
 };
 
 const TRIGGER_OP_KEYS: Record<string, string> = {
@@ -127,6 +129,7 @@ const ENTITY_KEYS: Record<string, string> = {
   notification_templates: "audit.entity.notification_templates",
   feature_flags: "audit.entity.feature_flags",
   system_settings: "audit.entity.system_settings",
+  mobile_app_versions: "audit.entity.mobile_app_versions",
 };
 
 // Fallback for unknown codes: separators become spaces (never show a raw key).

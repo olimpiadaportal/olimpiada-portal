@@ -87,7 +87,7 @@ Header (every tab): **NotificationBell** (when `notifications` flag on; dropdown
 | Language | TypeScript strict | parity with web |
 | Navigation | expo-router (+ native-stack/bottom-tabs) | §3 |
 | Backend | @supabase/supabase-js v2 (latest) | same contracts as web; Realtime for notifications |
-| Session storage | expo-secure-store via the "large secure store" adapter (AES key in SecureStore, ciphertext in MMKV) | tokens never in plain AsyncStorage |
+| Session storage | expo-secure-store via a CHUNKED adapter (as built M1: session JSON split into keystore-sized chunks — everything stays in the OS keystore, Expo-Go-testable, no hand-rolled crypto) | tokens never in plain AsyncStorage |
 | Data | @tanstack/react-query v5 + MMKV persister (non-sensitive cache only) | §11 |
 | UI state | zustand (theme, locale, sheet state) | tiny |
 | Images | expo-image (disk cache, placeholders/blurhash) | news covers, sticker previews, avatars |
@@ -108,7 +108,7 @@ Header (every tab): **NotificationBell** (when `notifications` flag on; dropdown
 
 ```
 mobile-app/
-  app/                         # expo-router (§3 route tree)
+  src/app/                     # expo-router (§3 route tree; SDK's src/app convention)
   src/
     theme/ tokens.ts (incl. arena palettes) ThemeProvider useTheme
     i18n/  messages.ts(synced from web) messages.mobile.ts getT localeStore overrides.ts(CMS layer)
@@ -139,7 +139,7 @@ The mobile app calls these EXISTING contracts directly; nothing new is needed se
 ### 7.2 `get_mobile_config()` + `get_mobile_content(locale)` — the admin control plane (NEW, stage M1)
 `feature_flags`, `system_settings`, and `site_content` are **admin-RLS-locked** (the web reads them server-side with the service role), so the mobile app CANNOT read raw flags — these two RPCs are the whitelist readers:
 - **`get_mobile_config()`** — SECURITY DEFINER, **anon-callable, hard-coded whitelist** (never `select *`), returns one JSON:
-  `{ payment: {mode: real|demo|giveaway|off, giveaway_ends_at?}, flags: {news_public, olympiad_module, leaderboard, notifications, notifications_push, launch_promo}, maintenance: {on, message{az,en,ru}}, locales: {supported, default}, contact: {email, phone}, social: {facebook,instagram,youtube,tiktok}, version: {ios:{min, latest, force, store_url}, android:{...}, message{az,en,ru}} }`.
+  `{ payment: {mode: real|demo|giveaway|off, giveaway_ends_at?}, flags: {news_public, olympiad_module, leaderboard, notifications, notifications_push, launch_promo}, maintenance: {on, message{az,en,ru}}, locales: {supported, default}, contact: {email, phone}, social: {facebook,instagram,youtube,tiktok}, version: {ios:{min, latest, force, store_url, message{az,en,ru}}, android:{...}} }` (as built M1: the update message is PER-PLATFORM).
   The payment **mode** is resolved server-side exactly like `web-app/src/lib/paymentMode.ts` (giveaway window = `giveaway.started_at` + `giveaway.duration_days`, lazy expiry; precedence giveaway>demo>real>off) — the client NEVER computes or trusts a mode. Fetched at cold start + foreground (React Query, 5-min stale).
 - **`get_mobile_content(p_locale)`** — anon-callable, returns the `site_content` override map for ONE locale (key → text, registry-capped). Layered over the synced `messages.ts` exactly like the web's `getT`/I18nProvider, so the owner's Website-Content CMS edits reach mobile with zero releases.
 - New `mobile_app_versions` table + Admin-only **"Mobile App" admin section** (audited CRUD: min/latest/force per platform + trilingual message + store URLs) back the `version` block — this section does NOT exist yet; it is an M1 deliverable. Standard migration→backport→`013` workflow; `013` asserts anon CAN exec both RPCs + whitelist shape + versions table stays admin-write.

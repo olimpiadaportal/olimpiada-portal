@@ -100,7 +100,9 @@ with expected(name) as (
          ('bulk_insert_olympiad_package_questions'),
          ('advance_student_grades'),
          ('get_child_subject_dashboard'),
-         ('get_admin_platform_overview')
+         ('get_admin_platform_overview'),
+         ('get_mobile_config'),
+         ('get_mobile_content')
 )
 select '5_missing_functions' as check_name,
        coalesce(string_agg(e.name, ', '), '(none)') as missing_functions,
@@ -821,6 +823,34 @@ select '55_notifications_config' as check_name,
              and exists (select 1 from public.system_settings where key='notifications.retention_days')
              and (select count(*) from public.notification_templates where code='attempt_graded') >= 3
              and 'push' = any (enum_range(null::public.notification_channel)::text[])
+            then 'PASS' else 'FAIL' end as status;
+
+-- 56) Mobile control plane (Stage M1, migration 045): mobile_app_versions exists
+--     with RLS + the admin-only policy + both platforms seeded; the two whitelist
+--     readers exist and are ANON-executable (the mobile app has no service role);
+--     the table itself has no anon path (RLS admin policy only).
+select '56_mobile_control_plane' as check_name,
+       case when to_regclass('public.mobile_app_versions') is not null
+             and (select relrowsecurity from pg_class where oid='public.mobile_app_versions'::regclass)
+             and exists (select 1 from pg_policies where schemaname='public'
+                          and tablename='mobile_app_versions' and policyname='mobile_app_versions_admin')
+             and (select count(*) from pg_policies where schemaname='public'
+                          and tablename='mobile_app_versions') = 1
+             and (select count(*) from public.mobile_app_versions where platform in ('ios','android')) = 2
+             and has_function_privilege('anon','public.get_mobile_config()','EXECUTE') = true
+             and has_function_privilege('anon','public.get_mobile_content(text)','EXECUTE') = true
+            then 'PASS' else 'FAIL' end as status;
+
+-- 57) get_mobile_config() whitelist shape: EXACTLY the seven documented top-level
+--     keys, a complete per-platform version block, and a valid resolved payment
+--     mode — the function must never grow into a `select *` settings dump.
+select '57_mobile_config_shape' as check_name,
+       case when (select array_agg(k order by k)
+                    from jsonb_object_keys(public.get_mobile_config()) k)
+               = array['contact','flags','locales','maintenance','payment','social','version']
+             and public.get_mobile_config()->'version'->'ios' is not null
+             and public.get_mobile_config()->'version'->'android' is not null
+             and (public.get_mobile_config()->'payment'->>'mode') in ('real','demo','giveaway','off')
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

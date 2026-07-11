@@ -70,6 +70,7 @@ export const NAV: NavGroup[] = [
       { label: "nav.audit", href: "/audit", adminOnly: true },
       { label: "nav.settings", href: "/settings", adminOnly: true },
       { label: "nav.siteContent", href: "/site-content", adminOnly: true },
+      { label: "nav.mobileApp", href: "/mobile-app", adminOnly: true },
     ],
   },
   {

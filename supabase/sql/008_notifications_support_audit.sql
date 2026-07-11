@@ -191,6 +191,29 @@ create table if not exists public.site_content (
 );
 
 -- -----------------------------------------------------------------------------
+-- mobile_app_versions : per-platform version gate for the MOBILE APP (Stage M1 /
+-- migration 045). Backs the `version` block of the anon-callable
+-- get_mobile_config() RPC (011) and the admin panel's "Mobile App" section.
+-- Admin-only RLS (010); the config RPC is the only public reader. `force_update`
+-- hard-blocks app versions below `min_version`; `latest_version` drives a soft
+-- update hint. updated_at + audit triggers live in 011; ios/android seeded in 012.
+-- -----------------------------------------------------------------------------
+create table if not exists public.mobile_app_versions (
+  id             uuid primary key default gen_random_uuid(),
+  platform       text not null unique check (platform in ('ios','android')),
+  min_version    text not null default '1.0.0' check (min_version ~ '^[0-9]+\.[0-9]+\.[0-9]+$'),
+  latest_version text not null default '1.0.0' check (latest_version ~ '^[0-9]+\.[0-9]+\.[0-9]+$'),
+  force_update   boolean not null default false,
+  store_url      text not null default '' check (store_url = '' or store_url ~ '^https://'),
+  message_az     text not null default '',
+  message_en     text not null default '',
+  message_ru     text not null default '',
+  updated_by     uuid references public.profiles (id) on delete set null,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
 -- free_access_intervals : admin-scheduled FREE-ACCESS windows (Round 12 / migration
 -- 033). Targets a specific child (student_profile_id) OR a whole parent's children
 -- (parent_profile_id); at least one is set. While now() is inside [starts_at,

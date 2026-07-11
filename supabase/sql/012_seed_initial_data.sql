@@ -720,6 +720,15 @@ insert into public.notification_templates (code, locale, subject, body) values
   ('admin_announcement','ru','Объявление','{{body}}')
 on conflict (code, locale) do nothing;
 
+-- -----------------------------------------------------------------------------
+-- Mobile app version gate (Stage M1, migration 045): one row per platform with
+-- safe defaults (no forced update, no store URLs yet). Managed from the admin
+-- panel's "Mobile App" section; served to the app by get_mobile_config().
+-- -----------------------------------------------------------------------------
+insert into public.mobile_app_versions (platform)
+values ('ios'), ('android')
+on conflict (platform) do nothing;
+
 -- =============================================================================
 -- End of 012_seed_initial_data.sql
 -- =============================================================================

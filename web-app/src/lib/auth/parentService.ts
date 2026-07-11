@@ -14,6 +14,14 @@ import {
   resetChildPassword as svcResetChildPassword,
 } from "@/lib/auth/childAccountService";
 import { type ChildInfo, validateChildInfo } from "@/lib/auth/children";
+import {
+  EMAIL_MAX,
+  EMAIL_RE,
+  NAME_MAX,
+  PASSWORD_MAX,
+  PASSWORD_MIN,
+  validateParentRegistration,
+} from "@/lib/auth/parentValidation";
 import { getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
 import { rateLimitAllow } from "@/lib/rateLimit";
@@ -29,17 +37,8 @@ function siteUrl(): string {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 }
 
-// R7 security: pragmatic email shape check (local@domain.tld) + hard length
-// caps so unbounded strings never reach auth/DB. bcrypt effectively uses 72
-// bytes, so >128-char passwords are rejected rather than silently truncated.
-const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
-const NAME_MAX = 80;
-const EMAIL_MAX = 255;
-const PASSWORD_MAX = 128;
-// Round 11: mandatory parent phone in E.164 — mirrors the DB check constraint
-// chk_profiles_phone_e164 (migration 025) so invalid values never reach the DB.
-const PHONE_RE = /^\+[1-9][0-9]{6,14}$/;
-const PHONE_MAX = 16;
+// Registration validation constants + rules live in lib/auth/parentValidation
+// (shared with the mobile BFF register endpoint — ONE source of truth).
 
 // R7 security: throttle windows for the parent auth surface (in-memory, see
 // lib/rateLimit.ts for the serverless caveat). Child login has its own
@@ -51,24 +50,19 @@ export async function registerParent(
   formData: FormData,
 ): Promise<AuthFormState> {
   const t = await getT();
-  const firstName = f(formData, "first_name").slice(0, NAME_MAX);
-  const lastName = f(formData, "last_name").slice(0, NAME_MAX);
-  const displayName = `${firstName} ${lastName}`.trim();
-  const email = f(formData, "email").toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const phone = f(formData, "phone");
-  if (!firstName || !lastName) return { error: t("parent.err.required") };
-  if (!email || email.length > EMAIL_MAX || !EMAIL_RE.test(email)) {
-    return { error: t("parent.err.email") };
-  }
-  // Mandatory phone, validated BEFORE any auth user is created. The client
-  // composes E.164 (+countrycode + national); never trust that composition.
-  if (!phone || phone.length > PHONE_MAX || !PHONE_RE.test(phone)) {
-    return { error: t("parent.err.phone") };
-  }
-  if (password.length < 8 || password.length > PASSWORD_MAX) {
-    return { error: t("parent.err.password") };
-  }
+  // Same rules/keys/order as always (required → email → phone → password);
+  // the shared validator also normalizes (names trimmed+capped, email
+  // lowercased, phone trimmed) — use ITS values from here on.
+  const check = validateParentRegistration({
+    firstName: f(formData, "first_name"),
+    lastName: f(formData, "last_name"),
+    email: f(formData, "email"),
+    password,
+    phone: f(formData, "phone"),
+  });
+  if (!check.ok) return { error: t(check.errorKey) };
+  const { displayName, email, phone } = check;
   if (!rateLimitAllow("register", email, 5, WINDOW_15_MIN)) {
     return { error: t("parent.err.tooMany") };
   }
@@ -224,7 +218,7 @@ export async function updatePassword(
   }
   const password = String(formData.get("password") ?? "");
   // L1: same bounds as registration (>128 rejected, never silently truncated).
-  if (password.length < 8 || password.length > PASSWORD_MAX) {
+  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
     return { error: t("parent.err.password") };
   }
   const supabase = await createServerSupabase();

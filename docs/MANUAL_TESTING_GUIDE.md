@@ -961,4 +961,37 @@ If anything here doesn't match, tell me the **GG#** + what you saw.
 ## HH6. Today's Round Start
 - Child home → **Today's Round → Start** on a subject → it now **opens the test page for that subject** (`/child/test/<subject>`) instead of bouncing back to the home screen.
 
-If anything here doesn't match, tell me the **HH#** + what you saw.
+---
+
+# Stage M1 — Mobile foundation, admin control plane & authentication (2026-07-09)
+
+Prereq: `cd mobile-app && cp .env.example .env` and fill `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY` (the DEV project's values from `web-app/.env.local` — the same URL and **anon** key, never the service key) + `EXPO_PUBLIC_BFF_URL=http://<your-PC-LAN-IP>:3000` (localhost won't reach a phone — use the LAN IP and run `npm run dev` in web-app). Then `npm install && npx expo start` and open the QR in **Expo Go** on a phone (same Wi-Fi).
+
+## M1-1. Admin panel — Mobile App section
+- Admin panel → sidebar **Operations → Mobile App** (Admin-only; a Content Manager must not see it).
+- Two cards (iOS / Android): edit **Latest version**, **Minimum version**, toggle **Force update**, set a store URL (must be https://), and the trilingual update message → Save → "Saved." and the updated-at time changes.
+- Audit log shows a `mobile_app_versions` update row.
+
+## M1-2. Boot + admin control plane
+- Launch the app → OlympIQ splash → Welcome screen (brand mark, tagline, Login / Student sign-in / Register buttons).
+- Admin → Settings → set `platform.maintenance_mode` to `true` → background + reopen the mobile app → the full-screen **maintenance** notice (with your trilingual message) appears. Set back to `false` → app returns after a foreground refresh.
+- Admin → Mobile App → set the **Minimum version** for your platform to `9.9.9` + enable **Force update** → foreground the app → the **update-required** dead-end (store button appears only when a store URL is set). Revert (min `1.0.0`, force off).
+
+## M1-3. Parent auth end-to-end
+- Welcome → **Register**: fill names, email, password, and the phone field (compact `AZ +994` trigger opens a searchable country list) → submit → you land on the parent tab bar (Home/Analytics/Olympiads/Subscription/News — placeholder bodies "coming in the next stage"). If email confirmation is ON in Supabase you instead get the check-your-inbox notice (expected).
+- Header avatar (round button) → the account sheet: Language AZ/EN/RU segmented (whole UI switches instantly), Light/Dark theme, **Log out**.
+- Log in again from Welcome → Login (Parent tab) with the same credentials → parent tabs. A wrong password shows the generic invalid-credentials message.
+
+## M1-4. Child auth end-to-end (via the BFF)
+- Login → **Student** tab → enter a real child's 8-digit ID (grouped `1234 5678` display) + the parent password → the **arena-dark student tab bar** (Arena/Tests/Olympiads/Ranking/News).
+- Admin → Settings: turn the `leaderboard` flag **off** → foreground the app → the **Ranking tab disappears** (same for `olympiad_module` → Olympiads tab). Turn back on → tabs return.
+- 8+ wrong child passwords in 15 min → the generic lockout message (no hint whether the ID exists).
+
+## M1-5. Language + CMS reach mobile
+- Admin → Website Content: change a landing text that also exists in the app (or check after M2 when content screens exist) — mobile fetches overrides per locale at boot/foreground with no release.
+- Change the language from the account sheet → every visible string switches az/en/ru; Azerbaijani letters (ə Ğ ş Ç ü İ) render correctly everywhere.
+
+## M1-6. Deep links (dev)
+- With the app open in Expo Go, `npx uri-scheme open "olympiq:///child" --android` (or iOS) → signed in as a student it opens the arena; signed out it goes to Login and **replays into the arena after the child signs in**; signed in as a PARENT it stays put (role mismatch).
+
+If anything here doesn't match, tell me the **M1-#** + what you saw.

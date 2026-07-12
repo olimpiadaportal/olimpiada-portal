@@ -1,13 +1,11 @@
-// Parent bottom tabs (web nav parity: Home / Analytics / Olympiads /
-// Subscription / News; Notifications rides the header bell in M2; Profile
-// lives behind the header avatar -> AccountSheet).
+// Parent group root: the role guard + a Stack over the tab bar so full-screen
+// flows (notifications, profile, add-child wizard, per-child screens) can push
+// OVER the tabs (web parity: these pages are not tabs).
 import React from "react";
-import { Redirect, Tabs } from "expo-router";
+import { Redirect, Stack } from "expo-router";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
-import { TabIcon } from "@/components/TabIcon";
-import { HeaderAvatarButton } from "@/components/HeaderAvatarButton";
 
 export default function ParentLayout() {
   const status = useAuthStore((s) => s.status);
@@ -16,55 +14,24 @@ export default function ParentLayout() {
   const { t } = useT();
 
   if (status !== "signedIn") return <Redirect href="/(public)/welcome" />;
-  if (role === "student") return <Redirect href="/(student)/arena" />;
+  if (role === "student") return <Redirect href="/(student)/(tabs)/home" />;
   if (role !== "parent") return <Redirect href="/" />;
 
   return (
-    <Tabs
+    <Stack
       screenOptions={{
         headerStyle: { backgroundColor: tokens.surface },
         headerTitleStyle: { color: tokens.text },
-        headerRight: () => <HeaderAvatarButton />,
-        tabBarStyle: { backgroundColor: tokens.surface, borderTopColor: tokens.border },
-        tabBarActiveTintColor: tokens.accent,
-        tabBarInactiveTintColor: tokens.muted,
+        headerTintColor: tokens.accent,
+        contentStyle: { backgroundColor: tokens.bg },
       }}
     >
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: t("nav.home"),
-          tabBarIcon: ({ color }) => <TabIcon name="home" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="analytics"
-        options={{
-          title: t("nav.analytics"),
-          tabBarIcon: ({ color }) => <TabIcon name="chart" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="olympiads"
-        options={{
-          title: t("poly.nav"),
-          tabBarIcon: ({ color }) => <TabIcon name="medal" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="subscription"
-        options={{
-          title: t("nav.subscription"),
-          tabBarIcon: ({ color }) => <TabIcon name="card" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="news"
-        options={{
-          title: t("nav.news"),
-          tabBarIcon: ({ color }) => <TabIcon name="news" color={color} />,
-        }}
-      />
-    </Tabs>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="notifications" options={{ title: t("notif.title") }} />
+      <Stack.Screen name="profile" options={{ title: t("nav.profile") }} />
+      <Stack.Screen name="add-child" options={{ title: t("parent.dash.addChild") }} />
+      <Stack.Screen name="children/[id]/edit" options={{ title: t("childedit.title") }} />
+      <Stack.Screen name="children/[id]/subscribe" options={{ title: t("sub.title") }} />
+    </Stack>
   );
 }

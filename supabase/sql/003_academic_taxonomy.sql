@@ -83,11 +83,20 @@ create table if not exists public.topics (
   subject_id  uuid not null references public.subjects (id) on delete cascade,
   grade_id    uuid references public.grades (id) on delete set null,
   name        text not null,
+  -- Module scope (migration 050): 'exam' = general test bank / Exams surfaces;
+  -- 'olympiad' = created by olympiad package bulk uploads, hidden from every
+  -- Exams surface. Subtopics inherit scope through their parent topic.
+  scope       text not null default 'exam' check (scope in ('exam', 'olympiad')),
   order_index integer not null default 0,
   status      public.catalog_status not null default 'active',
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+comment on column public.topics.scope is
+  'Module the topic belongs to (migration 050): exam = general test bank / Exams '
+  'surfaces; olympiad = created by olympiad package bulk uploads, hidden from every '
+  'Exams surface. Subtopics inherit scope through their parent topic.';
 
 -- -----------------------------------------------------------------------------
 -- subtopics : nested detail under a topic.

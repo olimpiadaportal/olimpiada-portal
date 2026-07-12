@@ -43,19 +43,19 @@ describe("resolveDeepLink allowlist", () => {
   it("routes role links for the matching role", () => {
     expect(resolveDeepLink("/dashboard", "parent")).toEqual({
       kind: "open",
-      target: "/(parent)/home",
+      target: "/(parent)/(tabs)/home",
     });
     expect(resolveDeepLink("/dashboard/news/slug", "parent")).toEqual({
       kind: "open",
-      target: "/(parent)/news",
+      target: "/(parent)/(tabs)/news",
     });
     expect(resolveDeepLink("/child", "student")).toEqual({
       kind: "open",
-      target: "/(student)/arena",
+      target: "/(student)/(tabs)/home",
     });
     expect(resolveDeepLink("/child/test/run/xyz", "student")).toEqual({
       kind: "open",
-      target: "/(student)/tests",
+      target: "/(student)/(tabs)/tests",
     });
   });
 
@@ -93,7 +93,7 @@ describe("deferred link replay", () => {
     storePendingLink("/analytics", "parent");
     expect(consumePendingLink("student")).toBeNull();
     storePendingLink("/analytics", "parent");
-    expect(consumePendingLink("parent")).toBe("/(parent)/analytics");
+    expect(consumePendingLink("parent")).toBe("/(parent)/(tabs)/analytics");
     // consumed — a second read is empty
     expect(consumePendingLink("parent")).toBeNull();
   });

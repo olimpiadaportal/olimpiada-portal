@@ -450,6 +450,12 @@ ul.clean li {
   color: var(--danger);
   font-size: 0.9rem;
 }
+/* Per-field validation message rendered directly under its input/select. */
+.field-error {
+  color: var(--danger);
+  font-size: 0.8rem;
+  margin-top: 2px;
+}
 .form button {
   margin-top: 14px;
   align-self: flex-start;
@@ -877,17 +883,7 @@ ul.clean li {
    IMPORTANT: never give that header backdrop-filter/transform — a filtered
    ancestor becomes the containing block for the position:fixed .drawer inside
    it, which un-docks the drawer from the viewport and stretches the page
-   horizontally (the Round-6 "drawer won't open" bug).
-   .arena-brand is kept: the standalone /child-login page still uses it. */
-.arena-brand {
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  font-size: 1.02rem;
-  text-transform: uppercase;
-}
-.arena-brand b {
-  color: var(--lime);
-}
+   horizontally (the Round-6 "drawer won't open" bug). */
 .arena-streak {
   display: inline-flex;
   align-items: center;
@@ -900,6 +896,8 @@ ul.clean li {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 5px 11px;
+  /* Lives in the single-row .pnav-right — must never wrap internally. */
+  white-space: nowrap;
 }
 /* ---- Shell ---- */
 .arena-main {
@@ -1442,37 +1440,9 @@ ul.clean li {
   font-weight: 700;
 }
 
-/* =====================  Login / register split  ===================== */
-.arena-auth {
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-@media (max-width: 860px) {
-  .arena-auth {
-    grid-template-columns: 1fr;
-  }
-}
-.arena-auth-brandside {
-  padding: 56px 48px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 16px;
-  border-right: 1px solid var(--line);
-  background: linear-gradient(160deg, var(--panel2), var(--bg));
-}
-@media (max-width: 860px) {
-  .arena-auth-brandside {
-    display: none;
-  }
-}
-.arena-auth-formside {
-  padding: 56px 48px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
+/* =====================  Login / register card  =====================
+   (the old split-page layout died with the standalone student-login route;
+   the unified /login renders just the tabbed card below) */
 .arena-auth-card {
   width: 100%;
   max-width: 380px;
@@ -1905,8 +1875,7 @@ ul.clean li {
   text-decoration: none;
   white-space: nowrap;
 }
-.arena .brand-compact,
-.arena-brand.brand-compact {
+.arena .brand-compact {
   /* Inside the arena the brand is uppercase/condensed; keep that feel but
      smaller + tighter so it stays compact in the child top bar. */
   font-weight: 900;
@@ -1915,8 +1884,7 @@ ul.clean li {
   color: var(--ink);
   text-transform: uppercase;
 }
-.arena .brand-compact b,
-.arena-brand.brand-compact b {
+.arena .brand-compact b {
   color: var(--lime);
 }
 
@@ -2970,12 +2938,17 @@ ul.clean li {
 /* ---- Parent top navigation --------------------------------------------------
    Left: compact brand (small dot/logo + "Home" as the first link — NO long
    wordmark). Center-left: the section links. Far right: .pnav-right holding the
-   round profile-icon drawer trigger. */
+   round profile-icon drawer trigger.
+   SINGLE-ROW CONTRACT: the header must never wrap the bell/avatar onto a second
+   line, whatever the item count (the notifications flag adds an 8th link) or
+   viewport width. The links region flexes + scrolls horizontally (scrollbar
+   hidden) while .pnav-right keeps its intrinsic width. Shared with the student
+   arena header (.arena .pnav re-skins colors only). */
 .pnav {
   display: flex;
   align-items: center;
   gap: 20px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   max-width: 1080px;
   margin: 0 auto;
   padding: 14px 28px;
@@ -3005,15 +2978,28 @@ ul.clean li {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
+/* Takes the free space and scrolls horizontally when the links don't fit —
+   never pushes .pnav-right to a second line. Scrollbar hidden in both engines
+   (touch/trackpad swipe still scrolls). */
 .pnav-links {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.pnav-links::-webkit-scrollbar {
+  display: none;
 }
 .pnav-link {
   display: inline-flex;
   align-items: center;
+  flex: none;
+  white-space: nowrap;
   color: var(--muted);
   text-decoration: none;
   font-size: 0.92rem;
@@ -3031,12 +3017,14 @@ ul.clean li {
   color: var(--accent);
   background: var(--pill-bg);
 }
-/* Right-aligned group: pushes the profile-drawer trigger to the far right. */
+/* Right-aligned group: pushes the profile-drawer trigger to the far right.
+   Never shrinks/wraps — the scrolling .pnav-links absorbs all overflow. */
 .pnav-right {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: none;
 }
 
 /* ---- Profile drawer trigger (round avatar-style button, far right) ---- */
@@ -3682,8 +3670,7 @@ ul.clean li {
    the flat arena aesthetic stay byte-identical. Adds the purple→orange energy:
    softer display font, 22px card signature radius, gradient logo mark, lifted
    primary buttons, and gradient stat/price numbers. Does NOT edit any existing
-   dark or .arena* rule (the .arena-auth-brandside line below is a NEW light
-   override for the student-login art panel, not an edit of the arena rule).
+   dark or .arena* rule.
    ========================================================================== */
 
 /* STEP 5 — R8: the Energetic theme used "Trebuchet MS", whose Azerbaijani ə/Ə
@@ -3736,12 +3723,6 @@ ul.clean li {
   color: transparent;
 }
 
-/* STEP 7d — student-login hero art (NEW light override; arena rule untouched).
-   The public .about-hero-art gets the same base gradient via its own
-   [data-theme="light"] rule above. */
-[data-theme="light"] .arena-auth-brandside {
-  background: linear-gradient(150deg, #7c3aed, #9333ea, #ff8a00);
-}
 /* End ROUND4 PARENT */
 
 /* =============================================================================
@@ -7159,23 +7140,24 @@ ul.clean li {
 /* ============ ROUND 9 MERGE: analytics.css ============ */
 /* =========================================================================
    R9 (T6+T4) — analytics CSS additions. Token-driven only.
-   WEB (web-app/src/app/globals.css): .ana-kpis-5
+   WEB (web-app/src/app/globals.css): .ana-kpis-6
    ADMIN (admin-panel/src/app/globals.css): .adash-*
    ========================================================================= */
 
-/* ---- WEB: exactly-5 KPI tiles fill the row evenly on desktop (T4).
-   0-2-0 specificity so these win over the Round-8 .ana-kpis rules
-   regardless of merge order. ---- */
-.ana-kpis.ana-kpis-5 {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+/* ---- WEB: exactly-6 KPI tiles (practices, tests, correct, wrong, skipped,
+   time — migration 046) fill the row evenly on desktop, drop to 3-per-row on
+   mid widths and 2-per-row on phones. 0-2-0 specificity so these win over the
+   Round-8 .ana-kpis rules regardless of merge order. ---- */
+.ana-kpis.ana-kpis-6 {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 @media (max-width: 1100px) {
-  .ana-kpis.ana-kpis-5 {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  .ana-kpis.ana-kpis-6 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 @media (max-width: 560px) {
-  .ana-kpis.ana-kpis-5 {
+  .ana-kpis.ana-kpis-6 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -7880,7 +7862,7 @@ ul.clean li {
    spacing, specificity 0,1,1) overrides `.pw-eye { margin: 0 }` (0,1,0).
    On an absolutely-positioned box, margin-top adds to `top: 50%`, so the eye
    sat 16px below the input's vertical center. Scoped to the wizard so the
-   login/register/reset/child-login pages keep their current rendering. */
+   login/register/reset pages keep their current rendering. */
 .wizard .pw-field .pw-eye {
   margin: 0; /* R11 */
 }
@@ -9593,8 +9575,75 @@ ul.clean li {
   align-items: center;
   text-decoration: none;
 }
-.lb-subchips {
-  margin-top: -8px;
+/* Subject picker (SUBJECT scope) — single-select dropdown over ALL active
+   subjects. Arena-token styled so every palette/theme re-skins it. */
+.lb-subject-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px 0 14px;
+  max-width: 100%;
+}
+.lb-subject-picker-label {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.lb-subject-select {
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 12px;
+  min-width: 200px;
+  max-width: 100%;
+  cursor: pointer;
+}
+.lb-subject-select:focus {
+  outline: none;
+  border-color: var(--lime);
+}
+
+/* Subject caption — the selected subject shown ONCE above the board (every
+   row shares it; no redundant per-row column). */
+.lb-subject-caption {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.lb-subject-caption strong {
+  color: var(--ink);
+}
+
+/* Board table (migration 048 row context) — desktop: full-width columns in a
+   horizontally scrollable wrap so the PAGE never overflows; mobile: the
+   city/school/grade columns collapse and the same context re-appears as one
+   muted line under the participant name (CSS-only swap, single table). */
+.lb-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.lb-part-ctx {
+  display: none;
+}
+@media (max-width: 760px) {
+  .arena-table th.lb-ctx-col,
+  .arena-table td.lb-ctx-col {
+    display: none;
+  }
+  .lb-part-ctx {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.74rem;
+    font-weight: 500;
+    color: var(--dim);
+  }
 }
 
 /* Medal ranks 1–3 */
@@ -10349,4 +10398,18 @@ ul.clean li {
   font-size: 0.7rem;
   font-weight: 500;
   color: var(--muted);
+}
+
+/* =============================================================================
+   ROUND 19 — student test setup (mandatory topic/subtopic picker)
+   ----------------------------------------------------------------------------
+   Native selects reuse the .arena-input look; a missing mandatory selection is
+   flagged via aria-invalid (set by TestSetup when Start is pressed too early).
+   ========================================================================== */
+select.arena-input {
+  appearance: auto;
+  width: 100%;
+}
+.arena-input[aria-invalid="true"] {
+  border-color: var(--red);
 }

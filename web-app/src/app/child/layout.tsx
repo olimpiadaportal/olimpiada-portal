@@ -4,7 +4,7 @@ import { getT, getLocale } from "@/i18n/server";
 import { getLocaleSettings, isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { ChildProfileDrawer } from "@/components/ChildProfileDrawer";
-import { ParentNavLinks } from "@/components/ProfileDrawer";
+import { ChildNavLinks, ChildNavProvider } from "@/components/ChildNav";
 import { GiveawayBanner } from "@/components/GiveawayBanner";
 import { StickerDecorations } from "@/components/StickerDecorations";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -116,7 +116,7 @@ export default async function ChildLayout({
   // never fabricated).
   const streak = Number((streakStatus as any)?.current ?? 0) || 0;
 
-  // Same header structure as the parent shell (.pnav + ParentNavLinks +
+  // Same header structure as the parent shell (.pnav + ChildNavLinks +
   // .pnav-right drawer trigger). The drawer must NOT live inside a header with
   // backdrop-filter — a filtered ancestor becomes the containing block for
   // position:fixed, which broke the old .arena-nav drawer. Profile lives in the
@@ -151,8 +151,12 @@ export default async function ChildLayout({
         {/* Self-contained async server component (fetches its own selection;
             renders null when the child has no sticker theme selected). */}
         <StickerDecorations />
+        {/* ChildNavProvider lets the attempt pages (which know the attempt
+            kind) pin the correct active tab — exams vs olympiads share the
+            /child/test/run route, so pathname matching alone is not enough. */}
+        <ChildNavProvider>
         <header className="pnav">
-          <ParentNavLinks items={navItems} />
+          <ChildNavLinks items={navItems} />
           <div className="pnav-right">
             <span className="arena-streak" title={t("arena.streak")}>
               🔥 {streak} {t("arena.streak")}
@@ -193,6 +197,7 @@ export default async function ChildLayout({
           )}
           {children}
         </main>
+        </ChildNavProvider>
       </div>
     </>
   );

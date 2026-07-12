@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
@@ -29,10 +29,15 @@ export default async function EditQuestionPage({
     .maybeSingle();
   if (!q) notFound();
 
-  // M1: PRIVATE olympiad-pool questions (olympiad_package_id set) are
-  // Admin-only. The list already excludes them for content managers; a direct
-  // URL to the edit page must behave as if the question does not exist.
-  if (!ctx.isAdmin && q.olympiad_package_id) notFound();
+  // PRIVATE olympiad-pool questions (olympiad_package_id set) are managed
+  // ONLY through their package (bulk import on the package pages) — the
+  // general editor must not open them for ANYONE. Content managers get a 404
+  // (they must not even learn the row exists); admins are sent back to the
+  // list with a notice explaining where the question lives.
+  if (q.olympiad_package_id) {
+    if (!ctx.isAdmin) notFound();
+    redirect("/questions?notice=olympiadScoped");
+  }
 
   const loc: string = q.primary_locale ?? "az";
 

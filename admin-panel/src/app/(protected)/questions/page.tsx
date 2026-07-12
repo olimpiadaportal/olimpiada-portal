@@ -81,12 +81,15 @@ export default async function QuestionsPage({
   const subject = uuidParam("subject");
   const topic = uuidParam("topic");
   const subtopic = uuidParam("subtopic");
-  const type = uuidParam("type");
   const grade = uuidParam("grade");
   const statusRaw = first(sp, "status");
   const status = (LIFECYCLE_STATUSES as readonly string[]).includes(statusRaw)
     ? statusRaw
     : "";
+  // One-shot notice banner (whitelisted values only — e.g. the edit page
+  // redirects here when an olympiad-pool question id is opened directly).
+  const noticeRaw = first(sp, "notice");
+  const notice = noticeRaw === "olympiadScoped" ? noticeRaw : "";
 
   // ---- Text search: resolve matching question ids first ------------------
   // supabase-js cannot filter the parent by an embedded table reliably without
@@ -114,7 +117,7 @@ export default async function QuestionsPage({
     let qb = supabase
       .from("questions")
       .select(
-        "id, status, primary_locale, created_at, subjects(name), grades(name), question_types(code, name), question_translations(locale, body)",
+        "id, status, primary_locale, created_at, subjects(name), grades(name), topics(name), question_translations(locale, body)",
         { count: "exact" },
       )
       // PRIVATE olympiad-package questions are excluded from the general list.
@@ -123,7 +126,6 @@ export default async function QuestionsPage({
     if (subject) qb = qb.eq("subject_id", subject);
     if (topic) qb = qb.eq("topic_id", topic);
     if (subtopic) qb = qb.eq("subtopic_id", subtopic);
-    if (type) qb = qb.eq("type_id", type);
     if (grade) qb = qb.eq("grade_id", grade);
     if (status) qb = qb.eq("status", status);
     const { data, count } = await qb
@@ -160,7 +162,13 @@ export default async function QuestionsPage({
   ] = await Promise.all([
     loadRows(),
     supabase.from("subjects").select("id, name, status").order("name"),
-    supabase.from("topics").select("id, subject_id, name").order("name"),
+    // Module separation: the Exams surfaces only ever list EXAM-scoped topics
+    // (olympiad-package bulk imports create scope='olympiad' topics).
+    supabase
+      .from("topics")
+      .select("id, subject_id, name")
+      .eq("scope", "exam")
+      .order("name"),
     supabase.from("subtopics").select("id, topic_id, name").order("name"),
     supabase.from("grades").select("id, name, level").order("level"),
     supabase
@@ -183,14 +191,6 @@ export default async function QuestionsPage({
       ? localeNames[loc as Locale]
       : loc;
 
-  const typeLabel = (r: any): string => {
-    const code = r.question_types?.code;
-    if (!code) return "—";
-    const key = `qtype.${code}`;
-    const tr = t(key);
-    return tr === key ? (r.question_types?.name ?? "—") : tr;
-  };
-
   const bodySnippet = (r: any): string => {
     const tr = (r.question_translations ?? []).find(
       (x: any) => x.locale === r.primary_locale,
@@ -205,26 +205,31 @@ export default async function QuestionsPage({
     subject: r.subjects?.name ?? "—",
     grade: r.grades?.name ?? "—",
     lang: langName(r.primary_locale),
-    type: typeLabel(r),
+    // Embedded topics.name via questions.topic_id (NULL topic → em dash).
+    topic: r.topics?.name ?? "—",
     body: bodySnippet(r),
     status: r.status,
   }));
 
+  // Subtopics have no scope column — they inherit it via their parent topic,
+  // so keep only subtopics whose parent is in the exam-scoped topic set above.
+  const examTopicIds = new Set(
+    ((topics ?? []) as { id: string }[]).map((r) => r.id),
+  );
+  const examSubtopics = ((subtopics ?? []) as { topic_id: string }[]).filter(
+    (s) => examTopicIds.has(s.topic_id),
+  );
+
   const taxonomy: Taxonomy = {
     subjects: (subjects ?? []) as Taxonomy["subjects"],
     topics: (topics ?? []) as Taxonomy["topics"],
-    subtopics: (subtopics ?? []) as Taxonomy["subtopics"],
+    subtopics: examSubtopics as Taxonomy["subtopics"],
   };
 
   const gradeOptions: FilterOption[] = ((grades ?? []) as any[]).map((g) => ({
     value: g.id,
     label: String(g.name),
   }));
-  const typeOptions: FilterOption[] = ((qtypes ?? []) as any[]).map((r) => {
-    const key = `qtype.${r.code}`;
-    const tr = t(key);
-    return { value: r.id, label: tr === key ? String(r.name) : tr };
-  });
   const statusOptions: FilterOption[] = LIFECYCLE_STATUSES.map((s) => ({
     value: s,
     label: t(`qstatus.${s}`),
@@ -253,7 +258,6 @@ export default async function QuestionsPage({
     subject,
     topic,
     subtopic,
-    type,
     grade,
     status,
     size: String(size),
@@ -290,14 +294,14 @@ export default async function QuestionsPage({
     "qbulk.confirmDelete", "qbulk.selectAll", "qbulk.assignTopic", "qbulk.assign",
     "qbulk.confirmAssign", "qbulk.optional",
     "action.delete", "action.edit",
-    "qfield.subject", "qfield.grade", "qfield.language", "qfield.type",
+    "qfield.subject", "qfield.grade", "qfield.language",
     "qfield.topic", "qfield.subtopic", "qfield.bodyAz", "qfield.status",
     "questions.none",
     "qact.publish", "qact.reject", "qact.to_review",
     "qstatus.in_review", "qstatus.published", "qstatus.rejected",
     "qbulk.applied", "qbulk.updated", "qbulk.skipped",
     "qfilter.search", "qfilter.allSubjects", "qfilter.allTopics",
-    "qfilter.allSubtopics", "qfilter.allTypes", "qfilter.allGrades",
+    "qfilter.allSubtopics", "qfilter.allGrades",
     "qfilter.allStatuses", "qfilter.clear", "qpage.perPage",
   ];
   const dict: Record<string, string> = {};
@@ -335,6 +339,12 @@ export default async function QuestionsPage({
         </div>
       </div>
 
+      {notice === "olympiadScoped" && (
+        <p className="form-ok" role="status">
+          {t("qnotice.olympiadScoped")}
+        </p>
+      )}
+
       {/* Lifecycle stat cards — click to filter by status (Total clears it). */}
       <div className="qstat-grid">
         {statCards.map((c) => (
@@ -353,7 +363,6 @@ export default async function QuestionsPage({
       <QuestionFilters
         taxonomy={taxonomy}
         grades={gradeOptions}
-        types={typeOptions}
         statuses={statusOptions}
         current={current}
         dict={dict}

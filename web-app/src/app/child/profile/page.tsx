@@ -1,6 +1,7 @@
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
+import { formatGradeLabel } from "@/lib/gradeLabel";
 import { StickerThemePicker, type StickerThemeCard } from "@/components/StickerThemePicker";
 import { PalettePicker } from "@/components/PalettePicker";
 import { ChildProfile } from "@/components/ChildProfile";
@@ -14,6 +15,7 @@ import { ChildProfile } from "@/components/ChildProfile";
 export default async function ChildProfilePage() {
   const child = await requireChild();
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
 
   const { data: student } = await supabase
@@ -37,7 +39,7 @@ export default async function ChildProfilePage() {
   // parent can (parent /children/[id]/edit). "—" when nothing is on record.
   const s = (student as any) ?? {};
   const gradeInfo = s.grade
-    ? `${s.grade.level} — ${s.grade.name}`
+    ? formatGradeLabel(s.grade.level, locale, s.grade.name)
     : (s.class_grade ?? "").trim() || "—";
   const cityInfo = (s.district?.name ?? s.city ?? "").trim() || "—";
   const schoolInfo = (s.school?.name ?? s.school_name ?? "").trim() || "—";

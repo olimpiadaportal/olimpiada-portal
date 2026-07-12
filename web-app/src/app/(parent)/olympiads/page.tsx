@@ -126,7 +126,7 @@ export default async function ParentOlympiadCatalogPage() {
     addChild: t("poly.addChild"),
     none: t("poly.none"),
     owned: t("poly.owned"),
-    buyFor: t("poly.buyFor"),
+    buy: t("poly.buy"),
     price: t("poly.price"),
     modalTitle: t("poly.modal.title"),
     modalPackage: t("poly.modal.package"),

@@ -995,3 +995,182 @@ Prereq: `cd mobile-app && cp .env.example .env` and fill `EXPO_PUBLIC_SUPABASE_U
 - With the app open in Expo Go, `npx uri-scheme open "olympiq:///child" --android` (or iOS) → signed in as a student it opens the arena; signed out it goes to Login and **replays into the arena after the child signs in**; signed in as a PARENT it stays put (role mismatch).
 
 If anything here doesn't match, tell me the **M1-#** + what you saw.
+
+---
+
+# Round 18 — owner queue: admin Questions/Olympiad, analytics states, olympiad timed tests, leaderboard, profile fixes (2026-07-11)
+
+## II1. Admin → Questions table
+- Columns are now: checkbox · Subject · Grade · Language · **Topic** · Question text · Status · Actions — no "Question Type" column anywhere; a question without a topic shows "—".
+- The "All types" filter is gone; subject → topic → subtopic cascade, grade/status filters, search, paging, stat cards, bulk toolbar all still work.
+
+## II2. Admin → Olympiad packages: create WITH questions
+- **New Package** now contains the bulk-upload section inline. Template download + file upload stay disabled until Subject and Grade are chosen (Grade is now required).
+- The bulk section asks for NO subject/grade — uploaded rows inherit the package's. Old template files that still carry subject/grade are accepted, but those values are ignored.
+- Try submitting with no file → blocked: "Paket yaratmaq üçün ən azı bir sual əlavə edilməlidir."
+- Upload a valid file → package is created and you land on its edit page with the pool count. A file where every row is invalid → **nothing is created** (per-row errors listed). Mixed file → package created "N imported, M skipped" + errors.
+- Both forms now have **Müddət (dəqiqə)** (5–240, default 25) — this is the child's countdown for that package.
+
+## II3. Question-pool separation (the leak)
+- Admin → Questions: package-pool questions no longer appear (one legacy leaked question was repaired by migration 049). Opening a pool question's edit URL directly bounces back to the list with a notice.
+- Bulk select/status/delete/assign-topic can no longer touch pool questions even with forged ids.
+- Package A's pool never shows Package B's or the general bank's questions, and vice versa; regular tests draw only general-bank questions, olympiad attempts only the package pool (DB check #58 pins these filters permanently).
+
+## II4. Student profile grade label
+- Child → Profile → School information shows "**5-ci sinif**" style (1-ci, 3-cü, 6-cı, 9-cu, 10-cu…) — never "5 — 5. sinif". The same clean label appears in the parent edit-child and add-child grade dropdowns.
+
+## II5. Parent → Edit child info (save bug)
+- Change any field(s) → Save: the form **keeps the values**, shows "Saxlanılır…" then the success note, and a page refresh shows the persisted data (root cause: name inputs never posted + the form auto-reset).
+- Change City → the school list reloads for that city; the old school clears only if it doesn't belong to the new city. Missing required fields show per-field errors and nothing is lost.
+
+## II6. Analytics: skipped ≠ wrong
+- Parent → Analytics: six cards now, including **Buraxılmış cavablar**. A test with 2 wrong + 20 skipped shows Wrong 2, Skipped 20 (not 22 wrong).
+- Accuracy uses only ANSWERED questions (3 correct of 5 answered = 60%, even with 20 skipped); the trend chart and strongest/weakest topics follow the same rule; switching children never mixes data.
+
+## II7. Olympiad tests = real timed tests
+- Child → Olympiads → Start on a purchased package now opens the SAME test player as regular tests: countdown (from the package's duration), question palette with answered/current/flagged states, prev/next, bookmark, autosave.
+- Refresh mid-attempt → timer and answers survive (server deadline). Finish → confirm modal with unanswered count; results page → review with All/Correct/Wrong/Skipped filters; back-links go to Olympiads.
+- A live olympiad attempt shows a "continue" card on the Olympiads page; time running out auto-submits; a closed attempt can't be reopened for editing.
+
+## II8. Student leaderboard
+- Rows show **"Firstname L."** (e.g. "Ruslan Z.") — no more "Şagird •1234"; your own row keeps "Siz" + highlight.
+- Points boards show City · School · Grade columns (desktop) or a compact context line under the name (mobile); grade renders "5-ci sinif" style.
+- The **Fənn** scope now opens a single-select dropdown with ALL active subjects (not just the child's) and never shows a blank board — an unknown/missing selection falls back to the first subject. Switching scopes clears the subject selection.
+
+If anything here doesn't match, tell me the **II#** + what you saw.
+
+---
+
+# Stage M2 — Mobile public surface & complete parent panel (2026-07-11)
+
+Prereq: same setup as M1 (`mobile-app/.env` + Expo Go + `npm run dev` in web-app — the BFF must run for add-child/subscribe/purchase/profile actions). Payment-mode note: mobile follows the admin flags — **demo/giveaway/free flows run fully in the app; in `real` mode money actions show "managed from the family's web account"** (adopted default — tell me if you want it different).
+
+## M2-1. Public surface
+- Welcome now has Pricing / About / FAQ / Contact chips (+ News when `news_public` is on) and shows the giveaway countdown while a giveaway runs.
+- Pricing: weekly/monthly/yearly switcher with per-subject prices from the DB, the "per 1 subject" note, trial + sibling-discount callouts.
+- Contact: email/phone open mail/dialer; social links (only those set in admin Settings) open externally.
+- News: list + article with covers, view counter bumps once per session; turning `news_public` off hides the public news entry (in-app news stays).
+
+## M2-2. Parent Home
+- Children cards: name, grade ("5-ci sinif" format), school, mono 8-digit ID (or "ID pending"), access pill, leaderboard chip (rank·points·🔥) when the flag is on; Add-Child button; onboarding carousel; pull-to-refresh.
+- Giveaway or free-access countdown banner shows at top when a window is active.
+
+## M2-3. Add-Child wizard (test per mode by flipping admin flags)
+- **demo**: Info → Subjects → Plan cards (live server quote incl. sibling discount, Most Popular) → demo-pay sheet → Done with the big 8-digit ID.
+- **giveaway / free-access**: Info → Done with an instant ID (no payment step).
+- **real**: Info → child created, "choose the plan on the web" note, no money CTAs. **off**: Info → Done, payments-off notice.
+- City→School cascade filters schools by city (private schools first); all fields validate; values never clear on errors.
+
+## M2-4. Subscription center
+- Child selector chips; Plans tab shows the live subscription (status/interval/period end/total/subjects); Billing + Invoices are clearly-labeled DEMO sections (web parity).
+- Manage subjects: enabled in demo/giveaway/free (additions open the demo-pay sheet first — payment-first), read-only note in real mode; min 1 subject enforced.
+- Cancel flow: reason → warning → confirm; shows "access until period end".
+
+## M2-5. Olympiads (parent)
+- Catalog cards with cover, subject/grade, question count + duration, event date, price; "Owned" pill per selected child; detail sheet.
+- Buy runs in demo AND giveaway modes (packages are always paid — web parity); real mode shows the web-only note.
+
+## M2-6. Analytics
+- Child chips → 6 KPI tiles incl. **Skipped answers** (never merged into wrong), weekly bars, accuracy trend (answered-based), topic strengths, mistakes; leaderboard panel behind the flag; honest empty state for a child with no graded attempts.
+
+## M2-7. Notifications + Profile
+- Header bell (live unread badge) on every parent tab → inbox: category chips, unread dots, mark-all-read; tap follows the notification's link or opens a detail sheet (rich-text bodies render bold/italic/safe links); delete from the sheet. Send yourself one from admin → Notifications and watch it arrive live.
+- Profile: identity card (avatar display; upload marked "coming soon" — no picker dependency yet), change password, notification preferences for self + each child (switches persist), FAQ/Contact rows, danger zone with double-confirm delete.
+- Edit child (from a Home card): controlled form, city→school cascade, read-only 8-digit ID, optional child-password reset; values never clear; saved data survives refresh.
+
+If anything doesn't match, tell me the **M2-#** + what you saw.
+
+---
+
+# ROUND 19 (2026-07-11) — ten fixes across web-app + admin
+
+## JJ1. Parent header never wraps
+- Turn the notifications flag ON (8 nav items) and open the parent panel with a free-access countdown active: the bell + avatar stay on the SAME row as the menu at every width.
+- Narrow to ~500px: nav links scroll horizontally (no visible scrollbar, swipe/trackpad works); icons never drop to a second line.
+- Repeat in the student arena header (streak pill + bell + avatar) in light and dark.
+
+## JJ2. Child-Login page removed
+- `/child-login` → 404. `/login` opens on the Parent tab; `/login?tab=student` opens on the Student tab; garbage `?tab=` values fall back to Parent.
+- Student login via the /login Student tab (8-digit ID + parent password) works exactly as before.
+- Logged-out visit to `/child/test` redirects to `/login?tab=student`.
+
+## JJ3. Olympiad purchase — no more crash
+- As a parent (works with admin-granted free access too), buy an olympiad package: the success tick shows INSIDE the modal, the card flips to "Alınıb" — no "Maximum update depth exceeded" error, no refresh needed.
+- Buy a second package right after — same clean flow; re-opening the dialog for an owned package stays consistent.
+
+## JJ4. Buy button is just "Buy"
+- Olympiad cards show **Al / Buy / Купить** (no child name on the button); the child picked in the selector above still receives the purchase (confirm in the modal's "Child" row).
+
+## JJ5. Notification read-state is synchronized
+- Open `/notifications`, then mark ONE item read from the bell dropdown → the page row loses its unread style and the badge decrements instantly (no refresh).
+- Mark read from the page → bell dropdown + badge update instantly. "Mark all read" from the bell → page fully read, badge gone; refresh → persists.
+- Repeat as a student (bell + /child/notifications). New incoming notification bumps both surfaces live.
+
+## JJ6. Page-specific skeletons (no blank screens)
+- DevTools → Network → Slow 3G (or slow server). Navigate Parent: Home → Analytics → Olimpiadalar → Subscription → News → article → FAQ → Profile → Add-Child: EACH page shows its own layout-matched skeleton under the real header — never a blank page or a lone spinner, and content replaces it without visible jumping.
+- Student: `/child` → Tests → subject setup → runner (top-bar + question card + palette skeleton) → result/review, Olympiads, Leaderboard, News, Profile. Public: home, pricing (plan-card grid), news.
+- Check one parent + one arena page in light AND dark (and a child palette); with OS "reduce motion" the shimmer becomes a calm pulse.
+
+## JJ7. Olympiads and Exams fully separated (topics too)
+- Bulk-upload questions into an olympiad package using brand-new topic/subtopic names → those names must NOT appear in: admin Questions filters, the New-question/Edit forms, the bulk "assign topic" modal, Manage → Topics/Subtopics, or the student test-start picker.
+- Opening `/manage/topics/<olympiad-topic-id>/edit` directly → 404. Exam taxonomy CRUD, question tagging, and exam bulk upload keep working unchanged (new exam topics appear normally).
+- Legacy leaked topics were auto-moved to the olympiad scope by migration 050 (8 moved on dev; 1 mixed-use topic legitimately stays visible because real exam questions use it).
+
+## JJ8. Mandatory topic/subtopic + leave-test confirmation
+- Test setup: Start is disabled until Topic AND Subtopic are chosen; clicking anyway shows the trilingual warning and highlights the missing select; changing Topic resets Subtopic; a topic with no subtopics may start on its own (muted note explains).
+- NOTE (behavior change): a subject with no topics at all can no longer be started "whole-subject" — topics must exist.
+- During a running test OR olympiad: clicking any top-nav item/logo shows "Are you sure you want to leave the test?" — Continue stays, Leave navigates; browser Back shows the same dialog; refresh/close-tab falls to the native browser prompt. Prev/Next/flag/palette/Submit/Cancel never trigger it.
+
+## JJ9. Correct active tab + wording per session type
+- Start an olympiad → the **Olimpiadalar** tab is highlighted in the runner, result, and review pages; the runner header and result title say "Olimpiada". A normal exam highlights the Exams tab and says "Sınaq".
+- Known minor: on a hard refresh of an olympiad run URL the correct highlight applies right after hydration (a brief first-frame fallback is expected).
+
+## JJ10. Analytics: Subjects vs Olympiads separated
+- `/analytics` defaults to **Fənlər** — numbers now EXCLUDE olympiad attempts entirely (compare a child who did olympiads: subject totals shrink accordingly).
+- Switch to **Olimpiadalar**: subject chips disappear; KPIs/charts/topics cover olympiad attempts only; a "Results by package" table lists each package (attempts/correct/wrong/skipped/accuracy). Child with no olympiad attempts → friendly empty state.
+- Mode survives refresh via the URL (`?mode=olympiads&child=…`); no package name ever appears among subject chips.
+
+If anything doesn't match, tell me the **JJ-#** + what you saw.
+
+---
+
+# STAGE M3 (2026-07-11) — mobile student arena (Expo SDK 54)
+
+> Note: the app now runs Expo SDK **54** (matches the Expo Go you install from the stores). If you had an older checkout, run `npm install` in `mobile-app/` once. Start as usual: `npx expo start` in `mobile-app` + `npm run dev` in `web-app` (BFF; LAN IP in `.env`).
+
+## M3-1. Arena shell, palette + streak
+- Log in as a student (8-digit ID + parent password): 5 arena tabs (Arena/Tests/Olympiads/Ranking/News); Olympiads/Ranking disappear when their admin flags are off.
+- Header shows the 🔥 streak chip + bell + avatar. Play no round for a day → the chip turns red (at-risk) and the home shows the warning line.
+- Pick a palette in the student profile (e.g. bubblegum) and switch to light theme → header/tab bar/panels re-skin live; dark theme stays the frozen dark arena.
+
+## M3-2. Arena home + access states
+- Active/trialing (or free-window) child: hero with the child's name, "Start a round" CTA → Tests tab, ministats (points/accuracy/rounds), flag-gated leaderboard quick-look, per-subject Go rows, recent rounds, strengths, news panel (article opens in-tab; view counts once per session).
+- Child with no coverage: locked card with the correct trilingual status text; no test CTAs.
+- Pull-to-refresh updates everything.
+
+## M3-3. Test engine — the big one
+- Tests tab lists ONLY covered subjects (turn on giveaway/free-access → all actively-priced subjects appear).
+- Setup: Topic mandatory → Subtopic mandatory (resets when Topic changes; topic with no subtopics starts alone with a muted note; Start disabled until selection + consent; pressing anyway shows the warning + red highlight). Olympiad-scoped topics must never appear.
+- Runner: countdown (amber ≤5:00, red ≤1:00), answer/flag → autosave chip (~30s + on navigation), palette below the card, submit confirm shows the unanswered count.
+- Kill the app mid-attempt → reopen → Continue card resumes the SAME attempt with saved answers/flags and server-correct remaining time.
+- Android hardware back / any back mid-attempt → "leave the test?" dialog (Stay keeps everything; runner's own controls never trigger it).
+- Let the timer hit 0:00 → auto-submit → result. Skip one question on purpose → it lands in **Skipped**, never Wrong; per-topic bars render.
+- Review: All/Correct/Wrong/Skipped tabs with matching counts, original question numbers, green/red option tags, explanations.
+
+## M3-4. Olympiads (student)
+- Planned cards (cover, chips, date, questions+duration) with a detail sheet carrying the "ask your parent" note — no price CTA anywhere for children.
+- On an OWNED package: Start → the SAME runner with "Olimpiada" title + package label; leave mid-attempt → Continue card; result/review exit to the Olympiads tab with olympiad wording.
+
+## M3-5. Ranking
+- Points|Streak boards, month|all-time; scope chips only for what the child has (grade/city/school + subject over ALL active subjects, single-select, clamped default).
+- Rows show "Firstname L." + city/school/grade (grade as "5-ci sinif" style); top-3 medals; self-row highlighted; sticky my-rank card matches; streak card shows at-risk urgency.
+
+## M3-6. Student profile
+- Avatar: pick from gallery (>2MB → size error; non-image → type error; server re-checks bytes), remove works; web /child/profile shows the same photo.
+- Name edit (both fields required) updates the identity card + arena greeting; password change rejects the 8-digit ID and <8 chars; new password logs in.
+- Read-only school info (grade/city/school), mono 8-digit ID, sticker THEME picker + palette picker persist across restart and match the web.
+
+## M3-7. Parent avatar picker (M2 leftover closed)
+- Parent profile: upload/change/remove avatar now works from the app (was "coming soon"); everything else on the screen unchanged.
+
+If anything doesn't match, tell me the **M3-#** + what you saw.

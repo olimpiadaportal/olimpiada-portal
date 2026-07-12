@@ -11,6 +11,7 @@ import { requireChild } from "@/lib/auth/session";
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { rateLimitAllow } from "@/lib/rateLimit";
+import { isUuid } from "@/lib/uuid";
 
 export type ChildLoginState = { error?: string } | null;
 
@@ -43,7 +44,7 @@ export async function childLoginAction(
 export async function childLogoutAction(): Promise<void> {
   await childLogout();
   // R8 fix: after logout the student lands on the public landing page (was
-  // /child-login).
+  // the old standalone child login page, retired in favor of /login).
   redirect("/");
 }
 
@@ -62,23 +63,35 @@ export async function startPractice(formData: FormData): Promise<void> {
   redirect(`/child/practice/${data}`);
 }
 
-// Stage 14 — child starts an olympiad attempt from a purchased package's pool.
+// Stage 14 / migration 047 — child starts (or TRUE-resumes) a TIMED olympiad
+// attempt on a purchased package. The RPC now returns the test-engine jsonb
+// contract {attempt_id, resumed, deadline_at, duration_seconds, count} and the
+// attempt runs on the SHARED timed test player (/child/test/run/[attemptId]),
+// not the old PracticeRunner path.
 export async function startOlympiad(formData: FormData): Promise<void> {
   await requireChild();
   // Module gate (admin Settings → olympiad_module): no new attempts while off.
   if (!(await isFeatureEnabled("olympiad_module"))) redirect("/child");
   const packageId = String(formData.get("package_id") ?? "");
-  if (!packageId) redirect("/child/olympiads");
+  if (!isUuid(packageId)) redirect("/child/olympiads");
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("start_olympiad_attempt", {
     p_package_id: packageId,
   });
-  // Purchase-only server-side (migration 038): the RPC raises check_violation
-  // for a non-owned package (e.g. a stale free-play row). supabase-js returns
-  // that as `error` — never a throw — so the child lands back on the list with
-  // the friendly generic notice instead of a crash.
-  if (error || !data) redirect("/child/olympiads?err=1");
-  redirect(`/child/practice/${data}`);
+  if (error) {
+    // Purchase-only server-side (migration 038): check_violation = no active
+    // purchase for this child+package. no_data_found = the package pool has no
+    // published questions yet. Raw Postgres text never reaches the client —
+    // the olympiads page maps ?err= to trilingual notices.
+    if (error.code === "23514") redirect("/child/olympiads?err=noaccess");
+    if (error.code === "P0002") redirect("/child/olympiads?err=empty");
+    redirect("/child/olympiads?err=1");
+  }
+  const d = data as { attempt_id?: string; resumed?: boolean } | null;
+  if (!d?.attempt_id || !isUuid(String(d.attempt_id))) {
+    redirect("/child/olympiads?err=1");
+  }
+  redirect(`/child/test/run/${d.attempt_id}${d.resumed ? "?resumed=1" : ""}`);
 }
 
 export type GradeState =

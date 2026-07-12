@@ -9,9 +9,10 @@ import { TestSetup, type SetupTopic } from "@/components/TestSetup";
 // Strings resolved server-side into an explicit-KEYS dict for the client
 // picker (client components never touch getT).
 const KEYS = [
-  "test.setup.topicsTitle", "test.setup.topicsHint", "test.setup.selectAll",
-  "test.setup.clearAll", "test.setup.noTopics", "test.setup.wholeSubject",
-  "test.setup.selectedCount", "test.setup.rulesTitle", "test.setup.qCount",
+  "test.setup.topicsTitle", "test.setup.pickHint", "test.setup.noTopics",
+  "test.setup.topic", "test.setup.subtopic", "test.setup.topicPh",
+  "test.setup.subtopicPh", "test.setup.noSubtopics", "test.setup.selectWarn",
+  "test.setup.rulesTitle", "test.setup.qCount",
   "test.setup.duration", "test.setup.rule1", "test.setup.rule2",
   "test.setup.rule3", "test.setup.rule4", "test.setup.scoringTitle",
   "test.setup.scoring", "test.setup.consent", "test.setup.start",
@@ -45,11 +46,14 @@ export default async function TestSetupPage({
     .maybeSingle();
   const gradeId = (student as any)?.grade_id ?? null;
 
+  // Module separation (migration 050): only EXAM-scoped topics belong in this
+  // picker — olympiad-package topics must never surface here.
   const { data: topicsRaw } = await supabase
     .from("topics")
     .select("id, name, grade_id, order_index")
     .eq("subject_id", subjectId)
     .eq("status", "active")
+    .eq("scope", "exam")
     .order("order_index", { ascending: true })
     .order("name", { ascending: true });
 

@@ -4,6 +4,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
+import { ChildNavActive } from "@/components/ChildNav";
 
 type TopicRow = { topic_id: string | null; name: string | null; total: number; correct: number };
 type ResultPayload = {
@@ -44,20 +45,24 @@ export default async function TestResultPage({
     .maybeSingle();
   if (!att) notFound();
   const a = att as any;
-  if (a.kind !== "test") notFound();
+  // Both timed kinds share this page since migration 047; olympiad attempts
+  // exit back to the olympiads list instead of the test home.
+  if (a.kind !== "test" && a.kind !== "olympiad") notFound();
+  const isOlympiad = a.kind === "olympiad";
+  const homeHref = isOlympiad ? "/child/olympiads" : "/child/test";
 
   if (a.status === "in_progress") {
     const live = a.deadline_at && new Date(a.deadline_at).getTime() > Date.now();
     if (live) redirect(`/child/test/run/${attemptId}`);
   } else if (a.status !== "graded") {
-    redirect("/child/test?notice=closed");
+    redirect(`${homeHref}?notice=closed`);
   }
 
   const { data, error } = await supabase.rpc("submit_test_attempt", {
     p_attempt_id: attemptId,
     p_answers: null,
   });
-  if (error || !data) redirect("/child/test?err=1");
+  if (error || !data) redirect(`${homeHref}?err=1`);
   const result = data as ResultPayload;
 
   const score = Math.round(Number(result.score ?? 0));
@@ -79,10 +84,19 @@ export default async function TestResultPage({
 
   return (
     <>
+      {/* Kind-aware nav highlight (shared route — see ChildNav). */}
+      <ChildNavActive href={homeHref} />
       <section style={{ marginBottom: 22 }}>
         <p className="arena-eyebrow">{t("test.result.eyebrow")}</p>
-        <h1>{t("test.result.title")}</h1>
+        {/* Olympiad sessions use olympiad wording, not test wording. */}
+        <h1>{isOlympiad ? t("test.result.olympiadTitle") : t("test.result.title")}</h1>
         <p className="arena-muted" style={{ margin: "8px 0 0" }}>
+          {isOlympiad && (
+            <>
+              <span>{t("test.run.olympiad")}</span>
+              {a.subjects?.name ? <span aria-hidden="true"> · </span> : null}
+            </>
+          )}
           {a.subjects?.name ?? ""}
         </p>
       </section>
@@ -103,8 +117,8 @@ export default async function TestResultPage({
           <Link className="arena-btn" href={`/child/test/review/${attemptId}`}>
             {t("test.result.review")}
           </Link>
-          <Link className="arena-btn-ghost" href="/child/test">
-            {t("test.result.newTest")}
+          <Link className="arena-btn-ghost" href={homeHref}>
+            {isOlympiad ? t("test.result.backToOlympiads") : t("test.result.newTest")}
           </Link>
         </div>
       </div>

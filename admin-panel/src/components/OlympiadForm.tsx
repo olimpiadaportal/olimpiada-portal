@@ -11,6 +11,7 @@ type Defaults = {
   price: string;
   status: string;
   event?: string; // ISO timestamptz from the DB ("" = undated)
+  duration?: string; // attempt time limit in minutes (migration 047)
   tr: Record<string, { title: string; desc: string }>;
 };
 
@@ -49,6 +50,7 @@ export function OlympiadForm({
     grade_id: defaults?.grade_id ?? "",
     price: defaults?.price ?? "0",
     status: defaults?.status ?? "inactive",
+    duration: defaults?.duration ?? "25",
   });
   const [tr, setTr] = useState<Record<string, { title: string; desc: string }>>(() => {
     const o: Record<string, { title: string; desc: string }> = {};
@@ -83,8 +85,8 @@ export function OlympiadForm({
         </select>
       </label>
       <label className="field">
-        <span className="field-label">{tt("oly2.grade")}</span>
-        <select name="grade_id" value={f.grade_id} onChange={(e) => set("grade_id", e.target.value)}>
+        <span className="field-label">{tt("oly2.grade")} *</span>
+        <select name="grade_id" value={f.grade_id} required onChange={(e) => set("grade_id", e.target.value)}>
           <option value="">{tt("manage.select")}</option>
           {grades.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
         </select>
@@ -92,6 +94,20 @@ export function OlympiadForm({
       <label className="field">
         <span className="field-label">{tt("oly2.price")}</span>
         <input name="price_amount" type="number" step="0.01" value={f.price} onChange={(e) => set("price", e.target.value)} />
+      </label>
+      <label className="field">
+        <span className="field-label">{tt("oly2.duration")} *</span>
+        <input
+          name="duration_minutes"
+          type="number"
+          min={5}
+          max={240}
+          step={1}
+          required
+          value={f.duration}
+          onChange={(e) => set("duration", e.target.value)}
+        />
+        <span className="hint">{tt("oly2.durationHelp")}</span>
       </label>
       <label className="field">
         <span className="field-label">{tt("oly2.statusLabel")}</span>

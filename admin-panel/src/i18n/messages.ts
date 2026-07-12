@@ -461,8 +461,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.chooseGrade": "Sinif seçin.",
     "bulk.batchNote":
       "Seçilmiş fənn və sinif fayldakı bütün suallara tətbiq olunur.",
-    "bulk.batchNoteGrade":
-      "Seçilmiş sinif fayldakı bütün suallara tətbiq olunur.",
     "bulk.overrideHint":
       "Köhnə formatlı faylda meta.subject və ya meta.grade_level qalıbsa, burada seçilmiş fənn və sinif üstünlük təşkil edir.",
     "bulk.codesHint":
@@ -473,6 +471,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.rowNeedAzBody": "Azərbaycanca mətn (translations.az.body) tələb olunur",
     "bulk.rowNeedOptions": "cavab variantları massivi (options) tələb olunur",
     "bulk.itemsFound": "{n} sual tapıldı.",
+    "bulk.rowsSummary": "Düzgün sətir: {n} · Xətalı sətir: {m}.",
     "bulk.emptyArray": "Fayl boşdur — heç bir sual tapılmadı.",
     "modal.close": "Bağla",
     "qbulk.selected": "seçildi",
@@ -492,7 +491,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qfilter.allSubjects": "Bütün fənlər",
     "qfilter.allTopics": "Bütün mövzular",
     "qfilter.allSubtopics": "Bütün alt mövzular",
-    "qfilter.allTypes": "Bütün növlər",
     "qfilter.allGrades": "Bütün siniflər",
     "qfilter.allStatuses": "Bütün statuslar",
     "qfilter.clear": "Filtrləri təmizlə",
@@ -508,6 +506,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "flt.allCities": "Bütün şəhərlər",
     "flt.noMatches": "Filtrlərə uyğun nəticə tapılmadı.",
     "qstat.total": "Cəmi",
+    "qnotice.olympiadScoped":
+      "Bu sual olimpiada paketinə aiddir və yalnız paketin öz səhifəsindən idarə olunur.",
     "bulk.codesRef": "Sahə dəyərləri",
     "bulk.codesNote": "İdxal faylında aşağıdakı adları istifadə edin.",
     "bulk.codesByName": "ada görə (mövcud deyilsə avtomatik yaradılır)",
@@ -549,7 +549,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.none": "Hələ paket yoxdur.",
     "oly2.code": "Kod",
     "oly2.subject": "Fənn",
-    "oly2.grade": "Sinif (istəyə bağlı)",
+    "oly2.grade": "Sinif",
     "oly2.price": "Qiymət (AZN)",
     "oly2.statusLabel": "Status",
     "oly2.status.active": "Aktiv",
@@ -564,7 +564,20 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.archive": "Paketi arxivlə",
     "oly2.err.code": "Düzgün kod daxil edin (kiçik hərflər, rəqəmlər, defis).",
     "oly2.err.subject": "Fənn seçin.",
+    "oly2.err.grade": "Sinif seçin.",
     "oly2.err.titleAz": "Azərbaycan dilində başlıq tələb olunur.",
+    "oly2.err.needQuestions":
+      "Paket yaratmaq üçün ən azı bir sual əlavə edilməlidir.",
+    "oly2.err.importAllFailed":
+      "Heç bir sual idxal olunmadı, paket yaradılmadı. Sətirlərdəki xətaları düzəldib yenidən cəhd edin.",
+    "oly2.createdPartial":
+      "Paket {n} sualla yaradıldı, {m} sətir buraxıldı. Buraxılan sətirləri düzəldib redaktə səhifəsindən yenidən yükləyə bilərsiniz.",
+    "oly2.goEdit": "Paket səhifəsinə keç",
+    "oly2.duration": "Müddət (dəqiqə)",
+    "oly2.durationHelp":
+      "Şagirdin cəhdi üçün vaxt limiti, dəqiqə ilə (5–240).",
+    "oly2.err.duration":
+      "Müddət 5 ilə 240 dəqiqə arasında tam ədəd olmalıdır.",
     "oly2.eventAt": "Tədbirin tarixi və vaxtı (istəyə bağlı)",
     "oly2.eventAtHint": "Boş saxlasanız, şagirdlər \"planlaşdırılır\" statusunu görəcək.",
     "oly2.eventClear": "Təmizlə",
@@ -576,7 +589,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.cover.hint": "PNG, JPEG, WEBP və ya GIF. Maksimum 5 MB.",
     "olybulk.note": "Bu paketə məxsus özəl sualları JSON faylı ilə toplu yükləyin. Bu suallar yalnız bu paketdə görünür və ümumi sual bankına düşmür.",
     "olybulk.count": "Bu paketdəki özəl suallar",
-    "olybulk.subjectFromPkg": "Fənn paketdən götürülür.",
+    "olybulk.fromPackage":
+      "Fənn və sinif paketdən avtomatik götürülür. Köhnə formatlı faylda meta.subject və ya meta.grade_level qalıbsa, onlara məhəl qoyulmur — paketin dəyərləri istifadə olunur.",
+    "olybulk.pickFirst":
+      "Şablonu yükləmək və fayl seçmək üçün əvvəlcə fənn və sinif seçin.",
+    "olybulk.err.pkgGrade":
+      "Paketin sinfi seçilməyib. Əvvəlcə paket formasında sinfi seçib yadda saxlayın.",
     "lang.label": "Dil",
     "settings.subtitle": "Funksiya bayraqlarını və sistem parametrlərini idarə edin.",
     "settings.flagsTitle": "Funksiya bayraqları",
@@ -1606,8 +1624,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.chooseGrade": "Choose a grade.",
     "bulk.batchNote":
       "The selected subject and grade apply to every question in the file.",
-    "bulk.batchNoteGrade":
-      "The selected grade applies to every question in the file.",
     "bulk.overrideHint":
       "If the file still contains meta.subject or meta.grade_level (old format), the subject and grade selected here take precedence.",
     "bulk.codesHint":
@@ -1618,6 +1634,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.rowNeedAzBody": "the Azerbaijani text (translations.az.body) is required",
     "bulk.rowNeedOptions": "an options array is required",
     "bulk.itemsFound": "{n} question(s) found.",
+    "bulk.rowsSummary": "Valid rows: {n} · Invalid rows: {m}.",
     "bulk.emptyArray": "The file is empty — no questions found.",
     "modal.close": "Close",
     "qbulk.selected": "selected",
@@ -1637,7 +1654,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qfilter.allSubjects": "All subjects",
     "qfilter.allTopics": "All topics",
     "qfilter.allSubtopics": "All subtopics",
-    "qfilter.allTypes": "All types",
     "qfilter.allGrades": "All grades",
     "qfilter.allStatuses": "All statuses",
     "qfilter.clear": "Clear filters",
@@ -1653,6 +1669,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "flt.allCities": "All cities",
     "flt.noMatches": "No results match the filters.",
     "qstat.total": "Total",
+    "qnotice.olympiadScoped":
+      "This question belongs to an olympiad package and is managed only from that package's page.",
     "bulk.codesRef": "Field values",
     "bulk.codesNote": "Use these names in the import file.",
     "bulk.codesByName": "by name (auto-created if missing)",
@@ -1692,7 +1710,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.none": "No packages yet.",
     "oly2.code": "Code",
     "oly2.subject": "Subject",
-    "oly2.grade": "Grade (optional)",
+    "oly2.grade": "Grade",
     "oly2.price": "Price (AZN)",
     "oly2.statusLabel": "Status",
     "oly2.status.active": "Active",
@@ -1707,7 +1725,20 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.archive": "Archive package",
     "oly2.err.code": "Enter a valid code (lowercase letters, numbers, hyphens).",
     "oly2.err.subject": "Choose a subject.",
+    "oly2.err.grade": "Choose a grade.",
     "oly2.err.titleAz": "Azerbaijani title is required.",
+    "oly2.err.needQuestions":
+      "At least one question must be added before creating the package.",
+    "oly2.err.importAllFailed":
+      "No questions could be imported, so the package was not created. Fix the row errors and try again.",
+    "oly2.createdPartial":
+      "Package created with {n} questions, {m} rows skipped. Fix the skipped rows and upload them again from the edit page.",
+    "oly2.goEdit": "Open the package page",
+    "oly2.duration": "Duration (minutes)",
+    "oly2.durationHelp":
+      "Time limit for the child's attempt, in minutes (5–240).",
+    "oly2.err.duration":
+      "Duration must be a whole number between 5 and 240 minutes.",
     "oly2.eventAt": "Event date & time (optional)",
     "oly2.eventAtHint": "Leave empty to show students a \"planned\" status.",
     "oly2.eventClear": "Clear",
@@ -1719,7 +1750,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.cover.hint": "PNG, JPEG, WEBP or GIF. Max 5 MB.",
     "olybulk.note": "Bulk-upload this package's private questions from a JSON file. These questions appear only in this package and never enter the general question bank.",
     "olybulk.count": "Private questions in this package",
-    "olybulk.subjectFromPkg": "The subject comes from the package.",
+    "olybulk.fromPackage":
+      "The subject and grade are taken from the package automatically. If an older file still contains meta.subject or meta.grade_level, those values are ignored — the package's values are used.",
+    "olybulk.pickFirst":
+      "Choose a subject and grade first to download the template and upload a file.",
+    "olybulk.err.pkgGrade":
+      "The package has no grade set. Choose and save a grade in the package form first.",
     "lang.label": "Language",
     "settings.subtitle": "Manage feature flags and system settings.",
     "settings.flagsTitle": "Feature flags",
@@ -2755,8 +2791,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.chooseGrade": "Выберите класс.",
     "bulk.batchNote":
       "Выбранные предмет и класс применяются ко всем вопросам в файле.",
-    "bulk.batchNoteGrade":
-      "Выбранный класс применяется ко всем вопросам в файле.",
     "bulk.overrideHint":
       "Если файл в старом формате всё ещё содержит meta.subject или meta.grade_level, приоритет имеют выбранные здесь предмет и класс.",
     "bulk.codesHint":
@@ -2767,6 +2801,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.rowNeedAzBody": "требуется текст на азербайджанском (translations.az.body)",
     "bulk.rowNeedOptions": "требуется массив вариантов ответа (options)",
     "bulk.itemsFound": "Найдено вопросов: {n}.",
+    "bulk.rowsSummary": "Корректных строк: {n} · С ошибками: {m}.",
     "bulk.emptyArray": "Файл пуст — вопросы не найдены.",
     "modal.close": "Закрыть",
     "qbulk.selected": "выбрано",
@@ -2786,7 +2821,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qfilter.allSubjects": "Все предметы",
     "qfilter.allTopics": "Все темы",
     "qfilter.allSubtopics": "Все подтемы",
-    "qfilter.allTypes": "Все типы",
     "qfilter.allGrades": "Все классы",
     "qfilter.allStatuses": "Все статусы",
     "qfilter.clear": "Сбросить фильтры",
@@ -2802,6 +2836,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "flt.allCities": "Все города",
     "flt.noMatches": "По выбранным фильтрам ничего не найдено.",
     "qstat.total": "Всего",
+    "qnotice.olympiadScoped":
+      "Этот вопрос относится к пакету олимпиады и управляется только со страницы пакета.",
     "bulk.codesRef": "Значения полей",
     "bulk.codesNote": "Используйте в файле импорта эти названия.",
     "bulk.codesByName": "по названию (создаётся автоматически, если отсутствует)",
@@ -2842,7 +2878,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.none": "Пакетов пока нет.",
     "oly2.code": "Код",
     "oly2.subject": "Предмет",
-    "oly2.grade": "Класс (необязательно)",
+    "oly2.grade": "Класс",
     "oly2.price": "Цена (AZN)",
     "oly2.statusLabel": "Статус",
     "oly2.status.active": "Активно",
@@ -2857,7 +2893,20 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.archive": "Архивировать пакет",
     "oly2.err.code": "Введите корректный код (строчные буквы, цифры, дефисы).",
     "oly2.err.subject": "Выберите предмет.",
+    "oly2.err.grade": "Выберите класс.",
     "oly2.err.titleAz": "Требуется заголовок на азербайджанском.",
+    "oly2.err.needQuestions":
+      "Чтобы создать пакет, нужно добавить хотя бы один вопрос.",
+    "oly2.err.importAllFailed":
+      "Ни один вопрос не был импортирован, поэтому пакет не создан. Исправьте ошибки в строках и попробуйте снова.",
+    "oly2.createdPartial":
+      "Пакет создан: добавлено вопросов — {n}, пропущено строк — {m}. Исправьте пропущенные строки и загрузите их снова на странице редактирования.",
+    "oly2.goEdit": "Перейти к пакету",
+    "oly2.duration": "Длительность (минуты)",
+    "oly2.durationHelp":
+      "Лимит времени на попытку ребёнка, в минутах (5–240).",
+    "oly2.err.duration":
+      "Длительность должна быть целым числом от 5 до 240 минут.",
     "oly2.eventAt": "Дата и время проведения (необязательно)",
     "oly2.eventAtHint": "Оставьте пустым — ученики увидят статус «планируется».",
     "oly2.eventClear": "Очистить",
@@ -2869,7 +2918,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.cover.hint": "PNG, JPEG, WEBP или GIF. Максимум 5 МБ.",
     "olybulk.note": "Загрузите частные вопросы этого пакета из файла JSON. Эти вопросы видны только в данном пакете и не попадают в общий банк вопросов.",
     "olybulk.count": "Частных вопросов в этом пакете",
-    "olybulk.subjectFromPkg": "Предмет берётся из пакета.",
+    "olybulk.fromPackage":
+      "Предмет и класс автоматически берутся из пакета. Если в старом файле остались meta.subject или meta.grade_level, они игнорируются — используются значения пакета.",
+    "olybulk.pickFirst":
+      "Сначала выберите предмет и класс, чтобы скачать шаблон и загрузить файл.",
+    "olybulk.err.pkgGrade":
+      "У пакета не задан класс. Сначала выберите и сохраните класс в форме пакета.",
     "lang.label": "Язык",
     "settings.subtitle": "Управление флагами функций и системными настройками.",
     "settings.flagsTitle": "Флаги функций",

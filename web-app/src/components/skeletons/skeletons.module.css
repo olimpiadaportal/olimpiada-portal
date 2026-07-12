@@ -1,0 +1,197 @@
+/* =============================================================================
+   Skeleton loading primitives (scoped CSS Module — never touches globals.css).
+
+   Theme safety: every color comes from EXISTING custom properties with a
+   fallback chain that works in all three scopes:
+     - inside the student `.arena` scope the arena tokens win
+       (--panel / --panel2 / --line are defined there for BOTH themes);
+     - everywhere else (public + parent shells, root fallback) the root theme
+       tokens win (--surface / --chip-bg / --border are defined on :root and
+       re-defined per [data-theme]).
+   The shimmer sheen is keyed off html[data-theme] (set before paint by the
+   no-flash script), so light mode gets a soft white sweep and dark mode a
+   faint one — including the arena, whose palettes follow [data-theme] too.
+   ========================================================================== */
+
+/* ---- Base shimmer bone ---- */
+.bone {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--panel2, var(--chip-bg, rgba(148, 148, 168, 0.18)));
+}
+
+.bone::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
+  );
+  animation: sk-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Dark theme (parent/public dark AND the arena dark palette): the panels are
+   deep navy, so the sweep must be a faint highlight, not a white flash. */
+:global([data-theme="dark"]) .bone::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.07),
+    transparent
+  );
+}
+
+@keyframes sk-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Circle variant (avatars, icon marks). */
+.circle {
+  border-radius: 50%;
+  flex: none;
+}
+
+/* ---- Panel shell (mirrors .card / .arena-panel / .metric-card surfaces) ---- */
+.panel {
+  background: var(--panel, var(--surface, transparent));
+  border: 1px solid var(--line, var(--border, rgba(148, 148, 168, 0.25)));
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 1px 2px var(--shadow, rgba(0, 0, 0, 0.06));
+}
+
+/* ---- Small layout helpers used by the composite pieces ---- */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rowBetween {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.wrapRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Divided list rows (mirrors .arena-round / .ntf-row separators). */
+.divided > * + * {
+  border-top: 1px solid var(--line, var(--border, rgba(148, 148, 168, 0.25)));
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 0;
+}
+
+/* Responsive auto grid — same pattern the app's card grids use
+   (repeat(auto-fill|auto-fit, minmax(min, 1fr))); the min size arrives as an
+   inline CSS variable so one class serves every composition. */
+.autoGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--sk-min, 220px), 1fr));
+  gap: var(--sk-gap, 18px);
+  align-items: stretch;
+}
+
+/* Fixed-count grid that collapses like the app's .plans-grid / .poly-grid
+   (3-up → 1-up on phones, 2-up in between). */
+.colsGrid {
+  display: grid;
+  grid-template-columns: repeat(var(--sk-cols, 3), minmax(0, 1fr));
+  gap: var(--sk-gap, 18px);
+  align-items: stretch;
+}
+@media (max-width: 1020px) {
+  .colsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 680px) {
+  .colsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Two-pane split (question card + palette, contact info + map, hero + aside).
+   Ratio comes in as inline vars; stacks on small screens like the originals. */
+.split {
+  display: grid;
+  grid-template-columns: var(--sk-left, 1.2fr) var(--sk-right, 1fr);
+  gap: var(--sk-gap, 18px);
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Table skeleton */
+.tableWrap {
+  overflow-x: auto;
+}
+.tableGrid {
+  display: grid;
+  gap: 14px;
+  min-width: 480px;
+}
+.tableRow {
+  display: grid;
+  grid-template-columns: var(--sk-tcols, repeat(4, 1fr));
+  gap: 14px;
+  align-items: center;
+}
+
+/* ---- Reduced motion: stop the sweep, keep a gentle opacity pulse ---- */
+@media (prefers-reduced-motion: reduce) {
+  .bone::after {
+    animation: none;
+    display: none;
+  }
+  .bone {
+    animation: sk-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes sk-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}

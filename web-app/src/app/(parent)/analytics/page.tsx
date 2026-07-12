@@ -8,7 +8,7 @@ import {
   AnalyticsDashboard,
   type AnalyticsChild,
   type DashPayload,
-} from "@/components/AnalyticsDashboard";
+} from "./AnalyticsDashboard";
 
 // get_child_leaderboard_summary payload (defensive-optional: any RPC error/null
 // is treated as "no leaderboard activity" and renders the honest empty state).
@@ -36,7 +36,7 @@ const ANA_KEYS = [
   "ana.subject.all",
   "ana.locked", "ana.noActive", "ana.goSubscribe",
   "ana.kpi.last7", "ana.kpi.tests", "ana.kpi.correct", "ana.kpi.wrong",
-  "ana.kpi.time", "ana.kpi.best", "ana.kpi.weak", "ana.kpi.last",
+  "ana.kpi.skipped", "ana.kpi.time", "ana.kpi.best", "ana.kpi.weak", "ana.kpi.last",
   "ana.chart.weekly", "ana.chart.weeklySub", "ana.chart.trend", "ana.chart.trendSub30",
   "ana.chart.topics", "ana.chart.mistakes",
   "ana.th.topic", "ana.th.subtopic", "ana.th.questions", "ana.th.accuracy", "ana.th.mistakes",
@@ -45,6 +45,12 @@ const ANA_KEYS = [
   "ana.unit.h", "ana.unit.m",
   "ana.rangeNote",
   "ana.empty.title", "ana.empty.sub", "ana.empty.trend", "ana.empty.mistakes",
+  // Analytics-type switch (Subjects vs Olympiads) + olympiad-scope extras.
+  "ana.mode.label", "ana.mode.subjects", "ana.mode.olympiads",
+  "ana.olymp.kpi.attempts",
+  "ana.olymp.perPackage", "ana.olymp.perPackageSub",
+  "ana.th.package", "ana.th.attempts",
+  "ana.olymp.empty.title", "ana.olymp.empty.sub",
 ];
 
 function firstParam(v: string | string[] | undefined): string {
@@ -54,7 +60,11 @@ function firstParam(v: string | string[] | undefined): string {
 export default async function ParentAnalytics({
   searchParams,
 }: {
-  searchParams: Promise<{ child?: string | string[]; subject?: string | string[] }>;
+  searchParams: Promise<{
+    child?: string | string[];
+    subject?: string | string[];
+    mode?: string | string[];
+  }>;
 }) {
   const parent = await requireParent();
   const t = await getT();
@@ -225,6 +235,14 @@ export default async function ParentAnalytics({
     },
   ];
 
+  // --- Analytics type (URL state, like child/subject): "subjects" (default)
+  // keeps today's per-subject view, RPC-scoped to kind<>'olympiad' so subject
+  // stats are guaranteed olympiad-free; "olympiads" drives the SAME layout from
+  // olympiad attempts only (+ a per-package results table). Whitelisted — any
+  // forged value falls back to the default.
+  const mode: "subjects" | "olympiads" =
+    firstParam(sp.mode) === "olympiads" ? "olympiads" : "subjects";
+
   // --- Resolve the URL selection → child + subject ("all" | uuid | "" = none).
   // Defence-in-depth: ?subject= is honored ONLY when it is one of the selected
   // child's UNLOCKED subjects — a hand-crafted locked/foreign uuid falls back
@@ -249,13 +267,21 @@ export default async function ParentAnalytics({
   // --- ONE RPC call for the selection (real aggregates; RPC authorizes the
   // linked parent in-body). Any error/null → safe empty object so the client
   // renders the honest empty state instead of crashing.
+  // Subjects mode requires an unlocked subject selection (p_scope='tests'
+  // excludes olympiad attempts); olympiads mode ignores the subject filter
+  // entirely (p_scope='olympiads' — packages aren't subject-gated, so a child
+  // without any subject subscription still sees their olympiad results).
   let dash: DashPayload = {};
-  if (selectedChild && selectedSubject) {
+  const wantDash =
+    mode === "olympiads" ? !!selectedChild : !!(selectedChild && selectedSubject);
+  if (wantDash && selectedChild) {
     try {
       const { data, error } = await supabase.rpc("get_child_subject_dashboard", {
         p_student_profile_id: selectedChild.id,
-        p_subject_id: selectedSubject === "all" ? null : selectedSubject,
+        p_subject_id:
+          mode === "olympiads" || selectedSubject === "all" ? null : selectedSubject,
         p_days: 30,
+        p_scope: mode === "olympiads" ? "olympiads" : "tests",
       });
       if (!error && data && typeof data === "object") dash = data as DashPayload;
     } catch {
@@ -322,6 +348,7 @@ export default async function ParentAnalytics({
           dict={dict}
           selectedChildId={selectedChild!.id}
           selectedSubject={selectedSubject}
+          mode={mode}
           data={dash}
         />
       )}

@@ -9,6 +9,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireChild } from "@/lib/auth/session";
+import { updateChildOwnNameCore } from "@/lib/auth/childProfileCore";
 import { getT } from "@/i18n/server";
 import { sniffImageMime, EXT_BY_SNIFFED } from "@/lib/imageSniff";
 
@@ -17,33 +18,25 @@ export type ChildProfileState = { ok?: boolean; error?: string } | null;
 // Update the logged-in child's own first/last name. Self-row update via the SSR
 // client — the students_write RLS policy allows profile_id = current_profile.
 // Only the name columns are written (never access/subscription fields).
+// Stage M3: the trim/caps/required validation, the students update, the
+// best-effort profiles.display_name sync and the /child revalidation live in
+// lib/auth/childProfileCore.updateChildOwnNameCore (shared with the mobile
+// BFF); this action stays the cookie-session wrapper acting through the SSR
+// client so RLS semantics are unchanged.
 export async function childUpdateOwnName(
   _prev: ChildProfileState,
   formData: FormData,
 ): Promise<ChildProfileState> {
   const child = await requireChild(); // authorize FIRST (before any FormData read)
   const t = await getT();
-  const first = String(formData.get("first_name") ?? "").trim().slice(0, 80);
-  const last = String(formData.get("last_name") ?? "").trim().slice(0, 80);
-  if (!first || !last) return { error: t("profile.err.nameRequired") };
-
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("students")
-    .update({ first_name: first, last_name: last })
-    .eq("profile_id", child.profileId);
-  if (error) return { error: t("profile.err.updateFailed") };
-
-  // Keep profiles.display_name in sync (create_child_account seeds it from
-  // first+last; other surfaces may read it). Best-effort — the students update
-  // is the authoritative name and already succeeded.
-  await supabase
-    .from("profiles")
-    .update({ display_name: `${first} ${last}`.trim() })
-    .eq("id", child.profileId);
-
-  revalidatePath("/child");
-  revalidatePath("/child/profile");
+  const res = await updateChildOwnNameCore(
+    supabase,
+    child.profileId,
+    String(formData.get("first_name") ?? ""),
+    String(formData.get("last_name") ?? ""),
+  );
+  if (!res.ok) return { error: t(res.errorKey) };
   return { ok: true };
 }
 

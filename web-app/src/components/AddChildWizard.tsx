@@ -39,6 +39,8 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
+import { useLocale } from "@/i18n/I18nProvider";
+import { formatGradeLabel } from "@/lib/gradeLabel";
 import { addChild } from "@/lib/auth/parentService";
 import {
   subscribeChild,
@@ -113,6 +115,7 @@ export function AddChildWizard({
   freeAccessActive?: boolean;
 }) {
   const tt = (k: string) => dict[k] ?? k;
+  const locale = useLocale();
   // Same fallback chain the Subscription page uses for the popular badge:
   // skip keys the dict doesn't resolve (getT returns the key itself when a
   // key is missing, so `v === k` means "not translated").
@@ -408,7 +411,7 @@ export function AddChildWizard({
                 <option value="">{tt("addchild.field.selectGrade")}</option>
                 {grades.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.level} — {g.name}
+                    {formatGradeLabel(g.level, locale, g.name)}
                   </option>
                 ))}
               </select>

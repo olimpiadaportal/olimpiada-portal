@@ -7,8 +7,8 @@ export default function PublicLayout() {
   const role = useAuthStore((s) => s.role);
 
   // Signed-in users never see the public stack (web parity).
-  if (status === "signedIn" && role === "parent") return <Redirect href="/(parent)/home" />;
-  if (status === "signedIn" && role === "student") return <Redirect href="/(student)/arena" />;
+  if (status === "signedIn" && role === "parent") return <Redirect href="/(parent)/(tabs)/home" />;
+  if (status === "signedIn" && role === "student") return <Redirect href="/(student)/(tabs)/home" />;
 
   return <Stack screenOptions={{ headerShown: false }} />;
 }

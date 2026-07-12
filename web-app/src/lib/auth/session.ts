@@ -68,6 +68,8 @@ export async function getChild(): Promise<{ profileId: string } | null> {
 
 export async function requireChild(): Promise<{ profileId: string }> {
   const child = await getChild();
-  if (!child) redirect("/child-login");
+  // The standalone /child-login page is retired — the unified /login page
+  // opens on its Student tab instead.
+  if (!child) redirect("/login?tab=student");
   return child;
 }

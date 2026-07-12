@@ -14,6 +14,7 @@ const FORM_KEYS = [
   "oly2.title", "oly2.desc", "manage.select", "manage.saving",
   "oly2.err.subject", "oly2.err.titleAz",
   "oly2.eventAt", "oly2.eventAtHint", "oly2.eventClear",
+  "oly2.duration", "oly2.durationHelp",
 ];
 
 export default async function EditOlympiadPage({
@@ -28,7 +29,7 @@ export default async function EditOlympiadPage({
 
   const { data: pkg } = await supabase
     .from("olympiad_packages")
-    .select("id, subject_id, grade_id, price_amount, status, event_starts_at, cover_media_id")
+    .select("id, subject_id, grade_id, price_amount, status, event_starts_at, duration_minutes, cover_media_id")
     .eq("id", id)
     .maybeSingle();
   if (!pkg) notFound();
@@ -73,11 +74,8 @@ export default async function EditOlympiadPage({
   const formDict: Record<string, string> = {};
   for (const k of FORM_KEYS) formDict[k] = t(k);
 
-  // Bulk-import modal inputs: the package's subject is READ-ONLY (the pool RPC
-  // scopes by package); grade is chosen per batch in the modal.
-  const packageSubjectName =
-    ((subjects ?? []) as any[]).find((s) => s.id === (pkg as any).subject_id)
-      ?.name ?? null;
+  // Bulk-import modal inputs: subject AND grade come from the PACKAGE row
+  // server-side, so the modal only needs the type hints for validation.
   const activeTypeNames = ((qtypes ?? []) as any[])
     .filter((r) => r.status === "active")
     .map((r) => String(r.name));
@@ -113,6 +111,7 @@ export default async function EditOlympiadPage({
             price: String((pkg as any).price_amount ?? 0),
             status: (pkg as any).status,
             event: (pkg as any).event_starts_at ?? "",
+            duration: String((pkg as any).duration_minutes ?? 25),
             tr,
           }}
           submitLabel={t("manage.save")}
@@ -140,11 +139,6 @@ export default async function EditOlympiadPage({
         <BulkUploadModal
           dict={fullDict}
           packageId={(pkg as any).id}
-          subjectName={packageSubjectName}
-          grades={((grades ?? []) as any[]).map((g) => ({
-            value: g.id,
-            label: String(g.name),
-          }))}
           typeNames={activeTypeNames}
           typeRules={activeTypeRules}
           triggerClassName="btn"

@@ -12,20 +12,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireParent } from "@/lib/auth/session";
+import { removeAvatarCore, setAvatarCore } from "@/lib/auth/avatarCore";
 import { getT } from "@/i18n/server";
-import { sniffImageMime, EXT_BY_SNIFFED } from "@/lib/imageSniff";
-
-const AVATAR_BUCKET = "profile-avatars";
-const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2 MB (matches bucket limit)
-// Cheap early reject only — the authoritative type comes from byte sniffing
-// (imageSniff) inside the action.
-const ALLOWED_MIME = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-  "image/gif",
-]);
 
 export type ProfileActionState = { ok?: boolean; error?: string } | null;
 
@@ -69,10 +57,11 @@ export async function updateOwnPassword(
   return { ok: true };
 }
 
-// Upload/replace the logged-in parent's avatar. Enforces image mime + ≤2MB,
-// uploads to 'profile-avatars' as `${authUserId}/${Date.now()}.${ext}` (so the
-// storage owner = auth.uid() satisfies the owner-write policy), records the
-// metadata in media_assets, and links it on profiles.avatar_media_id.
+// Upload/replace the logged-in parent's avatar. Stage M2: mime/size/byte-sniff
+// enforcement, the owner-scoped Storage upload, the media_assets metadata row
+// and the profiles.avatar_media_id link live in lib/auth/avatarCore.setAvatarCore
+// (shared with the mobile BFF); this action stays the cookie-session wrapper
+// acting through the SSR client so RLS/owner-write semantics are unchanged.
 export async function setOwnAvatar(
   _prev: ProfileActionState,
   formData: FormData,
@@ -80,63 +69,16 @@ export async function setOwnAvatar(
   const parent = await requireParent();
   const t = await getT();
 
-  const file = formData.get("avatar");
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: t("profile.err.uploadFailed") };
-  }
-  if (!ALLOWED_MIME.has(file.type)) {
-    return { error: t("profile.err.fileType") };
-  }
-  if (file.size > MAX_AVATAR_BYTES) {
-    return { error: t("profile.err.fileTooLarge") };
-  }
-  // R7 security: type the upload from its BYTES (magic numbers), never from the
-  // attacker-controlled file.type. The sniffed mime drives contentType + ext +
-  // the media_assets row.
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const sniffed = sniffImageMime(bytes);
-  if (!sniffed) return { error: t("profile.err.fileType") };
-
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: t("profile.err.updateFailed") };
-
-  const ext = EXT_BY_SNIFFED[sniffed];
-  const path = `${user.id}/${Date.now()}.${ext}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from(AVATAR_BUCKET)
-    .upload(path, bytes, { contentType: sniffed, upsert: false });
-  if (uploadError) return { error: t("profile.err.uploadFailed") };
-
-  // Record file metadata (PostgreSQL stores metadata only, never the binary).
-  const { data: media, error: mediaError } = await supabase
-    .from("media_assets")
-    .insert({
-      bucket: AVATAR_BUCKET,
-      path,
-      owner_profile_id: parent.profileId,
-      mime_type: sniffed,
-      file_size_bytes: bytes.byteLength,
-      visibility: "public",
-    })
-    .select("id")
-    .single();
-  if (mediaError || !media) {
-    // Best-effort cleanup of the orphaned object; ignore failures.
-    await supabase.storage.from(AVATAR_BUCKET).remove([path]).catch(() => {});
-    return { error: t("profile.err.updateFailed") };
-  }
-
-  const { error: linkError } = await supabase
-    .from("profiles")
-    .update({ avatar_media_id: media.id })
-    .eq("id", parent.profileId);
-  if (linkError) return { error: t("profile.err.updateFailed") };
-
-  revalidatePath("/dashboard");
+  const res = await setAvatarCore(supabase, {
+    profileId: parent.profileId,
+    file: formData.get("avatar"),
+    // Resolved exactly where the historical action called auth.getUser()
+    // (after the file checks) — the check order is unchanged.
+    resolveAuthUserId: async () =>
+      (await supabase.auth.getUser()).data.user?.id ?? null,
+  });
+  if (!res.ok) return { error: t(res.errorKey) };
   return { ok: true };
 }
 
@@ -145,11 +87,7 @@ export async function removeOwnAvatar(): Promise<ProfileActionState> {
   const parent = await requireParent();
   const t = await getT();
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("profiles")
-    .update({ avatar_media_id: null })
-    .eq("id", parent.profileId);
-  if (error) return { error: t("profile.err.updateFailed") };
-  revalidatePath("/dashboard");
+  const res = await removeAvatarCore(supabase, parent.profileId);
+  if (!res.ok) return { error: t(res.errorKey) };
   return { ok: true };
 }

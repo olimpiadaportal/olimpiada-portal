@@ -44,6 +44,37 @@ function s(formData: FormData, name: string): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
+// Module-separation guard: general-bank (EXAM) questions may only reference
+// EXAM-scoped topics. Olympiad-package bulk imports create scope='olympiad'
+// topics that must never be attachable here — even via a forged form post.
+// Subtopics have no scope column; they inherit it via their parent topic.
+// Empty ids pass (topic/subtopic are optional); unknown ids fail closed.
+async function isExamTaxonomy(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  topicId: string | null,
+  subtopicId: string | null,
+): Promise<boolean> {
+  const topicIds = new Set<string>();
+  if (topicId) topicIds.add(topicId);
+  if (subtopicId) {
+    const { data: st } = await supabase
+      .from("subtopics")
+      .select("topic_id")
+      .eq("id", subtopicId)
+      .maybeSingle();
+    if (!st?.topic_id) return false;
+    topicIds.add(String(st.topic_id));
+  }
+  if (topicIds.size === 0) return true;
+  const ids = [...topicIds];
+  const { data: rows } = await supabase
+    .from("topics")
+    .select("id, scope")
+    .in("id", ids);
+  const found = (rows ?? []) as { id: string; scope: string }[];
+  return found.length === ids.length && found.every((r) => r.scope === "exam");
+}
+
 export async function saveQuestion(
   _prev: QuestionState,
   formData: FormData,
@@ -53,10 +84,10 @@ export async function saveQuestion(
   const id = s(formData, "__id");
   const supabase = await createClient();
 
-  // M1: PRIVATE olympiad-pool questions (olympiad_package_id set) are
-  // Admin-only. The list already excludes them for content managers; also
-  // reject a direct edit-by-id here (generic error, no detail leak).
-  if (id && !ctx.isAdmin) {
+  // PRIVATE olympiad-pool questions (olympiad_package_id set) are managed
+  // ONLY through their package — the general editor must never touch them,
+  // ADMINS INCLUDED. Reject a direct edit-by-id (generic error, no detail leak).
+  if (id) {
     const { data: target } = await supabase
       .from("questions")
       .select("olympiad_package_id")
@@ -73,6 +104,18 @@ export async function saveQuestion(
   if (!meta.subject_id) return { error: t("qerr.subjectRequired") };
   if (!meta.grade_id) return { error: t("qerr.gradeRequired") };
   if (!meta.type_id) return { error: t("qerr.typeRequired") };
+
+  // Module separation: an exam question can never be tagged with an
+  // olympiad-scoped topic/subtopic (generic error, no detail leak).
+  if (
+    !(await isExamTaxonomy(
+      supabase,
+      (meta.topic_id as string | null) ?? null,
+      (meta.subtopic_id as string | null) ?? null,
+    ))
+  ) {
+    return { error: t("err.server") };
+  }
   // Difficulty is optional — an admin may tag it later (used only for server-side
   // random selection, never chosen by students).
 
@@ -173,7 +216,9 @@ export async function saveQuestion(
     const { error } = await supabase
       .from("questions")
       .update({ ...meta, primary_locale: locale, updated_by: ctx.profileId })
-      .eq("id", questionId);
+      .eq("id", questionId)
+      // Defence-in-depth: even a forged id can never mutate a package question.
+      .is("olympiad_package_id", null);
     if (error) {
       console.error("[admin] question update failed", error.message);
       return { error: t("err.server") };
@@ -279,14 +324,17 @@ export async function transitionQuestion(formData: FormData): Promise<void> {
     .maybeSingle();
   if (!q || !tr.from.includes(q.status)) return;
 
-  // M1: olympiad-pool questions are Admin-only — content managers must not
-  // transition them even with a direct id.
-  if (!ctx.isAdmin && q.olympiad_package_id) return;
+  // Olympiad-pool questions are managed only through their package — NOBODY
+  // (admins included) may transition them from the general surface. Pool rows
+  // are imported as 'published' and the attempt engine depends on that.
+  if (q.olympiad_package_id) return;
 
   await supabase
     .from("questions")
     .update({ status: tr.to, updated_by: ctx.profileId })
-    .eq("id", id);
+    .eq("id", id)
+    // Defence-in-depth: a forged id can never mutate a package question.
+    .is("olympiad_package_id", null);
   revalidatePath("/questions");
   revalidatePath(`/questions/${id}/edit`);
 }
@@ -297,7 +345,13 @@ export async function deleteQuestion(formData: FormData): Promise<void> {
   const id = s(formData, "__id");
   if (!id) return;
   const supabase = await createClient();
-  await supabase.from("questions").delete().eq("id", id);
+  // Scope guard: the general surface can never delete an olympiad-pool
+  // question (those live and die with their package).
+  await supabase
+    .from("questions")
+    .delete()
+    .eq("id", id)
+    .is("olympiad_package_id", null);
   revalidatePath("/questions");
   redirect("/questions");
 }
@@ -461,7 +515,13 @@ export async function bulkDeleteQuestions(formData: FormData): Promise<void> {
   const ids = idList(formData);
   if (ids.length === 0) return;
   const supabase = await createClient();
-  await supabase.from("questions").delete().in("id", ids);
+  // Scope guard: forged/stale ids can never delete olympiad-pool questions
+  // from the general surface (those live and die with their package).
+  await supabase
+    .from("questions")
+    .delete()
+    .in("id", ids)
+    .is("olympiad_package_id", null);
   revalidatePath("/questions");
 }
 
@@ -490,12 +550,13 @@ export async function bulkTransitionQuestions(
     .select("id, status, olympiad_package_id")
     .in("id", ids);
 
-  // Only transition rows whose current status allows it (M1: olympiad-pool rows
-  // stay Admin-only). RLS additionally restricts which rows actually update.
+  // Only transition rows whose current status allows it. Olympiad-pool rows
+  // are NEVER eligible (admins included) — they are managed through their
+  // package only. RLS additionally restricts which rows actually update.
   const eligible = (qs ?? [])
     .filter(
       (q: { status: string; olympiad_package_id: string | null }) =>
-        tr.from.includes(q.status) && (ctx.isAdmin || !q.olympiad_package_id),
+        tr.from.includes(q.status) && !q.olympiad_package_id,
     )
     .map((q: { id: string }) => q.id);
   const skipped = ids.length - eligible.length;
@@ -508,7 +569,9 @@ export async function bulkTransitionQuestions(
   const { error } = await supabase
     .from("questions")
     .update({ status: tr.to, updated_by: ctx.profileId })
-    .in("id", eligible);
+    .in("id", eligible)
+    // Defence-in-depth: re-assert the scope on the UPDATE itself.
+    .is("olympiad_package_id", null);
   revalidatePath("/questions");
   return error ? { updated: 0, skipped: ids.length } : { updated: eligible.length, skipped };
 }
@@ -524,6 +587,9 @@ export async function bulkAssignTopic(formData: FormData): Promise<void> {
   // Set subject+topic(+subtopic) together so the question's subject always
   // matches its topic. RLS restricts which rows actually update.
   const supabase = await createClient();
+  // Module separation: never re-tag exam questions with olympiad-scoped
+  // taxonomy (silent no-op, mirroring the other early returns above).
+  if (!(await isExamTaxonomy(supabase, topicId, subtopicId || null))) return;
   await supabase
     .from("questions")
     .update({
@@ -532,6 +598,8 @@ export async function bulkAssignTopic(formData: FormData): Promise<void> {
       subtopic_id: subtopicId || null,
       updated_by: ctx.profileId,
     })
-    .in("id", ids);
+    .in("id", ids)
+    // Scope guard: never re-classify olympiad-pool questions from here.
+    .is("olympiad_package_id", null);
   revalidatePath("/questions");
 }

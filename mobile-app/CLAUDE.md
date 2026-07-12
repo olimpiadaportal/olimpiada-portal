@@ -2,7 +2,8 @@
 
 ## Scope & state
 
-- Framework is CONFIRMED (owner, 2026-07-03): **React Native + Expo** (latest stable SDK, TypeScript strict, expo-router, Hermes/New Architecture).
+- Framework is CONFIRMED (owner, 2026-07-03): **React Native + Expo** (TypeScript strict, expo-router, Hermes/New Architecture).
+- **Expo SDK is PINNED to 54 (owner decision, 2026-07-11):** it is the version the owner's Expo Go installs actually run (verified on device; no newer SDK found in the stores). Never bump the SDK — or any `expo-*`/`react-native*` major — without an explicit owner request; use `npx expo install` so versions stay SDK-54-aligned.
 - The mobile track is **PLANNED & READY but DORMANT**: do NOT create mobile source files until the owner sets a Mobile stage (M1–M4) as the active stage in root `STATUS.md`.
 - Source of design truth: `markdowns/MOBILE_APP_MASTER_PLAN.md` **v3** (2026-07-09 — written against the shipped web platform through Round 17). Staged plan (**the plan the owner activates to build**): root `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md` — 4 BIG stages M1–M4. Push/notification contract: `docs/NOTIFICATIONS_MOBILE_CONTRACT.md`. `markdowns/FUTURE_MOBILE_READINESS.md` is historical only (superseded).
 

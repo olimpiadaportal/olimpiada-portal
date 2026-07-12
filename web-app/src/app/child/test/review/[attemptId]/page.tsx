@@ -8,6 +8,7 @@ import {
   TestReviewList,
   type ReviewListQuestion,
 } from "@/components/TestReviewList";
+import { ChildNavActive } from "@/components/ChildNav";
 
 type ReviewOption = { option_id: string; text: string | null; is_correct: boolean };
 type ReviewQuestion = {
@@ -37,24 +38,37 @@ export default async function TestReviewPage({
 }: {
   params: Promise<{ attemptId: string }>;
 }) {
-  await requireChild();
+  const child = await requireChild();
   const { attemptId } = await params;
   if (!isUuid(attemptId)) redirect("/child/test");
 
   const [locale, t, supabase] = await Promise.all([getLocale(), getT(), createClient()]);
 
-  const { data, error } = await supabase.rpc("get_test_review", {
-    p_attempt_id: attemptId,
-    p_locale: locale,
-  });
-  if (error || !data) redirect("/child/test");
+  // The review RPC payload has no `kind`, so read it from the own attempt row
+  // (RLS-scoped) — olympiad reviews exit to /child/olympiads (migration 047:
+  // both timed kinds share this page).
+  const [{ data, error }, { data: att }] = await Promise.all([
+    supabase.rpc("get_test_review", {
+      p_attempt_id: attemptId,
+      p_locale: locale,
+    }),
+    supabase
+      .from("test_attempts")
+      .select("kind")
+      .eq("id", attemptId)
+      .eq("student_profile_id", child.profileId)
+      .maybeSingle(),
+  ]);
+  const isOlympiad = (att as { kind?: string } | null)?.kind === "olympiad";
+  const homeHref = isOlympiad ? "/child/olympiads" : "/child/test";
+  if (error || !data) redirect(homeHref);
   const payload = data as unknown;
   if (
     typeof payload !== "object" ||
     payload === null ||
     !Array.isArray((payload as { questions?: unknown }).questions)
   ) {
-    redirect("/child/test");
+    redirect(homeHref);
   }
   const review = payload as ReviewPayload;
 
@@ -95,6 +109,8 @@ export default async function TestReviewPage({
 
   return (
     <>
+      {/* Kind-aware nav highlight (shared route — see ChildNav). */}
+      <ChildNavActive href={homeHref} />
       <section style={{ marginBottom: 22 }}>
         <p className="arena-eyebrow">{t("test.result.eyebrow")}</p>
         <h1>{t("test.review.title")}</h1>
@@ -111,8 +127,8 @@ export default async function TestReviewPage({
         <Link className="arena-btn" href={`/child/test/result/${attemptId}`}>
           {t("test.review.backToResult")}
         </Link>
-        <Link className="arena-btn-ghost" href="/child/test">
-          {t("test.result.newTest")}
+        <Link className="arena-btn-ghost" href={homeHref}>
+          {isOlympiad ? t("test.result.backToOlympiads") : t("test.result.newTest")}
         </Link>
       </div>
     </>

@@ -1019,8 +1019,13 @@ a {
   color: var(--text);
 }
 
-.cell-muted {
-  color: var(--muted);
+/* Topic column in the questions table — truncate long topic names so the
+   Question Text column keeps its room (full value stays in the title attr). */
+.cell-topic {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Refined status pill for the questions table — slightly tighter. */

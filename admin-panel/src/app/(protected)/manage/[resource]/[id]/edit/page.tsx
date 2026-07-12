@@ -26,10 +26,11 @@ export default async function EditResourcePage({
   const optionsByField: Record<string, { value: string; label: string }[]> = {};
   for (const f of refFields) {
     const ref = f.ref!;
-    const { data } = await supabase
-      .from(ref.table)
-      .select(`id, ${ref.labelColumn}`)
-      .order(ref.orderBy ?? ref.labelColumn);
+    let refQb = supabase.from(ref.table).select(`id, ${ref.labelColumn}`);
+    // Module separation: parent-topic dropdowns on the Exams taxonomy pages
+    // only ever offer EXAM-scoped topics (olympiad topics are package-internal).
+    if (ref.table === "topics") refQb = refQb.eq("scope", "exam");
+    const { data } = await refQb.order(ref.orderBy ?? ref.labelColumn);
     optionsByField[f.name] = (data ?? []).map((r: any) => ({
       value: r.id,
       label: String(r[ref.labelColumn]),
@@ -42,6 +43,20 @@ export default async function EditResourcePage({
     .eq("id", id)
     .maybeSingle();
   if (!row) notFound();
+
+  // Module separation: olympiad-scoped topics (and their subtopics) are
+  // created/owned by olympiad-package bulk imports and are never editable
+  // from the Exams taxonomy pages — a direct URL gets a 404. Subtopics have
+  // no scope column; they inherit it via their parent topic.
+  if (res.slug === "topics" && (row as any).scope !== "exam") notFound();
+  if (res.slug === "subtopics") {
+    const { data: parentTopic } = await supabase
+      .from("topics")
+      .select("scope")
+      .eq("id", (row as any).topic_id)
+      .maybeSingle();
+    if (parentTopic?.scope !== "exam") notFound();
+  }
 
   return (
     <div className="page">

@@ -13,17 +13,19 @@ import {
   createChild,
   resetChildPassword as svcResetChildPassword,
 } from "@/lib/auth/childAccountService";
-import { type ChildInfo, validateChildInfo } from "@/lib/auth/children";
+import {
+  deleteParentAccountCore,
+  updateChildProfileCore,
+} from "@/lib/auth/parentCore";
+import { type ChildInfo } from "@/lib/auth/children";
 import {
   EMAIL_MAX,
   EMAIL_RE,
-  NAME_MAX,
   PASSWORD_MAX,
   PASSWORD_MIN,
   validateParentRegistration,
 } from "@/lib/auth/parentValidation";
 import { getT } from "@/i18n/server";
-import { isUuid } from "@/lib/uuid";
 import { rateLimitAllow } from "@/lib/rateLimit";
 
 export type AuthFormState = { error?: string } | null;
@@ -228,32 +230,19 @@ export async function updatePassword(
 }
 
 // ---- Account deletion (self-serve; deletes the parent + their children) -----
+// Stage M2: the deletion cascade (children auth users → parent auth user) lives
+// in lib/auth/parentCore.deleteParentAccountCore, shared with the mobile BFF.
 export async function deleteParentAccount(): Promise<void> {
   const parent = await requireParent();
   const supabase = await createServerSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const admin = getAdminClient();
 
-  // Delete the parent's children (auth users → cascade students/credentials/links).
-  const { data: students } = await admin
-    .from("students")
-    .select("profile_id")
-    .eq("created_by_parent_profile_id", parent.profileId);
-  const studentIds = (students ?? []).map((s: { profile_id: string }) => s.profile_id);
-  if (studentIds.length > 0) {
-    const { data: creds } = await admin
-      .from("child_credentials")
-      .select("auth_user_id")
-      .in("student_profile_id", studentIds);
-    for (const c of (creds ?? []) as { auth_user_id: string }[]) {
-      await admin.auth.admin.deleteUser(c.auth_user_id).catch(() => {});
-    }
-  }
-
-  // Delete the parent auth user (cascades profile/parents/links).
-  if (user?.id) await admin.auth.admin.deleteUser(user.id).catch(() => {});
+  await deleteParentAccountCore({
+    parentProfileId: parent.profileId,
+    authUserId: user?.id ?? null,
+  });
   await supabase.auth.signOut();
   redirect("/?deleted=1");
 }
@@ -328,13 +317,12 @@ export async function resetChildPasswordAction(
 
 // ---- Parent edits a child's profile info AFTER creation --------------------
 // Internal identifiers (child_unique_id, profile/DB ids) are NEVER editable
-// here — only the human-facing info a parent may correct.
+// here — only the human-facing info a parent may correct. Stage M2: ownership
+// re-verification, field normalization/caps and validateChildInfo live in
+// lib/auth/parentCore.updateChildProfileCore, shared with the mobile BFF.
 export type UpdateChildState =
   | { ok?: boolean; error?: string; errors?: string[] }
   | null;
-
-const SCHOOL_NAME_MAX = 160;
-const CLASS_GRADE_MAX = 40;
 
 export async function updateChildProfile(
   _prev: UpdateChildState,
@@ -346,56 +334,24 @@ export async function updateChildProfile(
   const t = await getT();
   if (!parent) return { error: t("childedit.err.generic") };
 
-  const studentProfileId = f(formData, "student_profile_id");
-  if (!isUuid(studentProfileId)) return { error: t("childedit.err.generic") };
-
-  const admin = getAdminClient();
-  // Re-verify OWNERSHIP server-side (the parent must have created this child).
-  // RLS also enforces this, but we never trust the client-supplied id.
-  const { data: student } = await admin
-    .from("students")
-    .select("created_by_parent_profile_id")
-    .eq("profile_id", studentProfileId)
-    .maybeSingle();
-  if (!student || student.created_by_parent_profile_id !== parent.profileId) {
-    return { error: t("childedit.err.notYourChild") };
+  const res = await updateChildProfileCore({
+    parentProfileId: parent.profileId,
+    studentProfileId: f(formData, "student_profile_id"),
+    firstName: f(formData, "first_name"),
+    lastName: f(formData, "last_name"),
+    districtId: f(formData, "district_id"),
+    schoolId: f(formData, "school_id"),
+    gradeId: f(formData, "grade_id"),
+    schoolName: f(formData, "school_name"),
+    classGrade: f(formData, "class_grade"),
+    city: f(formData, "city"),
+  });
+  if (!res.ok) {
+    // Validation keys are returned RAW (the edit form localizes them);
+    // generic/ownership errors are localized here — historical behavior.
+    if ("validationErrors" in res) return { errors: res.validationErrors };
+    return { error: t(res.errorKey) };
   }
-
-  const firstName = f(formData, "first_name").slice(0, NAME_MAX);
-  const lastName = f(formData, "last_name").slice(0, NAME_MAX);
-  const districtId = f(formData, "district_id") || null;
-  const schoolId = f(formData, "school_id") || null;
-  const gradeId = f(formData, "grade_id") || null;
-  const schoolName = f(formData, "school_name").slice(0, SCHOOL_NAME_MAX) || null;
-  const classGrade = f(formData, "class_grade").slice(0, CLASS_GRADE_MAX) || null;
-
-  // Same server-side validation the create flow uses (names present + capped,
-  // city/school/grade ids UUID-shaped). Returns i18n keys the UI localizes.
-  const check = validateChildInfo({ firstName, lastName, districtId, schoolId, gradeId });
-  if (!check.ok) return { errors: check.errors };
-
-  const { error } = await admin
-    .from("students")
-    .update({
-      first_name: firstName,
-      last_name: lastName,
-      grade_id: gradeId,
-      district_id: districtId,
-      school_id: schoolId,
-      school_name: schoolName,
-      class_grade: classGrade,
-    })
-    .eq("profile_id", studentProfileId);
-  if (error) return { error: t("childedit.err.generic") };
-
-  // Keep the child's display_name (used e.g. on the leaderboard) in sync with
-  // the edited names. Best-effort — never fail the edit on this.
-  const display = `${firstName} ${lastName}`.trim();
-  if (display) {
-    await admin.from("profiles").update({ display_name: display }).eq("id", studentProfileId);
-  }
-
-  revalidatePath("/dashboard");
   return { ok: true };
 }
 

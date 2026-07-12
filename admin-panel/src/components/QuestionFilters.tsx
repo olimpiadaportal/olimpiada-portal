@@ -14,7 +14,6 @@ export type FilterCurrent = {
   subject: string;
   topic: string;
   subtopic: string;
-  type: string;
   grade: string;
   status: string;
   size: string;
@@ -25,14 +24,12 @@ const PAGE_SIZES = ["25", "50", "100"];
 export function QuestionFilters({
   taxonomy,
   grades,
-  types,
   statuses,
   current,
   dict,
 }: {
   taxonomy: Taxonomy;
   grades: FilterOption[];
-  types: FilterOption[];
   statuses: FilterOption[];
   current: FilterCurrent;
   dict: Record<string, string>;
@@ -63,7 +60,6 @@ export function QuestionFilters({
     if (merged.subject) p.set("subject", merged.subject);
     if (merged.topic) p.set("topic", merged.topic);
     if (merged.subtopic) p.set("subtopic", merged.subtopic);
-    if (merged.type) p.set("type", merged.type);
     if (merged.grade) p.set("grade", merged.grade);
     if (merged.status) p.set("status", merged.status);
     if (merged.size && merged.size !== "25") p.set("size", merged.size);
@@ -94,7 +90,6 @@ export function QuestionFilters({
       current.subject ||
       current.topic ||
       current.subtopic ||
-      current.type ||
       current.grade ||
       current.status,
   );
@@ -153,18 +148,6 @@ export function QuestionFilters({
       </select>
 
       <select
-        aria-label={tt("qfield.type")}
-        value={current.type}
-        onChange={(e) => apply({ type: e.target.value })}
-      >
-        <option value="">{tt("qfilter.allTypes")}</option>
-        {types.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <select
         aria-label={tt("qfield.grade")}
         value={current.grade}
         onChange={(e) => apply({ grade: e.target.value })}
@@ -197,7 +180,6 @@ export function QuestionFilters({
             subject: "",
             topic: "",
             subtopic: "",
-            type: "",
             grade: "",
             status: "",
           })}

@@ -14,8 +14,8 @@ export default function Index() {
   const [, setNonce] = useState(0);
 
   if (status !== "signedIn") return <Redirect href="/(public)/welcome" />;
-  if (role === "parent") return <Redirect href="/(parent)/home" />;
-  if (role === "student") return <Redirect href="/(student)/arena" />;
+  if (role === "parent") return <Redirect href="/(parent)/(tabs)/home" />;
+  if (role === "student") return <Redirect href="/(student)/(tabs)/home" />;
 
   return (
     <UnknownRoleScreen

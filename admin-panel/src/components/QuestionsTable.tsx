@@ -14,7 +14,7 @@ export type QuestionRow = {
   subject: string;
   grade: string;
   lang: string;
-  type: string;
+  topic: string;
   body: string;
   status: string;
 };
@@ -248,7 +248,7 @@ export function QuestionsTable({
               <th>{tt("qfield.subject")}</th>
               <th className="col-narrow">{tt("qfield.grade")}</th>
               <th className="col-narrow">{tt("qfield.language")}</th>
-              <th>{tt("qfield.type")}</th>
+              <th>{tt("qfield.topic")}</th>
               <th>{tt("qfield.bodyAz")}</th>
               <th className="col-narrow">{tt("qfield.status")}</th>
               <th aria-label="actions" />
@@ -275,7 +275,9 @@ export function QuestionsTable({
                 <td>{r.subject}</td>
                 <td className="col-narrow">{r.grade}</td>
                 <td className="col-narrow">{r.lang}</td>
-                <td className="cell-muted">{r.type}</td>
+                <td className="cell-topic" title={r.topic}>
+                  {r.topic}
+                </td>
                 <td className="cell-body" title={r.body}>
                   {r.body}
                 </td>

@@ -37,11 +37,34 @@ export async function loadQuestionOptions(
     });
   }
 
+  // Module separation: the exam question editor only offers EXAM-scoped
+  // topics. Olympiad-package bulk imports create scope='olympiad' topics that
+  // must never appear on the Exams surfaces. Subtopics carry no scope column —
+  // they inherit it via their parent topic, so they are filtered by the
+  // exam-scoped topic id set.
+  const { data: topicRows } = await supabase
+    .from("topics")
+    .select("id, name")
+    .eq("scope", "exam")
+    .order("name");
+  const examTopics = ((topicRows ?? []) as any[]).map((r) => ({
+    value: r.id as string,
+    label: String(r.name),
+  }));
+  const examTopicIds = new Set(examTopics.map((o) => o.value));
+  const { data: subtopicRows } = await supabase
+    .from("subtopics")
+    .select("id, topic_id, name")
+    .order("name");
+  const examSubtopics = ((subtopicRows ?? []) as any[])
+    .filter((r) => examTopicIds.has(r.topic_id as string))
+    .map((r) => ({ value: r.id as string, label: String(r.name) }));
+
   return {
     subject_id: await named("subjects"),
     grade_id: await named("grades", "level"),
-    topic_id: await named("topics"),
-    subtopic_id: await named("subtopics"),
+    topic_id: examTopics,
+    subtopic_id: examSubtopics,
     type_id: await coded("question_types", "qtype", "code"),
     difficulty_id: await coded("difficulty_levels", "diff", "weight"),
     olympiad_type_id: await coded("olympiad_types", "olympiad", "code"),

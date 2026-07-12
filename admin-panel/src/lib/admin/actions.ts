@@ -37,6 +37,58 @@ type BuiltPayload =
   | { payload: Record<string, unknown>; invalid?: undefined }
   | { payload?: undefined; invalid: "number" | "text" };
 
+type Db = Awaited<ReturnType<typeof createClient>>;
+
+// ---------------------------------------------------------------------------
+// Module-separation guards (Exams vs Olympiad taxonomy). The Exams taxonomy
+// CRUD may only ever touch EXAM-scoped topics: olympiad-package bulk imports
+// create scope='olympiad' topics that are package-internal and must never be
+// editable/deletable here — even via a forged form post. Subtopics have no
+// scope column; they inherit it through their parent topic. New topics rely on
+// the DB default scope='exam' (the registry never writes the scope column).
+// ---------------------------------------------------------------------------
+async function topicIsExamScoped(supabase: Db, topicId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("topics")
+    .select("scope")
+    .eq("id", topicId)
+    .maybeSingle();
+  return data?.scope === "exam";
+}
+
+// True when an existing topics/subtopics row may be mutated from the Exams
+// taxonomy pages. Non-taxonomy resources always pass.
+async function rowIsExamScoped(
+  supabase: Db,
+  slug: string,
+  id: string,
+): Promise<boolean> {
+  if (slug === "topics") return topicIsExamScoped(supabase, id);
+  if (slug === "subtopics") {
+    const { data } = await supabase
+      .from("subtopics")
+      .select("topic_id")
+      .eq("id", id)
+      .maybeSingle();
+    return data?.topic_id
+      ? topicIsExamScoped(supabase, String(data.topic_id))
+      : false;
+  }
+  return true;
+}
+
+// True when a client-supplied parent topic_id (subtopic create/update) points
+// at an exam-scoped topic. Empty/absent values pass — the required-field and
+// FK checks handle those.
+async function payloadTopicIsExamScoped(
+  supabase: Db,
+  slug: string,
+  payload: Record<string, unknown>,
+): Promise<boolean> {
+  if (slug !== "subtopics" || !payload.topic_id) return true;
+  return topicIsExamScoped(supabase, String(payload.topic_id));
+}
+
 function buildPayload(res: Resource, formData: FormData): BuiltPayload {
   const payload: Record<string, unknown> = {};
   for (const f of res.fields) {
@@ -96,6 +148,15 @@ export async function saveRow(
     return { error: built.invalid === "text" ? t("err.tooLong") : t("err.server") };
   }
   const payload = built.payload;
+
+  // Module separation: reject mutations that would touch or attach
+  // olympiad-scoped taxonomy from the Exams pages (generic error, no detail).
+  if (!(await payloadTopicIsExamScoped(supabase, res.slug, payload))) {
+    return { error: t("err.server") };
+  }
+  if (id && !(await rowIsExamScoped(supabase, res.slug, id))) {
+    return { error: t("err.server") };
+  }
 
   if (id) {
     const { error } = await supabase.from(res.table).update(payload).eq("id", id);
@@ -162,6 +223,9 @@ export async function deleteRow(formData: FormData): Promise<void> {
   if (res.adminOnly) await requireAdmin();
 
   const supabase = await createClient();
+  // Module separation: olympiad-scoped taxonomy can never be deleted from the
+  // Exams pages (silent no-op, mirroring the other early returns above).
+  if (!(await rowIsExamScoped(supabase, res.slug, id))) return;
   const { error } = await supabase.from(res.table).delete().eq("id", id);
 
   if (!error) {

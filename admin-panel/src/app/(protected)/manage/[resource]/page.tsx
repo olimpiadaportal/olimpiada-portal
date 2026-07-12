@@ -78,10 +78,12 @@ export default async function ManageResourcePage({
   const optionsByField: Record<string, { value: string; label: string }[]> = {};
   for (const f of refFields) {
     const ref = f.ref!;
-    const { data } = await supabase
-      .from(ref.table)
-      .select(`id, ${ref.labelColumn}`)
-      .order(ref.orderBy ?? ref.labelColumn);
+    let refQb = supabase.from(ref.table).select(`id, ${ref.labelColumn}`);
+    // Module separation: the Exams taxonomy pages only ever offer EXAM-scoped
+    // topics (e.g. the subtopic form's parent-topic dropdown). Olympiad-package
+    // bulk imports create scope='olympiad' topics that must never appear here.
+    if (ref.table === "topics") refQb = refQb.eq("scope", "exam");
+    const { data } = await refQb.order(ref.orderBy ?? ref.labelColumn);
     optionsByField[f.name] = (data ?? []).map((r: any) => ({
       value: r.id,
       label: String(r[ref.labelColumn]),
@@ -96,7 +98,13 @@ export default async function ManageResourcePage({
   if (res.slug === "subtopics") {
     const [{ data: subs }, { data: tops }] = await Promise.all([
       supabase.from("subjects").select("id, name").order("name"),
-      supabase.from("topics").select("id, subject_id, name").order("name"),
+      // Exam-scoped topics only: this set also drives the subtopics list
+      // restriction below (subtopics inherit scope via their parent topic).
+      supabase
+        .from("topics")
+        .select("id, subject_id, name")
+        .eq("scope", "exam")
+        .order("name"),
     ]);
     subjectOptions = ((subs ?? []) as any[]).map((r) => ({
       value: r.id,
@@ -113,13 +121,18 @@ export default async function ManageResourcePage({
     .join(", ");
   const selectStr = embeds ? `*, ${embeds}` : "*";
 
+  // A ?topic= id is only honoured when it belongs to the exam-scoped topic
+  // set loaded above — a forged olympiad topic id must never list its
+  // subtopics here.
+  const topicSafe = topic && topicRows.some((r) => r.id === topic) ? topic : "";
+
   // Subtopics have no subject_id column: a subject-only filter means
   // "subtopics of any topic of that subject" (empty topic set → no rows).
   const topicIdsForSubject = subject
     ? topicRows.filter((r) => r.subject_id === subject).map((r) => r.id)
     : [];
   const subjectHasNoTopics =
-    res.slug === "subtopics" && subject !== "" && topic === "" &&
+    res.slug === "subtopics" && subject !== "" && topicSafe === "" &&
     topicIdsForSubject.length === 0;
 
   let list: any[] = [];
@@ -130,10 +143,18 @@ export default async function ManageResourcePage({
       qb = qb.ilike("name", `%${escaped}%`);
     }
     if (status) qb = qb.eq("status", status);
-    if (res.slug === "topics" && subject) qb = qb.eq("subject_id", subject);
+    if (res.slug === "topics") {
+      // Module separation: olympiad-scoped topics are package-internal and
+      // never listed/managed on the Exams taxonomy pages.
+      qb = qb.eq("scope", "exam");
+      if (subject) qb = qb.eq("subject_id", subject);
+    }
     if (res.slug === "subtopics") {
-      if (topic) qb = qb.eq("topic_id", topic);
+      if (topicSafe) qb = qb.eq("topic_id", topicSafe);
       else if (subject) qb = qb.in("topic_id", topicIdsForSubject);
+      // No cascade filter → still restricted to subtopics of exam topics
+      // (subtopics inherit scope through their parent topic).
+      else qb = qb.in("topic_id", topicRows.map((r) => r.id));
     }
     const { data: rows } = await qb.order(res.orderBy);
     list = (rows as any[] | null) ?? [];
@@ -165,7 +186,7 @@ export default async function ManageResourcePage({
       },
       {
         key: "topic",
-        value: topic,
+        value: topicSafe,
         allLabel: t("qfilter.allTopics"),
         ariaLabel: t("qfield.topic"),
         disabled: !subject,
@@ -187,7 +208,7 @@ export default async function ManageResourcePage({
       })),
     });
   }
-  const hasFilters = Boolean(q || status || subject || topic);
+  const hasFilters = Boolean(q || status || subject || topicSafe);
 
   return (
     <div className="page">

@@ -1,9 +1,10 @@
 // The account bottom-sheet shell (web ProfileDrawer parity: ACCOUNT / LANGUAGE
-// / APPEARANCE / SESSION sections). M1 ships Language + Appearance + Session;
-// the Account row becomes the profile push in M2/M3. Plain RN Modal — the
-// @gorhom/bottom-sheet dependency arrives with the richer M2 sheets.
+// / APPEARANCE / SESSION sections). The ACCOUNT section carries the
+// "My profile" push for BOTH roles (parent → (parent)/profile, student →
+// (student)/profile — web ChildProfileDrawer parity). Plain RN Modal.
 import React from "react";
 import { Modal, Pressable, View } from "react-native";
+import { useRouter } from "expo-router";
 import { AppText } from "./AppText";
 import { Button } from "./Button";
 import { Segmented } from "./Segmented";
@@ -24,9 +25,11 @@ export function AccountSheet({
   const { tokens } = useTheme();
   const { t } = useT();
   const theme = useTheme();
+  const router = useRouter();
   const locale = useLocaleStore((s) => s.locale);
   const setLocale = useLocaleStore((s) => s.setLocale);
   const config = useMobileConfig();
+  const role = useAuthStore((s) => s.role);
   const signOut = useAuthStore((s) => s.signOut);
 
   const supported = (config.data?.locales.supported ?? ["az", "en", "ru"]).filter(isLocale);
@@ -59,6 +62,20 @@ export function AccountSheet({
             backgroundColor: tokens.border,
           }}
         />
+        {role === "parent" || role === "student" ? (
+          <View style={{ gap: spacing.sm }}>
+            <AppText variant="muted">{t("drawer2.account")}</AppText>
+            <Button
+              title={t("drawer.profileBtn")}
+              variant="ghost"
+              onPress={() => {
+                onClose();
+                if (role === "parent") router.push("/(parent)/profile");
+                else router.push("/(student)/profile");
+              }}
+            />
+          </View>
+        ) : null}
         <View style={{ gap: spacing.sm }}>
           <AppText variant="muted">{t("drawer2.language")}</AppText>
           <Segmented options={localeOptions} value={locale} onChange={setLocale} />

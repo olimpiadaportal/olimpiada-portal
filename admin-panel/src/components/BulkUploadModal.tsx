@@ -1,98 +1,56 @@
 "use client";
 
 // Bulk question import as a modal (general question bank + olympiad private
-// pools). The modal REQUIRES a Subject (general mode only — olympiad pools
-// inherit the package's subject), a Grade and a JSON file; the submit button
-// stays disabled until everything is chosen and the file passes the
-// client-side pre-checks. Client validation is UX only — the SECURITY DEFINER
-// bulk RPCs remain the authority (assert_question_type_rules etc.).
+// pools). GENERAL mode requires a Subject + Grade (batch-level selects) and a
+// JSON file. OLYMPIAD mode asks for the FILE ONLY: the package's own Subject
+// and Grade are applied server-side to every imported row, so the modal shows
+// no subject/grade inputs at all. The submit button stays disabled until the
+// file passes the client-side pre-checks. Client validation is UX only — the
+// SECURITY DEFINER bulk RPCs remain the authority (assert_question_type_rules
+// etc.).
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
 import { bulkImportQuestions, type BulkImportState } from "@/lib/admin/questions";
 import { bulkImportOlympiadQuestions } from "@/lib/admin/olympiad";
+import {
+  downloadBulkTemplate,
+  parseBulkFile,
+  validateBulkRowsClient,
+  type ClientTypeRule,
+  type RowIssue,
+} from "@/lib/bulk-client";
 
 type Opt = { value: string; label: string };
-type RowIssue = { row: number; message: string };
-
-const MAX_FILE_BYTES = 2 * 1024 * 1024;
-
-// The downloadable template: per-item meta intentionally has NO subject and NO
-// grade_level — the modal supplies both for the whole batch. Multiple choice
-// (the only ACTIVE type at launch) requires exactly 4 options with exactly 1
-// correct; the template models exactly that shape. The "source" field was
-// removed from the question model, so it is no longer part of the template.
-const TEMPLATE = [
-  {
-    primary_locale: "az",
-    meta: {
-      type: "Multiple choice",
-      olympiad_type: "School",
-      topic: "Toplama",
-      subtopic: "Birrəqəmli ədədlər",
-    },
-    translations: {
-      az: { body: "2 + 2 = ?", prompt: "Düzgün cavabı seçin", explanation: "2 + 2 = 4" },
-      en: { body: "2 + 2 = ?", prompt: "Choose the correct answer" },
-      ru: { body: "2 + 2 = ?", prompt: "Выберите правильный ответ" },
-    },
-    options: [
-      { is_correct: true, order_index: 0, text: { az: "4", en: "4", ru: "4" } },
-      { is_correct: false, order_index: 1, text: { az: "3", en: "3", ru: "3" } },
-      { is_correct: false, order_index: 2, text: { az: "5", en: "5", ru: "5" } },
-      { is_correct: false, order_index: 3, text: { az: "6", en: "6", ru: "6" } },
-    ],
-  },
-];
-
-// Active question type + its structure rules, mirrored from the server.
-type TypeRule = {
-  name: string;
-  options_required: number | null;
-  correct_required: number | null;
-};
-
-// Case/space-insensitive normalization so "Multiple choice", "multiple_choice"
-// and "Multiple  Choice" all resolve to the same active type.
-function normType(v: string): string {
-  return v.trim().toLowerCase().replace(/\s+/g, "_");
-}
 
 export function BulkUploadModal({
   dict,
   grades,
   subjects,
   packageId,
-  subjectName,
   typeNames,
   typeRules,
   triggerClassName = "btn-ghost",
 }: {
   dict: Record<string, string>;
-  grades: Opt[];
-  // General mode: selectable subject list (active subjects).
+  // General mode: selectable grade + subject lists (active subjects).
+  grades?: Opt[];
   subjects?: Opt[];
-  // Olympiad mode: the private pool's package id (+ read-only subject label).
+  // Olympiad mode: the private pool's package id (subject/grade come from the
+  // package row server-side — no selectors on this surface).
   packageId?: string;
-  subjectName?: string | null;
   // Active question-type names, for the short reference hint.
   typeNames?: string[];
   // Active question types + their structure rules (options_required /
   // correct_required) for the client-side pre-validation mirror. The server is
   // the authority; this only spares the admin an obviously-broken upload.
-  typeRules?: TypeRule[];
+  typeRules?: ClientTypeRule[];
   triggerClassName?: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const router = useRouter();
   const olympiad = Boolean(packageId);
-
-  // Rule lookup (by normalized name) + the default type for items that omit
-  // meta.type (the sole active type = Multiple choice).
   const rules = typeRules ?? [];
-  const activeByNorm = new Map<string, TypeRule>();
-  for (const r of rules) activeByNorm.set(normType(r.name), r);
-  const defaultType: TypeRule | null = rules[0] ?? null;
 
   const [open, setOpen] = useState(false);
   const [subjectId, setSubjectId] = useState("");
@@ -140,123 +98,18 @@ export function BulkUploadModal({
       return;
     }
     setFileName(f.name);
-    if (f.size > MAX_FILE_BYTES) {
-      setFileError(tt("bulk.tooLarge"));
+    const parsed = await parseBulkFile(f, tt);
+    if ("error" in parsed) {
+      setFileError(parsed.error);
       return;
     }
-    let data: unknown;
-    try {
-      data = JSON.parse(await f.text());
-    } catch {
-      setFileError(tt("bulk.invalidJson"));
-      return;
-    }
-    if (!Array.isArray(data)) {
-      setFileError(tt("bulk.notArray"));
-      return;
-    }
-    if (data.length === 0) {
-      setFileError(tt("bulk.emptyArray"));
-      return;
-    }
-
-    const issues: RowIssue[] = [];
-    data.forEach((item, i) => {
-      const row = i + 1;
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        issues.push({ row, message: tt("bulk.err.notObject") });
-        return;
-      }
-      const it = item as {
-        primary_locale?: unknown;
-        meta?: { type?: unknown };
-        translations?: Record<string, { body?: unknown } | undefined>;
-        options?: unknown;
-      };
-
-      // Required primary-locale body (defaults to az).
-      const plRaw = typeof it.primary_locale === "string" ? it.primary_locale : "az";
-      const pl = ["az", "en", "ru"].includes(plRaw) ? plRaw : "az";
-      const body = it.translations?.[pl]?.body;
-      if (typeof body !== "string" || body.trim() === "") {
-        issues.push({ row, message: tt("bulk.err.noAzBody") });
-      }
-
-      if (!Array.isArray(it.options)) {
-        issues.push({ row, message: tt("bulk.err.optionsArray") });
-        return;
-      }
-      const opts = it.options as { is_correct?: unknown; text?: { az?: unknown } }[];
-
-      // Resolve the type rule (mirror of the server). Missing/empty type →
-      // sole active type; a named type must match an active one.
-      const typeRaw = it.meta?.type;
-      let rule: TypeRule | null;
-      if (typeRaw == null || (typeof typeRaw === "string" && typeRaw.trim() === "")) {
-        rule = defaultType;
-      } else if (typeof typeRaw === "string") {
-        rule = activeByNorm.get(normType(typeRaw)) ?? null;
-        if (!rule) {
-          issues.push({ row, message: tt("bulk.err.unknownType") });
-          return;
-        }
-      } else {
-        issues.push({ row, message: tt("bulk.err.unknownType") });
-        return;
-      }
-
-      if (rule?.options_required != null && opts.length !== rule.options_required) {
-        issues.push({
-          row,
-          message: tt("bulk.err.optionCount")
-            .replace("{n}", String(rule.options_required))
-            .replace("{got}", String(opts.length)),
-        });
-      }
-      if (rule?.correct_required != null) {
-        const correct = opts.filter((o) => o && o.is_correct === true).length;
-        if (correct !== rule.correct_required) {
-          issues.push({
-            row,
-            message: tt("bulk.err.correctCount")
-              .replace("{n}", String(rule.correct_required))
-              .replace("{got}", String(correct)),
-          });
-        }
-      }
-      // Each option needs a non-empty az text.
-      for (let k = 0; k < opts.length; k++) {
-        const az = opts[k]?.text?.az;
-        if (typeof az !== "string" || az.trim() === "") {
-          issues.push({
-            row,
-            message: tt("bulk.err.optionText").replace("{i}", String(k + 1)),
-          });
-          break;
-        }
-      }
-    });
-    setRowIssues(issues);
-    setItemCount(data.length);
-  }
-
-  function downloadTemplate() {
-    const blob = new Blob([JSON.stringify(TEMPLATE, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = olympiad
-      ? "olympiad-questions-template.json"
-      : "questions-template.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    setRowIssues(validateBulkRowsClient(parsed.items, tt, rules));
+    setItemCount(parsed.items.length);
   }
 
   const fileReady = fileName !== "" && fileError === "" && rowIssues.length === 0;
   const canSubmit =
-    !pending && fileReady && gradeId !== "" && (olympiad || subjectId !== "");
+    !pending && fileReady && (olympiad || (gradeId !== "" && subjectId !== ""));
 
   const codesHint = tt("bulk.codesHint").replace(
     "{types}",
@@ -283,66 +136,65 @@ export function BulkUploadModal({
         {olympiad && <p className="muted">{tt("olybulk.note")}</p>}
 
         <form action={action} className="form">
-          {olympiad && <input type="hidden" name="__id" value={packageId} />}
+          {olympiad ? (
+            <>
+              <input type="hidden" name="__id" value={packageId} />
+              {/* Subject + Grade are inherited from the package server-side —
+                  this surface intentionally has NO selectors for them. */}
+              <p className="hint">{tt("olybulk.fromPackage")}</p>
+            </>
+          ) : (
+            <>
+              <div className="form-grid">
+                <label className="field">
+                  <span className="field-label">
+                    {tt("qfield.subject")}
+                    <span className="req"> *</span>
+                  </span>
+                  <select
+                    name="subject_id"
+                    required
+                    value={subjectId}
+                    onChange={(e) => setSubjectId(e.target.value)}
+                  >
+                    <option value="">{tt("manage.select")}</option>
+                    {(subjects ?? []).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  {subjectId === "" && (
+                    <span className="hint">{tt("bulk.chooseSubject")}</span>
+                  )}
+                </label>
 
-          <div className="form-grid">
-            {olympiad ? (
-              <div className="field">
-                <span className="field-label">{tt("qfield.subject")}</span>
-                <input type="text" value={subjectName || "—"} disabled readOnly />
-                <span className="hint">{tt("olybulk.subjectFromPkg")}</span>
+                <label className="field">
+                  <span className="field-label">
+                    {tt("qfield.grade")}
+                    <span className="req"> *</span>
+                  </span>
+                  <select
+                    name="grade_id"
+                    required
+                    value={gradeId}
+                    onChange={(e) => setGradeId(e.target.value)}
+                  >
+                    <option value="">{tt("manage.select")}</option>
+                    {(grades ?? []).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  {gradeId === "" && (
+                    <span className="hint">{tt("bulk.chooseGrade")}</span>
+                  )}
+                </label>
               </div>
-            ) : (
-              <label className="field">
-                <span className="field-label">
-                  {tt("qfield.subject")}
-                  <span className="req"> *</span>
-                </span>
-                <select
-                  name="subject_id"
-                  required
-                  value={subjectId}
-                  onChange={(e) => setSubjectId(e.target.value)}
-                >
-                  <option value="">{tt("manage.select")}</option>
-                  {(subjects ?? []).map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                {subjectId === "" && (
-                  <span className="hint">{tt("bulk.chooseSubject")}</span>
-                )}
-              </label>
-            )}
-
-            <label className="field">
-              <span className="field-label">
-                {tt("qfield.grade")}
-                <span className="req"> *</span>
-              </span>
-              <select
-                name="grade_id"
-                required
-                value={gradeId}
-                onChange={(e) => setGradeId(e.target.value)}
-              >
-                <option value="">{tt("manage.select")}</option>
-                {grades.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {gradeId === "" && (
-                <span className="hint">{tt("bulk.chooseGrade")}</span>
-              )}
-            </label>
-          </div>
-          <p className="hint">
-            {olympiad ? tt("bulk.batchNoteGrade") : tt("bulk.batchNote")}
-          </p>
+              <p className="hint">{tt("bulk.batchNote")}</p>
+            </>
+          )}
 
           <label className="field">
             <span className="field-label">
@@ -382,7 +234,9 @@ export function BulkUploadModal({
           <p className="hint">{tt("bulk.fileHint")}</p>
           <p className="hint">{tt("bulk.mcqRule")}</p>
           <p className="hint">{codesHint}</p>
-          <p className="hint">{tt("bulk.overrideHint")}</p>
+          {/* Olympiad mode: olybulk.fromPackage above already explains that
+              legacy meta.subject / meta.grade_level values are ignored. */}
+          {!olympiad && <p className="hint">{tt("bulk.overrideHint")}</p>}
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn" type="submit" disabled={!canSubmit}>
@@ -391,7 +245,13 @@ export function BulkUploadModal({
             <button
               className="btn-ghost"
               type="button"
-              onClick={downloadTemplate}
+              onClick={() =>
+                downloadBulkTemplate(
+                  olympiad
+                    ? "olympiad-questions-template.json"
+                    : "questions-template.json",
+                )
+              }
               disabled={pending}
             >
               {tt("bulk.template")}

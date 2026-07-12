@@ -10,7 +10,7 @@
 // mock-payment note) → Confirm runs purchaseOlympiadForChild (useActionState)
 // → success (or "already owned" after a race) INSIDE the modal; the card flips
 // to owned without a full reload (local state + router.refresh()).
-import { useEffect, useMemo, useState, useActionState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useActionState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Modal } from "@/components/Modal";
@@ -44,8 +44,8 @@ export type PolyDict = {
   addChild: string;
   none: string;
   owned: string;
-  /** "Buy for {name}" — {name} is replaced client-side. */
-  buyFor: string;
+  /** Plain "Buy" — the child comes from the selector above the grid. */
+  buy: string;
   price: string;
   modalTitle: string;
   modalPackage: string;
@@ -117,9 +117,14 @@ function PurchaseDialogBody({
     null,
   );
 
-  // On success (including the "already owned" race) flip the card to owned.
+  // On success (including the "already owned" race) flip the card to owned —
+  // exactly once per mounted attempt (the ref guards against effect re-runs).
+  const doneFired = useRef(false);
   useEffect(() => {
-    if (state?.ok) onDone(child.id, pkg.id);
+    if (state?.ok && !doneFired.current) {
+      doneFired.current = true;
+      onDone(child.id, pkg.id);
+    }
   }, [state, child.id, pkg.id, onDone]);
 
   if (state?.ok) {
@@ -229,6 +234,23 @@ export function OlympiadPurchase({
     [childrenList, childId],
   );
 
+  // Stable identity (it sits in the dialog effect's deps) and a same-reference
+  // bail-out when the key is already present, so a repeat call can never start
+  // a render loop. Declared before the early return (rules of hooks).
+  const onDone = useCallback(
+    (cid: string, pid: string) => {
+      const key = `${cid}:${pid}`;
+      setJustOwned((prev) => {
+        if (prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+      router.refresh();
+    },
+    [router],
+  );
+
   if (childrenList.length === 0) {
     return (
       <div className="poly-empty">
@@ -246,15 +268,6 @@ export function OlympiadPurchase({
   const openBuy = (pkg: PolyPackage) => {
     setAttempt((n) => n + 1);
     setBuying(pkg);
-  };
-
-  const onDone = (cid: string, pid: string) => {
-    setJustOwned((prev) => {
-      const next = new Set(prev);
-      next.add(`${cid}:${pid}`);
-      return next;
-    });
-    router.refresh();
   };
 
   return (
@@ -324,7 +337,7 @@ export function OlympiadPurchase({
                         className="poly-buy"
                         onClick={() => openBuy(pkg)}
                       >
-                        {dict.buyFor.replace("{name}", child.name)}
+                        {dict.buy}
                       </button>
                     ) : null}
                   </div>

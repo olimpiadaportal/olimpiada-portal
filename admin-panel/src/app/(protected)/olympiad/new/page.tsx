@@ -1,27 +1,37 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
-import { getT } from "@/i18n/server";
-import { OlympiadForm } from "@/components/OlympiadForm";
+import { getDict, getT } from "@/i18n/server";
+import { OlympiadCreateForm } from "@/components/OlympiadCreateForm";
 
-const KEYS = [
-  "oly2.subject", "oly2.grade", "oly2.price", "oly2.statusLabel",
-  "oly2.status.active", "oly2.status.inactive", "oly2.status.archived",
-  "oly2.title", "oly2.desc", "manage.select", "manage.saving",
-  "oly2.err.subject", "oly2.err.titleAz",
-  "oly2.eventAt", "oly2.eventAtHint", "oly2.eventClear",
-];
-
+// New Package = one workspace: package fields + the MANDATORY question bulk
+// upload submit together (a package is never created with zero questions).
+// The full dict is passed because the inline bulk section shares the bulk.*
+// strings with the BulkUploadModal.
 export default async function NewOlympiadPage() {
   await requireAdmin();
   const t = await getT();
   const supabase = await createClient();
-  const [{ data: subjects }, { data: grades }] = await Promise.all([
-    supabase.from("subjects").select("id, name").order("name"),
-    supabase.from("grades").select("id, name, level").order("level"),
-  ]);
-  const dict: Record<string, string> = {};
-  for (const k of KEYS) dict[k] = t(k);
+  const [{ data: subjects }, { data: grades }, { data: qtypes }, fullDict] =
+    await Promise.all([
+      supabase.from("subjects").select("id, name").order("name"),
+      supabase.from("grades").select("id, name, level").order("level"),
+      supabase
+        .from("question_types")
+        .select("name, status, options_required, correct_required")
+        .order("code"),
+      getDict(),
+    ]);
+
+  const activeTypes = ((qtypes ?? []) as any[]).filter((r) => r.status === "active");
+  const activeTypeNames = activeTypes.map((r) => String(r.name));
+  // Structure rules for the client-side pre-validation mirror (server = authority).
+  const activeTypeRules = activeTypes.map((r) => ({
+    name: String(r.name),
+    options_required: r.options_required ?? null,
+    correct_required: r.correct_required ?? null,
+  }));
+
   return (
     <div className="page">
       <div className="page-head">
@@ -31,10 +41,12 @@ export default async function NewOlympiadPage() {
         </div>
       </div>
       <section className="card">
-        <OlympiadForm
-          dict={dict}
+        <OlympiadCreateForm
+          dict={fullDict}
           subjects={((subjects ?? []) as any[]).map((s) => ({ value: s.id, label: s.name }))}
           grades={((grades ?? []) as any[]).map((g) => ({ value: g.id, label: g.name }))}
+          typeNames={activeTypeNames}
+          typeRules={activeTypeRules}
           submitLabel={t("manage.add")}
         />
       </section>

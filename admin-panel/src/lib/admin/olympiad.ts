@@ -20,10 +20,12 @@ import {
   overrideItemMeta,
   type ActiveTypeRule,
 } from "@/lib/admin/bulk-validate";
-import { getT } from "@/i18n/server";
+import { getT, type T } from "@/i18n/server";
 
 export type OlympiadState = { error?: string } | null;
 export type OlympiadCoverState = { error?: string } | null;
+
+type Db = Awaited<ReturnType<typeof createClient>>;
 const LOCALES = ["az", "en", "ru"] as const;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,16 +65,33 @@ function slugifyCode(input: string): string {
   );
 }
 
-export async function saveOlympiadPackage(
-  _prev: OlympiadState,
-  fd: FormData,
-): Promise<OlympiadState> {
-  const ctx = await requireAdmin();
-  const t = await getT();
-  const id = s(fd, "__id");
+// ---------------------------------------------------------------------------
+// Shared package-field parsing + persistence helpers, used by BOTH
+// saveOlympiadPackage (edit) and createOlympiadPackageWithQuestions (create).
+// ---------------------------------------------------------------------------
+
+type PackageFields = {
+  subjectId: string;
+  gradeId: string;
+  price: number;
+  status: string;
+  titleAz: string;
+  eventAt: string | null;
+  durationMinutes: number;
+};
+
+// olympiad_packages.duration_minutes (migration 047): attempt time limit in
+// whole minutes, DB CHECK between 5 and 240 — mirrored here.
+const DURATION_MIN = 5;
+const DURATION_MAX = 240;
+
+function parsePackageFields(fd: FormData, t: T): { error: string } | PackageFields {
   const subjectId = s(fd, "subject_id");
   if (!subjectId) return { error: t("oly2.err.subject") };
-  const gradeId = s(fd, "grade_id") || null;
+  // Grade is REQUIRED: bulk-imported pool questions inherit the package's
+  // subject AND grade, so a package can no longer be saved without one.
+  const gradeId = s(fd, "grade_id");
+  if (!gradeId) return { error: t("oly2.err.grade") };
   // Price must be a finite number ≥ 0 (negatives/NaN/Infinity rejected);
   // normalized to 2 decimals.
   const priceRaw = s(fd, "price_amount");
@@ -81,6 +100,16 @@ export async function saveOlympiadPackage(
     return { error: t("err.server") };
   }
   const price = Math.round(priceNum * 100) / 100;
+  // Attempt duration: whole minutes, 5–240 (drives the child's countdown).
+  const durationNum = Number(s(fd, "duration_minutes"));
+  if (
+    !Number.isFinite(durationNum) ||
+    !Number.isInteger(durationNum) ||
+    durationNum < DURATION_MIN ||
+    durationNum > DURATION_MAX
+  ) {
+    return { error: t("oly2.err.duration") };
+  }
   const statusRaw = s(fd, "status");
   const status = ["active", "inactive", "archived"].includes(statusRaw) ? statusRaw : "inactive";
   const titleAz = s(fd, "title_az");
@@ -101,50 +130,53 @@ export async function saveOlympiadPackage(
     if (!Number.isFinite(ts)) return { error: t("err.server") };
     eventAt = new Date(ts).toISOString();
   }
-
-  const supabase = await createClient();
-  // `code` is auto-generated from the Azerbaijani title (no longer a UI input).
-  // On update we keep the existing code untouched.
-  const row = {
-    subject_id: subjectId,
-    grade_id: gradeId,
-    price_amount: price,
+  return {
+    subjectId,
+    gradeId,
+    price,
     status,
-    event_starts_at: eventAt,
+    titleAz,
+    eventAt,
+    durationMinutes: durationNum,
   };
-  let pkgId = id;
-  if (!pkgId) {
-    const base = slugifyCode(titleAz);
-    let code = base;
-    let inserted: { id: string } | null = null;
-    // Retry on a unique-violation by appending a short random suffix.
-    for (let attempt = 0; attempt < 4 && !inserted; attempt++) {
-      const { data, error } = await supabase
-        .from("olympiad_packages")
-        .insert({ ...row, code, created_by: ctx.profileId })
-        .select("id")
-        .single();
-      if (!error && data) {
-        inserted = data;
-        break;
-      }
-      if ((error as { code?: string } | null)?.code === "23505") {
-        code = `${base}-${Math.random().toString(36).slice(2, 6)}`;
-        continue;
-      }
-      console.error("[admin] olympiad package insert failed", error?.message);
-      return { error: t("err.server") };
-    }
-    if (!inserted) return { error: t("err.server") };
-    pkgId = inserted.id;
-  } else {
-    const { error } = await supabase.from("olympiad_packages").update(row).eq("id", pkgId);
-    if (error) {
-      console.error("[admin] olympiad package update failed", error.message);
-      return { error: t("err.server") };
-    }
-  }
+}
 
+// Insert with the auto-generated `code`; retry on a unique-violation by
+// appending a short random suffix. Returns the new package id or null.
+async function insertPackageRow(
+  supabase: Db,
+  row: Record<string, unknown>,
+  titleAz: string,
+  profileId: string | null,
+): Promise<string | null> {
+  const base = slugifyCode(titleAz);
+  let code = base;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data, error } = await supabase
+      .from("olympiad_packages")
+      .insert({ ...row, code, created_by: profileId })
+      .select("id")
+      .single();
+    if (!error && data) return data.id as string;
+    if ((error as { code?: string } | null)?.code === "23505") {
+      code = `${base}-${Math.random().toString(36).slice(2, 6)}`;
+      continue;
+    }
+    console.error("[admin] olympiad package insert failed", error?.message);
+    return null;
+  }
+  return null;
+}
+
+// Upserts az/en/ru title+description. `deleteMissing` (update mode only)
+// removes a locale row when its title was cleared. Returns an error string
+// (already logged) or null on success.
+async function upsertPackageTranslations(
+  supabase: Db,
+  fd: FormData,
+  pkgId: string,
+  deleteMissing: boolean,
+): Promise<string | null> {
   for (const loc of LOCALES) {
     const title = s(fd, `title_${loc}`);
     const desc = s(fd, `desc_${loc}`);
@@ -157,9 +189,9 @@ export async function saveOlympiadPackage(
         );
       if (error) {
         console.error("[admin] olympiad translation upsert failed", error.message);
-        return { error: t("err.server") };
+        return error.message;
       }
-    } else if (id) {
+    } else if (deleteMissing) {
       await supabase
         .from("olympiad_package_translations")
         .delete()
@@ -167,6 +199,45 @@ export async function saveOlympiadPackage(
         .eq("locale", loc);
     }
   }
+  return null;
+}
+
+export async function saveOlympiadPackage(
+  _prev: OlympiadState,
+  fd: FormData,
+): Promise<OlympiadState> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+  const id = s(fd, "__id");
+  const fields = parsePackageFields(fd, t);
+  if ("error" in fields) return { error: fields.error };
+
+  const supabase = await createClient();
+  // `code` is auto-generated from the Azerbaijani title (no longer a UI input).
+  // On update we keep the existing code untouched.
+  const row = {
+    subject_id: fields.subjectId,
+    grade_id: fields.gradeId,
+    price_amount: fields.price,
+    status: fields.status,
+    event_starts_at: fields.eventAt,
+    duration_minutes: fields.durationMinutes,
+  };
+  let pkgId = id;
+  if (!pkgId) {
+    const inserted = await insertPackageRow(supabase, row, fields.titleAz, ctx.profileId);
+    if (!inserted) return { error: t("err.server") };
+    pkgId = inserted;
+  } else {
+    const { error } = await supabase.from("olympiad_packages").update(row).eq("id", pkgId);
+    if (error) {
+      console.error("[admin] olympiad package update failed", error.message);
+      return { error: t("err.server") };
+    }
+  }
+
+  const trErr = await upsertPackageTranslations(supabase, fd, pkgId, Boolean(id));
+  if (trErr) return { error: t("err.server") };
 
   // Best-effort audit trail (never fails the mutation — handled inside).
   await writeAuditLog({
@@ -174,7 +245,7 @@ export async function saveOlympiadPackage(
     action: id ? "admin.olympiad.update" : "admin.olympiad.create",
     targetTable: "olympiad_packages",
     targetId: pkgId,
-    metadata: { status, price },
+    metadata: { status: fields.status, price: fields.price },
   });
 
   revalidatePath("/olympiad");
@@ -198,55 +269,44 @@ export type OlympiadBulkState =
     }
   | null;
 
-export async function bulkImportOlympiadQuestions(
-  _prev: OlympiadBulkState,
+type BulkResult = {
+  total: number;
+  successful: number;
+  failed: number;
+  errors: { index: number; error: string }[];
+};
+
+// Reads + size-caps the uploaded JSON file (2 MB, same cap as the general
+// question-bank import). Returns the parsed array or a trilingual error.
+async function readBulkFile(
   fd: FormData,
-): Promise<OlympiadBulkState> {
-  const ctx = await requireAdmin();
-  const t = await getT();
-  const pkgId = s(fd, "__id");
-  if (!pkgId || !UUID_RE.test(pkgId)) {
-    return { ok: false, error: t("err.server") };
-  }
-
-  // Batch-level Grade comes from the modal select (NOT from the file). The RPC
-  // resolves grades by grades.level, so that is the value injected into every
-  // item's meta below. Subject is scoped by the package inside the RPC.
-  const gradeId = s(fd, "grade_id");
-  if (!UUID_RE.test(gradeId)) {
-    return { ok: false, error: t("qerr.gradeRequired") };
-  }
-  const supabase = await createClient();
-  const { data: grade } = await supabase
-    .from("grades")
-    .select("id, level")
-    .eq("id", gradeId)
-    .maybeSingle();
-  if (!grade || grade.level == null) {
-    return { ok: false, error: t("qerr.gradeRequired") };
-  }
-
+  t: T,
+): Promise<{ error: string } | { payload: unknown[]; fileName: string }> {
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: t("bulk.pickFile") };
+    return { error: t("bulk.pickFile") };
   }
   if (file.size > 2 * 1024 * 1024) {
-    return { ok: false, error: t("bulk.tooLarge") };
+    return { error: t("bulk.tooLarge") };
   }
   let payload: unknown;
   try {
     payload = JSON.parse(await file.text());
   } catch {
-    return { ok: false, error: t("bulk.invalidJson") };
+    return { error: t("bulk.invalidJson") };
   }
   if (!Array.isArray(payload)) {
-    return { ok: false, error: t("bulk.notArray") };
+    return { error: t("bulk.notArray") };
   }
+  return { payload, fileName: file.name };
+}
 
-  // Strict per-row validation (shared with the general bank) BEFORE the RPC, so
-  // each bad row gets a specific trilingual reason instead of a generic message.
-  // Subject is package-scoped (not in meta); only grade_level is injected. The
-  // active-type rules drive option/correct counts (MCQ = 4 options / 1 correct).
+// Active question types + their structure rules (MCQ = 4 options / 1 correct)
+// for the strict per-row validation shared with the general bank.
+async function loadActiveTypeRules(supabase: Db): Promise<{
+  activeByNorm: Map<string, ActiveTypeRule>;
+  defaultType: ActiveTypeRule | null;
+}> {
   const { data: typeRows } = await supabase
     .from("question_types")
     .select("name, options_required, correct_required")
@@ -259,9 +319,27 @@ export async function bulkImportOlympiadQuestions(
   }));
   const activeByNorm = new Map<string, ActiveTypeRule>();
   for (const r of activeTypes) activeByNorm.set(normTypeName(r.name), r);
-  const defaultType = activeTypes[0] ?? null;
+  return { activeByNorm, defaultType: activeTypes[0] ?? null };
+}
 
-  const total = payload.length;
+type ValidatedRows = {
+  total: number;
+  errors: { index: number; error: string }[];
+  validItems: Record<string, unknown>[];
+  validFileIndex: number[];
+};
+
+// Strict per-row validation BEFORE the RPC, so each bad row gets a specific
+// trilingual reason instead of a generic message. Subject is package-scoped
+// inside the RPC (never taken from the row); the PACKAGE grade level is
+// injected into every valid row, superseding any legacy meta.grade_level.
+function validateRows(
+  payload: unknown[],
+  t: T,
+  activeByNorm: Map<string, ActiveTypeRule>,
+  defaultType: ActiveTypeRule | null,
+  gradeLevel: number,
+): ValidatedRows {
   const errors: { index: number; error: string }[] = [];
   const validItems: Record<string, unknown>[] = [];
   const validFileIndex: number[] = [];
@@ -271,34 +349,96 @@ export async function bulkImportOlympiadQuestions(
       errors.push({ index: i + 1, error: msg });
       return;
     }
-    validItems.push(overrideItemMeta(item, { grade_level: grade.level }));
+    validItems.push(overrideItemMeta(item, { grade_level: gradeLevel }));
     validFileIndex.push(i + 1);
   });
+  return { total: payload.length, errors, validItems, validFileIndex };
+}
 
+// Runs the SECURITY DEFINER pool-import RPC and merges its per-row errors
+// (mapped back to original file row numbers) with the pre-validation errors.
+async function runOlympiadPoolImport(
+  supabase: Db,
+  t: T,
+  pkgId: string,
+  rows: ValidatedRows,
+): Promise<{ error: string } | { result: BulkResult }> {
+  const errors = [...rows.errors];
   let successful = 0;
-  if (validItems.length > 0) {
+  if (rows.validItems.length > 0) {
     const { data, error } = await supabase.rpc(
       "bulk_insert_olympiad_package_questions",
-      { p_package_id: pkgId, p_questions: validItems },
+      { p_package_id: pkgId, p_questions: rows.validItems },
     );
     if (error) {
       console.error("[admin] olympiad bulk import failed", error.message);
-      return { ok: false, error: t("err.server") };
+      return { error: t("err.server") };
     }
-    const rpc = data as {
-      total: number;
-      successful: number;
-      failed: number;
-      errors: { index: number; error: string }[];
-    };
+    const rpc = data as BulkResult;
     successful = rpc?.successful ?? 0;
     for (const e of rpc?.errors ?? []) {
-      const fileIdx = validFileIndex[e.index - 1] ?? e.index;
+      const fileIdx = rows.validFileIndex[e.index - 1] ?? e.index;
       errors.push({ index: fileIdx, error: mapRpcRowError(e.error, t) });
     }
   }
   errors.sort((a, b) => a.index - b.index);
-  const result = { total, successful, failed: total - successful, errors };
+  return {
+    result: { total: rows.total, successful, failed: rows.total - successful, errors },
+  };
+}
+
+// Resolves the grade LEVEL a package's imported rows must use. The package's
+// stored grade_id is authoritative; a legacy package saved without one cannot
+// bulk-import until the admin sets a grade on the package form.
+async function packageGradeLevel(
+  supabase: Db,
+  gradeId: string | null,
+): Promise<number | null> {
+  if (!gradeId) return null;
+  const { data: grade } = await supabase
+    .from("grades")
+    .select("id, level")
+    .eq("id", gradeId)
+    .maybeSingle();
+  return grade && grade.level != null ? (grade.level as number) : null;
+}
+
+export async function bulkImportOlympiadQuestions(
+  _prev: OlympiadBulkState,
+  fd: FormData,
+): Promise<OlympiadBulkState> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+  const pkgId = s(fd, "__id");
+  if (!pkgId || !UUID_RE.test(pkgId)) {
+    return { ok: false, error: t("err.server") };
+  }
+
+  // Subject AND Grade are inherited from the PACKAGE row (the upload UI no
+  // longer asks for them): the RPC scopes subject by package; the package's
+  // grade level is injected into every row here. Any meta.subject /
+  // meta.grade_level left in a legacy file is ignored in favor of these.
+  const supabase = await createClient();
+  const { data: pkg } = await supabase
+    .from("olympiad_packages")
+    .select("id, grade_id")
+    .eq("id", pkgId)
+    .maybeSingle();
+  if (!pkg) return { ok: false, error: t("err.server") };
+  const gradeLevel = await packageGradeLevel(supabase, (pkg as any).grade_id ?? null);
+  if (gradeLevel == null) {
+    return { ok: false, error: t("olybulk.err.pkgGrade") };
+  }
+
+  const parsedFile = await readBulkFile(fd, t);
+  if ("error" in parsedFile) return { ok: false, error: parsedFile.error };
+
+  const { activeByNorm, defaultType } = await loadActiveTypeRules(supabase);
+  const rows = validateRows(parsedFile.payload, t, activeByNorm, defaultType, gradeLevel);
+
+  const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows);
+  if ("error" in imp) return { ok: false, error: imp.error };
+  const result = imp.result;
 
   await writeAuditLog({
     actorProfileId: ctx.profileId,
@@ -306,14 +446,164 @@ export async function bulkImportOlympiadQuestions(
     targetTable: "olympiad_packages",
     targetId: pkgId,
     metadata: {
-      total: result?.total,
-      successful: result?.successful,
-      failed: result?.failed,
+      total: result.total,
+      successful: result.successful,
+      failed: result.failed,
     },
   });
 
   revalidatePath(`/olympiad/${pkgId}/edit`);
   return { ok: true, result };
+}
+
+// ---------------------------------------------------------------------------
+// Create package + import its pool in ONE action (New Package page). A package
+// must never be created with zero questions, so:
+//   validate fields → validate file rows → create package → import pool →
+//   if NOTHING imported, hard-delete the just-created package (safe: it is
+//   brand-new — zero purchases verified here AND enforced by the ON DELETE
+//   RESTRICT FK on olympiad_purchases; its translations and any pool questions
+//   are removed by ON DELETE CASCADE) → report per-row errors.
+// Partial success keeps the package (admin fixes the failed rows on the edit
+// page); full success redirects straight to the edit page.
+// ---------------------------------------------------------------------------
+
+export type OlympiadCreateState =
+  | {
+      ok?: boolean;
+      error?: string;
+      packageId?: string;
+      result?: BulkResult;
+    }
+  | null;
+
+// Hard delete used ONLY to roll back a package created in this same call.
+// Refuses to touch a package that somehow acquired a purchase.
+async function rollbackNewPackage(supabase: Db, pkgId: string): Promise<void> {
+  const { count } = await supabase
+    .from("olympiad_purchases")
+    .select("id", { count: "exact", head: true })
+    .eq("olympiad_package_id", pkgId);
+  if ((count ?? 0) > 0) {
+    console.error(
+      "[admin] olympiad create rollback skipped: package has purchases",
+      pkgId,
+    );
+    return;
+  }
+  const { error } = await supabase
+    .from("olympiad_packages")
+    .delete()
+    .eq("id", pkgId);
+  if (error) {
+    console.error("[admin] olympiad create rollback failed", error.message);
+  }
+}
+
+export async function createOlympiadPackageWithQuestions(
+  _prev: OlympiadCreateState,
+  fd: FormData,
+): Promise<OlympiadCreateState> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const fields = parsePackageFields(fd, t);
+  if ("error" in fields) return { error: fields.error };
+  if (!UUID_RE.test(fields.subjectId)) return { error: t("oly2.err.subject") };
+  if (!UUID_RE.test(fields.gradeId)) return { error: t("oly2.err.grade") };
+
+  const supabase = await createClient();
+  // Every imported row inherits the package grade — resolve its level now.
+  const gradeLevel = await packageGradeLevel(supabase, fields.gradeId);
+  if (gradeLevel == null) return { error: t("oly2.err.grade") };
+
+  // Validate the bulk file BEFORE creating anything: a package with zero
+  // valid questions must never be created in the first place.
+  const parsedFile = await readBulkFile(fd, t);
+  if ("error" in parsedFile) return { error: parsedFile.error };
+
+  const { activeByNorm, defaultType } = await loadActiveTypeRules(supabase);
+  const rows = validateRows(parsedFile.payload, t, activeByNorm, defaultType, gradeLevel);
+  if (rows.validItems.length === 0) {
+    return {
+      error: t("oly2.err.needQuestions"),
+      result: { total: rows.total, successful: 0, failed: rows.total, errors: rows.errors },
+    };
+  }
+
+  // Create the package — same insert path (auto code + retry) as save.
+  const pkgId = await insertPackageRow(
+    supabase,
+    {
+      subject_id: fields.subjectId,
+      grade_id: fields.gradeId,
+      price_amount: fields.price,
+      status: fields.status,
+      event_starts_at: fields.eventAt,
+      duration_minutes: fields.durationMinutes,
+    },
+    fields.titleAz,
+    ctx.profileId,
+  );
+  if (!pkgId) return { error: t("err.server") };
+
+  const trErr = await upsertPackageTranslations(supabase, fd, pkgId, false);
+  if (trErr) {
+    await rollbackNewPackage(supabase, pkgId);
+    return { error: t("err.server") };
+  }
+
+  const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows);
+  if ("error" in imp) {
+    await rollbackNewPackage(supabase, pkgId);
+    return { error: imp.error };
+  }
+  const result = imp.result;
+
+  if (result.successful === 0) {
+    // Nothing imported → the package would be empty: undo the creation and
+    // surface the per-row errors so the admin can fix the file and retry.
+    await rollbackNewPackage(supabase, pkgId);
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.olympiad.create_rolled_back",
+      targetTable: "olympiad_packages",
+      targetId: pkgId,
+      metadata: { total: result.total, failed: result.failed },
+      severity: "warning",
+      success: false,
+    });
+    return { error: t("oly2.err.importAllFailed"), result };
+  }
+
+  // Audit like saveOlympiadPackage's create today, plus the import counters.
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.create",
+    targetTable: "olympiad_packages",
+    targetId: pkgId,
+    metadata: { status: fields.status, price: fields.price },
+  });
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.bulk_import",
+    targetTable: "olympiad_packages",
+    targetId: pkgId,
+    metadata: {
+      total: result.total,
+      successful: result.successful,
+      failed: result.failed,
+    },
+  });
+
+  revalidatePath("/olympiad");
+  if (result.failed === 0) {
+    // Everything imported — continue on the package's edit page.
+    redirect(`/olympiad/${pkgId}/edit`);
+  }
+  // Partial success: the package exists with `successful` questions; the
+  // client shows "created with N questions, M rows skipped" + row errors.
+  return { ok: true, packageId: pkgId, result };
 }
 
 // Links a browser-uploaded cover image to the package. Mirrors the hardened

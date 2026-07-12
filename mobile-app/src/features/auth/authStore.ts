@@ -15,6 +15,8 @@ type AuthState = {
   status: AuthStatus;
   role: SessionRole | null;
   userId: string | null;
+  /** public.profiles.id for the signed-in user (Realtime filters, RPC args). */
+  profileId: string | null;
   restore: () => Promise<void>;
   resolveRole: () => Promise<SessionRole>;
   parentLogin: (email: string, password: string) => Promise<{ error?: string }>;
@@ -28,6 +30,15 @@ type AuthState = {
   }) => Promise<{ error?: string; verifyEmail?: boolean }>;
   signOut: () => Promise<void>;
 };
+
+async function serverProfileId(): Promise<string | null> {
+  try {
+    const { data } = await supabase.rpc("current_profile_id");
+    return typeof data === "string" && data.length > 0 ? data : null;
+  } catch {
+    return null;
+  }
+}
 
 async function serverRole(): Promise<SessionRole> {
   try {
@@ -55,18 +66,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   status: "restoring",
   role: null,
   userId: null,
+  profileId: null,
 
   restore: async () => {
     try {
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
-        set({ status: "signedOut", role: null, userId: null });
+        set({ status: "signedOut", role: null, userId: null, profileId: null });
         return;
       }
-      const role = await serverRole();
-      set({ status: "signedIn", role, userId: data.session.user.id });
+      const [role, profileId] = await Promise.all([serverRole(), serverProfileId()]);
+      set({ status: "signedIn", role, userId: data.session.user.id, profileId });
     } catch {
-      set({ status: "signedOut", role: null, userId: null });
+      set({ status: "signedOut", role: null, userId: null, profileId: null });
     }
   },
 
@@ -87,8 +99,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       return { error: "parent.err.invalid" };
     }
-    const role = await serverRole();
-    set({ status: "signedIn", role, userId: data.session.user.id });
+    const [role, profileId] = await Promise.all([serverRole(), serverProfileId()]);
+    set({ status: "signedIn", role, userId: data.session.user.id, profileId });
     return {};
   },
 
@@ -98,8 +110,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!(await adoptTokens(res.data))) {
       return { error: "auth.child.err.serverError" };
     }
-    const role = await serverRole();
-    set({ status: "signedIn", role, userId: res.data.user_id });
+    const [role, profileId] = await Promise.all([serverRole(), serverProfileId()]);
+    set({ status: "signedIn", role, userId: res.data.user_id, profileId });
     return {};
   },
 
@@ -116,8 +128,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!(await adoptTokens(res.data))) {
       return { error: "parent.err.createFailed" };
     }
-    const role = await serverRole();
-    set({ status: "signedIn", role, userId: res.data.user_id });
+    const [role, profileId] = await Promise.all([serverRole(), serverProfileId()]);
+    set({ status: "signedIn", role, userId: res.data.user_id, profileId });
     return {};
   },
 
@@ -129,7 +141,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     clearPendingLink();
     queryClient.clear();
-    set({ status: "signedOut", role: null, userId: null });
+    set({ status: "signedOut", role: null, userId: null, profileId: null });
   },
 }));
 
@@ -139,7 +151,7 @@ supabase.auth.onAuthStateChange((event) => {
   if (event === "SIGNED_OUT") {
     const s = useAuthStore.getState();
     if (s.status === "signedIn") {
-      useAuthStore.setState({ status: "signedOut", role: null, userId: null });
+      useAuthStore.setState({ status: "signedOut", role: null, userId: null, profileId: null });
     }
   }
 });

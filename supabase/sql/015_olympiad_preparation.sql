@@ -38,6 +38,7 @@ create table if not exists public.olympiad_packages (
   price_amount         numeric(10,2) not null default 0,
   currency             text not null default 'AZN',
   questions_per_attempt integer not null default 25 check (questions_per_attempt > 0),
+  duration_minutes     int not null default 25 check (duration_minutes between 5 and 240), -- attempt time limit (migration 047; drives deadline_at)
   event_starts_at      timestamptz,                          -- planned event date shown to students (Round 8; NULL = undated)
   status               public.catalog_status not null default 'inactive', -- active = listed; archived = delisted (purchasers keep access)
   created_by           uuid references public.profiles (id) on delete set null,

@@ -454,7 +454,7 @@ select '30_wallpapers_single_media_fk' as check_name,
 --     executable by anon.
 select '31_analytics_rpcs_secure' as check_name,
        case when has_function_privilege('anon',
-                   'public.get_child_subject_dashboard(uuid,uuid,int)', 'EXECUTE') = false
+                   'public.get_child_subject_dashboard(uuid,uuid,int,text)', 'EXECUTE') = false
              and has_function_privilege('anon',
                    'public.get_admin_platform_overview()', 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
@@ -851,6 +851,63 @@ select '57_mobile_config_shape' as check_name,
              and public.get_mobile_config()->'version'->'ios' is not null
              and public.get_mobile_config()->'version'->'android' is not null
              and (public.get_mobile_config()->'payment'->>'mode') in ('real','demo','giveaway','off')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 58) Round 18 engine guarantees (migrations 046/047/048): question-scope
+--     separation filters stay in BOTH general draw RPCs and the olympiad draw
+--     stays package-scoped; olympiad attempts are TIMED (jsonb return + package
+--     duration column); analytics separates answered/skipped; leaderboard rows
+--     are named with context (no anonymization tag).
+select '58_round18_engine_guarantees' as check_name,
+       case when position('olympiad_package_id is null'
+                          in pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)) > 0
+             and position('olympiad_package_id is null'
+                          in pg_get_functiondef('public.start_topic_test_attempt(uuid,uuid[],uuid[])'::regprocedure)) > 0
+             and position('olympiad_package_id = p_package_id'
+                          in pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) > 0
+             and pg_get_function_result('public.start_olympiad_attempt(uuid)'::regprocedure) = 'jsonb'
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='olympiad_packages'
+                            and column_name='duration_minutes')
+             and position('skipped' in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
+             and pg_get_function_result('public.get_leaderboard(text,text,uuid,text,int)'::regprocedure) not like '%anon_tag%'
+             and pg_get_function_result('public.get_leaderboard(text,text,uuid,text,int)'::regprocedure) like '%grade_level%'
+            then 'PASS' else 'FAIL' end as status;
+
+-- 59) Taxonomy module scope (migration 050): topics.scope exists; the general
+--     bulk import resolves/creates ONLY exam-scoped topics and the olympiad
+--     package import ONLY olympiad-scoped ones; no olympiad-scoped topic may
+--     ever be referenced by a general-bank question.
+select '59_taxonomy_module_scope' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='topics'
+                            and column_name='scope')
+             and position('scope = ''exam'''
+                          in pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure)) > 0
+             and position('scope = ''olympiad'''
+                          in pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb)'::regprocedure)) > 0
+             and not exists (select 1
+                               from public.topics t
+                               join public.questions q on q.topic_id = t.id
+                              where t.scope = 'olympiad'
+                                and q.olympiad_package_id is null)
+            then 'PASS' else 'FAIL' end as status;
+
+-- 60) Analytics module scope (migration 051): exactly ONE dashboard signature
+--     (PostgREST rejects ambiguous overloads); it filters attempts by kind per
+--     scope, defaults unknown scopes to 'tests', and carries the olympiad
+--     per_package breakdown.
+select '60_analytics_module_scope' as check_name,
+       case when (select count(*) from pg_proc p
+                    join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public'
+                     and p.proname = 'get_child_subject_dashboard') = 1
+             and position('ta.kind = ''olympiad'''
+                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
+             and position('ta.kind <> ''olympiad'''
+                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
+             and position('per_package'
+                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

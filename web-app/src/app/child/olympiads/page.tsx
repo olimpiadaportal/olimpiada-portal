@@ -7,6 +7,7 @@
 // Business ruling (2026-07-06): olympiad packages are ALWAYS purchase-only —
 // giveaway windows / free-access intervals cover SUBJECT access only, never
 // olympiad play. Playable = owned purchases; the planned section always shows.
+import Link from "next/link";
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
@@ -23,10 +24,10 @@ type StatusKind = PlannedOlympiad["statusKind"];
 export default async function ChildOlympiadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ err?: string }>;
+  searchParams: Promise<{ err?: string; notice?: string }>;
 }) {
   const child = await requireChild();
-  const { err } = await searchParams;
+  const { err, notice } = await searchParams;
   const locale = await getLocale();
   const t = await getT();
   // Module gate (admin Settings): friendly notice instead of the package list.
@@ -41,27 +42,62 @@ export default async function ChildOlympiadsPage({
   }
   const supabase = await createClient();
 
-  const [{ data: packages }, { data: purchases }] = await Promise.all([
-    // Active listing is publicly browsable (RLS); covers resolve via the public
-    // olympiad-media bucket like the parent olympiads page / news covers.
-    supabase
-      .from("olympiad_packages")
-      .select(
-        "id, price_amount, currency, questions_per_attempt, event_starts_at, subjects(name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
-      )
-      .eq("status", "active")
-      .order("created_at"),
-    supabase
-      .from("olympiad_purchases")
-      .select(
-        "olympiad_package_id, status, olympiad_packages(questions_per_attempt, olympiad_package_translations(locale, title))",
-      )
-      .eq("student_profile_id", child.profileId)
-      .eq("status", "active"),
-  ]);
+  const [{ data: packages }, { data: purchases }, { data: openAttempts }] =
+    await Promise.all([
+      // Active listing is publicly browsable (RLS); covers resolve via the public
+      // olympiad-media bucket like the parent olympiads page / news covers.
+      supabase
+        .from("olympiad_packages")
+        .select(
+          "id, price_amount, currency, questions_per_attempt, event_starts_at, subjects(name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+        )
+        .eq("status", "active")
+        .order("created_at"),
+      supabase
+        .from("olympiad_purchases")
+        .select(
+          "olympiad_package_id, status, olympiad_packages(questions_per_attempt, olympiad_package_translations(locale, title))",
+        )
+        .eq("student_profile_id", child.profileId)
+        .eq("status", "active"),
+      // Migration 047: olympiad attempts are TIMED on the shared test engine —
+      // a still-running one (deadline not passed) surfaces as a "continue" card
+      // exactly like the test home does for kind='test'.
+      supabase
+        .from("test_attempts")
+        .select("id, deadline_at, question_ids")
+        .eq("student_profile_id", child.profileId)
+        .eq("kind", "olympiad")
+        .eq("status", "in_progress")
+        .order("started_at", { ascending: false })
+        .limit(1),
+    ]);
 
   const owned = (purchases ?? []) as any[];
   const ownedIds = new Set(owned.map((p) => p.olympiad_package_id));
+
+  // Live attempt (server deadline still running); resolve which package it
+  // belongs to via its first drawn question (each pool question is PRIVATE to
+  // exactly one package) so its card's button can read "Continue".
+  const liveRow = ((openAttempts ?? []) as any[]).find(
+    (r) => r.deadline_at && new Date(r.deadline_at).getTime() > Date.now(),
+  );
+  let livePackageId: string | null = null;
+  if (liveRow) {
+    const firstQid = Array.isArray(liveRow.question_ids)
+      ? liveRow.question_ids[0]
+      : null;
+    if (firstQid) {
+      const { data: qRow } = await supabase
+        .from("questions")
+        .select("olympiad_package_id")
+        .eq("id", firstQid)
+        .maybeSingle();
+      livePackageId =
+        (qRow as { olympiad_package_id?: string | null } | null)
+          ?.olympiad_package_id ?? null;
+    }
+  }
 
   const pickTr = (trs: any[]) =>
     (trs ?? []).find((x: any) => x.locale === locale) ??
@@ -161,10 +197,41 @@ export default async function ChildOlympiadsPage({
       <p className="arena-eyebrow">{t("oly4.eyebrow")}</p>
       <h1 style={{ marginBottom: 20 }}>{t("oly4.pageTitle")}</h1>
 
-      {err && (
-        <div className="arena-panel arena-muted" role="alert" style={{ marginBottom: 16 }}>
+      {notice === "closed" && <div className="tst-notice">{t("oly5.noticeClosed")}</div>}
+      {err === "noaccess" && (
+        <div className="tst-notice warn" role="alert">
+          {t("oly5.errNoAccess")}
+        </div>
+      )}
+      {err === "empty" && (
+        <div className="tst-notice warn" role="alert">
+          {t("oly5.errEmpty")}
+        </div>
+      )}
+      {err && err !== "noaccess" && err !== "empty" && (
+        <div className="tst-notice warn" role="alert">
           {t("test.err.generic")}
         </div>
+      )}
+
+      {liveRow && (
+        <Link href={`/child/test/run/${liveRow.id}`} className="tst-continue">
+          <div className="tst-continue-body">
+            <strong>{t("oly5.continueTitle")}</strong>
+            <span className="arena-muted">
+              {(() => {
+                const lp = livePackageId
+                  ? owned.find((p) => p.olympiad_package_id === livePackageId)
+                  : null;
+                const title = lp ? ownedTitle(lp) : null;
+                return title && title !== "—"
+                  ? `${title} · ${t("test.home.continueSub")}`
+                  : t("test.home.continueSub");
+              })()}
+            </span>
+          </div>
+          <span className="arena-btn arena-btn-sm">{t("test.home.continueCta")}</span>
+        </Link>
       )}
 
       <section className="oly4-section">
@@ -197,8 +264,12 @@ export default async function ChildOlympiadsPage({
                 </div>
                 <form action={startOlympiad}>
                   <input type="hidden" name="package_id" value={p.id} />
+                  {/* The RPC TRUE-resumes the one open olympiad attempt, so the
+                      live attempt's own package reads "Continue" (047). */}
                   <button className="arena-btn arena-btn-sm" type="submit">
-                    {t("oly3.start")}
+                    {livePackageId === p.id
+                      ? t("test.home.continueCta")
+                      : t("oly3.start")}
                   </button>
                 </form>
               </div>

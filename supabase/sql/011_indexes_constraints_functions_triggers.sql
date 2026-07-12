@@ -1019,13 +1019,16 @@ begin
         end if;
       end if;
 
+      -- Module scope (migration 050): the general bank lives in 'exam' scope —
+      -- never resolve into (or create inside) olympiad-scoped taxonomy.
       v_topic := null; v_subtopic := null;
       if coalesce(v_item->'meta'->>'topic','') <> '' then
         select id into v_topic from public.topics
-          where subject_id = v_subject and name = (v_item->'meta'->>'topic') limit 1;
+          where subject_id = v_subject and name = (v_item->'meta'->>'topic')
+            and scope = 'exam' limit 1;
         if v_topic is null then
-          insert into public.topics (subject_id, grade_id, name)
-          values (v_subject, v_grade, v_item->'meta'->>'topic') returning id into v_topic;
+          insert into public.topics (subject_id, grade_id, name, scope)
+          values (v_subject, v_grade, v_item->'meta'->>'topic', 'exam') returning id into v_topic;
         end if;
         if coalesce(v_item->'meta'->>'subtopic','') <> '' then
           select id into v_subtopic from public.subtopics
@@ -1103,7 +1106,9 @@ end;
 $$;
 
 comment on function public.bulk_insert_questions(jsonb, text) is
-  'Atomic per-item bulk question import (az/en/ru). Caller must hold content.create (checked internally). created_by derived from session. Not anon-executable.';
+  'Atomic per-item bulk question import (az/en/ru) into the GENERAL bank; taxonomy '
+  'resolve-or-create stays inside exam scope (migration 050). Caller must hold '
+  'content.create (checked internally). created_by derived from session. Not anon-executable.';
 
 -- EXECUTE: authenticated content authors + service_role; never anon/public.
 revoke all on function public.bulk_insert_questions(jsonb, text) from public, anon;
@@ -2151,24 +2156,30 @@ $$;
 comment on function public.purchase_olympiad(uuid, uuid) is
   'Parent one-time LIFETIME purchase of an olympiad package for a child. service_role only (payment stubbed). Past-event packages are not sellable.';
 
-create or replace function public.start_olympiad_attempt(p_package_id uuid)
-returns uuid
+-- Migration 047: olympiad attempts run on the TIMED test engine (jsonb return,
+-- TRUE resume, deadline from olympiad_packages.duration_minutes, pre-inserted
+-- answer rows). Drop first — the return type changed from uuid to jsonb.
+drop function if exists public.start_olympiad_attempt(uuid);
+
+create function public.start_olympiad_attempt(p_package_id uuid)
+returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_student uuid := public.current_profile_id();
-  v_subject uuid;
-  v_n_per   int;
-  v_attempt uuid;
-  v_n       int;
+  v_student  uuid := public.current_profile_id();
+  v_pkg      record;
+  v_duration int;
+  v_existing record;
+  v_qids     uuid[];
+  v_attempt  uuid;
+  v_deadline timestamptz;
 begin
   if v_student is null then raise exception 'olympiad: not authenticated'; end if;
+
   -- Purchase-only (owner ruling 2026-07-06, migration 038): free-access/trial/
   -- giveaway windows cover SUBJECTS only — olympiad packages are always bought.
-  -- The Round-11/12 free-play fallback (giveaway or free-access interval opened
-  -- ACTIVE-catalog packages without a purchase) was removed.
   if not exists (
     select 1 from public.olympiad_purchases
     where student_profile_id = v_student and olympiad_package_id = p_package_id and status = 'active'
@@ -2176,16 +2187,38 @@ begin
     raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
   end if;
 
-  select subject_id, questions_per_attempt into v_subject, v_n_per
+  select id, subject_id, coalesce(questions_per_attempt, 25) as n_per,
+         coalesce(duration_minutes, 25) as dur_min
+    into v_pkg
   from public.olympiad_packages where id = p_package_id;
-  v_n_per := coalesce(v_n_per, 25);
+  if v_pkg.id is null then
+    raise exception 'olympiad: package not found' using errcode = 'no_data_found';
+  end if;
+  v_duration := v_pkg.dur_min * 60;
 
-  insert into public.test_attempts (student_profile_id, subject_id, kind, status)
-  values (v_student, v_subject, 'olympiad', 'in_progress')
-  returning id into v_attempt;
+  -- TRUE resume: one open olympiad attempt at a time (test-engine parity).
+  -- Still-running -> return it; past-deadline -> expire it and start fresh.
+  select id, deadline_at, duration_seconds into v_existing
+  from public.test_attempts
+  where student_profile_id = v_student and kind = 'olympiad' and status = 'in_progress'
+  order by started_at desc
+  limit 1;
+  if v_existing.id is not null then
+    if v_existing.deadline_at is not null and v_existing.deadline_at > now() then
+      return jsonb_build_object(
+        'attempt_id', v_existing.id, 'resumed', true,
+        'deadline_at', v_existing.deadline_at,
+        'duration_seconds', coalesce(v_existing.duration_seconds, v_duration));
+    end if;
+    update public.test_attempts
+       set status = (case when v_existing.deadline_at is null
+                          then 'abandoned' else 'expired' end)::public.attempt_status,
+           updated_at = now()
+     where id = v_existing.id;
+  end if;
 
-  -- PRIVATE pool: questions assigned to this package only (Batch D).
-  with picked as (
+  -- PRIVATE pool: questions assigned to this package only (Batch D — unchanged).
+  select coalesce(array_agg(id), '{}') into v_qids from (
     select q.id
     from public.questions q
     where q.olympiad_package_id = p_package_id
@@ -2195,21 +2228,38 @@ begin
       )
       and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct)
     order by random()
-    limit greatest(1, v_n_per)
-  )
-  insert into public.test_attempt_answers (attempt_id, question_id)
-  select v_attempt, id from picked;
-  get diagnostics v_n = row_count;
-  if v_n = 0 then
+    limit greatest(1, v_pkg.n_per)
+  ) picked;
+
+  if cardinality(v_qids) = 0 then
     raise exception 'olympiad: no questions in package pool' using errcode = 'no_data_found';
   end if;
 
-  return v_attempt;
+  v_deadline := now() + make_interval(secs => v_duration);
+
+  insert into public.test_attempts
+    (student_profile_id, subject_id, kind, status,
+     question_ids, deadline_at, duration_seconds)
+  values
+    (v_student, v_pkg.subject_id, 'olympiad', 'in_progress',
+     v_qids, v_deadline, v_duration)
+  returning id into v_attempt;
+
+  insert into public.test_attempt_answers (attempt_id, question_id)
+  select v_attempt, unnest(v_qids);
+
+  return jsonb_build_object(
+    'attempt_id', v_attempt, 'resumed', false,
+    'deadline_at', v_deadline, 'duration_seconds', v_duration,
+    'count', cardinality(v_qids));
 end;
 $$;
 
 comment on function public.start_olympiad_attempt(uuid) is
-  'Child starts an olympiad attempt on a PURCHASED package (25 random from the package''s private pool). Purchase-only in every mode — free-access/trial/giveaway never open packages (owner ruling 2026-07-06).';
+  'Child starts/resumes a TIMED olympiad attempt on a PURCHASED package (server-random '
+  'draw from the package''s private pool; deadline from olympiad_packages.duration_minutes; '
+  'test-engine contract — the get/save/submit/cancel/review test RPCs drive the attempt). '
+  'Purchase-only in every mode (owner ruling 2026-07-06).';
 
 revoke all on function public.purchase_olympiad(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.purchase_olympiad(uuid, uuid) to service_role;
@@ -2292,13 +2342,17 @@ begin
         end if;
       end if;
 
+      -- Module scope (migration 050): olympiad uploads live in 'olympiad' scope —
+      -- a topic name matching an exam topic yields a SEPARATE olympiad-scoped row,
+      -- so nothing ever surfaces inside the Exams module.
       v_topic := null; v_subtopic := null;
       if coalesce(v_item->'meta'->>'topic','') <> '' then
         select id into v_topic from public.topics
-          where subject_id = v_subject and name = (v_item->'meta'->>'topic') limit 1;
+          where subject_id = v_subject and name = (v_item->'meta'->>'topic')
+            and scope = 'olympiad' limit 1;
         if v_topic is null then
-          insert into public.topics (subject_id, grade_id, name)
-          values (v_subject, v_grade, v_item->'meta'->>'topic') returning id into v_topic;
+          insert into public.topics (subject_id, grade_id, name, scope)
+          values (v_subject, v_grade, v_item->'meta'->>'topic', 'olympiad') returning id into v_topic;
         end if;
         if coalesce(v_item->'meta'->>'subtopic','') <> '' then
           select id into v_subtopic from public.subtopics
@@ -2369,7 +2423,10 @@ end;
 $$;
 
 comment on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) is
-  'Bulk import of PRIVATE trilingual questions for one olympiad package (sets questions.olympiad_package_id, status published). Administrators only (checked internally). Not anon-executable.';
+  'Bulk import of PRIVATE trilingual questions for one olympiad package (sets '
+  'questions.olympiad_package_id, status published). Taxonomy resolve-or-create stays '
+  'inside olympiad scope (migration 050) so nothing surfaces in the Exams module. '
+  'Administrators only (checked internally). Not anon-executable.';
 
 revoke all on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) from public, anon;
 grant execute on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) to authenticated, service_role;
@@ -2384,7 +2441,8 @@ grant execute on function public.bulk_insert_olympiad_package_questions(uuid, js
 create or replace function public.get_child_subject_dashboard(
   p_student_profile_id uuid,
   p_subject_id uuid default null,
-  p_days int default 30
+  p_days int default 30,
+  p_scope text default 'tests'
 )
 returns jsonb
 language plpgsql
@@ -2394,6 +2452,9 @@ set search_path = public, pg_temp
 as $$
 declare
   v_days int := least(greatest(coalesce(p_days, 30), 1), 365);
+  -- Module scope (migration 051): 'tests' (default) or 'olympiads'; unknown
+  -- values coerce to 'tests' so pre-051 callers keep working unchanged.
+  v_scope text := case when p_scope = 'olympiads' then 'olympiads' else 'tests' end;
   v_result jsonb;
 begin
   -- Authorization: service role, admin, the linked parent, or the child itself.
@@ -2418,21 +2479,33 @@ begin
        and ta.status = 'graded'
        and ta.submitted_at >= now() - make_interval(days => v_days)
        and (p_subject_id is null or ta.subject_id = p_subject_id)
+       -- Module scope (migration 051): olympiad attempts never mix into the
+       -- Subjects analytics and vice versa.
+       and ((v_scope = 'olympiads' and ta.kind = 'olympiad')
+         or (v_scope = 'tests' and ta.kind <> 'olympiad'))
   ),
   ans as (
-    select a.is_correct, q.topic_id, q.subtopic_id, g.submitted_at
+    -- answered = a non-empty stored selection; empty selection = SKIPPED
+    -- (migration 046 — skipped must never count as wrong).
+    select a.attempt_id, a.is_correct,
+           coalesce(array_length(a.selected_option_ids, 1), 0) > 0 as answered,
+           q.topic_id, q.subtopic_id, q.olympiad_package_id, g.submitted_at
       from public.test_attempt_answers a
       join graded g on g.id = a.attempt_id
       join public.questions q on q.id = a.question_id
   )
   select jsonb_build_object(
+    'scope', v_scope,
     'totals', jsonb_build_object(
       'attempts',  (select count(*) from graded),
       'questions', (select count(*) from ans),
+      'answered',  (select count(*) filter (where answered) from ans),
       'correct',   (select count(*) filter (where is_correct) from ans),
-      'wrong',     (select count(*) filter (where not is_correct) from ans),
+      'wrong',     (select count(*) filter (where answered and not is_correct) from ans),
+      'skipped',   (select count(*) filter (where not answered) from ans),
       'accuracy',  (select round(count(*) filter (where is_correct)::numeric
-                                 / nullif(count(*), 0) * 100, 1) from ans)
+                                 / nullif(count(*) filter (where answered), 0) * 100, 1)
+                      from ans)
     ),
     'time_spent_minutes', (select round(coalesce(sum(minutes_spent), 0)) from graded),
     'last_activity', (select max(submitted_at) from graded),
@@ -2445,44 +2518,75 @@ begin
                      from graded group by 1) c on c.dt = d::date
     ),
     'accuracy_trend', (
+      -- accuracy per day over ANSWERED questions only (046); zero-answered days
+      -- are omitted (they would otherwise chart as a false 0%).
       select coalesce(jsonb_agg(jsonb_build_object(
-               'date', dt, 'accuracy', round(cor::numeric / nullif(tot, 0) * 100, 1))
+               'date', dt, 'accuracy', round(cor::numeric / nullif(answ, 0) * 100, 1))
                order by dt), '[]'::jsonb)
         from (select submitted_at::date dt,
-                     count(*) tot,
+                     count(*) filter (where answered) answ,
                      count(*) filter (where is_correct) cor
-                from ans group by 1) t
+                from ans group by 1
+              having count(*) filter (where answered) > 0) t
     ),
     'per_topic', (
+      -- zero-answered topics excluded (046): strongest/weakest must never rank
+      -- a topic nobody actually answered.
       select coalesce(jsonb_agg(jsonb_build_object(
                'topic_id', x.topic_id, 'topic', x.tname,
-               'answered', x.tot, 'correct', x.cor, 'wrong', x.tot - x.cor,
-               'accuracy', round(x.cor::numeric / nullif(x.tot, 0) * 100, 1))
-               order by x.tot desc, x.tname), '[]'::jsonb)
-        from (select a.topic_id, t.name as tname, count(*) tot,
-                     count(*) filter (where a.is_correct) cor
+               'answered', x.answ, 'correct', x.cor,
+               'wrong', x.answ - x.cor, 'skipped', x.skp,
+               'accuracy', round(x.cor::numeric / nullif(x.answ, 0) * 100, 1))
+               order by x.answ desc, x.tname), '[]'::jsonb)
+        from (select a.topic_id, t.name as tname,
+                     count(*) filter (where a.answered) answ,
+                     count(*) filter (where a.is_correct) cor,
+                     count(*) filter (where not a.answered) skp
                 from ans a
                 join public.topics t on t.id = a.topic_id
-               group by a.topic_id, t.name) x
+               group by a.topic_id, t.name
+              having count(*) filter (where a.answered) > 0) x
     ),
     'mistakes', (
       select coalesce(jsonb_agg(jsonb_build_object(
                'topic', y.tname, 'subtopic', y.sname,
                'wrong', y.wrong,
-               'accuracy', round(y.cor::numeric / nullif(y.tot, 0) * 100, 1))
+               'accuracy', round(y.cor::numeric / nullif(y.answ, 0) * 100, 1))
                order by y.wrong desc), '[]'::jsonb)
         from (select t.name as tname,
                      coalesce(st.name, '—') as sname,
-                     count(*) tot,
+                     count(*) filter (where a.answered) answ,
                      count(*) filter (where a.is_correct) cor,
-                     count(*) filter (where not a.is_correct) wrong
+                     count(*) filter (where a.answered and not a.is_correct) wrong
                 from ans a
                 join public.topics t on t.id = a.topic_id
                 left join public.subtopics st on st.id = a.subtopic_id
                group by t.name, coalesce(st.name, '—')
-              having count(*) filter (where not a.is_correct) > 0
-               order by count(*) filter (where not a.is_correct) desc
+              having count(*) filter (where a.answered and not a.is_correct) > 0
+               order by count(*) filter (where a.answered and not a.is_correct) desc
                limit 10) y
+    ),
+    'per_package', (
+      -- Olympiad scope only (051): per-package breakdown through the attempt
+      -- questions' private-pool link. Title is the az translation (the UI may
+      -- re-localize from its own catalog); '[]' under tests scope.
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'package_id', z.pkg, 'title', z.title,
+               'attempts', z.att, 'answered', z.answ, 'correct', z.cor,
+               'wrong', z.answ - z.cor, 'skipped', z.skp,
+               'accuracy', round(z.cor::numeric / nullif(z.answ, 0) * 100, 1))
+               order by z.att desc, z.title), '[]'::jsonb)
+        from (select a.olympiad_package_id as pkg,
+                     coalesce((select tr.title from public.olympiad_package_translations tr
+                                where tr.olympiad_package_id = a.olympiad_package_id
+                                  and tr.locale = 'az' limit 1), '—') as title,
+                     count(distinct a.attempt_id) att,
+                     count(*) filter (where a.answered) answ,
+                     count(*) filter (where a.is_correct) cor,
+                     count(*) filter (where not a.answered) skp
+                from ans a
+               where v_scope = 'olympiads' and a.olympiad_package_id is not null
+               group by a.olympiad_package_id) z
     )
   ) into v_result;
 
@@ -2490,14 +2594,16 @@ begin
 end;
 $$;
 
-comment on function public.get_child_subject_dashboard(uuid, uuid, int) is
-  'Per-child (optionally per-subject) analytics over graded attempts in a rolling window: '
-  'totals/accuracy/time/last-activity + 7-day activity, accuracy trend, per-topic rows, '
-  'mistakes breakdown. Callable by admins, the linked parent, or the child (in-body check).';
+comment on function public.get_child_subject_dashboard(uuid, uuid, int, text) is
+  'Per-child analytics over graded attempts in a rolling window, module-scoped '
+  '(migration 051): p_scope tests (default; kind<>olympiad) or olympiads (kind=olympiad, '
+  'adds per_package). Answer states separated (046): wrong counts only answered-and-'
+  'incorrect; skipped is its own metric; accuracy uses answered as the denominator. '
+  'Callable by admins, the linked parent, or the child.';
 
-revoke all on function public.get_child_subject_dashboard(uuid, uuid, int)
+revoke all on function public.get_child_subject_dashboard(uuid, uuid, int, text)
   from public, anon;
-grant execute on function public.get_child_subject_dashboard(uuid, uuid, int)
+grant execute on function public.get_child_subject_dashboard(uuid, uuid, int, text)
   to authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
@@ -3185,16 +3291,20 @@ declare
   v_tests int;
   v_other int;
 begin
+  -- Timed attempts (tests AND olympiads since migration 047): hard-expire past
+  -- the deadline (5-min grace, matching the submit-side 60s grace generously).
   update public.test_attempts
      set status = 'expired', updated_at = now()
-   where kind = 'test' and status = 'in_progress'
+   where kind in ('test', 'olympiad') and status = 'in_progress'
      and deadline_at is not null
      and deadline_at + interval '5 minutes' < now();
   get diagnostics v_tests = row_count;
 
+  -- Deadline-less attempts (practice, daily, legacy olympiad rows): 24h abandon.
   update public.test_attempts
      set status = 'abandoned', updated_at = now()
    where kind in ('practice', 'olympiad', 'daily') and status = 'in_progress'
+     and deadline_at is null
      and started_at < now() - interval '24 hours';
   get diagnostics v_other = row_count;
 
@@ -3393,14 +3503,22 @@ create trigger trg_award_points_on_graded
 --
 
 -- Internal: full ranked set for one board/scope/period. service-internal only.
-create or replace function public.lb_rows(
+-- Migration 048: board rows carry the student's city/school/grade context and
+-- get_leaderboard ALWAYS returns the "First L." display name (server-formatted;
+-- the full last name and every internal id stay in the DB). Return types
+-- changed -> drop both before recreating.
+drop function if exists public.get_leaderboard(text, text, uuid, text, int);
+drop function if exists public.lb_rows(text, text, uuid, text);
+
+create function public.lb_rows(
   p_board    text,          -- 'points' | 'streak'
   p_scope    text,          -- 'global' | 'subject' | 'grade' | 'city' | 'school'
   p_scope_id uuid,
   p_period   text           -- 'month' | 'all_time' (points only)
 )
 returns table (profile_id uuid, value numeric, best_streak int, last_points_at timestamptz,
-               first_name text, last_name text, child_unique_id text)
+               first_name text, last_name text,
+               city_name text, school_name text, grade_level int)
 language plpgsql
 stable
 security definer
@@ -3425,15 +3543,19 @@ begin
              -- lazy expiry: a streak is live only if active today or yesterday (local)
              case when st.last_active_date >= (now() at time zone coalesce(st.streak_tz,'Asia/Baku'))::date - 1
                   then st.current_streak else 0 end::numeric,
-             st.best_streak, st.last_points_at, st.first_name, st.last_name, st.child_unique_id
+             st.best_streak, st.last_points_at, st.first_name, st.last_name,
+             d.name, sc.name, g.level::int
       from public.students st
+      left join public.districts d on d.id = st.district_id
+      left join public.schools  sc on sc.id = st.school_id
+      left join public.grades    g on g.id = st.grade_id
       where st.current_streak > 0
         and st.last_active_date >= (now() at time zone coalesce(st.streak_tz,'Asia/Baku'))::date - 1;
   elsif p_scope = 'subject' then
     -- per-subject points come from the ledger (month filter on the board tz)
     return query
       select st.profile_id, l.pts, st.best_streak, st.last_points_at,
-             st.first_name, st.last_name, st.child_unique_id
+             st.first_name, st.last_name, d.name, sc.name, g.level::int
       from (
         select sl.student_profile_id, sum(sl.points) as pts
         from public.student_points_ledger sl
@@ -3443,6 +3565,9 @@ begin
         group by sl.student_profile_id
       ) l
       join public.students st on st.profile_id = l.student_profile_id
+      left join public.districts d on d.id = st.district_id
+      left join public.schools  sc on sc.id = st.school_id
+      left join public.grades    g on g.id = st.grade_id
       where l.pts > 0;
   else
     return query
@@ -3450,8 +3575,12 @@ begin
              case when p_period = 'all_time' then st.points_all_time
                   when st.points_month_key = v_mkey then st.points_month
                   else 0 end::numeric,
-             st.best_streak, st.last_points_at, st.first_name, st.last_name, st.child_unique_id
+             st.best_streak, st.last_points_at, st.first_name, st.last_name,
+             d.name, sc.name, g.level::int
       from public.students st
+      left join public.districts d on d.id = st.district_id
+      left join public.schools  sc on sc.id = st.school_id
+      left join public.grades    g on g.id = st.grade_id
       where (p_scope = 'global'
              or (p_scope = 'grade'  and st.grade_id    = p_scope_id)
              or (p_scope = 'city'   and st.district_id = p_scope_id)
@@ -3465,38 +3594,35 @@ $$;
 revoke all on function public.lb_rows(text, text, uuid, text) from public, anon, authenticated;
 grant execute on function public.lb_rows(text, text, uuid, text) to service_role;
 
--- Public board read: top-N, deterministic tie-break, privacy applied server-side.
-create or replace function public.get_leaderboard(
+-- Public board read: top-N, deterministic tie-break, named rows with context.
+create function public.get_leaderboard(
   p_board    text,
   p_scope    text default 'global',
   p_scope_id uuid default null,
   p_period   text default 'month',
   p_limit    int  default 100
 )
-returns table (rank int, display_name text, anon_tag text, value numeric, is_self boolean)
+returns table (rank int, display_name text, city text, school text,
+               grade_level int, value numeric, is_self boolean)
 language plpgsql
 stable
 security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_me     uuid := public.current_profile_id();
-  v_public boolean := coalesce((select nullif(value_json #>> '{}', '')::boolean
-                                  from public.system_settings
-                                 where key = 'leaderboard.public_display_names'), true);
-  v_limit  int := least(greatest(coalesce(p_limit, 100), 1), 100);
+  v_me    uuid := public.current_profile_id();
+  v_limit int := least(greatest(coalesce(p_limit, 100), 1), 100);
 begin
   if v_me is null then
     raise exception 'leaderboard: not authenticated';
   end if;
   return query
     select r.rn::int,
-           case when v_public or r.profile_id = v_me
-                then trim(coalesce(r.first_name, '') || ' ' ||
-                          coalesce(left(nullif(r.last_name, ''), 1) || '.', ''))
-                else null end,
-           case when v_public or r.profile_id = v_me then null
-                else right(coalesce(r.child_unique_id, '0000'), 4) end,
+           -- "Firstname L." for EVERYONE (owner ruling, migration 048): the
+           -- full last name and any internal id never leave the server.
+           trim(coalesce(r.first_name, '') || ' ' ||
+                coalesce(left(nullif(trim(r.last_name), ''), 1) || '.', '')),
+           r.city_name, r.school_name, r.grade_level,
            r.value, r.profile_id = v_me
     from (
       select t.*, row_number() over (
@@ -3509,7 +3635,9 @@ begin
 end;
 $$;
 comment on function public.get_leaderboard(text, text, uuid, text, int) is
-  'Live privacy-filtered board (points month/all_time per scope; streak global). Non-self rows are anonymized to a 4-digit tag when leaderboard.public_display_names is off. No client aggregation.';
+  'Live board (points month/all_time per scope; streak global): rank, "First L." display '
+  'name (always; formatted server-side), city/school/grade context, value, is_self. '
+  'No anonymization tag, no ids (migration 048). No client aggregation.';
 revoke all on function public.get_leaderboard(text, text, uuid, text, int) from public, anon;
 grant execute on function public.get_leaderboard(text, text, uuid, text, int) to authenticated, service_role;
 

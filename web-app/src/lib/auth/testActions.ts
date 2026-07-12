@@ -99,6 +99,23 @@ export async function startTopicTest(
   if (topicIds === null || subtopicIds === null) return { error: t("test.err.generic") };
 
   const supabase = await createClient();
+
+  // Owner fix (2026-07): topic selection is MANDATORY — and when any selected
+  // topic has active subtopics, a subtopic selection is mandatory too. Client
+  // validation is UX only; this is the real gate (trilingual message, no
+  // internals leaked).
+  if (topicIds.length === 0) return { error: t("test.setup.selectWarn") };
+  if (subtopicIds.length === 0) {
+    const { data: subsProbe, error: subsErr } = await supabase
+      .from("subtopics")
+      .select("id")
+      .in("topic_id", topicIds)
+      .eq("status", "active")
+      .limit(1);
+    if (subsErr) return { error: t("test.err.generic") };
+    if ((subsProbe ?? []).length > 0) return { error: t("test.setup.selectWarn") };
+  }
+
   const { data, error } = await supabase.rpc("start_topic_test_attempt", {
     p_subject_id: subjectId,
     p_topic_ids: topicIds,

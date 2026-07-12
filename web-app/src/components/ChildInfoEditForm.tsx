@@ -5,8 +5,20 @@
 // EDITS an existing child. Internal identifiers (8-digit login ID, profile id)
 // are shown READ-ONLY and are never sent as editable fields. All writes go
 // through the ownership-checked updateChildProfile server action.
+//
+// SUBMIT MODEL (bug fix): the form is fully controlled and the action is
+// dispatched manually inside startTransition with a FormData built FROM STATE
+// — never via the native <form action> flow. Two reasons:
+//   1. React 19 auto-resets a form's DOM fields after a <form action>
+//      completes, which visibly wiped the selects/inputs here;
+//   2. building FormData from state guarantees every field the server action
+//      expects (first_name/last_name/district_id/school_id/grade_id) is posted
+//      with exactly the value on screen.
+// So entered values stay visible during and after Save, on success AND on error.
 import Link from "next/link";
-import { useActionState, useMemo, useState } from "react";
+import { startTransition, useActionState, useMemo, useState } from "react";
+import { useLocale } from "@/i18n/I18nProvider";
+import { formatGradeLabel } from "@/lib/gradeLabel";
 import { updateChildProfile, type UpdateChildState } from "@/lib/auth/parentService";
 
 type City = { id: string; name: string };
@@ -17,6 +29,12 @@ type School = {
   is_private?: boolean;
 };
 type Grade = { id: string; level: number; name: string };
+
+// Per-field client validation messages (i18n KEYS — the server returns the
+// same keys, so both layers localize identically).
+type FieldErrors = Partial<
+  Record<"first" | "last" | "city" | "school" | "grade", string>
+>;
 
 export function ChildInfoEditForm({
   studentProfileId,
@@ -42,6 +60,7 @@ export function ChildInfoEditForm({
   dict: Record<string, string>;
 }) {
   const tt = (k: string) => dict[k] ?? k;
+  const locale = useLocale();
   const [state, action, pending] = useActionState<UpdateChildState, FormData>(
     updateChildProfile,
     null,
@@ -52,9 +71,11 @@ export function ChildInfoEditForm({
   const [districtId, setDistrictId] = useState(initial.districtId);
   const [schoolId, setSchoolId] = useState(initial.schoolId);
   const [gradeId, setGradeId] = useState(initial.gradeId);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   // Schools available for the chosen city (same client-side filter the wizard
-  // uses). Reset the school when the city changes so a stale school never posts.
+  // uses). Changing the city keeps the selected school ONLY if it belongs to
+  // the new city; otherwise it clears so a stale school never posts.
   const citySchools = useMemo(
     () => (districtId ? schools.filter((s) => s.district_id === districtId) : []),
     [districtId, schools],
@@ -62,27 +83,78 @@ export function ChildInfoEditForm({
   const hasPrivate = citySchools.some((s) => s.is_private);
   const hasPublic = citySchools.some((s) => !s.is_private);
 
-  // Free-text fallbacks stored alongside the structured FKs (kept in sync so the
-  // child's read-only profile card shows a name even without the join).
-  const cityName = cities.find((c) => c.id === districtId)?.name ?? "";
-  const schoolName = citySchools.find((s) => s.id === schoolId)?.name ?? "";
-  const gradeLabel = grades.find((g) => g.id === gradeId)?.name ?? "";
+  function handleCityChange(nextCityId: string) {
+    setDistrictId(nextCityId);
+    setSchoolId((prev) =>
+      prev && schools.find((s) => s.id === prev)?.district_id === nextCityId
+        ? prev
+        : "",
+    );
+  }
+
+  // Client-side required checks mirror the server's validateChildInfo (same
+  // i18n keys); the server re-validates authoritatively either way.
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (pending) return; // double-submit guard (button is also disabled)
+
+    const errs: FieldErrors = {};
+    if (!firstName.trim()) errs.first = "auth.child.err.firstNameRequired";
+    if (!lastName.trim()) errs.last = "auth.child.err.lastNameRequired";
+    if (!districtId) errs.city = "addchild.err.cityRequired";
+    if (!schoolId) errs.school = "addchild.err.schoolRequired";
+    if (!gradeId) errs.grade = "addchild.err.gradeRequired";
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    // Exact field names updateChildProfile reads. Free-text fallbacks (city /
+    // school_name / class_grade DB label) are derived from the selections so
+    // the child's read-only profile card shows a name even without the join.
+    const fd = new FormData();
+    fd.set("student_profile_id", studentProfileId);
+    fd.set("first_name", firstName.trim());
+    fd.set("last_name", lastName.trim());
+    fd.set("district_id", districtId);
+    fd.set("school_id", schoolId);
+    fd.set("grade_id", gradeId);
+    fd.set("city", cities.find((c) => c.id === districtId)?.name ?? "");
+    fd.set("school_name", citySchools.find((s) => s.id === schoolId)?.name ?? "");
+    fd.set("class_grade", grades.find((g) => g.id === gradeId)?.name ?? "");
+
+    startTransition(() => {
+      action(fd);
+    });
+  }
 
   return (
-    <form action={action} className="form">
-      <input type="hidden" name="student_profile_id" value={studentProfileId} />
-      {/* Free-text fallbacks derived from the current selections. */}
-      <input type="hidden" name="city" value={cityName} />
-      <input type="hidden" name="school_name" value={schoolName} />
-      <input type="hidden" name="class_grade" value={gradeLabel} />
-
+    <form onSubmit={handleSubmit} className="form" noValidate>
       <label className="field">
         <span className="field-label">{tt("parent.child.first")} *</span>
-        <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+        <input
+          name="first_name"
+          value={firstName}
+          onChange={(e) => setFirstName(e.target.value)}
+          maxLength={80}
+          required
+          aria-invalid={!!fieldErrors.first}
+        />
+        {fieldErrors.first && (
+          <span className="field-error">{tt(fieldErrors.first)}</span>
+        )}
       </label>
       <label className="field">
         <span className="field-label">{tt("parent.child.last")} *</span>
-        <input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+        <input
+          name="last_name"
+          value={lastName}
+          onChange={(e) => setLastName(e.target.value)}
+          maxLength={80}
+          required
+          aria-invalid={!!fieldErrors.last}
+        />
+        {fieldErrors.last && (
+          <span className="field-error">{tt(fieldErrors.last)}</span>
+        )}
       </label>
 
       <label className="field">
@@ -90,11 +162,9 @@ export function ChildInfoEditForm({
         <select
           name="district_id"
           value={districtId}
-          onChange={(e) => {
-            setDistrictId(e.target.value);
-            setSchoolId("");
-          }}
+          onChange={(e) => handleCityChange(e.target.value)}
           required
+          aria-invalid={!!fieldErrors.city}
         >
           <option value="">{tt("addchild.field.selectCity")}</option>
           {cities.map((c) => (
@@ -103,6 +173,9 @@ export function ChildInfoEditForm({
             </option>
           ))}
         </select>
+        {fieldErrors.city && (
+          <span className="field-error">{tt(fieldErrors.city)}</span>
+        )}
       </label>
 
       <label className="field">
@@ -113,6 +186,7 @@ export function ChildInfoEditForm({
           onChange={(e) => setSchoolId(e.target.value)}
           disabled={!districtId}
           required
+          aria-invalid={!!fieldErrors.school}
         >
           <option value="">
             {districtId ? tt("addchild.field.selectSchool") : tt("addchild.field.cityFirst")}
@@ -147,6 +221,9 @@ export function ChildInfoEditForm({
               ))
             ))}
         </select>
+        {fieldErrors.school && (
+          <span className="field-error">{tt(fieldErrors.school)}</span>
+        )}
       </label>
 
       <label className="field">
@@ -156,14 +233,18 @@ export function ChildInfoEditForm({
           value={gradeId}
           onChange={(e) => setGradeId(e.target.value)}
           required
+          aria-invalid={!!fieldErrors.grade}
         >
           <option value="">{tt("addchild.field.selectGrade")}</option>
           {grades.map((g) => (
             <option key={g.id} value={g.id}>
-              {g.level} — {g.name}
+              {formatGradeLabel(g.level, locale, g.name)}
             </option>
           ))}
         </select>
+        {fieldErrors.grade && (
+          <span className="field-error">{tt(fieldErrors.grade)}</span>
+        )}
       </label>
 
       {/* Read-only identifiers — display only, never editable. */}
@@ -179,7 +260,7 @@ export function ChildInfoEditForm({
       </div>
       <p className="hint">{tt("childedit.idNote")}</p>
 
-      {state?.ok && <p className="prof2-ok">{tt("childedit.saved")}</p>}
+      {state?.ok && !pending && <p className="prof2-ok">{tt("childedit.saved")}</p>}
       {state?.errors && state.errors.length > 0 && (
         <ul className="form-error">
           {state.errors.map((e, i) => (

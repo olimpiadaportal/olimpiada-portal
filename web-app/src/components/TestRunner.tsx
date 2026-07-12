@@ -8,6 +8,14 @@
 // submit/cancel through the shared Modal, beforeunload guard, and timer-zero
 // auto-submit (the server keeps a 60s grace). All strings arrive translated
 // via the dict; all writes go through the testActions server actions.
+//
+// Leave guard (owner fix, 2026-07): while the attempt is running, ANY
+// same-origin link click (top nav tabs, logo/home, notification links, …) and
+// the browser Back button first open a confirmation modal ("Continue Test" /
+// "Leave Test"). The runner's own controls are all <button>s — anchor-only
+// interception can never block prev/next/flag/save/submit/cancel or the
+// palette. Tab close / refresh / external links keep the native beforeunload
+// dialog. Applies identically to kind='test' and kind='olympiad' attempts.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
@@ -79,6 +87,8 @@ export function TestRunner({
   dict,
   subjectName = "",
   topicNames = [],
+  modeLabel = "",
+  exitHref = "/child/test",
 }: {
   attemptId: string;
   data: TestAttemptData;
@@ -88,6 +98,13 @@ export function TestRunner({
   subjectName?: string;
   /** Distinct topic names for the header (fetched server-side). */
   topicNames?: string[];
+  /**
+   * Pre-translated header label for non-topic attempts (kind:'olympiad' — the
+   * package title or a generic "Olympiad" label). Empty for regular tests.
+   */
+  modeLabel?: string;
+  /** Where cancel lands (test home by default; /child/olympiads for olympiads). */
+  exitHref?: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const router = useRouter();
@@ -131,6 +148,12 @@ export function TestRunner({
   const [submitting, setSubmitting] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [fatal, setFatal] = useState<string | null>(null);
+  // Leave guard: the intercepted destination ("back" = browser Back button);
+  // non-null = the confirmation modal is open. leavingRef silences the
+  // interceptors once the child confirmed leaving.
+  const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+  const leavingRef = useRef(false);
+  const aliveRef = useRef(true); // false once the leave-guard effect is torn down
 
   const answeredCount = useMemo(
     () => questions.filter((q) => answers[q.question_id]).length,
@@ -257,6 +280,85 @@ export function TestRunner({
     }
   }, [remaining]);
 
+  // ---- leave guard: intercept in-app link clicks + browser Back ----
+  useEffect(() => {
+    // Capture-phase document listener: runs BEFORE React's delegated handlers
+    // (Next's <Link> included), so preventDefault+stopPropagation reliably
+    // holds the navigation until the child confirms. Only same-origin,
+    // same-tab, primary-button anchor clicks are held; modifier/middle
+    // clicks and target="_blank" open elsewhere (this tab keeps running),
+    // and cross-origin links fall through to the beforeunload guard.
+    const onDocClickCapture = (e: MouseEvent) => {
+      if (finishedRef.current || leavingRef.current) return;
+      if (e.defaultPrevented || e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const el = e.target as Element | null;
+      const anchor = (el?.closest?.("a[href]") ?? null) as HTMLAnchorElement | null;
+      if (!anchor || anchor.hasAttribute("download")) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      let url: URL;
+      try {
+        url = new URL(anchor.href, window.location.href);
+      } catch {
+        return;
+      }
+      if (url.origin !== window.location.origin) return;
+      const here = window.location;
+      // In-page (hash-only) links never leave the runner.
+      if (url.pathname === here.pathname && url.search === here.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaveTarget(url.pathname + url.search + url.hash);
+    };
+    document.addEventListener("click", onDocClickCapture, true);
+
+    // History pinning: one sentinel entry sits on top of the player, so Back
+    // pops the sentinel (not the player). The handler re-pins and asks;
+    // confirming rewinds past both entries (see confirmLeave). The state
+    // check keeps dev strict-mode double-mounts from stacking two sentinels.
+    aliveRef.current = true;
+    if (!(window.history.state as { tstGuard?: boolean } | null)?.tstGuard) {
+      window.history.pushState({ tstGuard: true }, "", window.location.href);
+    }
+    const onPopState = () => {
+      if (finishedRef.current || leavingRef.current) return;
+      window.history.pushState({ tstGuard: true }, "", window.location.href);
+      setLeaveTarget("back");
+    };
+    window.addEventListener("popstate", onPopState);
+
+    return () => {
+      aliveRef.current = false;
+      document.removeEventListener("click", onDocClickCapture, true);
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, []);
+
+  function continueTest() {
+    setLeaveTarget(null);
+  }
+
+  function confirmLeave() {
+    if (leaveTarget === null) return;
+    leavingRef.current = true;
+    // Best-effort save of anything unsaved on the way out (SPA navigation
+    // keeps the request alive; the server autosave is the real safety net).
+    void flushRef.current();
+    if (leaveTarget === "back") {
+      // Stack is [..., previous, player, sentinel] — rewind past both.
+      window.history.go(-2);
+      // Rare fallback: opened as the tab's FIRST entry there is nothing to
+      // rewind to (go() is a silent no-op) — leave via the runner's home
+      // instead of staying stuck with the guards disarmed.
+      window.setTimeout(() => {
+        if (aliveRef.current && !finishedRef.current) router.replace(exitHref);
+      }, 400);
+    } else {
+      router.push(leaveTarget);
+    }
+    setLeaveTarget(null);
+  }
+
   // ---- interactions ----
   function goTo(i: number) {
     if (i < 0 || i >= total || i === idx) return;
@@ -290,7 +392,7 @@ export function TestRunner({
       const res = await cancelTest(attemptId);
       if (res.ok) {
         finishedRef.current = true;
-        router.replace("/child/test");
+        router.replace(exitHref);
         return;
       }
       setFatal(res.error);
@@ -337,15 +439,16 @@ export function TestRunner({
         </div>
       </div>
 
-      {/* Subject + topic(s) for this attempt (from server-fetched names). */}
-      {(subjectName || topicNames.length > 0) && (
+      {/* Subject + topic(s) — or the olympiad label — for this attempt
+          (from server-fetched names). */}
+      {(subjectName || topicNames.length > 0 || modeLabel) && (
         <div className="tst-meta">
           {subjectName && (
             <span className="tst-meta-item">
               <b>{tt("test.run.subject")}:</b> {subjectName}
             </span>
           )}
-          {subjectName && topicNames.length > 0 && (
+          {subjectName && (topicNames.length > 0 || modeLabel) && (
             <span className="tst-meta-sep" aria-hidden="true">
               ·
             </span>
@@ -353,6 +456,11 @@ export function TestRunner({
           {topicNames.length > 0 && (
             <span className="tst-meta-item">
               <b>{tt("test.run.topic")}:</b> {topicNames.join(", ")}
+            </span>
+          )}
+          {modeLabel && (
+            <span className="tst-meta-item">
+              <b>{modeLabel}</b>
             </span>
           )}
         </div>
@@ -545,6 +653,24 @@ export function TestRunner({
             disabled={canceling}
           >
             {canceling ? tt("test.run.canceling") : tt("test.run.cancelConfirm")}
+          </button>
+        </div>
+      </Modal>
+
+      {/* ---- Leave confirm (intercepted nav link / browser Back) ---- */}
+      <Modal
+        isOpen={leaveTarget !== null}
+        onClose={continueTest}
+        title={tt("test.run.leaveTitle")}
+        closeLabel={tt("test.run.leaveStay")}
+      >
+        <p className="modal-message">{tt("test.run.leaveMsg")}</p>
+        <div className="modal-actions">
+          <button type="button" className="btn-ghost" onClick={confirmLeave}>
+            {tt("test.run.leaveConfirm")}
+          </button>
+          <button type="button" className="btn" onClick={continueTest}>
+            {tt("test.run.leaveStay")}
           </button>
         </div>
       </Modal>

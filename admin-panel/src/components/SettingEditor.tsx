@@ -42,6 +42,10 @@ type FieldProps = {
   // Inclusive bounds for "number" fields (UX mirror of the server-side rule).
   min?: number;
   max?: number;
+  // Optional fixed choices for a "number" field: renders a <select> with these
+  // labelled values instead of a free numeric input (e.g. academic term 1..4).
+  // The stored JSON shape stays a bare number either way.
+  numberOptions?: { value: number; label: string }[];
   strings: SettingEditorStrings;
 };
 
@@ -170,6 +174,7 @@ function TextField({
   placeholder,
   min,
   max,
+  numberOptions,
   strings,
   kind,
 }: FieldProps & { kind: "text" | "email" | "phone" | "url" | "number" }) {
@@ -201,6 +206,8 @@ function TextField({
       : JSON.stringify(trimmed);
   const inputType =
     kind === "phone" ? "tel" : kind === "number" ? "number" : kind;
+  const asSelect =
+    kind === "number" && numberOptions !== undefined && numberOptions.length > 0;
 
   return (
     <FieldShell
@@ -214,16 +221,35 @@ function TextField({
       labelFor={inputId}
       saveDisabled={kind === "number" && !numberValid}
     >
-      <input
-        id={inputId}
-        className="sfield-control"
-        type={inputType}
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        placeholder={placeholder}
-        min={kind === "number" ? min : undefined}
-        max={kind === "number" ? max : undefined}
-      />
+      {asSelect ? (
+        <select
+          id={inputId}
+          className="sfield-control sfield-select"
+          value={v}
+          onChange={(e) => setV(e.target.value)}
+        >
+          {/* Force an explicit choice when the stored value is missing. */}
+          {!numberOptions!.some((o) => String(o.value) === v) && (
+            <option value="">—</option>
+          )}
+          {numberOptions!.map((o) => (
+            <option key={o.value} value={String(o.value)}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          id={inputId}
+          className="sfield-control"
+          type={inputType}
+          value={v}
+          onChange={(e) => setV(e.target.value)}
+          placeholder={placeholder}
+          min={kind === "number" ? min : undefined}
+          max={kind === "number" ? max : undefined}
+        />
+      )}
       <input type="hidden" name="value_json" value={serialized} />
     </FieldShell>
   );

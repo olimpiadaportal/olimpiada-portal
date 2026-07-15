@@ -1,44 +1,61 @@
 // Notification inbox UI pieces (mobile port of the web NotificationsPanel /
-// NotificationDetailModal): pure helpers (type→emoji map, category label key,
-// relative time — same rules as web-app/src/lib/notifications/types.ts), the
-// row, the category filter chips and the detail bottom sheet. The hook
-// (useNotifications.ts) owns all state; these components only render.
+// NotificationDetailModal, redesigned): pure helpers (type→lucide icon map,
+// category label key, relative time, day grouping — same rules as
+// web-app/src/lib/notifications/types.ts), the ListRow-anatomy row, the
+// category filter chips, the day section header and the detail bottom sheet.
+// The hook (useNotifications.ts) owns all state; these components only render.
 import React from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
+import {
+  Bell,
+  ChartColumn,
+  CreditCard,
+  Flame,
+  Gift,
+  Hourglass,
+  Medal,
+  Megaphone,
+  Newspaper,
+  Receipt,
+  Trash2,
+  Trophy,
+  type LucideIcon,
+} from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing } from "@/theme/tokens";
+import { radius, shadow, spacing } from "@/theme/tokens";
 import { RichBody } from "@/lib/notifMarkdown";
 import type { NotificationItem } from "./useNotifications";
 
 /* ------------------------------ pure helpers ------------------------------ */
 
-/** Emoji glyph per notification type (web iconForType parity). */
-export function iconForType(type: string | null): string {
+/** Lucide glyph per notification type (web iconForType parity, one icon
+ *  language — the emoji map is gone). */
+export function typeIcon(type: string | null): LucideIcon {
   switch (type) {
     case "olympiad_purchased":
-      return "\u{1F3C5}"; // medal
+      return Medal;
     case "attempt_graded":
-      return "\u{1F4CA}"; // bar chart
+      return ChartColumn;
     case "personal_best":
-      return "\u{1F3C6}"; // trophy
+      return Trophy;
     case "streak_milestone":
-      return "\u{1F525}"; // fire
+      return Flame;
     case "subscription_canceled":
-      return "\u{1F9FE}"; // receipt
+      return Receipt;
     case "subject_charge_failed":
-      return "\u{1F4B3}"; // card
+      return CreditCard;
     case "subject_expiring":
-      return "\u{23F3}"; // hourglass
+      return Hourglass;
     case "giveaway_ending":
-      return "\u{1F381}"; // gift
+      return Gift;
     case "news_published":
-      return "\u{1F4F0}"; // newspaper
+      return Newspaper;
     case "admin_announcement":
-      return "\u{1F4E3}"; // megaphone
+      return Megaphone;
     default:
-      return "\u{1F514}"; // bell
+      return Bell;
   }
 }
 
@@ -75,6 +92,60 @@ export function relativeTime(
   if (hours < 24) return `${hours} ${labels.hour}`;
   const days = Math.floor(hours / 24);
   return `${days} ${labels.day}`;
+}
+
+const INTL_LOCALE: Record<string, string> = { az: "az-AZ", en: "en-GB", ru: "ru-RU" };
+
+export type NotificationSection = {
+  key: string;
+  title: string;
+  data: NotificationItem[];
+};
+
+/**
+ * Group inbox items into DAY sections (list order preserved — the hook already
+ * sorts newest-first): today / yesterday get their labels, older days a locale
+ * date ("12 iyul" — year appended when it differs from the current one).
+ */
+export function groupByDay(
+  items: NotificationItem[],
+  labels: { today: string; yesterday: string },
+  locale: string,
+): NotificationSection[] {
+  const dayKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate(),
+    ).padStart(2, "0")}`;
+  const now = new Date();
+  const todayKey = dayKey(now);
+  const yesterdayKey = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+
+  const titleFor = (key: string, d: Date): string => {
+    if (key === todayKey) return labels.today;
+    if (key === yesterdayKey) return labels.yesterday;
+    try {
+      return new Intl.DateTimeFormat(INTL_LOCALE[locale] ?? locale, {
+        day: "numeric",
+        month: "long",
+        ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" as const } : {}),
+      }).format(d);
+    } catch {
+      return key;
+    }
+  };
+
+  const sections: NotificationSection[] = [];
+  let current: NotificationSection | null = null;
+  for (const n of items) {
+    const d = new Date(n.created_at);
+    const key = Number.isFinite(d.getTime()) ? dayKey(d) : "unknown";
+    if (!current || current.key !== key) {
+      current = { key, title: titleFor(key, d), data: [] };
+      sections.push(current);
+    }
+    current.data.push(n);
+  }
+  return sections;
 }
 
 /**
@@ -140,14 +211,19 @@ export function CategoryChips({
               accessibilityState={{ selected: on }}
               accessibilityLabel={c.label}
               onPress={() => onChange(c.value)}
-              style={{
+              android_ripple={{ color: tokens.pillBg }}
+              style={({ pressed }) => ({
                 paddingVertical: spacing.sm,
                 paddingHorizontal: spacing.lg,
-                borderRadius: radius.xl,
+                minHeight: 44,
+                justifyContent: "center",
+                borderRadius: 999,
                 backgroundColor: on ? tokens.accent : tokens.chipBg,
                 borderWidth: 1,
                 borderColor: on ? tokens.accent : tokens.border,
-              }}
+                opacity: pressed ? 0.85 : 1,
+                overflow: "hidden",
+              })}
             >
               <AppText variant="label" color={on ? "#ffffff" : tokens.chipText}>
                 {c.label}
@@ -157,6 +233,16 @@ export function CategoryChips({
         })}
       </View>
     </ScrollView>
+  );
+}
+
+/* ------------------------------ day header --------------------------------- */
+
+export function DayHeader({ title }: { title: string }) {
+  return (
+    <View style={{ paddingTop: spacing.md, paddingBottom: spacing.xs }}>
+      <AppText variant="eyebrow">{title}</AppText>
+    </View>
   );
 }
 
@@ -175,27 +261,47 @@ export function NotificationRow({
 }) {
   const { tokens } = useTheme();
   const unread = !item.read_at;
+  const Icon = typeIcon(item.type);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={item.title}
       onPress={onPress}
       onLongPress={onLongPress}
+      android_ripple={{ color: tokens.chipBg }}
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
         gap: spacing.md,
+        minHeight: 48,
         backgroundColor: unread ? tokens.chipBg : tokens.surface,
         borderWidth: 1,
         borderColor: tokens.border,
         borderRadius: radius.md,
         padding: spacing.md,
         opacity: pressed ? 0.85 : 1,
+        overflow: "hidden",
       })}
     >
-      <AppText style={{ fontSize: 22 }}>{iconForType(item.type)}</AppText>
+      {/* Leading icon squircle (ListRow anatomy). */}
+      <View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: radius.sm,
+          backgroundColor: unread ? tokens.pillBg : tokens.chipBg,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Icon size={18} color={unread ? tokens.accent : tokens.muted} strokeWidth={2} />
+      </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <AppText variant="label" numberOfLines={1} style={{ fontWeight: unread ? "700" : "600" }}>
+        <AppText
+          variant="label"
+          numberOfLines={1}
+          style={{ fontWeight: unread ? "700" : "600" }}
+        >
           {item.title}
         </AppText>
         {item.body ? (
@@ -239,6 +345,7 @@ export function NotificationDetailSheet({
   const d = new Date(item.created_at);
   const when = Number.isFinite(d.getTime()) ? d.toLocaleString() : "";
   const pairs = scalarPairs(item.data_json);
+  const Icon = typeIcon(item.type);
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -248,14 +355,17 @@ export function NotificationDetailSheet({
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
       />
       <View
-        style={{
-          backgroundColor: tokens.surface,
-          borderTopLeftRadius: radius.xl,
-          borderTopRightRadius: radius.xl,
-          padding: spacing.xl,
-          gap: spacing.lg,
-          maxHeight: "80%",
-        }}
+        style={[
+          {
+            backgroundColor: tokens.surface,
+            borderTopLeftRadius: radius.xl,
+            borderTopRightRadius: radius.xl,
+            padding: spacing.xl,
+            gap: spacing.lg,
+            maxHeight: "80%",
+          },
+          shadow("float", tokens.shadow),
+        ]}
       >
         <View
           style={{
@@ -267,16 +377,31 @@ export function NotificationDetailSheet({
           }}
         />
         <ScrollView contentContainerStyle={{ gap: spacing.lg }}>
-          <AppText variant="title">{item.title || t("notif.detailsTitle")}</AppText>
-
-          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-            <AppText style={{ fontSize: 16 }}>{iconForType(item.type)}</AppText>
-            <AppText variant="muted">{typeLabel}</AppText>
-            {when ? (
-              <AppText variant="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
-                {when}
+          {/* Header: icon squircle + category eyebrow + title + timestamp. */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: radius.md,
+                backgroundColor: tokens.pillBg,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Icon size={22} color={tokens.accent} strokeWidth={2} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <AppText variant="eyebrow">{typeLabel}</AppText>
+              <AppText variant="title" style={{ fontSize: 18 }}>
+                {item.title || t("notif.detailsTitle")}
               </AppText>
-            ) : null}
+              {when ? (
+                <AppText variant="muted" style={{ fontSize: 12 }}>
+                  {when}
+                </AppText>
+              ) : null}
+            </View>
           </View>
 
           {item.body ? (
@@ -286,8 +411,16 @@ export function NotificationDetailSheet({
           )}
 
           {pairs.length > 0 ? (
-            <View style={{ gap: spacing.sm }}>
-              <AppText variant="muted">{t("notif.detailsData")}</AppText>
+            <View
+              style={{
+                gap: spacing.sm,
+                borderRadius: radius.md,
+                borderWidth: 1,
+                borderColor: tokens.border,
+                padding: spacing.md,
+              }}
+            >
+              <AppText variant="eyebrow">{t("notif.detailsData")}</AppText>
               {pairs.map((p) => (
                 <View
                   key={p.key}
@@ -308,6 +441,7 @@ export function NotificationDetailSheet({
             <Button
               title={t("notif.delete")}
               variant="danger"
+              icon={<Trash2 size={18} color="#ffffff" strokeWidth={2} />}
               style={{ flex: 1 }}
               onPress={() => onDelete(item.id)}
             />

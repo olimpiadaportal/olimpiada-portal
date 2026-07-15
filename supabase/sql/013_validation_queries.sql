@@ -23,13 +23,12 @@ with expected(name) as (
   values
     ('profiles'),('roles'),('permissions'),('role_permissions'),('profile_roles'),
     ('parents'),('students'),('parent_student_links'),('child_login_attempts'),
-    ('districts'),('schools'),('grades'),('subjects'),('topics'),('subtopics'),
+    ('districts'),('city_districts'),('schools'),('grades'),('subjects'),('topics'),('subtopics'),
     ('question_types'),('difficulty_levels'),('olympiad_types'),('sources'),
     ('questions'),('question_translations'),('answer_options'),
     ('answer_option_translations'),('question_explanations'),('tests'),('test_questions'),
     ('question_imports'),
-    ('test_attempts'),('test_attempt_answers'),('daily_task_packages'),('daily_task_items'),
-    ('student_daily_task_progress'),('progress_snapshots'),
+    ('test_attempts'),('test_attempt_answers'),('daily_rounds'),('progress_snapshots'),
     ('leaderboard_periods'),('leaderboard_entries'),('leaderboard_snapshots'),
     ('achievements'),('student_achievements'),('question_analytics'),
     ('subscription_plans'),('subscriptions'),('payments'),('payment_events'),
@@ -254,14 +253,15 @@ where t.table_name is null;
 
 -- 17) Child provisioning is secure: the lockout log table exists AND the atomic
 --     create_child_account() function is NOT EXECUTE-grantable by clients
---     (authenticated/anon) — it is service_role only.
+--     (authenticated/anon) — it is service_role only. (Signature = the 11-arg
+--     Round-21 v2 with p_city_district_id.)
 select '17_child_provisioning_secure' as check_name,
        case when exists (select 1 from information_schema.tables
                           where table_schema='public' and table_name='child_login_attempts')
              and has_function_privilege('authenticated',
-                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid)', 'EXECUTE') = false
+                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)', 'EXECUTE') = false
              and has_function_privilege('anon',
-                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid)', 'EXECUTE') = false
+                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)', 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
 -- -----------------------------------------------------------------------------
@@ -691,11 +691,12 @@ select '48_access_lifecycle_and_retention' as check_name,
                           where conname = 'olympiad_purchases_owner_parent_profile_id_fkey' and confdeltype = 'n')
             then 'PASS' else 'FAIL' end as status;
 
--- 49) Test engine T0 + MCQ-only launch (migration 037): the six learner RPCs +
---     expiry sweep exist with the right grant posture; the single-open index and
---     attempt columns exist; the MCQ (multiple_choice) is the ONLY active
---     question type (exactly 5 options / 1 correct) and both bulk RPCs enforce
---     the per-type structure rules.
+-- 49) Test engine T0 + MCQ-only launch (migration 037; single_choice = the
+--     5-option MCQ since migration 055): the six learner RPCs + expiry sweep
+--     exist with the right grant posture; the single-open index and attempt
+--     columns exist; the MCQ (single_choice) is the ONLY active question type
+--     (exactly 5 options / 1 correct) and both bulk RPCs enforce the per-type
+--     structure rules.
 select '49_test_engine_and_mcq_rules' as check_name,
        case when to_regprocedure('public.start_topic_test_attempt(uuid,uuid[],uuid[])') is not null
              and to_regprocedure('public.get_test_attempt(uuid,text)') is not null
@@ -711,10 +712,10 @@ select '49_test_engine_and_mcq_rules' as check_name,
              and exists (select 1 from information_schema.columns
                           where table_schema='public' and table_name='test_attempts' and column_name='deadline_at')
              and exists (select 1 from public.question_types
-                          where code='multiple_choice' and status='active'
-                            and options_required=4 and correct_required=1)
+                          where code='single_choice' and status='active'
+                            and options_required=5 and correct_required=1)
              and not exists (select 1 from public.question_types
-                              where code <> 'multiple_choice' and status='active')
+                              where code <> 'single_choice' and status='active')
              and position('assert_question_type_rules' in
                    pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure)) > 0
              and position('assert_question_type_rules' in
@@ -908,6 +909,124 @@ select '60_analytics_module_scope' as check_name,
                           in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
              and position('per_package'
                           in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 61) Daily rounds engine (migrations 052/056/057): the daily_rounds table +
+--     start_daily_round_attempt exist; ONE rated attempt per student per round
+--     is DB-enforced (partial unique index); points fire only for RATED
+--     attempts; topic tests are UNTIMED practice (no c_duration constant) and
+--     olympiad attempts draw the WHOLE package pool (no 'limit greatest' cap).
+select '61_daily_rounds_engine' as check_name,
+       case when to_regclass('public.daily_rounds') is not null
+             and to_regprocedure('public.start_daily_round_attempt(uuid,text)') is not null
+             and exists (select 1 from pg_indexes
+                          where schemaname='public' and indexname='uq_rated_attempt_per_round')
+             and position('is_rated' in
+                   pg_get_functiondef('public.award_attempt_points(uuid)'::regprocedure)) > 0
+             and position('c_duration' in
+                   pg_get_functiondef('public.start_topic_test_attempt(uuid,uuid[],uuid[])'::regprocedure)) = 0
+             and position('limit greatest' in
+                   pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) = 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 62) City districts + leaderboard cluster (migrations 053/058): city_districts
+--     table + schools.city_district_id exist; board rows carry the DISTRICT
+--     column (derived through the school); the landing-page top-10 is
+--     anon-callable; the city/district consistency guard trigger is attached.
+select '62_city_districts_and_leaderboard' as check_name,
+       case when to_regclass('public.city_districts') is not null
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='schools'
+                            and column_name='city_district_id')
+             and pg_get_function_result('public.get_leaderboard(text,text,uuid,text,int)'::regprocedure)
+                 like '%district%'
+             and has_function_privilege('anon','public.get_public_leaderboard(int)','EXECUTE') = true
+             and exists (select 1 from pg_trigger
+                          where tgname='trg_school_district_guard'
+                            and tgrelid='public.schools'::regclass)
+            then 'PASS' else 'FAIL' end as status;
+
+-- 63) Academic terms + five options (migrations 054/055/059): term columns on
+--     topics + questions; single_choice requires exactly 5 options; the term
+--     guard/cascade + taxonomy guard triggers are attached; the bulk import
+--     REQUIRES a term (1..4) on every item.
+select '63_terms_and_five_options' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='topics'
+                            and column_name='term')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='questions'
+                            and column_name='term')
+             and (select options_required from public.question_types where code='single_choice') = 5
+             and exists (select 1 from pg_trigger
+                          where tgname='trg_question_term_guard'
+                            and tgrelid='public.questions'::regclass)
+             and exists (select 1 from pg_trigger
+                          where tgname='trg_topic_term_cascade'
+                            and tgrelid='public.topics'::regclass)
+             and exists (select 1 from pg_trigger
+                          where tgname='trg_question_taxonomy_guard'
+                            and tgrelid='public.questions'::regclass)
+             and position('term (1..4) is required' in
+                   pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 64) Notification audiences (migration 060): the resolver serves the two new
+--     Round-20 audiences ('all_users' deduped union; 'olympiad_buyers' from
+--     active purchases) and the composer whitelists + validates olympiad_buyers
+--     package ids before anything is stored.
+select '64_notification_audiences' as check_name,
+       case when position('all_users' in
+                   pg_get_functiondef('public.lb_notify_audience(text,jsonb)'::regprocedure)) > 0
+             and position('olympiad_buyers' in
+                   pg_get_functiondef('public.lb_notify_audience(text,jsonb)'::regprocedure)) > 0
+             and position('olympiad_buyers' in
+                   pg_get_functiondef('public.admin_send_notification(text,text,text[],text,jsonb,timestamptz,text,text)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 65) Question delete guard (migration 063): answered questions can never be
+--     hard-deleted (attempt history would cascade away); the guard trigger is
+--     attached and its lookup index exists.
+select '65_question_delete_guard' as check_name,
+       case when exists (select 1 from pg_trigger
+                          where tgname='trg_question_delete_guard'
+                            and tgrelid='public.questions'::regclass)
+             and to_regclass('public.idx_answers_question') is not null
+            then 'PASS' else 'FAIL' end as status;
+
+-- 66) Student city-district (migration 064): the rayon is stored on students
+--     with the consistency guard attached; create_child_account is the 11-arg
+--     v2 (rayon validated + required when the city has rayons) and stays
+--     service-role-only; leaderboard rows fall back to the stored rayon.
+select '66_student_city_district' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='city_district_id')
+             and exists (select 1 from pg_trigger
+                          where tgname='trg_student_district_guard'
+                            and tgrelid='public.students'::regclass)
+             and to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)') is not null
+             and to_regprocedure('public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid)') is null
+             and has_function_privilege('authenticated',
+                   'public.create_child_account(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid)','EXECUTE') = false
+             and position('st.city_district_id' in
+                   pg_get_functiondef('public.lb_rows(text,text,uuid,text)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 67) Round readiness + pool counts (migration 065): the daily pool accepts
+--     shared (grade NULL) questions with the readiness fn in lockstep; the
+--     student pre-flight and the real olympiad pool-count RPCs exist and are
+--     callable by authenticated (counts/booleans only).
+select '67_round_readiness_pool_counts' as check_name,
+       case when position('grade_id is null' in
+                   pg_get_functiondef('public.get_or_create_daily_round(uuid,uuid,date)'::regprocedure)) > 0
+             and position('grade_id is null' in
+                   pg_get_functiondef('public.daily_round_readiness()'::regprocedure)) > 0
+             and to_regprocedure('public.get_my_round_readiness()') is not null
+             and has_function_privilege('authenticated','public.get_my_round_readiness()','EXECUTE')
+             and to_regprocedure('public.get_olympiad_pool_counts(uuid[])') is not null
+             and has_function_privilege('authenticated','public.get_olympiad_pool_counts(uuid[])','EXECUTE')
+             and has_function_privilege('anon','public.get_olympiad_pool_counts(uuid[])','EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

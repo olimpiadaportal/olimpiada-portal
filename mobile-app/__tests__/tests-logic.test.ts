@@ -9,6 +9,7 @@ import {
   initialAnswers,
   initialFlags,
   isGiveawayNow,
+  isLiveAttempt,
   isUuid,
   paletteCellState,
   remainingFrom,
@@ -61,9 +62,26 @@ describe("countdown math (server deadline is the truth)", () => {
     expect(remainingFrom(null, NOW)).toBeNull();
   });
 
-  it("treats null/negative server remaining as already expired", () => {
-    expect(remainingFrom(deadlineFromRemaining(NOW, null), NOW)).toBe(0);
+  it("treats a negative/zero server remaining as already expired (TIMED)", () => {
     expect(remainingFrom(deadlineFromRemaining(NOW, -10), NOW)).toBe(0);
+    expect(remainingFrom(deadlineFromRemaining(NOW, 0), NOW)).toBe(0);
+  });
+
+  // Round-20 practice contract (migration 057): null remaining = UNTIMED.
+  it("null server remaining = UNTIMED: no anchor, no countdown ticks", () => {
+    expect(deadlineFromRemaining(NOW, null)).toBeNull();
+    expect(deadlineFromRemaining(NOW, undefined)).toBeNull();
+    // remaining stays null across ticks — the runner's 0:00 auto-submit
+    // condition (remaining === 0) can therefore never become true.
+    const anchor = deadlineFromRemaining(NOW, null);
+    expect(remainingFrom(anchor, NOW)).toBeNull();
+    expect(remainingFrom(anchor, NOW + 500)).toBeNull(); // first tick
+    expect(remainingFrom(anchor, NOW + 3_600_000)).toBeNull(); // an hour in
+  });
+
+  it("untimed remaining renders the normal (no-pulse) timer state", () => {
+    const anchor = deadlineFromRemaining(NOW, null);
+    expect(timerLevel(remainingFrom(anchor, NOW + 60_000))).toBe("normal");
   });
 });
 
@@ -157,13 +175,31 @@ describe("tests home helpers", () => {
     expect(findLiveAttempt(rows, NOW)?.id).toBe("b");
   });
 
-  it("lazily expires a stale in_progress row for display", () => {
+  it("lazily expires a stale TIMED in_progress row for display", () => {
     expect(displayStatus({ status: "in_progress", deadline_at: past }, NOW)).toBe("expired");
-    expect(displayStatus({ status: "in_progress", deadline_at: null }, NOW)).toBe("expired");
     expect(displayStatus({ status: "in_progress", deadline_at: future }, NOW)).toBe(
       "in_progress",
     );
     expect(displayStatus({ status: "canceled", deadline_at: null }, NOW)).toBe("canceled");
+  });
+
+  // Round-20: untimed practice (null deadline) never expires — it stays
+  // live/resumable (continue card + result-guard bounce back to the player).
+  it("untimed practice stays live and never lazily expires", () => {
+    expect(isLiveAttempt({ status: "in_progress", deadline_at: null }, NOW)).toBe(true);
+    expect(displayStatus({ status: "in_progress", deadline_at: null }, NOW)).toBe(
+      "in_progress",
+    );
+    expect(isLiveAttempt({ status: "graded", deadline_at: null }, NOW)).toBe(false);
+    expect(
+      findLiveAttempt(
+        [
+          { id: "a", status: "graded", deadline_at: null },
+          { id: "b", status: "in_progress", deadline_at: null },
+        ],
+        NOW,
+      )?.id,
+    ).toBe("b");
   });
 
   it("re-checks the giveaway window client-side (stale config safety)", () => {

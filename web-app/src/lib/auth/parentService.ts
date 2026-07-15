@@ -273,7 +273,10 @@ export async function addChild(
   const cityChoice = f(formData, "city");
   const city = cityChoice === "__other__" ? f(formData, "city_other") : cityChoice;
   // Structured catalog ids (Batch H / D2 wizard). Empty string → null.
+  // NAMING: district_id = the CITY (historic naming); city_district_id = the
+  // real intra-city rayon (Round 21).
   const districtId = f(formData, "district_id") || null;
+  const cityDistrictId = f(formData, "city_district_id") || null;
   const schoolId = f(formData, "school_id") || null;
   const info: ChildInfo = {
     firstName: f(formData, "first_name"),
@@ -284,6 +287,7 @@ export async function addChild(
     gradeId: f(formData, "grade_id") || null,
     districtId,
     schoolId,
+    cityDistrictId,
   };
   const result = await createChild({
     parentProfileId: parent.profileId,
@@ -340,6 +344,7 @@ export async function updateChildProfile(
     firstName: f(formData, "first_name"),
     lastName: f(formData, "last_name"),
     districtId: f(formData, "district_id"),
+    cityDistrictId: f(formData, "city_district_id"),
     schoolId: f(formData, "school_id"),
     gradeId: f(formData, "grade_id"),
     schoolName: f(formData, "school_name"),

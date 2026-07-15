@@ -5,26 +5,54 @@
 // server-side (migration 038) and TRUE-resuming the one open attempt (047).
 import { supabase } from "@/lib/supabase";
 
+// ---- real pool counts (Round 21, migration 065) --------------------------------
+
+/**
+ * REAL published-question count per olympiad package via
+ * get_olympiad_pool_counts (SECURITY DEFINER, counts only) — ONE RPC per load.
+ * Attempts include ALL of a package's questions, so this is the number every
+ * card shows; a package absent from the result has an empty pool → 0. The
+ * display-legacy olympiad_packages.questions_per_attempt is never read here.
+ * The server caps the id list at 100; the slice keeps us inside it.
+ */
+export async function fetchOlympiadPoolCounts(
+  packageIds: string[],
+): Promise<Record<string, number>> {
+  const ids = Array.from(new Set(packageIds.filter(Boolean))).slice(0, 100);
+  if (ids.length === 0) return {};
+  const { data, error } = await supabase.rpc("get_olympiad_pool_counts", {
+    p_package_ids: ids,
+  });
+  if (error) throw error;
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as { package_id?: unknown; question_count?: unknown }[]) {
+    if (typeof row.package_id === "string") {
+      counts[row.package_id] = Number(row.question_count ?? 0) || 0;
+    }
+  }
+  return counts;
+}
+
 // ---- owned packages ("Olimpiadalarım") ---------------------------------------
 
 export type OwnedOlympiad = {
   packageId: string;
   title: string;
+  /** REAL pool size (get_olympiad_pool_counts) — never questions_per_attempt. */
   questions: number;
 };
 
 type PurchaseRow = {
   olympiad_package_id: string;
   package: {
-    questions_per_attempt: number | null;
     olympiad_package_translations: { locale: string; title: string }[] | null;
   } | null;
 };
 
 /**
- * The child's ACTIVE purchases with the package title/question count — this is
- * the playable list (packages are purchase-only in every payment mode; free
- * windows cover subjects, never olympiads). The join keeps working for
+ * The child's ACTIVE purchases with the package title + REAL question count —
+ * this is the playable list (packages are purchase-only in every payment mode;
+ * free windows cover subjects, never olympiads). The join keeps working for
  * archived listings, so purchasers keep lifetime access exactly like the web.
  */
 export async function fetchOwnedOlympiads(
@@ -34,18 +62,20 @@ export async function fetchOwnedOlympiads(
   const { data, error } = await supabase
     .from("olympiad_purchases")
     .select(
-      "olympiad_package_id, package:olympiad_package_id(questions_per_attempt, olympiad_package_translations(locale, title))",
+      "olympiad_package_id, package:olympiad_package_id(olympiad_package_translations(locale, title))",
     )
     .eq("student_profile_id", profileId)
     .eq("status", "active");
   if (error) throw error;
-  return ((data ?? []) as unknown as PurchaseRow[]).map((p) => {
+  const rows = (data ?? []) as unknown as PurchaseRow[];
+  const counts = await fetchOlympiadPoolCounts(rows.map((p) => p.olympiad_package_id));
+  return rows.map((p) => {
     const trs = p.package?.olympiad_package_translations ?? [];
     const tr = trs.find((x) => x.locale === locale) ?? trs.find((x) => x.locale === "az");
     return {
       packageId: p.olympiad_package_id,
       title: tr?.title ?? "—",
-      questions: Number(p.package?.questions_per_attempt ?? 25) || 25,
+      questions: counts[p.olympiad_package_id] ?? 0,
     };
   });
 }

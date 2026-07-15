@@ -150,18 +150,20 @@ export function TestSetup({
         {tt("test.setup.rulesTitle")}
       </h3>
       <div className="arena-panel">
+        {/* Practice mode (migration 057): untimed, never rated. */}
         <div className="tst-facts">
           <span className="tst-fact mono">{tt("test.setup.qCount")}</span>
-          <span className="tst-fact mono">{tt("test.setup.duration")}</span>
+          <span className="tst-fact mono">∞ {tt("test.setup.noLimit")}</span>
+          <span className="tst-fact mono">{tt("test.setup.noPoints")}</span>
         </div>
         <ul className="tst-rules">
-          <li>{tt("test.setup.rule1")}</li>
-          <li>{tt("test.setup.rule2")}</li>
+          <li>{tt("test.setup.rulePractice1")}</li>
+          <li>{tt("test.setup.rulePractice2")}</li>
           <li>{tt("test.setup.rule3")}</li>
           <li>{tt("test.setup.rule4")}</li>
         </ul>
         <p className="tst-scoring">
-          <b>{tt("test.setup.scoringTitle")}:</b> {tt("test.setup.scoring")}
+          <b>{tt("test.setup.scoringTitle")}:</b> {tt("test.setup.practiceScoring")}
         </p>
 
         <label className="tst-consent">

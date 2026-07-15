@@ -5,7 +5,6 @@ import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
-import { ChildNewsPanel } from "@/components/ChildNewsPanel";
 
 export default async function ChildDashboard() {
   const child = await requireChild();
@@ -23,6 +22,7 @@ export default async function ChildDashboard() {
     { data: attempts },
     leaderboardOn,
     { data: lbRank },
+    { data: lbRankAllTime },
     { data: streakStatus },
   ] = await Promise.all([
       // Round 11: during an active giveaway window the whole platform is free —
@@ -50,16 +50,23 @@ export default async function ChildDashboard() {
         .eq("status", "graded")
         .order("submitted_at", { ascending: false })
         .limit(200),
-      // L-quick: leaderboard feature gate + this-month GLOBAL rank + streak,
-      // read through the child's OWN RLS-scoped RPCs (never service role). Both
-      // resolve to { data: null } on any error, so the card degrades to the
-      // encouraging "not ranked yet" state and never throws.
+      // L-quick: leaderboard feature gate + GLOBAL rank (this-month for the
+      // quick-look card, ALL-TIME for the hero rank panel) + streak, read
+      // through the child's OWN RLS-scoped RPCs (never service role). All
+      // resolve to { data: null } on any error, so the cards degrade to the
+      // encouraging "not ranked yet" state and never throw.
       isFeatureEnabled("leaderboard"),
       supabase.rpc("get_my_leaderboard_rank", {
         p_board: "points",
         p_scope: "global",
         p_scope_id: null,
         p_period: "month",
+      }),
+      supabase.rpc("get_my_leaderboard_rank", {
+        p_board: "points",
+        p_scope: "global",
+        p_scope_id: null,
+        p_period: "all_time",
       }),
       supabase.rpc("get_streak_status"),
     ]);
@@ -122,13 +129,93 @@ export default async function ChildDashboard() {
   const lbMe = (lbRank ?? null) as
     | { rank: number | null; total: number; value: number }
     | null;
+  // Hero rank panel — global ALL-TIME points rank (Round 21: replaces the old
+  // static "—" placeholder; honest fallback when not ranked yet).
+  const lbAllTime = (lbRankAllTime ?? null) as
+    | { rank: number | null; total: number; value: number }
+    | null;
   const streakInfo = (streakStatus ?? null) as
     | { current: number; best: number }
     | null;
   const lbRanked = !!lbMe && lbMe.rank !== null;
+  const allTimeRanked = !!lbAllTime && lbAllTime.rank !== null;
   const lbMonthPoints = lbMe ? Math.round(Number(lbMe.value ?? 0)) : 0;
   const streakCurrent = Number(streakInfo?.current ?? 0) || 0;
   const streakBest = Number(streakInfo?.best ?? 0) || 0;
+
+  // ---- Leaderboard quick-look (L-quick) ----
+  // Gated by the `leaderboard` feature flag (hidden entirely when off).
+  // Real this-month GLOBAL rank + month points + streak from the child's
+  // own RLS-scoped RPCs; encouraging fallback when not ranked yet.
+  const lbqCard = (
+    <section className="lbq-card">
+      <div className="lbq-head">
+        <p className="arena-eyebrow" style={{ margin: 0 }}>
+          {"\u{1F3C6}"} {t("plb.title")}
+        </p>
+        <Link className="lbq-link" href="/child/leaderboard">
+          {t("plb.seeFull")} →
+        </Link>
+      </div>
+      {lbRanked ? (
+        <div className="lbq-stats">
+          <div className="lbq-stat">
+            <div className="lbq-val mono">
+              #{lbMe!.rank}
+              <span className="lbq-total"> / {lbMe!.total}</span>
+            </div>
+            <div className="lbq-key">{t("plb.rankThisMonth")}</div>
+          </div>
+          <div className="lbq-stat">
+            <div className="lbq-val mono">{lbMonthPoints}</div>
+            <div className="lbq-key">{t("plb.points")}</div>
+          </div>
+          <div className="lbq-stat">
+            <div className="lbq-val mono">🔥 {streakCurrent}</div>
+            <div className="lbq-key">
+              {t("plb.streak")} · {t("plb.best")} {streakBest}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="lbq-none-row">
+          <p className="lbq-none">{t("plb.notRanked")}</p>
+          <div className="lbq-stat">
+            <div className="lbq-val mono">🔥 {streakCurrent}</div>
+            <div className="lbq-key">
+              {t("plb.streak")} · {t("plb.best")} {streakBest}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+
+  // ---- Subject strength panel (right column / full width when lbq is off) ----
+  const strengthPanel = (
+    <div>
+      <h3 className="arena-section-h">{t("arena.subjectStrength")}</h3>
+      <div className="arena-panel">
+        {strength.length === 0 ? (
+          <p className="arena-muted" style={{ margin: 0 }}>
+            {t("arena.noStrength")}
+          </p>
+        ) : (
+          strength.map((s) => (
+            <div className="arena-strength" key={s.id}>
+              <div className="arena-strength-top">
+                <span>{s.name}</span>
+                <span className="pct">{s.pct}%</span>
+              </div>
+              <div className="arena-bar">
+                <i style={{ width: `${s.pct}%` }} />
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -145,9 +232,10 @@ export default async function ChildDashboard() {
           <div className="arena-hero-cta">
             {hasAccess && subjects.length > 0 ? (
               <>
-                {/* Land on the real test engine's subject page (topic picker →
-                    instructions → start); never the practice bounce-home path. */}
-                <Link className="arena-btn" href={`/child/test/${subjects[0].id}`}>
+                {/* Land on the tests tab — today's RATED daily rounds live
+                    there (one per subject/day; the topic-picker flow is now
+                    the untimed practice entry). */}
+                <Link className="arena-btn" href="/child/test">
                   {t("arena.startRound")}
                 </Link>
                 <Link className="arena-btn-ghost" href="/child/leaderboard">
@@ -164,7 +252,15 @@ export default async function ChildDashboard() {
 
         <div className="arena-rank-panel">
           <p className="arena-eyebrow">{t("arena.rankLabel")}</p>
-          <span className="arena-rank-num mono">—</span>
+          {/* Real global ALL-TIME points rank; "—" + note until first ranked. */}
+          <span className="arena-rank-num mono">
+            {allTimeRanked ? `#${lbAllTime!.rank}` : "—"}
+          </span>
+          {!allTimeRanked && (
+            <p className="arena-muted" style={{ margin: "6px 0 0", fontSize: "0.8rem" }}>
+              {t("plb.notRanked")}
+            </p>
+          )}
           <div className="arena-ministats">
             <div className="arena-ministat">
               <div className="v mono">{points}</div>
@@ -195,54 +291,6 @@ export default async function ChildDashboard() {
         </div>
       </div>
 
-      {/* ---- Leaderboard quick-look (L-quick) ----
-          Gated by the `leaderboard` feature flag (hidden entirely when off).
-          Real this-month GLOBAL rank + month points + streak from the child's
-          own RLS-scoped RPCs; encouraging fallback when not ranked yet. */}
-      {leaderboardOn && (
-        <section className="lbq-card">
-          <div className="lbq-head">
-            <p className="arena-eyebrow" style={{ margin: 0 }}>
-              {"\u{1F3C6}"} {t("plb.title")}
-            </p>
-            <Link className="lbq-link" href="/child/leaderboard">
-              {t("plb.seeFull")} →
-            </Link>
-          </div>
-          {lbRanked ? (
-            <div className="lbq-stats">
-              <div className="lbq-stat">
-                <div className="lbq-val mono">
-                  #{lbMe!.rank}
-                  <span className="lbq-total"> / {lbMe!.total}</span>
-                </div>
-                <div className="lbq-key">{t("plb.rankThisMonth")}</div>
-              </div>
-              <div className="lbq-stat">
-                <div className="lbq-val mono">{lbMonthPoints}</div>
-                <div className="lbq-key">{t("plb.points")}</div>
-              </div>
-              <div className="lbq-stat">
-                <div className="lbq-val mono">🔥 {streakCurrent}</div>
-                <div className="lbq-key">
-                  {t("plb.streak")} · {t("plb.best")} {streakBest}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="lbq-none-row">
-              <p className="lbq-none">{t("plb.notRanked")}</p>
-              <div className="lbq-stat">
-                <div className="lbq-val mono">🔥 {streakCurrent}</div>
-                <div className="lbq-key">
-                  {t("plb.streak")} · {t("plb.best")} {streakBest}
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
-      )}
-
       {!hasAccess && (
         <div className="arena-locked" style={{ marginBottom: 26 }}>
           <strong>{t(`child.locked.${access}`)}</strong>
@@ -252,84 +300,42 @@ export default async function ChildDashboard() {
         </div>
       )}
 
-      {/* ---- Two-column: rounds + subject strength ---- */}
-      <section className="arena-cols">
-        <div>
-          <h3 className="arena-section-h">{t("arena.todaysRounds")}</h3>
-          {hasAccess && subjects.length > 0 ? (
-            <div className="arena-panel">
-              {subjects.map((s) => (
-                <div className="arena-round" key={s.id}>
-                  <span className="arena-round-icon">{s.name.trim()[0]?.toUpperCase() ?? "?"}</span>
-                  <div className="arena-round-body">
-                    <div className="arena-round-title">{s.name}</div>
-                    <div className="arena-round-meta">25 {t("arena.questionsShort")}</div>
-                  </div>
-                  {/* → subject test page (topic picker → instructions → start). */}
-                  <Link className="arena-btn arena-btn-sm" href={`/child/test/${s.id}`}>
-                    {t("arena.go")}
-                  </Link>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="arena-panel arena-muted">
-              {hasAccess ? t("child.noSubjects") : t("child.lockedNote")}
-            </div>
-          )}
+      {/* ---- Two-column row: monthly ranking | subject strength ----
+          (Round 21 redesign: the old "today's rounds" list and the news panel
+          left the dashboard — rounds live on /child/test, news on /child/news.)
+          When the leaderboard flag is off the strength panel takes the full
+          width instead of leaving an empty grid cell. */}
+      {leaderboardOn ? (
+        <section className="arena-cols">
+          {lbqCard}
+          {strengthPanel}
+        </section>
+      ) : (
+        strengthPanel
+      )}
 
-          {recent.length > 0 && (
-            <>
-              <h3 className="arena-section-h" style={{ marginTop: 26 }}>
-                {t("arena.recentRounds")}
-              </h3>
-              <div className="arena-panel">
-                {recent.map((r) => (
-                  <div className="arena-round" key={r.id}>
-                    <div className="arena-round-body">
-                      <div className="arena-round-title">
-                        {r.subjects?.name ?? "—"} · {t(`kind.${r.kind}`)}
-                      </div>
-                    </div>
-                    <span className="arena-pts mono">
-                      {Math.round(Number(r.score ?? 0))}/{Math.round(Number(r.max_score ?? 0))}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div>
-          <h3 className="arena-section-h">{t("arena.subjectStrength")}</h3>
-          <div className="arena-panel">
-            {strength.length === 0 ? (
-              <p className="arena-muted" style={{ margin: 0 }}>
-                {t("arena.noStrength")}
-              </p>
-            ) : (
-              strength.map((s) => (
-                <div className="arena-strength" key={s.id}>
-                  <div className="arena-strength-top">
-                    <span>{s.name}</span>
-                    <span className="pct">{s.pct}%</span>
-                  </div>
-                  <div className="arena-bar">
-                    <i style={{ width: `${s.pct}%` }} />
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* ---- News ---- */}
+      {/* ---- Recent rounds — full-width history strip ---- */}
+      {recent.length > 0 && (
+        <>
           <h3 className="arena-section-h" style={{ marginTop: 26 }}>
-            {t("news.latest")}
+            {t("arena.recentRounds")}
           </h3>
-          <ChildNewsPanel />
-        </div>
-      </section>
+          <div className="arena-panel">
+            {recent.map((r) => (
+              <div className="arena-round" key={r.id}>
+                <div className="arena-round-body">
+                  <div className="arena-round-title">
+                    {r.subjects?.name ?? "—"} · {t(`kind.${r.kind}`)}
+                  </div>
+                </div>
+                <span className="arena-pts mono">
+                  {Math.round(Number(r.score ?? 0))}/{Math.round(Number(r.max_score ?? 0))}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </>
   );
 }

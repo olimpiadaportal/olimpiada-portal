@@ -1,6 +1,21 @@
 import Link from "next/link";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
+import { createClient } from "@/lib/supabase/server";
+import { isFeatureEnabled } from "@/lib/flags";
+import { formatGradeLabel } from "@/lib/gradeLabel";
 import AboutUs from "@/components/AboutUs";
+
+// get_public_leaderboard row (migration 058): global all-time points top-10,
+// names pre-anonymized server-side ("Şagird XXXX") — rendered verbatim.
+type PubLbRow = {
+  rank: number;
+  display_name: string;
+  city: string | null;
+  district: string | null;
+  school: string | null;
+  grade_level: number | null;
+  value: number;
+};
 
 // Stat cards use ILLUSTRATIVE placeholder numbers for the investor review.
 // Replace with live figures once analytics/reporting are wired.
@@ -56,12 +71,45 @@ function StatIcon({ kind }: { kind: "test" | "medal" | "users" | "up" }) {
 
 export default async function HomePage() {
   const t = await getT();
+  const locale = await getLocale();
   const features = [
     ["home.f1Title", "home.f1Desc"],
     ["home.f2Title", "home.f2Desc"],
     ["home.f3Title", "home.f3Desc"],
     ["home.f4Title", "home.f4Desc"],
   ];
+
+  // Public leaderboard band (gated by the same `leaderboard` flag as the
+  // in-app boards). Fetched with the ANON server client — the RPC is
+  // anon-executable by design (hard-capped top-10, pre-anonymized names), so
+  // logged-out visitors see it too. Any error degrades to the empty state —
+  // the landing page must never break because of the board.
+  const lbOn = await isFeatureEnabled("leaderboard");
+  let lbRows: PubLbRow[] = [];
+  if (lbOn) {
+    try {
+      const supabase = await createClient();
+      const { data, error } = await supabase.rpc("get_public_leaderboard", {
+        p_limit: 10,
+      });
+      if (!error && Array.isArray(data)) {
+        lbRows = (data as PubLbRow[]).filter((r) => !!r);
+      }
+    } catch {
+      // graceful: render the empty state
+    }
+  }
+  // Mobile context line (≤760px hides the context columns via .lb-ctx-col).
+  const lbCtxOf = (r: PubLbRow): string =>
+    [
+      r.city?.trim() || null,
+      r.district?.trim() || null,
+      r.school?.trim() || null,
+      r.grade_level != null ? formatGradeLabel(r.grade_level, locale) : null,
+    ]
+      .filter((p): p is string => !!p)
+      .join(" · ");
+
   return (
     <>
       <section className="hero">
@@ -76,6 +124,62 @@ export default async function HomePage() {
           </Link>
         </div>
       </section>
+
+      {/* Public leaderboard — top-10 global all-time points, anonymized
+          server-side. Shows ~5 rows; rows 6–10 scroll INTERNALLY under the
+          sticky header (reused .lb-scroll/.lb-table + landing height cap). */}
+      {lbOn && (
+        <section className="pub-lb" aria-labelledby="pub-lb-title">
+          <h2 className="pub-lb-title" id="pub-lb-title">
+            {t("pub.lb.title")}
+          </h2>
+          <p className="pub-lb-sub">{t("pub.lb.sub")}</p>
+          <div className="pub-lb-panel">
+            {lbRows.length === 0 ? (
+              <p className="pub-lb-empty">{t("pub.lb.empty")}</p>
+            ) : (
+              <div className="lb-scroll pub-lb-scroll">
+                <table className="lb-table">
+                  <thead>
+                    <tr>
+                      <th>{t("lb.colNo")}</th>
+                      <th>{t("lb.colStudent")}</th>
+                      <th className="lb-ctx-col">{t("lb.colCity")}</th>
+                      <th className="lb-ctx-col">{t("lb.colDistrict")}</th>
+                      <th className="lb-ctx-col">{t("lb.colSchool")}</th>
+                      <th className="lb-ctx-col">{t("lb.colGrade")}</th>
+                      <th className="num">{t("lb.colPoints")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lbRows.map((r) => {
+                      const ctx = lbCtxOf(r);
+                      return (
+                        <tr key={r.rank}>
+                          <td className="lb-rank">{r.rank}</td>
+                          <td>
+                            <span className="plb-part-name">
+                              {(r.display_name ?? "").trim() || "—"}
+                            </span>
+                            {ctx && <span className="lb-part-ctx">{ctx}</span>}
+                          </td>
+                          <td className="lb-ctx-col">{r.city?.trim() || "—"}</td>
+                          <td className="lb-ctx-col">{r.district?.trim() || "—"}</td>
+                          <td className="lb-ctx-col">{r.school?.trim() || "—"}</td>
+                          <td className="lb-ctx-col">
+                            {formatGradeLabel(r.grade_level, locale)}
+                          </td>
+                          <td className="num plb-val">{Math.round(Number(r.value))}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <div className="grid">
         {features.map(([titleKey, descKey]) => (

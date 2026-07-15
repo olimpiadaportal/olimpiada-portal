@@ -17,6 +17,7 @@ import {
   useTransition,
 } from "react";
 import { saveSiteContent } from "@/lib/admin/siteContent";
+import { FIELD_FONT_SIZE_OPTIONS } from "@/lib/admin/siteContentRegistry";
 
 export type CmsEntry = {
   key: string;
@@ -25,6 +26,8 @@ export type CmsEntry = {
   en: string;
   ru: string;
   isOverridden: boolean;
+  // Optional per-field font size (px); null = site default.
+  fontSize: number | null;
 };
 export type CmsMenu = { id: string; label: string; entries: CmsEntry[] };
 export type CmsSection = { id: string; label: string; menus: CmsMenu[] };
@@ -46,6 +49,8 @@ export type ContentManagerStrings = {
   langEn: string;
   langRu: string;
   errServer: string;
+  fontSize: string;
+  fontSizeDefault: string;
 };
 
 type Vals = { az: string; en: string; ru: string };
@@ -70,8 +75,20 @@ export function ContentManager({
     [allEntries],
   );
 
+  const seedSizes = useMemo(
+    () =>
+      Object.fromEntries(allEntries.map((e) => [e.key, e.fontSize])) as Record<
+        string,
+        number | null
+      >,
+    [allEntries],
+  );
+
   const [values, setValues] = useState<Record<string, Vals>>(seed);
   const [baseline, setBaseline] = useState<Record<string, Vals>>(seed);
+  const [sizes, setSizes] = useState<Record<string, number | null>>(seedSizes);
+  const [baselineSizes, setBaselineSizes] =
+    useState<Record<string, number | null>>(seedSizes);
   const [overridden, setOverridden] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(allEntries.map((e) => [e.key, e.isOverridden])),
   );
@@ -93,7 +110,12 @@ export function ContentManager({
     .filter((e) => {
       const v = values[e.key];
       const b = baseline[e.key];
-      return v.az !== b.az || v.en !== b.en || v.ru !== b.ru;
+      return (
+        v.az !== b.az ||
+        v.en !== b.en ||
+        v.ru !== b.ru ||
+        sizes[e.key] !== baselineSizes[e.key]
+      );
     })
     .map((e) => e.key);
   const dirty = changedKeys.length > 0;
@@ -109,6 +131,7 @@ export function ContentManager({
         fd.set("az", values[key].az);
         fd.set("en", values[key].en);
         fd.set("ru", values[key].ru);
+        fd.set("fontSize", sizes[key] == null ? "" : String(sizes[key]));
         const res = await saveSiteContent(null, fd);
         if (res?.ok) savedNow.push(key);
         else ok = false;
@@ -117,6 +140,11 @@ export function ContentManager({
         setBaseline((cur) => {
           const next = { ...cur };
           for (const k of savedNow) next[k] = { ...values[k] };
+          return next;
+        });
+        setBaselineSizes((cur) => {
+          const next = { ...cur };
+          for (const k of savedNow) next[k] = sizes[k] ?? null;
           return next;
         });
         setOverridden((cur) => {
@@ -134,6 +162,11 @@ export function ContentManager({
     setValues((cur) => {
       const next = { ...cur };
       for (const e of menu.entries) next[e.key] = { ...baseline[e.key] };
+      return next;
+    });
+    setSizes((cur) => {
+      const next = { ...cur };
+      for (const e of menu.entries) next[e.key] = baselineSizes[e.key] ?? null;
       return next;
     });
     setStatus("idle");
@@ -203,6 +236,39 @@ export function ContentManager({
                     >
                       {isOverridden ? strings.overridden : strings.usingDefault}
                     </span>
+                    {/* Compact per-field font size (px) — "" = site default. */}
+                    <label
+                      style={{
+                        marginLeft: "auto",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: "0.78rem",
+                        opacity: 0.9,
+                      }}
+                    >
+                      <span>{strings.fontSize}</span>
+                      <select
+                        className="sfield-control sfield-select"
+                        style={{ width: "auto", padding: "2px 6px" }}
+                        value={sizes[entry.key] == null ? "" : String(sizes[entry.key])}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSizes((cur) => ({
+                            ...cur,
+                            [entry.key]: v === "" ? null : Number(v),
+                          }));
+                          if (status !== "idle") setStatus("idle");
+                        }}
+                      >
+                        <option value="">{strings.fontSizeDefault}</option>
+                        {FIELD_FONT_SIZE_OPTIONS.map((s) => (
+                          <option key={s} value={s}>
+                            {s}px
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                   <div
                     className="tri-grid"

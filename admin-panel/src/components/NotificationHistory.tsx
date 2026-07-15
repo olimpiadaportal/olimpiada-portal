@@ -19,6 +19,9 @@ export type HistoryRow = {
   scheduledAt: string | null;
   sentAt: string | null;
   createdAt: string;
+  // For olympiad_buyers sends: the selected package names (title snapshot
+  // stored in audience_filter.package_titles; ids as a fallback).
+  packageTitles?: string[];
 };
 
 export type HistoryStrings = {
@@ -34,6 +37,7 @@ export type HistoryStrings = {
   detailTitle: string;
   bodyLabel: string;
   templateLabel: string;
+  packagesLabel: string;
   scheduledAtLabel: string;
   sentAtLabel: string;
   createdAtLabel: string;
@@ -159,6 +163,24 @@ export function NotificationHistory({
                 </span>
               ))}
             </div>
+            {/* olympiad_buyers: the packages this send targeted (title snapshot). */}
+            {detail.packageTitles && detail.packageTitles.length > 0 && (
+              <div>
+                <span className="muted" style={{ fontSize: "0.8rem" }}>
+                  {strings.packagesLabel}
+                </span>
+                <div
+                  className="row-actions"
+                  style={{ gap: 6, flexWrap: "wrap", marginTop: 4 }}
+                >
+                  {detail.packageTitles.map((p, i) => (
+                    <span key={i} className="pill pill-muted">
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <dl className="detail-grid" style={{ margin: 0 }}>
               <MetaRow
                 label={strings.colProgress}

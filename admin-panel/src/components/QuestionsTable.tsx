@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState, useState } from "react";
 import {
   bulkAssignTopic,
@@ -8,6 +7,12 @@ import {
   bulkTransitionQuestions,
   transitionQuestion,
 } from "@/lib/admin/questions";
+import {
+  EditQuestionModal,
+  rowTransitions,
+  statusPill,
+} from "@/components/EditQuestionModal";
+import type { QuestionTaxonomy } from "@/lib/admin/question-options";
 
 export type QuestionRow = {
   id: string;
@@ -15,6 +20,10 @@ export type QuestionRow = {
   grade: string;
   lang: string;
   topic: string;
+  // Pre-localized Rüb label ("2-ci rüb"); needsTerm marks a NULL term (legacy
+  // "needs review" — excluded from daily-round generation).
+  term: string;
+  needsTerm: boolean;
   body: string;
   status: string;
 };
@@ -27,44 +36,13 @@ export type Taxonomy = {
 
 // Lifecycle actions a user may apply in bulk; perm gates which appear.
 // Three-state model: publish / reject / to_review.
+// (Per-row quick actions + status pill styling now live in EditQuestionModal —
+// rowTransitions / statusPill — shared between the table rows and the modal.)
 const ACTIONS: { action: string; perm?: string }[] = [
   { action: "publish", perm: "content.publish" },
   { action: "reject", perm: "content.review" },
   { action: "to_review", perm: "content.review" },
 ];
-
-function statusPill(s: string): string {
-  if (s === "published") return "pill-ok";
-  if (s === "rejected") return "pill-warn";
-  return "pill-muted"; // in_review
-}
-
-// Per-row quick actions — mirrors the allowed-transitions logic of the edit
-// page (QuestionLifecycle). The server action re-checks permissions and current
-// status; RLS is the final gate.
-//   in_review → publish / reject
-//   published → reject / to_review
-//   rejected  → publish / to_review
-function rowTransitions(
-  status: string,
-  can: (p: string) => boolean,
-): { action: string; key: string }[] {
-  const buttons: { action: string; key: string }[] = [];
-  if (status === "in_review") {
-    if (can("content.publish")) buttons.push({ action: "publish", key: "qact.publish" });
-    if (can("content.review")) buttons.push({ action: "reject", key: "qact.reject" });
-  } else if (status === "published") {
-    if (can("content.review"))
-      buttons.push(
-        { action: "reject", key: "qact.reject" },
-        { action: "to_review", key: "qact.to_review" },
-      );
-  } else if (status === "rejected") {
-    if (can("content.publish")) buttons.push({ action: "publish", key: "qact.publish" });
-    if (can("content.review")) buttons.push({ action: "to_review", key: "qact.to_review" });
-  }
-  return buttons;
-}
 
 export function QuestionsTable({
   rows,
@@ -72,16 +50,25 @@ export function QuestionsTable({
   dict,
   isAdmin,
   perms,
+  editorOptions,
+  editorTaxonomy,
 }: {
   rows: QuestionRow[];
   taxonomy: Taxonomy;
   dict: Record<string, string>;
   isAdmin: boolean;
   perms: string[];
+  // Inputs for the edit modal's QuestionForm (same objects the create modal
+  // uses): subject/grade selects + exam topic/subtopic cascade.
+  editorOptions: Record<string, { value: string; label: string }[]>;
+  editorTaxonomy: QuestionTaxonomy;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [action, setAction] = useState("");
+  // Round 22: editing happens in a modal on this page (no edit route). One
+  // modal instance serves every row; the Edit button sets the target id.
+  const [editId, setEditId] = useState<string | null>(null);
   // Bulk transition returns { updated, skipped } so we can show real feedback
   // (the owner reported bulk actions felt like silent no-ops).
   const [bulkState, bulkAction] = useActionState(bulkTransitionQuestions, null);
@@ -249,6 +236,7 @@ export function QuestionsTable({
               <th className="col-narrow">{tt("qfield.grade")}</th>
               <th className="col-narrow">{tt("qfield.language")}</th>
               <th>{tt("qfield.topic")}</th>
+              <th className="col-narrow">{tt("qfield.term")}</th>
               <th>{tt("qfield.bodyAz")}</th>
               <th className="col-narrow">{tt("qfield.status")}</th>
               <th aria-label="actions" />
@@ -257,7 +245,7 @@ export function QuestionsTable({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="muted">
+                <td colSpan={9} className="muted">
                   {tt("questions.none")}
                 </td>
               </tr>
@@ -277,6 +265,13 @@ export function QuestionsTable({
                 <td className="col-narrow">{r.lang}</td>
                 <td className="cell-topic" title={r.topic}>
                   {r.topic}
+                </td>
+                <td className="col-narrow">
+                  {r.needsTerm ? (
+                    <span className="pill pill-sm pill-warn">{r.term}</span>
+                  ) : (
+                    r.term
+                  )}
                 </td>
                 <td className="cell-body" title={r.body}>
                   {r.body}
@@ -298,13 +293,29 @@ export function QuestionsTable({
                       </form>
                     ))}
                   </span>
-                  <Link href={`/questions/${r.id}/edit`}>{tt("action.edit")}</Link>
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => setEditId(r.id)}
+                  >
+                    {tt("action.edit")}
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <EditQuestionModal
+        id={editId}
+        onClose={() => setEditId(null)}
+        dict={dict}
+        options={editorOptions}
+        taxonomy={editorTaxonomy}
+        isAdmin={isAdmin}
+        perms={perms}
+      />
     </section>
   );
 }

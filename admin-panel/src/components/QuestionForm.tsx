@@ -1,9 +1,29 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+// Round 21 — question editor overhaul (owner-approved field order):
+// language, subject, grade, topic, subtopic, rüb, body, image, options A–E
+// (radio-picked single correct), status (read-only), save.
+//   * No question-type / olympiad-type selects: saveQuestion resolves the type
+//     server-side to single_choice; olympiad_type_id is untouched on edit.
+//   * Topic AND subtopic are mandatory; they cascade from subject + grade.
+//   * The selected topic's Rüb is shown read-only; a legacy topic (term NULL)
+//     requires the admin to pick 1..4 — saveQuestion then upgrades the TOPIC
+//     (the DB cascades it to its subtopics/questions).
+//   * Exactly 5 fixed options (A–E) with a radio group for the correct one.
+//   * Create-modal image: the file is kept locally (preview + remove) and only
+//     uploaded to a staging path on SUBMIT, so question + image save in ONE
+//     action (saveQuestion verifies, moves and links it — or cleans up).
+import {
+  Fragment,
+  startTransition,
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { createClient } from "@/lib/supabase/client";
 import { saveQuestion, type QuestionState } from "@/lib/admin/questions";
-import type { QuestionTypeRule } from "@/lib/admin/question-options";
-import { typeRuleSummary } from "@/lib/admin/type-rules";
+import type { QuestionTaxonomy } from "@/lib/admin/question-options";
 import { localeNames, locales } from "@/i18n/config";
 
 type Opt = { value: string; label: string };
@@ -17,55 +37,71 @@ type Defaults = {
   options: { text: string; is_correct: boolean }[];
 };
 
-const META: { name: string; key: string; required?: boolean }[] = [
-  { name: "subject_id", key: "qfield.subject", required: true },
-  { name: "grade_id", key: "qfield.grade", required: true },
-  { name: "type_id", key: "qfield.type", required: true },
-  { name: "topic_id", key: "qfield.topic" },
-  { name: "subtopic_id", key: "qfield.subtopic" },
-  { name: "olympiad_type_id", key: "qfield.olympiad" },
-];
+const OPTION_LETTERS = ["A", "B", "C", "D", "E"] as const;
+const TERMS = [1, 2, 3, 4] as const;
 
-type OptRow = { text: string; correct: boolean };
+// Create-modal image constraints (images only — audio stays on the edit
+// modal's media box). Server-side verification (magic-number sniff) is
+// authoritative.
+const IMG_MIME_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+const IMG_MAX = 5 * 1024 * 1024;
+const BUCKET = "question-media";
 
-// Resize the option rows to an exact count (fixed-structure types): keep
-// existing texts, pad with empty rows, truncate extras.
-function resizeOpts(rows: OptRow[], n: number): OptRow[] {
-  if (rows.length === n) return rows;
-  if (rows.length > n) return rows.slice(0, n);
-  return [
-    ...rows,
-    ...Array.from({ length: n - rows.length }, () => ({
-      text: "",
-      correct: false,
-    })),
-  ];
+// crypto.randomUUID() only exists in secure contexts (https / localhost); LAN
+// IP access falls back gracefully.
+function uniqueId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // fall through
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// Pads/truncates the option rows to exactly 5 (A–E).
+function fiveTexts(defaults?: Defaults): string[] {
+  const texts = (defaults?.options ?? []).map((o) => o.text).slice(0, 5);
+  while (texts.length < 5) texts.push("");
+  return texts;
 }
 
 export function QuestionForm({
   dict,
   options,
-  typeRules,
+  taxonomy,
   defaults,
   id,
   submitLabel,
+  statusText,
   stay,
   onSaved,
+  withImagePicker,
+  mediaSlot,
 }: {
   dict: Record<string, string>;
-  options: Options;
-  // Maps each question type id → its stable `code` + structure rules (status,
-  // options_required, correct_required) so the editor can restrict NEW
-  // questions to active types, render a fixed option count, and show the
-  // per-type rules line — all from the same config saveQuestion enforces.
-  typeRules: Record<string, QuestionTypeRule>;
+  options: Options; // subject_id / grade_id selects
+  taxonomy: QuestionTaxonomy; // exam topics (+term) and subtopics for cascading
   defaults?: Defaults;
   id?: string;
   submitLabel: string;
+  // Read-only status display (create: "in review" note; edit: current status).
+  statusText: string;
   // Embedded (modal) mode: saveQuestion returns { ok } instead of redirecting;
   // `onSaved` fires so the host can close the modal and refresh the list.
   stay?: boolean;
   onSaved?: () => void;
+  // Create modal: local image picker whose upload is deferred until submit.
+  withImagePicker?: boolean;
+  // Edit modal: the existing immediate-upload media box, rendered in-place
+  // (after the body field) to keep the owner's field order.
+  mediaSlot?: React.ReactNode;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [state, action, pending] = useActionState<QuestionState, FormData>(
@@ -81,103 +117,152 @@ export function QuestionForm({
     if (state?.ok) onSavedRef.current?.();
   }, [state]);
 
-  const initialTypeId = (defaults?.meta?.type_id ?? "") as string;
-
   // All inputs are controlled so values PERSIST across a validation error
   // (React resets uncontrolled form fields after a form action).
-  const [meta, setMeta] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    for (const m of META) init[m.name] = (defaults?.meta?.[m.name] ?? "") as string;
-    return init;
-  });
   const [lang, setLang] = useState(defaults?.primary_locale ?? "az");
+  const [subject, setSubject] = useState(
+    (defaults?.meta?.subject_id ?? "") as string,
+  );
+  const [grade, setGrade] = useState((defaults?.meta?.grade_id ?? "") as string);
+  const [topic, setTopic] = useState((defaults?.meta?.topic_id ?? "") as string);
+  const [subtopic, setSubtopic] = useState(
+    (defaults?.meta?.subtopic_id ?? "") as string,
+  );
+  const [topicTerm, setTopicTerm] = useState(""); // only for legacy NULL-term topics
   const [body, setBody] = useState(defaults?.body ?? "");
   const [prompt, setPrompt] = useState(defaults?.prompt ?? "");
   const [explanation, setExplanation] = useState(defaults?.explanation ?? "");
-  const [opts, setOpts] = useState<OptRow[]>(() => {
-    const initial: OptRow[] =
-      defaults?.options?.map((o) => ({ text: o.text, correct: o.is_correct })) ?? [
-        { text: "", correct: false },
-        { text: "", correct: false },
-      ];
-    // A fixed-structure type (options_required set) always shows exactly that
-    // many rows — including legacy questions saved before the rule existed.
-    const req = typeRules[initialTypeId]?.options_required;
-    return req != null ? resizeOpts(initial, req) : initial;
+  const [optTexts, setOptTexts] = useState<string[]>(() => fiveTexts(defaults));
+  const [correct, setCorrect] = useState<number>(() => {
+    const i = (defaults?.options ?? []).findIndex((o) => o.is_correct);
+    return i >= 0 && i < 5 ? i : -1;
   });
 
-  // The chosen type's structure rules drive the option editor.
-  const rule = typeRules[meta.type_id ?? ""];
-  const typeCode = rule?.code ?? "";
-  const isTrueFalse = typeCode === "true_false";
-  const fixedCount = rule?.options_required ?? null;
-  // Exactly-one-correct types behave like radios: checking one unchecks the
-  // rest. (single_choice/true_false keep this even without the config column.)
-  const exclusiveCorrect =
-    rule?.correct_required === 1 ||
-    typeCode === "single_choice" ||
-    isTrueFalse;
-
-  // The rules line under the type select, built from the config values
-  // ("5 answer options, 1 correct answer" style).
-  const rulesLine = rule ? typeRuleSummary(tt, rule) : "";
-
-  // An existing question may carry a type that has since been deactivated: it
-  // stays visible but LOCKED (muted hint below). New questions only ever see
-  // active types in the select.
-  const currentTypeInactive = Boolean(
-    id && initialTypeId && typeRules[initialTypeId] &&
-      typeRules[initialTypeId].status !== "active",
+  // ---- Cascades ------------------------------------------------------------
+  // Topic belongs to the selected subject AND grade (a topic without a grade
+  // matches any grade); subtopic belongs to the selected topic. Stale child
+  // selections are cleared on parent change.
+  const topicsForSelection = taxonomy.topics.filter(
+    (tp) =>
+      tp.subject_id === subject &&
+      (tp.grade_id == null || tp.grade_id === grade),
   );
-  const typeOptions = (options.type_id ?? []).filter(
-    (o) => typeRules[o.value]?.status === "active" || o.value === initialTypeId,
+  const subtopicsForTopic = taxonomy.subtopics.filter(
+    (st) => st.topic_id === topic,
   );
+  const selectedTopic = taxonomy.topics.find((tp) => tp.id === topic) ?? null;
+  const topicNeedsTerm = selectedTopic != null && selectedTopic.term == null;
 
-  const optionHint = isTrueFalse
-    ? tt("qhint.trueFalse")
-    : typeCode === "single_choice"
-      ? tt("qhint.single")
-      : typeCode === "multiple_choice"
-        ? tt("qhint.multiple")
-        : "";
-
-  function markCorrect(i: number, checked: boolean) {
-    setOpts((p) =>
-      p.map((x, idx) =>
-        idx === i
-          ? { ...x, correct: checked }
-          : exclusiveCorrect && checked
-            ? { ...x, correct: false }
-            : x,
-      ),
+  function onSubjectOrGrade(nextSubject: string, nextGrade: string) {
+    setSubject(nextSubject);
+    setGrade(nextGrade);
+    const stillValid = taxonomy.topics.some(
+      (tp) =>
+        tp.id === topic &&
+        tp.subject_id === nextSubject &&
+        (tp.grade_id == null || tp.grade_id === nextGrade),
     );
+    if (!stillValid) {
+      setTopic("");
+      setSubtopic("");
+      setTopicTerm("");
+    }
   }
 
-  // Apply a newly selected type's structure: True/False seeds its fixed
-  // locale-labelled pair; fixed-count types resize to exactly N rows.
-  function applyTypeStructure(typeId: string) {
-    const next = typeRules[typeId];
-    if (next?.code === "true_false") {
-      setOpts((p) => {
-        const base = p.length === 2 && p[0].text && p[1].text
-          ? p
-          : [
-              { text: tt("qopt.true"), correct: p[0]?.correct ?? false },
-              { text: tt("qopt.false"), correct: p[1]?.correct ?? false },
-            ];
-        return next.options_required != null
-          ? resizeOpts(base, next.options_required)
-          : base;
-      });
+  // ---- Deferred image (create modal) ----------------------------------------
+  const [image, setImage] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string>("");
+  const [imgError, setImgError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  // A staged upload we can reuse when the server action fails validation and
+  // the admin retries with the SAME file (no duplicate upload).
+  const stagedRef = useRef<{ key: string; path: string } | null>(null);
+  const fileKey = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
+
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  function pickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    setImgError("");
+    const f = e.target.files?.[0] ?? null;
+    e.target.value = "";
+    if (!f) return;
+    if (!IMG_MIME_EXT[f.type] || f.size > IMG_MAX) {
+      setImgError(tt("qimg.invalid"));
       return;
     }
-    if (next?.options_required != null) {
-      setOpts((p) => resizeOpts(p, next.options_required as number));
+    if (preview) URL.revokeObjectURL(preview);
+    setImage(f);
+    setPreview(URL.createObjectURL(f));
+  }
+
+  function removeStagedBestEffort(path: string) {
+    // Fire-and-forget cleanup of an abandoned staged object.
+    try {
+      void createClient().storage.from(BUCKET).remove([path]);
+    } catch {
+      // ignore — orphaned staging objects are harmless
     }
   }
 
+  function removeImage() {
+    if (preview) URL.revokeObjectURL(preview);
+    setImage(null);
+    setPreview("");
+    setImgError("");
+    if (stagedRef.current) {
+      removeStagedBestEffort(stagedRef.current.path);
+      stagedRef.current = null;
+    }
+  }
+
+  async function uploadStaged(f: File): Promise<string | null> {
+    const supabase = createClient();
+    const path = `staging/${uniqueId()}.${IMG_MIME_EXT[f.type]}`;
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, f, { upsert: false, contentType: f.type });
+    return error ? null : path;
+  }
+
+  // ---- One-submission save ---------------------------------------------------
+  // The image (if any) is uploaded to a staging path first, then the SAME
+  // submission dispatches saveQuestion with the staged path — the server
+  // verifies/moves/links it atomically with the question, so the admin still
+  // performs exactly one "Save".
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    if (withImagePicker && image) {
+      const key = fileKey(image);
+      if (stagedRef.current?.key !== key) {
+        setUploading(true);
+        try {
+          const path = await uploadStaged(image);
+          if (!path) {
+            setImgError(tt("qimg.uploadFailed"));
+            return;
+          }
+          if (stagedRef.current) removeStagedBestEffort(stagedRef.current.path);
+          stagedRef.current = { key, path };
+        } finally {
+          setUploading(false);
+        }
+      }
+      fd.set("media_path", stagedRef.current.path);
+    }
+    startTransition(() => {
+      action(fd);
+    });
+  }
+
+  const busy = pending || uploading;
+  const termLabel = (n: number) => tt(`term.${n}`);
+
   return (
-    <form action={action} className="form">
+    <form onSubmit={handleSubmit} className="form">
       {id && <input type="hidden" name="__id" value={id} />}
       {stay && <input type="hidden" name="__stay" value="1" />}
 
@@ -201,45 +286,127 @@ export function QuestionForm({
           </select>
         </label>
 
-        {META.map((m) => (
-          <label className="field" key={m.name}>
-            <span className="field-label">
-              {tt(m.key)}
-              {m.required && <span className="req"> *</span>}
-            </span>
-            {m.name === "type_id" && currentTypeInactive && (
-              // The locked select would not post a value — submit the current
-              // type explicitly so edits keep it unchanged.
-              <input type="hidden" name="type_id" value={initialTypeId} />
-            )}
-            <select
-              name={m.name === "type_id" && currentTypeInactive ? undefined : m.name}
-              required={m.required}
-              disabled={m.name === "type_id" && currentTypeInactive}
-              value={meta[m.name] ?? ""}
-              onChange={(e) => {
-                const value = e.target.value;
-                setMeta((p) => ({ ...p, [m.name]: value }));
-                if (m.name === "type_id") applyTypeStructure(value);
-              }}
-            >
-              <option value="">{tt("manage.select")}</option>
-              {(m.name === "type_id" ? typeOptions : options[m.name] ?? []).map(
-                (o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
+        <label className="field">
+          <span className="field-label">
+            {tt("qfield.subject")}
+            <span className="req"> *</span>
+          </span>
+          <select
+            name="subject_id"
+            required
+            value={subject}
+            onChange={(e) => onSubjectOrGrade(e.target.value, grade)}
+          >
+            <option value="">{tt("manage.select")}</option>
+            {(options.subject_id ?? []).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field">
+          <span className="field-label">
+            {tt("qfield.grade")}
+            <span className="req"> *</span>
+          </span>
+          <select
+            name="grade_id"
+            required
+            value={grade}
+            onChange={(e) => onSubjectOrGrade(subject, e.target.value)}
+          >
+            <option value="">{tt("manage.select")}</option>
+            {(options.grade_id ?? []).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field">
+          <span className="field-label">
+            {tt("qfield.topic")}
+            <span className="req"> *</span>
+          </span>
+          <select
+            name="topic_id"
+            required
+            disabled={!subject || !grade}
+            value={topic}
+            onChange={(e) => {
+              setTopic(e.target.value);
+              setSubtopic("");
+              setTopicTerm("");
+            }}
+          >
+            <option value="">{tt("manage.select")}</option>
+            {topicsForSelection.map((tp) => (
+              <option key={tp.id} value={tp.id}>
+                {tp.name}
+              </option>
+            ))}
+          </select>
+          {subject && grade && topicsForSelection.length === 0 && (
+            <span className="hint">{tt("qform.noTopicsForSelection")}</span>
+          )}
+        </label>
+
+        <label className="field">
+          <span className="field-label">
+            {tt("qfield.subtopic")}
+            <span className="req"> *</span>
+          </span>
+          <select
+            name="subtopic_id"
+            required
+            disabled={!topic}
+            value={subtopic}
+            onChange={(e) => setSubtopic(e.target.value)}
+          >
+            <option value="">{tt("manage.select")}</option>
+            {subtopicsForTopic.map((st) => (
+              <option key={st.id} value={st.id}>
+                {st.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* Rüb: read-only from the topic; a legacy topic (NULL) asks for one. */}
+        <label className="field">
+          <span className="field-label">
+            {tt("qfield.term")}
+            {topicNeedsTerm && <span className="req"> *</span>}
+          </span>
+          {topicNeedsTerm ? (
+            <>
+              <select
+                name="topic_term"
+                required
+                value={topicTerm}
+                onChange={(e) => setTopicTerm(e.target.value)}
+              >
+                <option value="">{tt("manage.select")}</option>
+                {TERMS.map((n) => (
+                  <option key={n} value={n}>
+                    {termLabel(n)}
                   </option>
-                ),
-              )}
-            </select>
-            {m.name === "type_id" && rulesLine && (
-              <span className="hint">{rulesLine}</span>
-            )}
-            {m.name === "type_id" && currentTypeInactive && (
-              <span className="hint muted">{tt("qform.typeLocked")}</span>
-            )}
-          </label>
-        ))}
+                ))}
+              </select>
+              <span className="hint">{tt("qform.termLegacy")}</span>
+            </>
+          ) : (
+            <input
+              type="text"
+              value={selectedTopic?.term != null ? termLabel(selectedTopic.term) : "—"}
+              readOnly
+              disabled
+            />
+          )}
+        </label>
       </div>
 
       <h3 style={{ marginTop: 18 }}>{tt("qsection.contentAz")}</h3>
@@ -276,64 +443,88 @@ export function QuestionForm({
         />
       </label>
 
+      {/* Question image — deferred picker (create modal) or the edit modal's
+          immediate-upload media box, in the owner's field position. */}
+      {withImagePicker && (
+        <div className="field">
+          <span className="field-label">
+            {tt("qimg.title")} ({tt("qimg.optional")})
+          </span>
+          {image && preview ? (
+            <div className="media-current">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={preview} alt="" className="media-preview" />
+              <button
+                type="button"
+                className="link-danger"
+                onClick={removeImage}
+                disabled={busy}
+              >
+                {tt("qimg.remove")}
+              </button>
+            </div>
+          ) : null}
+          <label className="btn-ghost media-upload">
+            {image ? tt("qimg.replace") : tt("qimg.choose")}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={pickImage}
+              disabled={busy}
+              hidden
+            />
+          </label>
+          <p className="hint">{tt("qimg.hint")}</p>
+          {imgError && <p className="form-error">{imgError}</p>}
+        </div>
+      )}
+      {/* Explicit key: mediaSlot is created by the HOST component, so React
+          treats it as a dynamic list entry here and demands a key (this exact
+          slot caused the "unique key prop … passed a child from
+          EditQuestionPage" warning when the old edit page supplied it). */}
+      {mediaSlot != null && <Fragment key="media-slot">{mediaSlot}</Fragment>}
+
       <h3 style={{ marginTop: 18 }}>{tt("qsection.options")}</h3>
-      {optionHint && <p className="hint">{optionHint}</p>}
-      <input type="hidden" name="opt_count" value={opts.length} />
+      <p className="hint">{tt("qhint.single")}</p>
       <div className="options-editor">
-        {opts.map((o, i) => (
-          <div className="option-row" key={i}>
+        {OPTION_LETTERS.map((letter, i) => (
+          <div className="option-row" key={letter}>
+            <span className="option-letter">{letter}</span>
             <input
               type="text"
               name={`opt.${i}.text`}
-              value={o.text}
-              placeholder={tt("qopt.text")}
-              readOnly={isTrueFalse}
+              required
+              value={optTexts[i]}
+              placeholder={`${tt("qopt.text")} ${letter}`}
               onChange={(e) =>
-                setOpts((p) =>
-                  p.map((x, idx) =>
-                    idx === i ? { ...x, text: e.target.value } : x,
-                  ),
-                )
+                setOptTexts((p) => p.map((x, idx) => (idx === i ? e.target.value : x)))
               }
             />
             <label className="option-correct">
               <input
-                type="checkbox"
-                name={`opt.${i}.correct`}
-                checked={o.correct}
-                onChange={(e) => markCorrect(i, e.target.checked)}
+                type="radio"
+                name="correct"
+                value={i}
+                required
+                checked={correct === i}
+                onChange={() => setCorrect(i)}
               />
               {tt("qopt.correct")}
             </label>
-            {fixedCount == null && !isTrueFalse && (
-              <button
-                type="button"
-                className="link-danger"
-                onClick={() => setOpts((p) => p.filter((_, idx) => idx !== i))}
-              >
-                {tt("qopt.remove")}
-              </button>
-            )}
           </div>
         ))}
       </div>
-      {fixedCount == null && !isTrueFalse && (
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={() =>
-            setOpts((p) =>
-              p.length >= 10 ? p : [...p, { text: "", correct: false }],
-            )
-          }
-        >
-          {tt("qopt.add")}
-        </button>
-      )}
+
+      {/* Read-only status (lifecycle transitions stay permission-gated). */}
+      <label className="field" style={{ marginTop: 14 }}>
+        <span className="field-label">{tt("qfield.status")}</span>
+        <input type="text" value={statusText} readOnly disabled />
+        {!id && <span className="hint">{tt("qform.statusNote")}</span>}
+      </label>
 
       {state?.error && <p className="form-error">{state.error}</p>}
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? tt("qform.saving") : submitLabel}
+      <button className="btn" type="submit" disabled={busy}>
+        {busy ? tt("qform.saving") : submitLabel}
       </button>
     </form>
   );

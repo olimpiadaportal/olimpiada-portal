@@ -49,12 +49,19 @@ export function timerLevel(remaining: number | null): TimerLevel {
  * across JS-timer throttling and app background/foreground; the anchor itself
  * is re-derived from every save/get response, so device-clock skew never
  * accumulates (web deadlineRef parity).
+ *
+ * Round-20 contract (migration 057): a NULL server remaining means UNTIMED
+ * (practice — no deadline exists), so the anchor is null and `remainingFrom`
+ * keeps yielding null: no countdown, no resync target, and the 0:00
+ * auto-submit can never fire. A numeric remaining ≤ 0 stays "already expired"
+ * (a TIMED attempt past its deadline).
  */
 export function deadlineFromRemaining(
   nowMs: number,
   remainingSeconds: number | null | undefined,
-): number {
-  const r = Math.max(0, Math.floor(remainingSeconds ?? 0));
+): number | null {
+  if (remainingSeconds === null || remainingSeconds === undefined) return null;
+  const r = Math.max(0, Math.floor(remainingSeconds));
   return nowMs + r * 1000;
 }
 
@@ -167,16 +174,17 @@ export function paletteCellState(
 
 // ---- tests home helpers ---------------------------------------------------------------
 
-/** A resumable attempt: in_progress AND the server deadline is still ahead. */
+/**
+ * A resumable attempt: in_progress AND either UNTIMED (null deadline —
+ * Round-20 practice never expires) or the server deadline is still ahead.
+ */
 export function isLiveAttempt(
   row: Pick<AttemptListRow, "status" | "deadline_at">,
   nowMs: number,
 ): boolean {
-  return (
-    row.status === "in_progress" &&
-    !!row.deadline_at &&
-    Date.parse(row.deadline_at) > nowMs
-  );
+  if (row.status !== "in_progress") return false;
+  if (row.deadline_at === null) return true; // untimed practice
+  return Date.parse(row.deadline_at) > nowMs;
 }
 
 export function findLiveAttempt<T extends Pick<AttemptListRow, "status" | "deadline_at">>(
@@ -187,8 +195,9 @@ export function findLiveAttempt<T extends Pick<AttemptListRow, "status" | "deadl
 }
 
 /**
- * Display status for the history list (web parity): an in_progress row whose
- * deadline already passed renders as "expired" (lazy expiry).
+ * Display status for the history list (web parity): a TIMED in_progress row
+ * whose deadline already passed renders as "expired" (lazy expiry). Untimed
+ * practice (null deadline) stays "in_progress" — it never expires.
  */
 export function displayStatus(
   row: Pick<AttemptListRow, "status" | "deadline_at">,

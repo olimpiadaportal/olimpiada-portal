@@ -207,6 +207,15 @@ export function arenaTokens(theme: ThemeName, palette: ArenaPalette): ArenaToken
 /** Brand gradient (logo mark, hero accents): 135° purple → orange. */
 export const BRAND_GRADIENT = ["#7c3aed", "#ff8a00"] as const;
 
+/**
+ * Token-level gradient exposure (redesign §2). The web ships ONE brand
+ * gradient for both themes (globals.css linear-gradient(135deg, #7c3aed,
+ * #ff8a00)) — mirrored here; do not invent per-theme variants.
+ */
+export const gradients = {
+  brand: BRAND_GRADIENT,
+} as const;
+
 /** Radii + spacing + type scale (web: 14–22px radii; scale 12…28). */
 export const radius = { sm: 10, md: 14, lg: 18, xl: 22 } as const;
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
@@ -219,5 +228,47 @@ export const fontSize = {
   xxl: 28,
 } as const;
 
+/** Display tier (hero numbers/titles): 32/40 tight, weight 800 (redesign §1). */
+export const display = { size: 32, lineHeight: 40 } as const;
+
+/** Named font weights (RN wants string literals). */
+export const weight = {
+  regular: "400",
+  medium: "500",
+  semibold: "600",
+  bold: "700",
+  heavy: "800",
+} as const;
+
 /** JetBrains-Mono-style numeric accents: platform monospace, tabular digits. */
 export const MONO_FONT = { fontVariant: ["tabular-nums" as const] };
+
+// ---- shadows (redesign §2) -------------------------------------------------
+// The ONLY sanctioned way to cast a shadow: emits Android elevation and the
+// iOS shadow* quartet together so both platforms stay in visual lockstep.
+// Pass the theme's shadow color (AppTokens.shadow — it carries its own alpha,
+// so shadowOpacity stays 1); arena surfaces pass nothing and get the neutral
+// dark-ink default.
+
+export type ShadowLevel = "card" | "float";
+
+export type ShadowStyle = {
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowRadius: number;
+  shadowOffset: { width: number; height: number };
+  elevation: number;
+};
+
+const SHADOW_PRESETS: Record<ShadowLevel, Omit<ShadowStyle, "shadowColor" | "shadowOpacity">> = {
+  /** Resting cards (web .card soft shadow). */
+  card: { shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  /** Floating chrome: sheets, tab bar, hero cards. */
+  float: { shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 8 },
+};
+
+export const SHADOW_FALLBACK_COLOR = "rgba(10, 14, 26, 0.16)";
+
+export function shadow(level: ShadowLevel, color: string = SHADOW_FALLBACK_COLOR): ShadowStyle {
+  return { shadowColor: color, shadowOpacity: 1, ...SHADOW_PRESETS[level] };
+}

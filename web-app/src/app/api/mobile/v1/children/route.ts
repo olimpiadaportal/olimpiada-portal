@@ -37,6 +37,9 @@ export async function POST(request: Request): Promise<Response> {
       classGrade: bodyStr(body, "class_grade").trim() || null,
       gradeId: bodyStr(body, "grade_id").trim() || null,
       districtId: bodyStr(body, "district_id").trim() || null,
+      // Round 21: the intra-city rayon — REQUIRED by the DB when the chosen
+      // city has active rayons (mobile sends it from the M3.1 wizard update).
+      cityDistrictId: bodyStr(body, "city_district_id").trim() || null,
       schoolId: bodyStr(body, "school_id").trim() || null,
     };
 

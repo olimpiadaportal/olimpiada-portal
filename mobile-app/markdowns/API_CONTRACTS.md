@@ -75,8 +75,14 @@ Add a child (web `addChild` parity via `createChild`): names trimmed/capped at
 `create_child_account` RPC with saga cleanup. Batch H: NO login ID yet — it is
 allocated on subscribe (or activate-free).
 
-Request: `{"first_name","last_name","grade_id","district_id","school_id",
-"city"?,"school_name"?,"class_grade"?,"password"}`
+Request: `{"first_name","last_name","grade_id","district_id","city_district_id"?,
+"school_id","city"?,"school_name"?,"class_grade"?,"password"}`
+
+Round 21: `city_district_id` (intra-city rayon, from the public-readable
+`city_districts` table) is REQUIRED by the server whenever the chosen city
+(`district_id` — naming trap: that field is the CITY) has active rayons; the
+failure maps to `addchild.err.districtRequired`. The M3.1 wizard must add the
+District select between City and School.
 
 | Status | Body |
 |---|---|
@@ -159,8 +165,11 @@ re-verified, same caps (names 80, school 160, class 40, city 120), same
 `validateChildInfo` rules (district/school/grade mandatory UUIDs). Internal
 identifiers (child_unique_id, profile ids) are never editable.
 
-Request: `{"first_name","last_name","grade_id","district_id","school_id",
-"city"?,"school_name"?,"class_grade"?}`
+Request: `{"first_name","last_name","grade_id","district_id","city_district_id"?,
+"school_id","city"?,"school_name"?,"class_grade"?}`
+
+Round 21: same `city_district_id` rule as POST /children (required when the
+city has active rayons; guard-checked against the school's rayon).
 
 | Status | Body |
 |---|---|

@@ -2,7 +2,9 @@
 // (globals.css): panel, eyebrow, section heading with trailing hairline, the
 // lime/ghost mono buttons and the pull-to-refresh scroll body. All colors come
 // from the palette-aware useArena() hook so every piece follows the child's
-// chosen palette and the dark arena automatically.
+// chosen palette and the dark arena automatically. Redesign pass: panels cast
+// the sanctioned shadow(), radii come from the web scale, buttons get ripple +
+// pressed-scale, and the section heading grows an optional trailing action.
 import React from "react";
 import {
   Platform,
@@ -14,10 +16,18 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
-import { radius, spacing } from "@/theme/tokens";
+import { radius, shadow, spacing } from "@/theme/tokens";
 import { useArena } from "./useArena";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
+
+/** Fixed dark ink used on the lime accent (web .arena-btn text color). */
+export const ARENA_BTN_INK = "#0a0e1a";
+
+/** Arena shadow color: soft neutral in light palettes, deep in the dark arena. */
+function arenaShadowColor(theme: "light" | "dark"): string {
+  return theme === "dark" ? "rgba(0, 0, 0, 0.5)" : "rgba(22, 32, 58, 0.14)";
+}
 
 /** Scroll body under the tabs header (web .arena-main), arena background. */
 export function ArenaScroll({
@@ -55,7 +65,7 @@ export function ArenaScroll({
   );
 }
 
-/** Web .arena-panel: panel surface, hairline border, 14px radius. */
+/** Web .arena-panel: panel surface, hairline border, card radius + soft shadow. */
 export function ArenaPanel({
   children,
   style,
@@ -63,7 +73,7 @@ export function ArenaPanel({
   children: React.ReactNode;
   style?: ViewStyle;
 }) {
-  const { arena } = useArena();
+  const { arena, theme } = useArena();
   return (
     <View
       style={[
@@ -71,8 +81,9 @@ export function ArenaPanel({
           backgroundColor: arena.panel,
           borderWidth: 1,
           borderColor: arena.line,
-          borderRadius: radius.md,
+          borderRadius: radius.lg,
           padding: spacing.lg,
+          ...shadow("card", arenaShadowColor(theme)),
         },
         style,
       ]}
@@ -82,7 +93,7 @@ export function ArenaPanel({
   );
 }
 
-/** Web .arena-eyebrow: tiny mono uppercase dim label. */
+/** Web .arena-eyebrow: tiny mono uppercase dim label (arena take on "eyebrow"). */
 export function ArenaEyebrow({
   children,
   color,
@@ -93,6 +104,7 @@ export function ArenaEyebrow({
   const { arena } = useArena();
   return (
     <AppText
+      variant="eyebrow"
       color={color ?? arena.dim}
       style={{
         fontFamily: MONO,
@@ -106,8 +118,15 @@ export function ArenaEyebrow({
   );
 }
 
-/** Web .arena-section-h: mono uppercase heading with a trailing hairline. */
-export function ArenaSectionH({ title }: { title: string }) {
+/** Web .arena-section-h: mono uppercase heading with a trailing hairline
+ * (+ an optional trailing text action, e.g. "See all"). */
+export function ArenaSectionH({
+  title,
+  action,
+}: {
+  title: string;
+  action?: { label: string; onPress: () => void };
+}) {
   const { arena } = useArena();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
@@ -124,23 +143,39 @@ export function ArenaSectionH({ title }: { title: string }) {
         {title}
       </AppText>
       <View style={{ flex: 1, height: 1, backgroundColor: arena.line }} />
+      {action ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          onPress={action.onPress}
+          hitSlop={12}
+        >
+          <AppText color={arena.lime} variant="label" style={{ fontSize: 13 }}>
+            {action.label}
+          </AppText>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
-/** Web .arena-btn / .arena-btn-ghost (+ -sm): mono uppercase action button. */
+/** Web .arena-btn / .arena-btn-ghost (+ -sm): mono uppercase action button.
+ * Redesign: ripple on Android, pressed-scale 0.97, ≥44dp default target. */
 export function ArenaButton({
   title,
   onPress,
   variant = "primary",
   small = false,
   style,
+  icon,
 }: {
   title: string;
   onPress: () => void;
   variant?: "primary" | "ghost";
   small?: boolean;
   style?: ViewStyle;
+  /** Optional leading glyph (lucide icon sized 16–18). */
+  icon?: React.ReactNode;
 }) {
   const { arena } = useArena();
   const primary = variant === "primary";
@@ -149,25 +184,34 @@ export function ArenaButton({
       accessibilityRole="button"
       accessibilityLabel={title}
       onPress={onPress}
+      android_ripple={{
+        color: primary ? "rgba(10, 14, 26, 0.18)" : arena.panel2,
+        foreground: true,
+      }}
       style={({ pressed }) => [
         {
           backgroundColor: primary ? arena.lime : "transparent",
           borderWidth: primary ? 0 : 1,
           borderColor: arena.line,
-          borderRadius: 8,
+          borderRadius: radius.sm,
           paddingVertical: small ? spacing.sm : spacing.md,
           paddingHorizontal: small ? spacing.md : spacing.lg,
+          flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
-          opacity: pressed ? 0.85 : 1,
+          gap: spacing.sm,
+          opacity: pressed ? 0.9 : 1,
+          transform: [{ scale: pressed ? 0.97 : 1 }],
           minHeight: small ? 36 : 46,
+          overflow: "hidden",
         },
         style,
       ]}
     >
+      {icon ?? null}
       <AppText
         // Web .arena-btn text is the fixed dark ink on lime; ghost uses ink.
-        color={primary ? "#0a0e1a" : arena.ink}
+        color={primary ? ARENA_BTN_INK : arena.ink}
         style={{
           fontFamily: MONO,
           fontSize: small ? 11 : 12,
@@ -177,6 +221,53 @@ export function ArenaButton({
         }}
       >
         {title}
+      </AppText>
+    </Pressable>
+  );
+}
+
+/** Arena chip (web .arena-chip): full-round palette chip with an active state. */
+export function ArenaChip({
+  label,
+  active = false,
+  onPress,
+  icon,
+}: {
+  label: string;
+  active?: boolean;
+  onPress: () => void;
+  icon?: React.ReactNode;
+}) {
+  const { arena } = useArena();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={label}
+      onPress={onPress}
+      android_ripple={{ color: arena.panel2, foreground: true }}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.xs,
+        backgroundColor: active ? arena.lime : arena.panel,
+        borderWidth: 1,
+        borderColor: active ? arena.lime : arena.line,
+        borderRadius: 999,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.lg,
+        minHeight: 36,
+        opacity: pressed ? 0.85 : 1,
+        overflow: "hidden",
+      })}
+    >
+      {icon ?? null}
+      <AppText
+        variant="label"
+        color={active ? ARENA_BTN_INK : arena.muted}
+        style={{ fontSize: 13 }}
+      >
+        {label}
       </AppText>
     </Pressable>
   );

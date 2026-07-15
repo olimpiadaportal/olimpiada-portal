@@ -330,6 +330,8 @@ a {
   gap: 14px;
   align-items: center;
   justify-content: flex-end;
+  /* Action labels ("Düzəliş et", quick transitions) never wrap mid-button. */
+  white-space: nowrap;
 }
 
 .row-actions form {
@@ -543,6 +545,17 @@ a {
 
 .lifecycle form {
   display: inline;
+}
+
+/* Status + transitions + delete row at the top of the edit-question modal. */
+.qedit-lifecycle {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.qedit-lifecycle .pill {
+  margin-top: 0;
 }
 
 .head-row {
@@ -1026,6 +1039,17 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Round 22: on the widened questions page (1560px cap) the question-text and
+   topic columns may breathe — they still ellipsize, the action buttons never
+   get squeezed (narrow windows keep .table-wrap's horizontal scroll). */
+.admin-content:has(.questions-page) .cell-body {
+  max-width: 560px;
+}
+
+.admin-content:has(.questions-page) .cell-topic {
+  max-width: 260px;
 }
 
 /* Refined status pill for the questions table — slightly tighter. */
@@ -2437,4 +2461,450 @@ a.qpage-link:hover {
   border-radius: 8px;
   background: var(--bg);
   font-size: 0.9rem;
+}
+
+/* ---- Round 21: question-flow overhaul ------------------------------------ */
+/* Fixed A–E option rows: the letter chip in front of each answer input. */
+.option-letter {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Review chips ("needs option E" / "needs term") under the stat cards. */
+.review-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.review-chip b {
+  color: var(--warn-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.review-chip:hover {
+  border-color: var(--brand);
+}
+
+.review-chip.active {
+  border-color: var(--brand);
+  outline: 2px solid rgba(79, 70, 229, 0.22);
+  outline-offset: -1px;
+}
+
+/* Daily-round readiness panel (subject × grade eligible/25 grid). */
+.ready-panel {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+}
+
+.ready-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.ready-panel[open] summary {
+  margin-bottom: 8px;
+}
+
+.ready-flag {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.ready-ok {
+  color: var(--ok-fg);
+  font-weight: 600;
+}
+
+.ready-table td.ready-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ready-table td.ready-cell.low {
+  color: #b91c1c;
+  background: #fef2f2;
+  font-weight: 700;
+}
+
+/* =========================================================================
+   Locations (/locations) — Cities → Rayons → Schools master-detail
+   (Round 21 item 7). Additive, token-driven; first master-detail pattern.
+   ========================================================================= */
+
+/* The shared .admin-content caps at 1120px — three columns need more room.
+   Progressive enhancement: without :has() support the page simply stays at
+   1120px (columns are narrower but fully functional).
+   Round 22: the questions list (8 columns + row actions) gets the same full
+   width so the table stops feeling squeezed on desktop. */
+.admin-content:has(.locations-page),
+.admin-content:has(.questions-page) {
+  max-width: 1560px;
+}
+
+.loc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* Selection navigations run in a transition — dim while the server catches up. */
+.loc-grid[data-pending="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.loc-col {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+}
+
+.loc-col-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.loc-col-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.loc-col-count {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.loc-col-add {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.loc-col-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Context line under the column head (selected city / rayon name). */
+.loc-col-context {
+  margin: 8px 14px 0;
+  font-size: 0.8rem;
+}
+
+.loc-search {
+  padding: 10px 12px 2px;
+}
+
+.loc-search input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 0.86rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.loc-search input:focus {
+  outline: 2px solid rgba(79, 70, 229, 0.35);
+  border-color: var(--brand);
+}
+
+.loc-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  max-height: min(62vh, 680px);
+}
+
+.loc-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+}
+
+.loc-row:hover {
+  background: var(--bg);
+}
+
+.loc-row.selected {
+  background: rgba(79, 70, 229, 0.08);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.loc-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text);
+  border-radius: 8px;
+}
+
+.loc-row-main:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.35);
+}
+
+.loc-row-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.loc-row.inactive .loc-row-name {
+  color: var(--muted);
+}
+
+.loc-row.review .loc-row-name {
+  color: var(--warn-fg);
+}
+
+.loc-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.loc-row-actions {
+  display: flex;
+  gap: 0;
+  padding-right: 6px;
+  flex-shrink: 0;
+}
+
+.loc-icon-btn {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.loc-icon-btn:hover {
+  background: #eef0f4;
+  color: var(--text);
+}
+
+.loc-icon-btn.danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.loc-empty {
+  padding: 16px 14px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.loc-empty-hint {
+  font-size: 0.78rem;
+}
+
+.loc-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.loc-pill-private {
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--brand);
+}
+
+.loc-pill-public {
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--muted);
+}
+
+.loc-pill-warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.loc-pill-muted {
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--muted);
+}
+
+/* Review-mode banner above the needs-district school list. */
+.loc-review-banner {
+  margin: 10px 14px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 0.8rem;
+}
+
+/* Delete-confirmation modal content. */
+.loc-delete-question {
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.loc-impact {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.loc-impact li {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.loc-impact-note {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.loc-impact-blocked {
+  margin: 0 0 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 0.85rem;
+}
+
+/* Danger-styled primary button (delete confirmation). */
+.btn-danger {
+  background: #dc2626;
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
+}
+
+.btn-danger:disabled {
+  background: #dc2626;
+}
+
+/* Route-level skeleton (locations/loading.tsx). */
+.loc-skel {
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--bg) 50%,
+    var(--border) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: 8px;
+  animation: loc-shimmer 1.4s ease-in-out infinite;
+}
+
+.loc-skel-title {
+  width: 140px;
+  height: 26px;
+  margin-bottom: 8px;
+}
+
+.loc-skel-subtitle {
+  width: 320px;
+  max-width: 100%;
+  height: 14px;
+}
+
+.loc-skel-colhead {
+  width: 60%;
+  height: 20px;
+}
+
+.loc-skel-row {
+  height: 44px;
+  flex-shrink: 0;
+}
+
+@keyframes loc-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Stack below ~1100px: three selectable sections, top to bottom (selection is
+   URL-driven, so it survives the reflow). */
+@media (max-width: 1099px) {
+  .loc-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .loc-col {
+    min-height: 0;
+  }
+
+  .loc-list {
+    max-height: 46vh;
+  }
 }

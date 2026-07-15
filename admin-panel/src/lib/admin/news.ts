@@ -16,7 +16,10 @@ import {
 } from "@/lib/admin/media-verify";
 import { getT } from "@/i18n/server";
 
-export type NewsState = { error?: string } | null;
+// `ok`/`id` are returned only for the create-with-cover flow (__afterCreate
+// = "return"): the client then uploads + attaches the chosen cover image for
+// the new article and navigates itself.
+export type NewsState = { error?: string; ok?: boolean; id?: string } | null;
 export type NewsCoverState = { error?: string } | null;
 
 const LOCALES = ["az", "en", "ru"] as const;
@@ -137,11 +140,12 @@ export async function saveNews(
   });
 
   revalidatePath("/news");
-  // On first create (from the Add-News page) land back on /news/new with the new
-  // id so the featured-image uploader appears at the end of the same flow. Edits
-  // go straight to the full edit page (which has its own cover uploader).
-  if (isCreate && s(formData, "__afterCreate") === "stay") {
-    redirect(`/news/new?created=${newsId}`);
+  // One-submission create with a cover image: instead of redirecting, hand the
+  // new id back to the create form, which uploads the pre-selected image,
+  // attaches it (attachNewsCover re-validates everything server-side) and then
+  // navigates to the edit page itself. Plain creates/edits redirect as before.
+  if (isCreate && s(formData, "__afterCreate") === "return") {
+    return { ok: true, id: newsId };
   }
   redirect(`/news/${newsId}/edit`);
 }

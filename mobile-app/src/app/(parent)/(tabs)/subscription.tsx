@@ -1,15 +1,25 @@
-// SUBSCRIPTION tab (web /subscription one-page billing center parity):
-// child selector chips → per-child live-subscription card + manage-subjects
-// editor (posture-aware) + cancel flow, plus the owner-approved, clearly
-// labeled DEMO Billing and Invoices sections (billing.demoNote).
-// Posture: editor runs in demo (payment-first sheet) and free modes (direct);
-// 'real' shows the web-only note; 'off' shows gate.paymentsOff.
+// SUBSCRIPTION tab (web /subscription one-page billing center parity,
+// redesigned): child selector chips → per-child live-subscription card (brand
+// gradient-border when a plan is live) + manage-subjects editor
+// (posture-aware) + cancel flow, plus the owner-approved, clearly labeled DEMO
+// Billing and Invoices sections (billing.demoNote) restyled to the new visual
+// system. Posture: editor runs in demo (payment-first sheet) and free modes
+// (direct); 'real' shows the web-only note; 'off' shows gate.paymentsOff.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
+import {
+  CalendarDays,
+  CreditCard,
+  FileText,
+  Receipt,
+  RefreshCw,
+  Wallet,
+} from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { SectionHeader } from "@/components/SectionHeader";
 import { Segmented } from "@/components/Segmented";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -34,6 +44,7 @@ import {
 } from "@/features/parent/queries";
 import {
   ChildChips,
+  GradientBorderCard,
   KeyRow,
   Pill,
   ScreenScroll,
@@ -110,18 +121,61 @@ export default function ParentSubscription() {
     );
   }
 
+  // The live-plan summary body (shared by the gradient-border and plain cards).
+  const planSummary = selected ? (
+    <View style={{ gap: spacing.sm }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+        <AppText variant="title" style={{ flex: 1 }}>
+          {childDisplayName(selected)}
+        </AppText>
+        <Pill label={t(subStatusKey(liveSub?.status))} tone={liveSub ? "ok" : "muted"} />
+      </View>
+      {liveSub ? (
+        <>
+          <KeyRow
+            icon={<RefreshCw size={16} color={tokens.muted} strokeWidth={2} />}
+            label={t("subscription.interval")}
+            value={intervalName(liveSub.billing_interval)}
+          />
+          <KeyRow
+            icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
+            label={t("billing.row.next")}
+            value={fmtDate(liveSub.current_period_end, locale)}
+          />
+          <KeyRow
+            icon={<Wallet size={16} color={tokens.muted} strokeWidth={2} />}
+            label={t("billing.totalLabel")}
+            value={fmtMoney(liveSub.total_amount ?? 0, liveSub.currency)}
+          />
+          <KeyRow
+            icon={<FileText size={16} color={tokens.muted} strokeWidth={2} />}
+            label={t("subscription.subjects")}
+            value={
+              liveSub.subjects.length > 0
+                ? liveSub.subjects.map((s) => s.name).join(", ")
+                : t("billing.noSubjects")
+            }
+          />
+        </>
+      ) : (
+        <AppText variant="muted">{t("billing.noSubjects")}</AppText>
+      )}
+    </View>
+  ) : null;
+
   return (
     <ScreenScroll onRefresh={onRefresh} refreshing={children.isRefetching || subs.isRefetching}>
       <AppText variant="muted">{t("subscription.subtitle")}</AppText>
 
       {list.length === 0 ? (
-        <>
-          <EmptyState title={t("parent.dash.noChildren")} />
-          <Button
-            title={t("parent.dash.addChild")}
-            onPress={() => router.push("/(parent)/add-child")}
-          />
-        </>
+        <EmptyState
+          title={t("parent.dash.noChildren")}
+          icon={<CreditCard size={26} color={tokens.muted} strokeWidth={2} />}
+          action={{
+            label: t("parent.dash.addChild"),
+            onPress: () => router.push("/(parent)/add-child"),
+          }}
+        />
       ) : (
         <>
           {list.length > 1 ? (
@@ -153,46 +207,12 @@ export default function ParentSubscription() {
 
           {section === "plans" && selected ? (
             <View style={{ gap: spacing.lg }}>
-              {/* Live subscription summary for the selected child. */}
-              <Card style={{ gap: spacing.sm }}>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
-                >
-                  <AppText variant="title" style={{ flex: 1 }}>
-                    {childDisplayName(selected)}
-                  </AppText>
-                  <Pill
-                    label={t(subStatusKey(liveSub?.status))}
-                    tone={liveSub ? "ok" : "muted"}
-                  />
-                </View>
-                {liveSub ? (
-                  <>
-                    <KeyRow
-                      label={t("subscription.interval")}
-                      value={intervalName(liveSub.billing_interval)}
-                    />
-                    <KeyRow
-                      label={t("billing.row.next")}
-                      value={fmtDate(liveSub.current_period_end, locale)}
-                    />
-                    <KeyRow
-                      label={t("billing.totalLabel")}
-                      value={fmtMoney(liveSub.total_amount ?? 0, liveSub.currency)}
-                    />
-                    <KeyRow
-                      label={t("subscription.subjects")}
-                      value={
-                        liveSub.subjects.length > 0
-                          ? liveSub.subjects.map((s) => s.name).join(", ")
-                          : t("billing.noSubjects")
-                      }
-                    />
-                  </>
-                ) : (
-                  <AppText variant="muted">{t("billing.noSubjects")}</AppText>
-                )}
-              </Card>
+              {/* Live subscription summary — gradient border marks an ACTIVE plan. */}
+              {liveSub ? (
+                <GradientBorderCard>{planSummary}</GradientBorderCard>
+              ) : (
+                <Card>{planSummary}</Card>
+              )}
 
               {posture.paymentsOff ? (
                 <GateNotice title={t("billing.plansTitle")} body={t("gate.paymentsOff")} />
@@ -226,6 +246,7 @@ export default function ParentSubscription() {
                 // demo mode, no live plan → start one on the subscribe screen.
                 <Button
                   title={t("subscription.startPlan")}
+                  variant="gradient"
                   onPress={() =>
                     router.push({
                       pathname: "/(parent)/children/[id]/subscribe",
@@ -238,15 +259,43 @@ export default function ParentSubscription() {
           ) : null}
 
           {section === "billing" ? (
-            <Card style={{ gap: spacing.xs }}>
-              <AppText variant="title">{t("billing.billingTitle")}</AppText>
-              <KeyRow label={t("billing.current")} value={t("pricing.plan.monthly.name")} />
-              <KeyRow label={t("billing.row.cycle")} value={t("pricing.monthly")} />
-              <KeyRow label={t("billing.row.next")} value="29/01/2026" />
-              <KeyRow label={t("billing.totalLabel")} value="≈ 18 AZN" />
-              <KeyRow label={t("billing.row.method")} value={t("billing.cardEnding")} />
-              <KeyRow label={t("billing.row.expiry")} value="11/2028" />
-              <KeyRow label={t("billing.row.status")} value={t("billing.defaultMethod")} />
+            <Card style={{ gap: spacing.sm }}>
+              <SectionHeader title={t("billing.billingTitle")} />
+              <KeyRow
+                icon={<FileText size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("billing.current")}
+                value={t("pricing.plan.monthly.name")}
+              />
+              <KeyRow
+                icon={<RefreshCw size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("billing.row.cycle")}
+                value={t("pricing.monthly")}
+              />
+              <KeyRow
+                icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("billing.row.next")}
+                value="29/01/2026"
+              />
+              <KeyRow
+                icon={<Wallet size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("billing.totalLabel")}
+                value="≈ 18 AZN"
+              />
+              <KeyRow
+                icon={<CreditCard size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("billing.row.method")}
+                value={t("billing.cardEnding")}
+              />
+              <KeyRow
+                icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("billing.row.expiry")}
+                value="11/2028"
+              />
+              <KeyRow
+                icon={<Receipt size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("billing.row.status")}
+                value={t("billing.defaultMethod")}
+              />
               <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
                 <Button title={t("billing.changeMethod")} variant="ghost" disabled onPress={() => {}} />
                 <Button title={t("billing.addCard")} variant="ghost" disabled onPress={() => {}} />
@@ -254,7 +303,7 @@ export default function ParentSubscription() {
                   {t("billing.soon")}
                 </AppText>
               </View>
-              <AppText variant="muted" style={{ marginTop: spacing.sm }}>
+              <AppText variant="muted" style={{ marginTop: spacing.sm, fontSize: 12 }}>
                 {t("billing.demoNote")}
               </AppText>
             </Card>
@@ -262,13 +311,14 @@ export default function ParentSubscription() {
 
           {section === "invoices" ? (
             <View style={{ gap: spacing.md }}>
-              <AppText variant="title">{t("billing.invoicesTitle")}</AppText>
+              <SectionHeader title={t("billing.invoicesTitle")} />
               {[
                 { id: "INV-2026-001", date: t("billing.date1") },
                 { id: "INV-2025-012", date: t("billing.date2") },
               ].map((row) => (
                 <Card key={row.id} style={{ gap: spacing.xs }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+                    <FileText size={18} color={tokens.accent} strokeWidth={2} />
                     <AppText variant="mono" style={{ flex: 1, fontWeight: "700" }}>
                       {row.id}
                     </AppText>
@@ -283,7 +333,9 @@ export default function ParentSubscription() {
                   </AppText>
                 </Card>
               ))}
-              <AppText variant="muted">{t("billing.demoNote")}</AppText>
+              <AppText variant="muted" style={{ fontSize: 12 }}>
+                {t("billing.demoNote")}
+              </AppText>
             </View>
           ) : null}
 

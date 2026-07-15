@@ -1,27 +1,40 @@
 // Canonical non-content states: GateNotice (flag-gated module), EmptyState
-// (branded empty), Skeleton (loading shimmer block), ErrorRetry.
+// (branded empty, lucide glyph + one optional action), Skeleton (loading
+// shimmer block), ErrorRetry. Glyphs come from lucide (one icon language).
 import React, { useEffect, useState } from "react";
 import { Animated, View } from "react-native";
-import Svg, { Circle, Path } from "react-native-svg";
+import { CircleAlert, Inbox, Lock } from "lucide-react-native";
 import { AppText } from "./AppText";
 import { Button } from "./Button";
 import { Card } from "./Card";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
 
+function GlyphChip({ children }: { children: React.ReactNode }) {
+  const { tokens } = useTheme();
+  return (
+    <View
+      style={{
+        width: 56,
+        height: 56,
+        borderRadius: radius.md,
+        backgroundColor: tokens.chipBg,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
 export function GateNotice({ title, body }: { title: string; body: string }) {
   const { tokens } = useTheme();
   return (
     <Card style={{ alignItems: "center", gap: spacing.sm }}>
-      <Svg width={40} height={40} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M7 11V8a5 5 0 0 1 10 0v3M5 11h14v9H5z"
-          stroke={tokens.muted}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+      <GlyphChip>
+        <Lock size={26} color={tokens.muted} strokeWidth={2} />
+      </GlyphChip>
       <AppText variant="title" style={{ textAlign: "center" }}>
         {title}
       </AppText>
@@ -32,19 +45,23 @@ export function GateNotice({ title, body }: { title: string; body: string }) {
   );
 }
 
-export function EmptyState({ title, body }: { title: string; body?: string }) {
+export function EmptyState({
+  title,
+  body,
+  icon,
+  action,
+}: {
+  title: string;
+  body?: string;
+  /** Custom lucide glyph (default: Inbox). */
+  icon?: React.ReactNode;
+  /** One optional action ("Add child", "Start round"…). */
+  action?: { label: string; onPress: () => void };
+}) {
   const { tokens } = useTheme();
   return (
     <View style={{ alignItems: "center", gap: spacing.sm, padding: spacing.xl }}>
-      <Svg width={48} height={48} viewBox="0 0 24 24" fill="none">
-        <Circle cx={12} cy={12} r={9} stroke={tokens.border} strokeWidth={2} />
-        <Path
-          d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01"
-          stroke={tokens.muted}
-          strokeWidth={2}
-          strokeLinecap="round"
-        />
-      </Svg>
+      <GlyphChip>{icon ?? <Inbox size={26} color={tokens.muted} strokeWidth={2} />}</GlyphChip>
       <AppText variant="label" style={{ textAlign: "center" }}>
         {title}
       </AppText>
@@ -52,6 +69,14 @@ export function EmptyState({ title, body }: { title: string; body?: string }) {
         <AppText variant="muted" style={{ textAlign: "center" }}>
           {body}
         </AppText>
+      ) : null}
+      {action ? (
+        <Button
+          title={action.label}
+          onPress={action.onPress}
+          variant="ghost"
+          style={{ marginTop: spacing.sm }}
+        />
       ) : null}
     </View>
   );
@@ -92,8 +117,12 @@ export function ErrorRetry({
   retryLabel: string;
   onRetry: () => void;
 }) {
+  const { tokens } = useTheme();
   return (
     <View style={{ alignItems: "center", gap: spacing.lg, padding: spacing.xl }}>
+      <GlyphChip>
+        <CircleAlert size={26} color={tokens.muted} strokeWidth={2} />
+      </GlyphChip>
       <AppText variant="muted" style={{ textAlign: "center" }}>
         {message}
       </AppText>

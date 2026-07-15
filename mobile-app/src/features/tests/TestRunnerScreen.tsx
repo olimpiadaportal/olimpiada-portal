@@ -7,6 +7,8 @@
 // auto-submit (server keeps a 60s grace), TRUE resume, and the leave guard
 // (Android hardware back + navigation beforeRemove → confirm dialog; never for
 // the runner's own controls).
+// M3.2 restyle: presentation-only chrome (TimerPill pulse, AnsweredBar, lucide
+// glyphs, option/palette skins) — every engine flow above is byte-identical.
 import React, {
   useCallback,
   useEffect,
@@ -15,6 +17,7 @@ import React, {
   useState,
 } from "react";
 import {
+  Animated,
   AppState,
   BackHandler,
   Pressable,
@@ -23,13 +26,22 @@ import {
 } from "react-native";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Path } from "react-native-svg";
+import {
+  Bookmark,
+  BookmarkCheck,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Clock,
+  CloudUpload,
+} from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { cancelTestAttempt, saveTestAnswers, submitTestAttempt } from "./api";
-import { useTestAttempt } from "./queries";
+import { useAttemptRow, useTestAttempt } from "./queries";
 import {
   AUTOSAVE_MS,
   LETTERS,
@@ -50,18 +62,168 @@ import { ArenaButton, Notice, Panel, tint, useArena } from "./ui";
 const TESTS_TAB = "/(student)/(tabs)/tests" as const;
 const OLYMPIADS_TAB = "/(student)/(tabs)/olympiads" as const;
 
-// Instagram-style bookmark glyph (web BookmarkIcon parity).
-function BookmarkIcon({ filled, color }: { filled: boolean; color: string }) {
+// ---------------------------------------------------------------------------
+// Presentation-only chrome (M3.2 restyle). These components RECEIVE engine
+// state (remaining/level/answered) and never compute or mutate any of it.
+// ---------------------------------------------------------------------------
+
+/**
+ * Timer chip — pulses red under 60s (native driver; display only). UNTIMED
+ * attempts (Round-20 practice: null deadline) render the ∞ no-limit state
+ * instead of a countdown (web .tst-timer.inf parity).
+ */
+function TimerPill({
+  arena,
+  remaining,
+  level,
+  untimed,
+  noLimitLabel,
+  a11yLabel,
+}: {
+  arena: ArenaTokens;
+  remaining: number | null;
+  level: "normal" | "warn" | "crit";
+  untimed: boolean;
+  noLimitLabel: string;
+  a11yLabel: string;
+}) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (untimed || level !== "crit") {
+      pulse.stopAnimation();
+      pulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.5, duration: 450, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 450, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [level, untimed, pulse]);
+
+  if (untimed) {
+    return (
+      <View
+        accessible
+        accessibilityLabel={noLimitLabel}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing.xs,
+          backgroundColor: arena.panel2,
+          borderColor: arena.line,
+          borderWidth: 1,
+          borderRadius: 999,
+          paddingVertical: spacing.xs,
+          paddingHorizontal: spacing.md,
+        }}
+      >
+        <AppText variant="mono" color={arena.muted} style={{ fontSize: 16 }}>
+          ∞
+        </AppText>
+        <AppText variant="label" color={arena.muted} style={{ fontSize: 12 }}>
+          {noLimitLabel}
+        </AppText>
+      </View>
+    );
+  }
+
+  const color = level === "crit" ? arena.red : level === "warn" ? arena.gold : arena.ink;
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill={filled ? color : "none"}>
-      <Path
-        d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
+    <Animated.View
+      accessible
+      accessibilityLabel={a11yLabel}
+      style={{
+        opacity: pulse,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.xs,
+        backgroundColor: tint(color, level === "normal" ? 0.08 : 0.14),
+        borderColor: tint(color, level === "normal" ? 0.3 : 0.55),
+        borderWidth: 1,
+        borderRadius: 999,
+        paddingVertical: spacing.xs,
+        paddingHorizontal: spacing.md,
+      }}
+    >
+      <Clock size={15} color={color} strokeWidth={2.5} />
+      <AppText variant="mono" color={color} style={{ fontSize: 18 }}>
+        {remaining === null ? "--:--" : fmtClock(remaining)}
+      </AppText>
+    </Animated.View>
+  );
+}
+
+/** Rated / practice mode badge (web .tst-mode-badge parity; display only). */
+function ModeBadge({
+  arena,
+  rated,
+  label,
+}: {
+  arena: ArenaTokens;
+  rated: boolean;
+  label: string;
+}) {
+  const color = rated ? arena.lime : arena.muted;
+  return (
+    <View
+      style={{
+        backgroundColor: tint(color, 0.14),
+        borderColor: tint(color, 0.5),
+        borderWidth: 1,
+        borderRadius: 999,
+        paddingVertical: 2,
+        paddingHorizontal: spacing.sm,
+        alignSelf: "center",
+      }}
+    >
+      <AppText variant="label" color={color} style={{ fontSize: 11 }} numberOfLines={1}>
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
+/** Thin answered/total progress bar under the top bar (derived, display only). */
+function AnsweredBar({
+  arena,
+  answered,
+  total,
+}: {
+  arena: ArenaTokens;
+  answered: number;
+  total: number;
+}) {
+  const pct = total > 0 ? answered / total : 0;
+  const fill = useRef(new Animated.Value(pct)).current;
+  useEffect(() => {
+    // Width is not native-transformable; a 250ms JS-driven tween on answer
+    // changes is imperceptible work-wise.
+    Animated.timing(fill, { toValue: pct, duration: 250, useNativeDriver: false }).start();
+  }, [pct, fill]);
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: total, now: answered }}
+      style={{
+        height: 4,
+        borderRadius: 999,
+        backgroundColor: arena.panel2,
+        overflow: "hidden",
+      }}
+    >
+      <Animated.View
+        style={{
+          width: fill.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
+          height: "100%",
+          borderRadius: 999,
+          backgroundColor: arena.lime,
+        }}
       />
-    </Svg>
+    </View>
   );
 }
 
@@ -79,6 +241,10 @@ export function TestRunnerScreen({
 
   const q = useTestAttempt(attemptId, locale, attemptId.length > 0);
   const attempt = q.data?.attempt ?? null;
+  // is_rated lives on the attempt ROW (own row under RLS), not in the RPC
+  // payload — web run-page parity. Badge only; null (still loading) hides it.
+  const rowQ = useAttemptRow(attemptId);
+  const rated = rowQ.data ? rowQ.data.is_rated === true : null;
 
   // Closed attempts never open the player (web run-page guards).
   const isGraded = attempt?.status === "graded";
@@ -147,6 +313,7 @@ export function TestRunnerScreen({
       attempt={attempt}
       meta={q.data!.meta}
       resumed={resumed}
+      rated={rated}
       arena={arena}
       pad={pad}
     />
@@ -162,6 +329,7 @@ function RunnerActive({
   attempt,
   meta,
   resumed,
+  rated,
   arena,
   pad,
 }: {
@@ -169,6 +337,8 @@ function RunnerActive({
   attempt: TestAttemptData;
   meta: AttemptMeta;
   resumed: boolean;
+  /** is_rated from the own attempt row — null while loading (badge hidden). */
+  rated: boolean | null;
   arena: ArenaTokens;
   pad: object;
 }) {
@@ -180,6 +350,10 @@ function RunnerActive({
   const homeTab = isOlympiad ? OLYMPIADS_TAB : TESTS_TAB;
   const questions = attempt.questions;
   const total = questions.length;
+  // Round-20 contract (migration 057): null deadline = UNTIMED practice. The
+  // countdown anchor stays null (deadlineFromRemaining), so remaining stays
+  // null → no ticking clock, no 0:00 auto-submit, no deadline resync.
+  const untimed = attempt.deadline_at === null;
 
   // ---- answers / flags (rehydrated from saved rows — TRUE resume) ----
   const [answers, setAnswers] = useState<AnswersMap>(() => initialAnswers(questions));
@@ -327,7 +501,8 @@ function RunnerActive({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- 0:00 → auto-submit once ----
+  // ---- 0:00 → auto-submit once (TIMED only: with a null anchor `remaining`
+  // stays null forever, so untimed practice can never trip this) ----
   useEffect(() => {
     if (remaining === 0 && !finishedRef.current && !submittingRef.current) {
       setTimeUp(true);
@@ -420,7 +595,6 @@ function RunnerActive({
 
   const q = questions[idx];
   const level = timerLevel(remaining);
-  const timerColor = level === "crit" ? arena.red : level === "warn" ? arena.gold : arena.ink;
   const isLast = idx === total - 1;
   const flagged = q ? flags.has(q.question_id) : false;
   const runTitle = isOlympiad ? t("test.run.olympiad") : t("test.run.title");
@@ -430,7 +604,7 @@ function RunnerActive({
       style={{ flex: 1, backgroundColor: arena.bg }}
       contentContainerStyle={[pad, { gap: spacing.lg }]}
     >
-      {/* ---- Top bar: title + counter + save state + timer ---- */}
+      {/* ---- Top bar: title + timer, answered progress, counter + save state ---- */}
       <View style={{ gap: spacing.sm }}>
         <View
           style={{
@@ -440,26 +614,42 @@ function RunnerActive({
             gap: spacing.md,
           }}
         >
-          <AppText variant="title" color={arena.ink} numberOfLines={1} style={{ flex: 1 }}>
-            {runTitle}
-          </AppText>
           <View
-            accessible
-            accessibilityLabel={`${t("test.run.timeLeft")}: ${remaining === null ? "" : fmtClock(remaining)}`}
             style={{
-              backgroundColor: tint(timerColor, level === "normal" ? 0.08 : 0.14),
-              borderColor: tint(timerColor, level === "normal" ? 0.3 : 0.55),
-              borderWidth: 1,
-              borderRadius: radius.sm,
-              paddingVertical: spacing.xs,
-              paddingHorizontal: spacing.md,
+              flex: 1,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.sm,
             }}
           >
-            <AppText variant="mono" color={timerColor} style={{ fontSize: 18 }}>
-              {remaining === null ? "--:--" : fmtClock(remaining)}
+            <AppText
+              variant="title"
+              color={arena.ink}
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
+              {runTitle}
             </AppText>
+            {rated !== null ? (
+              <ModeBadge
+                arena={arena}
+                rated={rated}
+                label={rated ? t("test.run.ratedBadge") : t("test.run.practiceBadge")}
+              />
+            ) : null}
           </View>
+          <TimerPill
+            arena={arena}
+            remaining={remaining}
+            level={level}
+            untimed={untimed}
+            noLimitLabel={t("test.run.noLimit")}
+            a11yLabel={`${t("test.run.timeLeft")}: ${remaining === null ? "" : fmtClock(remaining)}`}
+          />
         </View>
+
+        <AnsweredBar arena={arena} answered={answeredCount} total={total} />
+
         <View
           style={{
             flexDirection: "row",
@@ -472,19 +662,36 @@ function RunnerActive({
             {t("arena.quizQuestion")} {String(idx + 1).padStart(2, "0")} {t("arena.quizOf")}{" "}
             {String(total).padStart(2, "0")}
           </AppText>
-          <AppText
-            color={saveState === "error" ? arena.red : arena.dim}
-            style={{ fontSize: 12 }}
+          <View
             accessibilityLiveRegion="polite"
+            style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}
           >
-            {saveState === "saving"
-              ? t("test.run.saving")
-              : saveState === "saved"
-                ? t("test.run.saved")
-                : saveState === "error"
-                  ? t("test.run.saveError")
-                  : ""}
-          </AppText>
+            {saveState === "saving" ? (
+              <CloudUpload size={13} color={arena.dim} strokeWidth={2} />
+            ) : saveState === "saved" ? (
+              <Check size={13} color={arena.lime} strokeWidth={2.5} />
+            ) : saveState === "error" ? (
+              <CircleAlert size={13} color={arena.red} strokeWidth={2} />
+            ) : null}
+            <AppText
+              color={
+                saveState === "error"
+                  ? arena.red
+                  : saveState === "saved"
+                    ? arena.lime
+                    : arena.dim
+              }
+              style={{ fontSize: 12 }}
+            >
+              {saveState === "saving"
+                ? t("test.run.saving")
+                : saveState === "saved"
+                  ? t("test.run.saved")
+                  : saveState === "error"
+                    ? t("test.run.saveError")
+                    : ""}
+            </AppText>
+          </View>
         </View>
 
         {/* Subject + topic(s) — or the olympiad label — for this attempt. */}
@@ -539,7 +746,7 @@ function RunnerActive({
               accessibilityState={{ selected: flagged }}
               accessibilityLabel={flagged ? t("test.run.unflag") : t("test.run.flag")}
               onPress={() => toggleFlag(q.question_id)}
-              hitSlop={8}
+              hitSlop={10}
               style={({ pressed }) => ({
                 flexDirection: "row",
                 alignItems: "center",
@@ -550,10 +757,15 @@ function RunnerActive({
                 borderRadius: 999,
                 paddingVertical: spacing.xs,
                 paddingHorizontal: spacing.md,
+                minHeight: 32,
                 opacity: pressed ? 0.8 : 1,
               })}
             >
-              <BookmarkIcon filled={flagged} color={flagged ? arena.gold : arena.muted} />
+              {flagged ? (
+                <BookmarkCheck size={14} color={arena.gold} strokeWidth={2.5} />
+              ) : (
+                <Bookmark size={14} color={arena.muted} strokeWidth={2} />
+              )}
               <AppText
                 variant="label"
                 color={flagged ? arena.gold : arena.muted}
@@ -592,14 +804,15 @@ function RunnerActive({
                     backgroundColor: selected ? tint(arena.blue, 0.12) : arena.panel2,
                     borderRadius: radius.md,
                     padding: spacing.md,
+                    minHeight: 52,
                     opacity: pressed ? 0.85 : 1,
                   })}
                 >
                   <View
                     style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 14,
+                      width: 32,
+                      height: 32,
+                      borderRadius: radius.sm,
                       backgroundColor: selected ? arena.blue : tint(arena.blue, 0.12),
                       alignItems: "center",
                       justifyContent: "center",
@@ -608,7 +821,7 @@ function RunnerActive({
                     <AppText
                       variant="label"
                       color={selected ? "#ffffff" : arena.blue}
-                      style={{ fontSize: 13 }}
+                      style={{ fontSize: 14 }}
                     >
                       {LETTERS[i] ?? String(i + 1)}
                     </AppText>
@@ -616,6 +829,9 @@ function RunnerActive({
                   <AppText color={arena.ink} style={{ flex: 1, fontSize: 15, lineHeight: 21 }}>
                     {o.text ?? ""}
                   </AppText>
+                  {selected ? (
+                    <Check size={18} color={arena.blue} strokeWidth={2.5} />
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -629,6 +845,7 @@ function RunnerActive({
           arena={arena}
           kind="ghost"
           title={t("arena.quizPrev")}
+          icon={<ChevronLeft size={16} color={arena.ink} strokeWidth={2.5} />}
           disabled={idx === 0 || submitting}
           onPress={() => {
             if (idx === 0 || submitting) return;
@@ -640,6 +857,7 @@ function RunnerActive({
           <ArenaButton
             arena={arena}
             title={t("test.run.next")}
+            icon={<ChevronRight size={16} color="#ffffff" strokeWidth={2.5} />}
             disabled={submitting}
             onPress={() => {
               if (submitting) return;
@@ -684,8 +902,8 @@ function RunnerActive({
                 accessibilityState={{ selected: isCurrent }}
                 onPress={() => goTo(i)}
                 style={({ pressed }) => ({
-                  width: 42,
-                  height: 42,
+                  width: 44,
+                  height: 44,
                   borderRadius: radius.sm,
                   borderWidth: isCurrent ? 2 : 1,
                   borderColor: border,
@@ -702,6 +920,19 @@ function RunnerActive({
                 >
                   {i + 1}
                 </AppText>
+                {isFlagged ? (
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: 4,
+                      right: 4,
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: arena.gold,
+                    }}
+                  />
+                ) : null}
               </Pressable>
             );
           })}
@@ -717,12 +948,22 @@ function RunnerActive({
           ).map(([color, label]) => (
             <View
               key={label}
-              style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.xs,
+                backgroundColor: arena.panel2,
+                borderColor: arena.line,
+                borderWidth: 1,
+                borderRadius: 999,
+                paddingVertical: 3,
+                paddingHorizontal: spacing.sm,
+              }}
             >
               <View
-                style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }}
+                style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }}
               />
-              <AppText color={arena.dim} style={{ fontSize: 12 }}>
+              <AppText color={arena.dim} style={{ fontSize: 11 }}>
                 {label}
               </AppText>
             </View>
@@ -734,7 +975,9 @@ function RunnerActive({
       <View style={{ gap: spacing.md }}>
         <ArenaButton
           arena={arena}
+          kind="gradient"
           title={t("test.run.submit")}
+          icon={<Check size={16} color="#ffffff" strokeWidth={2.5} />}
           pending={submitting}
           pendingTitle={t("test.run.submitting")}
           onPress={() => setSubmitOpen(true)}

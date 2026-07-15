@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing } from "@/theme/tokens";
+import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 
 const BLOCKS = ["b1", "b2", "b3", "b4", "b5"] as const;
@@ -29,7 +29,7 @@ function Pill({
       style={{
         alignSelf: "flex-start",
         backgroundColor: bg,
-        borderRadius: radius.sm,
+        borderRadius: 999,
         paddingVertical: 3,
         paddingHorizontal: spacing.md,
       }}
@@ -67,7 +67,7 @@ export default function About() {
       >
         <View style={{ gap: spacing.md }}>
           <Pill text={t("about2.hero.eyebrow")} bg={tokens.pillBg} color={tokens.pillText} />
-          <AppText variant="heading">{t("about2.hero.title")}</AppText>
+          <AppText variant="display">{t("about2.hero.title")}</AppText>
           <AppText variant="muted">{t("about2.hero.lead")}</AppText>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
             {CHIPS.map((c) => (

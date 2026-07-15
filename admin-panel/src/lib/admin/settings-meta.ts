@@ -203,6 +203,26 @@ export const SETTING_META: Record<string, SettingMeta> = {
     min: 0.1,
     max: 10,
   },
+  // Academic calendar (Round 20): the current school year + term drive the
+  // daily-round question pools server-side (cumulative topic windows). Edited
+  // on the Settings page (General tab, Academic card) with LOCAL trilingual
+  // labels until messages.ts gains these keys — the label/help keys below are
+  // reserved for that migration. current_term is a whole number 1..4
+  // (integer-checked server-side in updateSetting).
+  "academic.year": {
+    kind: "text",
+    labelKey: "settings.sys.academic_year.label",
+    helpKey: "settings.sys.academic_year.help",
+    placeholder: "2026-2027",
+  },
+  "academic.current_term": {
+    kind: "number",
+    labelKey: "settings.sys.academic_term.label",
+    helpKey: "settings.sys.academic_term.help",
+    placeholder: "1",
+    min: 1,
+    max: 4,
+  },
   "platform.default_locale": {
     kind: "locale",
     labelKey: "settings.sys.default_locale.label",

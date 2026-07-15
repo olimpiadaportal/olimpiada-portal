@@ -1,10 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { saveCity, type CitySaveState } from "@/lib/admin/cities";
 
 // Error codes returned by saveCity mapped to localized strings passed from the
 // server page (so this client component holds no i18n dictionary itself).
+// STAY-mode (Round 21): saveCity returns { ok: true } instead of redirecting;
+// the host (a Locations modal) passes `onSaved` to close + refresh in place.
 export type CityFormLabels = {
   name: string;
   status: string;
@@ -28,15 +30,21 @@ export function CityForm({
   labels,
   defaultValues,
   id,
+  onSaved,
 }: {
   labels: CityFormLabels;
   defaultValues?: { name?: string; status?: string };
   id?: string;
+  onSaved?: () => void;
 }) {
   const [state, formAction, pending] = useActionState<CitySaveState, FormData>(
     saveCity,
     null,
   );
+
+  useEffect(() => {
+    if (state?.ok) onSaved?.();
+  }, [state, onSaved]);
 
   return (
     <form action={formAction} className="form">

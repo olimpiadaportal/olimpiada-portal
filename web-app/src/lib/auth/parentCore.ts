@@ -35,7 +35,15 @@ export async function updateChildProfileCore(params: {
   studentProfileId: string;
   firstName: string;
   lastName: string;
+  /** The CITY (historic naming — table `districts` stores cities). */
   districtId: string;
+  /**
+   * Round 21: the intra-city district (rayon) = city_districts.id. Optional so
+   * the mobile BFF (which doesn't send it yet) keeps compiling — a missing
+   * value is treated as "" and the requiredness check below still REJECTS the
+   * edit when the chosen city has active rayons.
+   */
+  cityDistrictId?: string;
   schoolId: string;
   gradeId: string;
   schoolName: string;
@@ -60,6 +68,7 @@ export async function updateChildProfileCore(params: {
   const firstName = params.firstName.trim().slice(0, NAME_MAX);
   const lastName = params.lastName.trim().slice(0, NAME_MAX);
   const districtId = params.districtId.trim() || null;
+  const cityDistrictId = (params.cityDistrictId ?? "").trim() || null;
   const schoolId = params.schoolId.trim() || null;
   const gradeId = params.gradeId.trim() || null;
   const schoolName = params.schoolName.trim().slice(0, SCHOOL_NAME_MAX) || null;
@@ -67,9 +76,31 @@ export async function updateChildProfileCore(params: {
   const city = params.city.trim().slice(0, CITY_MAX) || null;
 
   // Same server-side validation the create flow uses (names present + capped,
-  // city/school/grade ids UUID-shaped). Returns i18n keys the UI localizes.
-  const check = validateChildInfo({ firstName, lastName, districtId, schoolId, gradeId });
+  // city/school/grade ids UUID-shaped, rayon UUID-shaped when given). Returns
+  // i18n keys the UI localizes.
+  const check = validateChildInfo({
+    firstName,
+    lastName,
+    districtId,
+    cityDistrictId,
+    schoolId,
+    gradeId,
+  });
   if (!check.ok) return { ok: false, validationErrors: check.errors };
+
+  // Round 21: mirror the create RPC's requiredness rule — the rayon is
+  // MANDATORY whenever the chosen city has active rayons. The client can't be
+  // trusted to say whether the city has rayons, so re-check against the DB.
+  if (districtId && !cityDistrictId) {
+    const { count } = await admin
+      .from("city_districts")
+      .select("id", { count: "exact", head: true })
+      .eq("city_id", districtId)
+      .eq("status", "active");
+    if ((count ?? 0) > 0) {
+      return { ok: false, validationErrors: ["addchild.err.districtRequired"] };
+    }
+  }
 
   const { error } = await admin
     .from("students")
@@ -78,6 +109,10 @@ export async function updateChildProfileCore(params: {
       last_name: lastName,
       grade_id: gradeId,
       district_id: districtId,
+      // Round 21: the rayon is posted TOGETHER with the school so the
+      // trg_student_district_guard trigger never sees a school paired with a
+      // stale contradicting rayon (it would reject with SQLSTATE 23514).
+      city_district_id: cityDistrictId,
       school_id: schoolId,
       // Free-text fallbacks kept in sync with the structured FKs (the child's
       // read-only profile card uses them when a join is unavailable).
@@ -86,7 +121,15 @@ export async function updateChildProfileCore(params: {
       class_grade: classGrade,
     })
     .eq("profile_id", studentProfileId);
-  if (error) return { ok: false, errorKey: "childedit.err.generic" };
+  if (error) {
+    // The district guard trigger rejects (23514) a rayon outside the child's
+    // city or contradicting the school's rayon — surface it as the district
+    // field error (the parent must re-pick a rayon) instead of the generic one.
+    if (error.code === "23514") {
+      return { ok: false, validationErrors: ["addchild.err.districtRequired"] };
+    }
+    return { ok: false, errorKey: "childedit.err.generic" };
+  }
 
   // Keep the child's display_name (used e.g. on the leaderboard) in sync with
   // the edited names. Best-effort — never fail the edit on this.

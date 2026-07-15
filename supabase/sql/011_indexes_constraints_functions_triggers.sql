@@ -34,6 +34,13 @@ alter table public.students drop constraint if exists fk_students_district;
 alter table public.students add constraint fk_students_district
   foreign key (district_id) references public.districts (id) on delete set null;
 
+-- Round 21: the intra-city district (rayon) stored on the child profile
+-- (guard-enforced to match the school's rayon; leaderboard fallback).
+alter table public.students drop constraint if exists fk_students_city_district;
+alter table public.students add constraint fk_students_city_district
+  foreign key (city_district_id) references public.city_districts (id) on delete set null;
+create index if not exists idx_students_city_district on public.students (city_district_id);
+
 -- profile / content media -> media_assets (008)
 alter table public.profiles drop constraint if exists fk_profiles_avatar_media;
 alter table public.profiles add constraint fk_profiles_avatar_media
@@ -102,6 +109,8 @@ create index if not exists idx_questions_primary_locale on public.questions (pri
 -- 015 — questions.olympiad_package_id is added there (FKs olympiad_packages).
 create index if not exists idx_questions_type on public.questions (type_id);
 create index if not exists idx_questions_subtopic on public.questions (subtopic_id);
+-- School-term filter (migration 054): daily-round pool + admin review lists.
+create index if not exists idx_questions_term on public.questions (term);
 -- trigram search over localized question bodies (pg_trgm from 001).
 create index if not exists idx_qtrans_body_trgm
   on public.question_translations using gin (body gin_trgm_ops);
@@ -116,6 +125,8 @@ create index if not exists idx_attempts_status on public.test_attempts (status);
 -- Practice/daily attempts filtered by subject (Stage 13 test engine).
 create index if not exists idx_test_attempts_subject on public.test_attempts (subject_id);
 create index if not exists idx_answers_attempt on public.test_attempt_answers (attempt_id);
+-- Round 21: delete-guard lookups + review joins.
+create index if not exists idx_answers_question on public.test_attempt_answers (question_id);
 -- Timed topic tests (migration 037): one open test per child + expiry sweep.
 create unique index if not exists uq_test_attempts_open_test
   on public.test_attempts (student_profile_id)
@@ -124,8 +135,6 @@ create index if not exists idx_test_attempts_deadline
   on public.test_attempts (deadline_at)
   where status = 'in_progress';
 
-create index if not exists idx_dtp_publish on public.daily_task_packages (publish_date, status);
-create index if not exists idx_sdtp_student on public.student_daily_task_progress (student_profile_id);
 create index if not exists idx_snap_student_period on public.progress_snapshots (student_profile_id, period);
 
 create index if not exists idx_lb_entries_period on public.leaderboard_entries (period_id);
@@ -182,12 +191,11 @@ declare t text;
 begin
   foreach t in array array[
     'profiles','roles','permissions','parents','students','parent_student_links',
-    'districts','schools','grades','subjects','topics','subtopics',
+    'districts','city_districts','schools','grades','subjects','topics','subtopics',
     'question_types','difficulty_levels','olympiad_types','sources',
     'questions','question_translations','answer_options','answer_option_translations',
     'question_explanations','tests',
-    'test_attempts','test_attempt_answers','daily_task_packages',
-    'student_daily_task_progress','progress_snapshots',
+    'test_attempts','test_attempt_answers','progress_snapshots',
     'leaderboard_periods','leaderboard_entries',
     'achievements','question_analytics',
     'subscription_plans','subscriptions','payments','coupons',
@@ -277,11 +285,6 @@ create trigger trg_audit_questions
 drop trigger if exists trg_audit_tests on public.tests;
 create trigger trg_audit_tests
   after insert or update or delete on public.tests
-  for each row execute function public.fn_audit_row();
-
-drop trigger if exists trg_audit_daily_task_packages on public.daily_task_packages;
-create trigger trg_audit_daily_task_packages
-  after insert or update or delete on public.daily_task_packages
   for each row execute function public.fn_audit_row();
 
 -- -----------------------------------------------------------------------------
@@ -608,12 +611,68 @@ create trigger trg_audit_child_subscriptions
 create index if not exists idx_child_login_attempts_lookup
   on public.child_login_attempts (child_unique_id, attempted_at desc);
 
+-- -----------------------------------------------------------------------------
+-- student_district_guard (Round 21) : keeps students.city_district_id honest.
+-- Auto-fills the rayon from the school when missing; rejects a rayon outside the
+-- child's city; rejects a rayon that contradicts the school's rayon. (The
+-- "required when the city has rayons" rule lives in create_child_account so
+-- legacy rows never break.) NB: districts = the CITIES table (historic naming).
+-- -----------------------------------------------------------------------------
+create or replace function public.student_district_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_rayon_city  uuid;
+  v_school_rayon uuid;
+begin
+  -- Auto-fill from the school when the rayon was not provided.
+  if new.city_district_id is null and new.school_id is not null then
+    select sc.city_district_id into new.city_district_id
+      from public.schools sc where sc.id = new.school_id;
+  end if;
+
+  if new.city_district_id is not null then
+    select cd.city_id into v_rayon_city
+      from public.city_districts cd where cd.id = new.city_district_id;
+    if v_rayon_city is null then
+      raise exception 'student: district % does not exist', new.city_district_id
+        using errcode = 'foreign_key_violation';
+    end if;
+    -- Rayon must belong to the child's city (when a city is set).
+    if new.district_id is not null and v_rayon_city <> new.district_id then
+      raise exception 'student: district % is not in city %', new.city_district_id, new.district_id
+        using errcode = 'check_violation';
+    end if;
+    -- Rayon must match the school's rayon (when the school has one).
+    if new.school_id is not null then
+      select sc.city_district_id into v_school_rayon
+        from public.schools sc where sc.id = new.school_id;
+      if v_school_rayon is not null and v_school_rayon <> new.city_district_id then
+        raise exception 'student: district % contradicts the school''s district', new.city_district_id
+          using errcode = 'check_violation';
+      end if;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_student_district_guard on public.students;
+create trigger trg_student_district_guard
+  before insert or update of city_district_id, school_id, district_id on public.students
+  for each row execute function public.student_district_guard();
+
 -- create_child_account : atomic, server-side child provisioning WITHOUT a login ID.
 -- The Auth user (p_auth_user_id) is created first by the service layer; the
 -- on_auth_user_created trigger has already inserted a base profiles row. This
 -- function promotes that profile to an active child, creates the student row
--- (optional structured p_grade_id + p_district_id/p_school_id), assigns the Student
--- role, records the credential mapping with a NULL child_unique_id, and auto-links
+-- (optional structured p_grade_id + p_district_id/p_city_district_id/p_school_id —
+-- the intra-city rayon is REQUIRED when the city has active rayons, Round 21),
+-- assigns the Student role, records the credential mapping with a NULL
+-- child_unique_id, and auto-links
 -- the child to the creating parent — all in one txn. The 8-digit ID is DEFERRED: it
 -- is allocated later by create_child_subscription once a plan is chosen (Batch H).
 -- access_status stays 'inactive' until then. The structured city(district)/school
@@ -634,7 +693,8 @@ create or replace function public.create_child_account(
   p_class_grade       text default null,
   p_grade_id          uuid default null,
   p_district_id       uuid default null,
-  p_school_id         uuid default null
+  p_school_id         uuid default null,
+  p_city_district_id  uuid default null
 )
 -- OUT column names are deliberately non-colliding with table columns (else plpgsql
 -- raises "ambiguous column reference" inside the body).
@@ -682,6 +742,29 @@ begin
       using errcode = 'foreign_key_violation';
   end if;
 
+  -- Round 21: the intra-city district (rayon). REQUIRED when the chosen city has
+  -- active rayons; must belong to that city. (The students trigger additionally
+  -- enforces school-rayon consistency and auto-fills from the school.)
+  if p_district_id is not null and p_city_district_id is null
+     and exists (select 1 from public.city_districts cd
+                  where cd.city_id = p_district_id and cd.status = 'active') then
+    raise exception 'create_child_account: district is required for city %', p_district_id
+      using errcode = 'check_violation',
+            hint    = 'district_required';
+  end if;
+  if p_city_district_id is not null then
+    if not exists (select 1 from public.city_districts cd where cd.id = p_city_district_id) then
+      raise exception 'create_child_account: district % does not exist', p_city_district_id
+        using errcode = 'foreign_key_violation';
+    end if;
+    if p_district_id is not null
+       and not exists (select 1 from public.city_districts cd
+                        where cd.id = p_city_district_id and cd.city_id = p_district_id) then
+      raise exception 'create_child_account: district % is not in city %', p_city_district_id, p_district_id
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
   -- Validate the optional structured school, and (when both given) that the
   -- school belongs to the chosen city. OPTIONAL: no raise on null.
   if p_school_id is not null then
@@ -693,6 +776,15 @@ begin
        and not exists (select 1 from public.schools sc
                         where sc.id = p_school_id and sc.district_id = p_district_id) then
       raise exception 'create_child_account: school % is not in city %', p_school_id, p_district_id
+        using errcode = 'check_violation';
+    end if;
+    -- Round 21: the school must belong to the chosen rayon (when it has one).
+    if p_city_district_id is not null
+       and exists (select 1 from public.schools sc
+                    where sc.id = p_school_id
+                      and sc.city_district_id is not null
+                      and sc.city_district_id <> p_city_district_id) then
+      raise exception 'create_child_account: school % is not in district %', p_school_id, p_city_district_id
         using errcode = 'check_violation';
     end if;
   end if;
@@ -708,14 +800,14 @@ begin
 
   -- 2) Create the student row WITHOUT a login ID (no paid access yet).
   --    child_unique_id stays NULL until a plan is chosen (subscribe step).
-  --    Structured district_id/school_id are stored alongside the free-text
-  --    city/school_name/class_grade (display) values.
+  --    Structured district_id/city_district_id/school_id are stored alongside the
+  --    free-text city/school_name/class_grade (display) values.
   insert into public.students (profile_id, created_by_parent_profile_id, grade_id,
-                               district_id, school_id,
+                               district_id, city_district_id, school_id,
                                first_name, last_name, city, school_name, class_grade,
                                access_status)
   values (v_profile_id, p_parent_profile_id, p_grade_id,
-          p_district_id, p_school_id,
+          p_district_id, p_city_district_id, p_school_id,
           p_first_name, p_last_name, p_city, p_school_name, p_class_grade,
           'inactive');
 
@@ -746,14 +838,14 @@ begin
 end;
 $$;
 
-comment on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid) is
-  'Atomic parent-created child provisioning WITHOUT a login ID (allocated later on subscribe). Optional structured grade/city(district)/school stored on students. service_role EXECUTE only. Run AFTER admin.createUser (pending email).';
+comment on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) is
+  'Atomic parent-created child provisioning WITHOUT a login ID (allocated later on subscribe). Optional structured grade/city(district)/school stored on students; the intra-city district (rayon) is REQUIRED when the city has active rayons (Round 21). service_role EXECUTE only. Run AFTER admin.createUser (pending email).';
 
 -- service_role only (the service layer runs admin.createUser then this).
 -- Revoke anon/authenticated EXPLICITLY: Supabase ALTER DEFAULT PRIVILEGES grants
 -- EXECUTE to anon/authenticated on every new function; revoking public is not enough.
-revoke all on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid) from public, anon, authenticated;
-grant execute on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid) to service_role;
+revoke all on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) to service_role;
 
 -- -----------------------------------------------------------------------------
 -- advance_student_grades : yearly grade promotion (intended Sept 1 via pg_cron).
@@ -942,17 +1034,156 @@ $$;
 revoke all on function public.assert_question_type_rules(uuid, jsonb) from public, anon;
 grant execute on function public.assert_question_type_rules(uuid, jsonb) to authenticated, service_role;
 
--- bulk_insert_questions : atomic, per-item fault-tolerant batch insert across the
--- normalized trilingual question tables. Resolves taxonomy by code/level/name and
--- auto-creates missing topics/subtopics/sources. Each item runs in its own
--- subtransaction (BEGIN..EXCEPTION): a bad item is skipped + reported, good items
--- persist. Returns {total, successful, failed, errors[]}.
+-- -----------------------------------------------------------------------------
+-- ACADEMIC TERMS (migration 054): consistency triggers keep the topic →
+-- subtopic/question term tree in sync (a subtopic's/question's term must equal
+-- its topic's term when both are set; NULL inherits), plus the central
+-- current-term helper. Columns live in 003/004; settings seeds in 012.
+-- -----------------------------------------------------------------------------
+-- Subtopics inherit/must match the parent topic's term.
+create or replace function public.subtopic_term_guard()
+returns trigger
+language plpgsql
+as $$
+declare v_topic_term smallint;
+begin
+  select term into v_topic_term from public.topics where id = new.topic_id;
+  if new.term is null then
+    new.term := v_topic_term;            -- inherit on insert/update when omitted
+  elsif v_topic_term is not null and new.term <> v_topic_term then
+    raise exception 'subtopic: term must match the parent topic (%)', v_topic_term
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_subtopic_term_guard on public.subtopics;
+create trigger trg_subtopic_term_guard
+  before insert or update of term, topic_id on public.subtopics
+  for each row execute function public.subtopic_term_guard();
+
+-- Questions inherit/must match their topic's term.
+create or replace function public.question_term_guard()
+returns trigger
+language plpgsql
+as $$
+declare v_topic_term smallint;
+begin
+  if new.topic_id is not null then
+    select term into v_topic_term from public.topics where id = new.topic_id;
+    if new.term is null then
+      new.term := v_topic_term;
+    elsif v_topic_term is not null and new.term <> v_topic_term then
+      raise exception 'question: term must match the topic (%)', v_topic_term
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_question_term_guard on public.questions;
+create trigger trg_question_term_guard
+  before insert or update of term, topic_id on public.questions
+  for each row execute function public.question_term_guard();
+
+-- Changing a TOPIC's term cascades to its subtopics and questions (keeps the
+-- tree consistent; admin edits the topic once).
+create or replace function public.topic_term_cascade()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.term is distinct from old.term then
+    update public.subtopics set term = new.term, updated_at = now()
+     where topic_id = new.id and term is distinct from new.term;
+    update public.questions set term = new.term, updated_at = now()
+     where topic_id = new.id and term is distinct from new.term;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_topic_term_cascade on public.topics;
+create trigger trg_topic_term_cascade
+  after update of term on public.topics
+  for each row execute function public.topic_term_cascade();
+
+-- Current-term helper used by daily-round generation + admin readiness checks.
+-- Reads system_settings 'academic.current_term' (seeded in 012), clamped 1..4.
+create or replace function public.current_academic_term()
+returns smallint
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select least(greatest(coalesce(
+           (select nullif(value_json #>> '{}', '')::int
+              from public.system_settings where key = 'academic.current_term'), 1), 1), 4)::smallint;
+$$;
+revoke all on function public.current_academic_term() from public, anon;
+grant execute on function public.current_academic_term() to authenticated, service_role;
+
+-- Safety net (migration 059): NEW general-bank questions must carry topic +
+-- subtopic (insert trigger; legacy rows untouched; term inherits via 054's guard).
+create or replace function public.question_taxonomy_guard()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.olympiad_package_id is null then
+    if new.topic_id is null or new.subtopic_id is null then
+      raise exception 'question: topic and subtopic are required'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_question_taxonomy_guard on public.questions;
+create trigger trg_question_taxonomy_guard
+  before insert on public.questions
+  for each row execute function public.question_taxonomy_guard();
+
+-- -----------------------------------------------------------------------------
+-- question_delete_guard (Round 21) : test_attempt_answers.question_id is
+-- ON DELETE CASCADE, so hard-deleting an answered question silently destroys
+-- graded history (review rows vanish, max_score no longer matches). Block the
+-- delete with a clear error — archive instead. BEFORE DELETE fires before the
+-- FK cascade, so the history rows still exist for the check.
+-- -----------------------------------------------------------------------------
+create or replace function public.question_delete_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if exists (select 1 from public.test_attempt_answers a where a.question_id = old.id) then
+    raise exception 'question % has attempt history and cannot be deleted; archive it instead', old.id
+      using errcode = 'check_violation',
+            hint    = 'question_has_attempts';
+  end if;
+  return old;
+end;
+$$;
+drop trigger if exists trg_question_delete_guard on public.questions;
+create trigger trg_question_delete_guard
+  before delete on public.questions
+  for each row execute function public.question_delete_guard();
+
+-- bulk_insert_questions (v3, migration 059) : atomic, per-item fault-tolerant
+-- batch insert across the normalized trilingual question tables. Resolves
+-- taxonomy by code/level/name and auto-creates missing topics/subtopics/sources.
+-- Each item runs in its own subtransaction (BEGIN..EXCEPTION): a bad item is
+-- skipped + reported, good items persist. Returns {total, successful, failed,
+-- errors[]}. Since Round 20: meta.type is OPTIONAL (defaults single_choice),
+-- meta.topic/meta.subtopic/meta.term (1..4) are REQUIRED, and an optional
+-- meta.media_asset_id links the primary locale's pre-uploaded question image.
 --
 -- Item shape (JSON):
 -- {
 --   "primary_locale": "az",
---   "meta": { "subject","grade_level","type",
---             "olympiad_type"?, "topic"?, "subtopic"?, "source"? },
+--   "meta": { "subject","grade_level","topic","subtopic","term",
+--             "type"?, "olympiad_type"?, "source"?, "media_asset_id"? },
 --   "translations": { "az": {"body","prompt"?,"explanation"?}, "en"?: {...}, "ru"?: {...} },
 --   "options": [ { "is_correct": true, "order_index"?: 0, "text": {"az": "...","en"?:"...","ru"?:"..."} } ]
 -- }
@@ -974,10 +1205,11 @@ declare
   v_errors   jsonb := '[]'::jsonb;
   v_subject  uuid; v_grade uuid; v_type uuid; v_oly uuid; v_source uuid;
   v_topic    uuid; v_subtopic uuid;
+  v_term     smallint; v_topic_term smallint;
+  v_media    uuid;
   v_qid      uuid; v_optid uuid;
   v_pl       text; v_loc text; v_opt jsonb; v_order int;
 begin
-  -- AuthZ (DEFINER bypasses RLS, so we must check the caller's permission here).
   if v_profile is null or not (public.is_admin() or public.has_permission('content.create')) then
     raise exception 'bulk_insert_questions: forbidden' using errcode = 'insufficient_privilege';
   end if;
@@ -989,23 +1221,31 @@ begin
   loop
     v_idx := v_idx + 1;
     begin
-      -- ---- resolve taxonomy by code/level (required) ----
+      -- ---- required base taxonomy ----
       select id into v_subject from public.subjects where name = (v_item->'meta'->>'subject');
       if v_subject is null then raise exception 'unknown subject %', coalesce(v_item->'meta'->>'subject','(null)'); end if;
 
       select id into v_grade from public.grades where level = nullif(v_item->'meta'->>'grade_level','')::smallint;
       if v_grade is null then raise exception 'unknown grade_level %', coalesce(v_item->'meta'->>'grade_level','(null)'); end if;
 
-      select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
-      if v_type is null then raise exception 'unknown type %', coalesce(v_item->'meta'->>'type','(null)'); end if;
+      -- type is optional since Round 20 — the platform is MCQ (single_choice).
+      if coalesce(v_item->'meta'->>'type','') <> '' then
+        select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
+        if v_type is null then raise exception 'unknown type %', v_item->'meta'->>'type'; end if;
+      else
+        select id into v_type from public.question_types where code = 'single_choice';
+        if v_type is null then raise exception 'single_choice type missing'; end if;
+      end if;
 
-      -- Per-type structure rules (migration 037): active type + exact option /
-      -- correct-option counts (MCQ = 4 options, exactly 1 correct).
+      -- Per-type structure rules (five options, exactly one correct — 055).
       perform public.assert_question_type_rules(v_type, coalesce(v_item->'options','[]'::jsonb));
 
-      -- difficulty removed from the platform (difficulty_id left null).
+      -- ---- REQUIRED term (Rüb) ----
+      v_term := nullif(v_item->'meta'->>'term','')::smallint;
+      if v_term is null or v_term not between 1 and 4 then
+        raise exception 'term (1..4) is required';
+      end if;
 
-      -- ---- optional taxonomy (resolve-or-create) ----
       v_oly := null;
       if coalesce(v_item->'meta'->>'olympiad_type','') <> '' then
         select id into v_oly from public.olympiad_types where name = (v_item->'meta'->>'olympiad_type');
@@ -1019,25 +1259,44 @@ begin
         end if;
       end if;
 
-      -- Module scope (migration 050): the general bank lives in 'exam' scope —
-      -- never resolve into (or create inside) olympiad-scoped taxonomy.
-      v_topic := null; v_subtopic := null;
-      if coalesce(v_item->'meta'->>'topic','') <> '' then
-        select id into v_topic from public.topics
-          where subject_id = v_subject and name = (v_item->'meta'->>'topic')
-            and scope = 'exam' limit 1;
-        if v_topic is null then
-          insert into public.topics (subject_id, grade_id, name, scope)
-          values (v_subject, v_grade, v_item->'meta'->>'topic', 'exam') returning id into v_topic;
-        end if;
-        if coalesce(v_item->'meta'->>'subtopic','') <> '' then
-          select id into v_subtopic from public.subtopics
-            where topic_id = v_topic and name = (v_item->'meta'->>'subtopic') limit 1;
-          if v_subtopic is null then
-            insert into public.subtopics (topic_id, name)
-            values (v_topic, v_item->'meta'->>'subtopic') returning id into v_subtopic;
-          end if;
-        end if;
+      -- ---- REQUIRED topic + subtopic (exam scope) ----
+      if coalesce(v_item->'meta'->>'topic','') = '' then
+        raise exception 'topic is required';
+      end if;
+      if coalesce(v_item->'meta'->>'subtopic','') = '' then
+        raise exception 'subtopic is required';
+      end if;
+
+      select id, term into v_topic, v_topic_term from public.topics
+        where subject_id = v_subject and name = (v_item->'meta'->>'topic')
+          and scope = 'exam' limit 1;
+      if v_topic is null then
+        insert into public.topics (subject_id, grade_id, name, scope, term)
+        values (v_subject, v_grade, v_item->'meta'->>'topic', 'exam', v_term)
+        returning id into v_topic;
+      elsif v_topic_term is null then
+        -- explicit admin declaration upgrades a legacy (unreviewed) topic; the
+        -- 054 cascade rolls the term onto its subtopics/questions.
+        update public.topics set term = v_term, updated_at = now() where id = v_topic;
+      elsif v_topic_term <> v_term then
+        raise exception 'term % conflicts with topic "%" (term %)',
+          v_term, v_item->'meta'->>'topic', v_topic_term;
+      end if;
+
+      select id into v_subtopic from public.subtopics
+        where topic_id = v_topic and name = (v_item->'meta'->>'subtopic') limit 1;
+      if v_subtopic is null then
+        insert into public.subtopics (topic_id, name, term)
+        values (v_topic, v_item->'meta'->>'subtopic', v_term) returning id into v_subtopic;
+      end if;
+
+      -- ---- optional pre-uploaded question image ----
+      v_media := nullif(v_item->'meta'->>'media_asset_id','')::uuid;
+      if v_media is not null and not exists (
+        select 1 from public.media_assets ma
+        where ma.id = v_media and ma.bucket = 'question-media'
+      ) then
+        raise exception 'media_asset_id does not reference a question-media asset';
       end if;
 
       -- ---- primary locale + required body ----
@@ -1047,22 +1306,21 @@ begin
         raise exception 'missing % body', v_pl;
       end if;
 
-      -- ---- question row ----
       insert into public.questions
         (grade_id, subject_id, topic_id, subtopic_id, type_id, difficulty_id,
-         olympiad_type_id, source_id, status, primary_locale, created_by, updated_by)
+         olympiad_type_id, source_id, status, primary_locale, term, created_by, updated_by)
       values
         (v_grade, v_subject, v_topic, v_subtopic, v_type, null,
-         v_oly, v_source, 'in_review', v_pl::public.content_locale, v_profile, v_profile)
+         v_oly, v_source, 'in_review', v_pl::public.content_locale, v_term, v_profile, v_profile)
       returning id into v_qid;
 
-      -- ---- translations (+ optional explanation) for every provided locale ----
       for v_loc in select jsonb_object_keys(v_item->'translations')
       loop
         if v_loc in ('az','en','ru') and coalesce(v_item->'translations'->v_loc->>'body','') <> '' then
-          insert into public.question_translations (question_id, locale, body, prompt)
+          insert into public.question_translations (question_id, locale, body, prompt, media_asset_id)
           values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'body',
-                  nullif(v_item->'translations'->v_loc->>'prompt',''));
+                  nullif(v_item->'translations'->v_loc->>'prompt',''),
+                  case when v_loc = v_pl then v_media end);
           if coalesce(v_item->'translations'->v_loc->>'explanation','') <> '' then
             insert into public.question_explanations (question_id, locale, explanation_body)
             values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'explanation');
@@ -1070,7 +1328,6 @@ begin
         end if;
       end loop;
 
-      -- ---- answer options (+ per-locale option text) ----
       v_order := 0;
       for v_opt in select * from jsonb_array_elements(coalesce(v_item->'options','[]'::jsonb))
       loop
@@ -1090,7 +1347,6 @@ begin
 
       v_ok := v_ok + 1;
     exception when others then
-      -- per-item rollback to savepoint; record and continue.
       v_fail := v_fail + 1;
       v_errors := v_errors || jsonb_build_object('index', v_idx, 'error', SQLERRM);
     end;
@@ -1106,9 +1362,9 @@ end;
 $$;
 
 comment on function public.bulk_insert_questions(jsonb, text) is
-  'Atomic per-item bulk question import (az/en/ru) into the GENERAL bank; taxonomy '
-  'resolve-or-create stays inside exam scope (migration 050). Caller must hold '
-  'content.create (checked internally). created_by derived from session. Not anon-executable.';
+  'Bulk question import v3 (Round 20): topic+subtopic+term REQUIRED, type optional '
+  '(defaults single_choice, 5 options), optional pre-uploaded question image; exam-'
+  'scoped taxonomy resolve-or-create; per-item fault tolerance. content.create gated.';
 
 -- EXECUTE: authenticated content authors + service_role; never anon/public.
 revoke all on function public.bulk_insert_questions(jsonb, text) from public, anon;
@@ -2159,6 +2415,8 @@ comment on function public.purchase_olympiad(uuid, uuid) is
 -- Migration 047: olympiad attempts run on the TIMED test engine (jsonb return,
 -- TRUE resume, deadline from olympiad_packages.duration_minutes, pre-inserted
 -- answer rows). Drop first — the return type changed from uuid to jsonb.
+-- Migration 057: attempts draw ALL of the package's published questions (owner
+-- item 1 — no questions_per_attempt cap) and are marked RATED.
 drop function if exists public.start_olympiad_attempt(uuid);
 
 create function public.start_olympiad_attempt(p_package_id uuid)
@@ -2187,8 +2445,7 @@ begin
     raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
   end if;
 
-  select id, subject_id, coalesce(questions_per_attempt, 25) as n_per,
-         coalesce(duration_minutes, 25) as dur_min
+  select id, subject_id, coalesce(duration_minutes, 25) as dur_min
     into v_pkg
   from public.olympiad_packages where id = p_package_id;
   if v_pkg.id is null then
@@ -2197,7 +2454,6 @@ begin
   v_duration := v_pkg.dur_min * 60;
 
   -- TRUE resume: one open olympiad attempt at a time (test-engine parity).
-  -- Still-running -> return it; past-deadline -> expire it and start fresh.
   select id, deadline_at, duration_seconds into v_existing
   from public.test_attempts
   where student_profile_id = v_student and kind = 'olympiad' and status = 'in_progress'
@@ -2217,18 +2473,15 @@ begin
      where id = v_existing.id;
   end if;
 
-  -- PRIVATE pool: questions assigned to this package only (Batch D — unchanged).
+  -- ALL of the package's published questions, random order (owner item 1,
+  -- migration 057: a package may hold ANY number of questions — no cap).
   select coalesce(array_agg(id), '{}') into v_qids from (
     select q.id
     from public.questions q
     where q.olympiad_package_id = p_package_id
       and q.status = 'published'
-      and q.type_id in (
-        select id from public.question_types where code in ('single_choice', 'multiple_choice', 'true_false')
-      )
       and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct)
     order by random()
-    limit greatest(1, v_pkg.n_per)
   ) picked;
 
   if cardinality(v_qids) = 0 then
@@ -2239,10 +2492,10 @@ begin
 
   insert into public.test_attempts
     (student_profile_id, subject_id, kind, status,
-     question_ids, deadline_at, duration_seconds)
+     question_ids, deadline_at, duration_seconds, is_rated)
   values
     (v_student, v_pkg.subject_id, 'olympiad', 'in_progress',
-     v_qids, v_deadline, v_duration)
+     v_qids, v_deadline, v_duration, true)
   returning id into v_attempt;
 
   insert into public.test_attempt_answers (attempt_id, question_id)
@@ -2256,10 +2509,9 @@ end;
 $$;
 
 comment on function public.start_olympiad_attempt(uuid) is
-  'Child starts/resumes a TIMED olympiad attempt on a PURCHASED package (server-random '
-  'draw from the package''s private pool; deadline from olympiad_packages.duration_minutes; '
-  'test-engine contract — the get/save/submit/cancel/review test RPCs drive the attempt). '
-  'Purchase-only in every mode (owner ruling 2026-07-06).';
+  'Child starts/resumes a TIMED, RATED olympiad attempt on a PURCHASED package. '
+  'Since migration 057 the attempt contains ALL of the package''s published questions '
+  '(random order; no fixed count). Deadline from olympiad_packages.duration_minutes.';
 
 revoke all on function public.purchase_olympiad(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.purchase_olympiad(uuid, uuid) to service_role;
@@ -2267,12 +2519,14 @@ revoke all on function public.start_olympiad_attempt(uuid) from public, anon;
 grant execute on function public.start_olympiad_attempt(uuid) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- bulk_insert_olympiad_package_questions (Batch D): import PRIVATE trilingual
--- questions for one olympiad package. Same item format as bulk_insert_questions
--- but every inserted question gets olympiad_package_id = p_package_id and is
--- published immediately (the attempt engine requires status='published'), so it
--- stays out of the general pool. Subject defaults to the package's subject; type
--- resolved by name. Administrator-only (audit H2); never anon-executable.
+-- bulk_insert_olympiad_package_questions (Batch D; v2 migration 059): import
+-- PRIVATE trilingual questions for one olympiad package. Same item format as
+-- bulk_insert_questions but every inserted question gets olympiad_package_id =
+-- p_package_id and is published immediately (the attempt engine requires
+-- status='published'), so it stays out of the general pool. Subject defaults to
+-- the package's subject; type optional (defaults single_choice, migration 059).
+-- CREATION-ONLY since migration 059 (owner item 15): rejected once the package
+-- already has questions. Administrator-only (audit H2); never anon-executable.
 -- ---------------------------------------------------------------------------
 create or replace function public.bulk_insert_olympiad_package_questions(
   p_package_id uuid,
@@ -2310,6 +2564,14 @@ begin
     raise exception 'bulk_insert_olympiad_package_questions: package not found';
   end if;
 
+  -- CREATION-ONLY (owner item 15, migration 059): once a package holds
+  -- questions, further bulk imports are rejected — uploads happen only during
+  -- the create-package flow (a totally-failed first import may be retried).
+  if exists (select 1 from public.questions where olympiad_package_id = p_package_id) then
+    raise exception 'olympiad: questions can only be bulk uploaded during package creation'
+      using errcode = 'check_violation';
+  end if;
+
   for v_item in select * from jsonb_array_elements(p_questions)
   loop
     v_idx := v_idx + 1;
@@ -2323,10 +2585,14 @@ begin
       select id into v_grade from public.grades where level = nullif(v_item->'meta'->>'grade_level','')::smallint;
       if v_grade is null then raise exception 'unknown grade_level %', coalesce(v_item->'meta'->>'grade_level','(null)'); end if;
 
-      select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
-      if v_type is null then raise exception 'unknown type %', coalesce(v_item->'meta'->>'type','(null)'); end if;
+      if coalesce(v_item->'meta'->>'type','') <> '' then
+        select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
+        if v_type is null then raise exception 'unknown type %', v_item->'meta'->>'type'; end if;
+      else
+        select id into v_type from public.question_types where code = 'single_choice';
+        if v_type is null then raise exception 'single_choice type missing'; end if;
+      end if;
 
-      -- Per-type structure rules (migration 037).
       perform public.assert_question_type_rules(v_type, coalesce(v_item->'options','[]'::jsonb));
 
       v_oly := null;
@@ -2423,10 +2689,9 @@ end;
 $$;
 
 comment on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) is
-  'Bulk import of PRIVATE trilingual questions for one olympiad package (sets '
-  'questions.olympiad_package_id, status published). Taxonomy resolve-or-create stays '
-  'inside olympiad scope (migration 050) so nothing surfaces in the Exams module. '
-  'Administrators only (checked internally). Not anon-executable.';
+  'Bulk import of PRIVATE trilingual questions for one olympiad package — CREATION-'
+  'ONLY since migration 059 (rejected once the package has questions). Type optional '
+  '(single_choice, 5 options); olympiad-scoped optional taxonomy. Administrators only.';
 
 revoke all on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) from public, anon;
 grant execute on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) to authenticated, service_role;
@@ -2751,16 +3016,17 @@ revoke all on function public.recompute_child_access() from public, anon, authen
 grant execute on function public.recompute_child_access() to service_role;
 
 -- -----------------------------------------------------------------------------
--- TIMED TOPIC-TEST ENGINE (migration 037; docs/plans/TEST_ENGINE_PLAN.md T0).
--- Owner decisions 2026-07-06: FIXED 25 questions / 25 minutes, TRUE resume,
--- unlimited attempts with a fresh re-draw. Server-authoritative everything:
--- draw, deadline, grading, single-open, expiry. Answer keys are revealed ONLY
--- by get_test_review (status='graded').
+-- TOPIC-TEST ENGINE (migration 037; docs/plans/TEST_ENGINE_PLAN.md T0).
+-- Owner decisions 2026-07-06: FIXED 25 questions, TRUE resume, unlimited
+-- attempts with a fresh re-draw. Server-authoritative everything: draw,
+-- grading, single-open, expiry. Answer keys are revealed ONLY by
+-- get_test_review (status='graded'). Migration 057: topic tests are UNTIMED
+-- PRACTICE (no deadline, never rated); rated play = daily rounds/olympiads.
 -- -----------------------------------------------------------------------------
 
 -- start_topic_test_attempt: access-guarded (same rule as start_practice_attempt),
 -- topic/subtopic scope validated, 25 random published MCQ-family questions
--- (fallback to subject-wide when the scope has none), deadline = now()+25min.
+-- (fallback to subject-wide when the scope has none). Untimed since 057.
 create or replace function public.start_topic_test_attempt(
   p_subject_id   uuid,
   p_topic_ids    uuid[] default '{}',
@@ -2773,7 +3039,6 @@ set search_path = public, pg_temp
 as $$
 declare
   c_count    constant int := 25;    -- owner decision: fixed
-  c_duration constant int := 1500;  -- 25 minutes (60s/question)
   v_student  uuid := public.current_profile_id();
   v_grade    uuid;
   v_topics   uuid[] := coalesce(p_topic_ids, '{}');
@@ -2781,7 +3046,6 @@ declare
   v_existing record;
   v_qids     uuid[];
   v_attempt  uuid;
-  v_deadline timestamptz;
 begin
   if v_student is null then raise exception 'start_test: not authenticated'; end if;
   select grade_id into v_grade
@@ -2828,18 +3092,20 @@ begin
     end if;
   end if;
 
-  -- TRUE resume: one open timed test at a time. Still-running → return it;
-  -- past-deadline → expire it and start fresh.
-  select id, deadline_at into v_existing
+  -- Resume: one open practice test at a time. Untimed rows (056+) resume
+  -- forever (the 24h cron abandons them); legacy timed rows keep the old
+  -- deadline behavior.
+  select id, deadline_at, duration_seconds into v_existing
   from public.test_attempts
   where student_profile_id = v_student and kind = 'test' and status = 'in_progress'
   order by started_at desc
   limit 1;
   if v_existing.id is not null then
-    if v_existing.deadline_at is not null and v_existing.deadline_at > now() then
+    if v_existing.deadline_at is null or v_existing.deadline_at > now() then
       return jsonb_build_object(
-        'attempt_id', v_existing.id, 'resumed', true,
-        'deadline_at', v_existing.deadline_at, 'duration_seconds', c_duration);
+        'attempt_id', v_existing.id, 'resumed', true, 'rated', false,
+        'deadline_at', v_existing.deadline_at,
+        'duration_seconds', v_existing.duration_seconds);
     end if;
     update public.test_attempts
        set status = 'expired', updated_at = now()
@@ -2888,28 +3154,32 @@ begin
       using errcode = 'no_data_found';
   end if;
 
-  v_deadline := now() + make_interval(secs => c_duration);
-
+  -- UNTIMED practice (migration 057): no deadline, never rated.
   insert into public.test_attempts
     (student_profile_id, subject_id, kind, status,
-     question_ids, deadline_at, duration_seconds, topic_ids, subtopic_ids)
+     question_ids, deadline_at, duration_seconds, topic_ids, subtopic_ids, is_rated)
   values
     (v_student, p_subject_id, 'test', 'in_progress',
-     v_qids, v_deadline, c_duration, v_topics, v_subs)
+     v_qids, null, null, v_topics, v_subs, false)
   returning id into v_attempt;
 
   insert into public.test_attempt_answers (attempt_id, question_id)
   select v_attempt, unnest(v_qids);
 
   return jsonb_build_object(
-    'attempt_id', v_attempt, 'resumed', false,
-    'deadline_at', v_deadline, 'duration_seconds', c_duration,
+    'attempt_id', v_attempt, 'resumed', false, 'rated', false,
+    'deadline_at', null, 'duration_seconds', null,
     'count', cardinality(v_qids));
 end;
 $$;
+comment on function public.start_topic_test_attempt(uuid, uuid[], uuid[]) is
+  'Subject PRACTICE test (migration 057): mandatory-scope 25-question draw, UNTIMED '
+  '(no deadline) and UNRATED (no points/streak/boards). Rated play = daily rounds.';
 
 -- get_test_attempt: rehydration payload (questions + options WITHOUT is_correct,
--- saved answers + flags, server deadline → remaining seconds).
+-- saved answers + flags, server deadline → remaining seconds). Migration 057:
+-- daily-round attempts render from the round's immutable snapshot; every
+-- payload carries the question 'image' ({bucket,path}, locale-aware, az fallback).
 create or replace function public.get_test_attempt(
   p_attempt_id uuid,
   p_locale     text default 'az'
@@ -2924,14 +3194,65 @@ declare
   v_student  uuid := public.current_profile_id();
   v_att      record;
   v_loc      text := case when p_locale in ('az', 'en', 'ru') then p_locale else 'az' end;
+  v_snap     jsonb;
   v_result   jsonb;
 begin
   select id, student_profile_id, status, kind, subject_id,
-         deadline_at, duration_seconds, score, max_score
+         deadline_at, duration_seconds, score, max_score, daily_round_id
     into v_att
   from public.test_attempts where id = p_attempt_id;
   if v_att.id is null or v_att.student_profile_id <> v_student then
     raise exception 'forbidden';
+  end if;
+
+  if v_att.daily_round_id is not null then
+    select content_snapshot into v_snap
+    from public.daily_rounds where id = v_att.daily_round_id;
+  end if;
+
+  if v_snap is not null then
+    -- Immutable snapshot content (migration 057) + live answer state.
+    select jsonb_build_object(
+             'attempt_id', p_attempt_id,
+             'status', v_att.status,
+             'kind', v_att.kind,
+             'subject_id', v_att.subject_id,
+             'deadline_at', v_att.deadline_at,
+             'duration_seconds', v_att.duration_seconds,
+             'remaining_seconds',
+               case when v_att.deadline_at is null then null
+                    else greatest(0, floor(extract(epoch from (v_att.deadline_at - now()))))::int end,
+             'score', v_att.score,
+             'max_score', v_att.max_score,
+             'questions', coalesce(jsonb_agg(q order by ord), '[]'::jsonb))
+    into v_result
+    from (
+      select s.ord,
+             jsonb_build_object(
+               'question_id', (s.q_el->>'question_id')::uuid,
+               'type', s.q_el->>'type',
+               'topic_id', nullif(s.q_el->>'topic_id','')::uuid,
+               'body', coalesce(s.q_el->'translations'->v_loc->>'body',
+                                s.q_el->'translations'->'az'->>'body'),
+               'prompt', coalesce(s.q_el->'translations'->v_loc->>'prompt',
+                                  s.q_el->'translations'->'az'->>'prompt'),
+               'image', coalesce(s.q_el->'translations'->v_loc->'image',
+                                 s.q_el->'translations'->'az'->'image'),
+               'selected_option_ids', coalesce(to_jsonb(taa.selected_option_ids), '[]'::jsonb),
+               'is_marked', taa.is_marked,
+               'options', (
+                 select coalesce(jsonb_agg(
+                   jsonb_build_object('option_id', (o->>'option_id')::uuid,
+                                      'text', coalesce(o->'text'->>v_loc, o->'text'->>'az'))
+                   order by (o->>'order_index')::int), '[]'::jsonb)
+                 from jsonb_array_elements(s.q_el->'options') o
+               )) as q
+      from jsonb_array_elements(v_snap) with ordinality s(q_el, ord)
+      join public.test_attempt_answers taa
+        on taa.attempt_id = p_attempt_id
+       and taa.question_id = (s.q_el->>'question_id')::uuid
+    ) s2;
+    return v_result;
   end if;
 
   select jsonb_build_object(
@@ -2957,6 +3278,8 @@ begin
         'topic_id', qq.topic_id,
         'body', coalesce(qt.body, qt_az.body),
         'prompt', coalesce(qt.prompt, qt_az.prompt),
+        'image', case when ma.id is null then null
+                      else jsonb_build_object('bucket', ma.bucket, 'path', ma.path) end,
         'selected_option_ids', coalesce(to_jsonb(taa.selected_option_ids), '[]'::jsonb),
         'is_marked', taa.is_marked,
         'options', (
@@ -2979,6 +3302,8 @@ begin
       on qt.question_id = taa.question_id and qt.locale = v_loc::public.content_locale
     left join public.question_translations qt_az
       on qt_az.question_id = taa.question_id and qt_az.locale = 'az'
+    left join public.media_assets ma
+      on ma.id = coalesce(qt.media_asset_id, qt_az.media_asset_id)
     where taa.attempt_id = p_attempt_id
   ) s;
 
@@ -3053,6 +3378,8 @@ $$;
 -- submit_test_attempt: merge final answers (60s grace past the deadline; later
 -- answers are IGNORED, saved ones still grade), then grade FROM THE STORED ROWS
 -- (never from the client array — audit-H5 posture). Idempotent when graded.
+-- Migration 057: daily-round attempts grade against the round's immutable
+-- SNAPSHOT correctness (bank edits after generation can never change history).
 create or replace function public.submit_test_attempt(
   p_attempt_id uuid,
   p_answers    jsonb default null
@@ -3065,6 +3392,7 @@ as $$
 declare
   v_student  uuid := public.current_profile_id();
   v_att      record;
+  v_snap     jsonb;
   v_item     jsonb;
   v_qid      uuid;
   v_sel      uuid[];
@@ -3076,7 +3404,7 @@ declare
   v_max      int;
   v_n        int := 0;
 begin
-  select id, student_profile_id, status, deadline_at, score, max_score into v_att
+  select id, student_profile_id, status, deadline_at, score, max_score, daily_round_id into v_att
   from public.test_attempts where id = p_attempt_id;
   if v_att.id is null or v_att.student_profile_id <> v_student then
     raise exception 'forbidden';
@@ -3088,6 +3416,13 @@ begin
   end if;
   if v_att.status <> 'in_progress' then
     raise exception 'submit: attempt is not in progress' using errcode = 'check_violation';
+  end if;
+
+  -- Daily-round attempts grade against the round's immutable snapshot
+  -- (migration 057): bank edits after generation can never change history.
+  if v_att.daily_round_id is not null then
+    select content_snapshot into v_snap
+    from public.daily_rounds where id = v_att.daily_round_id;
   end if;
 
   -- Merge the final client answers only within deadline + 60s grace.
@@ -3114,10 +3449,19 @@ begin
     select question_id, selected_option_ids
     from public.test_attempt_answers where attempt_id = p_attempt_id
   loop
-    select coalesce(array_agg(ao.id), '{}')
-      into v_correct
-      from public.answer_options ao
-      where ao.question_id = v_r.question_id and ao.is_correct;
+    if v_snap is not null then
+      select coalesce(array_agg((o->>'option_id')::uuid), '{}')
+        into v_correct
+        from jsonb_array_elements(v_snap) q_el
+        cross join lateral jsonb_array_elements(q_el->'options') o
+        where (q_el->>'question_id')::uuid = v_r.question_id
+          and coalesce((o->>'is_correct')::boolean, false);
+    else
+      select coalesce(array_agg(ao.id), '{}')
+        into v_correct
+        from public.answer_options ao
+        where ao.question_id = v_r.question_id and ao.is_correct;
+    end if;
 
     v_ok := (array_length(v_correct, 1) is not null)
         and (coalesce(v_r.selected_option_ids, '{}') <@ v_correct)
@@ -3207,7 +3551,9 @@ end;
 $$;
 
 -- get_test_review: the ONLY place answer keys are revealed, and only for the
--- owner's GRADED attempt (works for practice attempts too).
+-- owner's GRADED attempt (works for practice attempts too). Migration 057:
+-- daily-round attempts render from the round's immutable snapshot; every
+-- payload carries the question 'image' ({bucket,path}, locale-aware, az fallback).
 create or replace function public.get_test_review(
   p_attempt_id uuid,
   p_locale     text default 'az'
@@ -3222,15 +3568,58 @@ declare
   v_student uuid := public.current_profile_id();
   v_att     record;
   v_loc     text := case when p_locale in ('az', 'en', 'ru') then p_locale else 'az' end;
+  v_snap    jsonb;
   v_result  jsonb;
 begin
-  select id, student_profile_id, status, score, max_score into v_att
+  select id, student_profile_id, status, score, max_score, daily_round_id into v_att
   from public.test_attempts where id = p_attempt_id;
   if v_att.id is null or v_att.student_profile_id <> v_student then
     raise exception 'forbidden';
   end if;
   if v_att.status <> 'graded' then
     raise exception 'review: attempt not graded yet' using errcode = 'check_violation';
+  end if;
+
+  if v_att.daily_round_id is not null then
+    select content_snapshot into v_snap
+    from public.daily_rounds where id = v_att.daily_round_id;
+  end if;
+
+  if v_snap is not null then
+    select jsonb_build_object(
+             'attempt_id', p_attempt_id,
+             'score', v_att.score,
+             'max', v_att.max_score,
+             'questions', coalesce(jsonb_agg(q order by ord), '[]'::jsonb))
+    into v_result
+    from (
+      select s.ord,
+             jsonb_build_object(
+               'question_id', (s.q_el->>'question_id')::uuid,
+               'body', coalesce(s.q_el->'translations'->v_loc->>'body',
+                                s.q_el->'translations'->'az'->>'body'),
+               'prompt', coalesce(s.q_el->'translations'->v_loc->>'prompt',
+                                  s.q_el->'translations'->'az'->>'prompt'),
+               'image', coalesce(s.q_el->'translations'->v_loc->'image',
+                                 s.q_el->'translations'->'az'->'image'),
+               'is_correct', taa.is_correct,
+               'selected_option_ids', coalesce(to_jsonb(taa.selected_option_ids), '[]'::jsonb),
+               'explanation', coalesce(s.q_el->'translations'->v_loc->>'explanation',
+                                       s.q_el->'translations'->'az'->>'explanation'),
+               'options', (
+                 select coalesce(jsonb_agg(
+                   jsonb_build_object('option_id', (o->>'option_id')::uuid,
+                                      'text', coalesce(o->'text'->>v_loc, o->'text'->>'az'),
+                                      'is_correct', coalesce((o->>'is_correct')::boolean, false))
+                   order by (o->>'order_index')::int), '[]'::jsonb)
+                 from jsonb_array_elements(s.q_el->'options') o
+               )) as q
+      from jsonb_array_elements(v_snap) with ordinality s(q_el, ord)
+      join public.test_attempt_answers taa
+        on taa.attempt_id = p_attempt_id
+       and taa.question_id = (s.q_el->>'question_id')::uuid
+    ) s2;
+    return v_result;
   end if;
 
   select jsonb_build_object(
@@ -3246,6 +3635,8 @@ begin
         'question_id', taa.question_id,
         'body', coalesce(qt.body, qt_az.body),
         'prompt', coalesce(qt.prompt, qt_az.prompt),
+        'image', case when ma.id is null then null
+                      else jsonb_build_object('bucket', ma.bucket, 'path', ma.path) end,
         'is_correct', taa.is_correct,
         'selected_option_ids', coalesce(to_jsonb(taa.selected_option_ids), '[]'::jsonb),
         'explanation', coalesce(qe.explanation_body, qe_az.explanation_body),
@@ -3268,6 +3659,8 @@ begin
       on qt.question_id = taa.question_id and qt.locale = v_loc::public.content_locale
     left join public.question_translations qt_az
       on qt_az.question_id = taa.question_id and qt_az.locale = 'az'
+    left join public.media_assets ma
+      on ma.id = coalesce(qt.media_asset_id, qt_az.media_asset_id)
     left join public.question_explanations qe
       on qe.question_id = taa.question_id and qe.locale = v_loc::public.content_locale
     left join public.question_explanations qe_az
@@ -3279,8 +3672,10 @@ begin
 end;
 $$;
 
--- expire_stale_test_attempts (cron, 016): timed tests 5 min past deadline →
--- 'expired'; practice/olympiad attempts stuck in_progress >24h → 'abandoned'.
+-- expire_stale_test_attempts (cron, 016): timed attempts (legacy tests,
+-- olympiads, rated daily rounds) 5 min past deadline → 'expired'; deadline-less
+-- attempts (practice, untimed topic tests, previous-day replays) stuck
+-- in_progress >24h → 'abandoned'. (Migration 057.)
 create or replace function public.expire_stale_test_attempts()
 returns jsonb
 language plpgsql
@@ -3291,19 +3686,20 @@ declare
   v_tests int;
   v_other int;
 begin
-  -- Timed attempts (tests AND olympiads since migration 047): hard-expire past
-  -- the deadline (5-min grace, matching the submit-side 60s grace generously).
+  -- Timed attempts (tests legacy, olympiads, rated daily rounds): hard-expire
+  -- past the deadline (5-min grace).
   update public.test_attempts
      set status = 'expired', updated_at = now()
-   where kind in ('test', 'olympiad') and status = 'in_progress'
+   where kind in ('test', 'olympiad', 'daily') and status = 'in_progress'
      and deadline_at is not null
      and deadline_at + interval '5 minutes' < now();
   get diagnostics v_tests = row_count;
 
-  -- Deadline-less attempts (practice, daily, legacy olympiad rows): 24h abandon.
+  -- Deadline-less attempts (practice, untimed topic tests, previous-day
+  -- replays, legacy olympiad rows): 24h abandon.
   update public.test_attempts
      set status = 'abandoned', updated_at = now()
-   where kind in ('practice', 'olympiad', 'daily') and status = 'in_progress'
+   where kind in ('practice', 'olympiad', 'daily', 'test') and status = 'in_progress'
      and deadline_at is null
      and started_at < now() - interval '24 hours';
   get diagnostics v_other = row_count;
@@ -3330,6 +3726,331 @@ revoke all on function public.test_attempt_result(uuid) from public, anon, authe
 grant execute on function public.test_attempt_result(uuid) to service_role;
 revoke all on function public.expire_stale_test_attempts() from public, anon, authenticated;
 grant execute on function public.expire_stale_test_attempts() to service_role;
+
+
+-- -----------------------------------------------------------------------------
+-- DAILY ROUNDS ENGINE (migration 056). The rated/practice split: a DAILY ROUND
+-- is one immutable 25-question snapshot per (subject, grade, Baku-local date)
+-- shared by every student; the RATED attempt (one per student per round, timed
+-- 25 min) feeds points/streak; previous-day practice replays the stored
+-- snapshot untimed and unrated. Table lives in 005; RLS in 010.
+-- -----------------------------------------------------------------------------
+
+-- Snapshot builder (internal): full content of the drawn questions — all three
+-- locales, options WITH correctness, explanations, image refs.
+create or replace function public.build_round_snapshot(p_qids uuid[])
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(jsonb_agg(q_obj order by ord), '[]'::jsonb)
+  from (
+    select ord, jsonb_build_object(
+      'question_id', q.id,
+      'type', qtp.code,
+      'topic_id', q.topic_id,
+      'subtopic_id', q.subtopic_id,
+      'term', q.term,
+      'translations', (
+        select jsonb_object_agg(qt.locale::text, jsonb_build_object(
+                 'body', qt.body, 'prompt', qt.prompt,
+                 'explanation', qe.explanation_body,
+                 'image', case when ma.id is null then null
+                               else jsonb_build_object('bucket', ma.bucket, 'path', ma.path) end))
+        from public.question_translations qt
+        left join public.question_explanations qe
+          on qe.question_id = qt.question_id and qe.locale = qt.locale
+        left join public.media_assets ma on ma.id = qt.media_asset_id
+        where qt.question_id = q.id
+      ),
+      'options', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+                 'option_id', ao.id, 'order_index', ao.order_index,
+                 'is_correct', ao.is_correct,
+                 'text', (select jsonb_object_agg(aot.locale::text, aot.text)
+                            from public.answer_option_translations aot
+                           where aot.option_id = ao.id))
+                 order by ao.order_index), '[]'::jsonb)
+        from public.answer_options ao where ao.question_id = q.id
+      ))
+      as q_obj
+    from unnest(p_qids) with ordinality u(qid, ord)
+    join public.questions q on q.id = u.qid
+    join public.question_types qtp on qtp.id = q.type_id
+  ) s;
+$$;
+revoke all on function public.build_round_snapshot(uuid[]) from public, anon, authenticated;
+grant execute on function public.build_round_snapshot(uuid[]) to service_role;
+
+-- Round generation (internal; race-safe; term-cumulative pool).
+create or replace function public.get_or_create_daily_round(
+  p_subject_id uuid, p_grade_id uuid, p_date date
+)
+returns public.daily_rounds
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  c_count constant int := 25;
+  v_term  smallint := public.current_academic_term();
+  v_qids  uuid[];
+  v_row   public.daily_rounds;
+begin
+  select * into v_row from public.daily_rounds
+   where round_date = p_date and subject_id = p_subject_id and grade_id = p_grade_id;
+  if found then return v_row; end if;
+
+  -- Cumulative-term pool: published, general bank, term reviewed and <= current,
+  -- valid 5-option questions of this subject, for this grade OR shared
+  -- (grade_id IS NULL — practice-engine parity, Round 21). Random draw = the mixture.
+  select coalesce(array_agg(id), '{}') into v_qids from (
+    select q.id
+    from public.questions q
+    where q.subject_id = p_subject_id
+      and (q.grade_id = p_grade_id or q.grade_id is null)
+      and q.status = 'published'
+      and q.olympiad_package_id is null
+      and q.term is not null and q.term <= v_term
+      and (select count(*) from public.answer_options ao where ao.question_id = q.id) = 5
+      and exists (select 1 from public.answer_options ao
+                   where ao.question_id = q.id and ao.is_correct)
+    order by random()
+    limit c_count
+  ) picked;
+
+  if coalesce(cardinality(v_qids), 0) < c_count then
+    raise exception 'daily round: not enough eligible questions (subject %, grade %, terms 1..%: have %, need %)',
+      p_subject_id, p_grade_id, v_term, coalesce(cardinality(v_qids), 0), c_count
+      using errcode = 'no_data_found';
+  end if;
+
+  insert into public.daily_rounds
+    (round_date, subject_id, grade_id, term_at_generation, question_ids, content_snapshot)
+  values
+    (p_date, p_subject_id, p_grade_id, v_term, v_qids, public.build_round_snapshot(v_qids))
+  on conflict (round_date, subject_id, grade_id) do nothing;
+
+  select * into v_row from public.daily_rounds
+   where round_date = p_date and subject_id = p_subject_id and grade_id = p_grade_id;
+  return v_row;
+end;
+$$;
+revoke all on function public.get_or_create_daily_round(uuid, uuid, date) from public, anon, authenticated;
+grant execute on function public.get_or_create_daily_round(uuid, uuid, date) to service_role;
+
+-- Admin readiness: eligible-question counts per subject×grade for the current
+-- term (spot the "missing 7 questions" gaps BEFORE students hit them).
+-- NOTE: this LANGUAGE SQL body reads questions.olympiad_package_id, a column
+-- added by 015 (numeric run order) — skip body validation here; the body is
+-- planned at call time and 013 #61 covers the engine.
+set check_function_bodies = off;
+create or replace function public.daily_round_readiness()
+returns table (subject_id uuid, subject_name text, grade_id uuid, grade_level int,
+               eligible int, required int)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select s.id, s.name, g.id, g.level::int,
+         (select count(*)::int
+            from public.questions q
+           where q.subject_id = s.id
+             and (q.grade_id = g.id or q.grade_id is null)
+             and q.status = 'published' and q.olympiad_package_id is null
+             and q.term is not null and q.term <= public.current_academic_term()
+             and (select count(*) from public.answer_options ao where ao.question_id = q.id) = 5
+             and exists (select 1 from public.answer_options ao
+                          where ao.question_id = q.id and ao.is_correct)),
+         25
+  from public.subjects s
+  cross join public.grades g
+  where s.status = 'active'
+  order by s.name, g.level;
+$$;
+reset check_function_bodies;
+revoke all on function public.daily_round_readiness() from public, anon;
+grant execute on function public.daily_round_readiness() to authenticated, service_role;
+-- (authenticated needed for the admin panel; the fn leaks only counts.)
+
+-- Student-facing pre-flight (Round 21): per active subject for the CALLING
+-- student — today's round exists / already played rated / can be started
+-- (round exists or the pool can generate one). Lets the Tests page render an
+-- honest "not ready yet" state instead of click-bouncing Start into an error
+-- redirect. Booleans only; nothing about other grades leaks.
+create or replace function public.get_my_round_readiness()
+returns table (subject_id uuid, round_exists boolean, attempted boolean, ready boolean)
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_student uuid := public.current_profile_id();
+  v_grade   uuid;
+  v_today   date := (now() at time zone 'Asia/Baku')::date;
+  v_term    smallint := public.current_academic_term();
+begin
+  select st.grade_id into v_grade
+    from public.students st where st.profile_id = v_student;
+  if v_student is null or v_grade is null then
+    return;   -- no student / no grade → empty set; UI shows its no-grade state
+  end if;
+
+  return query
+    select s.id,
+           (dr.id is not null),
+           exists (select 1 from public.test_attempts ta
+                    where ta.student_profile_id = v_student
+                      and ta.daily_round_id = dr.id and ta.is_rated),
+           (dr.id is not null) or (
+             select count(*)
+               from public.questions q
+              where q.subject_id = s.id
+                and (q.grade_id = v_grade or q.grade_id is null)
+                and q.status = 'published'
+                and q.olympiad_package_id is null
+                and q.term is not null and q.term <= v_term
+                and (select count(*) from public.answer_options ao where ao.question_id = q.id) = 5
+                and exists (select 1 from public.answer_options ao
+                             where ao.question_id = q.id and ao.is_correct)
+           ) >= 25
+    from public.subjects s
+    left join public.daily_rounds dr
+           on dr.subject_id = s.id and dr.grade_id = v_grade and dr.round_date = v_today
+    where s.status = 'active';
+end;
+$$;
+comment on function public.get_my_round_readiness() is
+  'Tests-page pre-flight (Round 21): per active subject for the CALLING student — '
+  'today''s round exists / already played rated / can be started (round exists or '
+  'the pool can generate one). Booleans only; nothing about other grades leaks.';
+revoke all on function public.get_my_round_readiness() from public, anon;
+grant execute on function public.get_my_round_readiness() to authenticated, service_role;
+
+-- start_daily_round_attempt: today = RATED (one per student per round, timed
+-- 25 min); yesterday = unlimited UNTIMED practice on the stored snapshot.
+create or replace function public.start_daily_round_attempt(
+  p_subject_id uuid,
+  p_day        text default 'today'   -- 'today' (rated) | 'yesterday' (practice)
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  c_duration constant int := 1500;   -- rated rounds: 25 minutes, test-engine parity
+  v_student  uuid := public.current_profile_id();
+  v_grade    uuid;
+  v_date     date;
+  v_rated    boolean := (coalesce(p_day, 'today') = 'today');
+  v_round    public.daily_rounds;
+  v_existing record;
+  v_attempt  uuid;
+  v_deadline timestamptz;
+begin
+  if v_student is null then raise exception 'daily: not authenticated'; end if;
+  if coalesce(p_day, 'today') not in ('today', 'yesterday') then
+    raise exception 'daily: bad day' using errcode = 'check_violation';
+  end if;
+
+  select grade_id into v_grade from public.students where profile_id = v_student;
+  if not found then raise exception 'daily: not a student'; end if;
+  if v_grade is null then
+    raise exception 'daily: student has no grade' using errcode = 'check_violation';
+  end if;
+
+  -- Access: identical gate to the practice/test engines (per-subject).
+  if not public.is_giveaway_active()
+     and not public.is_free_access_active_for_student(v_student) then
+    if not exists (
+      select 1
+      from public.child_subscriptions cs
+      join public.subscription_subjects ss
+        on ss.child_subscription_id = cs.id and ss.subject_id = p_subject_id
+      where cs.student_profile_id = v_student
+        and cs.status in ('trialing', 'active', 'canceled')
+        and cs.current_period_end is not null
+        and cs.current_period_end > now()
+    ) then
+      raise exception 'daily: no active access' using errcode = 'check_violation';
+    end if;
+  end if;
+
+  v_date := (now() at time zone 'Asia/Baku')::date - (case when v_rated then 0 else 1 end);
+
+  if v_rated then
+    v_round := public.get_or_create_daily_round(p_subject_id, v_grade, v_date);
+  else
+    -- Previous-day practice replays what WAS generated — never retro-generates.
+    select * into v_round from public.daily_rounds
+     where round_date = v_date and subject_id = p_subject_id and grade_id = v_grade;
+    if not found then
+      raise exception 'daily: no round was held yesterday' using errcode = 'no_data_found';
+    end if;
+  end if;
+
+  -- Resume an open attempt on this round of the same rating class.
+  select id, deadline_at, duration_seconds into v_existing
+  from public.test_attempts
+  where student_profile_id = v_student and daily_round_id = v_round.id
+    and is_rated = v_rated and status = 'in_progress'
+  order by started_at desc limit 1;
+  if v_existing.id is not null then
+    if not v_rated or (v_existing.deadline_at is not null and v_existing.deadline_at > now()) then
+      return jsonb_build_object(
+        'attempt_id', v_existing.id, 'resumed', true, 'rated', v_rated,
+        'deadline_at', v_existing.deadline_at,
+        'duration_seconds', v_existing.duration_seconds,
+        'count', cardinality(v_round.question_ids));
+    end if;
+    update public.test_attempts
+       set status = 'expired', updated_at = now() where id = v_existing.id;
+  end if;
+
+  -- Rated: the day is consumed by ANY prior rated attempt on this round.
+  if v_rated and exists (
+    select 1 from public.test_attempts
+    where student_profile_id = v_student and daily_round_id = v_round.id and is_rated
+  ) then
+    raise exception 'daily: already attempted today' using errcode = 'unique_violation';
+  end if;
+
+  if v_rated then
+    v_deadline := now() + make_interval(secs => c_duration);
+  end if;
+
+  insert into public.test_attempts
+    (student_profile_id, subject_id, kind, status, question_ids,
+     deadline_at, duration_seconds, daily_round_id, is_rated)
+  values
+    (v_student, p_subject_id, 'daily', 'in_progress', v_round.question_ids,
+     v_deadline, case when v_rated then c_duration end, v_round.id, v_rated)
+  returning id into v_attempt;
+
+  insert into public.test_attempt_answers (attempt_id, question_id)
+  select v_attempt, unnest(v_round.question_ids);
+
+  return jsonb_build_object(
+    'attempt_id', v_attempt, 'resumed', false, 'rated', v_rated,
+    'deadline_at', v_deadline,
+    'duration_seconds', case when v_rated then c_duration end,
+    'count', cardinality(v_round.question_ids));
+exception when unique_violation then
+  raise exception 'daily: already attempted today' using errcode = 'unique_violation';
+end;
+$$;
+comment on function public.start_daily_round_attempt(uuid, text) is
+  'Start/resume a daily-round attempt (migration 056). today = RATED (one per '
+  'student per round, timed 25min, feeds points/streak); yesterday = unlimited '
+  'UNTIMED practice on the stored snapshot (never rated). Round is generated '
+  'lazily once per subject+grade+Baku-date from the cumulative-term pool.';
+revoke all on function public.start_daily_round_attempt(uuid, text) from public, anon;
+grant execute on function public.start_daily_round_attempt(uuid, text) to authenticated, service_role;
 
 
 -- -----------------------------------------------------------------------------
@@ -3376,25 +4097,28 @@ declare
   v_subject   uuid;
   v_kind      text;
   v_status    public.attempt_status;
+  v_rated     boolean;
   v_tz        text;
   v_today     date;
   v_mkey      text;
   v_per       numeric := 10;
-  v_cap       numeric := 150;
   v_mult      numeric := 1.5;
   v_correct   int := 0;
   v_raw       numeric := 0;
-  v_used      numeric := 0;
   v_awarded   numeric := 0;
   v_rows      int;
   v_last      date;
   v_new_day   boolean := false;
 begin
-  select student_profile_id, subject_id, kind::text, status
-    into v_student, v_subject, v_kind, v_status
+  select student_profile_id, subject_id, kind::text, status, is_rated
+    into v_student, v_subject, v_kind, v_status, v_rated
   from public.test_attempts where id = p_attempt_id;
-  if v_student is null or v_status <> 'graded'
-     or v_kind not in ('practice', 'test', 'olympiad', 'daily') then
+  if v_student is null or v_status <> 'graded' then
+    return;
+  end if;
+  -- Migration 057: ONLY rated attempts (daily rounds, olympiads) score.
+  -- Practice (topic tests, previous-day replays) never touches points/streak.
+  if not coalesce(v_rated, false) then
     return;
   end if;
 
@@ -3405,11 +4129,8 @@ begin
   v_today := (now() at time zone v_tz)::date;
   v_mkey  := to_char(now() at time zone 'Asia/Baku', 'YYYY-MM');  -- board-level month key
 
-  -- Config (exception-safe defaults; the trigger wrapper also guards).
   v_per  := coalesce((select nullif(value_json #>> '{}', '')::numeric
                         from public.system_settings where key = 'leaderboard.points.per_correct'), 10);
-  v_cap  := coalesce((select nullif(value_json #>> '{}', '')::numeric
-                        from public.system_settings where key = 'leaderboard.points.practice_daily_cap_per_subject'), 150);
   v_mult := coalesce((select nullif(value_json #>> '{}', '')::numeric
                         from public.system_settings where key = 'leaderboard.points.olympiad_multiplier'), 1.5);
 
@@ -3421,17 +4142,12 @@ begin
   left join public.difficulty_levels dl on dl.id = q.difficulty_id
   where a.attempt_id = p_attempt_id and a.is_correct;
 
+  -- The old per-subject daily cap is retired (057): rated play is structurally
+  -- limited to one daily round per subject per day (+ purchased olympiads).
   if v_kind = 'olympiad' then
     v_awarded := round(v_raw * v_mult, 2);
   else
-    -- practice + topic tests share the per-subject daily anti-grind cap.
-    select coalesce(sum(points), 0) into v_used
-    from public.student_points_ledger
-    where student_profile_id = v_student
-      and subject_id is not distinct from v_subject
-      and kind in ('practice', 'test', 'daily')
-      and (created_at at time zone v_tz)::date = v_today;
-    v_awarded := round(least(v_raw, greatest(0, v_cap - v_used)), 2);
+    v_awarded := round(v_raw, 2);
   end if;
 
   -- Append-only, once per attempt (replay/regrade-safe).
@@ -3440,7 +4156,7 @@ begin
   values
     (v_student, p_attempt_id, v_subject, v_kind, v_awarded,
      jsonb_build_object('correct', v_correct, 'raw', round(v_raw, 2),
-                        'cap_applied', v_awarded < v_raw))
+                        'cap_applied', false))
   on conflict (attempt_id) do nothing;
   get diagnostics v_rows = row_count;
   if v_rows = 0 then return; end if;     -- already scored
@@ -3472,7 +4188,9 @@ begin
 end;
 $$;
 comment on function public.award_attempt_points(uuid) is
-  'SINGLE leaderboard writer: ledger row (once per graded attempt), cached points (lazy month rollover) and streak. Fired by trg_award_points_on_graded; never callable by clients.';
+  'SINGLE leaderboard writer (rated attempts ONLY since migration 057): ledger row '
+  '(once per graded attempt), cached points (lazy month rollover) and streak. Fired '
+  'by trg_award_points_on_graded; never callable by clients.';
 revoke all on function public.award_attempt_points(uuid) from public, anon, authenticated;
 grant execute on function public.award_attempt_points(uuid) to service_role;
 
@@ -3505,20 +4223,23 @@ create trigger trg_award_points_on_graded
 -- Internal: full ranked set for one board/scope/period. service-internal only.
 -- Migration 048: board rows carry the student's city/school/grade context and
 -- get_leaderboard ALWAYS returns the "First L." display name (server-formatted;
--- the full last name and every internal id stay in the DB). Return types
--- changed -> drop both before recreating.
+-- the full last name and every internal id stay in the DB). Migration 058:
+-- rows also carry the DISTRICT + a 'district' scope filter. Migration 064
+-- (Round 21): district = the school's rayon with the rayon STORED on the
+-- student as fallback (coalesce; the students trigger keeps the two in
+-- agreement). Return types changed -> drop both before recreating.
 drop function if exists public.get_leaderboard(text, text, uuid, text, int);
 drop function if exists public.lb_rows(text, text, uuid, text);
 
 create function public.lb_rows(
   p_board    text,          -- 'points' | 'streak'
-  p_scope    text,          -- 'global' | 'subject' | 'grade' | 'city' | 'school'
+  p_scope    text,          -- 'global' | 'subject' | 'grade' | 'city' | 'district' | 'school'
   p_scope_id uuid,
   p_period   text           -- 'month' | 'all_time' (points only)
 )
 returns table (profile_id uuid, value numeric, best_streak int, last_points_at timestamptz,
                first_name text, last_name text,
-               city_name text, school_name text, grade_level int)
+               city_name text, district_name text, school_name text, grade_level int)
 language plpgsql
 stable
 security definer
@@ -3528,7 +4249,7 @@ declare
   v_mkey text := to_char(now() at time zone 'Asia/Baku', 'YYYY-MM');
 begin
   if p_board not in ('points', 'streak')
-     or p_scope not in ('global', 'subject', 'grade', 'city', 'school')
+     or p_scope not in ('global', 'subject', 'grade', 'city', 'district', 'school')
      or p_period not in ('month', 'all_time')
      or (p_scope <> 'global' and p_scope_id is null) then
     raise exception 'leaderboard: bad arguments' using errcode = 'check_violation';
@@ -3540,22 +4261,21 @@ begin
   if p_board = 'streak' then
     return query
       select st.profile_id,
-             -- lazy expiry: a streak is live only if active today or yesterday (local)
              case when st.last_active_date >= (now() at time zone coalesce(st.streak_tz,'Asia/Baku'))::date - 1
                   then st.current_streak else 0 end::numeric,
              st.best_streak, st.last_points_at, st.first_name, st.last_name,
-             d.name, sc.name, g.level::int
+             d.name, cd.name, sc.name, g.level::int
       from public.students st
       left join public.districts d on d.id = st.district_id
       left join public.schools  sc on sc.id = st.school_id
+      left join public.city_districts cd on cd.id = coalesce(sc.city_district_id, st.city_district_id)
       left join public.grades    g on g.id = st.grade_id
       where st.current_streak > 0
         and st.last_active_date >= (now() at time zone coalesce(st.streak_tz,'Asia/Baku'))::date - 1;
   elsif p_scope = 'subject' then
-    -- per-subject points come from the ledger (month filter on the board tz)
     return query
       select st.profile_id, l.pts, st.best_streak, st.last_points_at,
-             st.first_name, st.last_name, d.name, sc.name, g.level::int
+             st.first_name, st.last_name, d.name, cd.name, sc.name, g.level::int
       from (
         select sl.student_profile_id, sum(sl.points) as pts
         from public.student_points_ledger sl
@@ -3567,6 +4287,7 @@ begin
       join public.students st on st.profile_id = l.student_profile_id
       left join public.districts d on d.id = st.district_id
       left join public.schools  sc on sc.id = st.school_id
+      left join public.city_districts cd on cd.id = coalesce(sc.city_district_id, st.city_district_id)
       left join public.grades    g on g.id = st.grade_id
       where l.pts > 0;
   else
@@ -3576,15 +4297,17 @@ begin
                   when st.points_month_key = v_mkey then st.points_month
                   else 0 end::numeric,
              st.best_streak, st.last_points_at, st.first_name, st.last_name,
-             d.name, sc.name, g.level::int
+             d.name, cd.name, sc.name, g.level::int
       from public.students st
       left join public.districts d on d.id = st.district_id
       left join public.schools  sc on sc.id = st.school_id
+      left join public.city_districts cd on cd.id = coalesce(sc.city_district_id, st.city_district_id)
       left join public.grades    g on g.id = st.grade_id
       where (p_scope = 'global'
-             or (p_scope = 'grade'  and st.grade_id    = p_scope_id)
-             or (p_scope = 'city'   and st.district_id = p_scope_id)
-             or (p_scope = 'school' and st.school_id   = p_scope_id))
+             or (p_scope = 'grade'    and st.grade_id    = p_scope_id)
+             or (p_scope = 'city'     and st.district_id = p_scope_id)
+             or (p_scope = 'district' and coalesce(sc.city_district_id, st.city_district_id) = p_scope_id)
+             or (p_scope = 'school'   and st.school_id   = p_scope_id))
         and (case when p_period = 'all_time' then st.points_all_time
                   when st.points_month_key = v_mkey then st.points_month
                   else 0 end) > 0;
@@ -3595,6 +4318,8 @@ revoke all on function public.lb_rows(text, text, uuid, text) from public, anon,
 grant execute on function public.lb_rows(text, text, uuid, text) to service_role;
 
 -- Public board read: top-N, deterministic tie-break, named rows with context.
+-- Column order contract for UIs (migration 058): Rank → Participant → City →
+-- District → School → Grade → Score.
 create function public.get_leaderboard(
   p_board    text,
   p_scope    text default 'global',
@@ -3602,7 +4327,7 @@ create function public.get_leaderboard(
   p_period   text default 'month',
   p_limit    int  default 100
 )
-returns table (rank int, display_name text, city text, school text,
+returns table (rank int, display_name text, city text, district text, school text,
                grade_level int, value numeric, is_self boolean)
 language plpgsql
 stable
@@ -3618,11 +4343,9 @@ begin
   end if;
   return query
     select r.rn::int,
-           -- "Firstname L." for EVERYONE (owner ruling, migration 048): the
-           -- full last name and any internal id never leave the server.
            trim(coalesce(r.first_name, '') || ' ' ||
                 coalesce(left(nullif(trim(r.last_name), ''), 1) || '.', '')),
-           r.city_name, r.school_name, r.grade_level,
+           r.city_name, r.district_name, r.school_name, r.grade_level,
            r.value, r.profile_id = v_me
     from (
       select t.*, row_number() over (
@@ -3635,9 +4358,9 @@ begin
 end;
 $$;
 comment on function public.get_leaderboard(text, text, uuid, text, int) is
-  'Live board (points month/all_time per scope; streak global): rank, "First L." display '
-  'name (always; formatted server-side), city/school/grade context, value, is_self. '
-  'No anonymization tag, no ids (migration 048). No client aggregation.';
+  'Live board: rank, "First L." name, city/DISTRICT/school/grade context (district '
+  'derives from the school — migration 058), value, is_self. Scopes: global/subject/'
+  'grade/city/district/school. Numeric ranks only; no ids leave the server.';
 revoke all on function public.get_leaderboard(text, text, uuid, text, int) from public, anon;
 grant execute on function public.get_leaderboard(text, text, uuid, text, int) to authenticated, service_role;
 
@@ -3675,6 +4398,92 @@ end;
 $$;
 revoke all on function public.get_my_leaderboard_rank(text, text, uuid, text) from public, anon;
 grant execute on function public.get_my_leaderboard_rank(text, text, uuid, text) to authenticated, service_role;
+
+-- Parent panel: per-child position under the active filters (migration 058).
+create or replace function public.get_child_leaderboard_position(
+  p_student  uuid,
+  p_board    text,
+  p_scope    text default 'global',
+  p_scope_id uuid default null,
+  p_period   text default 'month'
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_out jsonb;
+begin
+  -- Authorization: service role, admin, the linked parent, or the child itself.
+  if not coalesce(
+    auth.role() = 'service_role'
+    or public.is_admin()
+    or public.is_parent_linked_to_student(p_student)
+    or public.current_profile_id() = p_student
+  , false) then
+    raise exception 'not allowed';
+  end if;
+
+  select jsonb_build_object('rank', r.rn, 'total', r.total, 'value', r.value)
+    into v_out
+  from (
+    select profile_id, value,
+           row_number() over (order by value desc, best_streak desc,
+                              last_points_at asc nulls last, profile_id) as rn,
+           count(*) over () as total
+    from public.lb_rows(p_board, p_scope, p_scope_id, p_period)
+  ) r
+  where r.profile_id = p_student;
+  -- Not on the board under these filters → rank null (UI renders the honest
+  -- "not participating under this filter" state, never a fake 0).
+  return coalesce(v_out, jsonb_build_object('rank', null, 'total',
+    (select count(*) from public.lb_rows(p_board, p_scope, p_scope_id, p_period)), 'value', 0));
+end;
+$$;
+comment on function public.get_child_leaderboard_position(uuid, text, text, uuid, text) is
+  'Parent-panel per-child board position (migration 058): rank/total/value for one '
+  'LINKED child under the active filters. Parent-link/admin/self enforced in-body.';
+revoke all on function public.get_child_leaderboard_position(uuid, text, text, uuid, text) from public, anon;
+grant execute on function public.get_child_leaderboard_position(uuid, text, text, uuid, text) to authenticated, service_role;
+
+-- Landing page: anon public top-10, anonymized (migration 058).
+create or replace function public.get_public_leaderboard(p_limit int default 10)
+returns table (rank int, display_name text, city text, district text, school text,
+               grade_level int, value numeric)
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_limit int := least(greatest(coalesce(p_limit, 10), 1), 10);
+begin
+  -- Overall board = global all-time points. Names are anonymized server-side:
+  -- 'Şagird XXXX' (last 4 digits of the 8-digit child id, leading zeros kept).
+  -- No real names, ids, or contact data in the payload.
+  return query
+    select r.rn::int,
+           'Şagird ' || coalesce(right(st.child_unique_id::text, 4), '····'),
+           r.city_name, r.district_name, r.school_name, r.grade_level, r.value
+    from (
+      select t.*, row_number() over (
+               order by t.value desc, t.best_streak desc,
+                        t.last_points_at asc nulls last, t.profile_id) as rn
+      from public.lb_rows('points', 'global', null, 'all_time') t
+    ) r
+    join public.students st on st.profile_id = r.profile_id
+    where r.rn <= v_limit
+    order by r.rn;
+end;
+$$;
+comment on function public.get_public_leaderboard(int) is
+  'PUBLIC landing-page board (migration 058): top-10 global all-time points, '
+  'anonymized "Şagird XXXX" names (last 4 id digits), city/district/school/grade '
+  'context only. Anon-callable by design; hard-capped at 10 rows.';
+revoke all on function public.get_public_leaderboard(int) from public;
+grant execute on function public.get_public_leaderboard(int) to anon, authenticated, service_role;
 
 -- Streak status (self): live state + lazy zeroing of a lost streak.
 create or replace function public.get_streak_status()
@@ -4131,6 +4940,9 @@ revoke all on function public.create_notification(uuid, text, text, text, jsonb,
 grant execute on function public.create_notification(uuid, text, text, text, jsonb, text[], text, int, text, text, timestamptz) to service_role;
 
 -- Internal audience resolver → set of recipient profile ids. service-internal.
+-- Migration 060 adds 'all_users' (parents ∪ students, deduped) and
+-- 'olympiad_buyers' (active purchases of ≥1 selected package → purchasing
+-- parent + entitled child, deduped; filter.package_ids uuid[]).
 create or replace function public.lb_notify_audience(p_type text, p_filter jsonb)
 returns table (profile_id uuid)
 language plpgsql
@@ -4139,10 +4951,38 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
-  if p_type = 'all_parents' then
+  if p_type = 'all_users' then
+    -- Every notifiable end-user role, deduped (migration 060).
+    return query
+      select pr.profile_id from public.parents pr
+      union
+      select st.profile_id from public.students st;
+  elsif p_type = 'all_parents' then
     return query select pr.profile_id from public.parents pr;
   elsif p_type = 'all_children' then
     return query select st.profile_id from public.students st;
+  elsif p_type = 'olympiad_buyers' then
+    -- ACTIVE purchases of any selected package → purchasing parent + entitled
+    -- child, deduped (migration 060). Failed/canceled purchases never match.
+    return query
+      with pkg as (
+        select e::uuid as id
+        from jsonb_array_elements_text(coalesce(p_filter->'package_ids','[]'::jsonb)) e
+        where e ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      )
+      select distinct u.pid
+      from (
+        select op.owner_parent_profile_id as pid
+        from public.olympiad_purchases op
+        join pkg on pkg.id = op.olympiad_package_id
+        where op.status = 'active'
+        union
+        select op.student_profile_id
+        from public.olympiad_purchases op
+        join pkg on pkg.id = op.olympiad_package_id
+        where op.status = 'active'
+      ) u
+      where u.pid is not null;
   elsif p_type in ('parent', 'individual') then
     -- Multi-select: audience_filter.profile_ids (uuid array). Fallback: single profile_id (migration 044).
     if p_filter ? 'profile_ids' and jsonb_typeof(p_filter->'profile_ids') = 'array' then
@@ -4189,6 +5029,9 @@ grant execute on function public.get_notification_target_count(text, jsonb) to a
 -- admin_send_notification — the broadcast path. authenticated + in-body admin
 -- check. Immediate send (scheduled_at null) fans out now; else stored 'scheduled'
 -- and dispatched by cron. Returns the admin_notifications id + recipient count.
+-- Migration 060: audience whitelist extended (all_users, olympiad_buyers);
+-- olympiad_buyers requires well-formed package_ids of existing ACTIVE packages,
+-- validated BEFORE anything is stored.
 create or replace function public.admin_send_notification(
   p_title         text,
   p_body          text,
@@ -4210,6 +5053,7 @@ declare
   v_rec   uuid;
   v_n     int := 0;
   v_key   text;
+  v_pkg_n int;
 begin
   if not (public.is_admin() or public.has_permission('notifications.send')) then
     raise exception 'notify: forbidden' using errcode = 'insufficient_privilege';
@@ -4217,8 +5061,29 @@ begin
   if coalesce(btrim(p_title),'') = '' or coalesce(btrim(p_body),'') = '' then
     raise exception 'notify: title and body required' using errcode = 'check_violation';
   end if;
-  if p_audience_type not in ('all_parents','all_children','parent','by_subject','individual') then
+  if p_audience_type not in ('all_users','all_parents','all_children','olympiad_buyers',
+                             'parent','by_subject','individual') then
     raise exception 'notify: bad audience' using errcode = 'check_violation';
+  end if;
+
+  -- olympiad_buyers: package_ids are REQUIRED and must all be existing ACTIVE
+  -- packages (migration 060) — validated before anything is stored.
+  if p_audience_type = 'olympiad_buyers' then
+    select count(*) into v_pkg_n
+    from jsonb_array_elements_text(coalesce(p_audience_filter->'package_ids','[]'::jsonb)) e
+    where e ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+    if coalesce(v_pkg_n, 0) = 0 then
+      raise exception 'notify: at least one olympiad package required' using errcode = 'check_violation';
+    end if;
+    if exists (
+      select 1
+      from jsonb_array_elements_text(p_audience_filter->'package_ids') e
+      where not exists (
+        select 1 from public.olympiad_packages op
+        where op.id::text = e and op.status = 'active')
+    ) then
+      raise exception 'notify: invalid or inactive olympiad package' using errcode = 'check_violation';
+    end if;
   end if;
 
   insert into public.admin_notifications

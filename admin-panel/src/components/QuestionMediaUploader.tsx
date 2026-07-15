@@ -44,11 +44,16 @@ export function QuestionMediaUploader({
   locale,
   current,
   strings,
+  onChanged,
 }: {
   questionId: string;
   locale: string;
   current: { url: string; mime: string } | null;
   strings: Strings;
+  // Fired after a successful attach/detach. The edit modal passes its reload
+  // here because `current` is client state there — router.refresh() alone
+  // would not update the preview.
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -95,6 +100,7 @@ export function QuestionMediaUploader({
         return;
       }
       router.refresh();
+      onChanged?.();
     } finally {
       setBusy(false);
       e.target.value = "";
@@ -109,6 +115,7 @@ export function QuestionMediaUploader({
       fd.set("locale", locale);
       await detachQuestionMedia(fd);
       router.refresh();
+      onChanged?.();
     } finally {
       setBusy(false);
     }

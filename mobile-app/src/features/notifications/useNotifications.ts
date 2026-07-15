@@ -3,6 +3,7 @@
 // AWAITED and checked; optimistic updates roll back on failure.
 import { useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/features/auth/authStore";
 
@@ -39,6 +40,54 @@ async function fetchUnread(): Promise<number> {
   return typeof data === "number" ? data : 0;
 }
 
+// ---- shared Realtime subscription (module singleton, ref-counted) --------------
+// useNotifications() is mounted by SEVERAL components at once (HeaderBell stays
+// mounted while the notifications screen / profile section mounts on top). Each
+// consumer must NOT create its own channel: supabase-js dedupes channels by
+// topic, so a second `.on("postgres_changes", …)` lands on the ALREADY-SUBSCRIBED
+// instance and hard-throws ("cannot add postgres_changes callbacks … after
+// subscribe()"). One module-level channel per profile, consumers register plain
+// listeners; the channel is torn down when the last consumer unmounts or the
+// profile changes (logout/login).
+type LiveListener = () => void;
+let liveChannel: RealtimeChannel | null = null;
+let liveProfile: string | null = null;
+let liveSeq = 0; // unique topic per (re)build — never collides with a stale channel
+const liveListeners = new Set<LiveListener>();
+
+function acquireLive(profileId: string, listener: LiveListener) {
+  liveListeners.add(listener);
+  if (liveChannel && liveProfile === profileId) return;
+  if (liveChannel) {
+    void supabase.removeChannel(liveChannel);
+    liveChannel = null;
+  }
+  liveProfile = profileId;
+  liveSeq += 1;
+  liveChannel = supabase
+    .channel(`notif:${profileId}:${liveSeq}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: `recipient_profile_id=eq.${profileId}`,
+      },
+      () => liveListeners.forEach((l) => l()),
+    )
+    .subscribe();
+}
+
+function releaseLive(listener: LiveListener) {
+  liveListeners.delete(listener);
+  if (liveListeners.size === 0 && liveChannel) {
+    void supabase.removeChannel(liveChannel);
+    liveChannel = null;
+    liveProfile = null;
+  }
+}
+
 export function useNotifications(limit = PAGE_LIMIT) {
   const profileId = useAuthStore((s) => s.profileId);
   const queryClient = useQueryClient();
@@ -58,25 +107,12 @@ export function useNotifications(limit = PAGE_LIMIT) {
     void queryClient.invalidateQueries({ queryKey: ["notifications"] });
   }, [queryClient]);
 
-  // Live inserts for THIS user only (web hook parity: per-user channel filter).
+  // Live inserts for THIS user only (web hook parity: per-user channel filter),
+  // via the shared ref-counted channel above.
   useEffect(() => {
     if (!profileId) return;
-    const channel = supabase
-      .channel(`notif:${profileId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          filter: `recipient_profile_id=eq.${profileId}`,
-        },
-        () => refresh(),
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
+    acquireLive(profileId, refresh);
+    return () => releaseLive(refresh);
   }, [profileId, refresh]);
 
   const markRead = useCallback(

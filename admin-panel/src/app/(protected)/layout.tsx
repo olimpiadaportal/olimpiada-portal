@@ -5,6 +5,7 @@ import { SignOutButton } from "@/components/SignOutButton";
 import { IdleTimeout } from "@/components/IdleTimeout";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { getLocale, getT } from "@/i18n/server";
+import { localStrings as locationStrings } from "./locations/labels";
 
 export default async function ProtectedLayout({
   children,
@@ -12,6 +13,15 @@ export default async function ProtectedLayout({
   const ctx = await requirePanelAccess();
   const t = await getT();
   const locale = await getLocale();
+
+  // Nav labels not yet in the shared dictionary fall back to the local
+  // trilingual locations strings (t() returns the key itself when missing) —
+  // currently just nav.locations (Round 21 merged Cities/Districts/Schools).
+  const ltLocations = locationStrings(locale);
+  const navLabel = (key: string) => {
+    const v = t(key);
+    return v === key ? ltLocations(key) : v;
+  };
 
   const roleLabel = ctx.isAdmin
     ? t("common.administrator")
@@ -26,7 +36,11 @@ export default async function ProtectedLayout({
           return ctx.isAdmin || ctx.permissions.includes(i.permission);
         return true;
       })
-      .map((i) => ({ label: t(i.label), href: i.href ?? null, soon: !!i.soon })),
+      .map((i) => ({
+        label: navLabel(i.label),
+        href: i.href ?? null,
+        soon: !!i.soon,
+      })),
   })).filter((g) => g.items.length > 0);
 
   return (

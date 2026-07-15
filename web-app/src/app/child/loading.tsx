@@ -1,8 +1,9 @@
-// Skeleton for the student arena home: hero (welcome panel + rank panel),
-// ticker strip, leaderboard quick-look, two-column rounds/strength area.
-// Reuses the real .arena-hero / .arena-cols grid classes so column ratios and
-// breakpoints match the loaded page exactly. Renders inside the .arena scope,
-// so the bones pick up the arena panel tokens automatically.
+// Skeleton for the student arena home (Round 21 layout): hero (welcome panel
+// + rank panel), ticker strip, two-column [leaderboard quick-look | subject
+// strength] row, full-width recent-rounds list. Reuses the real .arena-hero /
+// .arena-cols grid classes so column ratios and breakpoints match the loaded
+// page exactly. Renders inside the .arena scope, so the bones pick up the
+// arena panel tokens automatically.
 import {
   Skeleton,
   SkeletonButton,
@@ -47,28 +48,22 @@ export default function Loading() {
       {/* ---- Ticker strip ---- */}
       <Skeleton w="100%" h={40} r={999} style={{ margin: "0 0 26px" }} />
 
-      {/* ---- Leaderboard quick-look card ---- */}
-      <SkeletonCard r={16} pad="18px 20px" style={{ marginBottom: 26 }}>
-        <div className={s.rowBetween} style={{ marginBottom: 14 }}>
-          <Skeleton w={170} h={13} />
-          <Skeleton w={110} h={12} />
-        </div>
-        <div className={s.row} style={{ gap: 12 }}>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className={s.stack} style={{ gap: 6, flex: 1 }}>
-              <Skeleton w="60%" h={20} />
-              <Skeleton w="85%" h={10} />
-            </div>
-          ))}
-        </div>
-      </SkeletonCard>
-
-      {/* ---- Two-column: rounds | strength + news ---- */}
+      {/* ---- Two-column: leaderboard quick-look | subject strength ---- */}
       <div className="arena-cols">
-        <div>
-          <Skeleton w={190} h={17} style={{ margin: "0 0 14px" }} />
-          <SkeletonList rows={4} icon trailing pad="6px 20px" />
-        </div>
+        <SkeletonCard r={16} pad="18px 20px">
+          <div className={s.rowBetween} style={{ marginBottom: 14 }}>
+            <Skeleton w={170} h={13} />
+            <Skeleton w={110} h={12} />
+          </div>
+          <div className={s.row} style={{ gap: 12 }}>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className={s.stack} style={{ gap: 6, flex: 1 }}>
+                <Skeleton w="60%" h={20} />
+                <Skeleton w="85%" h={10} />
+              </div>
+            ))}
+          </div>
+        </SkeletonCard>
         <div>
           <Skeleton w={190} h={17} style={{ margin: "0 0 14px" }} />
           <SkeletonCard r={14} pad={20}>
@@ -84,10 +79,12 @@ export default function Loading() {
               ))}
             </div>
           </SkeletonCard>
-          <Skeleton w={150} h={17} style={{ margin: "26px 0 14px" }} />
-          <SkeletonList rows={3} icon={false} trailing={false} pad="6px 20px" />
         </div>
       </div>
+
+      {/* ---- Recent rounds — full-width history strip ---- */}
+      <Skeleton w={150} h={17} style={{ margin: "26px 0 14px" }} />
+      <SkeletonList rows={3} icon={false} trailing pad="6px 20px" />
     </SkeletonShell>
   );
 }

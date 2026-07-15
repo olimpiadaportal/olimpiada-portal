@@ -39,14 +39,13 @@ begin
     'profiles','roles','permissions','role_permissions','profile_roles',
     'parents','students','parent_student_links',
     'child_unique_ids','child_credentials','child_login_attempts',
-    'districts','schools','grades','subjects','topics','subtopics',
+    'districts','city_districts','schools','grades','subjects','topics','subtopics',
     'wallpapers','child_wallpaper_selections',
     'sticker_themes','sticker_images','child_sticker_selections',
     'question_types','difficulty_levels','olympiad_types','sources',
     'questions','question_translations','answer_options','answer_option_translations',
     'question_explanations','tests','test_questions','question_imports',
-    'test_attempts','test_attempt_answers','daily_task_packages','daily_task_items',
-    'student_daily_task_progress','progress_snapshots',
+    'test_attempts','test_attempt_answers','daily_rounds','progress_snapshots',
     'leaderboard_periods','leaderboard_entries','leaderboard_snapshots',
     'achievements','student_achievements','question_analytics',
     'subscription_plans','subscriptions','payments','payment_events',
@@ -226,6 +225,17 @@ begin
       'create policy "%1$s_write" on public.%1$I for all to authenticated using (public.is_admin()) with check (public.is_admin());', t);
   end loop;
 end $$;
+
+-- city_districts (migration 053): intra-city rayons — public read; admin write.
+drop policy if exists city_districts_read on public.city_districts;
+create policy city_districts_read on public.city_districts
+  for select to anon, authenticated using (true);
+
+drop policy if exists city_districts_admin_write on public.city_districts;
+create policy city_districts_admin_write on public.city_districts
+  for all to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
 
 -- wallpapers: active catalog readable by authenticated; admin write.
 drop policy if exists "wallpapers_select" on public.wallpapers;
@@ -479,34 +489,11 @@ create policy "answers_write" on public.test_attempt_answers for all to authenti
   with check (exists (select 1 from public.test_attempts a where a.id = attempt_id
     and (a.student_profile_id = public.current_profile_id() or public.is_admin())));
 
--- daily task packages/items: published read; admin/content manage.
-drop policy if exists "dtp_select" on public.daily_task_packages;
-create policy "dtp_select" on public.daily_task_packages for select to authenticated
-  using (status = 'published' or public.is_admin() or public.has_permission('daily_tasks.manage'));
-drop policy if exists "dtp_write" on public.daily_task_packages;
-create policy "dtp_write" on public.daily_task_packages for all to authenticated
-  using (public.is_admin() or public.has_permission('daily_tasks.manage'))
-  with check (public.is_admin() or public.has_permission('daily_tasks.manage'));
-
-drop policy if exists "dti_select" on public.daily_task_items;
-create policy "dti_select" on public.daily_task_items for select to authenticated
-  using (exists (select 1 from public.daily_task_packages p where p.id = package_id
-    and (p.status = 'published' or public.is_admin() or public.has_permission('daily_tasks.manage'))));
-drop policy if exists "dti_write" on public.daily_task_items;
-create policy "dti_write" on public.daily_task_items for all to authenticated
-  using (public.is_admin() or public.has_permission('daily_tasks.manage'))
-  with check (public.is_admin() or public.has_permission('daily_tasks.manage'));
-
--- student daily task progress: own/parent/admin.
-drop policy if exists "sdtp_select" on public.student_daily_task_progress;
-create policy "sdtp_select" on public.student_daily_task_progress for select to authenticated
-  using (student_profile_id = public.current_profile_id()
-         or public.is_parent_linked_to_student(student_profile_id)
-         or public.is_admin());
-drop policy if exists "sdtp_write" on public.student_daily_task_progress;
-create policy "sdtp_write" on public.student_daily_task_progress for all to authenticated
-  using (student_profile_id = public.current_profile_id() or public.is_admin())
-  with check (student_profile_id = public.current_profile_id() or public.is_admin());
+-- daily_rounds (migration 056): students/parents never read rounds directly
+-- (the attempt RPCs serve content); admins may inspect. No client write path.
+drop policy if exists daily_rounds_admin_read on public.daily_rounds;
+create policy daily_rounds_admin_read on public.daily_rounds
+  for select to authenticated using (public.is_admin());
 
 -- progress snapshots: own/parent/admin read; writes admin/service only.
 drop policy if exists "snap_select" on public.progress_snapshots;
@@ -796,13 +783,12 @@ create policy "fai_admin" on public.free_access_intervals for all to authenticat
 -- RLS is row-level, not column-level: a row-write policy that lets a learner
 -- write their own attempt would also let them forge score/is_correct via a direct
 -- PostgREST write. To close that, we remove table-level INSERT/UPDATE on these
--- three tables from anon + authenticated and grant back ONLY the columns a learner
+-- tables from anon + authenticated and grant back ONLY the columns a learner
 -- may legitimately set. The protected columns
 --   test_attempts.{score, max_score, status, submitted_at, graded_at}
 --   test_attempt_answers.{is_correct, points_awarded}
---   student_daily_task_progress.{status, score, completed_at}
--- therefore become writable ONLY by the service_role (TestService /
--- DailyTaskService) or a future SECURITY DEFINER grading RPC — the intended path.
+-- therefore become writable ONLY by the service_role (TestService) or a
+-- SECURITY DEFINER grading RPC — the intended path.
 --
 -- Notes:
 --   * Supabase grants ALL on public tables to anon/authenticated/service_role by
@@ -830,11 +816,6 @@ grant  insert (attempt_id, question_id, selected_option_ids, answer_text, time_s
   on public.test_attempt_answers to authenticated;
 grant  update (selected_option_ids, answer_text, time_spent_ms)
   on public.test_attempt_answers to authenticated;
-
--- student_daily_task_progress: learner may only BEGIN a package row;
--- status / score / completed_at are service-only.
-revoke insert, update on public.student_daily_task_progress from anon, authenticated;
-grant  insert (student_profile_id, package_id) on public.student_daily_task_progress to authenticated;
 
 
 -- -----------------------------------------------------------------------------

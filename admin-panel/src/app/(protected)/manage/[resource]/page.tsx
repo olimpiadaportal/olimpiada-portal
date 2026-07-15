@@ -5,7 +5,8 @@ import { getResource, type Resource } from "@/lib/admin/resources";
 import { requireAdmin, requirePanelAccess } from "@/lib/admin/guards";
 import { ResourceForm } from "@/components/ResourceForm";
 import { DeleteButton } from "@/components/DeleteButton";
-import { getT, type T } from "@/i18n/server";
+import { getLocale, getT, type T } from "@/i18n/server";
+import { withLocalStrings } from "@/lib/admin/question-flow-labels";
 import { localizeFields, resourceTitle } from "@/i18n/resources-i18n";
 import { FilterBar, type FilterBarSelect } from "@/components/FilterBar";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
@@ -28,13 +29,22 @@ function first(sp: SearchParams, key: string): string {
   return "";
 }
 
-function renderCell(t: T, res: Resource, row: any, col: string): string {
+function renderCell(t: T, res: Resource, row: any, col: string): React.ReactNode {
   const f = res.fields.find((x) => x.name === col);
   if (f?.type === "reference" && f.ref) {
     return row[f.ref.table]?.[f.ref.labelColumn] ?? "—";
   }
   if (f?.type === "boolean") return row[col] ? t("boolean.yes") : t("boolean.no");
   if (f?.name === "status" && row[col]) return t(`status.${row[col]}`);
+  // Rüb column: "N-ci rüb"; NULL = legacy needs-review badge (excluded from
+  // daily-round generation until an admin assigns a term).
+  if (f?.name === "term") {
+    return row[col] == null ? (
+      <span className="pill pill-sm pill-warn">{t("term.review")}</span>
+    ) : (
+      t(`term.${row[col]}`)
+    );
+  }
   const v = row[col];
   return v === null || v === undefined || v === "" ? "—" : String(v);
 }
@@ -53,7 +63,9 @@ export default async function ManageResourcePage({
   if (res.adminOnly) await requireAdmin();
   else await requirePanelAccess();
 
-  const t = await getT();
+  // Local trilingual strings (Rüb labels) fill the keys messages.ts does not
+  // know yet; messages.ts wins once the keys land there.
+  const t = withLocalStrings(await getT(), await getLocale());
   const supabase = await createClient();
   const sp = await searchParams;
 
@@ -70,9 +82,13 @@ export default async function ManageResourcePage({
     return UUID_RE.test(v) ? v : "";
   };
   // Taxonomy cascades: topics filter by subject; subtopics by subject → topic.
-  const subject =
-    res.slug === "topics" || res.slug === "subtopics" ? uuidParam("subject") : "";
+  const isTaxonomy = res.slug === "topics" || res.slug === "subtopics";
+  const subject = isTaxonomy ? uuidParam("subject") : "";
   const topic = res.slug === "subtopics" ? uuidParam("topic") : "";
+  // Rüb filter (topics + subtopics): 1..4 or "none" (NULL = needs review).
+  const termRaw = first(sp, "term");
+  const term =
+    isTaxonomy && ["1", "2", "3", "4", "none"].includes(termRaw) ? termRaw : "";
 
   const refFields = res.fields.filter((f) => f.type === "reference" && f.ref);
   const optionsByField: Record<string, { value: string; label: string }[]> = {};
@@ -92,9 +108,10 @@ export default async function ManageResourcePage({
 
   // Subtopics cascade needs subjects + subject-scoped topics (light queries;
   // read-only). Topic rows carry subject_id so the topic select can be scoped
-  // to the currently selected subject server-side.
+  // to the currently selected subject server-side, and term so the subtopic
+  // form can show the Rüb inherited from the selected parent topic.
   let subjectOptions: { value: string; label: string }[] = [];
-  let topicRows: { id: string; subject_id: string; name: string }[] = [];
+  let topicRows: { id: string; subject_id: string; name: string; term: number | null }[] = [];
   if (res.slug === "subtopics") {
     const [{ data: subs }, { data: tops }] = await Promise.all([
       supabase.from("subjects").select("id, name").order("name"),
@@ -102,7 +119,7 @@ export default async function ManageResourcePage({
       // restriction below (subtopics inherit scope via their parent topic).
       supabase
         .from("topics")
-        .select("id, subject_id, name")
+        .select("id, subject_id, name, term")
         .eq("scope", "exam")
         .order("name"),
     ]);
@@ -114,6 +131,14 @@ export default async function ManageResourcePage({
   } else if (res.slug === "topics") {
     subjectOptions = optionsByField["subject_id"] ?? [];
   }
+
+  // Parent-topic id → term map for the subtopic form's read-only Rüb display.
+  const termByTopic: Record<string, number | null> | undefined =
+    res.slug === "subtopics"
+      ? Object.fromEntries(
+          topicRows.map((r) => [r.id, r.term == null ? null : Number(r.term)]),
+        )
+      : undefined;
 
   // ---- Filtered list query -------------------------------------------------
   const embeds = refFields
@@ -143,6 +168,10 @@ export default async function ManageResourcePage({
       qb = qb.ilike("name", `%${escaped}%`);
     }
     if (status) qb = qb.eq("status", status);
+    // Rüb filter: exact term or the NULL "needs review" bucket. Both topics
+    // and subtopics carry their own term column (kept in sync by the DB).
+    if (term === "none") qb = qb.is("term", null);
+    else if (term) qb = qb.eq("term", Number(term));
     if (res.slug === "topics") {
       // Module separation: olympiad-scoped topics are package-internal and
       // never listed/managed on the Exams taxonomy pages.
@@ -196,6 +225,19 @@ export default async function ManageResourcePage({
       },
     );
   }
+  if (isTaxonomy) {
+    // Rüb filter: 1..4 + the NULL "needs review" bucket.
+    selects.push({
+      key: "term",
+      value: term,
+      allLabel: t("qfilter.allTerms"),
+      ariaLabel: t("qfield.term"),
+      options: [
+        ...["1", "2", "3", "4"].map((n) => ({ value: n, label: t(`term.${n}`) })),
+        { value: "none", label: t("qfilter.noTerm") },
+      ],
+    });
+  }
   if (hasStatusField) {
     selects.push({
       key: "status",
@@ -208,7 +250,7 @@ export default async function ManageResourcePage({
       })),
     });
   }
-  const hasFilters = Boolean(q || status || subject || topicSafe);
+  const hasFilters = Boolean(q || status || subject || topicSafe || term);
 
   return (
     <div className="page">
@@ -226,6 +268,7 @@ export default async function ManageResourcePage({
           submitLabel={t("manage.add")}
           savingLabel={t("manage.saving")}
           selectPlaceholder={t("manage.select")}
+          termByTopic={termByTopic}
         />
       </section>
 

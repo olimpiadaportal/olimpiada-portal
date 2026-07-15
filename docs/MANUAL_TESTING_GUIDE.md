@@ -1174,3 +1174,174 @@ If anything doesn't match, tell me the **JJ-#** + what you saw.
 - Parent profile: upload/change/remove avatar now works from the app (was "coming soon"); everything else on the screen unchanged.
 
 If anything doesn't match, tell me the **M3-#** + what you saw.
+
+---
+
+# ROUND 20 (2026-07-12) — daily rounds, districts, terms, 5 options, leaderboards everywhere
+
+> DB note: migrations 052–062 are applied on dev; from-zero rebuild = 64/64 PASS. The old daily-task tables are gone (replaced by the new daily-rounds engine).
+
+## KK1. Olympiad packages — any question count, editable duration
+- Create a package with e.g. 35 questions (bulk import during creation): a child attempt contains ALL 35 — no 25 cap; runner countdown = the package's `duration_minutes`.
+- Edit the package: duration is editable in create AND edit; hints say attempts include all published questions.
+
+## KK2. Subject tests are untimed practice
+- Student → a subject's "Məşq et" (setup → start): runner shows the "∞ Vaxt limiti yoxdur" pill + "Məşq" badge — no countdown, no auto-submit; you can leave and resume any time (24h auto-abandon).
+- Finish it → NO points/streak change (check the Ranking tab before/after). Olympiads still show a live countdown.
+
+## KK3. Parent nav — Notifications only via the bell
+- Parent menu shows no Notifications tab (bell stays; its "see all" opens the page; unread counts work).
+
+## KK4. Student leaderboard overhaul
+- Columns: Sıra | İştirakçı | Şəhər | Rayon | Məktəb | Sinif | Xal; ranks are plain numbers (no medals anywhere).
+- Top 50 scrolls INSIDE the table container with a sticky header (page height fixed).
+- A Baku child sees the "Rayon" scope chip → district chips; forged `?district=<uuid>` clamps safely.
+- "Sizin yeriniz" shows `#rank / total`; a filter the child isn't in shows the honest "not on this board" state.
+
+## KK5. Daily rounds (THE big one)
+- Tests tab = three sections: **Bugünün raundları** / **Dünənin raundları** / **Son raundlar**.
+- Start a today-round: timed 25:00, 25 questions, "Reytinqə təsir edir" badge; finish → card flips to "Bu gün iştirak etmisən" + score; a second start (even via a second tab / direct POST) → friendly "already attempted" note (DB-enforced).
+- Two students of the SAME grade get the SAME 25 questions in the same order; a different grade gets a different round.
+- Points/streak increase ONLY from this rated round (and olympiads).
+- Tomorrow: yesterday's round appears under "Dünənin raundları" with the notice "Bu testlər yalnız təkrar üçündür və nəticələr reytinq cədvəlinə təsir etmir." — replay it twice (unlimited), untimed, zero points; editing/deleting bank questions after generation does NOT change the stored round (snapshot).
+- Subject with too few eligible questions → friendly "round not ready" note; admin sees the gap in the readiness panel (KK13).
+
+## KK6. Schools ↔ districts (admin + data)
+- Admin → Rayonlar: Baku's 12 official rayons listed; create/edit/delete works (deleting one with schools warns/refuses safely). Gəncə correctly has none (rayons abolished 2022).
+- Schools form: City=Bakı → mandatory Rayon dropdown (only Baku rayons); other cities → no district field; city change resets it.
+- Schools list: District column + filters; the "Rayon gözləyən məktəblər: 7" pill lists the 7 unmatched schools (313/320 were auto-assigned from the official BŞTİ directory) — assign them manually via edit.
+- Leaderboard rows show the district that comes from the student's SCHOOL; changing a school's rayon updates the board.
+
+## KK7. Terms (Rüb)
+- Admin Topics/Subtopics: "Sıra" is gone; required Rüb dropdown (1-ci…4-cü rüb); lists show a Rüb column ("Baxılmalı" badge for legacy NULL) + term filter; subtopic inherits its topic's term.
+- Settings → "Cari tədris ili / rüb": set year + term; term drives daily-round pools cumulatively (Term 2 rounds mix Term 1+2; never future terms).
+- Legacy items without a term are EXCLUDED from daily rounds until reviewed.
+
+## KK8. Parent leaderboard page
+- Parent menu → "Reytinq cədvəli": same board as the student page (all filters incl. Rayon, top-50 internal scroll, numeric ranks).
+- "Övladlarınızın mövqeyi": one card per child with `#rank / total` + xal under the ACTIVE filters; a child outside the filter shows "Bu filtr üzrə reytinqdə iştirak etmir" (never a fake 0); no children → friendly add-child card.
+
+## KK9. Exactly 5 answer options (A–E)
+- Question form: fixed 5 rows, no add/remove, one radio-correct; saving with an empty option is rejected.
+- Bulk templates (general + olympiad) require 5 options / 1 correct — a 4-option row errors per-row.
+- The 127 old 4-option questions (26 general + 101 olympiad on dev) were demoted to "Baxılır" and are EXCLUDED from all new tests; the "E variantı çatışmır" chip lists them — add option E, republish, they leave the list. Old attempt reviews still render fine.
+
+## KK10. News — image on create
+- News → create: pick a cover in the same form → ONE submission creates the article with the image (no create-then-edit dance); creating without an image still works.
+
+## KK11. Notification audiences
+- Composer order: Bütün istifadəçilər → Bütün valideynlər → Bütün uşaqlar → Olimpiada paketlərini alanlar → Müəyyən valideyn → Fənnə görə uşaqlar.
+- "Olimpiada paketlərini alanlar" → searchable multi-select of ACTIVE packages + live unique-recipient count (+ zero-recipient warning); recipients = purchasing parents + their entitled children, ONE notification each even with multiple packages; history detail shows the package names.
+- "Bütün istifadəçilər" reaches every parent+student exactly once.
+
+## KK12. Maintenance mode in ~5 seconds
+- Flip maintenance ON in admin Settings → navigate the web-app: splash appears within ~0–5s; flip OFF → an open splash auto-exits within ~4–8s (it polls every 4s). Admin panel never locks itself out.
+
+## KK13. New question flow (admin)
+- "Yeni sual": no Sual növü / Olimpiada növü fields; Topic+Subtopic mandatory (cascading, exam-scoped); Rüb read-only from the topic (legacy topic → forced 1–4 pick that also upgrades the topic); optional "Sual şəkli" upload with preview/remove — question + image save in ONE submission.
+- Student side: the image renders between the question text and options (tap to zoom) in the runner and review.
+- Questions page: Rüb column, "Needs option E" + "Needs term" chips with live counts, and the collapsed "Günlük raund hazırlığı" panel (subject × grade eligible/25, red cells = gaps).
+
+## KK14. Landing page public leaderboard
+- Logged OUT on `/`: right under the hero — "Ümumi Reytinq Cədvəli": top-10, names ONLY as "Şagird XXXX" (last 4 ID digits), columns incl. Rayon, numeric ranks, first ~5 rows visible + internal scroll with sticky header; dark+light themes; empty state degrades gracefully. No real names/ids anywhere in the network response.
+
+## KK15. Olympiad edit — no more bulk upload
+- An existing package's edit page has NO "Toplu idxal" section (questions upload only during creation); direct API attempts are rejected with the friendly creation-only message; existing questions and the rest of the edit page (duration/price/status/cover/archive) unchanged.
+
+## KK16. Site typography (Sayt şrifti)
+- Admin → Sayt məzmunu → "Sayt şrifti": searchable 20-font library — every option previews the Azerbaijani alphabet (ə Ə ğ Ğ ş Ş …); pick e.g. Mulish + sizes → live preview → Save.
+- Web-app (within ~60s): global font + sizes change everywhere (Arial fallback keeps ə safe); deleting the setting restores today's look exactly; only ONE Google Fonts stylesheet loads.
+- Per-field: set a CMS entry's "Şrift ölçüsü" to 28px → that text renders at 28px (responsive clamp on mobile).
+
+If anything doesn't match, tell me the **KK-#** + what you saw.
+
+---
+
+# Round 21 (2026-07-13) — olympiad question CRUD, real counts, Start/Practice fixes, dashboard, add-child district, unified Locations
+
+## LL1. React console error ("cleaning up async info…") — NO code change
+- That error comes from the **React DevTools browser extension** (`installHook.js`), is dev-only and can never occur in production (the hook isn't injected there). Fix on your machine: update the React Developer Tools extension (or test in an incognito window without it). Our React 19.2.7 is newer than the affected versions in the upstream report — no bump helps.
+
+## LL2. Olympiad package question management (admin)
+- Open any package → edit page: a **question list** shows every pool question (text excerpt, options count with a warn pill when ≠5, image dot, status, updated) with search; the header count is the REAL row count.
+- **Add**: "Yeni sual" → modal: subject/grade fixed from the package, optional olympiad-scoped topic/subtopic, trilingual body/prompt/explanation (az required), fixed 5 options A–E with one correct radio, optional image — all in ONE submission; the list refreshes without a page reload.
+- **Edit**: prefills everything (incl. per-language texts + image); legacy 4-option questions gain option E on save; saving keeps historical reviews intact (option ids are stable).
+- **Delete**: confirm dialog; a question that was EVER answered is refused with the trilingual "has attempt history — archive it instead" message; **Archive/Restore** row actions cover that case (archived questions drop out of future attempts; history stays readable).
+- Bulk upload stays creation-only; Content Managers still see none of this.
+
+## LL3. Real question counts everywhere (was "25 Questions")
+- Parent Olympiads page + detail modal, and the child Olympiads tab: every card shows the **actual published pool count** (your 50-question package shows 50). Counts follow creates/edits/deletes/archives automatically. A package with an empty pool shows 0.
+
+## LL4. Student Tests page — Start/Practice
+- Practice works again out of the box: the Round-20 demotion was rolled back, so the legacy 4-option questions are published and drawable (25 general + 100 olympiad on dev).
+- Start (rated daily round): a subject whose round CAN'T generate now shows a muted **"Bugünkü raund hələ hazır deyil"** state instead of bouncing to an error banner. Ready subjects start immediately. NOTE: a round still needs ≥25 published questions **with a term assigned and 5 options** for that subject×grade (shared grade-less questions now count too) — the admin "Günlük raund hazırlığı" panel shows exactly what's missing; assign terms/option E to light subjects up.
+- Practice stays available regardless of round readiness; if a subject truly has no drawable published questions, the accurate "no questions yet" message appears.
+
+## LL5. Student dashboard redesign
+- GONE: "Bugünkü raundlar" and "Son xəbərlər" (news keeps its own tab; the real rounds UI lives on the Tests page).
+- Layout: welcome + country-rank row → stats ticker → **monthly ranking | subject performance** side by side → "Son raundlar" full-width. No empty containers, responsive at tablet/mobile widths, dark+light.
+- The country-rank card now shows your child's REAL all-time global rank (or an honest "—/not ranked" for a new child).
+
+## LL6. Add Child / Edit Child — District (rayon)
+- City with rayons (Bakı): a mandatory **Rayon** select appears between City and School; disabled until a city is picked; picking a rayon filters the school list (schools still awaiting rayon assignment stay selectable at the bottom); changing city resets rayon+school. Submit without a rayon → "Rayonu seçin." (client AND server enforce it — the RPC rejects it too).
+- City without rayons: no district field at all; everything else unchanged.
+- Edit Child: saved city → rayon → school preselected; changing the school to another rayon updates consistently (the DB guard refuses contradictions).
+- Existing children were backfilled from their school's rayon automatically.
+
+## LL7. Admin "Yerlər" — unified location management
+- The sidebar's Cities/Districts/Schools entries are replaced by ONE **Yerlər** item; the old URLs redirect.
+- Three columns: Şəhərlər → selected city's Rayonlar → selected rayon's Məktəblər. Each column: search, live counts, add button, edit/delete per row, proper empty states. A city without rayons lists its schools directly; a rayon-city also shows a **"Rayon təyin edilməyib"** review entry with the live count (the 7 pending Baku schools live there).
+- Create/edit open in modals and the lists refresh WITHOUT a full page reload; selection survives refresh (it's in the URL).
+- **Delete previews impact**: city → how many rayons would cascade + schools that BLOCK the delete (button disabled when blocked) + enrolled students; rayon → schools that would return to the review list; school → how many students get detached. All existing validations (rayon required for rayon-cities, school-number derivation, duplicate names) still enforced.
+- Narrow screens: the columns stack.
+
+## LL8. Data safety guard (regression check)
+- Anywhere in the admin (general Questions page included): deleting a question that any attempt ever answered is refused with the friendly message — archive is the path. Deleting a never-answered question still works.
+
+If anything doesn't match, tell me the **LL-#** + what you saw.
+
+---
+
+# Round 22 (2026-07-14) — admin edit modal + wide table · mobile crash fix · FULL mobile redesign (M3.2). Mobile checks = Android/Expo Go.
+
+## MM1. Admin: question edit is a modal + full-width table
+- Questions page: click Edit on any row → a MODAL opens (no page navigation), prefilled with everything (languages, options, Rüb, status, image); save → list refreshes without reload; lifecycle transitions + delete live in the modal (deleting an answered question still shows the friendly "archive instead" message). No React "unique key" warning in the console. Old bookmark URL `/questions/<id>/edit` redirects to /questions.
+- At full screen the page now breathes (~1560px): the question-text column is wider, action buttons never clip or wrap; a narrow window still gets a horizontal scroll inside the table.
+
+## MM2. Mobile: the navigation crash is gone
+- Log in on the phone → tap ANY tab, the bell, and the profile/avatar button, then open Notifications on both roles: no "cannot add postgres_changes callbacks…" Render Error anywhere. A new notification arriving while two screens are open updates the badge live.
+
+## MM3. Mobile: onboarding shows ONCE per install
+- Fresh install (or clear the app's data in Android settings): 3 swipeable slides with dots, "Keç" skip, final slide = login/register CTAs + info links.
+- Kill + reopen the app signed-out: you land on LOGIN, not the slides. Log out: LOGIN again. The "OlympIQ haqqında" link on Login replays the slides manually.
+
+## MM4. Mobile: the new design system (overall pass)
+- Custom tab bar on both roles (active tab = soft pill + filled icon + label; purple accent for parents, arena lime for students); lucide icons everywhere (no more emoji glyphs except the 🔥 streak); avatars show initials on a personal pastel (no more "•"); pressed buttons subtly scale; cards have consistent radii/soft shadows.
+- Check light AND dark themes, and all 5 student palettes (profile → palette picker — swatches must match the applied palette exactly since they now derive from the same tokens).
+
+## MM5. Mobile parent surfaces
+- Home: greeting header ("Salam, {ad}") with bell+avatar; child cards with initials-avatar, mono ID chip, color-coded access pill; Add-Child appears as a gradient hero card when you have no children.
+- Olympiads: covers with a dark bottom scrim, REAL question counts (your 50-question package says 50), gradient buy CTA in the detail sheet.
+- Subscription: active plan has a gradient border; demo Billing/Invoices keep demo content but match the new look.
+- Notifications (both roles): grouped by day (Bu gün / Dünən / date), unread rows bolder with an accent dot, "mark all read" appears only when something is unread.
+
+## MM6. Mobile: Add-Child district (rayon)
+- Pick Bakı → a mandatory Rayon select appears between City and School; it filters the school list (unassigned schools still listed); changing city resets it; submitting without it is blocked with "Rayonu seçin." A city without rayons shows no district field. Child edit preselects the saved rayon. (Server enforces all of it — the same rules as web.)
+
+## MM7. Mobile student arena home
+- New layout: hero (welcome + Start CTA) → rank panel with a gradient ring around your REAL all-time country rank ("—" + honest note when unranked) → stats → monthly quick-look → subject strengths → recent rounds. The old today's-rounds list and news panel are GONE from home (they live on the Tests/News tabs).
+
+## MM8. Mobile ranking
+- Numeric ranks only — no medals. New "Rayon" scope chip (only when the child's school/profile has one). Rows show initials-avatars + city · rayon · school · grade context; your own row highlighted; my-rank card sticky at the bottom.
+
+## MM9. Mobile tests tab — the big functional check
+- Subject cards: ready → gradient Start; already played today → attempted pill + score; round not generatable → muted "raund hazır deyil" pill. Practice stays available on every card.
+- **Start now launches the RATED daily round directly** (25 questions, 25-minute timer, rated badge in the runner). Playing it twice is blocked (card flips to attempted).
+- **Practice is UNTIMED now**: the runner shows an ∞ "limitsiz" pill instead of a countdown, never auto-submits, and an abandoned practice attempt can be resumed later. The setup screen no longer promises a 25-minute timer for practice.
+
+## MM10. Mobile runner/result/review visuals
+- Runner: thin progress bar under the top bar, letter-chip options (A–E), timer pulses red under 60s (rated rounds), lucide bookmark, modernized palette grid. Resume/autosave/leave-guard behavior unchanged.
+- Result: animated score ring + %, correct/wrong/skipped chips (skipped is its own bucket), topic bars.
+- Review: All/Correct/Wrong/Skipped chips with counts, verdict-colored question cards, ✓/✗ option markers.
+
+If anything doesn't match, tell me the **MM-#** + what you saw.

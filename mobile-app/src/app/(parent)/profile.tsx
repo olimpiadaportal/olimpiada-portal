@@ -7,10 +7,13 @@ import React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import { BellRing, CircleHelp, Mail } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
+import { ListRow } from "@/components/ListRow";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
+import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
@@ -27,6 +30,7 @@ import {
 
 export default function ParentProfile() {
   const { t } = useT();
+  const { tokens } = useTheme();
   const router = useRouter();
   const config = useMobileConfig();
   const signOut = useAuthStore((s) => s.signOut);
@@ -59,19 +63,15 @@ export default function ParentProfile() {
 
         {notificationsOn ? (
           <Card style={{ gap: spacing.lg }}>
-            <View style={{ gap: spacing.xs }}>
-              <AppText variant="title" style={{ fontSize: 16 }}>
-                {t("notif.prefs.title")}
-              </AppText>
-              <AppText variant="muted" style={{ fontSize: 12 }}>
-                {t("notif.prefs.desc")}
-              </AppText>
-            </View>
+            <ListRow
+              icon={<BellRing size={18} color={tokens.accent} strokeWidth={2} />}
+              title={t("notif.prefs.title")}
+              subtitle={t("notif.prefs.desc")}
+              chevron={false}
+            />
 
             <View style={{ gap: spacing.sm }}>
-              <AppText variant="muted" style={{ fontSize: 12 }}>
-                {t("notif.prefs.yourChannels")}
-              </AppText>
+              <AppText variant="eyebrow">{t("notif.prefs.yourChannels")}</AppText>
               <PrefRow
                 target={null}
                 label={
@@ -82,9 +82,7 @@ export default function ParentProfile() {
             </View>
 
             <View style={{ gap: spacing.lg }}>
-              <AppText variant="muted" style={{ fontSize: 12 }}>
-                {t("notif.prefs.children")}
-              </AppText>
+              <AppText variant="eyebrow">{t("notif.prefs.children")}</AppText>
               {kids.length === 0 ? (
                 <AppText variant="muted">{t("notif.prefs.noChildren")}</AppText>
               ) : (
@@ -105,8 +103,13 @@ export default function ParentProfile() {
         ) : null}
 
         <Card>
-          <LinkRow label={t("nav.faq")} onPress={() => router.push("/(public)/faq" as never)} />
           <LinkRow
+            icon={<CircleHelp size={18} color={tokens.accent} strokeWidth={2} />}
+            label={t("nav.faq")}
+            onPress={() => router.push("/(public)/faq" as never)}
+          />
+          <LinkRow
+            icon={<Mail size={18} color={tokens.accent} strokeWidth={2} />}
             label={t("nav.contact")}
             onPress={() => router.push("/(public)/contact" as never)}
           />

@@ -19,22 +19,27 @@ import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect"
 //
 // searchParams contract (all optional, all whitelist-validated):
 //   ?board=points|streak      (default points; streak is GLOBAL-only)
-//   ?scope=global|subject|grade|city|school   (points only; default global;
-//          grade/city/school are offered ONLY when the child has that id;
-//          subject is offered whenever the platform has an active subject)
+//   ?scope=global|subject|grade|city|district|school   (points only; default
+//          global; grade/city/school are offered ONLY when the child has that
+//          id; district (migration 058) is offered when the child's city has
+//          active districts; subject whenever an active subject exists)
 //   ?period=month|all         (points only; default month; all → 'all_time')
 //   ?subject=<uuid>           (subject scope only; validated against the ACTIVE
 //          subjects catalog — forged/unknown ids clamp to the first subject)
+//   ?district=<uuid>          (district scope only; validated against the
+//          child's city's ACTIVE districts — unknown ids clamp to the first)
 
 type Board = "points" | "streak";
-type Scope = "global" | "subject" | "grade" | "city" | "school";
+type Scope = "global" | "subject" | "grade" | "city" | "district" | "school";
 type PeriodUrl = "month" | "all";
 
-// get_leaderboard row (migration 048).
+// get_leaderboard row (migrations 048 + 058: district derived from the
+// student's school, for BOTH boards).
 type LbRow = {
   rank: number;
   display_name: string; // ALWAYS "Firstname L." (server-formatted)
   city: string | null;
+  district: string | null;
   school: string | null;
   grade_level: number | null;
   value: number;
@@ -48,8 +53,6 @@ type StreakStatus = {
   hours_until_loss: number | null;
 };
 
-const MEDALS = ["\u{1F947}", "\u{1F948}", "\u{1F949}"]; // 🥇 🥈 🥉
-
 export default async function ChildLeaderboardPage({
   searchParams,
 }: {
@@ -58,6 +61,7 @@ export default async function ChildLeaderboardPage({
     scope?: string;
     period?: string;
     subject?: string;
+    district?: string;
   }>;
 }) {
   const child = await requireChild();
@@ -102,16 +106,31 @@ export default async function ChildLeaderboardPage({
   const cityId: string | null = (student as any)?.district_id ?? null;
   const schoolId: string | null = (student as any)?.school_id ?? null;
 
+  // City districts (rayons) of the CHILD'S city (public-read catalog,
+  // migration 053) — they drive the district scope tab + its filter chips.
+  let cityDistricts: { id: string; name: string }[] = [];
+  if (cityId) {
+    const { data: cdRows } = await supabase
+      .from("city_districts")
+      .select("id, name")
+      .eq("city_id", cityId)
+      .eq("status", "active")
+      .order("name", { ascending: true });
+    cityDistricts = ((cdRows ?? []) as { id: string; name: string }[]).filter((d) => !!d.id);
+  }
+
   // ---- server-side whitelists (never pass raw client strings to the RPC) ----
   const board: Board = raw.board === "streak" ? "streak" : "points";
   const periodUrl: PeriodUrl = raw.period === "all" ? "all" : "month";
   // grade/city/school tabs exist ONLY when the child has the corresponding id;
-  // the subject tab exists whenever the platform has at least one active subject.
+  // the subject tab exists whenever the platform has at least one active
+  // subject; the district tab exists when the child's city has districts.
   const scopeTabs: { key: Scope; id: string | null }[] = [
     { key: "global", id: null },
     ...(activeSubjects.length > 0 ? [{ key: "subject" as Scope, id: null }] : []),
     ...(gradeId ? [{ key: "grade" as Scope, id: gradeId }] : []),
     ...(cityId ? [{ key: "city" as Scope, id: cityId }] : []),
+    ...(cityDistricts.length > 0 ? [{ key: "district" as Scope, id: null }] : []),
     ...(schoolId ? [{ key: "school" as Scope, id: schoolId }] : []),
   ];
   const requestedScope: Scope =
@@ -126,6 +145,11 @@ export default async function ChildLeaderboardPage({
     activeSubjects.find((s) => s.id === raw.subject)?.id ??
     activeSubjects[0]?.id ??
     null;
+  // ?district= is clamped the same way against the child's city's districts.
+  const districtId =
+    cityDistricts.find((d) => d.id === raw.district)?.id ??
+    cityDistricts[0]?.id ??
+    null;
   const scopeId: string | null =
     scope === "global"
       ? null
@@ -135,7 +159,9 @@ export default async function ChildLeaderboardPage({
           ? gradeId
           : scope === "city"
             ? cityId
-            : schoolId;
+            : scope === "district"
+              ? districtId
+              : schoolId;
   const period =
     board === "streak" ? "all_time" : periodUrl === "all" ? "all_time" : "month";
 
@@ -157,14 +183,16 @@ export default async function ChildLeaderboardPage({
   const streak = (streakRes.data ?? null) as StreakStatus | null;
 
   // Link builder — default values are omitted so canonical URLs stay clean.
-  // ?subject= is emitted ONLY for the subject scope, so switching to any other
-  // scope automatically drops it (and re-entering subject scope re-defaults).
+  // ?subject=/?district= are emitted ONLY for their own scope, so switching to
+  // any other scope automatically drops them (and re-entering re-defaults).
   const defaultSubject = activeSubjects[0]?.id ?? null;
+  const defaultDistrict = cityDistricts[0]?.id ?? null;
   const href = (q: {
     board: Board;
     scope: Scope;
     period: PeriodUrl;
     subject: string | null;
+    district: string | null;
   }): string => {
     const p = new URLSearchParams();
     if (q.board !== "points") p.set("board", q.board);
@@ -174,11 +202,14 @@ export default async function ChildLeaderboardPage({
       if (q.scope === "subject" && q.subject && q.subject !== defaultSubject) {
         p.set("subject", q.subject);
       }
+      if (q.scope === "district" && q.district && q.district !== defaultDistrict) {
+        p.set("district", q.district);
+      }
     }
     const s = p.toString();
     return s ? `/child/leaderboard?${s}` : "/child/leaderboard";
   };
-  const cur = { board, scope, period: periodUrl, subject: subjectId };
+  const cur = { board, scope, period: periodUrl, subject: subjectId, district: districtId };
 
   const selectedSubjectName =
     scope === "subject"
@@ -210,22 +241,28 @@ export default async function ChildLeaderboardPage({
       ? String(Math.round(Number(v)))
       : `${Number(v)} ${t("lb.days")}`;
 
-  // Mobile context line under the participant name (points board): the same
-  // city/school/grade the desktop columns show, joined into one muted line.
+  // Mobile context line under the participant name: the same columns the
+  // desktop table shows, joined into one muted line (points: city/district/
+  // school/grade; streak: district only — its sole context column).
   const ctxOf = (r: LbRow): string =>
-    [
-      r.city?.trim() || null,
-      r.school?.trim() || null,
-      r.grade_level != null ? formatGradeLabel(r.grade_level, locale) : null,
-    ]
+    (board === "points"
+      ? [
+          r.city?.trim() || null,
+          r.district?.trim() || null,
+          r.school?.trim() || null,
+          r.grade_level != null ? formatGradeLabel(r.grade_level, locale) : null,
+        ]
+      : [r.district?.trim() || null]
+    )
       .filter((p): p is string => !!p)
       .join(" · ");
 
   // ---- ONE column config drives the single table for every board/scope ----
-  // Points boards (all scopes) show Rank·Participant·City·School·Grade·Score;
-  // the SUBJECT scope shows the selected subject once in the caption instead
-  // of a redundant per-row column (every row shares it). The streak board
-  // keeps its simpler Rank·Participant·Score layout.
+  // Points boards (all scopes): Sıra·İştirakçı·Şəhər·Rayon·Məktəb·Sinif·Xal
+  // (district right after city, migration 058); the SUBJECT scope shows the
+  // selected subject once in the caption instead of a redundant per-row
+  // column. The streak board keeps its simpler layout + the district column.
+  // Ranks are PLAIN NUMBERS 1..50 — no medal icons anywhere.
   type Col = {
     id: string;
     header: string;
@@ -238,20 +275,13 @@ export default async function ChildLeaderboardPage({
       id: "rank",
       header: t("lb.colRank"),
       tdClass: "arena-rank-cell",
-      render: (r) =>
-        r.rank <= 3 ? (
-          <span className="lb-medal" aria-label={String(r.rank)}>
-            {MEDALS[r.rank - 1]}
-          </span>
-        ) : (
-          String(r.rank).padStart(2, "0")
-        ),
+      render: (r) => String(r.rank),
     },
     {
       id: "participant",
       header: t("lb.colStudent"),
       render: (r) => {
-        const ctx = board === "points" ? ctxOf(r) : "";
+        const ctx = ctxOf(r);
         return (
           <>
             <span className="arena-part-name">
@@ -272,6 +302,17 @@ export default async function ChildLeaderboardPage({
             tdClass: "lb-ctx-col",
             render: (r) => r.city?.trim() || "—",
           },
+        ] satisfies Col[])
+      : []),
+    {
+      id: "district",
+      header: t("lb.colDistrict"),
+      thClass: "lb-ctx-col",
+      tdClass: "lb-ctx-col",
+      render: (r) => r.district?.trim() || "—",
+    },
+    ...(board === "points"
+      ? ([
           {
             id: "school",
             header: t("lb.colSchool"),
@@ -350,6 +391,23 @@ export default async function ChildLeaderboardPage({
             />
           )}
 
+          {/* District filter chips (migration 058) — the districts of the
+              child's CITY; server-built whitelisted hrefs, first district
+              auto-selected when ?district= is absent. */}
+          {scope === "district" && cityDistricts.length > 0 && (
+            <div className="arena-chips" role="group" aria-label={t("lb.colDistrict")}>
+              {cityDistricts.map((d) => (
+                <Link
+                  key={d.id}
+                  className={`arena-chip${districtId === d.id ? " active" : ""}`}
+                  href={href({ ...cur, district: d.id })}
+                >
+                  {d.name}
+                </Link>
+              ))}
+            </div>
+          )}
+
           {/* Period toggle: This month | All time */}
           <div className="arena-chips" role="group" aria-label={t("lb.period.month")}>
             <Link
@@ -400,15 +458,16 @@ export default async function ChildLeaderboardPage({
         </p>
       )}
 
-      {/* Top-50 board */}
+      {/* Top-50 board — INTERNAL vertical scroll (≈10–12 rows) with a sticky
+          header, so the page itself never stretches to 50 rows. */}
       <div className="arena-panel" style={{ padding: 8 }}>
         {rows.length === 0 ? (
           <p className="arena-muted" style={{ margin: 0, padding: 16 }}>
             {t(emptyKey)}
           </p>
         ) : (
-          <div className="lb-table-wrap">
-            <table className="arena-table">
+          <div className="lb-scroll">
+            <table className="arena-table lb-table">
               <thead>
                 <tr>
                   {cols.map((c) => (
@@ -434,7 +493,10 @@ export default async function ChildLeaderboardPage({
         )}
       </div>
 
-      {/* Sticky "Your rank" card for the CURRENT board/scope/period. */}
+      {/* Sticky "Your rank" card for the CURRENT board/scope/period — visible
+          even when the child is outside the top-50. A null rank under a
+          non-default filter gets the honest "not participating under this
+          filter" state instead of the generic "not ranked yet". */}
       <aside className="lb-me-card" aria-label={t("lb.myRank.title")}>
         <div>
           <div className="lb-me-label">{t("lb.myRank.title")}</div>
@@ -443,7 +505,11 @@ export default async function ChildLeaderboardPage({
               #{me.rank} <span className="lb-me-total">/ {me.total}</span>
             </div>
           ) : (
-            <div className="lb-me-none">{t("lb.myRank.none")}</div>
+            <div className="lb-me-none">
+              {board === "points" && scope !== "global"
+                ? t("lb.myRank.notInFilter")
+                : t("lb.myRank.none")}
+            </div>
           )}
         </div>
         <div className="lb-me-val">

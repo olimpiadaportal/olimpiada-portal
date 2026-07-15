@@ -3,21 +3,22 @@
 // "New question" as a modal on /questions: the COMPLETE QuestionForm (same
 // fields, same validation, same saveQuestion action) inside the shared Modal.
 // On success the form returns { ok } (stay-mode, no redirect); we close the
-// modal and refresh the list in place. Media upload stays on the edit page.
+// modal and refresh the list in place. The optional question image is picked
+// here too (deferred upload — saved together with the question in ONE submit).
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
 import { QuestionForm } from "@/components/QuestionForm";
-import type { QuestionTypeRule } from "@/lib/admin/question-options";
+import type { QuestionTaxonomy } from "@/lib/admin/question-options";
 
 export function NewQuestionModal({
   dict,
   options,
-  typeRules,
+  taxonomy,
 }: {
   dict: Record<string, string>;
   options: Record<string, { value: string; label: string }[]>;
-  typeRules: Record<string, QuestionTypeRule>;
+  taxonomy: QuestionTaxonomy;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [open, setOpen] = useState(false);
@@ -41,13 +42,14 @@ export function NewQuestionModal({
         closeLabel={tt("modal.close")}
         wide
       >
-        <p className="hint">{tt("qnew.mediaHint")}</p>
         <QuestionForm
           dict={dict}
           options={options}
-          typeRules={typeRules}
+          taxonomy={taxonomy}
           submitLabel={tt("qform.save")}
+          statusText={tt("qstatus.in_review")}
           stay
+          withImagePicker
           onSaved={onSaved}
         />
       </Modal>

@@ -7,6 +7,7 @@ import { SettingCard } from "@/components/SettingCard";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { FLAG_META, SETTING_META, LOCALE_OPTIONS } from "@/lib/admin/settings-meta";
 import { getT, getLocale } from "@/i18n/server";
+import { localStrings } from "./labels";
 
 // Round 11: the three payment-mode flags are grouped into their own Features
 // sub-card. The DATABASE trigger guarantees mutual exclusivity (enabling one
@@ -25,6 +26,7 @@ export default async function SettingsPage() {
   await requireAdmin();
   const t = await getT();
   const locale = await getLocale();
+  const lt = localStrings(locale);
   const supabase = await createClient();
 
   const [{ data: flagRows }, { data: settingRows }] = await Promise.all([
@@ -116,6 +118,51 @@ export default async function SettingsPage() {
     );
   }
 
+  // ---- Academic year / term (Round 20) --------------------------------------
+  // Rendered directly (not via field()) so the labels come from the LOCAL
+  // trilingual strings until messages.ts gains the settings.sys.academic_* keys.
+  // The term renders as a fixed 1..4 select ("1-ci rüb" … "4-cü rüb") but is
+  // stored as a bare JSON number through the same updateSetting action.
+  const termOptions = [1, 2, 3, 4].map((n) => ({
+    value: n,
+    label: lt(`settings.academic.term.${n}`),
+  }));
+  const academicFields = (
+    <>
+      <SettingEditor
+        settingKey="academic.year"
+        kind="text"
+        value={settingValue.get("academic.year")}
+        exists={settingValue.has("academic.year")}
+        localeOptions={LOCALE_OPTIONS}
+        placeholder={SETTING_META["academic.year"]?.placeholder}
+        strings={{
+          ...editorBase,
+          label: lt("settings.sys.academic_year.label"),
+          help: lt("settings.sys.academic_year.help"),
+        }}
+      />
+      <SettingEditor
+        settingKey="academic.current_term"
+        kind="number"
+        value={settingValue.get("academic.current_term")}
+        exists={settingValue.has("academic.current_term")}
+        localeOptions={LOCALE_OPTIONS}
+        min={SETTING_META["academic.current_term"]?.min}
+        max={SETTING_META["academic.current_term"]?.max}
+        numberOptions={termOptions}
+        strings={{
+          ...editorBase,
+          label: lt("settings.sys.academic_term.label"),
+          help: lt("settings.sys.academic_term.help"),
+        }}
+      />
+      <p className="hint" style={{ marginTop: 8 }}>
+        {lt("settings.academic.cumulativeNote")}
+      </p>
+    </>
+  );
+
   /* ------------------------------ Tab: General ------------------------------ */
   const generalTab = (
     <div className="settings-panel-stack">
@@ -126,6 +173,13 @@ export default async function SettingsPage() {
       >
         {toggle("platform.maintenance_mode", { confirm: true })}
         {field("platform.maintenance_message")}
+      </SettingCard>
+
+      <SettingCard
+        title={lt("settings.academic.title")}
+        description={lt("settings.academic.desc")}
+      >
+        {academicFields}
       </SettingCard>
 
       <SettingCard

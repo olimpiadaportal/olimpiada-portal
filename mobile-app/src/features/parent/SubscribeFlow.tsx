@@ -10,7 +10,7 @@ import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing } from "@/theme/tokens";
+import { radius, shadow, spacing } from "@/theme/tokens";
 import { bffQuote, bffSubscribe } from "@/lib/api";
 import { useT } from "@/i18n/useT";
 import {
@@ -167,14 +167,17 @@ function PlanCards({
             accessibilityState={{ selected, disabled }}
             accessibilityLabel={t(INTERVAL_NAME_KEY[iv])}
             onPress={disabled ? undefined : () => onSelect(iv)}
-            style={{
-              backgroundColor: tokens.surface,
-              borderRadius: radius.lg,
-              borderWidth: 2,
-              borderColor: selected ? tokens.accent : tokens.border,
-              padding: spacing.lg,
-              gap: spacing.xs,
-            }}
+            style={[
+              {
+                backgroundColor: tokens.surface,
+                borderRadius: radius.lg,
+                borderWidth: 2,
+                borderColor: selected ? tokens.accent : tokens.border,
+                padding: spacing.lg,
+                gap: spacing.xs,
+              },
+              selected ? shadow("card", tokens.shadow) : null,
+            ]}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
               <AppText variant="label" style={{ flex: 1 }}>

@@ -1,15 +1,30 @@
-// TEST ENGINE (M3) — setup screen (web /child/test/[subjectId] + TestSetup
-// parity, Round-19 contract): single-select Topic (EXAM-scoped taxonomy) then
-// Subtopic — BOTH MANDATORY, subtopic waived only when the topic has zero
-// subtopics; changing topic resets the subtopic; pressing the (visually)
-// disabled Start surfaces the trilingual warning + highlights the missing
-// field. The instructions/consent gate precedes start_topic_test_attempt;
-// client checks are UX only — the RPC re-enforces everything server-side.
+// TEST ENGINE (M3, restyled M3.2) — setup screen (web /child/test/[subjectId]
+// + TestSetup parity, Round-19 contract): single-select Topic (EXAM-scoped
+// taxonomy) then Subtopic — BOTH MANDATORY, subtopic waived only when the
+// topic has zero subtopics; changing topic resets the subtopic; pressing the
+// (visually) disabled Start surfaces the trilingual warning + highlights the
+// missing field. The instructions/consent gate precedes
+// start_topic_test_attempt; client checks are UX only — the RPC re-enforces
+// everything server-side. Wording follows the Round-20 PRACTICE contract
+// (migration 057: untimed, unrated — web TestSetup parity: qCount/noLimit/
+// noPoints facts, rulePractice1/2 + rule3/4, practiceScoring). The
+// validation/start flow is byte-identical to M3.
 import React, { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  Ban,
+  Check,
+  CircleOff,
+  Dumbbell,
+  Hourglass,
+  Infinity as InfinityIcon,
+  ListChecks,
+  Save,
+} from "lucide-react-native";
 import { AppText } from "@/components/AppText";
+import { SectionHeader } from "@/components/SectionHeader";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
@@ -131,6 +146,14 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
     setStarting(false);
   };
 
+  // Practice rules (web TestSetup parity): practice1/2 + autosave + cancel.
+  const RULES = [
+    { key: "test.setup.rulePractice1", Glyph: Dumbbell },
+    { key: "test.setup.rulePractice2", Glyph: Hourglass },
+    { key: "test.setup.rule3", Glyph: Save },
+    { key: "test.setup.rule4", Glyph: Ban },
+  ] as const;
+
   return (
     <ScrollView style={{ flex: 1, backgroundColor: arena.bg }} contentContainerStyle={pad}>
       <BackBar arena={arena} label={t("test.run.back")} onPress={goBack} />
@@ -143,9 +166,7 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
       </View>
 
       {/* ---- Topic + subtopic picker (both mandatory) ---- */}
-      <AppText variant="title" color={arena.ink}>
-        {t("test.setup.topicsTitle")}
-      </AppText>
+      <SectionHeader title={t("test.setup.topicsTitle")} color={arena.muted} />
       <Panel arena={arena} style={{ gap: spacing.lg }}>
         <AppText color={arena.muted} style={{ fontSize: 13, lineHeight: 19 }}>
           {t("test.setup.pickHint")}
@@ -185,23 +206,31 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
       </Panel>
 
       {/* ---- Instructions / consent gate ---- */}
-      <AppText variant="title" color={arena.ink}>
-        {t("test.setup.rulesTitle")}
-      </AppText>
+      <SectionHeader title={t("test.setup.rulesTitle")} color={arena.muted} />
       <Panel arena={arena} style={{ gap: spacing.md }}>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          {[t("test.setup.qCount"), t("test.setup.duration")].map((fact) => (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          {(
+            [
+              [ListChecks, t("test.setup.qCount")],
+              [InfinityIcon, t("test.setup.noLimit")],
+              [CircleOff, t("test.setup.noPoints")],
+            ] as const
+          ).map(([Glyph, fact]) => (
             <View
               key={fact}
               style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.sm,
                 backgroundColor: arena.panel2,
                 borderColor: arena.line,
                 borderWidth: 1,
-                borderRadius: radius.sm,
+                borderRadius: 999,
                 paddingVertical: spacing.sm,
                 paddingHorizontal: spacing.md,
               }}
             >
+              <Glyph size={14} color={arena.blue} strokeWidth={2} />
               <AppText variant="mono" color={arena.ink} style={{ fontSize: 13 }}>
                 {fact}
               </AppText>
@@ -209,12 +238,27 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
           ))}
         </View>
 
-        <View style={{ gap: spacing.sm }}>
-          {[1, 2, 3, 4].map((n) => (
-            <View key={n} style={{ flexDirection: "row", gap: spacing.sm }}>
-              <AppText color={arena.dim}>•</AppText>
+        <View style={{ gap: spacing.md }}>
+          {RULES.map(({ key, Glyph }) => (
+            <View
+              key={key}
+              style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.md }}
+            >
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: radius.sm,
+                  backgroundColor: tint(arena.blue, 0.12),
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginTop: 1,
+                }}
+              >
+                <Glyph size={15} color={arena.blue} strokeWidth={2} />
+              </View>
               <AppText color={arena.muted} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
-                {t(`test.setup.rule${n}`)}
+                {t(key)}
               </AppText>
             </View>
           ))}
@@ -224,7 +268,7 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
           <AppText variant="label" color={arena.ink} style={{ fontSize: 14 }}>
             {t("test.setup.scoringTitle")}:
           </AppText>{" "}
-          {t("test.setup.scoring")}
+          {t("test.setup.practiceScoring")}
         </AppText>
 
         <Pressable
@@ -232,13 +276,20 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
           accessibilityState={{ checked: consent }}
           accessibilityLabel={t("test.setup.consent")}
           onPress={() => setConsent((c) => !c)}
-          style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: spacing.md,
+            minHeight: 44,
+            paddingVertical: spacing.xs,
+            opacity: pressed ? 0.8 : 1,
+          })}
         >
           <View
             style={{
-              width: 22,
-              height: 22,
-              borderRadius: 6,
+              width: 24,
+              height: 24,
+              borderRadius: 8,
               borderWidth: 2,
               borderColor: consent ? arena.lime : arena.line,
               backgroundColor: consent ? tint(arena.lime, 0.18) : "transparent",
@@ -246,11 +297,7 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
               justifyContent: "center",
             }}
           >
-            {consent ? (
-              <AppText color={arena.lime} style={{ fontSize: 13, lineHeight: 15 }}>
-                ✓
-              </AppText>
-            ) : null}
+            {consent ? <Check size={15} color={arena.lime} strokeWidth={3} /> : null}
           </View>
           <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
             {t("test.setup.consent")}
@@ -270,6 +317,7 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
 
         <ArenaButton
           arena={arena}
+          kind="gradient"
           title={t("test.setup.start")}
           pendingTitle={t("test.setup.starting")}
           pending={starting}

@@ -4,7 +4,7 @@
 import React from "react";
 import { Modal, Pressable, View } from "react-native";
 import { AppText } from "@/components/AppText";
-import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
+import { radius, shadow, spacing, type ArenaTokens } from "@/theme/tokens";
 import { ArenaButton, tint } from "./ui";
 
 export function ConfirmModal({
@@ -62,14 +62,17 @@ export function ConfirmModal({
         {/* Inner pressable swallows taps so the card never closes itself. */}
         <Pressable
           onPress={() => {}}
-          style={{
-            backgroundColor: arena.panel,
-            borderColor: arena.line,
-            borderWidth: 1,
-            borderRadius: radius.lg,
-            padding: spacing.xl,
-            gap: spacing.md,
-          }}
+          style={[
+            {
+              backgroundColor: arena.panel,
+              borderColor: arena.line,
+              borderWidth: 1,
+              borderRadius: radius.xl,
+              padding: spacing.xl,
+              gap: spacing.md,
+            },
+            shadow("float"),
+          ]}
         >
           <AppText variant="title" color={arena.ink}>
             {title}

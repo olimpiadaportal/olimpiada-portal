@@ -2,26 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { attachNewsCover, detachNewsCover } from "@/lib/admin/news";
+import { detachNewsCover } from "@/lib/admin/news";
+import {
+  isValidNewsCover,
+  uploadAndAttachNewsCover,
+} from "@/lib/newsCover";
 
-// Cover is image-only to match the news-media bucket's allowed_mime_types.
-const ALLOWED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-const MAX = 5 * 1024 * 1024;
-const BUCKET = "news-media";
-
-// crypto.randomUUID() only exists in secure contexts (https / localhost). When the
-// app is opened over a LAN IP it is undefined, so fall back gracefully.
-function uniqueId(): string {
-  try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID();
-    }
-  } catch {
-    // ignore and use the fallback below
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
+// Standalone cover uploader for the news EDIT page. The upload/attach plumbing
+// is shared with the create form's inline picker (lib/newsCover.ts) so both
+// paths use identical validation and the same hardened attach server action.
 
 type Strings = {
   title: string;
@@ -50,7 +39,7 @@ export function NewsCoverUploader({
     if (!file) return;
     setError(null);
 
-    if (!ALLOWED.includes(file.type) || file.size > MAX) {
+    if (!isValidNewsCover(file)) {
       setError(strings.hint);
       e.target.value = "";
       return;
@@ -58,28 +47,9 @@ export function NewsCoverUploader({
 
     setBusy(true);
     try {
-      const supabase = createClient();
-      const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
-      const path = `news/${newsId}/${uniqueId()}.${ext}`;
-
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, file, { upsert: false, contentType: file.type });
-      if (upErr) {
-        setError(upErr.message);
-        return;
-      }
-
-      const fd = new FormData();
-      fd.set("news_id", newsId);
-      fd.set("bucket", BUCKET);
-      fd.set("path", path);
-      fd.set("mime", file.type);
-      fd.set("size", String(file.size));
-
-      const res = await attachNewsCover(fd);
-      if (res?.error) {
-        setError(res.error);
+      const err = await uploadAndAttachNewsCover(newsId, file);
+      if (err) {
+        setError(err);
         return;
       }
       router.refresh();

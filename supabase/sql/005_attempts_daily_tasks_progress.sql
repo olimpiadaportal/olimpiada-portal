@@ -5,13 +5,14 @@
 --
 -- Responsibility : Learning activity:
 --                  test_attempts, test_attempt_answers,
---                  daily_task_packages, daily_task_items,
---                  student_daily_task_progress, progress_snapshots.
+--                  daily_rounds, progress_snapshots.
 -- Run order      : After 004. Before 006 (leaderboard/analytics use this data).
 -- Safe to rerun  : Yes (CREATE TABLE IF NOT EXISTS). Non-destructive.
 -- Notes          : Authoritative scoring is server/DB side; clients must never
 --                  set score/is_correct directly. RLS in 010 restricts each
 --                  student to their own rows and parents to linked students.
+--                  The legacy daily_task_* tables were removed (migration 052);
+--                  the daily-rounds engine (migration 056) replaces the concept.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -76,47 +77,46 @@ alter table public.test_attempt_answers
   add column if not exists is_marked boolean not null default false;
 
 -- -----------------------------------------------------------------------------
--- daily_task_packages : scheduled daily practice package.
+-- daily_rounds : immutable daily rated rounds (migration 056). Per
+-- subject+grade+Baku-local date, a fixed 25-question set with a FULL content
+-- snapshot (all locales, options with correctness, explanations, image refs).
+-- Generated once, shared by all students, reused verbatim by previous-day
+-- practice. Never rewritten. Round generation/attempt functions live in 011.
 -- -----------------------------------------------------------------------------
-create table if not exists public.daily_task_packages (
-  id           uuid primary key default gen_random_uuid(),
-  grade_id     uuid references public.grades (id) on delete set null,
-  subject_id   uuid references public.subjects (id) on delete set null,
-  title        text,
-  publish_date date,
-  status       public.content_status not null default 'draft',
-  created_by   uuid references public.profiles (id) on delete set null,
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
-);
-
--- -----------------------------------------------------------------------------
--- daily_task_items : questions inside a daily task package.
--- -----------------------------------------------------------------------------
-create table if not exists public.daily_task_items (
-  package_id  uuid not null references public.daily_task_packages (id) on delete cascade,
-  question_id uuid not null references public.questions (id) on delete cascade,
-  order_index integer not null default 0,
-  points      numeric(6,2) not null default 1.0,
-  primary key (package_id, question_id)
-);
-
--- -----------------------------------------------------------------------------
--- student_daily_task_progress : a student's state/result for a package.
--- Unique (student, package) prevents duplicate completion records.
--- -----------------------------------------------------------------------------
-create table if not exists public.student_daily_task_progress (
+create table if not exists public.daily_rounds (
   id                 uuid primary key default gen_random_uuid(),
-  student_profile_id uuid not null references public.students (profile_id) on delete cascade,
-  package_id         uuid not null references public.daily_task_packages (id) on delete cascade,
-  status             public.task_progress_status not null default 'not_started',
-  score              numeric(8,2),
-  max_score          numeric(8,2),
-  completed_at       timestamptz,
+  round_date         date not null,
+  subject_id         uuid not null references public.subjects (id) on delete cascade,
+  grade_id           uuid not null references public.grades (id) on delete cascade,
+  term_at_generation smallint not null check (term_at_generation between 1 and 4),
+  question_ids       uuid[] not null,
+  content_snapshot   jsonb not null,
   created_at         timestamptz not null default now(),
-  updated_at         timestamptz not null default now(),
-  constraint uq_student_package unique (student_profile_id, package_id)
+  constraint uq_daily_round unique (round_date, subject_id, grade_id)
 );
+
+comment on table public.daily_rounds is
+  'Immutable daily rated rounds (migration 056): per subject+grade+Baku-local date, '
+  'a fixed 25-question set with a FULL content snapshot (all locales, options with '
+  'correctness, explanations, image refs). Generated once, shared by all students, '
+  'reused verbatim by previous-day practice. Never rewritten.';
+
+-- test_attempts joins the rated/practice split (migration 056): rated daily-
+-- round attempts link their round; is_rated gates points/streak/boards.
+alter table public.test_attempts
+  add column if not exists daily_round_id uuid references public.daily_rounds (id) on delete restrict,
+  add column if not exists is_rated boolean not null default false;
+
+comment on column public.test_attempts.is_rated is
+  'Rated attempts (daily rounds, olympiads) feed points/streak/boards; practice '
+  '(topic tests, previous-day replays) never does (migration 056).';
+
+-- ONE rated attempt per student per round — regardless of how it ended.
+create unique index if not exists uq_rated_attempt_per_round
+  on public.test_attempts (student_profile_id, daily_round_id)
+  where is_rated and daily_round_id is not null;
+
+create index if not exists idx_attempts_round on public.test_attempts (daily_round_id);
 
 -- -----------------------------------------------------------------------------
 -- progress_snapshots : pre-aggregated progress metrics to avoid expensive

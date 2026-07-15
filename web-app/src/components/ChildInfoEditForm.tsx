@@ -22,10 +22,16 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { updateChildProfile, type UpdateChildState } from "@/lib/auth/parentService";
 
 type City = { id: string; name: string };
+// NAMING (Round 21): `districts` is the CITIES table (historic naming) —
+// School.district_id and the `districtId` state mean the CITY. The real
+// intra-city district (rayon) is `city_districts` / School.city_district_id /
+// the `cityDistrictId` state, stored as students.city_district_id.
+type CityDistrict = { id: string; name: string; city_id: string };
 type School = {
   id: string;
   name: string;
   district_id: string | null;
+  city_district_id?: string | null;
   is_private?: boolean;
 };
 type Grade = { id: string; level: number; name: string };
@@ -33,7 +39,7 @@ type Grade = { id: string; level: number; name: string };
 // Per-field client validation messages (i18n KEYS — the server returns the
 // same keys, so both layers localize identically).
 type FieldErrors = Partial<
-  Record<"first" | "last" | "city" | "school" | "grade", string>
+  Record<"first" | "last" | "city" | "district" | "school" | "grade", string>
 >;
 
 export function ChildInfoEditForm({
@@ -41,6 +47,7 @@ export function ChildInfoEditForm({
   childUniqueId,
   initial,
   cities,
+  cityDistricts,
   schools,
   grades,
   dict,
@@ -51,10 +58,12 @@ export function ChildInfoEditForm({
     firstName: string;
     lastName: string;
     districtId: string;
+    cityDistrictId: string;
     schoolId: string;
     gradeId: string;
   };
   cities: City[];
+  cityDistricts: CityDistrict[];
   schools: School[];
   grades: Grade[];
   dict: Record<string, string>;
@@ -68,28 +77,67 @@ export function ChildInfoEditForm({
 
   const [firstName, setFirstName] = useState(initial.firstName);
   const [lastName, setLastName] = useState(initial.lastName);
-  const [districtId, setDistrictId] = useState(initial.districtId);
+  const [districtId, setDistrictId] = useState(initial.districtId); // the CITY
+  const [cityDistrictId, setCityDistrictId] = useState(initial.cityDistrictId); // the rayon
   const [schoolId, setSchoolId] = useState(initial.schoolId);
   const [gradeId, setGradeId] = useState(initial.gradeId);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
+  // Rayons of the chosen city. A city with NO active rayons skips the district
+  // field entirely (its schools attach directly to the city).
+  const cityRayons = useMemo(
+    () => (districtId ? cityDistricts.filter((d) => d.city_id === districtId) : []),
+    [districtId, cityDistricts],
+  );
+  const hasDistricts = cityRayons.length > 0;
+
   // Schools available for the chosen city (same client-side filter the wizard
   // uses). Changing the city keeps the selected school ONLY if it belongs to
-  // the new city; otherwise it clears so a stale school never posts.
-  const citySchools = useMemo(
-    () => (districtId ? schools.filter((s) => s.district_id === districtId) : []),
-    [districtId, schools],
-  );
+  // the new city; otherwise it clears so a stale school never posts. When a
+  // rayon is chosen, narrow to that rayon's schools PLUS the schools without
+  // a rayon yet (they must stay selectable), listed after the exact matches.
+  const citySchools = useMemo(() => {
+    const all = districtId ? schools.filter((s) => s.district_id === districtId) : [];
+    if (!hasDistricts || !cityDistrictId) return all;
+    return [
+      ...all.filter((s) => s.city_district_id === cityDistrictId),
+      ...all.filter((s) => s.city_district_id == null),
+    ];
+  }, [districtId, cityDistrictId, hasDistricts, schools]);
   const hasPrivate = citySchools.some((s) => s.is_private);
   const hasPublic = citySchools.some((s) => !s.is_private);
 
   function handleCityChange(nextCityId: string) {
     setDistrictId(nextCityId);
-    setSchoolId((prev) =>
-      prev && schools.find((s) => s.id === prev)?.district_id === nextCityId
+    // Keep the rayon only if it belongs to the new city; otherwise clear it.
+    const keptRayon = cityDistricts.some(
+      (d) => d.id === cityDistrictId && d.city_id === nextCityId,
+    )
+      ? cityDistrictId
+      : "";
+    setCityDistrictId(keptRayon);
+    setSchoolId((prev) => {
+      const s = schools.find((x) => x.id === prev);
+      return s &&
+        s.district_id === nextCityId &&
+        (!keptRayon || s.city_district_id == null || s.city_district_id === keptRayon)
         ? prev
-        : "",
-    );
+        : "";
+    });
+  }
+
+  // Rayon change keeps the school only if it fits (schools without a rayon
+  // stay valid). The school never mutates the rayon — only the reverse.
+  function handleDistrictChange(next: string) {
+    setCityDistrictId(next);
+    setSchoolId((prev) => {
+      const s = schools.find((x) => x.id === prev);
+      return s &&
+        s.district_id === districtId &&
+        (!next || s.city_district_id == null || s.city_district_id === next)
+        ? prev
+        : "";
+    });
   }
 
   // Client-side required checks mirror the server's validateChildInfo (same
@@ -102,6 +150,11 @@ export function ChildInfoEditForm({
     if (!firstName.trim()) errs.first = "auth.child.err.firstNameRequired";
     if (!lastName.trim()) errs.last = "auth.child.err.lastNameRequired";
     if (!districtId) errs.city = "addchild.err.cityRequired";
+    // Round 21: the rayon is required whenever the chosen city has active
+    // rayons (updateChildProfileCore re-enforces this server-side).
+    if (districtId && hasDistricts && !cityDistrictId) {
+      errs.district = "addchild.err.districtRequired";
+    }
     if (!schoolId) errs.school = "addchild.err.schoolRequired";
     if (!gradeId) errs.grade = "addchild.err.gradeRequired";
     setFieldErrors(errs);
@@ -115,6 +168,7 @@ export function ChildInfoEditForm({
     fd.set("first_name", firstName.trim());
     fd.set("last_name", lastName.trim());
     fd.set("district_id", districtId);
+    fd.set("city_district_id", cityDistrictId); // the rayon ("" → null server-side)
     fd.set("school_id", schoolId);
     fd.set("grade_id", gradeId);
     fd.set("city", cities.find((c) => c.id === districtId)?.name ?? "");
@@ -177,6 +231,36 @@ export function ChildInfoEditForm({
           <span className="field-error">{tt(fieldErrors.city)}</span>
         )}
       </label>
+
+      {/* Round 21: rayon between City and School — disabled until a city is
+          chosen; HIDDEN entirely when the chosen city has no active rayons. */}
+      {(!districtId || hasDistricts) && (
+        <label className="field">
+          <span className="field-label">{tt("addchild.field.district")} *</span>
+          <select
+            name="city_district_id"
+            value={cityDistrictId}
+            onChange={(e) => handleDistrictChange(e.target.value)}
+            disabled={!districtId}
+            required={hasDistricts}
+            aria-invalid={!!fieldErrors.district}
+          >
+            <option value="">
+              {districtId
+                ? tt("addchild.field.selectDistrict")
+                : tt("addchild.field.cityFirst")}
+            </option>
+            {cityRayons.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          {fieldErrors.district && (
+            <span className="field-error">{tt(fieldErrors.district)}</span>
+          )}
+        </label>
+      )}
 
       <label className="field">
         <span className="field-label">{tt("addchild.field.school")} *</span>

@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
+import { QuestionImage } from "@/components/QuestionImage";
 import {
   cancelTest,
   saveTestAnswers,
@@ -33,6 +34,10 @@ export type TestQuestion = {
   topic_id: string | null;
   body: string;
   prompt: string | null;
+  /** Optional figure ref from the RPC payload (locale-aware; migration 057). */
+  image?: { bucket: string; path: string } | null;
+  /** Public URL resolved server-side from `image` (bucket+path). */
+  image_url?: string | null;
   selected_option_ids: string[];
   is_marked: boolean;
   options: TestOption[];
@@ -89,6 +94,7 @@ export function TestRunner({
   topicNames = [],
   modeLabel = "",
   exitHref = "/child/test",
+  rated = false,
 }: {
   attemptId: string;
   data: TestAttemptData;
@@ -105,11 +111,17 @@ export function TestRunner({
   modeLabel?: string;
   /** Where cancel lands (test home by default; /child/olympiads for olympiads). */
   exitHref?: string;
+  /** is_rated from the attempt row (server-read) — drives the mode badge. */
+  rated?: boolean;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const router = useRouter();
   const questions = data.questions;
   const total = questions.length;
+  // UNTIMED mode (migration 057): deadline_at === null → practice. No
+  // countdown, no auto-submit, no deadline resync — everything else
+  // (autosave, palette, submit/cancel, leave guard) is identical.
+  const timed = data.deadline_at !== null;
 
   // ---- answers / flags (rehydrated from the saved rows for TRUE resume) ----
   const [answers, setAnswers] = useState<Record<string, string | null>>(() => {
@@ -224,13 +236,17 @@ export function TestRunner({
       const res = await saveTestAnswers(attemptId, buildItems(qids));
       if (res.ok) {
         for (const q of qids) dirtyRef.current.delete(q);
-        if (typeof res.remaining === "number") {
+        if (timed && typeof res.remaining === "number") {
           deadlineRef.current = Date.now() + res.remaining * 1000;
         }
         setSaveState("saved");
       } else if (res.deadline) {
-        // Server says time is over → auto-submit (60s grace server-side).
-        setTimeUp(true);
+        // Server says the attempt can't take saves anymore. Timed: the clock
+        // ran out → auto-submit (60s grace server-side). Untimed: the attempt
+        // was closed elsewhere — submit is idempotent (a graded attempt just
+        // redirects to its result), so take the same path minus the time-up
+        // notice.
+        if (timed) setTimeUp(true);
         savingRef.current = false;
         void doSubmitRef.current();
         return;
@@ -241,21 +257,24 @@ export function TestRunner({
       setSaveState("error");
     }
     savingRef.current = false;
-  }, [attemptId, buildItems]);
+  }, [attemptId, buildItems, timed]);
   const flushRef = useRef(flush);
   flushRef.current = flush;
 
-  // ---- mount: start the clock + autosave interval + beforeunload guard ----
+  // ---- mount: start the clock (timed only) + autosave + beforeunload guard ----
   useEffect(() => {
-    const initial = Math.max(0, Math.floor(data.remaining_seconds ?? 0));
-    deadlineRef.current = Date.now() + initial * 1000;
-    setRemaining(initial);
+    let tick: number | null = null;
+    if (timed) {
+      const initial = Math.max(0, Math.floor(data.remaining_seconds ?? 0));
+      deadlineRef.current = Date.now() + initial * 1000;
+      setRemaining(initial);
 
-    const tick = window.setInterval(() => {
-      if (deadlineRef.current === null) return;
-      const left = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000));
-      setRemaining(left);
-    }, 500);
+      tick = window.setInterval(() => {
+        if (deadlineRef.current === null) return;
+        const left = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000));
+        setRemaining(left);
+      }, 500);
+    }
     const saver = window.setInterval(() => void flushRef.current(), AUTOSAVE_MS);
 
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -265,20 +284,21 @@ export function TestRunner({
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
-      window.clearInterval(tick);
+      if (tick !== null) window.clearInterval(tick);
       window.clearInterval(saver);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- 0:00 → auto-submit once ----
+  // ---- 0:00 → auto-submit once (timed attempts only; untimed never fires:
+  // remaining stays null) ----
   useEffect(() => {
-    if (remaining === 0 && !finishedRef.current && !submittingRef.current) {
+    if (timed && remaining === 0 && !finishedRef.current && !submittingRef.current) {
       setTimeUp(true);
       void doSubmitRef.current();
     }
-  }, [remaining]);
+  }, [remaining, timed]);
 
   // ---- leave guard: intercept in-app link clicks + browser Back ----
   useEffect(() => {
@@ -414,10 +434,13 @@ export function TestRunner({
 
   return (
     <>
-      {/* ---- Top bar: title + save state + timer ---- */}
+      {/* ---- Top bar: title + mode badge + save state + timer/no-limit pill ---- */}
       <div className="tst-topbar">
         <div className="tst-topbar-left">
           <span className="tst-run-title">{tt("test.run.title")}</span>
+          <span className={`tst-mode-badge ${rated ? "rated" : "practice"}`}>
+            {rated ? tt("test.run.ratedBadge") : tt("test.run.practiceBadge")}
+          </span>
           <span className="arena-quiz-count mono">
             {tt("arena.quizQuestion")} {String(idx + 1).padStart(2, "0")} {tt("arena.quizOf")}{" "}
             {String(total).padStart(2, "0")}
@@ -429,13 +452,19 @@ export function TestRunner({
             {saveState === "saved" && tt("test.run.saved")}
             {saveState === "error" && <span className="err">{tt("test.run.saveError")}</span>}
           </span>
-          <span
-            className={`tst-timer mono${timerCls}`}
-            title={tt("test.run.timeLeft")}
-            aria-label={tt("test.run.timeLeft")}
-          >
-            {remaining === null ? "--:--" : fmtClock(remaining)}
-          </span>
+          {timed ? (
+            <span
+              className={`tst-timer mono${timerCls}`}
+              title={tt("test.run.timeLeft")}
+              aria-label={tt("test.run.timeLeft")}
+            >
+              {remaining === null ? "--:--" : fmtClock(remaining)}
+            </span>
+          ) : (
+            <span className="tst-timer mono inf" title={tt("test.run.noLimit")}>
+              ∞ <span className="tst-inf-label">{tt("test.run.noLimit")}</span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -488,6 +517,14 @@ export function TestRunner({
                 </button>
               </div>
               <div className="arena-q-body">{q.body}</div>
+              {q.image_url && (
+                <QuestionImage
+                  url={q.image_url}
+                  alt={tt("test.img.alt")}
+                  hint={tt("test.img.hint")}
+                  closeLabel={tt("test.run.back")}
+                />
+              )}
               {q.prompt && <p className="arena-q-prompt">{q.prompt}</p>}
               <div className="arena-options" role="radiogroup" aria-label={q.body}>
                 {q.options.map((o, i) => {

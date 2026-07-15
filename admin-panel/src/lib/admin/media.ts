@@ -127,7 +127,9 @@ export async function attachQuestionMedia(
     await supabase.from("media_assets").delete().eq("id", prevId);
   }
 
-  revalidatePath(`/questions/${questionId}/edit`);
+  // Round 22: editing happens in a modal on /questions (the edit route is a
+  // legacy redirect) — refresh the list page's cache instead.
+  revalidatePath("/questions");
   return null;
 }
 
@@ -162,5 +164,5 @@ export async function detachQuestionMedia(formData: FormData): Promise<void> {
     await supabase.from("media_assets").delete().eq("id", mediaId);
   }
 
-  revalidatePath(`/questions/${questionId}/edit`);
+  revalidatePath("/questions");
 }

@@ -4,17 +4,24 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
-  getAuthContext,
   requireAdmin,
   requirePanelAccess,
   requirePermission,
 } from "@/lib/admin/guards";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
+import { withLocalStrings } from "@/lib/admin/question-flow-labels";
+import {
+  IMAGE_FILENAME_RE,
+  sniffVerifiedImage,
+  splitStoragePath,
+  verifyStorageObject,
+} from "@/lib/admin/media-verify";
 import {
   validateBulkItem,
   normTypeName,
   mapRpcRowError,
   overrideItemMeta,
+  pickDefaultType,
   type ActiveTypeRule,
 } from "@/lib/admin/bulk-validate";
 
@@ -27,14 +34,15 @@ const BODY_MAX = 8000; // question body / prompt
 const EXPLANATION_MAX = 8000;
 const OPTION_MAX = 2000; // answer-option text
 
-const META_FIELDS = [
-  "grade_id",
-  "subject_id",
-  "topic_id",
-  "subtopic_id",
-  "type_id",
-  "olympiad_type_id",
-] as const;
+// Round 21: exactly 5 options (A–E), exactly 1 correct — the same structure
+// the DB enforces via question_types.options_required for single_choice.
+const OPTION_COUNT = 5;
+
+// Create-modal question image: staged by the browser under staging/ in the
+// question-media bucket, then verified + moved + linked HERE in the same
+// saveQuestion call (one-submission save).
+const MEDIA_BUCKET = "question-media";
+const MEDIA_MAX_SIZE = 5 * 1024 * 1024;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,7 +56,8 @@ function s(formData: FormData, name: string): string {
 // EXAM-scoped topics. Olympiad-package bulk imports create scope='olympiad'
 // topics that must never be attachable here — even via a forged form post.
 // Subtopics have no scope column; they inherit it via their parent topic.
-// Empty ids pass (topic/subtopic are optional); unknown ids fail closed.
+// Empty ids pass (bulkAssignTopic's subtopic is optional); unknown ids fail
+// closed. (saveQuestion does its own stricter subject/grade-aware check.)
 async function isExamTaxonomy(
   supabase: Awaited<ReturnType<typeof createClient>>,
   topicId: string | null,
@@ -75,12 +84,114 @@ async function isExamTaxonomy(
   return found.length === ids.length && found.every((r) => r.scope === "exam");
 }
 
+// Round 22: the question editor lives in a modal on /questions — this action
+// loads everything the editor needs for one question on demand (the old
+// /questions/[id]/edit server page did the same queries at render time).
+export type EditQuestionData =
+  | {
+      ok: true;
+      id: string;
+      status: string;
+      defaults: {
+        meta: Record<string, string | null>;
+        primary_locale: string;
+        body: string;
+        prompt: string;
+        explanation: string;
+        options: { text: string; is_correct: boolean }[];
+      };
+      media: { url: string; mime: string } | null;
+    }
+  // Error CODES only (the client maps them to trilingual strings): a content
+  // manager probing an olympiad-pool id gets "notFound" (must not even learn
+  // the row exists); an admin gets "olympiadScoped" (managed via the package).
+  | { ok: false; error: "notFound" | "olympiadScoped" };
+
+export async function loadQuestionForEdit(
+  rawId: string,
+): Promise<EditQuestionData> {
+  // Guard FIRST — before touching any client-supplied input.
+  const ctx = await requirePermission("content.create");
+  const id = typeof rawId === "string" ? rawId.trim() : "";
+  if (!UUID_RE.test(id)) return { ok: false, error: "notFound" };
+  const supabase = await createClient();
+
+  const { data: q } = await supabase
+    .from("questions")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (!q) return { ok: false, error: "notFound" };
+  if (q.olympiad_package_id) {
+    return { ok: false, error: ctx.isAdmin ? "olympiadScoped" : "notFound" };
+  }
+
+  const loc: string = q.primary_locale ?? "az";
+  const [{ data: trans }, { data: expl }, { data: aopts }] = await Promise.all([
+    supabase
+      .from("question_translations")
+      .select("locale, body, prompt, media_asset_id")
+      .eq("question_id", id),
+    supabase
+      .from("question_explanations")
+      .select("locale, explanation_body")
+      .eq("question_id", id),
+    supabase
+      .from("answer_options")
+      .select("id, is_correct, order_index, answer_option_translations(locale, text)")
+      .eq("question_id", id)
+      .order("order_index"),
+  ]);
+  const tr = (trans ?? []).find((x: any) => x.locale === loc);
+  const exp = (expl ?? []).find((x: any) => x.locale === loc);
+
+  // Current media, if attached to the primary-locale translation.
+  let media: { url: string; mime: string } | null = null;
+  if (tr?.media_asset_id) {
+    const { data: m } = await supabase
+      .from("media_assets")
+      .select("bucket, path, mime_type")
+      .eq("id", tr.media_asset_id)
+      .maybeSingle();
+    if (m) {
+      const { data: pub } = supabase.storage.from(m.bucket).getPublicUrl(m.path);
+      media = { url: pub.publicUrl, mime: m.mime_type ?? "" };
+    }
+  }
+
+  return {
+    ok: true,
+    id,
+    status: String(q.status),
+    defaults: {
+      meta: {
+        subject_id: q.subject_id,
+        grade_id: q.grade_id,
+        topic_id: q.topic_id,
+        subtopic_id: q.subtopic_id,
+      },
+      primary_locale: loc,
+      body: tr?.body ?? "",
+      prompt: tr?.prompt ?? "",
+      explanation: exp?.explanation_body ?? "",
+      options: ((aopts ?? []) as any[]).map((o: any) => ({
+        text:
+          (o.answer_option_translations ?? []).find(
+            (x: any) => x.locale === loc,
+          )?.text ?? "",
+        is_correct: !!o.is_correct,
+      })),
+    },
+    media,
+  };
+}
+
 export async function saveQuestion(
   _prev: QuestionState,
   formData: FormData,
 ): Promise<QuestionState> {
   const ctx = await requirePermission("content.create"); // admin or content.create
-  const t = await getT();
+  const t = withLocalStrings(await getT(), await getLocale());
   const id = s(formData, "__id");
   const supabase = await createClient();
 
@@ -96,28 +207,55 @@ export async function saveQuestion(
     if (!target || target.olympiad_package_id) return { error: t("err.server") };
   }
 
-  const meta: Record<string, unknown> = {};
-  for (const f of META_FIELDS) {
-    const v = s(formData, f);
-    meta[f] = v === "" ? null : v;
-  }
-  if (!meta.subject_id) return { error: t("qerr.subjectRequired") };
-  if (!meta.grade_id) return { error: t("qerr.gradeRequired") };
-  if (!meta.type_id) return { error: t("qerr.typeRequired") };
+  // ---- Required taxonomy: subject, grade, topic AND subtopic ---------------
+  const subjectId = s(formData, "subject_id");
+  const gradeId = s(formData, "grade_id");
+  const topicId = s(formData, "topic_id");
+  const subtopicId = s(formData, "subtopic_id");
+  if (!UUID_RE.test(subjectId)) return { error: t("qerr.subjectRequired") };
+  if (!UUID_RE.test(gradeId)) return { error: t("qerr.gradeRequired") };
+  if (!UUID_RE.test(topicId)) return { error: t("qerr.topicRequired") };
+  if (!UUID_RE.test(subtopicId)) return { error: t("qerr.subtopicRequired") };
 
-  // Module separation: an exam question can never be tagged with an
-  // olympiad-scoped topic/subtopic (generic error, no detail leak).
+  // The topic must be EXAM-scoped, belong to the selected subject and (when it
+  // is grade-bound) to the selected grade; the subtopic must belong to the
+  // topic. Forged ids fail closed with a non-leaking message.
+  const { data: topicRow } = await supabase
+    .from("topics")
+    .select("id, subject_id, grade_id, scope, term")
+    .eq("id", topicId)
+    .maybeSingle();
   if (
-    !(await isExamTaxonomy(
-      supabase,
-      (meta.topic_id as string | null) ?? null,
-      (meta.subtopic_id as string | null) ?? null,
-    ))
+    !topicRow ||
+    topicRow.scope !== "exam" ||
+    String(topicRow.subject_id) !== subjectId ||
+    (topicRow.grade_id != null && String(topicRow.grade_id) !== gradeId)
   ) {
-    return { error: t("err.server") };
+    return { error: t("qerr.taxonomyMismatch") };
   }
-  // Difficulty is optional — an admin may tag it later (used only for server-side
-  // random selection, never chosen by students).
+  const { data: subtopicRow } = await supabase
+    .from("subtopics")
+    .select("id, topic_id")
+    .eq("id", subtopicId)
+    .maybeSingle();
+  if (!subtopicRow || String(subtopicRow.topic_id) !== topicId) {
+    return { error: t("qerr.taxonomyMismatch") };
+  }
+
+  // ---- Rüb/term: read from the topic; a legacy topic requires a pick -------
+  // A NULL-term topic can only be saved against after the admin picks 1..4;
+  // that pick UPGRADES THE TOPIC (explicit declaration — the DB cascades it to
+  // the topic's subtopics/questions). The question row then carries the same
+  // term, so the DB mismatch trigger can never fire on this path.
+  let term: number =
+    topicRow.term == null ? 0 : Number(topicRow.term);
+  let upgradeTopicTerm: number | null = null;
+  if (topicRow.term == null) {
+    const raw = s(formData, "topic_term");
+    if (!/^[1-4]$/.test(raw)) return { error: t("qerr.termRequired") };
+    upgradeTopicTerm = Number(raw);
+    term = upgradeTopicTerm;
+  }
 
   const localeRaw = s(formData, "primary_locale");
   const locale = ["az", "en", "ru"].includes(localeRaw) ? localeRaw : "az";
@@ -132,66 +270,75 @@ export async function saveQuestion(
   }
   if (explanation.length > EXPLANATION_MAX) return { error: t("err.tooLong") };
 
-  // Clamp to a sane integer range (M2): a huge/NaN client value must never
-  // drive an unbounded loop. The UI allows at most 10 options.
-  const countRaw = Math.floor(Number(s(formData, "opt_count")) || 0);
-  const count = Math.min(10, Math.max(0, countRaw));
+  // ---- Exactly 5 options (A–E), exactly 1 correct (radio index) ------------
   const options: { text: string; is_correct: boolean; order_index: number }[] = [];
-  for (let i = 0; i < count; i++) {
+  const correctRaw = s(formData, "correct");
+  if (!/^[0-4]$/.test(correctRaw)) return { error: t("qerr.oneCorrect") };
+  const correctIdx = Number(correctRaw);
+  for (let i = 0; i < OPTION_COUNT; i++) {
     const text = s(formData, `opt.${i}.text`);
-    if (!text) continue;
+    if (!text) return { error: t("qerr.fiveOptions") };
     if (text.length > OPTION_MAX) return { error: t("err.tooLong") };
-    options.push({
-      text,
-      is_correct: formData.get(`opt.${i}.correct`) != null,
-      order_index: options.length,
-    });
+    options.push({ text, is_correct: i === correctIdx, order_index: i });
   }
 
-  // Type-aware answer validation, driven by the per-type structure rules on
-  // question_types (status / options_required / correct_required) — the same
-  // config the DB validator assert_question_type_rules enforces inside the
-  // bulk-import RPCs. Authoritative here regardless of what the client UI shows.
-  if (!UUID_RE.test(meta.type_id as string)) {
-    return { error: t("qerr.typeRequired") };
-  }
-  const correctCount = options.filter((o) => o.is_correct).length;
+  // ---- Type: resolved server-side (the form no longer offers a select) -----
+  // Every question authored through this editor is single_choice. On EDIT the
+  // stored olympiad_type_id is left untouched (the form never showed it);
+  // on CREATE it stays NULL.
   const { data: qType } = await supabase
     .from("question_types")
-    .select("code, status, options_required, correct_required")
-    .eq("id", meta.type_id as string)
+    .select("id")
+    .eq("code", "single_choice")
     .maybeSingle();
-  if (!qType) return { error: t("qerr.typeRequired") };
-
-  // Only ACTIVE types may be chosen for NEW questions. Existing questions keep
-  // their (possibly deactivated) type, but the structure rules still apply.
-  if (!id && qType.status !== "active") {
-    return { error: t("qval.typeInactive") };
+  if (!qType) {
+    console.error("[admin] single_choice question type missing");
+    return { error: t("err.server") };
   }
 
-  const optionsRequired: number | null = qType.options_required;
-  const correctRequired: number | null = qType.correct_required;
-  if (optionsRequired != null) {
-    // Exact non-empty-option count (e.g. exactly 5 for multiple_choice).
-    if (options.length !== optionsRequired) {
-      return {
-        error: t("qval.exactOptions").replace("{n}", String(optionsRequired)),
-      };
+  // ---- Optional staged image (create modal, one-submission save) -----------
+  // The browser uploaded the file to staging/<uuid>.<ext>; verify it exists,
+  // cap the size, and byte-sniff the real mime BEFORE creating anything.
+  let staged:
+    | { path: string; filename: string; mime: string; size: number }
+    | null = null;
+  const mediaPath = s(formData, "media_path");
+  if (!id && mediaPath) {
+    const filename = splitStoragePath(mediaPath, "staging/");
+    if (!filename || !IMAGE_FILENAME_RE.test(filename)) {
+      return { error: t("qimg.invalid") };
     }
-  } else if (options.length < 2 || options.length > 10) {
-    // Flexible types: 2..10 options (the count clamp above already caps at 10).
-    return { error: t("qval.minOptions") };
+    const obj = await verifyStorageObject(supabase, MEDIA_BUCKET, "staging", filename);
+    if (!obj || obj.size > MEDIA_MAX_SIZE) return { error: t("qimg.invalid") };
+    const sniffed = await sniffVerifiedImage(supabase, MEDIA_BUCKET, mediaPath, obj.mime);
+    if (!sniffed) return { error: t("qimg.invalid") };
+    staged = { path: mediaPath, filename, mime: sniffed, size: obj.size };
   }
-  if (correctRequired != null) {
-    // Exact correct count (e.g. exactly 1 for multiple_choice).
-    if (correctCount !== correctRequired) {
-      return {
-        error: t("qval.exactCorrect").replace("{n}", String(correctRequired)),
-      };
+
+  // ---- Explicit legacy-topic upgrade (before the question write) -----------
+  // Guarded by .is("term", null) so a concurrent upgrade is never overwritten;
+  // if someone set a DIFFERENT term meanwhile, the question write below fails
+  // on the DB mismatch trigger and surfaces a generic error.
+  if (upgradeTopicTerm != null) {
+    const { error } = await supabase
+      .from("topics")
+      .update({ term: upgradeTopicTerm })
+      .eq("id", topicId)
+      .is("term", null);
+    if (error) {
+      console.error("[admin] topic term upgrade failed", error.message);
+      return { error: t("err.server") };
     }
-  } else if (correctCount < 1) {
-    return { error: t("qerr.needCorrect") };
   }
+
+  const metaPayload = {
+    subject_id: subjectId,
+    grade_id: gradeId,
+    topic_id: topicId,
+    subtopic_id: subtopicId,
+    type_id: qType.id,
+    term,
+  };
 
   let questionId = id;
 
@@ -199,7 +346,7 @@ export async function saveQuestion(
     const { data: q, error } = await supabase
       .from("questions")
       .insert({
-        ...meta,
+        ...metaPayload,
         primary_locale: locale,
         status: "in_review",
         created_by: ctx.profileId,
@@ -215,7 +362,7 @@ export async function saveQuestion(
   } else {
     const { error } = await supabase
       .from("questions")
-      .update({ ...meta, primary_locale: locale, updated_by: ctx.profileId })
+      .update({ ...metaPayload, primary_locale: locale, updated_by: ctx.profileId })
       .eq("id", questionId)
       // Defence-in-depth: even a forged id can never mutate a package question.
       .is("olympiad_package_id", null);
@@ -228,13 +375,14 @@ export async function saveQuestion(
   const cleanup = async (context: string, msg?: string): Promise<QuestionState> => {
     console.error("[admin]", context, msg);
     if (!id && questionId) {
-      // Only undo a question we created in this call.
+      // Only undo a question we created in this call. (A still-staged image
+      // object is left in place so the admin's retry can reuse it.)
       await supabase.from("questions").delete().eq("id", questionId);
     }
     return { error: t("err.server") };
   };
 
-  // Azerbaijani translation (body/prompt).
+  // Primary-locale translation (body/prompt).
   {
     const { error } = await supabase
       .from("question_translations")
@@ -245,7 +393,7 @@ export async function saveQuestion(
     if (error) return cleanup("question translation upsert failed", error.message);
   }
 
-  // Azerbaijani explanation (optional).
+  // Primary-locale explanation (optional).
   if (explanation) {
     const { error } = await supabase
       .from("question_explanations")
@@ -281,13 +429,54 @@ export async function saveQuestion(
     if (tErr) return cleanup("answer option translation failed", tErr.message);
   }
 
+  // ---- Attach the staged image (create only) --------------------------------
+  // Move staging/<file> → questions/<id>/<file>, record the media_assets row
+  // with SERVER-derived (sniffed) mime + size, link the primary translation.
+  // Any failure rolls the question back (and removes a half-moved object).
+  if (staged && !id && questionId) {
+    const finalPath = `questions/${questionId}/${staged.filename}`;
+    const { error: mvErr } = await supabase.storage
+      .from(MEDIA_BUCKET)
+      .move(staged.path, finalPath);
+    if (mvErr) return cleanup("question image move failed", mvErr.message);
+
+    const { data: media, error: maErr } = await supabase
+      .from("media_assets")
+      .insert({
+        bucket: MEDIA_BUCKET,
+        path: finalPath,
+        owner_profile_id: ctx.profileId,
+        mime_type: staged.mime,
+        file_size_bytes: staged.size,
+        visibility: "public",
+      })
+      .select("id")
+      .single();
+    if (maErr || !media) {
+      await supabase.storage.from(MEDIA_BUCKET).remove([finalPath]);
+      return cleanup("question image media insert failed", maErr?.message);
+    }
+
+    const { error: linkErr } = await supabase
+      .from("question_translations")
+      .update({ media_asset_id: media.id })
+      .eq("question_id", questionId)
+      .eq("locale", locale);
+    if (linkErr) {
+      await supabase.from("media_assets").delete().eq("id", media.id);
+      await supabase.storage.from(MEDIA_BUCKET).remove([finalPath]);
+      return cleanup("question image link failed", linkErr.message);
+    }
+  }
+
   revalidatePath("/questions");
   // Modal path (__stay=1): return success instead of navigating — the client
-  // closes the modal and refreshes the list. The edit page keeps the redirect.
+  // closes the modal and refreshes the list. (Create AND edit both run inside
+  // modals since Round 22; the redirect below is only a non-JS fallback.)
   if (s(formData, "__stay") === "1") {
     return { ok: true };
   }
-  redirect(`/questions/${questionId}/edit`);
+  redirect("/questions");
 }
 
 // Lifecycle transitions with role rules (also enforced by RLS). Three-state
@@ -336,23 +525,47 @@ export async function transitionQuestion(formData: FormData): Promise<void> {
     // Defence-in-depth: a forged id can never mutate a package question.
     .is("olympiad_package_id", null);
   revalidatePath("/questions");
-  revalidatePath(`/questions/${id}/edit`);
 }
 
-export async function deleteQuestion(formData: FormData): Promise<void> {
+// Result shape so the edit modal can surface the delete-guard message inline.
+// `ok` is set on the modal ("stay") path so the client closes + refreshes in
+// place; without __stay success redirects to the list (non-JS fallback).
+export type DeleteQuestionState = { error?: string; ok?: boolean } | null;
+
+export async function deleteQuestion(
+  _prev: DeleteQuestionState,
+  formData: FormData,
+): Promise<DeleteQuestionState> {
   // Guard FIRST — before touching any client-supplied FormData.
   await requireAdmin();
   const id = s(formData, "__id");
-  if (!id) return;
+  if (!id) return null;
   const supabase = await createClient();
   // Scope guard: the general surface can never delete an olympiad-pool
   // question (those live and die with their package).
-  await supabase
+  const { error } = await supabase
     .from("questions")
     .delete()
     .eq("id", id)
     .is("olympiad_package_id", null);
+  if (error) {
+    const t = withLocalStrings(await getT(), await getLocale());
+    // trg_question_delete_guard (migration 063, platform-wide): a question
+    // any attempt ever answered must never be hard-deleted — the per-question
+    // answer rows ARE the grading history. Friendly trilingual message; never
+    // the raw DB error.
+    if (
+      error.code === "23514" &&
+      (error.hint === "question_has_attempts" ||
+        /attempt history/i.test(error.message ?? ""))
+    ) {
+      return { error: t("qdel.hasAttempts") };
+    }
+    console.error("[admin] question delete failed", error.message);
+    return { error: t("err.server") };
+  }
   revalidatePath("/questions");
+  if (s(formData, "__stay") === "1") return { ok: true };
   redirect("/questions");
 }
 
@@ -382,7 +595,7 @@ export async function bulkImportQuestions(
   formData: FormData,
 ): Promise<BulkImportState> {
   await requirePermission("content.create");
-  const t = await getT();
+  const t = withLocalStrings(await getT(), await getLocale());
 
   // Batch-level Subject + Grade come from the modal selects (NOT from the
   // file). UUID-shape check first, then a real existence check — the RPC
@@ -423,23 +636,25 @@ export async function bulkImportQuestions(
     return { ok: false, error: t("bulk.notArray") };
   }
 
-  // Load the ACTIVE question types + their structure rules (there is one at
-  // launch: Multiple choice, 4 options / 1 correct). Validation is driven by
-  // these rules, never a hardcoded count, so future types adapt automatically.
+  // Load the ACTIVE question types + their structure rules (single_choice is
+  // 5 options / 1 correct since migration 055). Validation is driven by these
+  // rules, never a hardcoded count, so future types adapt automatically. An
+  // item that omits meta.type defaults to single_choice — the same default the
+  // v3 RPC applies.
   const { data: typeRows } = await supabase
     .from("question_types")
-    .select("name, options_required, correct_required")
+    .select("code, name, options_required, correct_required")
     .eq("status", "active")
     .order("name");
   const activeTypes: ActiveTypeRule[] = ((typeRows ?? []) as any[]).map((r) => ({
+    code: String(r.code ?? ""),
     name: String(r.name),
     options_required: r.options_required ?? null,
     correct_required: r.correct_required ?? null,
   }));
   const activeByNorm = new Map<string, ActiveTypeRule>();
   for (const r of activeTypes) activeByNorm.set(normTypeName(r.name), r);
-  // Default (for items that omit meta.type) = the sole active type.
-  const defaultType = activeTypes[0] ?? null;
+  const defaultType = pickDefaultType(activeTypes);
 
   const total = payload.length;
   const errors: { index: number; error: string }[] = [];
@@ -449,7 +664,8 @@ export async function bulkImportQuestions(
   const validFileIndex: number[] = [];
 
   payload.forEach((item, i) => {
-    const msg = validateBulkItem(item, t, activeByNorm, defaultType);
+    // GENERAL mode: meta.topic + meta.subtopic + meta.term (1..4) required.
+    const msg = validateBulkItem(item, t, activeByNorm, defaultType, "general");
     if (msg) {
       errors.push({ index: i + 1, error: msg });
       return;

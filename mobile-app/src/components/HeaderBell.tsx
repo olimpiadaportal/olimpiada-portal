@@ -1,12 +1,14 @@
 // Header notification bell: live unread badge (Realtime-backed), tap opens the
 // role's notifications screen. Hidden entirely when the notifications flag is
-// off (web parity: gated surfaces disappear).
+// off (web parity: gated surfaces disappear). Lucide glyph (redesign icon
+// language).
 import React from "react";
 import { Pressable, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import { Bell } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { AppText } from "./AppText";
 import { useTheme } from "@/theme/ThemeProvider";
+import { weight } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { useNotifications } from "@/features/notifications/useNotifications";
@@ -26,17 +28,10 @@ export function HeaderBell({ target }: { target: string }) {
       accessibilityRole="button"
       accessibilityLabel={t("notif.bell")}
       onPress={() => router.push(target as never)}
-      style={{ marginRight: 4, padding: 6 }}
+      hitSlop={8}
+      style={({ pressed }) => ({ marginRight: 4, padding: 6, opacity: pressed ? 0.7 : 1 })}
     >
-      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"
-          stroke={tokens.text}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+      <Bell size={22} color={tokens.text} strokeWidth={2} />
       {unreadCount > 0 ? (
         <View
           style={{
@@ -52,7 +47,7 @@ export function HeaderBell({ target }: { target: string }) {
             paddingHorizontal: 3,
           }}
         >
-          <AppText color="#ffffff" style={{ fontSize: 10, fontWeight: "700" }}>
+          <AppText color="#ffffff" style={{ fontSize: 10, fontWeight: weight.bold }}>
             {badge}
           </AppText>
         </View>

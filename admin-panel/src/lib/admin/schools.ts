@@ -1,28 +1,22 @@
 "use server";
 
-// Schools admin CRUD. Every school MUST belong to a City (districts.id), so
-// create/edit require a server-validated, non-null district_id chosen from the
-// city dropdown. Dedicated (not generic-registry) so we can hard-enforce the
-// mandatory City link server-side and show the city in the list.
+// School save action + dropdown options for the merged Locations screen. Every
+// school MUST belong to a City (districts.id — historic naming), so create/edit
+// require a server-validated, non-null district_id; when the chosen city has
+// ACTIVE rayons (city_districts), choosing one is REQUIRED too. Round 21: the
+// standalone /schools pages were folded into /locations, so saveSchool is now
+// STAY-mode: it returns { ok: true } instead of redirecting. Deletes live in
+// lib/admin/locations.ts (deleteLocation, with the impact preview).
 //
-// Security: every mutation re-checks requireAdmin server-side and writes through
-// the normal RLS-respecting server client. Only allowlisted columns
-// (name, district_id, status) are ever written.
+// Security: the mutation re-checks requireAdmin server-side FIRST and writes
+// through the normal RLS-respecting server client. Only allowlisted columns
+// (name, district_id, city_district_id, status, is_private) are ever written;
+// school_number is DERIVED from the name server-side, never trusted from the
+// client.
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
-
-export type SchoolRow = {
-  id: string;
-  name: string;
-  district_id: string;
-  status: string;
-  is_private: boolean;
-  school_number: number | null;
-  city_name?: string;
-};
 
 // Parse the numeric sort key from an AZ school name ("N nömrəli ...") — mirrors the
 // SQL backfill (migration 029) so admin-entered names sort the same as seeds.
@@ -36,46 +30,13 @@ function parseSchoolNumber(name: string): number | null {
 
 export type CityOption = { value: string; label: string };
 
-export type SchoolSaveState = { error?: string } | null;
+export type SchoolSaveState = { error?: string; ok?: boolean } | null;
 
 const STATUSES = new Set(["active", "inactive"]);
 
 function readStatus(formData: FormData): string {
   const raw = String(formData.get("status") ?? "").trim();
   return STATUSES.has(raw) ? raw : "active";
-}
-
-export async function listSchools(): Promise<SchoolRow[]> {
-  await requireAdmin();
-  const supabase = await createClient();
-  // Round 12: private schools first, then numeric school_number asc (nulls last),
-  // then name.
-  const { data } = await supabase
-    .from("schools")
-    .select("id, name, district_id, status, is_private, school_number, districts(name)")
-    .order("is_private", { ascending: false })
-    .order("school_number", { ascending: true, nullsFirst: false })
-    .order("name");
-  return (data ?? []).map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    district_id: r.district_id,
-    status: r.status,
-    is_private: !!r.is_private,
-    school_number: r.school_number ?? null,
-    city_name: r.districts?.name ?? "—",
-  }));
-}
-
-export async function getSchool(id: string): Promise<SchoolRow | null> {
-  await requireAdmin();
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("schools")
-    .select("id, name, district_id, status, is_private, school_number")
-    .eq("id", id)
-    .maybeSingle();
-  return (data as SchoolRow) ?? null;
 }
 
 // Cities for the mandatory dropdown. Only active cities are offered for new
@@ -93,6 +54,34 @@ export async function listCityOptions(currentId?: string): Promise<CityOption[]>
     .map((r: any) => ({ value: r.id, label: String(r.name) }));
 }
 
+// Intra-city districts (rayons) for the City → District cascade in the school
+// form. All ACTIVE districts of every city are returned (the client filters by
+// the selected city); on edit the currently-assigned district is always
+// included so an inactive-but-assigned district still renders.
+export type SchoolDistrictOption = {
+  value: string;
+  cityId: string;
+  label: string;
+};
+
+export async function listSchoolDistrictOptions(
+  currentId?: string | null,
+): Promise<SchoolDistrictOption[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("city_districts")
+    .select("id, city_id, name, status")
+    .order("name");
+  return (data ?? [])
+    .filter((r: any) => r.status === "active" || r.id === currentId)
+    .map((r: any) => ({
+      value: r.id as string,
+      cityId: r.city_id as string,
+      label: String(r.name),
+    }));
+}
+
 export async function saveSchool(
   _prev: SchoolSaveState,
   formData: FormData,
@@ -101,6 +90,7 @@ export async function saveSchool(
   const id = String(formData.get("__id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const district_id = String(formData.get("district_id") ?? "").trim();
+  const city_district_id = String(formData.get("city_district_id") ?? "").trim();
   const status = readStatus(formData);
   const is_private = formData.get("is_private") != null; // checkbox present => true
 
@@ -122,11 +112,32 @@ export async function saveSchool(
     .maybeSingle();
   if (!city) return { error: "missing.city" };
 
+  // City → District pair validation (the DB school_district_guard trigger is
+  // the backstop; this yields friendly messages instead of a raw 23514):
+  //   * a chosen district must exist AND belong to the chosen city;
+  //   * when the city has ACTIVE districts, choosing one is REQUIRED.
+  if (city_district_id) {
+    const { data: cd } = await supabase
+      .from("city_districts")
+      .select("id, city_id")
+      .eq("id", city_district_id)
+      .maybeSingle();
+    if (!cd || cd.city_id !== district_id) return { error: "missing.district" };
+  } else {
+    const { count: activeDistricts } = await supabase
+      .from("city_districts")
+      .select("id", { count: "exact", head: true })
+      .eq("city_id", district_id)
+      .eq("status", "active");
+    if ((activeDistricts ?? 0) > 0) return { error: "missing.district" };
+  }
+
   // school_number is derived from the name (kept consistent with the SQL backfill),
   // never trusted from the client. is_private comes from the checkbox.
   const payload = {
     name,
     district_id,
+    city_district_id: city_district_id || null,
     status,
     is_private,
     school_number: parseSchoolNumber(name),
@@ -139,6 +150,9 @@ export async function saveSchool(
       .update(payload)
       .eq("id", id);
     if (error) {
+      // 23514 = the DB district guard (mismatched pair / required district).
+      if ((error as { code?: string }).code === "23514")
+        return { error: "missing.district" };
       // Never return raw DB error text to the client — generic code only.
       console.error("[admin] school update failed", error.message);
       return { error: "err.server" };
@@ -150,6 +164,8 @@ export async function saveSchool(
       .select("id")
       .single();
     if (error) {
+      if ((error as { code?: string }).code === "23514")
+        return { error: "missing.district" };
       console.error("[admin] school insert failed", error.message);
       return { error: "err.server" };
     }
@@ -162,30 +178,14 @@ export async function saveSchool(
     action: id ? "admin.school.update" : "admin.school.create",
     targetTable: "schools",
     targetId,
-    metadata: { name, district_id, status },
+    metadata: {
+      name,
+      district_id,
+      city_district_id: city_district_id || null,
+      status,
+    },
   });
 
-  revalidatePath("/schools");
-  redirect("/schools");
-}
-
-export async function deleteSchool(formData: FormData): Promise<void> {
-  const ctx = await requireAdmin();
-  const id = String(formData.get("__id") ?? "").trim();
-  if (!id) return;
-  const supabase = await createClient();
-  const { error } = await supabase.from("schools").delete().eq("id", id);
-
-  if (!error) {
-    // M5: best-effort audit trail.
-    await writeAuditLog({
-      actorProfileId: ctx.profileId,
-      action: "admin.school.delete",
-      targetTable: "schools",
-      targetId: id,
-      severity: "warning",
-    });
-  }
-
-  revalidatePath("/schools");
+  revalidatePath("/locations");
+  return { ok: true };
 }

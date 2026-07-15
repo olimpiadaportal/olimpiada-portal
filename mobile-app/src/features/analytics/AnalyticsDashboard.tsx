@@ -6,7 +6,9 @@
 import React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { AppText } from "@/components/AppText";
+import { Avatar } from "@/components/Avatar";
 import { Card } from "@/components/Card";
+import { SectionHeader } from "@/components/SectionHeader";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
 import { WeeklyBars, TrendLine } from "./charts";
@@ -40,7 +42,7 @@ export function ChildChips({
   if (childrenList.length <= 1) return null;
   return (
     <View style={{ gap: spacing.sm }}>
-      <AppText variant="muted">{label}</AppText>
+      <AppText variant="eyebrow">{label}</AppText>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           {childrenList.map((c) => {
@@ -52,15 +54,24 @@ export function ChildChips({
                 accessibilityState={{ selected: active }}
                 accessibilityLabel={c.name}
                 onPress={() => onSelect(c.id)}
-                style={{
-                  paddingVertical: spacing.sm,
-                  paddingHorizontal: spacing.lg,
-                  borderRadius: radius.xl,
+                android_ripple={{ color: tokens.pillBg }}
+                style={({ pressed }) => ({
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.sm,
+                  paddingVertical: spacing.xs + 2,
+                  paddingLeft: spacing.xs + 2,
+                  paddingRight: spacing.lg,
+                  minHeight: 44,
+                  borderRadius: 999,
                   backgroundColor: active ? tokens.accent : tokens.chipBg,
                   borderWidth: 1,
                   borderColor: active ? tokens.accent : tokens.border,
-                }}
+                  opacity: pressed ? 0.85 : 1,
+                  overflow: "hidden",
+                })}
               >
+                <Avatar name={c.name} seed={c.id} size={30} />
                 <AppText variant="label" color={active ? "#ffffff" : tokens.chipText}>
                   {c.name}
                 </AppText>
@@ -69,6 +80,24 @@ export function ChildChips({
           })}
         </View>
       </ScrollView>
+    </View>
+  );
+}
+
+/* ------------------------------ chart legend ------------------------------- */
+
+function Legend({ items }: { items: { color: string; label: string }[] }) {
+  const { tokens } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.lg }}>
+      {items.map((it) => (
+        <View key={it.label} style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+          <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: it.color }} />
+          <AppText variant="muted" style={{ fontSize: 12 }} color={tokens.muted}>
+            {it.label}
+          </AppText>
+        </View>
+      ))}
     </View>
   );
 }
@@ -248,9 +277,7 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
       </Card>
 
       <Card style={{ gap: spacing.sm }}>
-        <AppText variant="title" style={{ fontSize: 16 }}>
-          {t("ana.chart.weekly")}
-        </AppText>
+        <SectionHeader title={t("ana.chart.weekly")} />
         <AppText variant="muted" style={{ fontSize: 12 }}>
           {t("ana.chart.weeklySub")}
         </AppText>
@@ -259,35 +286,33 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
           days={dayLabels}
           ariaLabel={t("ana.chart.weekly")}
         />
+        <Legend items={[{ color: tokens.accent, label: t("ana.th.attempts") }]} />
       </Card>
 
       <Card style={{ gap: spacing.sm }}>
-        <AppText variant="title" style={{ fontSize: 16 }}>
-          {t("ana.chart.trend")}
-        </AppText>
+        <SectionHeader title={t("ana.chart.trend")} />
         <AppText variant="muted" style={{ fontSize: 12 }}>
           {t("ana.chart.trendSub30")}
         </AppText>
         {trendPts.length === 0 ? (
           <AppText variant="muted">{t("ana.empty.trend")}</AppText>
         ) : (
-          <TrendLine points={trendPts} ariaLabel={t("ana.chart.trend")} />
+          <>
+            <TrendLine points={trendPts} ariaLabel={t("ana.chart.trend")} />
+            <Legend items={[{ color: tokens.accent2, label: t("ana.th.accuracy") }]} />
+          </>
         )}
       </Card>
 
       <Card style={{ gap: spacing.md }}>
-        <AppText variant="title" style={{ fontSize: 16 }}>
-          {t("ana.chart.topics")}
-        </AppText>
+        <SectionHeader title={t("ana.chart.topics")} />
         {topics.map((row) => (
           <TopicBar key={row.id} topic={row.topic} answered={row.answered} accuracy={row.accuracy} />
         ))}
       </Card>
 
       <Card style={{ gap: spacing.md }}>
-        <AppText variant="title" style={{ fontSize: 16 }}>
-          {t("ana.chart.mistakes")}
-        </AppText>
+        <SectionHeader title={t("ana.chart.mistakes")} />
         {mistakes.length === 0 ? (
           <AppText variant="muted">{t("ana.empty.mistakes")}</AppText>
         ) : (
@@ -348,9 +373,7 @@ export function LeaderboardPanel({ summary, t }: { summary: LbSummary | null; t:
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <AppText variant="title" style={{ fontSize: 16 }}>
-        {t("plb.improvementTitle")}
-      </AppText>
+      <SectionHeader title={t("plb.improvementTitle")} />
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("plb.improvementSub")}
       </AppText>

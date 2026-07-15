@@ -19,9 +19,11 @@ import type {
   ChildSubject,
   ResultPayload,
   ReviewPayload,
+  RoundReadiness,
   SaveResult,
   SetupSubtopic,
   SetupTopic,
+  StartRoundResult,
   StartTestResult,
   SubjectAccess,
   TestAttemptData,
@@ -29,6 +31,7 @@ import type {
 
 const PG_CHECK_VIOLATION = "23514";
 const PG_NO_DATA_FOUND = "P0002";
+const PG_UNIQUE_VIOLATION = "23505";
 
 // ---------------------------------------------------------------------------
 // Access set — EXACT mirror of web getChildSubjectAccess (childSubjects.ts):
@@ -85,27 +88,53 @@ export async function fetchSubjectAccess(
 }
 
 // ---------------------------------------------------------------------------
-// Tests home — recent timed tests (kind='test'; own rows under RLS).
+// Tests home — recent rounds + practice tests (web Round-20 parity: kind in
+// daily|test; own rows under RLS). subject_id/is_rated feed the per-subject
+// "attempted today → result link" card state and the rated chip in history.
 // ---------------------------------------------------------------------------
 export async function fetchRecentAttempts(profileId: string): Promise<AttemptListRow[]> {
   const { data, error } = await supabase
     .from("test_attempts")
-    .select("id, status, score, max_score, started_at, submitted_at, deadline_at, subjects(name)")
+    .select(
+      "id, kind, is_rated, status, score, max_score, started_at, submitted_at, deadline_at, subject_id, subjects(name)",
+    )
     .eq("student_profile_id", profileId)
-    .eq("kind", "test")
+    .in("kind", ["daily", "test"])
     .order("started_at", { ascending: false })
     .limit(15);
   if (error) throw error;
   return ((data ?? []) as any[]).map((r) => ({
     id: r.id,
+    kind: r.kind ?? "test",
+    is_rated: r.is_rated === true,
     status: r.status,
     score: r.score,
     max_score: r.max_score,
     started_at: r.started_at,
     submitted_at: r.submitted_at,
     deadline_at: r.deadline_at,
+    subject_id: r.subject_id ?? null,
     subject_name: r.subjects?.name ?? null,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// get_my_round_readiness — the Round-21 tests-home pre-flight (the redesign's
+// ONE functional addition). Booleans about the calling student's own grade;
+// empty set = no student/no grade. Read-only; a failure must never block the
+// page (callers fail OPEN to today's behavior — web parity).
+// ---------------------------------------------------------------------------
+export async function fetchRoundReadiness(): Promise<RoundReadiness[]> {
+  const { data, error } = await supabase.rpc("get_my_round_readiness");
+  if (error) throw error;
+  return ((data ?? []) as any[])
+    .filter((r) => typeof r?.subject_id === "string")
+    .map((r) => ({
+      subject_id: r.subject_id as string,
+      round_exists: r.round_exists === true,
+      attempted: r.attempted === true,
+      ready: r.ready === true,
+    }));
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +223,38 @@ export async function startTopicTestAttempt(
       count: typeof d?.count === "number" ? d.count : undefined,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// start_daily_round_attempt (today = RATED, timed 25min, ONE per subject/day)
+// — the web startDailyRound error mapping (testActions.ts), as i18n keys:
+//   unique_violation → day consumed (caller flips the card to attempted);
+//   no_data_found    → pool can't build today's round yet;
+//   check_violation  → 'grade' in the message = no grade, else no access.
+// Raw Postgres text never reaches the UI. Previous-day replays stay out (M3.1).
+// ---------------------------------------------------------------------------
+export async function startDailyRoundAttempt(subjectId: string): Promise<StartRoundResult> {
+  const { data, error } = await supabase.rpc("start_daily_round_attempt", {
+    p_subject_id: subjectId,
+    p_day: "today",
+  });
+  if (error) {
+    if (error.code === PG_UNIQUE_VIOLATION) {
+      return { ok: false, already: true, errorKey: "test.rounds.alreadyNote" };
+    }
+    if (error.code === PG_NO_DATA_FOUND) {
+      return { ok: false, errorKey: "test.rounds.noRoundYet" };
+    }
+    if (error.code === PG_CHECK_VIOLATION) {
+      const noGrade = String(error.message ?? "").includes("grade");
+      return { ok: false, errorKey: noGrade ? "test.rounds.noGrade" : "test.err.noAccess" };
+    }
+    return { ok: false, errorKey: "test.err.generic" };
+  }
+  const d = data as { attempt_id?: unknown; resumed?: unknown } | null;
+  const attemptId = typeof d?.attempt_id === "string" ? d.attempt_id : "";
+  if (!attemptId) return { ok: false, errorKey: "test.err.generic" };
+  return { ok: true, data: { attempt_id: attemptId, resumed: d?.resumed === true } };
 }
 
 // ---------------------------------------------------------------------------
@@ -386,7 +447,7 @@ export async function fetchAttemptRow(
   const { data, error } = await supabase
     .from("test_attempts")
     .select(
-      "id, kind, status, deadline_at, started_at, submitted_at, duration_seconds, subjects(name)",
+      "id, kind, is_rated, status, deadline_at, started_at, submitted_at, duration_seconds, subjects(name)",
     )
     .eq("id", attemptId)
     .eq("student_profile_id", profileId)
@@ -397,6 +458,7 @@ export async function fetchAttemptRow(
   return {
     id: r.id,
     kind: r.kind,
+    is_rated: r.is_rated === true,
     status: r.status,
     deadline_at: r.deadline_at,
     started_at: r.started_at,

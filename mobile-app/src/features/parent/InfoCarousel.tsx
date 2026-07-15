@@ -1,11 +1,13 @@
 // Onboarding "how to get started" carousel (web InfoCarousel parity):
-// horizontally snap-scrolling cards + dot indicators, carousel.* copy.
+// horizontally snap-scrolling cards + StepDots. Redesign: numbered accent
+// chip, tighter type hierarchy, raised cards.
 import React, { useState } from "react";
 import { ScrollView, View, useWindowDimensions } from "react-native";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
+import { StepDots } from "@/components/StepDots";
 import { useTheme } from "@/theme/ThemeProvider";
-import { spacing } from "@/theme/tokens";
+import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 
 const SLIDES = [1, 2, 3, 4, 5] as const;
@@ -19,7 +21,7 @@ export function InfoCarousel() {
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <AppText variant="title">{t("carousel.title")}</AppText>
+      <AppText variant="eyebrow">{t("carousel.title")}</AppText>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -33,9 +35,20 @@ export function InfoCarousel() {
       >
         {SLIDES.map((n) => (
           <Card key={n} style={{ width: cardWidth, gap: spacing.sm }}>
-            <AppText variant="label" color={tokens.accent}>
-              {n}/{SLIDES.length}
-            </AppText>
+            <View
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: radius.sm,
+                backgroundColor: tokens.pillBg,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <AppText variant="mono" color={tokens.pillText} style={{ fontSize: 13, fontWeight: "700" }}>
+                {n}
+              </AppText>
+            </View>
             <AppText variant="title" style={{ fontSize: 18 }}>
               {t(`carousel.i${n}.title`)}
             </AppText>
@@ -43,19 +56,7 @@ export function InfoCarousel() {
           </Card>
         ))}
       </ScrollView>
-      <View style={{ flexDirection: "row", gap: spacing.xs, alignSelf: "center" }}>
-        {SLIDES.map((n, i) => (
-          <View
-            key={n}
-            style={{
-              width: i === page ? 16 : 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: i === page ? tokens.accent : tokens.border,
-            }}
-          />
-        ))}
-      </View>
+      <StepDots count={SLIDES.length} index={page} style={{ alignSelf: "center" }} />
     </View>
   );
 }

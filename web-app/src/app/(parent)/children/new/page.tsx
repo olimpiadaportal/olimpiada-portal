@@ -15,6 +15,9 @@ const KEYS = [
   "addchild.field.selectCity", "addchild.field.selectSchool",
   "addchild.field.selectGrade", "addchild.field.cityFirst",
   "addchild.field.privateSchools", "addchild.field.publicSchools",
+  // Round 21: intra-city district (rayon) cascade between City and School.
+  "addchild.field.district", "addchild.field.selectDistrict",
+  "addchild.field.noDistricts",
   "auth.showPassword", "auth.hidePassword",
   // step nav + steps
   "addchild.step.info", "addchild.step.subjects", "addchild.step.plan",
@@ -44,7 +47,7 @@ const KEYS = [
   "auth.child.err.passwordTooShort", "auth.child.err.passwordEqualsId",
   "auth.child.err.createFailed",
   "addchild.err.cityRequired", "addchild.err.schoolRequired",
-  "addchild.err.gradeRequired",
+  "addchild.err.gradeRequired", "addchild.err.districtRequired",
   "sub.err.invalid",
 ];
 
@@ -61,31 +64,49 @@ export default async function NewChildPage() {
   // a free window really covers the child before allocating the login ID).
   const { active: freeAccessActive } = await getParentFreeAccess();
 
-  // Catalogs: cities (active districts), schools (active), grades.
-  const [{ data: cityRows }, { data: schoolRows }, { data: gradeRows }, { data: pricing }] =
-    await Promise.all([
-      supabase.from("districts").select("id, name").eq("status", "active").order("name"),
-      // Round 12: schools sort PRIVATE first, then by numeric school_number
-      // ascending (2 before 10), unnumbered last, then name.
-      supabase
-        .from("schools")
-        .select("id, name, district_id, is_private, school_number")
-        .eq("status", "active")
-        .order("is_private", { ascending: false })
-        .order("school_number", { ascending: true, nullsFirst: false })
-        .order("name"),
-      supabase.from("grades").select("id, level, name").order("level", { ascending: true }),
-      supabase
-        .from("subjects_pricing")
-        .select("subject_id, interval, price_amount, subjects(name)")
-        .eq("status", "active"),
-    ]);
+  // Catalogs: cities (active districts), rayons (city_districts), schools
+  // (active), grades. NAMING: `districts` = the CITIES table (historic naming);
+  // `city_districts` = the real intra-city rayons (Round 21 cascade).
+  const [
+    { data: cityRows },
+    { data: cityDistrictRows },
+    { data: schoolRows },
+    { data: gradeRows },
+    { data: pricing },
+  ] = await Promise.all([
+    supabase.from("districts").select("id, name").eq("status", "active").order("name"),
+    supabase
+      .from("city_districts")
+      .select("id, name, city_id")
+      .eq("status", "active")
+      .order("name"),
+    // Round 12: schools sort PRIVATE first, then by numeric school_number
+    // ascending (2 before 10), unnumbered last, then name.
+    supabase
+      .from("schools")
+      .select("id, name, district_id, city_district_id, is_private, school_number")
+      .eq("status", "active")
+      .order("is_private", { ascending: false })
+      .order("school_number", { ascending: true, nullsFirst: false })
+      .order("name"),
+    supabase.from("grades").select("id, level, name").order("level", { ascending: true }),
+    supabase
+      .from("subjects_pricing")
+      .select("subject_id, interval, price_amount, subjects(name)")
+      .eq("status", "active"),
+  ]);
 
   const cities = (cityRows ?? []) as { id: string; name: string }[];
+  const cityDistricts = (cityDistrictRows ?? []) as {
+    id: string;
+    name: string;
+    city_id: string;
+  }[];
   const schools = (schoolRows ?? []) as {
     id: string;
     name: string;
     district_id: string | null;
+    city_district_id: string | null;
     is_private: boolean;
     school_number: number | null;
   }[];
@@ -117,6 +138,7 @@ export default async function NewChildPage() {
       <p className="muted">{t("parent.child.intro")}</p>
       <AddChildWizard
         cities={cities}
+        cityDistricts={cityDistricts}
         schools={schools}
         grades={grades}
         subjects={subjects}

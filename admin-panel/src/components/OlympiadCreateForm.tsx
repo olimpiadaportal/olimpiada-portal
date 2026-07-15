@@ -114,7 +114,7 @@ export function OlympiadCreateForm({
       setFileError(parsed.error);
       return;
     }
-    setRowIssues(validateBulkRowsClient(parsed.items, tt, typeRules));
+    setRowIssues(validateBulkRowsClient(parsed.items, tt, typeRules, "olympiad"));
     setItemCount(parsed.items.length);
   }
 
@@ -125,6 +125,7 @@ export function OlympiadCreateForm({
     // package's values — so the selection is reflected in the filename.
     downloadBulkTemplate(
       `olympiad-questions-${slugLabel(subj)}-${slugLabel(grade)}.json`,
+      "olympiad",
     );
   }
 
@@ -218,6 +219,9 @@ export function OlympiadCreateForm({
       <div style={{ marginTop: 16 }}>
         <h3>{tt("oly2.pool")} *</h3>
         <p className="muted">{tt("olybulk.note")}</p>
+        {/* Attempts include ALL uploaded questions; the pool is creation-only. */}
+        <p className="hint">{tt("oly2.allQuestionsNote")}</p>
+        <p className="hint">{tt("oly2.err.creationOnly")}</p>
         <p className="hint">{tt("olybulk.fromPackage")}</p>
         {!targetsChosen && <p className="hint">{tt("olybulk.pickFirst")}</p>}
 
@@ -272,7 +276,9 @@ export function OlympiadCreateForm({
         )}
 
         <p className="hint">{tt("bulk.fileHint")}</p>
-        <p className="hint">{tt("bulk.mcqRule")}</p>
+        {/* v3: five A–E options / exactly one correct (was 4 pre-055). */}
+        <p className="hint">{tt("bulk.fiveRule")}</p>
+        <p className="hint">{tt("olybulk.optionalMeta")}</p>
         <p className="hint">{codesHint}</p>
         {!fileReady && <p className="hint">{tt("oly2.err.needQuestions")}</p>}
       </div>

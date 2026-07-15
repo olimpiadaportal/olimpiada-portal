@@ -98,15 +98,22 @@ export default async function ParentLayout({
   const notifDict: Record<string, string> = {};
   if (notifOn) for (const k of NOTIF_KEYS) notifDict[k] = t(k);
 
+  // The parent leaderboard tab is gated by the same `leaderboard` feature flag
+  // the student arena uses (the page itself shows the trilingual "disabled"
+  // notice on a direct URL when the flag is off).
+  const leaderboardOn = await isFeatureEnabled("leaderboard");
+
   // Home is exact-matched: /dashboard/news lives under it (R10 in-panel news)
   // and must not keep the Home tab highlighted.
+  // Notifications: the header BELL is the single entry point (its dropdown
+  // links to /notifications via "see all") — no dedicated nav tab.
   const navItems = [
     { href: "/dashboard", label: t("nav.home"), brand: true, exact: true },
     { href: "/analytics", label: t("nav.analytics") },
+    ...(leaderboardOn ? [{ href: "/leaderboard", label: t("lb.title") }] : []),
     { href: "/olympiads", label: t("poly.nav") },
     { href: "/subscription", label: t("nav.subscription") },
     { href: "/dashboard/news", label: t("nav.news") },
-    ...(notifOn ? [{ href: "/notifications", label: t("notif.title") }] : []),
     { href: "/help/faq", label: t("help.faqTitle") },
     { href: "/help/contact", label: t("help.contactTitle") },
   ];

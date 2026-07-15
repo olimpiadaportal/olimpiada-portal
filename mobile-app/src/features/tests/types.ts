@@ -126,22 +126,36 @@ export type SubjectAccess = {
 
 export type AttemptListRow = {
   id: string;
+  /** 'daily' (rated round) | 'test' (topic practice) — olympiads never listed here. */
+  kind: string;
+  is_rated: boolean;
   status: string;
   score: number | null;
   max_score: number | null;
   started_at: string | null;
   submitted_at: string | null;
   deadline_at: string | null;
+  subject_id: string | null;
   subject_name: string | null;
+};
+
+/** get_my_round_readiness row (Round 21): booleans about the caller's own grade. */
+export type RoundReadiness = {
+  subject_id: string;
+  round_exists: boolean;
+  attempted: boolean;
+  ready: boolean;
 };
 
 export type SetupSubtopic = { id: string; name: string };
 export type SetupTopic = { id: string; name: string; subtopics: SetupSubtopic[] };
 
-/** Own test_attempts row — the result/review guards + time context. */
+/** Own test_attempts row — the result/review guards + time context + badge. */
 export type AttemptRowMeta = {
   id: string;
   kind: string;
+  /** Drives the runner's rated/practice mode badge (web run-page parity). */
+  is_rated: boolean;
   status: string;
   deadline_at: string | null;
   started_at: string | null;
@@ -149,6 +163,16 @@ export type AttemptRowMeta = {
   duration_seconds: number | null;
   subject_name: string | null;
 };
+
+/** start_daily_round_attempt('today') result — errors mapped to i18n keys. */
+export type StartRoundResult =
+  | { ok: true; data: { attempt_id: string; resumed: boolean } }
+  | {
+      ok: false;
+      errorKey: string;
+      /** unique_violation: today's round already consumed — flip to attempted. */
+      already?: boolean;
+    };
 
 /** Own test_attempt_answers rows post-grading (NO answer keys involved). */
 export type BreakdownRow = {

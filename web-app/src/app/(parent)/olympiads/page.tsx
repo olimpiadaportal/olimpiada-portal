@@ -56,7 +56,7 @@ export default async function ParentOlympiadCatalogPage() {
     supabase
       .from("olympiad_packages")
       .select(
-        "id, price_amount, currency, questions_per_attempt, event_starts_at, subjects(name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+        "id, price_amount, currency, event_starts_at, subjects(name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
       )
       .eq("status", "active")
       .order("created_at"),
@@ -79,6 +79,21 @@ export default async function ParentOlympiadCatalogPage() {
     ownedByPackage.set(p.olympiad_package_id, list);
   }
 
+  // Round 21 (item 3): the REAL published pool size per package — the legacy
+  // questions_per_attempt column is display-only (default 25, never written by
+  // the admin form). One RPC over the visible ids; a package with an empty
+  // pool returns NO row → coalesce to 0.
+  const pkgRows = (packages ?? []) as any[];
+  const poolCounts = new Map<string, number>();
+  if (pkgRows.length > 0) {
+    const { data: countRows } = await supabase.rpc("get_olympiad_pool_counts", {
+      p_package_ids: pkgRows.map((p) => p.id),
+    });
+    for (const r of (countRows ?? []) as any[]) {
+      poolCounts.set(r.package_id, Number(r.question_count) || 0);
+    }
+  }
+
   const pickTr = (trs: any[]) =>
     (trs ?? []).find((x: any) => x.locale === locale) ??
     (trs ?? []).find((x: any) => x.locale === "az");
@@ -93,9 +108,9 @@ export default async function ParentOlympiadCatalogPage() {
 
   // Serializable view models — the client component receives only translated,
   // display-ready strings (no locale logic in the browser).
-  const items: PolyPackage[] = ((packages ?? []) as any[]).map((p) => {
+  const items: PolyPackage[] = pkgRows.map((p) => {
     const tr = pickTr(p.olympiad_package_translations);
-    const n = Number(p.questions_per_attempt ?? 25) || 25;
+    const n = poolCounts.get(p.id) ?? 0;
     let coverUrl: string | null = null;
     const m = p.media_assets;
     if (m?.bucket && m?.path) {

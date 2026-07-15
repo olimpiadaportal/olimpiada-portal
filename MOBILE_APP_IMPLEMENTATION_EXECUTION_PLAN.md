@@ -63,6 +63,9 @@ Per-stage doc set (read ONLY these + the stage section):
 
 **Accept:** full topic-test round-trip on dev incl. TRUE resume after app kill + deadline auto-submit + review filters; olympiad attempt round-trip on an owned package; leaderboard matches web for the same child (incl. anonymization flag flip); palette choice persists and restyles the arena; locked/expired access states match web; free-window child sees full subject access; Maestro: child login→run test→submit→review→logout; manual checks appended to the testing guide.
 
+## M3.1 — Round-20/21 parity pass (REQUIRED before M4; added 2026-07-12, extended 2026-07-13)
+**Goal:** re-align the shipped M3 arena (and the M2 add-child wizard) with the Round-20/21 platform model. The authoritative item list is master plan **§7.2c + §7.2d** (daily rated rounds + previous-day practice on the Tests tab; untimed topic-test runner mode — null deadline handling; rated/practice badges + points-only-from-rated copy; all-questions olympiads; 5 options A–E; question images in runner/review; leaderboard district column + district scope + no medals + top-50 internal scroll; short-cadence maintenance refetch; optional public top-10 on welcome; **Round 21:** real olympiad pool counts via `get_olympiad_pool_counts` — kill the `?? 25` fallbacks; Tests-tab pre-flight via `get_my_round_readiness`; new arena-home layout (no Today's-Rounds/News sections, real all-time country rank); mandatory add-child District step + `city_district_id` through the BFF `/children` endpoint). Standard gates (tsc/lint/jest/audit/export) + guide section + STATUS entry.
+
 ## M4 — Push notifications, hardening, compliance & launch
 **Goal:** go live: push end-to-end, MASVS-hardened, store-ready, operable. (Absorbs old M6+M7+M8+M9.)
 

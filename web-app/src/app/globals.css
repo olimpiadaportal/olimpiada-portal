@@ -1115,10 +1115,12 @@ ul.clean li {
   }
 }
 
-/* ---- Two-column content grid ---- */
+/* ---- Two-column content grid ----
+   Round 21: balanced halves — the child home pairs the leaderboard quick-look
+   with the subject-strength panel. */
 .arena-cols {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 20px;
 }
 @media (max-width: 820px) {
@@ -2277,33 +2279,6 @@ ul.clean li {
   color: var(--muted);
   font-size: 0.92rem;
 }
-/* Arena reuse: follow arena tokens + lime accent. */
-.arena .news-panel {
-  background: var(--panel);
-  border-color: var(--line);
-}
-.arena .news-panel-head h3 {
-  color: var(--ink);
-}
-.arena .news-panel-head a {
-  color: var(--lime);
-}
-.arena .news-mini {
-  border-color: var(--line);
-}
-.arena .news-mini-thumb {
-  background: var(--panel2);
-}
-.arena .news-mini-title {
-  color: var(--ink);
-}
-.arena .news-mini:hover .news-mini-title {
-  color: var(--lime);
-}
-.arena .news-empty {
-  color: var(--muted);
-}
-
 /* ======================  DANGER LINK / BUTTON  ========================= */
 /* Themed danger red. .link-danger was referenced earlier but unstyled — give
    it a clear destructive look in BOTH themes (and inside the arena). */
@@ -8969,6 +8944,81 @@ ul.clean li {
   }
 }
 
+/* ---- DAILY ROUNDS (migration 056) — test home round cards ----
+   Today's RATED cards (.tst-daily) vs yesterday's muted PRACTICE replays
+   (.tst-daily.ghost — dashed border, dimmed, no lime hover). */
+.arena .tst-daily-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.arena .tst-daily {
+  display: grid;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+}
+.arena .tst-daily-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.arena .tst-daily-titles {
+  flex: 1;
+  min-width: 0;
+}
+.arena .tst-daily-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.arena .tst-daily-practice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+  font-size: 0.82rem;
+}
+/* Yesterday replay cards: visually distinct from today's rated cards. */
+.arena .tst-daily.ghost {
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  border-style: dashed;
+}
+.arena .tst-daily.ghost .arena-round-title {
+  color: var(--muted);
+}
+/* Mandatory replay disclaimer above the yesterday grid. */
+.arena .tst-replay-note {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--gold);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--gold) 8%, var(--panel));
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+/* Tiny "rated" chip in the recent-rounds list. */
+.arena .tst-rated-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line));
+  color: var(--gold);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  vertical-align: 2px;
+}
+
 /* ---- setup: tri-state topic picker ---- */
 .arena .tst-topics-actions {
   display: flex;
@@ -9205,6 +9255,42 @@ ul.clean li {
   border-color: color-mix(in srgb, var(--red) 60%, var(--line));
   animation: tst-blink 1s steps(2, start) infinite;
 }
+/* Untimed practice (migration 057): the countdown chip becomes a calm
+   "∞ no time limit" pill — never warns, never blinks. */
+.arena .tst-timer.inf {
+  color: var(--muted);
+  font-size: 0.9rem;
+  min-width: 0;
+}
+.arena .tst-inf-label {
+  font-family: Arial, Helvetica, "Segoe UI", system-ui, sans-serif;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+/* Rated / practice mode badge next to the player title. */
+.arena .tst-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.arena .tst-mode-badge.rated {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--line));
+  background: color-mix(in srgb, var(--gold) 10%, var(--panel2));
+}
+.arena .tst-mode-badge.practice {
+  color: var(--muted);
+  background: var(--panel2);
+}
 @keyframes tst-blink {
   50% {
     opacity: 0.55;
@@ -9232,6 +9318,38 @@ ul.clean li {
 }
 .arena .tst-meta-sep {
   color: var(--dim);
+}
+
+/* ---- question figure (migrations 056/057 image payloads) ----
+   Responsive inline render between the body and the options; click = zoom
+   (full size in the shared Modal). */
+.arena .tst-qimg-btn {
+  display: block;
+  margin: 12px 0 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  max-width: 100%;
+  text-align: left;
+}
+.arena .tst-qimg {
+  display: block;
+  max-width: 100%;
+  max-height: 340px;
+  width: auto;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+/* The full-size view renders inside the shared Modal, which PORTALS to
+   <body> — outside `.arena` — so this rule is global on purpose. */
+.tst-qimg-full {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 0 auto;
 }
 
 /* ---- player: layout (question + palette sidebar) ---- */
@@ -9621,18 +9739,70 @@ ul.clean li {
   color: var(--ink);
 }
 
-/* Board table (migration 048 row context) — desktop: full-width columns in a
-   horizontally scrollable wrap so the PAGE never overflows; mobile: the
-   city/school/grade columns collapse and the same context re-appears as one
-   muted line under the participant name (CSS-only swap, single table). */
-.lb-table-wrap {
+/* Board table (migrations 048/058 row context) — GENERIC, theme-neutral block
+   shared by the student arena AND the parent/public leaderboards: every color
+   token falls back through the arena vars (--panel/--line/--ink/--dim) to the
+   site-wide vars (--surface/--border/--text/--muted) to a hard default, so the
+   same classes work outside `.arena` unchanged.
+
+   .lb-scroll — the top-50 list scrolls INTERNALLY (≈10–12 rows tall, sticky
+   header) so the page itself never stretches; wide content additionally gets
+   its own horizontal scroll instead of overflowing the page.
+   .lb-table  — combine with .arena-table inside the arena (this block sits
+   LATER in the file, so its header/cell paddings win). */
+.lb-scroll {
+  max-height: 580px; /* ≈ header + 11 rows */
+  overflow-y: auto;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  border-radius: 10px;
+  scrollbar-width: thin;
+}
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.lb-table th {
+  /* Sticky header: stays pinned while the top-50 scrolls underneath. The
+     background MUST be solid — rows slide beneath it. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel, var(--surface, #ffffff));
+  box-shadow: 0 1px 0 var(--line, var(--border, #e5e7eb));
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim, var(--muted, #6b7280));
+  text-align: left;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+.lb-table td {
+  padding: 13px 14px;
+  border-top: 1px solid var(--line, var(--border, #e5e7eb));
+  vertical-align: middle;
+  color: var(--ink, var(--text, #1f2430));
+}
+.lb-table th.num,
+.lb-table td.num {
+  text-align: right;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+/* Plain numeric rank cell (NO medals — ranks are 1..50 numbers). */
+.lb-table td.lb-rank {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 700;
+  color: var(--muted, #6b7280);
+  width: 56px;
 }
 .lb-part-ctx {
   display: none;
 }
 @media (max-width: 760px) {
+  .lb-table th.lb-ctx-col,
+  .lb-table td.lb-ctx-col,
   .arena-table th.lb-ctx-col,
   .arena-table td.lb-ctx-col {
     display: none;
@@ -9642,14 +9812,8 @@ ul.clean li {
     margin-top: 3px;
     font-size: 0.74rem;
     font-weight: 500;
-    color: var(--dim);
+    color: var(--dim, var(--muted, #6b7280));
   }
-}
-
-/* Medal ranks 1–3 */
-.lb-medal {
-  font-size: 1.05rem;
-  line-height: 1;
 }
 
 /* Streak status card (streak board, above the list) */
@@ -9753,13 +9917,14 @@ ul.clean li {
    it works in the arena dark theme, the light theme, and all 5 palettes.
    Rendered ONLY inside `.arena`, so the arena CSS vars resolve by inheritance
    (same pattern as the .lb-* classes above). Gated by the `leaderboard` flag.
+   Round 21: lives inside the .arena-cols grid (no own bottom margin — the
+   grid gap and the next section's top margin handle spacing).
    ========================================================================== */
 .lbq-card {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 18px 20px;
-  margin-bottom: 26px;
 }
 .lbq-head {
   display: flex;
@@ -10412,4 +10577,237 @@ select.arena-input {
 }
 .arena-input[aria-invalid="true"] {
   border-color: var(--red);
+}
+
+/* ---- Site typography (admin "Sayt şrifti") -------------------------------
+   src/app/layout.tsx sets data-site-typography + the --fs-* variables on
+   <body> ONLY when an admin has saved the setting; without the attribute
+   these rules never match, so the default look stays untouched. Fallback
+   values = the shipped defaults. Bare <button> is intentionally NOT targeted
+   (icon buttons would inflate); .btn covers the styled buttons. */
+body[data-site-typography] h1 {
+  font-size: var(--fs-heading, 32px);
+}
+body[data-site-typography] h2 {
+  font-size: calc(var(--fs-heading, 32px) * 0.72);
+}
+body[data-site-typography] .btn,
+body[data-site-typography] .btn-ghost {
+  font-size: var(--fs-button, 15px);
+}
+
+/* =============================================================================
+   PARENT + LANDING leaderboards — .plb-* (parent panel) and .pub-lb-* (public
+   landing). The table itself REUSES the shared .lb-scroll/.lb-table block
+   (whose colors fall back to the site tokens outside .arena); everything here
+   is site-token driven so light AND dark themes work automatically.
+   ========================================================================== */
+
+/* ---- Filter chips (board / scope / grade / period) — link-friendly pills. */
+.plb-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+.plb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--chip-bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.plb-chip:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.plb-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ---- Cascading selects (subject / city / district / school). The markup
+   reuses LeaderboardSubjectSelect (.lb-subject-*), whose base styles use
+   arena-only vars — re-pin them to the site tokens inside .plb-filters. */
+.plb-filters {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: -2px 0 14px;
+}
+.plb-filters .lb-subject-picker {
+  margin: 0;
+}
+.plb-filters .lb-subject-picker-label {
+  color: var(--muted);
+}
+.plb-filters .lb-subject-select {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.plb-filters .lb-subject-select:focus {
+  border-color: var(--accent);
+}
+
+/* ---- Board panel around the shared .lb-scroll table. */
+.plb-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 8px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.plb-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+}
+.plb-part-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.lb-table td.plb-val {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* ---- "Övladlarınızın mövqeyi" — per-child position cards. */
+.plb-kids-title {
+  margin: 26px 0 12px;
+  font-size: 1.15rem;
+}
+.plb-kids {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+@media (max-width: 620px) {
+  .plb-kids {
+    grid-template-columns: 1fr; /* cards stack on mobile */
+  }
+}
+.plb-kid {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.plb-kid-empty {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.plb-kid-av {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: var(--chip-bg);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 1rem;
+}
+.plb-kid-body {
+  min-width: 0;
+  flex: 1;
+}
+.plb-kid-name {
+  font-weight: 700;
+  color: var(--text);
+}
+.plb-kid-meta {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.plb-kid-pos {
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.plb-kid-rank {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 800;
+  font-size: 1.15rem;
+  color: var(--accent);
+}
+.plb-kid-total {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.plb-kid-val {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.plb-kid-none {
+  margin-top: 8px;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+/* ---- Landing "Ümumi Reytinq Cədvəli" band (directly after the hero). */
+.pub-lb {
+  margin-top: 30px;
+}
+.pub-lb-title {
+  margin: 0;
+}
+.pub-lb-sub {
+  margin: 6px 0 16px;
+  color: var(--muted);
+}
+.pub-lb-panel {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+/* Accent top strip — same energetic signature the stat cards use. */
+.pub-lb-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
+}
+[data-theme="light"] .pub-lb-panel {
+  box-shadow: 0 1px 2px var(--shadow), 0 10px 26px -16px var(--shadow-lg);
+}
+/* Landing height cap: sticky header + ~5 rows visible; rows 6–10 scroll
+   internally (a sliver of row 6 hints at the scroll). */
+.lb-scroll.pub-lb-scroll {
+  max-height: 300px;
+}
+.pub-lb-empty {
+  margin: 0;
+  padding: 18px 16px;
+  color: var(--muted);
 }

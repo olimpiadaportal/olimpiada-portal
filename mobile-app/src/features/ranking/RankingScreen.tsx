@@ -1,33 +1,34 @@
-// Student RANKING tab — native port of web /child/leaderboard:
+// Student RANKING tab — native port of web /child/leaderboard (Round-20/21):
 //   * board switch Points | Streak (streak is GLOBAL-only + all-time),
 //   * scope chips offered ONLY for ids the child actually has (global always;
 //     subject whenever the platform has an active subject; grade/city/school
-//     when the students row carries the id),
+//     when the students row carries the id; DISTRICT when the child's own
+//     rayon resolves via school → schools.city_district_id, falling back to
+//     students.city_district_id),
 //   * period toggle This month | All time (points only),
 //   * subject scope = single-select over ALL active subjects with a clamped
 //     default (forged/missing selection falls back to the FIRST subject —
 //     Round-18 contract),
-//   * top-50 list with medal top-3, server-formatted "Firstname L." names and
-//     the city/school/grade context line (render as-is, never re-derive),
+//   * top-50 list with NUMERIC ranks ONLY (no medals — web Round-20 rule),
+//     Avatar initials, server-formatted "Firstname L." names and the
+//     city/district/school/grade context line (render as-is, never re-derive),
 //   * self-row highlight + the sticky my-rank card, and the streak status card
-//     with at-risk urgency.
+//     with at-risk urgency. Everything arena-palette-aware.
 import React, { useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { AppText } from "@/components/AppText";
-import { Card } from "@/components/Card";
+import { Avatar } from "@/components/Avatar";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
-import { Segmented } from "@/components/Segmented";
-import { useTheme } from "@/theme/ThemeProvider";
-import { arenaTokens, radius, spacing } from "@/theme/tokens";
+import { radius, shadow, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchActiveSubjects } from "@/lib/data";
 import { SelectField } from "@/features/profile/SelectField";
-import { ScreenScroll } from "@/features/parent/ui";
 import { useAuthStore } from "@/features/auth/authStore";
-import { useArenaPalette } from "@/features/profile/useArenaPalette";
+import { useArena } from "@/features/arena/useArena";
+import { ArenaChip, ArenaEyebrow, ArenaPanel, ArenaScroll } from "@/features/arena/ui";
 import {
   fetchLeaderboard,
   fetchMyRank,
@@ -40,52 +41,13 @@ import {
   type Scope,
 } from "./data";
 
-const MEDALS = ["\u{1F947}", "\u{1F948}", "\u{1F949}"]; // 🥇 🥈 🥉
-
-function ChipButton({
-  label,
-  active,
-  onPress,
-  activeBg,
-  activeFg,
-  bg,
-  fg,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  activeBg: string;
-  activeFg: string;
-  bg: string;
-  fg: string;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={{
-        backgroundColor: active ? activeBg : bg,
-        borderRadius: 999,
-        paddingVertical: spacing.sm,
-        paddingHorizontal: spacing.lg,
-      }}
-    >
-      <AppText variant="label" color={active ? activeFg : fg} style={{ fontSize: 13 }}>
-        {label}
-      </AppText>
-    </Pressable>
-  );
-}
+const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
 export function RankingScreen() {
-  const { theme, tokens } = useTheme();
+  const { arena, theme } = useArena();
   const { t, locale } = useT();
   const config = useMobileConfig();
   const profileId = useAuthStore((s) => s.profileId);
-  const palette = useArenaPalette();
-  const arena = arenaTokens(theme, palette);
 
   const leaderboardOn = config.data?.flags.leaderboard === true;
 
@@ -114,17 +76,20 @@ export function RankingScreen() {
   );
   const gradeId = scopeIdsQ.data?.gradeId ?? null;
   const cityId = scopeIdsQ.data?.cityId ?? null;
+  const districtId = scopeIdsQ.data?.districtId ?? null;
   const schoolId = scopeIdsQ.data?.schoolId ?? null;
 
   // Scope tabs — ONLY the scopes this child actually has (web whitelist).
+  // The district chip is the child's OWN rayon and hides when none resolves.
   const scopeTabs = useMemo(() => {
     const tabs: { key: Scope; id: string | null }[] = [{ key: "global", id: null }];
     if (activeSubjects.length > 0) tabs.push({ key: "subject", id: null });
     if (gradeId) tabs.push({ key: "grade", id: gradeId });
     if (cityId) tabs.push({ key: "city", id: cityId });
+    if (districtId) tabs.push({ key: "district", id: districtId });
     if (schoolId) tabs.push({ key: "school", id: schoolId });
     return tabs;
-  }, [activeSubjects.length, gradeId, cityId, schoolId]);
+  }, [activeSubjects.length, gradeId, cityId, districtId, schoolId]);
 
   // Whitelist clamping happens at RENDER time (no state writes in effects —
   // loop-safe): an unavailable selection falls back to global; the STREAK
@@ -143,7 +108,9 @@ export function RankingScreen() {
           ? gradeId
           : scope === "city"
             ? cityId
-            : schoolId;
+            : scope === "district"
+              ? districtId
+              : schoolId;
   const period: LbArgs["period"] =
     board === "streak" ? "all_time" : periodUrl === "all" ? "all_time" : "month";
 
@@ -168,9 +135,9 @@ export function RankingScreen() {
 
   if (config.data && !leaderboardOn) {
     return (
-      <ScreenScroll>
+      <ArenaScroll>
         <GateNotice title={t("lb.title")} body={t("gate.leaderboardOff")} />
-      </ScreenScroll>
+      </ArenaScroll>
     );
   }
 
@@ -188,13 +155,19 @@ export function RankingScreen() {
   const fmtValue = (v: number): string =>
     board === "points" ? String(Math.round(Number(v))) : `${Number(v)} ${t("lb.days")}`;
 
-  // City · school · grade context under the participant name (points board).
+  // Context under the participant name, exactly what the web table shows
+  // (points: city/district/school/grade; streak: district only — its sole
+  // context column since migration 058).
   const ctxOf = (r: LbRow): string =>
-    [
-      r.city?.trim() || null,
-      r.school?.trim() || null,
-      r.grade_level != null ? formatGradeLabel(r.grade_level, locale) : null,
-    ]
+    (board === "points"
+      ? [
+          r.city?.trim() || null,
+          r.district?.trim() || null,
+          r.school?.trim() || null,
+          r.grade_level != null ? formatGradeLabel(r.grade_level, locale) : null,
+        ]
+      : [r.district?.trim() || null]
+    )
       .filter((p): p is string => !!p)
       .join(" · ");
 
@@ -221,20 +194,22 @@ export function RankingScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: arena.bg }}>
       <View style={{ flex: 1 }}>
-        <ScreenScroll onRefresh={onRefresh} refreshing={listQ.isRefetching}>
-          <AppText variant="muted" color={arena.muted} style={{ letterSpacing: 1.2, fontSize: 12 }}>
-            {t("lb.eyebrow").toUpperCase()}
-          </AppText>
+        <ArenaScroll onRefresh={onRefresh} refreshing={listQ.isRefetching}>
+          <ArenaEyebrow>{t("lb.eyebrow")}</ArenaEyebrow>
 
-          {/* Board tabs: Points | Streak */}
-          <Segmented
-            options={[
-              { value: "points" as Board, label: t("lb.board.points") },
-              { value: "streak" as Board, label: `\u{1F525} ${t("lb.board.streak")}` },
-            ]}
-            value={board}
-            onChange={setBoard}
-          />
+          {/* Board tabs: Points | Streak (web .arena-tabs) */}
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ArenaChip
+              label={t("lb.board.points")}
+              active={board === "points"}
+              onPress={() => setBoard("points")}
+            />
+            <ArenaChip
+              label={`\u{1F525} ${t("lb.board.streak")}`}
+              active={board === "streak"}
+              onPress={() => setBoard("streak")}
+            />
+          </View>
 
           {board === "points" ? (
             <>
@@ -246,15 +221,11 @@ export function RankingScreen() {
                 contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.xs }}
               >
                 {scopeTabs.map((s) => (
-                  <ChipButton
+                  <ArenaChip
                     key={s.key}
                     label={t(`lb.scope.${s.key}`)}
                     active={scope === s.key}
                     onPress={() => setScopeSel(s.key)}
-                    activeBg={tokens.accent}
-                    activeFg="#ffffff"
-                    bg={tokens.chipBg}
-                    fg={tokens.chipText}
                   />
                 ))}
               </ScrollView>
@@ -272,29 +243,24 @@ export function RankingScreen() {
 
               {/* Period toggle: This month | All time */}
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <ChipButton
+                <ArenaChip
                   label={t("lb.period.month")}
                   active={periodUrl === "month"}
                   onPress={() => setPeriodUrl("month")}
-                  activeBg={tokens.accent}
-                  activeFg="#ffffff"
-                  bg={tokens.chipBg}
-                  fg={tokens.chipText}
                 />
-                <ChipButton
+                <ArenaChip
                   label={t("lb.period.all")}
                   active={periodUrl === "all"}
                   onPress={() => setPeriodUrl("all")}
-                  activeBg={tokens.accent}
-                  activeFg="#ffffff"
-                  bg={tokens.chipBg}
-                  fg={tokens.chipText}
                 />
               </View>
 
               {selectedSubjectName ? (
-                <AppText variant="muted">
-                  {t("lb.subjectLabel")}: <AppText variant="label">{selectedSubjectName}</AppText>
+                <AppText color={arena.muted}>
+                  {t("lb.subjectLabel")}:{" "}
+                  <AppText variant="label" color={arena.ink}>
+                    {selectedSubjectName}
+                  </AppText>
                 </AppText>
               ) : null}
             </>
@@ -302,43 +268,46 @@ export function RankingScreen() {
 
           {/* Streak status card (streak board only, above the list). */}
           {board === "streak" && streak ? (
-            <Card
+            <ArenaPanel
               style={{
                 gap: spacing.md,
-                borderColor: streak.state === "at_risk" ? tokens.warn : tokens.border,
+                borderColor: streak.state === "at_risk" ? arena.red : arena.line,
               }}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xl }}>
                 <AppText style={{ fontSize: 34 }}>{"\u{1F525}"}</AppText>
                 <View>
-                  <AppText variant="title" style={{ fontSize: 20 }}>
+                  <AppText
+                    color={arena.ink}
+                    style={{ fontFamily: MONO, fontSize: 22, fontWeight: "900" }}
+                  >
                     {streak.current} {t("lb.days")}
                   </AppText>
-                  <AppText variant="muted" style={{ fontSize: 12 }}>
+                  <AppText color={arena.dim} style={{ fontSize: 12 }}>
                     {t("lb.streak.current")}
                   </AppText>
                 </View>
                 <View>
-                  <AppText variant="title" style={{ fontSize: 20 }} color={arena.gold}>
+                  <AppText
+                    color={arena.gold}
+                    style={{ fontFamily: MONO, fontSize: 22, fontWeight: "900" }}
+                  >
                     {streak.best} {t("lb.days")}
                   </AppText>
-                  <AppText variant="muted" style={{ fontSize: 12 }}>
+                  <AppText color={arena.dim} style={{ fontSize: 12 }}>
                     {t("lb.streak.best")}
                   </AppText>
                 </View>
               </View>
               {streakMsg ? (
-                <AppText
-                  variant="muted"
-                  color={streak.state === "at_risk" ? tokens.warn : tokens.muted}
-                >
+                <AppText color={streak.state === "at_risk" ? arena.red : arena.muted}>
                   {streakMsg}
                 </AppText>
               ) : null}
-            </Card>
+            </ArenaPanel>
           ) : null}
 
-          {/* Top-50 board */}
+          {/* Top-50 board — numeric ranks only (web Round-20: medals removed). */}
           {loading ? (
             <View style={{ gap: spacing.md }}>
               <Skeleton height={52} />
@@ -355,9 +324,10 @@ export function RankingScreen() {
           ) : rows.length === 0 ? (
             <EmptyState title={t(emptyKey)} />
           ) : (
-            <Card style={{ padding: spacing.sm, gap: 0 }}>
+            <ArenaPanel style={{ padding: spacing.sm, gap: 0 }}>
               {rows.map((r, i) => {
-                const ctx = board === "points" ? ctxOf(r) : "";
+                const ctx = ctxOf(r);
+                const name = (r.display_name ?? "").trim() || "—";
                 return (
                   <View
                     key={`${r.rank}-${i}`}
@@ -368,47 +338,52 @@ export function RankingScreen() {
                       paddingVertical: spacing.md,
                       paddingHorizontal: spacing.sm,
                       borderRadius: radius.sm,
-                      backgroundColor: r.is_self ? tokens.chipBg : "transparent",
+                      backgroundColor: r.is_self ? arena.panel2 : "transparent",
                       borderTopWidth: i === 0 ? 0 : 1,
-                      borderTopColor: tokens.border,
+                      borderTopColor: arena.line,
                     }}
                   >
                     <View style={{ width: 34, alignItems: "center" }}>
-                      {r.rank <= 3 ? (
-                        <AppText style={{ fontSize: 20 }} accessibilityLabel={String(r.rank)}>
-                          {MEDALS[r.rank - 1]}
-                        </AppText>
-                      ) : (
-                        <AppText variant="mono" color={tokens.muted}>
-                          {String(r.rank).padStart(2, "0")}
-                        </AppText>
-                      )}
+                      <AppText
+                        color={r.rank <= 3 ? arena.lime : arena.muted}
+                        style={{
+                          fontFamily: MONO,
+                          fontVariant: ["tabular-nums"],
+                          fontWeight: r.rank <= 3 ? "900" : "400",
+                        }}
+                      >
+                        {String(r.rank)}
+                      </AppText>
                     </View>
+                    <Avatar name={name} seed={r.is_self ? profileId : name} size={34} />
                     <View style={{ flex: 1, gap: 2 }}>
-                      <AppText variant="label" numberOfLines={1}>
-                        {(r.display_name ?? "").trim() || "—"}
+                      <AppText variant="label" color={arena.ink} numberOfLines={1}>
+                        {name}
                         {r.is_self ? (
-                          <AppText variant="label" color={tokens.accent}>
+                          <AppText variant="label" color={arena.lime}>
                             {" "}
                             · {t("lb.you")}
                           </AppText>
                         ) : null}
                       </AppText>
                       {ctx ? (
-                        <AppText variant="muted" style={{ fontSize: 11 }} numberOfLines={1}>
+                        <AppText color={arena.dim} style={{ fontSize: 11 }} numberOfLines={1}>
                           {ctx}
                         </AppText>
                       ) : null}
                     </View>
-                    <AppText variant="mono" color={r.is_self ? tokens.accent : tokens.text}>
+                    <AppText
+                      color={r.is_self ? arena.lime : arena.ink}
+                      style={{ fontFamily: MONO, fontVariant: ["tabular-nums"], fontWeight: "700" }}
+                    >
                       {fmtValue(r.value)}
                     </AppText>
                   </View>
                 );
               })}
-            </Card>
+            </ArenaPanel>
           )}
-        </ScreenScroll>
+        </ArenaScroll>
       </View>
 
       {/* Sticky "Your rank" card for the CURRENT board/scope/period. */}
@@ -419,42 +394,54 @@ export function RankingScreen() {
           paddingBottom: spacing.md,
           backgroundColor: arena.bg,
           borderTopWidth: 1,
-          borderTopColor: tokens.border,
+          borderTopColor: arena.line,
         }}
       >
-        <Card
+        <View
           accessibilityLabel={t("lb.myRank.title")}
           style={{
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
             gap: spacing.md,
+            backgroundColor: arena.panel,
+            borderWidth: 1,
+            borderColor: arena.line,
+            borderRadius: radius.lg,
             paddingVertical: spacing.md,
+            paddingHorizontal: spacing.lg,
+            ...shadow("float", theme === "dark" ? "rgba(0, 0, 0, 0.5)" : "rgba(22, 32, 58, 0.14)"),
           }}
         >
           <View style={{ gap: 2, flexShrink: 1 }}>
-            <AppText variant="muted" style={{ fontSize: 12 }}>
+            <AppText color={arena.dim} style={{ fontSize: 12 }}>
               {t("lb.myRank.title")}
             </AppText>
             {me && me.rank !== null ? (
-              <AppText variant="title" style={{ fontSize: 18 }}>
+              <AppText
+                color={arena.ink}
+                style={{ fontFamily: MONO, fontSize: 18, fontWeight: "900" }}
+              >
                 #{me.rank}{" "}
-                <AppText variant="muted" style={{ fontSize: 13 }}>
+                <AppText color={arena.muted} style={{ fontSize: 13 }}>
                   / {me.total}
                 </AppText>
               </AppText>
             ) : (
-              <AppText variant="muted">{t("lb.myRank.none")}</AppText>
+              <AppText color={arena.muted}>{t("lb.myRank.none")}</AppText>
             )}
           </View>
-          <AppText variant="mono" color={tokens.accent} style={{ fontSize: 16 }}>
+          <AppText
+            color={arena.lime}
+            style={{ fontFamily: MONO, fontVariant: ["tabular-nums"], fontSize: 16, fontWeight: "700" }}
+          >
             {me
               ? board === "points"
                 ? `${Math.round(Number(me.value))} ${t("lb.pointsUnit")}`
                 : `${Number(me.value)} ${t("lb.days")}`
               : "—"}
           </AppText>
-        </Card>
+        </View>
       </View>
     </View>
   );

@@ -2,12 +2,16 @@
 
 // Bulk question import as a modal (general question bank + olympiad private
 // pools). GENERAL mode requires a Subject + Grade (batch-level selects) and a
-// JSON file. OLYMPIAD mode asks for the FILE ONLY: the package's own Subject
-// and Grade are applied server-side to every imported row, so the modal shows
-// no subject/grade inputs at all. The submit button stays disabled until the
-// file passes the client-side pre-checks. Client validation is UX only — the
-// SECURITY DEFINER bulk RPCs remain the authority (assert_question_type_rules
-// etc.).
+// JSON file whose rows carry meta.topic + meta.subtopic + meta.term (1..4)
+// (bulk import v3); meta.type is optional (single_choice by default) and
+// meta.media_asset_id may reference a pre-uploaded question image. OLYMPIAD
+// mode asks for the FILE ONLY: the package's own Subject and Grade are applied
+// server-side to every imported row (topic/subtopic/term stay optional), and
+// the DB accepts pool uploads ONLY while the package is being created — a
+// package that already has questions rejects the import. The submit button
+// stays disabled until the file passes the client-side pre-checks. Client
+// validation is UX only — the SECURITY DEFINER bulk RPCs remain the authority
+// (assert_question_type_rules etc.).
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
@@ -50,6 +54,7 @@ export function BulkUploadModal({
   const tt = (k: string) => dict[k] ?? k;
   const router = useRouter();
   const olympiad = Boolean(packageId);
+  const mode = olympiad ? ("olympiad" as const) : ("general" as const);
   const rules = typeRules ?? [];
 
   const [open, setOpen] = useState(false);
@@ -103,7 +108,7 @@ export function BulkUploadModal({
       setFileError(parsed.error);
       return;
     }
-    setRowIssues(validateBulkRowsClient(parsed.items, tt, rules));
+    setRowIssues(validateBulkRowsClient(parsed.items, tt, rules, mode));
     setItemCount(parsed.items.length);
   }
 
@@ -232,7 +237,13 @@ export function BulkUploadModal({
           )}
 
           <p className="hint">{tt("bulk.fileHint")}</p>
-          <p className="hint">{tt("bulk.mcqRule")}</p>
+          {/* v3 format rules: five A–E options / one correct everywhere; the
+              general bank additionally requires topic + subtopic + term and
+              may reference a pre-uploaded image. */}
+          <p className="hint">{tt("bulk.fiveRule")}</p>
+          {!olympiad && <p className="hint">{tt("bulk.generalMeta")}</p>}
+          {!olympiad && <p className="hint">{tt("bulk.mediaHint")}</p>}
+          {olympiad && <p className="hint">{tt("olybulk.optionalMeta")}</p>}
           <p className="hint">{codesHint}</p>
           {/* Olympiad mode: olybulk.fromPackage above already explains that
               legacy meta.subject / meta.grade_level values are ignored. */}
@@ -250,6 +261,7 @@ export function BulkUploadModal({
                   olympiad
                     ? "olympiad-questions-template.json"
                     : "questions-template.json",
+                  mode,
                 )
               }
               disabled={pending}

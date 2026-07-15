@@ -1,19 +1,32 @@
-// OLYMPIADS tab (web parent catalog parity): active packages with cover /
-// subject / grade / price / event date, a child selector, per-child "owned"
-// pills, a detail sheet and the posture-aware Buy flow. Packages are ALWAYS
+// OLYMPIADS tab (web parent catalog parity, redesigned): cover cards with a
+// bottom gradient scrim (title + price chip over the image), child selector,
+// per-child "owned" pills, a detail sheet (grab handle, icon KeyRows, gradient
+// buy CTA) and the posture-aware Buy flow. Question counts are the REAL
+// published pool sizes (get_olympiad_pool_counts — the legacy
+// questions_per_attempt column is display-only). Packages are ALWAYS
 // purchases — giveaway/free-access do NOT make them free (web Round 13.1):
 // demo AND giveaway buy through the demo sheet; 'real' is read-only (web
 // account note); 'off' shows gate.paymentsOff. Idempotency-Key = pkg:child.
 import React, { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import {
+  BookOpen,
+  CalendarDays,
+  CircleHelp,
+  Clock3,
+  GraduationCap,
+  Medal,
+  Tag,
+} from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
-import { spacing } from "@/theme/tokens";
+import { gradients, radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { formatGradeLabel } from "@/lib/gradeLabel";
@@ -25,6 +38,7 @@ import {
   useChildren,
   useInvalidateParentData,
   useOlympiadCatalog,
+  useOlympiadPoolCounts,
   useOlympiadPurchases,
   useParentFreeAccess,
 } from "@/features/parent/queries";
@@ -37,20 +51,120 @@ import {
   childDisplayName,
 } from "@/features/parent/ui";
 
-function Chip({ label }: { label: string }) {
+function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
   const { tokens } = useTheme();
   return (
     <View
       style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.xs,
         backgroundColor: tokens.chipBg,
         borderRadius: 999,
         paddingHorizontal: spacing.md,
-        paddingVertical: 2,
+        paddingVertical: 3,
       }}
     >
+      {icon ?? null}
       <AppText variant="label" color={tokens.chipText} style={{ fontSize: 12 }}>
         {label}
       </AppText>
+    </View>
+  );
+}
+
+/** Cover area: image (or brand-gradient fallback) + bottom scrim with the
+ *  title and the price chip. Scrim ink is the fixed contrast contract
+ *  (#0a0e1a → white text) so it reads on any cover photo in any theme. */
+function CoverHeader({
+  pkg,
+  priceText,
+  owned,
+  past,
+  ownedLabel,
+  heldLabel,
+}: {
+  pkg: OlympiadPackageRow;
+  priceText: string;
+  owned: boolean;
+  past: boolean;
+  ownedLabel: string;
+  heldLabel: string;
+}) {
+  return (
+    <View style={{ width: "100%", aspectRatio: 16 / 9 }}>
+      {pkg.cover ? (
+        <Image
+          source={{ uri: publicStorageUrl(pkg.cover.bucket, pkg.cover.path) }}
+          style={{ width: "100%", height: "100%" }}
+          contentFit="cover"
+          accessibilityLabel={pkg.title}
+          recyclingKey={pkg.id}
+          transition={150}
+        />
+      ) : (
+        <LinearGradient
+          colors={[...gradients.brand]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ width: "100%", height: "100%", alignItems: "center", justifyContent: "center" }}
+        >
+          <Medal size={44} color="rgba(255,255,255,0.9)" strokeWidth={1.8} />
+        </LinearGradient>
+      )}
+
+      {/* Status pills float on the cover's top edge. */}
+      {(owned || past) && (
+        <View
+          style={{
+            position: "absolute",
+            top: spacing.sm,
+            right: spacing.sm,
+            flexDirection: "row",
+            gap: spacing.sm,
+          }}
+        >
+          {owned ? <Pill label={ownedLabel} tone="ok" /> : null}
+          {past ? <Pill label={heldLabel} tone="muted" /> : null}
+        </View>
+      )}
+
+      <LinearGradient
+        colors={["transparent", "rgba(10,14,26,0.78)"]}
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.xxl,
+          paddingBottom: spacing.md,
+          flexDirection: "row",
+          alignItems: "flex-end",
+          gap: spacing.md,
+        }}
+      >
+        <AppText
+          variant="title"
+          color="#ffffff"
+          numberOfLines={2}
+          style={{ flex: 1, fontSize: 18 }}
+        >
+          {pkg.title}
+        </AppText>
+        <View
+          style={{
+            backgroundColor: "rgba(255,255,255,0.92)",
+            borderRadius: 999,
+            paddingHorizontal: spacing.md,
+            paddingVertical: 3,
+          }}
+        >
+          <AppText variant="mono" color="#0a0e1a" style={{ fontSize: 13, fontWeight: "700" }}>
+            {priceText}
+          </AppText>
+        </View>
+      </LinearGradient>
     </View>
   );
 }
@@ -66,6 +180,7 @@ export default function ParentOlympiads() {
   const children = useChildren();
   const catalog = useOlympiadCatalog(locale, olympiadOn);
   const purchases = useOlympiadPurchases(olympiadOn);
+  const poolCounts = useOlympiadPoolCounts((catalog.data ?? []).map((p) => p.id));
   const invalidate = useInvalidateParentData();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -106,6 +221,7 @@ export default function ParentOlympiads() {
     void children.refetch();
     void catalog.refetch();
     void purchases.refetch();
+    void poolCounts.refetch();
   };
 
   async function confirmBuy() {
@@ -140,6 +256,8 @@ export default function ParentOlympiads() {
     const ts = pkg.event_starts_at ? Date.parse(pkg.event_starts_at) : NaN;
     return Number.isFinite(ts) && ts <= now;
   };
+  // REAL pool size (missing row / still loading → 0, web coalesce parity).
+  const questionCount = (pkg: OlympiadPackageRow) => poolCounts.data?.get(pkg.id) ?? 0;
 
   return (
     <ScreenScroll
@@ -163,16 +281,17 @@ export default function ParentOlympiads() {
       ) : (
         <>
           {list.length === 0 ? (
-            <>
-              <EmptyState title={t("poly.noChildren")} />
-              <Button
-                title={t("poly.addChild")}
-                onPress={() => router.push("/(parent)/add-child")}
-              />
-            </>
+            <EmptyState
+              title={t("poly.noChildren")}
+              icon={<Medal size={26} color={tokens.muted} strokeWidth={2} />}
+              action={{
+                label: t("poly.addChild"),
+                onPress: () => router.push("/(parent)/add-child"),
+              }}
+            />
           ) : (
             <View style={{ gap: spacing.xs }}>
-              <AppText variant="label">{t("poly.chooseChild")}</AppText>
+              <AppText variant="eyebrow">{t("poly.chooseChild")}</AppText>
               <ChildChips
                 childrenList={list}
                 selectedId={selected?.profile_id ?? null}
@@ -199,42 +318,52 @@ export default function ParentOlympiads() {
           ) : null}
 
           {(catalog.data ?? []).length === 0 ? (
-            <EmptyState title={t("poly.none")} />
+            <EmptyState
+              title={t("poly.none")}
+              icon={<Medal size={26} color={tokens.muted} strokeWidth={2} />}
+            />
           ) : (
             <View style={{ gap: spacing.lg }}>
               {(catalog.data ?? []).map((pkg) => {
                 const owned = ownedForSelected.has(pkg.id);
                 const past = isPast(pkg);
                 return (
-                  <Card key={pkg.id} style={{ gap: spacing.sm, padding: 0, overflow: "hidden" }}>
-                    {pkg.cover ? (
-                      <Image
-                        source={{ uri: publicStorageUrl(pkg.cover.bucket, pkg.cover.path) }}
-                        style={{ width: "100%", aspectRatio: 16 / 9 }}
-                        contentFit="cover"
-                        accessibilityLabel={pkg.title}
-                        transition={150}
-                      />
-                    ) : null}
-                    <View style={{ padding: spacing.lg, gap: spacing.sm }}>
-                      <View
-                        style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
-                      >
-                        <AppText variant="title" style={{ flex: 1 }}>
-                          {pkg.title}
-                        </AppText>
-                        {owned ? <Pill label={t("poly.owned")} tone="ok" /> : null}
-                        {past ? <Pill label={t("oly4.status.held")} tone="muted" /> : null}
-                      </View>
+                  <Card key={pkg.id} style={{ padding: 0, overflow: "hidden" }}>
+                    <CoverHeader
+                      pkg={pkg}
+                      priceText={priceText(pkg)}
+                      owned={owned}
+                      past={past}
+                      ownedLabel={t("poly.owned")}
+                      heldLabel={t("oly4.status.held")}
+                    />
+                    <View style={{ padding: spacing.lg, gap: spacing.md }}>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-                        {pkg.subject?.name ? <Chip label={pkg.subject.name} /> : null}
-                        {pkg.grade ? (
-                          <Chip label={formatGradeLabel(pkg.grade.level, locale, pkg.grade.name)} />
+                        {pkg.subject?.name ? (
+                          <Chip
+                            icon={<BookOpen size={13} color={tokens.chipText} strokeWidth={2} />}
+                            label={pkg.subject.name}
+                          />
                         ) : null}
-                        <Chip label={`${pkg.questions_per_attempt} ${t("poly.questions")}`} />
-                        <Chip label={`${pkg.duration_minutes} ${t("mob.unit.min")}`} />
+                        {pkg.grade ? (
+                          <Chip
+                            icon={
+                              <GraduationCap size={13} color={tokens.chipText} strokeWidth={2} />
+                            }
+                            label={formatGradeLabel(pkg.grade.level, locale, pkg.grade.name)}
+                          />
+                        ) : null}
+                        <Chip
+                          icon={<CircleHelp size={13} color={tokens.chipText} strokeWidth={2} />}
+                          label={`${questionCount(pkg)} ${t("poly.questions")}`}
+                        />
+                        <Chip
+                          icon={<Clock3 size={13} color={tokens.chipText} strokeWidth={2} />}
+                          label={`${pkg.duration_minutes} ${t("mob.unit.min")}`}
+                        />
                       </View>
                       <KeyRow
+                        icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
                         label={t("oly4.date")}
                         value={
                           pkg.event_starts_at
@@ -242,7 +371,6 @@ export default function ParentOlympiads() {
                             : t("oly4.dateTbd")
                         }
                       />
-                      <KeyRow label={t("poly.price")} value={priceText(pkg)} strong />
                       <View style={{ flexDirection: "row", gap: spacing.sm }}>
                         <Button
                           title={t("oly4.details")}
@@ -270,7 +398,7 @@ export default function ParentOlympiads() {
         </>
       )}
 
-      {/* ---- detail sheet ---- */}
+      {/* ---- detail sheet (grab handle from SheetShell, icon KeyRows) ---- */}
       <SheetShell
         visible={detail !== null}
         onClose={() => setDetail(null)}
@@ -280,30 +408,53 @@ export default function ParentOlympiads() {
           <ScrollView contentContainerStyle={{ gap: spacing.md }}>
             <AppText variant="title">{detail.title}</AppText>
             {detail.description ? <AppText variant="muted">{detail.description}</AppText> : null}
-            {detail.subject?.name ? (
-              <KeyRow label={t("oly4.subject")} value={detail.subject.name} />
-            ) : null}
-            <KeyRow
-              label={t("oly4.date")}
-              value={
-                detail.event_starts_at
-                  ? fmtDate(detail.event_starts_at, locale, true)
-                  : t("oly4.dateTbd")
-              }
-            />
-            <KeyRow
-              label={t("oly4.qcount")}
-              value={`${detail.questions_per_attempt} ${t("poly.questions")}`}
-            />
-            <KeyRow
-              label={t("mob.oly.duration")}
-              value={`${detail.duration_minutes} ${t("mob.unit.min")}`}
-            />
-            <KeyRow label={t("oly4.price")} value={priceText(detail)} strong />
+            <View
+              style={{
+                borderRadius: radius.md,
+                borderWidth: 1,
+                borderColor: tokens.border,
+                paddingHorizontal: spacing.lg,
+                paddingVertical: spacing.sm,
+              }}
+            >
+              {detail.subject?.name ? (
+                <KeyRow
+                  icon={<BookOpen size={16} color={tokens.muted} strokeWidth={2} />}
+                  label={t("oly4.subject")}
+                  value={detail.subject.name}
+                />
+              ) : null}
+              <KeyRow
+                icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("oly4.date")}
+                value={
+                  detail.event_starts_at
+                    ? fmtDate(detail.event_starts_at, locale, true)
+                    : t("oly4.dateTbd")
+                }
+              />
+              <KeyRow
+                icon={<CircleHelp size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("oly4.qcount")}
+                value={`${questionCount(detail)} ${t("poly.questions")}`}
+              />
+              <KeyRow
+                icon={<Clock3 size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("mob.oly.duration")}
+                value={`${detail.duration_minutes} ${t("mob.unit.min")}`}
+              />
+              <KeyRow
+                icon={<Tag size={16} color={tokens.muted} strokeWidth={2} />}
+                label={t("oly4.price")}
+                value={priceText(detail)}
+                strong
+              />
+            </View>
             {ownedForSelected.has(detail.id) ? (
               <AppText variant="muted">{t("poly.modal.already")}</AppText>
             ) : canBuy && selected && !isPast(detail) ? (
               <Button
+                variant="gradient"
                 title={t("poly.buyFor").replace("{name}", childDisplayName(selected))}
                 onPress={() => startBuy(detail)}
               />

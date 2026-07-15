@@ -1,28 +1,38 @@
-// Add-Child WIZARD (web AddChildWizard parity, commerce-posture aware):
+// Add-Child WIZARD (web AddChildWizard parity, commerce-posture aware,
+// redesigned: StepDots progress + one clean section per step + a summary card
+// before submit):
 //   demo                → Info → Subjects → Plan → DemoPay sheet → Done (ID reveal)
 //   giveaway / free acc → Info → (bffAddChild + bffActivateFree) → Done (instant ID)
 //   real                → Info → Done: child created, ID pending, plans are
 //                         completed on the family's WEB account (read-only money)
 //   off                 → Info → Done: child created, ID pending, gate.paymentsOff
-// The child is created ONCE (bffAddChild) and kept across retries — a failed
-// free activation or an abandoned plan never duplicates the child. Every money
-// step is re-validated by the BFF; this flow is presentation only.
+// Round 21: the District (rayon) field lives between City and School — shown
+// only when the city has active rayons, required then, narrows the school
+// list; city_district_id goes to the BFF (which re-validates and maps a miss
+// to addchild.err.districtRequired). The child is created ONCE (bffAddChild)
+// and kept across retries — a failed free activation or an abandoned plan
+// never duplicates the child. Every money step is re-validated by the BFF;
+// this flow is presentation only.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
+import { PartyPopper } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { StepDots } from "@/components/StepDots";
 import { Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { formatGradeLabel } from "@/lib/gradeLabel";
 import { bffActivateFree, bffAddChild } from "@/lib/api";
 import {
   ChildInfoForm,
   EMPTY_CHILD_INFO,
   buildAddChildFields,
+  rayonsOfCity,
   validateChildInfo,
   type ChildInfo,
   type ChildInfoErrors,
@@ -31,13 +41,14 @@ import { SubscribeFlow, type SubscribeStep } from "@/features/parent/SubscribeFl
 import { extractChildUniqueId, groupChildId, resolvePosture } from "@/features/parent/commerce";
 import {
   useCities,
+  useCityDistricts,
   useGrades,
   useInvalidateParentData,
   useParentFreeAccess,
   useSchools,
   useSubjectOptions,
 } from "@/features/parent/queries";
-import { ScreenScroll } from "@/features/parent/ui";
+import { KeyRow, ScreenScroll } from "@/features/parent/ui";
 
 type Phase = "info" | "flow" | "done";
 
@@ -49,47 +60,29 @@ const STEP_KEYS: Record<string, string> = {
   done: "addchild.step.done",
 };
 
-function StepIndicator({ steps, activeIdx }: { steps: string[]; activeIdx: number }) {
-  const { tokens } = useTheme();
+/** StepDots + "2/5 · Fənlər" eyebrow — the wizard's progress header. */
+function StepProgress({ steps, activeIdx }: { steps: string[]; activeIdx: number }) {
   const { t } = useT();
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      {steps.map((id, i) => {
-        const active = i === activeIdx;
-        const done = i < activeIdx;
-        return (
-          <View
-            key={id}
-            style={{
-              backgroundColor: active ? tokens.accent : tokens.chipBg,
-              borderRadius: radius.sm,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.xs,
-            }}
-          >
-            <AppText
-              variant="label"
-              color={active ? "#ffffff" : done ? tokens.accent : tokens.muted}
-              style={{ fontSize: 12 }}
-            >
-              {t(STEP_KEYS[id])}
-            </AppText>
-          </View>
-        );
-      })}
+    <View style={{ gap: spacing.sm }}>
+      <StepDots count={steps.length} index={activeIdx} />
+      <AppText variant="eyebrow">
+        {activeIdx + 1}/{steps.length} · {t(STEP_KEYS[steps[activeIdx]] ?? "addchild.step.info")}
+      </AppText>
     </View>
   );
 }
 
 export default function AddChildScreen() {
   const { tokens } = useTheme();
-  const { t } = useT();
+  const { t, locale } = useT();
   const router = useRouter();
   const config = useMobileConfig();
   const freeAccess = useParentFreeAccess();
   const subjects = useSubjectOptions();
   const grades = useGrades();
   const cities = useCities();
+  const districts = useCityDistricts();
   const invalidate = useInvalidateParentData();
 
   const [info, setInfo] = useState<ChildInfo>(EMPTY_CHILD_INFO);
@@ -105,6 +98,10 @@ export default function AddChildScreen() {
   const mode = config.data?.payment.mode ?? "off";
   const posture = resolvePosture(mode, freeAccess.data?.active === true);
 
+  // Rayon requirement of the chosen city (drives validation + the summary).
+  const cityRayons = rayonsOfCity(districts.data, info.cityId);
+  const hasDistricts = cityRayons.length > 0;
+
   // Ordered indicator steps for the resolved posture.
   const steps = posture.demoPay
     ? ["info", "subjects", "plan", "payment", "done"]
@@ -118,10 +115,29 @@ export default function AddChildScreen() {
           ? 1
           : 2;
 
+  // ---- summary card inputs (resolved display names) ------------------------
+  const cityName = ((cities.data ?? []) as { id: string; name: string }[]).find(
+    (c) => c.id === info.cityId,
+  )?.name;
+  const rayonName = cityRayons.find((d) => d.id === info.cityDistrictId)?.name;
+  const schoolName = ((schools.data ?? []) as { id: string; name: string }[]).find(
+    (s) => s.id === info.schoolId,
+  )?.name;
+  const gradeRow = ((grades.data ?? []) as { id: string; level: number; name: string }[]).find(
+    (g) => g.id === info.gradeId,
+  );
+  const summaryReady =
+    info.firstName.trim().length > 0 &&
+    info.lastName.trim().length > 0 &&
+    !!cityName &&
+    (!hasDistricts || !!rayonName) &&
+    !!schoolName &&
+    !!gradeRow;
+
   async function submitInfo() {
     if (pending) return; // double-submit guard
     setServerError(null);
-    const v = validateChildInfo(info);
+    const v = validateChildInfo(info, hasDistricts);
     setErrors(v);
     if (Object.keys(v).length > 0) return;
 
@@ -134,11 +150,7 @@ export default function AddChildScreen() {
           buildAddChildFields(info, {
             grades: (grades.data ?? []) as { id: string; level: number; name: string }[],
             cities: (cities.data ?? []) as { id: string; name: string }[],
-            schools: (schools.data ?? []) as {
-              id: string;
-              name: string;
-              is_private: boolean | null;
-            }[],
+            schools: (schools.data ?? []) as { id: string; name: string }[],
           }),
         );
         if (!res.ok) {
@@ -200,7 +212,7 @@ export default function AddChildScreen() {
         </View>
       ) : (
         <>
-          <StepIndicator steps={steps} activeIdx={activeIdx} />
+          <StepProgress steps={steps} activeIdx={activeIdx} />
 
           {phase === "info" ? (
             <>
@@ -214,6 +226,27 @@ export default function AddChildScreen() {
                 errors={errors}
                 disabled={pending}
               />
+
+              {/* Summary card — appears once every selection resolves. */}
+              {summaryReady ? (
+                <Card style={{ gap: spacing.xs }}>
+                  <AppText variant="eyebrow">{t("addchild.summary")}</AppText>
+                  <KeyRow
+                    label={t("parent.child.first")}
+                    value={`${info.firstName.trim()} ${info.lastName.trim()}`.trim()}
+                  />
+                  <KeyRow label={t("addchild.field.city")} value={cityName ?? "—"} />
+                  {hasDistricts ? (
+                    <KeyRow label={t("addchild.field.district")} value={rayonName ?? "—"} />
+                  ) : null}
+                  <KeyRow label={t("addchild.field.school")} value={schoolName ?? "—"} />
+                  <KeyRow
+                    label={t("addchild.field.grade")}
+                    value={gradeRow ? formatGradeLabel(gradeRow.level, locale, gradeRow.name) : "—"}
+                  />
+                </Card>
+              ) : null}
+
               {serverError ? (
                 <AppText variant="muted" color={tokens.danger}>
                   {serverError}
@@ -221,6 +254,7 @@ export default function AddChildScreen() {
               ) : null}
               <Button
                 title={steps.length === 2 ? t("addchild.createChild") : t("addchild.next")}
+                variant="gradient"
                 pending={pending}
                 pendingTitle={t("parent.child.submitting")}
                 onPress={() => void submitInfo()}
@@ -242,7 +276,19 @@ export default function AddChildScreen() {
           ) : null}
 
           {phase === "done" ? (
-            <Card style={{ gap: spacing.md, alignItems: "center" }}>
+            <Card variant="hero" style={{ gap: spacing.md, alignItems: "center" }}>
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: radius.md,
+                  backgroundColor: tokens.pillBg,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <PartyPopper size={28} color={tokens.accent} strokeWidth={2} />
+              </View>
               {posture.paymentsOff ? (
                 <>
                   <AppText variant="title" style={{ textAlign: "center" }}>

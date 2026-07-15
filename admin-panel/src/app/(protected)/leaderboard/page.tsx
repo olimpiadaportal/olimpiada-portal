@@ -2,7 +2,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { getT, getLocale } from "@/i18n/server";
-import { FilterBar, type FilterBarSelect } from "@/components/FilterBar";
 import { SettingEditor, type SettingFieldKind } from "@/components/SettingEditor";
 import { SETTING_META, LOCALE_OPTIONS } from "@/lib/admin/settings-meta";
 import { getResource } from "@/lib/admin/resources";
@@ -12,134 +11,31 @@ import type { SeasonRow } from "@/lib/admin/leaderboard";
 
 // ---------------------------------------------------------------------------
 // Leaderboard management (L2) — Administrator-only.
-//   1) Boards viewer: get_leaderboard RPC via the admin's SESSION client
-//      (the RPC is granted to authenticated; privacy is applied server-side).
-//   2) Points formula: the three leaderboard.points.* system_settings keys,
+//   1) Points formula: the three leaderboard.points.* system_settings keys,
 //      edited through the existing typed SettingEditor + updateSetting action
 //      (requireAdmin + range validation + audit inside updateSetting).
+//   2) Named competition seasons: full CRUD via service-role RPCs.
 //   3) Season close / hard reset: service-role-only RPC behind resetLeaderboard
 //      (requireAdmin first, generic errors, audit row, double-confirm UI).
-// All searchParams are validated against whitelists server-side; the FilterBar
-// only writes the URL.
+// NOTE (Round 20): the ranked-students boards viewer was REMOVED from the
+// admin panel — standings are a product surface, not an admin operation. The
+// per-season standings modal inside SeasonManager remains (it documents what a
+// close freezes).
 // ---------------------------------------------------------------------------
 
-const BOARDS = ["points", "streak"] as const;
-const SCOPES = ["subject", "grade", "city", "school"] as const; // "" = global
-const PERIODS = ["month", "all_time"] as const;
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// The three formula keys shown in Section 2 (must exist in SETTING_META).
+// The three formula keys shown in Section 1 (must exist in SETTING_META).
 const LB_SETTING_KEYS = [
   "leaderboard.points.per_correct",
   "leaderboard.points.practice_daily_cap_per_subject",
   "leaderboard.points.olympiad_multiplier",
 ] as const;
 
-type SearchParams = Record<string, string | string[] | undefined>;
-
-function first(sp: SearchParams, key: string): string {
-  const v = sp[key];
-  if (typeof v === "string") return v;
-  if (Array.isArray(v)) return v[0] ?? "";
-  return "";
-}
-
-type BoardRow = {
-  rank: number;
-  display_name: string | null;
-  anon_tag: string | null;
-  value: number;
-  is_self: boolean;
-};
-
-export default async function LeaderboardAdminPage({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>;
-}) {
+export default async function LeaderboardAdminPage() {
   // Administrator-only (Content Managers are redirected to /unauthorized).
   await requireAdmin();
   const t = await getT();
   const locale = await getLocale();
   const supabase = await createClient();
-  const sp = await searchParams;
-
-  // ---- Validated searchParams --------------------------------------------
-  const boardRaw = first(sp, "board");
-  const board: (typeof BOARDS)[number] =
-    boardRaw === "streak" ? "streak" : "points"; // "" (default) = points
-  const scopeRaw = first(sp, "scope");
-  // The streak board is GLOBAL-ONLY (DB-enforced too) — force global there.
-  const scope =
-    board === "points" && (SCOPES as readonly string[]).includes(scopeRaw)
-      ? (scopeRaw as (typeof SCOPES)[number])
-      : ""; // "" = global
-  const sidRaw = first(sp, "sid").trim();
-  const sid = scope && UUID_RE.test(sidRaw) ? sidRaw : "";
-  const periodRaw = first(sp, "period");
-  const period: (typeof PERIODS)[number] =
-    periodRaw === "all_time" ? "all_time" : "month"; // "" (default) = month
-
-  // ---- Scope-id options (only the list the selected scope needs) -----------
-  let scopeOptions: { value: string; label: string }[] = [];
-  if (scope === "subject") {
-    const { data } = await supabase.from("subjects").select("id, name").order("name");
-    scopeOptions = ((data ?? []) as any[]).map((r) => ({
-      value: r.id as string,
-      label: String(r.name),
-    }));
-  } else if (scope === "grade") {
-    const { data } = await supabase.from("grades").select("id, name").order("level");
-    scopeOptions = ((data ?? []) as any[]).map((r) => ({
-      value: r.id as string,
-      label: String(r.name),
-    }));
-  } else if (scope === "city") {
-    const { data } = await supabase.from("districts").select("id, name").order("name");
-    scopeOptions = ((data ?? []) as any[]).map((r) => ({
-      value: r.id as string,
-      label: String(r.name),
-    }));
-  } else if (scope === "school") {
-    const { data } = await supabase
-      .from("schools")
-      .select("id, name, districts(name)")
-      .order("name");
-    scopeOptions = ((data ?? []) as any[]).map((r) => ({
-      value: r.id as string,
-      label: r.districts?.name
-        ? `${String(r.name)} — ${String(r.districts.name)}`
-        : String(r.name),
-    }));
-  }
-
-  // ---- Board rows (session client; the RPC is authenticated-granted) -------
-  const needsScopeId = scope !== "";
-  const canQuery = !needsScopeId || sid !== "";
-  let rows: BoardRow[] = [];
-  let loadError = false;
-  if (canQuery) {
-    const { data, error } = await supabase.rpc("get_leaderboard", {
-      p_board: board,
-      p_scope: scope === "" ? "global" : scope,
-      p_scope_id: sid === "" ? null : sid,
-      p_period: period,
-      p_limit: 100,
-    });
-    if (error) {
-      console.error("[admin] get_leaderboard failed", error.message);
-      loadError = true;
-    } else {
-      rows = ((data ?? []) as any[]).map((r) => ({
-        rank: Number(r.rank),
-        display_name: r.display_name ?? null,
-        anon_tag: r.anon_tag ?? null,
-        value: Number(r.value),
-        is_self: Boolean(r.is_self),
-      }));
-    }
-  }
 
   // ---- Points-formula settings values --------------------------------------
   const { data: settingRows } = await supabase
@@ -151,7 +47,7 @@ export default async function LeaderboardAdminPage({
     settingValue.set(row.key, row.value_json);
   }
 
-  // ---- Named competition seasons (Section 3) --------------------------------
+  // ---- Named competition seasons (Section 2) --------------------------------
   // Read on the admin's SESSION client — RLS policy lseasons_admin lets an
   // administrator SELECT. All writes go through the service-role RPCs in
   // lib/admin/leaderboard (behind requireAdmin). Status is derived client-side.
@@ -214,47 +110,6 @@ export default async function LeaderboardAdminPage({
   // difficulty-levels manage resource is registered.
   const difficultyResource = getResource("difficulty-levels");
 
-  // ---- FilterBar selects (conditional cascade, values already validated) ----
-  const selects: FilterBarSelect[] = [
-    {
-      key: "board",
-      value: board === "streak" ? "streak" : "",
-      allLabel: t("lb.board.points"),
-      ariaLabel: t("lb.board.label"),
-      options: [{ value: "streak", label: t("lb.board.streak") }],
-      resets: ["scope", "sid"],
-    },
-  ];
-  if (board === "points") {
-    selects.push({
-      key: "scope",
-      value: scope,
-      allLabel: t("lb.scope.global"),
-      ariaLabel: t("lb.scope.label"),
-      options: SCOPES.map((s) => ({ value: s, label: t(`lb.scope.${s}`) })),
-      resets: ["sid"],
-    });
-    if (scope) {
-      selects.push({
-        key: "sid",
-        value: sid,
-        allLabel: t("lb.scopeId.choose"),
-        ariaLabel: t(`lb.scope.${scope}`),
-        options: scopeOptions,
-      });
-    }
-  }
-  selects.push({
-    key: "period",
-    value: period === "all_time" ? "all_time" : "",
-    allLabel: t("lb.period.month"),
-    ariaLabel: t("lb.period.label"),
-    options: [{ value: "all_time", label: t("lb.period.all") }],
-  });
-
-  const valueHeader =
-    board === "streak" ? t("lb.col.streakDays") : t("lb.col.points");
-
   return (
     <div className="page">
       <div className="page-head">
@@ -262,73 +117,7 @@ export default async function LeaderboardAdminPage({
         <p className="muted">{t("lb.subtitle")}</p>
       </div>
 
-      {/* ---- Section 1: boards viewer ---- */}
-      <section className="card" style={{ marginBottom: 20 }}>
-        <h3>{t("lb.viewer.title")}</h3>
-        {board === "streak" && (
-          <p className="muted" style={{ marginTop: 4 }}>
-            {t("lb.streakGlobalNote")}
-          </p>
-        )}
-        <FilterBar
-          basePath="/leaderboard"
-          selects={selects}
-          clearLabel={t("qfilter.clear")}
-        />
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th style={{ width: 70 }}>{t("lb.col.rank")}</th>
-                <th>{t("lb.col.name")}</th>
-                <th className="nowrap">{valueHeader}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loadError && (
-                <tr>
-                  <td colSpan={3} className="muted">
-                    {t("lb.loadError")}
-                  </td>
-                </tr>
-              )}
-              {!loadError && !canQuery && (
-                <tr>
-                  <td colSpan={3} className="muted">
-                    {t("lb.needScopeId")}
-                  </td>
-                </tr>
-              )}
-              {!loadError && canQuery && rows.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="muted">
-                    {t("lb.empty")}
-                  </td>
-                </tr>
-              )}
-              {!loadError &&
-                rows.map((r) => (
-                  <tr key={r.rank}>
-                    <td className="nowrap">{r.rank}</td>
-                    <td>
-                      {r.display_name ? (
-                        r.display_name
-                      ) : (
-                        <span className="pill pill-muted">
-                          {t("lb.anonymized")}
-                          {r.anon_tag ? ` #${r.anon_tag}` : ""}
-                        </span>
-                      )}
-                    </td>
-                    <td className="nowrap">{r.value}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* ---- Section 2: points formula ---- */}
+      {/* ---- Section 1: points formula ---- */}
       <section className="card" style={{ marginBottom: 20 }}>
         <h3>{t("lb.config.title")}</h3>
         <p className="muted">{t("lb.config.desc")}</p>
@@ -347,7 +136,7 @@ export default async function LeaderboardAdminPage({
         </p>
       </section>
 
-      {/* ---- Section 3: named competition seasons (full CRUD) ---- */}
+      {/* ---- Section 2: named competition seasons (full CRUD) ---- */}
       <section className="card" style={{ marginBottom: 20 }}>
         <h3>{t("lbseason.title")}</h3>
         <p className="muted">{t("lbseason.desc")}</p>
@@ -412,7 +201,7 @@ export default async function LeaderboardAdminPage({
         />
       </section>
 
-      {/* ---- Section 4: monthly board reset (SEPARATE from named seasons) ---- */}
+      {/* ---- Section 3: monthly board reset (SEPARATE from named seasons) ---- */}
       <section className="card">
         <h3>{t("lb.reset.title")}</h3>
         <p className="muted">{t("lb.reset.desc")}</p>

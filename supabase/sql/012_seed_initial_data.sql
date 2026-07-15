@@ -179,23 +179,26 @@ on conflict (code) do nothing;
 -- -----------------------------------------------------------------------------
 -- Question types.
 -- -----------------------------------------------------------------------------
--- MCQ-only launch (migration 037; MCQ = 4 options since migration 040, owner
--- 2026-07-07): multiple_choice IS the MCQ (exactly 4 options, exactly 1 correct)
--- and the only type selectable for new questions; the option count is a FIXED
--- business rule (the admin question-types page no longer edits it). The rest are
--- seeded inactive until their structure rules are defined.
+-- MCQ-only launch (migration 037; FIVE options A–E since migration 055, Round
+-- 20): single_choice IS the platform MCQ (exactly 5 options, exactly 1 correct)
+-- and the only type selectable for new questions — the admin flow no longer
+-- asks for a type and bulk import defaults to single_choice (migration 059).
+-- The option count is a FIXED business rule (the admin question-types page no
+-- longer edits it). The rest are seeded inactive until their structure rules
+-- are defined.
 insert into public.question_types (code, name, supports_auto_grading, status, options_required, correct_required) values
-  ('single_choice',   'Single choice',   true,  'inactive', null, null),
-  ('multiple_choice', 'Multiple choice', true,  'active',   4,    1),
+  ('single_choice',   'Single choice',   true,  'active',   5,    1),
+  ('multiple_choice', 'Multiple choice', true,  'inactive', 4,    1),
   ('true_false',      'True / False',    true,  'inactive', 2,    1),
   ('numeric_input',   'Numeric input',   true,  'inactive', null, null),
   ('short_text',      'Short text',      false, 'inactive', null, null),
   ('open_text',       'Open / essay',    false, 'inactive', null, null)
 on conflict (code) do nothing;
--- Idempotent config for databases seeded before migration 040 (MCQ = 4 options).
-update public.question_types set options_required = 4, correct_required = 1 where code = 'multiple_choice';
-update public.question_types set status = 'inactive' where code <> 'multiple_choice';
-update public.question_types set status = 'active'   where code = 'multiple_choice';
+-- Idempotent config for databases seeded before migration 055 (5 options A–E,
+-- exactly one correct; single_choice is the one selectable type).
+update public.question_types set options_required = 5, correct_required = 1 where code = 'single_choice';
+update public.question_types set status = 'inactive' where code <> 'single_choice';
+update public.question_types set status = 'active'   where code = 'single_choice';
 
 -- -----------------------------------------------------------------------------
 -- Difficulty levels.
@@ -600,6 +603,28 @@ update public.schools
    and name ~ '[0-9]+[[:space:]]+nömrəli';
 
 -- -----------------------------------------------------------------------------
+-- City districts / rayons (migration 053). Bakı's 12 administrative rayons —
+-- per the State Statistics Committee's territorial classification these are the
+-- ONLY intra-city rayons in the country (Gəncə's Kəpəz/Nizami were ABOLISHED
+-- 04.03.2022 — president.az article 55708; verified by the Round-20 research
+-- pass). No other city gets artificial subdivisions.
+-- MUST run AFTER the schools seeds above: once a city has active districts, the
+-- school_district_guard trigger (003) requires a district on NEW school rows.
+-- The school→district assignments themselves are a DATA migration (061, the
+-- research-sourced Bakı backfill) and are intentionally NOT part of the seeds:
+-- schools with city_district_id NULL form the admin manual-review list.
+-- -----------------------------------------------------------------------------
+insert into public.city_districts (city_id, name)
+select d.id, r.name
+from public.districts d
+cross join (values
+  ('Binəqədi'), ('Qaradağ'), ('Xətai'), ('Xəzər'), ('Nərimanov'), ('Nəsimi'),
+  ('Nizami'), ('Pirallahı'), ('Sabunçu'), ('Səbail'), ('Suraxanı'), ('Yasamal')
+) r(name)
+where d.name in ('Bakı', 'Baku', 'Bakı şəhəri')
+on conflict (city_id, name) do nothing;
+
+-- -----------------------------------------------------------------------------
 -- Base system settings.
 -- -----------------------------------------------------------------------------
 insert into public.system_settings (key, value_json) values
@@ -619,7 +644,13 @@ insert into public.system_settings (key, value_json) values
   -- Round 11 (migration 025): giveaway window. duration_days is admin-editable;
   -- started_at is stamped by the exclusivity trigger when the flag flips ON.
   ('giveaway.duration_days',        '7'::jsonb),
-  ('giveaway.started_at',           '""'::jsonb)
+  ('giveaway.started_at',           '""'::jsonb),
+  -- Academic terms (migration 054): the CURRENT school term (Rüb 1..4) + year,
+  -- admin-editable from Settings. Daily-round generation reads the term
+  -- server-side (current_academic_term(), 011) and SNAPSHOTS it per round —
+  -- changing the term later never rewrites existing rounds.
+  ('academic.current_term',         '1'::jsonb),
+  ('academic.year',                 '"2026-2027"'::jsonb)
   -- Round 12 note: the design.* tokens seeded by migration 031 were REMOVED in
   -- migration 033 (the "Site Content & Design" design/font/colour editor was
   -- dropped in favour of a TEXT-ONLY Website Content Management module).
@@ -649,8 +680,9 @@ on conflict (key) do nothing;
 -- Points formula settings (weights come from difficulty_levels.weight).
 -- -----------------------------------------------------------------------------
 -- per_correct: base points per correct answer (× difficulty_levels.weight);
--- practice_daily_cap_per_subject: max practice+topic-test points per subject per
--- local day (anti-grind; olympiads uncapped); olympiad_multiplier: olympiad boost.
+-- olympiad_multiplier: olympiad boost. practice_daily_cap_per_subject is
+-- RETIRED since migration 057 (rated play is structurally one daily round per
+-- subject per day); the setting row is kept for config history only.
 insert into public.system_settings (key, value_json)
 values
   ('leaderboard.points.per_correct', '10'::jsonb),

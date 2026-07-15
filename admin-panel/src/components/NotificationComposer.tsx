@@ -29,6 +29,8 @@ function toUtcIso(local: string): string {
 }
 
 export type SubjectOption = { id: string; name: string };
+// ACTIVE olympiad packages for the "olympiad buyers" audience (az titles).
+export type PackageOption = { id: string; title: string };
 export type TemplateRow = {
   id: string;
   code: string;
@@ -58,12 +60,25 @@ export type ComposerStrings = {
   channelInAppNote: string;
   channelOffNote: string;
   audience: string;
+  audAllUsers: string;
   audAllParents: string;
   audAllChildren: string;
+  audOlympiadBuyers: string;
   audParent: string;
   audBySubject: string;
   subject: string;
   subjectChoose: string;
+  // Olympiad package picker (multi-select for the olympiad_buyers audience)
+  pkgLabel: string;
+  pkgSearch: string;
+  pkgEmpty: string; // no active packages exist at all
+  pkgNoMatch: string; // search filtered everything out
+  pkgChosen: string; // "{n} selected"
+  pkgSelectAll: string;
+  pkgClear: string;
+  pkgRemove: string; // aria-label for a single chip's × button
+  pkgHint: string;
+  zeroRecipients: string; // warning when the live count is 0
   recipients: string; // "{n} recipients"
   recipientsCounting: string;
   recipientsPick: string; // shown until a target is chosen
@@ -90,18 +105,26 @@ export type ComposerStrings = {
 };
 
 // Audiences that need a chosen target before a count is meaningful.
-const NEEDS_TARGET = new Set(["parent", "by_subject"]);
+const NEEDS_TARGET = new Set(["parent", "by_subject", "olympiad_buyers"]);
 // Above this many recipients a send is confirmed before dispatch.
 const LARGE_AUDIENCE = 50;
 
-type AudienceType = "all_parents" | "all_children" | "parent" | "by_subject";
+type AudienceType =
+  | "all_users"
+  | "all_parents"
+  | "all_children"
+  | "olympiad_buyers"
+  | "parent"
+  | "by_subject";
 
 export function NotificationComposer({
   subjects,
+  packages,
   templates,
   strings,
 }: {
   subjects: SubjectOption[];
+  packages: PackageOption[];
   templates: TemplateRow[];
   strings: ComposerStrings;
 }) {
@@ -110,6 +133,7 @@ export function NotificationComposer({
     <ComposerForm
       key={formKey}
       subjects={subjects}
+      packages={packages}
       templates={templates}
       strings={strings}
       onReset={() => setFormKey((k) => k + 1)}
@@ -123,11 +147,13 @@ function fmtCount(tpl: string, n: number): string {
 
 function ComposerForm({
   subjects,
+  packages,
   templates,
   strings,
   onReset,
 }: {
   subjects: SubjectOption[];
+  packages: PackageOption[];
   templates: TemplateRow[];
   strings: ComposerStrings;
   onReset: () => void;
@@ -145,6 +171,7 @@ function ComposerForm({
   const [audience, setAudience] = useState<AudienceType>("all_parents");
   const [parents, setParents] = useState<ParentSearchResult[]>([]);
   const [subjectId, setSubjectId] = useState("");
+  const [packageIds, setPackageIds] = useState<string[]>([]);
   const [schedule, setSchedule] = useState("");
 
   const [count, setCount] = useState<number | null>(null);
@@ -216,16 +243,26 @@ function ComposerForm({
     }
   }
 
+  // Deduped toggle / select-all / clear for the olympiad package multi-select.
+  function togglePackage(id: string) {
+    setPackageIds((cur) =>
+      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+    );
+  }
+
   // Live recipient count — debounced, recomputed on audience/target change.
-  // For "specific parent(s)" the target key is the joined list of picked ids, so
-  // the count updates as parents are added / removed.
+  // For "specific parent(s)" / "olympiad buyers" the target key is the joined
+  // list of picked ids, so the count updates as items are added / removed.
   const parentKey = parents.map((p) => p.id).join(",");
+  const packageKey = packageIds.join(",");
   const targetId =
     audience === "by_subject"
       ? subjectId
       : audience === "parent"
         ? parentKey
-        : "";
+        : audience === "olympiad_buyers"
+          ? packageKey
+          : "";
   useEffect(() => {
     if (debRef.current) clearTimeout(debRef.current);
     if (NEEDS_TARGET.has(audience) && !targetId) {
@@ -237,6 +274,8 @@ function ComposerForm({
         const n = await previewCount(audience, {
           profile_ids: audience === "parent" ? parents.map((p) => p.id) : undefined,
           subject_id: audience === "by_subject" ? subjectId : undefined,
+          package_ids:
+            audience === "olympiad_buyers" ? packageIds : undefined,
         });
         setCount(n);
       });
@@ -284,7 +323,10 @@ function ComposerForm({
         // Confirm before a large / broadcast send (only once a real count > 0 is
         // known — a null count means nothing to warn about yet).
         const n = count ?? 0;
-        const broadcast = audience === "all_parents" || audience === "all_children";
+        const broadcast =
+          audience === "all_users" ||
+          audience === "all_parents" ||
+          audience === "all_children";
         if ((broadcast || n >= LARGE_AUDIENCE) && n > 0) {
           const ok = window.confirm(fmtCount(strings.confirmLarge, n));
           if (!ok) e.preventDefault();
@@ -303,6 +345,27 @@ function ComposerForm({
         type="hidden"
         name="subject_id"
         value={audience === "by_subject" ? subjectId : ""}
+      />
+      {/* Comma-joined UUIDs of the selected olympiad packages + a JSON title
+          snapshot for the history view (server re-validates the ids; the DB
+          resolver ignores the extra titles key). */}
+      <input
+        type="hidden"
+        name="package_ids"
+        value={audience === "olympiad_buyers" ? packageKey : ""}
+      />
+      <input
+        type="hidden"
+        name="package_titles"
+        value={
+          audience === "olympiad_buyers"
+            ? JSON.stringify(
+                packages
+                  .filter((p) => packageIds.includes(p.id))
+                  .map((p) => p.title),
+              )
+            : ""
+        }
       />
       <input type="hidden" name="template_code" value={templateCode} />
       <input type="hidden" name="scheduled_at" value={toUtcIso(schedule)} />
@@ -435,10 +498,14 @@ function ComposerForm({
       <div className="field">
         <span>{strings.audience}</span>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* Fixed audience ORDER (owner-specified): all users, all parents,
+              all children, olympiad buyers, specific parent(s), by subject. */}
           {(
             [
+              ["all_users", strings.audAllUsers],
               ["all_parents", strings.audAllParents],
               ["all_children", strings.audAllChildren],
+              ["olympiad_buyers", strings.audOlympiadBuyers],
               ["parent", strings.audParent],
               ["by_subject", strings.audBySubject],
             ] as [AudienceType, string][]
@@ -492,10 +559,30 @@ function ComposerForm({
         </label>
       )}
 
+      {/* Target for olympiad_buyers — searchable multi-select of ACTIVE
+          packages with chips + select all / clear all. */}
+      {audience === "olympiad_buyers" && (
+        <PackagePicker
+          strings={strings}
+          packages={packages}
+          selected={packageIds}
+          onToggle={togglePackage}
+          onSelectAll={() => setPackageIds(packages.map((p) => p.id))}
+          onClear={() => setPackageIds([])}
+        />
+      )}
+
       {/* Live recipient count */}
       <p className="muted" style={{ margin: 0 }}>
         <strong>{countLabel}</strong>
       </p>
+      {/* Zero-recipient warning: the target is fully chosen, the count query
+          finished, and nobody would receive this send. */}
+      {!counting && targetChosen && count === 0 && (
+        <p className="form-error" style={{ margin: 0 }} role="alert">
+          {strings.zeroRecipients}
+        </p>
+      )}
 
       {/* Optional schedule */}
       <label className="field">
@@ -545,6 +632,154 @@ function ComposerForm({
         {state?.error && <span className="form-error">{state.error}</span>}
       </div>
     </form>
+  );
+}
+
+// Multi-select of ACTIVE olympiad packages for the "olympiad buyers" audience:
+// client-side search over the (small) package list, a checkbox list, selected
+// chips with per-chip remove, plus select-all / clear-all. The selection is
+// submitted as comma-joined uuids + a JSON title snapshot (the server
+// re-validates every id; the RPC re-checks ACTIVE status).
+function PackagePicker({
+  strings,
+  packages,
+  selected,
+  onToggle,
+  onSelectAll,
+  onClear,
+}: {
+  strings: ComposerStrings;
+  packages: PackageOption[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  onSelectAll: () => void;
+  onClear: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const term = q.trim().toLowerCase();
+  const shown = term
+    ? packages.filter((p) => p.title.toLowerCase().includes(term))
+    : packages;
+  const byId = new Map(packages.map((p) => [p.id, p]));
+
+  return (
+    <div className="field">
+      <span>{strings.pkgLabel}</span>
+
+      {packages.length === 0 ? (
+        <p className="muted" style={{ margin: "4px 0" }}>
+          {strings.pkgEmpty}
+        </p>
+      ) : (
+        <>
+          {/* Selected packages — chip list with per-chip remove + clear-all. */}
+          {selected.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              {selected.map((id) => {
+                const p = byId.get(id);
+                if (!p) return null;
+                return (
+                  <span
+                    key={id}
+                    className="checkbox-chip"
+                    style={{ gap: 6, padding: "4px 8px" }}
+                  >
+                    <span>{p.title}</span>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      style={{ padding: "0 4px", lineHeight: 1, fontSize: "1rem" }}
+                      aria-label={strings.pkgRemove}
+                      title={strings.pkgRemove}
+                      onClick={() => onToggle(id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={strings.pkgSearch}
+            autoComplete="off"
+            aria-label={strings.pkgSearch}
+          />
+
+          <div
+            role="group"
+            aria-label={strings.pkgLabel}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              maxHeight: 220,
+              overflowY: "auto",
+              marginTop: 6,
+            }}
+          >
+            {shown.length === 0 && (
+              <p className="muted" style={{ margin: "4px 0" }}>
+                {strings.pkgNoMatch}
+              </p>
+            )}
+            {shown.map((p) => (
+              <label
+                key={p.id}
+                className="checkbox-chip"
+                style={{ justifyContent: "flex-start" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(p.id)}
+                  onChange={() => onToggle(p.id)}
+                />
+                <span>{p.title}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="row-actions" style={{ gap: 8, marginTop: 6 }}>
+            <button
+              type="button"
+              className="btn-ghost"
+              style={{ padding: "2px 8px", fontSize: "0.8rem" }}
+              onClick={onSelectAll}
+            >
+              {strings.pkgSelectAll}
+            </button>
+            {selected.length > 0 && (
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ padding: "2px 8px", fontSize: "0.8rem" }}
+                onClick={onClear}
+              >
+                {strings.pkgClear}
+              </button>
+            )}
+          </div>
+
+          <span className="muted" style={{ fontSize: "0.8rem" }}>
+            {selected.length > 0
+              ? fmtCount(strings.pkgChosen, selected.length)
+              : strings.pkgHint}
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 

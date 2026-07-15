@@ -1,24 +1,47 @@
 // Student profile section cards (mobile port of web ChildProfile +
 // StickerThemePicker + PalettePicker + the read-only school-info card):
-//   * identity header — avatar (real picker via the BFF), name, 8-digit ID
-//     (mono, grouped "1234 5678") and the "only a parent can change" hint,
+//   * identity header — Avatar (initials fallback on the shared component,
+//     real picker via the BFF), name, 8-digit ID (mono, grouped "1234 5678")
+//     and the "only a parent can change" hint,
 //   * editable name (bffUpdateStudentName — web childUpdateOwnName twin),
 //   * security — change password DIRECTLY via supabase.auth.updateUser after
 //     the web childChangeOwnPassword client checks (≥8 chars, ≠ the child's
 //     8-digit ID, confirm-match),
-//   * read-only school info (grade via formatGradeLabel, city, school),
+//   * read-only school info (ListRow facts: grade via formatGradeLabel, city,
+//     school),
 //   * character-sticker THEME picker + light-mode PALETTE picker — both write
-//     on the child's own JWT (RLS self-row) and re-skin live.
+//     on the child's own JWT (RLS self-row) and re-skin live. Palette swatches
+//     are DERIVED from the ARENA_LIGHT tokens (single source of truth — no
+//     inlined palette hexes).
 import React, { useState } from "react";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  Check,
+  GraduationCap,
+  KeyRound,
+  MapPin,
+  Palette,
+  School,
+  Sticker,
+  UserRound,
+  X,
+} from "lucide-react-native";
 import { AppText } from "@/components/AppText";
+import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ListRow } from "@/components/ListRow";
 import { PasswordField, TextField } from "@/components/TextField";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing, type ArenaPalette } from "@/theme/tokens";
+import {
+  ARENA_LIGHT,
+  ARENA_PALETTES,
+  radius,
+  spacing,
+  type ArenaPalette,
+} from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { bffUpdateStudentName } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
@@ -37,39 +60,43 @@ import { useAuthStore } from "@/features/auth/authStore";
 
 type T = (key: string) => string;
 
+/** Section title row: soft icon chip + label (shared card header pattern). */
+function SectionTitleRow({ icon, title }: { icon: React.ReactNode; title: string }) {
+  const { tokens } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: radius.sm,
+          backgroundColor: tokens.chipBg,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {icon}
+      </View>
+      <AppText variant="title" style={{ fontSize: 16, flex: 1 }} numberOfLines={1}>
+        {title}
+      </AppText>
+    </View>
+  );
+}
+
 /* ------------------------------ identity card ------------------------------ */
 
 export function StudentIdentityCard({ profile, t }: { profile: StudentProfile; t: T }) {
-  const { tokens } = useTheme();
+  const profileId = useAuthStore((s) => s.profileId);
   return (
     <Card style={{ gap: spacing.lg }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
-        <View
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: 32,
-            backgroundColor: tokens.chipBg,
-            borderWidth: 1,
-            borderColor: tokens.border,
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-          }}
-        >
-          {profile.avatarUrl ? (
-            <Image
-              source={{ uri: profile.avatarUrl }}
-              style={{ width: 64, height: 64 }}
-              contentFit="cover"
-              accessibilityLabel={profile.name || "—"}
-            />
-          ) : (
-            <AppText variant="title" color={tokens.accent}>
-              {profile.initial}
-            </AppText>
-          )}
-        </View>
+        <Avatar
+          name={profile.name || "—"}
+          seed={profileId}
+          url={profile.avatarUrl}
+          size={64}
+        />
         <View style={{ flex: 1, gap: 2 }}>
           <AppText variant="title" numberOfLines={1}>
             {profile.name || "—"}
@@ -126,9 +153,10 @@ export function StudentNameSection({ profile, t }: { profile: StudentProfile; t:
 
   return (
     <Card style={{ gap: spacing.md }}>
-      <AppText variant="title" style={{ fontSize: 16 }}>
-        {t("prof2.accountInfo")}
-      </AppText>
+      <SectionTitleRow
+        icon={<UserRound size={18} color={tokens.accent} strokeWidth={2} />}
+        title={t("prof2.accountInfo")}
+      />
       {!open ? (
         <View
           style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
@@ -247,9 +275,10 @@ export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T
 
   return (
     <Card style={{ gap: spacing.md }}>
-      <AppText variant="title" style={{ fontSize: 16 }}>
-        {t("prof2.security")}
-      </AppText>
+      <SectionTitleRow
+        icon={<KeyRound size={18} color={tokens.accent} strokeWidth={2} />}
+        title={t("prof2.security")}
+      />
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("prof2.securityHint")}
       </AppText>
@@ -311,36 +340,35 @@ export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T
 /* --------------------------- read-only school info -------------------------- */
 
 export function SchoolInfoCard({ profile, t }: { profile: StudentProfile; t: T }) {
+  const { tokens } = useTheme();
   const { locale } = useT();
   const gradeInfo = profile.grade
     ? formatGradeLabel(profile.grade.level, locale, profile.grade.name)
     : profile.classGrade ?? "—";
-  const rows: { label: string; value: string }[] = [
-    { label: t("prof2.grade"), value: gradeInfo },
-    { label: t("prof2.city"), value: profile.city ?? "—" },
-    { label: t("prof2.school"), value: profile.school ?? "—" },
-  ];
   return (
-    <Card style={{ gap: spacing.md }}>
-      <AppText variant="title" style={{ fontSize: 16 }}>
-        {t("prof2.schoolInfo")}
-      </AppText>
+    <Card style={{ gap: spacing.sm }}>
+      <SectionTitleRow
+        icon={<School size={18} color={tokens.accent} strokeWidth={2} />}
+        title={t("prof2.schoolInfo")}
+      />
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("prof2.schoolInfoHint")}
       </AppText>
-      <View style={{ gap: spacing.sm }}>
-        {rows.map((r) => (
-          <View
-            key={r.label}
-            style={{ flexDirection: "row", justifyContent: "space-between", gap: spacing.md }}
-          >
-            <AppText variant="muted">{r.label}</AppText>
-            <AppText variant="label" style={{ flexShrink: 1, textAlign: "right" }} numberOfLines={2}>
-              {r.value}
-            </AppText>
-          </View>
-        ))}
-      </View>
+      <ListRow
+        icon={<GraduationCap size={18} color={tokens.muted} strokeWidth={2} />}
+        title={t("prof2.grade")}
+        value={gradeInfo}
+      />
+      <ListRow
+        icon={<MapPin size={18} color={tokens.muted} strokeWidth={2} />}
+        title={t("prof2.city")}
+        value={profile.city ?? "—"}
+      />
+      <ListRow
+        icon={<School size={18} color={tokens.muted} strokeWidth={2} />}
+        title={t("prof2.school")}
+        value={profile.school ?? "—"}
+      />
     </Card>
   );
 }
@@ -381,6 +409,7 @@ function SelectableCard({
         gap: spacing.xs,
         alignItems: "center",
         opacity: disabled && !pending ? 0.6 : pressed ? 0.8 : 1,
+        transform: [{ scale: pressed ? 0.97 : 1 }],
       })}
     >
       {children}
@@ -406,9 +435,7 @@ function SelectableCard({
             justifyContent: "center",
           }}
         >
-          <AppText color="#ffffff" style={{ fontSize: 11, fontWeight: "800" }}>
-            ✓
-          </AppText>
+          <Check size={12} color={tokens.surface} strokeWidth={3} />
         </View>
       ) : null}
     </Pressable>
@@ -439,9 +466,10 @@ export function StickerThemeSection({ t }: { t: T }) {
 
   return (
     <Card style={{ gap: spacing.md }}>
-      <AppText variant="title" style={{ fontSize: 16 }}>
-        {t("stk.sectionTitle")}
-      </AppText>
+      <SectionTitleRow
+        icon={<Sticker size={18} color={tokens.accent} strokeWidth={2} />}
+        title={t("stk.sectionTitle")}
+      />
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("stk.sectionDesc")}
       </AppText>
@@ -468,9 +496,7 @@ export function StickerThemeSection({ t }: { t: T }) {
                 justifyContent: "center",
               }}
             >
-              <AppText variant="title" color={tokens.muted}>
-                ✕
-              </AppText>
+              <X size={20} color={tokens.muted} strokeWidth={2} />
             </View>
           </SelectableCard>
 
@@ -499,9 +525,7 @@ export function StickerThemeSection({ t }: { t: T }) {
                 }}
               >
                 {th.samples.length === 0 ? (
-                  <AppText variant="title" color={tokens.muted}>
-                    ★
-                  </AppText>
+                  <Sticker size={20} color={tokens.muted} strokeWidth={2} />
                 ) : (
                   th.samples.map((url, i) => (
                     <Image
@@ -551,16 +575,16 @@ export function StickerThemeSection({ t }: { t: T }) {
 
 /* ------------------------------ palette picker ------------------------------ */
 
-// Preview swatches per palette — mirror of the web PalettePicker PREVIEWS
-// (visually matching the globals.css palette blocks / arena light tokens).
-const PREVIEWS: { id: ArenaPalette; bg: string; a: string; b: string }[] = [
-  { id: "default", bg: "#fffbf5", a: "#7c3aed", b: "#ff8a00" },
-  { id: "sky", bg: "#f2f8ff", a: "#1e88e5", b: "#f6b93b" },
-  { id: "bubblegum", bg: "#fff2fb", a: "#e0399e", b: "#9b34e0" },
-  { id: "mint", bg: "#f0fbf6", a: "#12b886", b: "#f6b93b" },
-  { id: "sunset", bg: "#fff8f0", a: "#f5731f", b: "#ffb23e" },
-  { id: "rainbow", bg: "#fbf6ff", a: "#7c5cff", b: "#ff6bad" },
-];
+// Preview swatches DERIVED from the arena light tokens (redesign §4-Student):
+// each palette previews its own background + its two leading accents. One
+// source of truth — when ARENA_LIGHT changes, the picker follows automatically.
+const PREVIEWS: { id: ArenaPalette; bg: string; a: string; b: string }[] =
+  ARENA_PALETTES.map((id) => ({
+    id,
+    bg: ARENA_LIGHT[id].bg,
+    a: ARENA_LIGHT[id].lime,
+    b: ARENA_LIGHT[id].blue,
+  }));
 
 export function PaletteSection({ current, t }: { current: ArenaPalette; t: T }) {
   const { tokens } = useTheme();
@@ -583,9 +607,10 @@ export function PaletteSection({ current, t }: { current: ArenaPalette; t: T }) 
 
   return (
     <Card style={{ gap: spacing.md }}>
-      <AppText variant="title" style={{ fontSize: 16 }}>
-        {t("pal.title")}
-      </AppText>
+      <SectionTitleRow
+        icon={<Palette size={18} color={tokens.accent} strokeWidth={2} />}
+        title={t("pal.title")}
+      />
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("pal.hint")}
       </AppText>

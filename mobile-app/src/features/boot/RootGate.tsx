@@ -19,6 +19,7 @@ import {
 import { isSupabaseConfigured } from "@/lib/env";
 import { clampLocale, useLocaleStore } from "@/i18n";
 import { useAuthStore } from "@/features/auth/authStore";
+import { useSeenWelcome } from "./seenWelcome";
 import {
   BootErrorView,
   ForceUpdateScreen,
@@ -43,11 +44,15 @@ export function RootGate() {
   const hydrateLocale = useLocaleStore((s) => s.hydrate);
   const setLocale = useLocaleStore((s) => s.setLocale);
 
-  // Boot: restore the session + persisted locale once.
+  const seenHydrated = useSeenWelcome((s) => s.hydrated);
+  const hydrateSeenWelcome = useSeenWelcome((s) => s.hydrate);
+
+  // Boot: restore the session + persisted locale + welcome-once flag.
   useEffect(() => {
     void hydrateLocale();
+    void hydrateSeenWelcome();
     void restore();
-  }, [hydrateLocale, restore]);
+  }, [hydrateLocale, hydrateSeenWelcome, restore]);
 
   // Foreground: refresh config + session state (maintenance/force-update can
   // interrupt a running session; staleTime keeps this cheap).
@@ -103,7 +108,7 @@ export function RootGate() {
 
   // ---- gates, in priority order ----
 
-  if (!localeHydrated || authStatus === "restoring") return <SplashView />;
+  if (!localeHydrated || !seenHydrated || authStatus === "restoring") return <SplashView />;
 
   if (!isSupabaseConfigured) {
     return <BootErrorView onRetry={() => void config.refetch()} />;

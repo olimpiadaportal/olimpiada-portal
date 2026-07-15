@@ -89,6 +89,9 @@ create table if not exists public.questions (
   -- 3-status lifecycle (migration 040, owner 2026-07-07): in_review/published/rejected.
   status         public.content_status not null default 'in_review',
   primary_locale public.content_locale not null default 'az',  -- question presentation language
+  -- School term Rüb 1..4 (migration 054): derived from the question's topic
+  -- (kept equal by trigger in 011). NULL = legacy/unreviewed.
+  term           smallint check (term between 1 and 4),
   created_by     uuid references public.profiles (id) on delete set null,
   updated_by     uuid references public.profiles (id) on delete set null,
   created_at     timestamptz not null default now(),
@@ -97,6 +100,10 @@ create table if not exists public.questions (
 
 comment on table public.questions is
   'Language-neutral question metadata. Localized body lives in question_translations. Only published questions are readable by subscribed students (RLS in 010).';
+
+comment on column public.questions.term is
+  'Derived from the question''s topic (kept equal by trigger). NULL = legacy/unreviewed; '
+  'excluded from daily-round generation.';
 
 -- -----------------------------------------------------------------------------
 -- question_translations : localized question body/prompt.

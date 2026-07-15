@@ -10,12 +10,21 @@ import React, { useEffect } from "react";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  CircleCheck,
+  CircleMinus,
+  CircleX,
+  Clock,
+  ListChecks,
+} from "lucide-react-native";
 import { AppText } from "@/components/AppText";
+import { ProgressRing } from "@/components/ProgressRing";
+import { SectionHeader } from "@/components/SectionHeader";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing, radius } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useAttemptRow, useTestResult } from "./queries";
-import { usedMinutes } from "./logic";
+import { isLiveAttempt, usedMinutes } from "./logic";
 import {
   ArenaButton,
   BackBar,
@@ -41,11 +50,13 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
 
   const isOlympiad = row?.kind === "olympiad";
   const homeTab = isOlympiad ? OLYMPIADS_TAB : TESTS_TAB;
-  const kindOk = row !== null && (row.kind === "test" || row.kind === "olympiad");
-  const live =
-    row?.status === "in_progress" &&
-    !!row.deadline_at &&
-    Date.parse(row.deadline_at) > Date.now();
+  const kindOk =
+    row !== null &&
+    (row.kind === "test" || row.kind === "daily" || row.kind === "olympiad");
+  // Live = timed-future OR untimed practice (Round-20 null deadline): both
+  // belong in the player — probing the idempotent submit here must never
+  // finalize a running attempt.
+  const live = row !== null && isLiveAttempt(row, Date.now());
   const closed = row !== null && row.status !== "graded" && row.status !== "in_progress";
 
   // A live attempt belongs in the player, not here.
@@ -143,24 +154,30 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
         </AppText>
       </View>
 
-      {/* ---- Score card ---- */}
-      <Panel arena={arena} style={{ alignItems: "center", gap: spacing.sm }}>
-        <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-          <AppText variant="mono" color={arena.lime} style={{ fontSize: 44, fontWeight: "700" }}>
-            {score}
+      {/* ---- Score hero: animated ring (score/max) with % inside ---- */}
+      <Panel arena={arena} style={{ alignItems: "center", gap: spacing.md, paddingVertical: spacing.xl }}>
+        <ProgressRing
+          progress={max > 0 ? score / max : 0}
+          size={148}
+          strokeWidth={11}
+          gradient
+          trackColor={arena.panel2}
+        >
+          <AppText variant="display" color={arena.ink} style={{ fontVariant: ["tabular-nums"] }}>
+            {pct}%
           </AppText>
-          <AppText variant="mono" color={arena.muted} style={{ fontSize: 20 }}>
-            {" "}/ {max}
+          <AppText variant="mono" color={arena.muted} style={{ fontSize: 15 }}>
+            {score}/{max}
           </AppText>
-        </View>
-        <AppText variant="mono" color={arena.ink} style={{ fontSize: 18 }}>
-          {pct}%
-        </AppText>
+        </ProgressRing>
         {usedMin !== null ? (
-          <AppText color={arena.muted} style={{ fontSize: 13 }}>
-            {t("test.result.timeSpent")}: {usedMin} {t("test.result.minutes")} / {durationMin}{" "}
-            {t("test.result.minutes")}
-          </AppText>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+            <Clock size={14} color={arena.muted} strokeWidth={2} />
+            <AppText color={arena.muted} style={{ fontSize: 13 }}>
+              {t("test.result.timeSpent")}: {usedMin} {t("test.result.minutes")} / {durationMin}{" "}
+              {t("test.result.minutes")}
+            </AppText>
+          </View>
         ) : null}
       </Panel>
 
@@ -168,11 +185,11 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
       <View style={{ flexDirection: "row", gap: spacing.md }}>
         {(
           [
-            [breakdown.correct, t("test.review.correct"), arena.lime],
-            [breakdown.wrong, t("test.review.wrong"), arena.red],
-            [breakdown.skipped, t("test.review.skipped"), arena.gold],
+            [breakdown.correct, t("test.review.correct"), arena.lime, CircleCheck],
+            [breakdown.wrong, t("test.review.wrong"), arena.red, CircleX],
+            [breakdown.skipped, t("test.review.skipped"), arena.gold, CircleMinus],
           ] as const
-        ).map(([value, label, color]) => (
+        ).map(([value, label, color, Glyph]) => (
           <View
             key={label}
             style={{
@@ -183,9 +200,10 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
               borderRadius: radius.md,
               paddingVertical: spacing.md,
               alignItems: "center",
-              gap: 2,
+              gap: spacing.xs,
             }}
           >
+            <Glyph size={18} color={color} strokeWidth={2} />
             <AppText variant="mono" color={color} style={{ fontSize: 22, fontWeight: "700" }}>
               {value}
             </AppText>
@@ -200,7 +218,9 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
       <View style={{ gap: spacing.md }}>
         <ArenaButton
           arena={arena}
+          kind="gradient"
           title={t("test.result.review")}
+          icon={<ListChecks size={16} color="#ffffff" strokeWidth={2.5} />}
           onPress={() =>
             router.push({
               pathname: "/(student)/test/review/[attemptId]",
@@ -217,9 +237,11 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
       </View>
 
       {/* ---- Per-topic breakdown ---- */}
-      <AppText variant="title" color={arena.ink}>
-        {t("test.result.topics")}
-      </AppText>
+      <SectionHeader
+        title={t("test.result.topics")}
+        color={arena.muted}
+        style={{ marginTop: spacing.sm }}
+      />
       <Panel arena={arena} style={{ gap: spacing.lg }}>
         {topics.length === 0 ? (
           <AppText color={arena.muted}>{t("test.result.noTopics")}</AppText>

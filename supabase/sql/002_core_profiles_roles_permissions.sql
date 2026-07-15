@@ -119,7 +119,8 @@ create table if not exists public.students (
   profile_id         uuid primary key references public.profiles (id) on delete cascade,
   grade_id           uuid,                     -- FK -> grades(id) added in 011
   school_id          uuid,                     -- FK -> schools(id) added in 011
-  district_id        uuid,                     -- FK -> districts(id) added in 011
+  district_id        uuid,                     -- FK -> districts(id) added in 011 (NB: districts = the CITIES table)
+  city_district_id   uuid,                     -- FK -> city_districts(id) added in 011 (intra-city rayon, Round 21)
   birth_year_optional smallint,
   -- Parent-created child account fields (Stage 7 business model).
   -- created_by_parent_profile_id index is added in 011.

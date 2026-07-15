@@ -50,10 +50,16 @@ import {
 } from "@/lib/auth/subscriptionService";
 
 type City = { id: string; name: string };
+// NAMING (Round 21): `districts` is the CITIES table (historic naming) —
+// School.district_id and the `districtId` state mean the CITY. The real
+// intra-city district (rayon) is `city_districts` / School.city_district_id /
+// the `cityDistrictId` state, stored as students.city_district_id.
+type CityDistrict = { id: string; name: string; city_id: string };
 type School = {
   id: string;
   name: string;
   district_id: string | null;
+  city_district_id?: string | null;
   is_private?: boolean;
   school_number?: number | null;
 };
@@ -97,6 +103,7 @@ const INTERVALS = ["week", "month", "year"] as const;
 
 export function AddChildWizard({
   cities,
+  cityDistricts,
   schools,
   grades,
   subjects,
@@ -105,6 +112,7 @@ export function AddChildWizard({
   freeAccessActive = false,
 }: {
   cities: City[];
+  cityDistricts: CityDistrict[];
   schools: School[];
   grades: Grade[];
   subjects: Subj[];
@@ -148,7 +156,8 @@ export function AddChildWizard({
   // Step 1 — info.
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [districtId, setDistrictId] = useState("");
+  const [districtId, setDistrictId] = useState(""); // the CITY (historic naming)
+  const [cityDistrictId, setCityDistrictId] = useState(""); // the rayon (Round 21)
   const [schoolId, setSchoolId] = useState("");
   const [gradeId, setGradeId] = useState("");
   const [infoErrors, setInfoErrors] = useState<string[]>([]);
@@ -167,10 +176,27 @@ export function AddChildWizard({
   const [payError, setPayError] = useState<string | null>(null);
   const [childUniqueId, setChildUniqueId] = useState<string | null>(null);
 
-  // Schools available for the chosen city (filtered client-side by district_id).
-  const citySchools = districtId
+  // Rayons of the chosen city. A city with NO active rayons skips the district
+  // field entirely (its schools attach directly to the city).
+  const cityRayons = districtId
+    ? cityDistricts.filter((d) => d.city_id === districtId)
+    : [];
+  const hasDistricts = cityRayons.length > 0;
+
+  // Schools available for the chosen city (filtered client-side by district_id
+  // = the CITY). When a rayon is chosen, narrow to that rayon's schools PLUS
+  // the schools without a rayon yet (they must stay selectable), listed after
+  // the exact matches so the grouping stays subtle.
+  const citySchoolsAll = districtId
     ? schools.filter((s) => s.district_id === districtId)
     : [];
+  const citySchools =
+    hasDistricts && cityDistrictId
+      ? [
+          ...citySchoolsAll.filter((s) => s.city_district_id === cityDistrictId),
+          ...citySchoolsAll.filter((s) => s.city_district_id == null),
+        ]
+      : citySchoolsAll;
 
   // Live, AUTHORITATIVE quote whenever the plan step inputs change.
   useEffect(() => {
@@ -213,6 +239,11 @@ export function AddChildWizard({
     if (!firstName.trim()) local.push("auth.child.err.firstNameRequired");
     if (!lastName.trim()) local.push("auth.child.err.lastNameRequired");
     if (!districtId) local.push("addchild.err.cityRequired");
+    // Round 21: the rayon is required whenever the chosen city has active
+    // rayons (the create RPC re-enforces this server-side).
+    if (districtId && hasDistricts && !cityDistrictId) {
+      local.push("addchild.err.districtRequired");
+    }
     if (!schoolId) local.push("addchild.err.schoolRequired");
     if (!gradeId) local.push("addchild.err.gradeRequired");
     if (local.length) {
@@ -224,6 +255,7 @@ export function AddChildWizard({
     fd.set("first_name", firstName.trim());
     fd.set("last_name", lastName.trim());
     fd.set("district_id", districtId);
+    fd.set("city_district_id", cityDistrictId); // the rayon ("" → null server-side)
     fd.set("school_id", schoolId);
     fd.set("grade_id", gradeId);
     // Display fallbacks (the DB also stores free-text city/school/grade label).
@@ -340,6 +372,7 @@ export function AddChildWizard({
                 value={districtId}
                 onChange={(e) => {
                   setDistrictId(e.target.value);
+                  setCityDistrictId(""); // rayon belongs to the previous city
                   setSchoolId(""); // reset school when city changes
                 }}
                 required
@@ -352,6 +385,46 @@ export function AddChildWizard({
                 ))}
               </select>
             </label>
+
+            {/* Round 21: rayon between City and School — disabled until a city
+                is chosen; HIDDEN entirely when the chosen city has no active
+                rayons (its schools attach directly to the city). */}
+            {(!districtId || hasDistricts) && (
+              <label className="field">
+                <span className="field-label">{tt("addchild.field.district")} *</span>
+                <select
+                  value={cityDistrictId}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setCityDistrictId(next);
+                    // Keep the chosen school only if it fits the new rayon
+                    // (schools without a rayon stay valid); never mutate the
+                    // rayon FROM the school — only the reverse.
+                    setSchoolId((prev) => {
+                      const s = schools.find((x) => x.id === prev);
+                      return s &&
+                        s.district_id === districtId &&
+                        (!next || s.city_district_id == null || s.city_district_id === next)
+                        ? prev
+                        : "";
+                    });
+                  }}
+                  disabled={!districtId}
+                  required={hasDistricts}
+                >
+                  <option value="">
+                    {districtId
+                      ? tt("addchild.field.selectDistrict")
+                      : tt("addchild.field.cityFirst")}
+                  </option>
+                  {cityRayons.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <label className="field">
               <span className="field-label">{tt("addchild.field.school")} *</span>

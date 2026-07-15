@@ -39,6 +39,8 @@ export async function POST(
       firstName: bodyStr(body, "first_name"),
       lastName: bodyStr(body, "last_name"),
       districtId: bodyStr(body, "district_id"),
+      // Round 21: rayon — required by the server when the city has active rayons.
+      cityDistrictId: bodyStr(body, "city_district_id"),
       schoolId: bodyStr(body, "school_id"),
       gradeId: bodyStr(body, "grade_id"),
       schoolName: bodyStr(body, "school_name"),

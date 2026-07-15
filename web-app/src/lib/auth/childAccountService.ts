@@ -71,11 +71,26 @@ export async function createChild(params: {
       p_school_name: info.schoolName ?? null,
       p_class_grade: info.classGrade ?? null,
       p_grade_id: info.gradeId ?? null,
-      // D2 wizard: structured catalog FKs (migration 017 — 10-arg signature).
+      // D2 wizard: structured catalog FKs (migration 017; Round 21 migration 064
+      // added p_city_district_id — the 11-arg signature). NAMING: p_district_id
+      // is the CITY (historic naming); p_city_district_id is the real rayon.
       p_district_id: info.districtId ?? null,
       p_school_id: info.schoolId ?? null,
+      p_city_district_id: info.cityDistrictId || null,
     });
-    if (rpcErr) throw new Error(rpcErr.message);
+    if (rpcErr) {
+      // Round 21: surface the RPC's rayon validation as a FIELD error instead
+      // of the generic create failure. hint 'district_required' = the chosen
+      // city has active rayons but none was posted; the other check_violations
+      // ("district … is not in city …", "school … is not in district …") mean
+      // a stale/contradicting rayon reached the server.
+      const districtViolation =
+        rpcErr.hint === "district_required" ||
+        (rpcErr.code === "23514" && /district/i.test(rpcErr.message ?? ""));
+      const err = new Error(rpcErr.message) as Error & { i18nKey?: string };
+      if (districtViolation) err.i18nKey = "addchild.err.districtRequired";
+      throw err;
+    }
     const row = Array.isArray(rows) ? rows[0] : rows;
     const studentProfileId: string | undefined = row?.new_student_profile_id;
     if (!studentProfileId) throw new Error("provisioning returned no student id");
@@ -86,7 +101,9 @@ export async function createChild(params: {
     // Saga cleanup: remove the orphaned Auth user (cascades the auto-created
     // profile). The RPC transaction already rolled back any partial DB writes.
     await admin.auth.admin.deleteUser(authUserId).catch(() => {});
-    return { ok: false, errors: ["auth.child.err.createFailed"], detail: (e as Error).message };
+    // Round 21: a tagged rayon violation keeps its specific field error key.
+    const key = (e as { i18nKey?: string }).i18nKey ?? "auth.child.err.createFailed";
+    return { ok: false, errors: [key], detail: (e as Error).message };
   }
 }
 

@@ -5,23 +5,31 @@
 // flows go through the BFF client (bffDeleteAccount) or supabase.auth.
 import React, { useState } from "react";
 import { Modal, Pressable, Switch, View } from "react-native";
-import { Image } from "expo-image";
+import {
+  KeyRound,
+  Mail,
+  Phone,
+  TriangleAlert,
+} from "lucide-react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppText } from "@/components/AppText";
+import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ListRow } from "@/components/ListRow";
 import { PasswordField } from "@/components/TextField";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing } from "@/theme/tokens";
+import { radius, shadow, spacing } from "@/theme/tokens";
 import { supabase } from "@/lib/supabase";
 import { bffDeleteAccount } from "@/lib/api";
+import { useAuthStore } from "@/features/auth/authStore";
 import {
   fetchPrefs,
   savePrefs,
   type NotificationPrefs,
 } from "@/features/notifications/useNotifications";
 import { AvatarSection } from "./AvatarPicker";
-import { initialsOf, type OwnProfile } from "./useOwnProfile";
+import { type OwnProfile } from "./useOwnProfile";
 
 type T = (key: string) => string;
 
@@ -29,36 +37,12 @@ type T = (key: string) => string;
 
 export function IdentityCard({ profile, t }: { profile: OwnProfile; t: T }) {
   const { tokens } = useTheme();
+  const profileId = useAuthStore((s) => s.profileId);
   const name = profile.displayName.trim() || profile.email;
   return (
     <Card style={{ gap: spacing.lg }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
-        <View
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: 32,
-            backgroundColor: tokens.chipBg,
-            borderWidth: 1,
-            borderColor: tokens.border,
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-          }}
-        >
-          {profile.avatarUrl ? (
-            <Image
-              source={{ uri: profile.avatarUrl }}
-              style={{ width: 64, height: 64 }}
-              contentFit="cover"
-              accessibilityLabel={name}
-            />
-          ) : (
-            <AppText variant="title" color={tokens.accent}>
-              {initialsOf(profile.displayName, profile.email)}
-            </AppText>
-          )}
-        </View>
+        <Avatar name={name} seed={profileId} url={profile.avatarUrl} size={64} />
         <View style={{ flex: 1, gap: 2 }}>
           <AppText variant="title" numberOfLines={1}>
             {name}
@@ -74,23 +58,32 @@ export function IdentityCard({ profile, t }: { profile: OwnProfile; t: T }) {
       {/* Real photo picker (expo-image-picker → BFF avatar endpoint). */}
       <AvatarSection hasAvatar={profile.avatarUrl !== null} t={t} />
 
-      <View style={{ gap: spacing.sm }}>
-        <InfoRow label={t("prof2.email")} value={profile.email || "—"} />
-        <InfoRow label={t("profile.phoneLabel")} value={profile.phone ?? "—"} />
+      <View>
+        <InfoRow
+          icon={<Mail size={18} color={tokens.muted} strokeWidth={2} />}
+          label={t("prof2.email")}
+          value={profile.email || "—"}
+        />
+        <InfoRow
+          icon={<Phone size={18} color={tokens.muted} strokeWidth={2} />}
+          label={t("profile.phoneLabel")}
+          value={profile.phone ?? "—"}
+        />
       </View>
     </Card>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", gap: spacing.md }}>
-      <AppText variant="muted">{label}</AppText>
-      <AppText variant="label" style={{ flexShrink: 1, textAlign: "right" }} numberOfLines={1}>
-        {value}
-      </AppText>
-    </View>
-  );
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return <ListRow icon={icon} title={label} value={value} chevron={false} />;
 }
 
 /* ----------------------------- change password ----------------------------- */
@@ -128,12 +121,12 @@ export function PasswordSection({ t }: { t: T }) {
 
   return (
     <Card style={{ gap: spacing.md }}>
-      <AppText variant="title" style={{ fontSize: 16 }}>
-        {t("prof2.security")}
-      </AppText>
-      <AppText variant="muted" style={{ fontSize: 12 }}>
-        {t("prof2.securityHint")}
-      </AppText>
+      <ListRow
+        icon={<KeyRound size={18} color={tokens.accent} strokeWidth={2} />}
+        title={t("prof2.security")}
+        subtitle={t("prof2.securityHint")}
+        chevron={false}
+      />
       {!open ? (
         <Button title={t("profile.changePassword")} variant="ghost" onPress={() => setOpen(true)} />
       ) : (
@@ -290,24 +283,17 @@ export function PrefRow({
 
 /* -------------------------------- link rows -------------------------------- */
 
-export function LinkRow({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingVertical: spacing.md,
-        opacity: pressed ? 0.7 : 1,
-      })}
-    >
-      <AppText variant="label">{label}</AppText>
-      <AppText variant="muted">{"›"}</AppText>
-    </Pressable>
-  );
+export function LinkRow({
+  label,
+  onPress,
+  icon,
+}: {
+  label: string;
+  onPress: () => void;
+  /** Leading lucide glyph (18–20, usually accent-tinted). */
+  icon?: React.ReactNode;
+}) {
+  return <ListRow icon={icon} title={label} onPress={onPress} />;
 }
 
 /* ------------------------------- danger zone ------------------------------- */
@@ -339,11 +325,25 @@ export function DangerZone({ t, onDeleted }: { t: T; onDeleted: () => void }) {
     setError(null);
   };
 
+  // Red-tinted bordered card: the danger token carries the border AND a soft
+  // wash (6-digit hex + alpha byte) so the zone reads as danger in both themes.
   return (
-    <Card style={{ gap: spacing.md, borderColor: tokens.danger }}>
-      <AppText variant="title" style={{ fontSize: 16 }} color={tokens.danger}>
-        {t("prof2.danger")}
-      </AppText>
+    <Card
+      variant="flat"
+      style={{
+        gap: spacing.md,
+        borderColor: tokens.danger,
+        backgroundColor: /^#[0-9a-fA-F]{6}$/.test(tokens.danger)
+          ? `${tokens.danger}12`
+          : tokens.surface,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+        <TriangleAlert size={18} color={tokens.danger} strokeWidth={2} />
+        <AppText variant="title" style={{ fontSize: 16 }} color={tokens.danger}>
+          {t("prof2.danger")}
+        </AppText>
+      </View>
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("prof2.dangerHint")}
       </AppText>
@@ -356,14 +356,26 @@ export function DangerZone({ t, onDeleted }: { t: T; onDeleted: () => void }) {
           style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
         />
         <View
-          style={{
-            backgroundColor: tokens.surface,
-            borderTopLeftRadius: radius.xl,
-            borderTopRightRadius: radius.xl,
-            padding: spacing.xl,
-            gap: spacing.lg,
-          }}
+          style={[
+            {
+              backgroundColor: tokens.surface,
+              borderTopLeftRadius: radius.xl,
+              borderTopRightRadius: radius.xl,
+              padding: spacing.xl,
+              gap: spacing.lg,
+            },
+            shadow("float", tokens.shadow),
+          ]}
         >
+          <View
+            style={{
+              alignSelf: "center",
+              width: 44,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: tokens.border,
+            }}
+          />
           <AppText variant="title" color={tokens.danger}>
             {t("account.delete")}
           </AppText>

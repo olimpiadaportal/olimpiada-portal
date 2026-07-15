@@ -11,6 +11,7 @@ import {
   fetchAttemptRow,
   fetchBreakdownRows,
   fetchRecentAttempts,
+  fetchRoundReadiness,
   fetchSetupTopics,
   fetchSubjectAccess,
   fetchTestAttempt,
@@ -23,6 +24,7 @@ export const TQK = {
   access: (profileId: string, giveaway: boolean) =>
     ["tests", "access", profileId, giveaway] as const,
   attempts: (profileId: string) => ["tests", "attempts", profileId] as const,
+  readiness: (profileId: string) => ["tests", "readiness", profileId] as const,
   setup: (subjectId: string, profileId: string) =>
     ["tests", "setup", subjectId, profileId] as const,
   attempt: (attemptId: string, locale: Locale) =>
@@ -67,6 +69,23 @@ export function useRecentAttempts() {
     queryFn: () => fetchRecentAttempts(profileId as string),
     enabled: !!profileId,
     staleTime: 15_000,
+    meta: { noPersist: true },
+  });
+}
+
+/**
+ * Round-readiness pre-flight (Round 21) — read-only booleans for the subject
+ * cards. NEVER blocks the page: the home screen fails OPEN (web parity) when
+ * this is pending/errored, so it renders exactly like today until data lands.
+ */
+export function useRoundReadiness() {
+  const profileId = useAuthStore((s) => s.profileId);
+  return useQuery({
+    queryKey: TQK.readiness(profileId ?? "-"),
+    queryFn: fetchRoundReadiness,
+    enabled: !!profileId,
+    staleTime: 60_000,
+    retry: 1,
     meta: { noPersist: true },
   });
 }

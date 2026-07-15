@@ -37,6 +37,13 @@ export type ChildInfo = {
   // The wizard makes these mandatory; validateChildInfo enforces it server-side.
   districtId?: string | null;
   schoolId?: string | null;
+  // Round 21: the intra-city district (rayon) = city_districts.id. NAMING:
+  // districtId above is the CITY (historic naming — table `districts` stores
+  // cities); THIS is the real rayon, stored as students.city_district_id.
+  // Optional here: whether the chosen city REQUIRES one is decided server-side
+  // (create RPC / updateChildProfileCore) against city_districts — never by
+  // the client.
+  cityDistrictId?: string | null;
 };
 
 export type ValidationResult =
@@ -78,6 +85,13 @@ export function validateChildInfo(info: ChildInfo): ValidationResult {
   // A malformed (non-UUID) id is treated the same as a missing one.
   if (!isUuid(info.districtId?.trim() ?? "")) {
     errors.push("addchild.err.cityRequired");
+  }
+  // Round 21: the rayon is OPTIONAL at this layer (requiredness depends on the
+  // city's rayon catalog and is enforced server-side by the create RPC and
+  // updateChildProfileCore) — but when provided it must be UUID-shaped.
+  const cityDistrictId = info.cityDistrictId?.trim() ?? "";
+  if (cityDistrictId && !isUuid(cityDistrictId)) {
+    errors.push("addchild.err.districtRequired");
   }
   if (!isUuid(info.schoolId?.trim() ?? "")) {
     errors.push("addchild.err.schoolRequired");

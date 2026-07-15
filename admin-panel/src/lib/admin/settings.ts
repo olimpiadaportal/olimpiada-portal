@@ -149,10 +149,29 @@ export async function updateSetting(
     return { error: "settings.err.invalidJson", key };
   }
 
+  // Key-specific rule: the current academic term is a WHOLE number 1..4 (the
+  // 1..4 range itself is covered by the generic min/max rule below).
+  if (key === "academic.current_term" && !Number.isInteger(parsed)) {
+    return { error: "settings.err.invalidJson", key };
+  }
+
+  // Key-specific rule: the academic year is a short non-empty label (e.g.
+  // "2026-2027") — it drives daily-round generation, so it may never be
+  // blanked out from the panel.
+  if (
+    key === "academic.year" &&
+    (typeof parsed !== "string" ||
+      parsed.trim().length === 0 ||
+      parsed.length > 20)
+  ) {
+    return { error: "settings.err.invalidJson", key };
+  }
+
   // Generic numeric range rule: any "number" setting with min/max bounds in
   // SETTING_META is hard-validated here (client min/max attributes are UX only).
   // Covers the leaderboard points-formula keys (per_correct 1..1000,
-  // daily cap 0..100000, olympiad multiplier 0.1..10).
+  // daily cap 0..100000, olympiad multiplier 0.1..10) and the academic term
+  // (1..4).
   if (meta.kind === "number") {
     const n = parsed as number; // isValidForKind already guaranteed finite number
     if (

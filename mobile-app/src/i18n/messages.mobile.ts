@@ -34,6 +34,21 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pw.show": "Şifrəni göstər",
     "mob.pw.hide": "Şifrəni gizlət",
     "mob.arena.streakAtRisk": "Bu gün bir raund həll et, yoxsa seriyan sıfırlanacaq!",
+    "mob.onb.s1.title": "Hər gün yeni raund",
+    "mob.onb.s1.body":
+      "Gündəlik 25 suallıq raundları həll et, xal topla və real reytinqdə yüksəl.",
+    "mob.onb.s2.title": "Olimpiadalara hazırlıq",
+    "mob.onb.s2.body":
+      "Olimpiada paketini bir dəfə əldə et — suallara ömürlük çıxışın olsun.",
+    "mob.onb.s3.title": "Valideyn nəzarəti",
+    "mob.onb.s3.body":
+      "Abunəlikləri və ödənişləri valideyn idarə edir — uşaq hesabı təhlükəsiz qalır.",
+    "mob.onb.skip": "Keç",
+    "mob.onb.next": "İrəli",
+    "mob.login.about": "OlympIQ haqqında",
+    "mob.notif.today": "Bu gün",
+    "mob.notif.yesterday": "Dünən",
+    "mob.notif.unread": "Oxunmamış: {n}",
   },
   en: {
     "mob.welcome.tagline": "The most fun way to prepare for olympiads",
@@ -64,6 +79,21 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pw.show": "Show password",
     "mob.pw.hide": "Hide password",
     "mob.arena.streakAtRisk": "Play a round today or your streak resets!",
+    "mob.onb.s1.title": "A new round every day",
+    "mob.onb.s1.body":
+      "Solve the daily 25-question rounds, earn points and climb a real leaderboard.",
+    "mob.onb.s2.title": "Olympiad preparation",
+    "mob.onb.s2.body":
+      "Get an olympiad package once — and keep lifetime access to its questions.",
+    "mob.onb.s3.title": "Parents stay in control",
+    "mob.onb.s3.body":
+      "Parents manage subscriptions and payments — the child account stays safe.",
+    "mob.onb.skip": "Skip",
+    "mob.onb.next": "Next",
+    "mob.login.about": "About OlympIQ",
+    "mob.notif.today": "Today",
+    "mob.notif.yesterday": "Yesterday",
+    "mob.notif.unread": "Unread: {n}",
   },
   ru: {
     "mob.welcome.tagline": "Самый увлекательный способ готовиться к олимпиадам",
@@ -94,5 +124,20 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pw.show": "Показать пароль",
     "mob.pw.hide": "Скрыть пароль",
     "mob.arena.streakAtRisk": "Реши раунд сегодня, иначе серия сгорит!",
+    "mob.onb.s1.title": "Каждый день — новый раунд",
+    "mob.onb.s1.body":
+      "Решай ежедневные раунды из 25 вопросов, зарабатывай очки и поднимайся в настоящем рейтинге.",
+    "mob.onb.s2.title": "Подготовка к олимпиадам",
+    "mob.onb.s2.body":
+      "Приобретите олимпиадный пакет один раз — доступ к его вопросам останется навсегда.",
+    "mob.onb.s3.title": "Родители всё контролируют",
+    "mob.onb.s3.body":
+      "Подписками и платежами управляют родители — детский аккаунт остаётся в безопасности.",
+    "mob.onb.skip": "Пропустить",
+    "mob.onb.next": "Далее",
+    "mob.login.about": "Об OlympIQ",
+    "mob.notif.today": "Сегодня",
+    "mob.notif.yesterday": "Вчера",
+    "mob.notif.unread": "Непрочитанных: {n}",
   },
 };

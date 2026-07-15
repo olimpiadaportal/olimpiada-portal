@@ -1,12 +1,22 @@
 // Themed text. System sans everywhere (Azerbaijani ə-safe — the mobile
 // counterpart of the web Arial rule); platform monospace only for numeric
 // accents (variant "mono"), mirroring the web's JetBrains Mono usage.
+// Redesign additions (plan §1): "display" hero tier (32/40 tight, 800) and
+// "eyebrow" section-label tier (12/16, 600, +0.4 tracking, muted).
 import React from "react";
 import { Platform, Text, type TextProps, type TextStyle } from "react-native";
 import { useTheme } from "@/theme/ThemeProvider";
-import { fontSize } from "@/theme/tokens";
+import { display, fontSize, weight } from "@/theme/tokens";
 
-type Variant = "body" | "muted" | "label" | "title" | "heading" | "mono";
+type Variant =
+  | "body"
+  | "muted"
+  | "label"
+  | "title"
+  | "heading"
+  | "display"
+  | "eyebrow"
+  | "mono";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
@@ -22,9 +32,22 @@ export function AppText({
   const byVariant: Record<Variant, TextStyle> = {
     body: {},
     muted: { color: color ?? tokens.muted, fontSize: fontSize.sm },
-    label: { fontSize: fontSize.sm, fontWeight: "600" },
-    title: { fontSize: fontSize.xl, fontWeight: "700" },
-    heading: { fontSize: fontSize.xxl, fontWeight: "800" },
+    label: { fontSize: fontSize.sm, fontWeight: weight.semibold },
+    title: { fontSize: fontSize.xl, fontWeight: weight.bold },
+    heading: { fontSize: fontSize.xxl, fontWeight: weight.heavy },
+    display: {
+      fontSize: display.size,
+      lineHeight: display.lineHeight,
+      fontWeight: weight.heavy,
+      letterSpacing: -0.3,
+    },
+    eyebrow: {
+      color: color ?? tokens.muted,
+      fontSize: fontSize.xs,
+      lineHeight: 16,
+      fontWeight: weight.semibold,
+      letterSpacing: 0.4,
+    },
     mono: { fontFamily: MONO, fontVariant: ["tabular-nums"] },
   };
 

@@ -9,6 +9,9 @@ export type FilterOption = { value: string; label: string };
 
 // Canonical validated filter state (server-provided; the URL is the source of
 // truth — every change router.replace()s a new URL and the server re-renders).
+// `review` is the Round-21 review-chip filter ("optionE" | "needsTerm" | "");
+// it has no control here but is carried through so changing a filter never
+// silently drops an active chip.
 export type FilterCurrent = {
   q: string;
   subject: string;
@@ -16,6 +19,7 @@ export type FilterCurrent = {
   subtopic: string;
   grade: string;
   status: string;
+  review: string;
   size: string;
 };
 
@@ -62,6 +66,7 @@ export function QuestionFilters({
     if (merged.subtopic) p.set("subtopic", merged.subtopic);
     if (merged.grade) p.set("grade", merged.grade);
     if (merged.status) p.set("status", merged.status);
+    if (merged.review) p.set("review", merged.review);
     if (merged.size && merged.size !== "25") p.set("size", merged.size);
     const qs = p.toString();
     return qs ? `/questions?${qs}` : "/questions";
@@ -91,7 +96,8 @@ export function QuestionFilters({
       current.topic ||
       current.subtopic ||
       current.grade ||
-      current.status,
+      current.status ||
+      current.review,
   );
 
   return (
@@ -182,6 +188,7 @@ export function QuestionFilters({
             subtopic: "",
             grade: "",
             status: "",
+            review: "",
           })}
         >
           {tt("qfilter.clear")}

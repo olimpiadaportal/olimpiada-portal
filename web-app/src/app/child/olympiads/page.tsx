@@ -49,14 +49,14 @@ export default async function ChildOlympiadsPage({
       supabase
         .from("olympiad_packages")
         .select(
-          "id, price_amount, currency, questions_per_attempt, event_starts_at, subjects(name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+          "id, price_amount, currency, event_starts_at, subjects(name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
         )
         .eq("status", "active")
         .order("created_at"),
       supabase
         .from("olympiad_purchases")
         .select(
-          "olympiad_package_id, status, olympiad_packages(questions_per_attempt, olympiad_package_translations(locale, title))",
+          "olympiad_package_id, status, olympiad_packages(olympiad_package_translations(locale, title))",
         )
         .eq("student_profile_id", child.profileId)
         .eq("status", "active"),
@@ -75,6 +75,32 @@ export default async function ChildOlympiadsPage({
 
   const owned = (purchases ?? []) as any[];
   const ownedIds = new Set(owned.map((p) => p.olympiad_package_id));
+
+  // Round 21: REAL published pool size per package (RPC, migration 065) —
+  // questions_per_attempt was a display-legacy default (25) the admin form
+  // never writes, so a 50-question package still said "25". One call covers
+  // both sections (owned packages may be archived, so union the id sets).
+  // Packages with 0 published questions return no row → coalesce to 0.
+  const allPackageIds = Array.from(
+    new Set<string>([
+      ...((packages ?? []) as any[]).map((p) => p.id),
+      ...owned.map((p) => p.olympiad_package_id),
+    ]),
+  )
+    .filter(Boolean)
+    .slice(0, 100); // DB-side cap; active listings never realistically exceed it.
+  const poolCounts = new Map<string, number>();
+  if (allPackageIds.length > 0) {
+    const { data: countRows } = await supabase.rpc("get_olympiad_pool_counts", {
+      p_package_ids: allPackageIds,
+    });
+    for (const r of (countRows ?? []) as {
+      package_id: string;
+      question_count: number;
+    }[]) {
+      poolCounts.set(r.package_id, Number(r.question_count ?? 0) || 0);
+    }
+  }
 
   // Live attempt (server deadline still running); resolve which package it
   // belongs to via its first drawn question (each pool question is PRIVATE to
@@ -118,7 +144,7 @@ export default async function ChildOlympiadsPage({
     .filter((p) => !ownedIds.has(p.id))
     .map((p): { item: PlannedOlympiad; ts: number } => {
       const tr = pickTr(p.olympiad_package_translations);
-      const n = Number(p.questions_per_attempt ?? 25) || 25;
+      const n = poolCounts.get(p.id) ?? 0;
       const questionsText = `${n} ${t("oly4.questions")}`;
       const subject: string | null = p.subjects?.name ?? null;
       const typeName: string | null = p.olympiad_types?.name ?? null;
@@ -184,12 +210,12 @@ export default async function ChildOlympiadsPage({
   // Playable list ("Olimpiadalarım"): owned purchases ONLY — packages are
   // purchase-only in every payment mode (free windows cover subjects, not
   // olympiads; start_olympiad_attempt enforces the same server-side).
-  // L16: each row shows the package's real questions_per_attempt.
+  // Round 21: each row shows the package's REAL published pool count.
   type Playable = { id: string; title: string; questions: number };
   const playable: Playable[] = owned.map((p) => ({
     id: p.olympiad_package_id,
     title: ownedTitle(p),
-    questions: Number(p.olympiad_packages?.questions_per_attempt ?? 25) || 25,
+    questions: poolCounts.get(p.olympiad_package_id) ?? 0,
   }));
 
   return (

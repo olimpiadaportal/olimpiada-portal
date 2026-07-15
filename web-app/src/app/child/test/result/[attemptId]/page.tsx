@@ -45,14 +45,16 @@ export default async function TestResultPage({
     .maybeSingle();
   if (!att) notFound();
   const a = att as any;
-  // Both timed kinds share this page since migration 047; olympiad attempts
-  // exit back to the olympiads list instead of the test home.
-  if (a.kind !== "test" && a.kind !== "olympiad") notFound();
+  // All test-engine kinds share this page since migrations 047/056; olympiad
+  // attempts exit back to the olympiads list instead of the test home.
+  if (a.kind !== "test" && a.kind !== "olympiad" && a.kind !== "daily") notFound();
   const isOlympiad = a.kind === "olympiad";
   const homeHref = isOlympiad ? "/child/olympiads" : "/child/test";
 
   if (a.status === "in_progress") {
-    const live = a.deadline_at && new Date(a.deadline_at).getTime() > Date.now();
+    // Untimed practice (deadline_at null, migration 057) is ALWAYS live —
+    // visiting this URL early must never finalize a running attempt.
+    const live = !a.deadline_at || new Date(a.deadline_at).getTime() > Date.now();
     if (live) redirect(`/child/test/run/${attemptId}`);
   } else if (a.status !== "graded") {
     redirect(`${homeHref}?notice=closed`);
@@ -70,13 +72,16 @@ export default async function TestResultPage({
   const pct = max > 0 ? Math.round((score / max) * 100) : 0;
 
   // Time context: minutes actually used, clamped to the test duration.
-  const durationMin = Math.round(Number(a.duration_seconds ?? 1500) / 60);
+  // Untimed practice (duration_seconds null, migration 057) has no limit to
+  // clamp against or display.
+  const durationMin = a.duration_seconds ? Math.round(Number(a.duration_seconds) / 60) : null;
   let usedMin: number | null = null;
   const endIso = a.submitted_at ?? result.submitted_at;
   if (a.started_at && endIso) {
     const ms = new Date(endIso).getTime() - new Date(a.started_at).getTime();
     if (Number.isFinite(ms) && ms >= 0) {
-      usedMin = Math.min(Math.max(1, Math.round(ms / 60_000)), durationMin);
+      const raw = Math.max(1, Math.round(ms / 60_000));
+      usedMin = durationMin !== null ? Math.min(raw, durationMin) : raw;
     }
   }
 
@@ -109,8 +114,12 @@ export default async function TestResultPage({
         <p className="tst-percent mono">{pct}%</p>
         {usedMin !== null && (
           <p className="arena-muted" style={{ margin: "6px 0 0" }}>
-            {t("test.result.timeSpent")}: {usedMin} {t("test.result.minutes")} / {durationMin}{" "}
-            {t("test.result.minutes")}
+            {t("test.result.timeSpent")}: {usedMin} {t("test.result.minutes")}
+            {durationMin !== null && (
+              <>
+                {" "}/ {durationMin} {t("test.result.minutes")}
+              </>
+            )}
           </p>
         )}
         <div className="tst-result-actions">

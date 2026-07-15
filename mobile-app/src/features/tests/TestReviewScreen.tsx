@@ -10,6 +10,7 @@ import React, { useMemo, useState } from "react";
 import { FlatList, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Check, CircleMinus, Lightbulb, X } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
@@ -160,26 +161,42 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
               style={({ pressed }) => ({
                 flexDirection: "row",
                 alignItems: "center",
-                gap: spacing.xs,
+                gap: spacing.sm,
                 borderWidth: 1,
                 borderColor: active ? arena.blue : arena.line,
-                backgroundColor: active ? tint(arena.blue, 0.14) : arena.panel,
+                backgroundColor: active ? arena.blue : arena.panel,
                 borderRadius: 999,
                 paddingVertical: spacing.sm,
-                paddingHorizontal: spacing.md,
+                paddingHorizontal: spacing.lg,
+                minHeight: 40,
                 opacity: pressed ? 0.8 : 1,
               })}
             >
               <AppText
                 variant="label"
-                color={active ? arena.blue : arena.muted}
+                color={active ? "#ffffff" : arena.muted}
                 style={{ fontSize: 13 }}
               >
                 {tab.label}
               </AppText>
-              <AppText variant="mono" color={active ? arena.blue : arena.dim} style={{ fontSize: 12 }}>
-                {tab.count}
-              </AppText>
+              <View
+                style={{
+                  backgroundColor: active ? "rgba(255,255,255,0.22)" : arena.panel2,
+                  borderRadius: 999,
+                  paddingVertical: 1,
+                  paddingHorizontal: spacing.sm,
+                  minWidth: 22,
+                  alignItems: "center",
+                }}
+              >
+                <AppText
+                  variant="mono"
+                  color={active ? "#ffffff" : arena.dim}
+                  style={{ fontSize: 12 }}
+                >
+                  {tab.count}
+                </AppText>
+              </View>
             </Pressable>
           );
         })}
@@ -230,9 +247,26 @@ function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
   const selected = new Set(q.selected_option_ids ?? []);
   const stateColor =
     state === "correct" ? arena.lime : state === "wrong" ? arena.red : arena.gold;
+  const pillIcon =
+    state === "correct" ? (
+      <Check size={12} color={arena.lime} strokeWidth={3} />
+    ) : state === "wrong" ? (
+      <X size={12} color={arena.red} strokeWidth={3} />
+    ) : (
+      <CircleMinus size={12} color={arena.dim} strokeWidth={2.5} />
+    );
 
   return (
-    <Panel arena={arena} style={{ gap: spacing.md, borderColor: tint(stateColor, 0.35) }}>
+    <Panel
+      arena={arena}
+      style={{
+        gap: spacing.md,
+        borderColor: tint(stateColor, 0.35),
+        // Verdict accent edge (web review-card parity).
+        borderLeftWidth: 3,
+        borderLeftColor: tint(stateColor, 0.8),
+      }}
+    >
       <View
         style={{
           flexDirection: "row",
@@ -248,6 +282,7 @@ function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
           arena={arena}
           tone={state === "correct" ? "ok" : state === "wrong" ? "bad" : "off"}
           label={t(`test.review.${state}`)}
+          icon={pillIcon}
         />
       </View>
 
@@ -273,6 +308,7 @@ function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
             : isSelected
               ? tint(arena.red, 0.1)
               : arena.panel2;
+          const chipColor = o.is_correct ? arena.lime : isSelected ? arena.red : null;
           return (
             <View
               key={o.option_id}
@@ -285,24 +321,53 @@ function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
                 backgroundColor: bg,
                 borderRadius: radius.md,
                 padding: spacing.md,
+                minHeight: 48,
               }}
             >
-              <AppText variant="mono" color={arena.muted} style={{ fontSize: 13 }}>
-                {LETTERS[oi] ?? String(oi + 1)}
-              </AppText>
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: radius.sm,
+                  backgroundColor: chipColor ? tint(chipColor, 0.16) : arena.panel,
+                  borderWidth: chipColor ? 0 : 1,
+                  borderColor: arena.line,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <AppText
+                  variant="label"
+                  color={chipColor ?? arena.muted}
+                  style={{ fontSize: 13 }}
+                >
+                  {LETTERS[oi] ?? String(oi + 1)}
+                </AppText>
+              </View>
               <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
                 {o.text ?? ""}
               </AppText>
               <View style={{ alignItems: "flex-end", gap: 2 }}>
                 {isSelected ? (
-                  <AppText color={arena.muted} style={{ fontSize: 11 }}>
-                    {t("test.review.your")}
-                  </AppText>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                    {!o.is_correct ? (
+                      <X size={11} color={arena.red} strokeWidth={3} />
+                    ) : null}
+                    <AppText
+                      color={o.is_correct ? arena.muted : arena.red}
+                      style={{ fontSize: 11 }}
+                    >
+                      {t("test.review.your")}
+                    </AppText>
+                  </View>
                 ) : null}
                 {o.is_correct ? (
-                  <AppText variant="label" color={arena.lime} style={{ fontSize: 11 }}>
-                    ✓ {t("test.review.correctAnswer")}
-                  </AppText>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                    <Check size={11} color={arena.lime} strokeWidth={3} />
+                    <AppText variant="label" color={arena.lime} style={{ fontSize: 11 }}>
+                      {t("test.review.correctAnswer")}
+                    </AppText>
+                  </View>
                 ) : null}
               </View>
             </View>
@@ -315,13 +380,18 @@ function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
           style={{
             backgroundColor: arena.panel2,
             borderRadius: radius.md,
+            borderWidth: 1,
+            borderColor: arena.line,
             padding: spacing.md,
             gap: spacing.xs,
           }}
         >
-          <AppText variant="label" color={arena.ink} style={{ fontSize: 13 }}>
-            {t("test.review.explanation")}
-          </AppText>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+            <Lightbulb size={14} color={arena.gold} strokeWidth={2} />
+            <AppText variant="label" color={arena.ink} style={{ fontSize: 13 }}>
+              {t("test.review.explanation")}
+            </AppText>
+          </View>
           <AppText color={arena.muted} style={{ fontSize: 14, lineHeight: 20 }}>
             {q.explanation}
           </AppText>

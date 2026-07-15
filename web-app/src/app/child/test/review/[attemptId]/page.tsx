@@ -15,6 +15,8 @@ type ReviewQuestion = {
   question_id: string;
   body: string | null;
   prompt: string | null;
+  /** Optional locale-aware figure ref (migration 057). */
+  image?: { bucket: string; path: string } | null;
   is_correct: boolean | null;
   selected_option_ids: string[];
   explanation: string | null;
@@ -86,6 +88,11 @@ export default async function TestReviewPage({
       question_id: q.question_id,
       body: q.body,
       prompt: q.prompt,
+      // Question figure → public URL (getPublicUrl is a pure URL builder).
+      image_url:
+        q.image?.bucket && q.image?.path
+          ? supabase.storage.from(q.image.bucket).getPublicUrl(q.image.path).data.publicUrl
+          : null,
       state,
       explanation: q.explanation,
       options: q.options.map((o) => ({
@@ -103,6 +110,7 @@ export default async function TestReviewPage({
     "test.review.your", "test.review.correctAnswer", "test.review.explanation",
     "test.review.filterAll", "test.review.filterCorrect",
     "test.review.filterWrong", "test.review.filterSkipped",
+    "test.img.alt", "test.img.hint", "test.img.close",
   ]) {
     reviewDict[k] = t(k);
   }

@@ -28,6 +28,105 @@ export type SiteContentEntry = {
   multiline?: boolean; // long text → render a textarea instead of an input
 };
 
+// =============================================================================
+// Site typography (owner item 16) — "Sayt şrifti".
+//
+// One system_settings key stores the sitewide font + base sizes; the web-app
+// reads it server-side (web-app/src/lib/siteTypography.ts mirrors these
+// constants — update BOTH files together). Every applied font-family always
+// falls back to the Azerbaijani-safe stack; the admin UI previews each font
+// with the schwa/glyph test line so missing ə/Ə support is visible BEFORE save.
+// =============================================================================
+
+export const SITE_TYPOGRAPHY_KEY = "site.typography";
+
+export type SiteTypography = {
+  fontFamily: string; // one of FONT_LIBRARY names
+  baseFontSize: number; // px, 12–72
+  headingFontSize: number; // px, 12–72
+  buttonFontSize: number; // px, 12–72
+};
+
+export const TYPOGRAPHY_DEFAULTS: SiteTypography = {
+  fontFamily: "Arial",
+  baseFontSize: 16,
+  headingFontSize: 32,
+  buttonFontSize: 15,
+};
+
+export const FONT_SIZE_MIN = 12;
+export const FONT_SIZE_MAX = 72;
+
+// Azerbaijani-safe fallback stack — ALWAYS appended after the chosen family.
+export const SAFE_FONT_STACK =
+  'Arial, Helvetica, "Segoe UI", system-ui, sans-serif';
+
+// Curated font library. `google: false` = system font (no stylesheet needed).
+export const FONT_LIBRARY: { name: string; google: boolean }[] = [
+  { name: "Mulish", google: true },
+  { name: "Arial", google: false },
+  { name: "Inter", google: true },
+  { name: "Roboto", google: true },
+  { name: "Open Sans", google: true },
+  { name: "Lato", google: true },
+  { name: "Poppins", google: true },
+  { name: "Nunito", google: true },
+  { name: "Montserrat", google: true },
+  { name: "Source Sans 3", google: true },
+  { name: "Ubuntu", google: true },
+  { name: "Work Sans", google: true },
+  { name: "DM Sans", google: true },
+  { name: "Noto Sans", google: true },
+  { name: "Manrope", google: true },
+  { name: "Rubik", google: true },
+  { name: "Fira Sans", google: true },
+  { name: "IBM Plex Sans", google: true },
+  { name: "Quicksand", google: true },
+  { name: "Raleway", google: true },
+];
+
+export const FONT_NAMES = FONT_LIBRARY.map((f) => f.name);
+
+// The glyph test the admin SEES for every font option (fixed, not localized —
+// it is an alphabet check, identical in all UI languages).
+export const AZ_GLYPH_TEST = "Əlifba sınağı — ə Ə ğ Ğ ş Ş ç Ç ü Ü ö Ö ı İ";
+
+/** CSS font-family value for a library font (chosen family + safe stack). */
+export function fontStackFor(name: string): string {
+  return name === "Arial" ? SAFE_FONT_STACK : `"${name}", ${SAFE_FONT_STACK}`;
+}
+
+// ONE Google Fonts stylesheet covering every google-hosted library font at
+// 400/700 — loaded ONLY on the Website Content page so the pickers/preview
+// render each candidate in its real face (display=swap; CSP allows the two
+// Google Fonts origins explicitly, see next.config.mjs).
+export const GOOGLE_FONTS_PREVIEW_URL =
+  "https://fonts.googleapis.com/css2?" +
+  FONT_LIBRARY.filter((f) => f.google)
+    .map((f) => `family=${f.name.replace(/ /g, "+")}:wght@400;700`)
+    .join("&") +
+  "&display=swap";
+
+// -----------------------------------------------------------------------------
+// Per-field font sizes.
+//
+// A field's optional font size is stored in a SIBLING site_content row keyed
+// `<key>#style` whose `az` column holds a tiny JSON blob (e.g. {"fontSize":24}).
+// Text rows stay plain strings, so every existing row/consumer keeps working;
+// readers that don't understand `#style` rows simply never look them up.
+// -----------------------------------------------------------------------------
+
+export const STYLE_KEY_SUFFIX = "#style";
+
+export function styleKeyFor(key: string): string {
+  return `${key}${STYLE_KEY_SUFFIX}`;
+}
+
+// Options offered by the per-field "Font size" select (px).
+export const FIELD_FONT_SIZE_OPTIONS = [
+  12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48,
+] as const;
+
 // Ordered section → menu structure. The UI renders sections/menus in this order.
 // The human-readable labels live in admin-panel i18n:
 //   section: siteContent.section.<id> · menu: siteContent.menu.<id>

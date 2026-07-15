@@ -1,18 +1,19 @@
-// Student profile screen (web /child/profile parity): identity card (avatar
-// picker + name + grouped 8-digit ID), editable name, security (password
-// change with the ≠8-digit-ID rule), read-only school info, the character-
-// sticker theme picker and the light-mode palette picker. No email and no
-// delete-account here — a child never gets those. Logout stays in the
-// AccountSheet (header avatar), exactly like the parent shell.
+// Student profile screen (web /child/profile parity): identity card (Avatar
+// with initials fallback + picker + grouped 8-digit ID), editable name,
+// security (password change with the ≠8-digit-ID rule), read-only school info,
+// the character-sticker theme picker and the light-mode palette picker (its
+// swatches derive from ARENA_LIGHT). No email and no delete-account here — a
+// child never gets those. Logout stays in the AccountSheet (header avatar),
+// exactly like the parent shell. Body scrolls on the arena background so all
+// five palettes + dark skin the screen.
 import React from "react";
 import { View } from "react-native";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
-import { useTheme } from "@/theme/ThemeProvider";
-import { arenaTokens, spacing } from "@/theme/tokens";
+import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
-import { ScreenScroll } from "@/features/parent/ui";
+import { useArena } from "@/features/arena/useArena";
+import { ArenaScroll } from "@/features/arena/ui";
 import { useStudentProfile } from "@/features/profile/studentProfile";
-import { useArenaPalette } from "@/features/profile/useArenaPalette";
 import {
   PaletteSection,
   SchoolInfoCard,
@@ -24,14 +25,12 @@ import {
 
 export default function StudentProfileScreen() {
   const { t } = useT();
-  const { theme } = useTheme();
-  const palette = useArenaPalette();
-  const arena = arenaTokens(theme, palette);
+  const { arena, palette } = useArena();
   const profileQ = useStudentProfile();
 
   return (
     <View style={{ flex: 1, backgroundColor: arena.bg }}>
-      <ScreenScroll
+      <ArenaScroll
         onRefresh={() => void profileQ.refetch()}
         refreshing={profileQ.isRefetching}
       >
@@ -58,7 +57,7 @@ export default function StudentProfileScreen() {
             <PaletteSection current={palette} t={t} />
           </>
         )}
-      </ScreenScroll>
+      </ArenaScroll>
     </View>
   );
 }

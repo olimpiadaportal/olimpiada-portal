@@ -3,7 +3,7 @@
 // display, autofill OFF — child credentials never hit password managers).
 import React, { useState } from "react";
 import { Pressable, TextInput, View, type TextInputProps } from "react-native";
-import Svg, { Circle, Line, Path } from "react-native-svg";
+import { Eye, EyeOff } from "lucide-react-native";
 import { AppText } from "./AppText";
 import { useTheme } from "@/theme/ThemeProvider";
 import { fontSize, radius, spacing } from "@/theme/tokens";
@@ -56,18 +56,10 @@ export function TextField({ label, error, style, ...rest }: BaseProps) {
 }
 
 function EyeIcon({ off, color }: { off: boolean; color: string }) {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={2} />
-      {off ? <Line x1={4} y1={20} x2={20} y2={4} stroke={color} strokeWidth={2} /> : null}
-    </Svg>
+  return off ? (
+    <EyeOff size={20} color={color} strokeWidth={2} />
+  ) : (
+    <Eye size={20} color={color} strokeWidth={2} />
   );
 }
 

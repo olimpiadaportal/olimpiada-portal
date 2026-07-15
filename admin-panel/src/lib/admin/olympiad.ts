@@ -18,9 +18,13 @@ import {
   normTypeName,
   mapRpcRowError,
   overrideItemMeta,
+  pickDefaultType,
   type ActiveTypeRule,
 } from "@/lib/admin/bulk-validate";
-import { getT, type T } from "@/i18n/server";
+import { getT, getLocale, type T } from "@/i18n/server";
+import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
+import { localeNames } from "@/i18n/config";
+import { localStrings as poolStrings } from "@/app/(protected)/olympiad/labels";
 
 export type OlympiadState = { error?: string } | null;
 export type OlympiadCoverState = { error?: string } | null;
@@ -301,25 +305,27 @@ async function readBulkFile(
   return { payload, fileName: file.name };
 }
 
-// Active question types + their structure rules (MCQ = 4 options / 1 correct)
-// for the strict per-row validation shared with the general bank.
+// Active question types + their structure rules (single_choice = 5 options /
+// 1 correct) for the strict per-row validation shared with the general bank.
+// Rows that omit meta.type default to single_choice — the RPCs' default.
 async function loadActiveTypeRules(supabase: Db): Promise<{
   activeByNorm: Map<string, ActiveTypeRule>;
   defaultType: ActiveTypeRule | null;
 }> {
   const { data: typeRows } = await supabase
     .from("question_types")
-    .select("name, options_required, correct_required")
+    .select("code, name, options_required, correct_required")
     .eq("status", "active")
     .order("name");
   const activeTypes: ActiveTypeRule[] = ((typeRows ?? []) as any[]).map((r) => ({
+    code: String(r.code ?? ""),
     name: String(r.name),
     options_required: r.options_required ?? null,
     correct_required: r.correct_required ?? null,
   }));
   const activeByNorm = new Map<string, ActiveTypeRule>();
   for (const r of activeTypes) activeByNorm.set(normTypeName(r.name), r);
-  return { activeByNorm, defaultType: activeTypes[0] ?? null };
+  return { activeByNorm, defaultType: pickDefaultType(activeTypes) };
 }
 
 type ValidatedRows = {
@@ -344,7 +350,8 @@ function validateRows(
   const validItems: Record<string, unknown>[] = [];
   const validFileIndex: number[] = [];
   payload.forEach((item, i) => {
-    const msg = validateBulkItem(item, t, activeByNorm, defaultType);
+    // OLYMPIAD mode: topic/subtopic/term stay optional (package-scoped pool).
+    const msg = validateBulkItem(item, t, activeByNorm, defaultType, "olympiad");
     if (msg) {
       errors.push({ index: i + 1, error: msg });
       return;
@@ -371,6 +378,13 @@ async function runOlympiadPoolImport(
       { p_package_id: pkgId, p_questions: rows.validItems },
     );
     if (error) {
+      // 23514 = the RPC's creation-only guard: the package already has
+      // questions, so a later import is rejected. Friendly trilingual message
+      // (local strings until messages.ts gains the key) — never the raw error.
+      if ((error as { code?: string }).code === "23514") {
+        const lt = olympiadLocalStrings(await getLocale());
+        return { error: lt("oly2.err.creationOnly") };
+      }
       console.error("[admin] olympiad bulk import failed", error.message);
       return { error: t("err.server") };
     }
@@ -742,6 +756,678 @@ export async function detachOlympiadCover(formData: FormData): Promise<void> {
   });
 
   revalidatePath(`/olympiad/${pkgId}/edit`);
+}
+
+// ---------------------------------------------------------------------------
+// Round 21 item 2 — per-question management of a package's PRIVATE pool.
+// Bulk upload stays creation-only (DB-enforced); AFTER creation admins manage
+// the pool question by question here. All actions: requireAdmin() FIRST, then
+// re-verify that the posted question actually belongs to the posted package
+// before mutating anything (even though RLS would also block outsiders).
+//
+// EDIT SAFETY: olympiad attempts read questions/options LIVE (no snapshot) and
+// historical reviews match test_attempt_answers.selected_option_ids against
+// live option ids. Updates are therefore ID-STABLE — the 5 options are updated
+// IN PLACE keyed by order_index (translations/is_correct on the existing rows;
+// insert only genuinely missing order_index rows, e.g. legacy 4-option shapes).
+// Options are NEVER delete+reinserted.
+// ---------------------------------------------------------------------------
+
+export type OlympiadQuestionState = { error?: string; ok?: boolean } | null;
+export type OlympiadPoolActionResult = { error?: string } | null;
+
+type PoolLocale = (typeof LOCALES)[number];
+type PoolLocaleContent = {
+  body: string;
+  prompt: string;
+  explanation: string;
+  options: string[];
+};
+
+// Full editable payload for the edit modal (loaded on demand so the package
+// page never ships every translation of every pool question to the client).
+export type OlympiadPoolQuestionData = {
+  id: string;
+  status: string;
+  topicId: string;
+  subtopicId: string;
+  correct: number; // order_index of the correct option, -1 when none
+  content: Record<PoolLocale, PoolLocaleContent>;
+  imageUrl: string | null;
+};
+
+// Same caps as the general question editor (lib/admin/questions.ts).
+const POOL_BODY_MAX = 8000;
+const POOL_EXPLANATION_MAX = 8000;
+const POOL_OPTION_MAX = 2000;
+const POOL_OPTION_COUNT = 5;
+const POOL_MEDIA_BUCKET = "question-media";
+const POOL_MEDIA_MAX_SIZE = 5 * 1024 * 1024;
+
+async function getPoolPackage(
+  supabase: Db,
+  pkgId: string,
+): Promise<{ id: string; subject_id: string; grade_id: string | null } | null> {
+  const { data } = await supabase
+    .from("olympiad_packages")
+    .select("id, subject_id, grade_id")
+    .eq("id", pkgId)
+    .maybeSingle();
+  return (data as { id: string; subject_id: string; grade_id: string | null } | null) ?? null;
+}
+
+// Ownership re-verification used by every pool-question action: the question
+// must exist AND carry THIS package's olympiad_package_id.
+async function getPoolQuestion(
+  supabase: Db,
+  pkgId: string,
+  qId: string,
+): Promise<{
+  id: string;
+  status: string;
+  primary_locale: string;
+  topic_id: string | null;
+  subtopic_id: string | null;
+} | null> {
+  const { data } = await supabase
+    .from("questions")
+    .select("id, status, primary_locale, topic_id, subtopic_id")
+    .eq("id", qId)
+    .eq("olympiad_package_id", pkgId)
+    .maybeSingle();
+  return (data as any) ?? null;
+}
+
+// Deletes a media_assets row together with its storage object (PostgreSQL
+// never keeps binaries; storage objects must never be orphaned either).
+async function removePoolMediaAsset(supabase: Db, mediaId: string): Promise<void> {
+  const { data: m } = await supabase
+    .from("media_assets")
+    .select("bucket, path")
+    .eq("id", mediaId)
+    .maybeSingle();
+  if (m) await supabase.storage.from(m.bucket).remove([m.path]);
+  await supabase.from("media_assets").delete().eq("id", mediaId);
+}
+
+// On-demand load of one pool question for the edit modal. Admin-only; returns
+// null (no detail) when the ids are malformed or the question is not in the
+// package.
+export async function loadOlympiadPoolQuestion(
+  packageId: string,
+  questionId: string,
+): Promise<OlympiadPoolQuestionData | null> {
+  await requireAdmin();
+  if (typeof packageId !== "string" || !UUID_RE.test(packageId)) return null;
+  if (typeof questionId !== "string" || !UUID_RE.test(questionId)) return null;
+
+  const supabase = await createClient();
+  const q = await getPoolQuestion(supabase, packageId, questionId);
+  if (!q) return null;
+
+  const [{ data: trs }, { data: exps }, { data: opts }] = await Promise.all([
+    supabase
+      .from("question_translations")
+      .select("locale, body, prompt, media_asset_id")
+      .eq("question_id", questionId),
+    supabase
+      .from("question_explanations")
+      .select("locale, explanation_body")
+      .eq("question_id", questionId),
+    supabase
+      .from("answer_options")
+      .select("id, is_correct, order_index, answer_option_translations(locale, text)")
+      .eq("question_id", questionId)
+      .order("order_index"),
+  ]);
+
+  const optRows = (opts ?? []) as any[];
+  const content = {} as Record<PoolLocale, PoolLocaleContent>;
+  for (const loc of LOCALES) {
+    const tr = ((trs ?? []) as any[]).find((x) => x.locale === loc);
+    const ex = ((exps ?? []) as any[]).find((x) => x.locale === loc);
+    const options: string[] = [];
+    for (let i = 0; i < POOL_OPTION_COUNT; i++) {
+      const row = optRows.find((o) => Number(o.order_index) === i);
+      const text = row
+        ? ((row.answer_option_translations ?? []) as any[]).find(
+            (x) => x.locale === loc,
+          )?.text ?? ""
+        : "";
+      options.push(String(text ?? ""));
+    }
+    content[loc] = {
+      body: String(tr?.body ?? ""),
+      prompt: String(tr?.prompt ?? ""),
+      explanation: String(ex?.explanation_body ?? ""),
+      options,
+    };
+  }
+  const correctRow = optRows.find((o) => o.is_correct);
+  const correctIdx = correctRow == null ? -1 : Number(correctRow.order_index);
+  const correct = correctIdx >= 0 && correctIdx < POOL_OPTION_COUNT ? correctIdx : -1;
+
+  // Current image preview: linked on the primary-locale translation
+  // (fallback: any translation that carries one).
+  let imageUrl: string | null = null;
+  const trList = (trs ?? []) as any[];
+  const mediaTr =
+    trList.find((x) => x.locale === q.primary_locale && x.media_asset_id) ??
+    trList.find((x) => x.media_asset_id);
+  if (mediaTr?.media_asset_id) {
+    const { data: m } = await supabase
+      .from("media_assets")
+      .select("bucket, path, mime_type")
+      .eq("id", mediaTr.media_asset_id)
+      .maybeSingle();
+    if (m && String(m.mime_type ?? "").startsWith("image/")) {
+      const { data: pub } = supabase.storage.from(m.bucket).getPublicUrl(m.path);
+      imageUrl = pub.publicUrl;
+    }
+  }
+
+  return {
+    id: String(q.id),
+    status: String(q.status),
+    topicId: q.topic_id ? String(q.topic_id) : "",
+    subtopicId: q.subtopic_id ? String(q.subtopic_id) : "",
+    correct,
+    content,
+    imageUrl,
+  };
+}
+
+// Create or update ONE pool question. Create matches bulk v3 exactly:
+// olympiad_package_id set + status='published' + subject/grade from the
+// PACKAGE (never the client) + optional olympiad-scoped taxonomy. az content
+// is required; en/ru are optional but must be complete when provided.
+export async function saveOlympiadPackageQuestion(
+  _prev: OlympiadQuestionState,
+  fd: FormData,
+): Promise<OlympiadQuestionState> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+  const lt = poolStrings(await getLocale());
+
+  const pkgId = s(fd, "__package_id");
+  const qId = s(fd, "__id");
+  if (!UUID_RE.test(pkgId)) return { error: t("err.server") };
+  if (qId && !UUID_RE.test(qId)) return { error: t("err.server") };
+
+  const supabase = await createClient();
+  const pkg = await getPoolPackage(supabase, pkgId);
+  if (!pkg) return { error: t("err.server") };
+
+  // On edit, re-verify the question belongs to THIS package before anything.
+  const existing = qId ? await getPoolQuestion(supabase, pkgId, qId) : null;
+  if (qId && !existing) return { error: t("err.server") };
+
+  // ---- Optional olympiad-scoped taxonomy (never exam topics) ---------------
+  const topicId = s(fd, "topic_id");
+  const subtopicId = s(fd, "subtopic_id");
+  if (subtopicId && !topicId) return { error: lt("olyq.err.taxonomy") };
+  if (topicId) {
+    if (!UUID_RE.test(topicId)) return { error: lt("olyq.err.taxonomy") };
+    const { data: tp } = await supabase
+      .from("topics")
+      .select("id, subject_id, grade_id, scope")
+      .eq("id", topicId)
+      .maybeSingle();
+    if (
+      !tp ||
+      tp.scope !== "olympiad" ||
+      String(tp.subject_id) !== String(pkg.subject_id) ||
+      (tp.grade_id != null &&
+        pkg.grade_id != null &&
+        String(tp.grade_id) !== String(pkg.grade_id))
+    ) {
+      return { error: lt("olyq.err.taxonomy") };
+    }
+    if (subtopicId) {
+      if (!UUID_RE.test(subtopicId)) return { error: lt("olyq.err.taxonomy") };
+      const { data: st } = await supabase
+        .from("subtopics")
+        .select("id, topic_id")
+        .eq("id", subtopicId)
+        .maybeSingle();
+      if (!st || String(st.topic_id) !== topicId) {
+        return { error: lt("olyq.err.taxonomy") };
+      }
+    }
+  }
+
+  // ---- Trilingual content: az required; en/ru optional-but-complete --------
+  const content: Record<PoolLocale, PoolLocaleContent | null> = {
+    az: null,
+    en: null,
+    ru: null,
+  };
+  for (const loc of LOCALES) {
+    const body = s(fd, `body_${loc}`);
+    const prompt = s(fd, `prompt_${loc}`);
+    const explanation = s(fd, `explanation_${loc}`);
+    if (body.length > POOL_BODY_MAX || prompt.length > POOL_BODY_MAX) {
+      return { error: t("err.tooLong") };
+    }
+    if (explanation.length > POOL_EXPLANATION_MAX) return { error: t("err.tooLong") };
+    const options: string[] = [];
+    for (let i = 0; i < POOL_OPTION_COUNT; i++) {
+      const text = s(fd, `opt_${loc}_${i}`);
+      if (text.length > POOL_OPTION_MAX) return { error: t("err.tooLong") };
+      options.push(text);
+    }
+    const active = Boolean(body || prompt || explanation || options.some(Boolean));
+    if (!active) continue;
+    if (!body || options.some((x) => !x)) {
+      if (loc === "az") {
+        return { error: body ? lt("olyq.err.fiveOptions") : lt("olyq.err.azBody") };
+      }
+      return {
+        error: lt("olyq.err.localeIncomplete").replace("{lang}", localeNames[loc]),
+      };
+    }
+    content[loc] = { body, prompt, explanation, options };
+  }
+  if (!content.az) return { error: lt("olyq.err.azBody") };
+
+  // Exactly one correct option (radio index 0..4).
+  const correctRaw = s(fd, "correct");
+  if (!/^[0-4]$/.test(correctRaw)) return { error: lt("olyq.err.oneCorrect") };
+  const correctIdx = Number(correctRaw);
+
+  // ---- Type resolved server-side (single_choice = 5 options / 1 correct) ---
+  const { data: qType } = await supabase
+    .from("question_types")
+    .select("id")
+    .eq("code", "single_choice")
+    .maybeSingle();
+  if (!qType) {
+    console.error("[admin] single_choice question type missing");
+    return { error: t("err.server") };
+  }
+
+  // ---- Optional staged image (create AND edit; one-submission save) --------
+  // The browser uploaded to staging/<uuid>.<ext>; verify existence, cap size,
+  // byte-sniff the real mime BEFORE creating/moving anything. SVG stays banned.
+  let staged:
+    | { path: string; filename: string; mime: string; size: number }
+    | null = null;
+  const mediaPath = s(fd, "media_path");
+  if (mediaPath) {
+    const filename = splitStoragePath(mediaPath, "staging/");
+    if (!filename || !IMAGE_FILENAME_RE.test(filename)) {
+      return { error: lt("olyq.img.invalid") };
+    }
+    const obj = await verifyStorageObject(supabase, POOL_MEDIA_BUCKET, "staging", filename);
+    if (!obj || obj.size > POOL_MEDIA_MAX_SIZE) return { error: lt("olyq.img.invalid") };
+    const sniffed = await sniffVerifiedImage(supabase, POOL_MEDIA_BUCKET, mediaPath, obj.mime);
+    if (!sniffed) return { error: lt("olyq.img.invalid") };
+    staged = { path: mediaPath, filename, mime: sniffed, size: obj.size };
+  }
+  const mediaRemove = s(fd, "media_remove") === "1";
+
+  // Primary locale: az on create; kept on edit while that language still has
+  // content, otherwise it falls back to az (az is always present).
+  const existingPl = existing?.primary_locale ?? "";
+  const primaryLocale: PoolLocale =
+    (LOCALES as readonly string[]).includes(existingPl) &&
+    content[existingPl as PoolLocale]
+      ? (existingPl as PoolLocale)
+      : "az";
+
+  // ---- Question row ---------------------------------------------------------
+  let questionId = qId;
+  if (!questionId) {
+    const { data: q, error } = await supabase
+      .from("questions")
+      .insert({
+        olympiad_package_id: pkgId,
+        subject_id: pkg.subject_id,
+        grade_id: pkg.grade_id,
+        topic_id: topicId || null,
+        subtopic_id: subtopicId || null,
+        type_id: qType.id,
+        // Pool rows are always published (bulk v3 parity) — attempts draw
+        // published questions only.
+        status: "published",
+        primary_locale: primaryLocale,
+        created_by: ctx.profileId,
+        updated_by: ctx.profileId,
+      })
+      .select("id")
+      .single();
+    if (error || !q) {
+      console.error("[admin] olympiad pool question insert failed", error?.message);
+      return { error: t("err.server") };
+    }
+    questionId = q.id as string;
+  } else {
+    const { error } = await supabase
+      .from("questions")
+      .update({
+        subject_id: pkg.subject_id,
+        grade_id: pkg.grade_id,
+        topic_id: topicId || null,
+        subtopic_id: subtopicId || null,
+        // Explicit NULL: trg_question_term_guard re-inherits the term from the
+        // (possibly changed) topic; a stale term would otherwise mismatch.
+        term: null,
+        type_id: qType.id,
+        primary_locale: primaryLocale,
+        updated_by: ctx.profileId,
+        // NOTE: status untouched — an archived question stays archived.
+      })
+      .eq("id", questionId)
+      // Defence-in-depth: re-assert the package scope on the UPDATE itself.
+      .eq("olympiad_package_id", pkgId);
+    if (error) {
+      console.error("[admin] olympiad pool question update failed", error.message);
+      return { error: t("err.server") };
+    }
+  }
+
+  // Only undo a question we created in THIS call (cascades remove children).
+  // A still-staged image object is left in place so a retry can reuse it.
+  const cleanup = async (context: string, msg?: string): Promise<OlympiadQuestionState> => {
+    console.error("[admin]", context, msg);
+    if (!qId && questionId) {
+      await supabase.from("questions").delete().eq("id", questionId);
+    }
+    return { error: t("err.server") };
+  };
+
+  // ---- Translations + explanations per locale -------------------------------
+  for (const loc of LOCALES) {
+    const c = content[loc];
+    if (c) {
+      const { error } = await supabase
+        .from("question_translations")
+        .upsert(
+          { question_id: questionId, locale: loc, body: c.body, prompt: c.prompt || null },
+          { onConflict: "question_id,locale" },
+        );
+      if (error) return cleanup("olympiad pool translation upsert failed", error.message);
+      if (c.explanation) {
+        const { error: eErr } = await supabase
+          .from("question_explanations")
+          .upsert(
+            { question_id: questionId, locale: loc, explanation_body: c.explanation },
+            { onConflict: "question_id,locale" },
+          );
+        if (eErr) return cleanup("olympiad pool explanation upsert failed", eErr.message);
+      } else if (qId) {
+        await supabase
+          .from("question_explanations")
+          .delete()
+          .eq("question_id", questionId)
+          .eq("locale", loc);
+      }
+    } else if (qId) {
+      // Language cleared on edit (az can never get here): remove its rows and
+      // clean up an image that was linked to the removed translation.
+      const { data: old } = await supabase
+        .from("question_translations")
+        .select("media_asset_id")
+        .eq("question_id", questionId)
+        .eq("locale", loc)
+        .maybeSingle();
+      await supabase
+        .from("question_translations")
+        .delete()
+        .eq("question_id", questionId)
+        .eq("locale", loc);
+      await supabase
+        .from("question_explanations")
+        .delete()
+        .eq("question_id", questionId)
+        .eq("locale", loc);
+      if (old?.media_asset_id) {
+        await removePoolMediaAsset(supabase, String(old.media_asset_id));
+      }
+    }
+  }
+
+  // ---- Options: ID-STABLE update keyed by order_index ------------------------
+  const { data: optRows } = await supabase
+    .from("answer_options")
+    .select("id, order_index, is_correct")
+    .eq("question_id", questionId)
+    .order("order_index");
+  const optByIndex = new Map<number, { id: string; is_correct: boolean }>();
+  for (const o of (optRows ?? []) as any[]) {
+    const idx = Number(o.order_index);
+    if (!optByIndex.has(idx)) {
+      optByIndex.set(idx, { id: String(o.id), is_correct: Boolean(o.is_correct) });
+    }
+  }
+  for (let i = 0; i < POOL_OPTION_COUNT; i++) {
+    const isCorrect = i === correctIdx;
+    const existingOpt = optByIndex.get(i);
+    let optionId = existingOpt?.id ?? null;
+    if (optionId) {
+      if (existingOpt!.is_correct !== isCorrect) {
+        const { error } = await supabase
+          .from("answer_options")
+          .update({ is_correct: isCorrect })
+          .eq("id", optionId);
+        if (error) return cleanup("olympiad pool option update failed", error.message);
+      }
+    } else {
+      // Genuinely missing row (legacy 4-option shape gains its option E).
+      const { data: created, error } = await supabase
+        .from("answer_options")
+        .insert({ question_id: questionId, is_correct: isCorrect, order_index: i })
+        .select("id")
+        .single();
+      if (error || !created) {
+        return cleanup("olympiad pool option insert failed", error?.message);
+      }
+      optionId = String(created.id);
+    }
+    for (const loc of LOCALES) {
+      const text = content[loc]?.options[i] ?? "";
+      if (text) {
+        const { error } = await supabase
+          .from("answer_option_translations")
+          .upsert({ option_id: optionId, locale: loc, text }, { onConflict: "option_id,locale" });
+        if (error) return cleanup("olympiad pool option translation failed", error.message);
+      } else if (qId) {
+        await supabase
+          .from("answer_option_translations")
+          .delete()
+          .eq("option_id", optionId)
+          .eq("locale", loc);
+      }
+    }
+  }
+
+  // ---- Image: explicit removal, then staged attach ---------------------------
+  if (qId && mediaRemove && !staged) {
+    const { data: cur } = await supabase
+      .from("question_translations")
+      .select("media_asset_id")
+      .eq("question_id", questionId)
+      .eq("locale", primaryLocale)
+      .maybeSingle();
+    if (cur?.media_asset_id) {
+      const { error } = await supabase
+        .from("question_translations")
+        .update({ media_asset_id: null })
+        .eq("question_id", questionId)
+        .eq("locale", primaryLocale);
+      if (!error) await removePoolMediaAsset(supabase, String(cur.media_asset_id));
+    }
+  }
+  if (staged && questionId) {
+    // Move staging/<file> → questions/<id>/<file>, record media_assets with
+    // SERVER-derived (sniffed) mime + size, link the primary translation.
+    const finalPath = `questions/${questionId}/${staged.filename}`;
+    const { error: mvErr } = await supabase.storage
+      .from(POOL_MEDIA_BUCKET)
+      .move(staged.path, finalPath);
+    if (mvErr) return cleanup("olympiad pool image move failed", mvErr.message);
+
+    const { data: media, error: maErr } = await supabase
+      .from("media_assets")
+      .insert({
+        bucket: POOL_MEDIA_BUCKET,
+        path: finalPath,
+        owner_profile_id: ctx.profileId,
+        mime_type: staged.mime,
+        file_size_bytes: staged.size,
+        visibility: "public",
+      })
+      .select("id")
+      .single();
+    if (maErr || !media) {
+      await supabase.storage.from(POOL_MEDIA_BUCKET).remove([finalPath]);
+      return cleanup("olympiad pool image media insert failed", maErr?.message);
+    }
+
+    const { data: prevTr } = await supabase
+      .from("question_translations")
+      .select("media_asset_id")
+      .eq("question_id", questionId)
+      .eq("locale", primaryLocale)
+      .maybeSingle();
+    const prevMediaId: string | null = prevTr?.media_asset_id
+      ? String(prevTr.media_asset_id)
+      : null;
+
+    const { error: linkErr } = await supabase
+      .from("question_translations")
+      .update({ media_asset_id: media.id })
+      .eq("question_id", questionId)
+      .eq("locale", primaryLocale);
+    if (linkErr) {
+      await supabase.from("media_assets").delete().eq("id", media.id);
+      await supabase.storage.from(POOL_MEDIA_BUCKET).remove([finalPath]);
+      return cleanup("olympiad pool image link failed", linkErr.message);
+    }
+    if (prevMediaId) await removePoolMediaAsset(supabase, prevMediaId);
+  }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: qId ? "admin.olympiad.question.update" : "admin.olympiad.question.create",
+    targetTable: "questions",
+    targetId: questionId,
+    metadata: { package_id: pkgId },
+  });
+
+  revalidatePath(`/olympiad/${pkgId}/edit`);
+  // Modal flow only: return success, the client closes and refreshes in place.
+  return { ok: true };
+}
+
+// Hard delete of ONE pool question. The DB trg_question_delete_guard
+// (migration 063) blocks deleting any question with attempt history — that
+// error is mapped to a friendly "archive it instead" message.
+export async function deleteOlympiadPackageQuestion(
+  fd: FormData,
+): Promise<OlympiadPoolActionResult> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+  const lt = poolStrings(await getLocale());
+
+  const pkgId = s(fd, "__package_id");
+  const qId = s(fd, "__id");
+  if (!UUID_RE.test(pkgId) || !UUID_RE.test(qId)) return { error: t("err.server") };
+
+  const supabase = await createClient();
+  const q = await getPoolQuestion(supabase, pkgId, qId);
+  if (!q) return { error: t("err.server") };
+
+  // Collect linked media BEFORE the delete (the FK cascade removes only the
+  // DB rows; storage objects + media_assets are cleaned up after success).
+  const { data: trs } = await supabase
+    .from("question_translations")
+    .select("media_asset_id")
+    .eq("question_id", qId);
+  const mediaIds = ((trs ?? []) as any[])
+    .map((x) => x.media_asset_id)
+    .filter(Boolean)
+    .map(String);
+
+  const { error } = await supabase
+    .from("questions")
+    .delete()
+    .eq("id", qId)
+    // Defence-in-depth: re-assert the package scope on the DELETE itself.
+    .eq("olympiad_package_id", pkgId);
+  if (error) {
+    if (
+      error.code === "23514" &&
+      (error.hint === "question_has_attempts" ||
+        /attempt history/i.test(error.message ?? ""))
+    ) {
+      return { error: lt("olyq.err.hasAttempts") };
+    }
+    console.error("[admin] olympiad pool question delete failed", error.message);
+    return { error: t("err.server") };
+  }
+  for (const mid of mediaIds) await removePoolMediaAsset(supabase, mid);
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.question.delete",
+    targetTable: "questions",
+    targetId: qId,
+    metadata: { package_id: pkgId },
+    severity: "warning",
+  });
+
+  revalidatePath(`/olympiad/${pkgId}/edit`);
+  return null;
+}
+
+// Archive/restore for the blocked-delete case: archived pool questions drop
+// out of FUTURE attempts (start_olympiad_attempt draws published only) while
+// past attempt history stays readable. Restore re-publishes.
+export async function setOlympiadPoolQuestionStatus(
+  fd: FormData,
+): Promise<OlympiadPoolActionResult> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const pkgId = s(fd, "__package_id");
+  const qId = s(fd, "__id");
+  const action = s(fd, "__action");
+  if (!UUID_RE.test(pkgId) || !UUID_RE.test(qId)) return { error: t("err.server") };
+  if (action !== "archive" && action !== "restore") return { error: t("err.server") };
+
+  const supabase = await createClient();
+  const q = await getPoolQuestion(supabase, pkgId, qId);
+  if (!q) return { error: t("err.server") };
+  if (action === "archive" ? q.status === "archived" : q.status !== "archived") {
+    return { error: t("err.server") };
+  }
+  const to = action === "archive" ? "archived" : "published";
+
+  const { error } = await supabase
+    .from("questions")
+    .update({ status: to, updated_by: ctx.profileId })
+    .eq("id", qId)
+    .eq("olympiad_package_id", pkgId);
+  if (error) {
+    console.error("[admin] olympiad pool question status change failed", error.message);
+    return { error: t("err.server") };
+  }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action:
+      action === "archive"
+        ? "admin.olympiad.question.archive"
+        : "admin.olympiad.question.restore",
+    targetTable: "questions",
+    targetId: qId,
+    metadata: { package_id: pkgId, status: to },
+    severity: action === "archive" ? "warning" : "info",
+  });
+
+  revalidatePath(`/olympiad/${pkgId}/edit`);
+  return null;
 }
 
 export async function archiveOlympiadPackage(fd: FormData): Promise<void> {

@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { getLocale, getT } from "@/i18n/server";
-import { getPublicSiteSettings, getContentOverrides } from "@/lib/flags";
+import {
+  getPublicSiteSettings,
+  getContentOverrides,
+  getContentFontSizes,
+} from "@/lib/flags";
+import { getSiteTypography, googleFontHref, fontStackFor } from "@/lib/siteTypography";
+import { cmsFontSizeVar, responsiveFontSize } from "@/lib/cmsTypography";
 import { I18nProvider } from "@/i18n/I18nProvider";
+import { MaintenanceSplash } from "@/components/MaintenanceSplash";
 import { messages } from "@/i18n/messages";
 import { defaultLocale } from "@/i18n/config";
 
@@ -38,6 +45,9 @@ export default async function RootLayout({
   // Maintenance mode (admin Settings → platform.maintenance_mode): the whole
   // web-app (public + parent + student) shows the maintenance notice. The
   // admin panel is a separate app and stays reachable to turn it back off.
+  // Item 12: the flag now lives in a 4s server cache (flags.ts) and the splash
+  // is a client component polling /api/maintenance-status every 4s, so both
+  // entering (on navigation/SSR) and exiting propagate within ~0–5s.
   const site = await getPublicSiteSettings();
   let maintenance: React.ReactNode = null;
   if (site.maintenanceMode) {
@@ -45,16 +55,42 @@ export default async function RootLayout({
     const msg =
       site.maintenanceMessage[locale] ?? site.maintenanceMessage.az ?? "";
     maintenance = (
-      <div className="maintenance-splash">
-        <div className="maintenance-card">
-          <span className="maintenance-badge" aria-hidden="true">
-            ⚙
-          </span>
-          <h1>{t("maintenance.title")}</h1>
-          <p>{msg || t("maintenance.body")}</p>
-        </div>
-      </div>
+      <MaintenanceSplash
+        title={t("maintenance.title")}
+        body={msg || t("maintenance.body")}
+        locale={locale}
+      />
     );
+  }
+
+  // Site typography (owner item 16, admin "Sayt şrifti"): when configured, the
+  // selected Google font loads via ONE stylesheet link and <body> carries the
+  // typography CSS variables + inline font-family/size (overrides the global
+  // Arial stack without touching globals.css). Per-field sizes from the
+  // Website Content CMS become `--cms-fs-*` variables (clamp()-wrapped).
+  // UNCONFIGURED = nothing injected → renders exactly as today.
+  const [typography, fieldSizes] = await Promise.all([
+    getSiteTypography(),
+    getContentFontSizes(),
+  ]);
+  const fontHref = typography ? googleFontHref(typography.fontFamily) : null;
+  const styleVars: Record<string, string> = {};
+  for (const [key, px] of Object.entries(fieldSizes)) {
+    styleVars[cmsFontSizeVar(key)] = responsiveFontSize(px);
+  }
+  if (typography) {
+    styleVars["--site-font"] = fontStackFor(typography.fontFamily);
+    styleVars["--fs-base"] = `${typography.baseFontSize}px`;
+    styleVars["--fs-heading"] = responsiveFontSize(typography.headingFontSize);
+    styleVars["--fs-button"] = `${typography.buttonFontSize}px`;
+  }
+  let bodyStyle: React.CSSProperties | undefined;
+  if (typography || Object.keys(styleVars).length > 0) {
+    bodyStyle = { ...(styleVars as React.CSSProperties) };
+    if (typography) {
+      bodyStyle.fontFamily = "var(--site-font)";
+      bodyStyle.fontSize = "var(--fs-base)";
+    }
   }
 
   // suppressHydrationWarning: data-theme is intentionally rewritten by the
@@ -66,8 +102,22 @@ export default async function RootLayout({
     <html lang={locale} data-theme="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME }} />
+        {fontHref && (
+          <>
+            <link rel="preconnect" href="https://fonts.googleapis.com" />
+            <link
+              rel="preconnect"
+              href="https://fonts.gstatic.com"
+              crossOrigin="anonymous"
+            />
+            <link rel="stylesheet" href={fontHref} />
+          </>
+        )}
       </head>
-      <body>
+      <body
+        style={bodyStyle}
+        data-site-typography={typography ? "1" : undefined}
+      >
         <I18nProvider locale={locale} dict={clientDict}>
           <div className="app-shell">
             {/* Theme + language controls live in each shell's own nav

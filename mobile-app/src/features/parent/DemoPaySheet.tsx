@@ -105,8 +105,10 @@ export function DemoPaySheet({
         </AppText>
       ) : null}
 
+      {/* The sheet's one brand-moment CTA. */}
       <Button
         title={confirmLabel}
+        variant="gradient"
         pending={pending}
         pendingTitle={t("pay.processing")}
         onPress={onConfirm}

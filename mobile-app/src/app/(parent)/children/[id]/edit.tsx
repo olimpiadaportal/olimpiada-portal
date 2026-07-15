@@ -1,9 +1,13 @@
 // Parent edits a child's info (web ChildInfoEditForm parity): first/last name,
-// city → school cascade + grade (ALL selects submit database UUIDs), read-only
-// 8-digit login ID, and an optional child-password reset. Round-18 lessons are
-// baked in: fully controlled state that NEVER clears on save, the cascade keeps
-// a still-valid school and clears a foreign one, per-field required errors, and
-// a pending double-submit guard. Writes go through the ownership-checked BFF.
+// city → district (rayon) → school cascade + grade (ALL selects submit
+// database UUIDs), read-only 8-digit login ID, and an optional child-password
+// reset. Round-18 lessons are baked in: fully controlled state that NEVER
+// clears on save, the cascade keeps a still-valid school and clears a foreign
+// one, per-field required errors, and a pending double-submit guard. Round 21:
+// the rayon field shows only when the city has active rayons (required then,
+// narrows the school list, preselected from the student's saved
+// city_district_id — read directly, RLS-scoped) and posts city_district_id
+// through the ownership-checked BFF.
 import React, { useMemo, useState } from "react";
 import { View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
@@ -18,20 +22,39 @@ import { spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 import { formatGradeLabel } from "@/lib/gradeLabel";
-import { fetchChildren, fetchCities, fetchGrades, fetchSchools, type ChildRow } from "@/lib/data";
+import { fetchChildren, type ChildRow } from "@/lib/data";
+import { supabase } from "@/lib/supabase";
 import { bffEditChild, bffResetChildPassword } from "@/lib/api";
+import { filterSchoolsByRayon, rayonsOfCity } from "@/features/parent/ChildInfoForm";
+import {
+  useCities,
+  useCityDistricts,
+  useGrades,
+  useSchools,
+  type SchoolRow,
+} from "@/features/parent/queries";
 import { SelectField, type SelectOption } from "@/features/profile/SelectField";
 
-type FieldErrors = Partial<Record<"first" | "last" | "city" | "school" | "grade", string>>;
+type FieldErrors = Partial<
+  Record<"first" | "last" | "city" | "district" | "school" | "grade", string>
+>;
 
-function EditForm({ child }: { child: ChildRow }) {
+function EditForm({
+  child,
+  initialCityDistrictId,
+}: {
+  child: ChildRow;
+  /** The student's saved rayon (students.city_district_id) — preselection. */
+  initialCityDistrictId: string;
+}) {
   const { t, locale } = useT();
   const { tokens } = useTheme();
   const queryClient = useQueryClient();
 
   const [firstName, setFirstName] = useState(child.first_name ?? "");
   const [lastName, setLastName] = useState(child.last_name ?? "");
-  const [districtId, setDistrictId] = useState(child.district_id ?? "");
+  const [districtId, setDistrictId] = useState(child.district_id ?? ""); // the CITY
+  const [cityDistrictId, setCityDistrictId] = useState(initialCityDistrictId); // the rayon
   const [schoolId, setSchoolId] = useState(child.school_id ?? "");
   const [gradeId, setGradeId] = useState(child.grade_id ?? "");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -39,32 +62,53 @@ function EditForm({ child }: { child: ChildRow }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const citiesQ = useQuery({ queryKey: ["cities"], queryFn: fetchCities });
-  const gradesQ = useQuery({ queryKey: ["grades"], queryFn: fetchGrades });
-  const schoolsQ = useQuery({
-    queryKey: ["schools", districtId],
-    enabled: !!districtId,
-    queryFn: () => fetchSchools(districtId),
-  });
+  const citiesQ = useCities();
+  const gradesQ = useGrades();
+  const districtsQ = useCityDistricts();
+  const schoolsQ = useSchools(districtId);
 
+  const cityRayons = rayonsOfCity(districtsQ.data, districtId);
+  const hasDistricts = cityRayons.length > 0;
+
+  // The rayon narrows the school list to its schools + the NULL-rayon ones.
   const citySchools = useMemo(
-    () => (schoolsQ.data ?? []) as { id: string; name: string; is_private: boolean | null }[],
-    [schoolsQ.data],
+    () =>
+      filterSchoolsByRayon(
+        (schoolsQ.data ?? []) as SchoolRow[],
+        hasDistricts,
+        cityDistrictId,
+      ),
+    [schoolsQ.data, hasDistricts, cityDistrictId],
   );
 
-  // Cascade rule (web handleCityChange parity): a school belongs to exactly
-  // one city, so changing to a DIFFERENT city always clears the selection —
-  // a stale/foreign school UUID can never be posted. Re-selecting the same
-  // city keeps the still-valid school. Submit re-checks membership below.
+  // Cascade rule (web handleCityChange parity): a school AND a rayon belong to
+  // exactly one city, so changing to a DIFFERENT city always clears both — a
+  // stale/foreign UUID can never be posted. Re-selecting the same city keeps
+  // the still-valid selections. Submit re-checks membership below.
   function handleCityChange(nextCityId: string) {
-    if (nextCityId !== districtId) setSchoolId("");
+    if (nextCityId !== districtId) {
+      setSchoolId("");
+      setCityDistrictId("");
+    }
     setDistrictId(nextCityId);
   }
 
-  const cityOptions: SelectOption[] = (citiesQ.data ?? []).map((c: any) => ({
-    id: String(c.id),
-    label: String(c.name),
-  }));
+  // Changing the rayon may orphan the chosen school — clear a foreign one.
+  function handleRayonChange(nextRayonId: string) {
+    setCityDistrictId(nextRayonId);
+    if (schoolId && nextRayonId) {
+      const all = (schoolsQ.data ?? []) as SchoolRow[];
+      const still = all.find((s) => s.id === schoolId);
+      if (still && still.city_district_id != null && still.city_district_id !== nextRayonId) {
+        setSchoolId("");
+      }
+    }
+  }
+
+  const cityOptions: SelectOption[] = ((citiesQ.data ?? []) as { id: string; name: string }[]).map(
+    (c) => ({ id: String(c.id), label: String(c.name) }),
+  );
+  const rayonOptions: SelectOption[] = cityRayons.map((d) => ({ id: d.id, label: d.name }));
   const hasPrivate = citySchools.some((s) => s.is_private === true);
   const schoolOptions: SelectOption[] = citySchools.map((s) => ({
     id: s.id,
@@ -75,10 +119,11 @@ function EditForm({ child }: { child: ChildRow }) {
         : t("addchild.field.publicSchools")
       : undefined,
   }));
-  const gradeOptions: SelectOption[] = (gradesQ.data ?? []).map((g: any) => ({
-    id: String(g.id),
-    label: formatGradeLabel(g.level, locale, g.name),
-  }));
+  const gradeOptions: SelectOption[] = ((gradesQ.data ?? []) as {
+    id: string;
+    level: number;
+    name: string;
+  }[]).map((g) => ({ id: String(g.id), label: formatGradeLabel(g.level, locale, g.name) }));
 
   async function submit() {
     if (pending) return; // double-submit guard
@@ -89,6 +134,8 @@ function EditForm({ child }: { child: ChildRow }) {
     if (!firstName.trim()) errs.first = t("auth.child.err.firstNameRequired");
     if (!lastName.trim()) errs.last = t("auth.child.err.lastNameRequired");
     if (!districtId) errs.city = t("addchild.err.cityRequired");
+    if (districtId && hasDistricts && !cityDistrictId)
+      errs.district = t("addchild.err.districtRequired");
     if (!schoolId || (schoolsQ.isSuccess && !citySchools.some((s) => s.id === schoolId)))
       errs.school = t("addchild.err.schoolRequired");
     if (!gradeId) errs.grade = t("addchild.err.gradeRequired");
@@ -101,11 +148,15 @@ function EditForm({ child }: { child: ChildRow }) {
       last_name: lastName.trim(),
       grade_id: gradeId,
       district_id: districtId,
+      city_district_id: cityDistrictId,
       school_id: schoolId,
       // Display-name fallbacks derived from the selections (web parity).
       city: cityOptions.find((c) => c.id === districtId)?.label ?? "",
       school_name: citySchools.find((s) => s.id === schoolId)?.name ?? "",
-      class_grade: (gradesQ.data ?? []).find((g: any) => String(g.id) === gradeId)?.name ?? "",
+      class_grade:
+        ((gradesQ.data ?? []) as { id: string; name: string }[]).find(
+          (g) => String(g.id) === gradeId,
+        )?.name ?? "",
     });
     setPending(false);
     if (!res.ok) {
@@ -114,6 +165,10 @@ function EditForm({ child }: { child: ChildRow }) {
     }
     setSaved(true);
     void queryClient.invalidateQueries({ queryKey: ["children"] });
+    void queryClient.invalidateQueries({ queryKey: ["parent", "children"] });
+    void queryClient.invalidateQueries({
+      queryKey: ["child-rayon", child.profile_id],
+    });
   }
 
   return (
@@ -143,6 +198,16 @@ function EditForm({ child }: { child: ChildRow }) {
         onChange={handleCityChange}
         error={fieldErrors.city}
       />
+      {hasDistricts ? (
+        <SelectField
+          label={`${t("addchild.field.district")} *`}
+          value={cityDistrictId}
+          options={rayonOptions}
+          placeholder={t("addchild.field.selectDistrict")}
+          onChange={handleRayonChange}
+          error={fieldErrors.district}
+        />
+      ) : null}
       <SelectField
         label={`${t("addchild.field.school")} *`}
         value={schoolId}
@@ -264,6 +329,23 @@ export default function EditChildScreen() {
   const childrenQ = useQuery({ queryKey: ["children"], queryFn: fetchChildren });
   const child = (childrenQ.data ?? []).find((c) => c.profile_id === id) ?? null;
 
+  // The saved rayon is not part of the children list read — fetch it directly
+  // (RLS scopes the row to the linked parent) so the field preselects.
+  const rayonQ = useQuery({
+    queryKey: ["child-rayon", id],
+    enabled: !!child,
+    queryFn: async (): Promise<string> => {
+      const { data, error } = await supabase
+        .from("students")
+        .select("city_district_id")
+        .eq("profile_id", id)
+        .maybeSingle();
+      if (error) throw error;
+      const v = (data as { city_district_id?: string | null } | null)?.city_district_id;
+      return typeof v === "string" ? v : "";
+    },
+  });
+
   if (childrenQ.isSuccess && !child) {
     // Unknown/foreign id — never render a form for someone else's child.
     return <Redirect href="/(parent)/(tabs)/home" />;
@@ -271,22 +353,29 @@ export default function EditChildScreen() {
 
   return (
     <Screen scroll>
-      {childrenQ.isPending ? (
+      {childrenQ.isPending || (child && rayonQ.isPending) ? (
         <View style={{ gap: spacing.md, paddingTop: spacing.md }}>
           <Skeleton height={20} width="70%" />
           <Skeleton height={48} />
           <Skeleton height={48} />
           <Skeleton height={48} />
         </View>
-      ) : childrenQ.isError ? (
+      ) : childrenQ.isError || rayonQ.isError ? (
         <ErrorRetry
           message={t("mob.boot.error")}
           retryLabel={t("mob.retry")}
-          onRetry={() => void childrenQ.refetch()}
+          onRetry={() => {
+            void childrenQ.refetch();
+            void rayonQ.refetch();
+          }}
         />
       ) : child ? (
         <View style={{ paddingTop: spacing.md, paddingBottom: spacing.xl }}>
-          <EditForm key={child.profile_id} child={child} />
+          <EditForm
+            key={child.profile_id}
+            child={child}
+            initialCityDistrictId={rayonQ.data ?? ""}
+          />
           <Button
             title={t("childedit.back")}
             variant="ghost"

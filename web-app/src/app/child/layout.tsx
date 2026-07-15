@@ -2,6 +2,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { getLocaleSettings, isFeatureEnabled } from "@/lib/flags";
+import { getSiteTypography } from "@/lib/siteTypography";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { ChildProfileDrawer } from "@/components/ChildProfileDrawer";
 import { ChildNavLinks, ChildNavProvider } from "@/components/ChildNav";
@@ -34,12 +35,16 @@ export default async function ChildLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const child = await requireChild();
   // M24: these lookups are independent — resolve them concurrently.
-  const [t, locale, { enabled: enabledLocales }, supabase] = await Promise.all([
-    getT(),
-    getLocale(),
-    getLocaleSettings(),
-    createClient(),
-  ]);
+  const [t, locale, { enabled: enabledLocales }, supabase, typography] =
+    await Promise.all([
+      getT(),
+      getLocale(),
+      getLocaleSettings(),
+      createClient(),
+      // Item 16: the .arena scope re-declares font-family in globals.css, so
+      // the admin-chosen site font (body var) must be re-applied inline here.
+      getSiteTypography(),
+    ]);
 
   // M24: the remaining reads don't depend on each other either — one round-trip
   // of latency instead of five serial awaits. (Genuinely dependent work — e.g.
@@ -147,7 +152,13 @@ export default async function ChildLayout({
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap"
         rel="stylesheet"
       />
-      <div className="arena" data-palette={palette ?? undefined}>
+      <div
+        className="arena"
+        data-palette={palette ?? undefined}
+        // Only when an admin saved a site font — otherwise the arena keeps its
+        // own stack from globals.css (zero visual regression by default).
+        style={typography ? { fontFamily: "var(--site-font)" } : undefined}
+      >
         {/* Self-contained async server component (fetches its own selection;
             renders null when the child has no sticker theme selected). */}
         <StickerDecorations />

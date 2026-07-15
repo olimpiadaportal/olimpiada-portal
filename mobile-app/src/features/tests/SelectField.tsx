@@ -4,8 +4,9 @@
 // never display labels — Round-19 forms rule).
 import React, { useState } from "react";
 import { FlatList, Modal, Pressable, View } from "react-native";
+import { Check, ChevronDown } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
-import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
+import { radius, shadow, spacing, type ArenaTokens } from "@/theme/tokens";
 import { tint } from "./ui";
 
 export type SelectOption = { id: string; name: string };
@@ -69,9 +70,7 @@ export function SelectField({
         >
           {selected?.name ?? placeholder}
         </AppText>
-        <AppText color={arena.dim} style={{ fontSize: 12 }}>
-          ▾
-        </AppText>
+        <ChevronDown size={16} color={arena.dim} strokeWidth={2} />
       </Pressable>
       {note ? (
         <AppText variant="muted" color={arena.dim} style={{ fontSize: 12 }}>
@@ -97,14 +96,17 @@ export function SelectField({
         >
           <Pressable
             onPress={() => {}}
-            style={{
-              backgroundColor: arena.panel,
-              borderColor: arena.line,
-              borderWidth: 1,
-              borderRadius: radius.lg,
-              maxHeight: "70%",
-              overflow: "hidden",
-            }}
+            style={[
+              {
+                backgroundColor: arena.panel,
+                borderColor: arena.line,
+                borderWidth: 1,
+                borderRadius: radius.lg,
+                maxHeight: "70%",
+                overflow: "hidden",
+              },
+              shadow("float"),
+            ]}
           >
             <View
               style={{
@@ -132,6 +134,10 @@ export function SelectField({
                       setOpen(false);
                     }}
                     style={({ pressed }) => ({
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: spacing.md,
+                      minHeight: 48,
                       paddingVertical: spacing.md,
                       paddingHorizontal: spacing.lg,
                       backgroundColor: active
@@ -141,7 +147,10 @@ export function SelectField({
                           : "transparent",
                     })}
                   >
-                    <AppText color={active ? arena.blue : arena.ink}>{item.name}</AppText>
+                    <AppText color={active ? arena.blue : arena.ink} style={{ flex: 1 }}>
+                      {item.name}
+                    </AppText>
+                    {active ? <Check size={16} color={arena.blue} strokeWidth={2.5} /> : null}
                   </Pressable>
                 );
               }}

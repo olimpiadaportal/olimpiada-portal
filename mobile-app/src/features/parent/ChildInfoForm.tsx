@@ -1,9 +1,13 @@
 // Add-child INFO step (web AddChildWizard step 1 parity): first/last name,
-// city → school cascade, grade, child password. Round-18 contract: all fields
-// are CONTROLLED React state and selects carry UUIDs; on a city change a
-// still-valid school is kept and a foreign one is cleared (here: when the new
-// city's school list arrives). Client checks are UX only — the BFF re-runs
-// the authoritative validation.
+// city → district (rayon) → school cascade, grade, child password. Round-18
+// contract: all fields are CONTROLLED React state and selects carry UUIDs; on
+// a city change the rayon clears immediately and a still-valid school is kept
+// while a foreign one is cleared (when the new city's school list arrives).
+// Round 21: the rayon field shows ONLY when the chosen city has active rayons
+// — required then — and narrows the school list to that rayon's schools PLUS
+// the schools without a rayon yet. Client checks are UX only — the BFF re-runs
+// the authoritative validation (a missing rayon maps to
+// addchild.err.districtRequired).
 import React, { useEffect } from "react";
 import { View } from "react-native";
 import { AppText } from "@/components/AppText";
@@ -12,7 +16,14 @@ import { spacing } from "@/theme/tokens";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import type { AddChildFields } from "@/lib/api";
 import { useT } from "@/i18n/useT";
-import { useCities, useGrades, useSchools } from "./queries";
+import {
+  useCities,
+  useCityDistricts,
+  useGrades,
+  useSchools,
+  type CityDistrictRow,
+  type SchoolRow,
+} from "./queries";
 import { SelectField, type SelectItem } from "./SelectField";
 
 export type ChildInfo = {
@@ -20,6 +31,8 @@ export type ChildInfo = {
   lastName: string;
   gradeId: string;
   cityId: string;
+  /** The intra-city rayon (city_districts.id) — NOT the city. */
+  cityDistrictId: string;
   schoolId: string;
   password: string;
 };
@@ -29,18 +42,31 @@ export const EMPTY_CHILD_INFO: ChildInfo = {
   lastName: "",
   gradeId: "",
   cityId: "",
+  cityDistrictId: "",
   schoolId: "",
   password: "",
 };
 
 export type ChildInfoErrors = Partial<Record<keyof ChildInfo, string>>;
 
-/** Client-side required checks (error values are i18n KEYS). */
-export function validateChildInfo(v: ChildInfo): ChildInfoErrors {
+/** Rayons of one city (empty array = the district field is hidden). */
+export function rayonsOfCity(
+  districts: CityDistrictRow[] | undefined,
+  cityId: string,
+): CityDistrictRow[] {
+  if (!cityId) return [];
+  return (districts ?? []).filter((d) => d.city_id === cityId);
+}
+
+/** Client-side required checks (error values are i18n KEYS). The rayon is
+ *  required only when the chosen city has active rayons. */
+export function validateChildInfo(v: ChildInfo, hasDistricts: boolean): ChildInfoErrors {
   const e: ChildInfoErrors = {};
   if (!v.firstName.trim()) e.firstName = "auth.child.err.firstNameRequired";
   if (!v.lastName.trim()) e.lastName = "auth.child.err.lastNameRequired";
   if (!v.cityId) e.cityId = "addchild.err.cityRequired";
+  if (v.cityId && hasDistricts && !v.cityDistrictId)
+    e.cityDistrictId = "addchild.err.districtRequired";
   if (!v.schoolId) e.schoolId = "addchild.err.schoolRequired";
   if (!v.gradeId) e.gradeId = "addchild.err.gradeRequired";
   if (!v.password) e.password = "auth.child.err.passwordRequired";
@@ -50,12 +76,26 @@ export function validateChildInfo(v: ChildInfo): ChildInfoErrors {
 
 type GradeRow = { id: string; level: number; name: string };
 type CityRow = { id: string; name: string };
-type SchoolRow = { id: string; name: string; is_private: boolean | null };
 
-/** BFF payload incl. the display-fallback strings the web action also stores. */
+/** Web parity: rayon chosen → that rayon's schools first, then the schools
+ *  without a rayon yet (they must stay selectable). No rayon → the full list. */
+export function filterSchoolsByRayon(
+  schools: SchoolRow[],
+  hasDistricts: boolean,
+  cityDistrictId: string,
+): SchoolRow[] {
+  if (!hasDistricts || !cityDistrictId) return schools;
+  return [
+    ...schools.filter((s) => s.city_district_id === cityDistrictId),
+    ...schools.filter((s) => s.city_district_id == null),
+  ];
+}
+
+/** BFF payload incl. the display-fallback strings the web action also stores.
+ *  NAMING TRAP: district_id = the CITY; city_district_id = the rayon. */
 export function buildAddChildFields(
   v: ChildInfo,
-  catalogs: { grades: GradeRow[]; cities: CityRow[]; schools: SchoolRow[] },
+  catalogs: { grades: GradeRow[]; cities: CityRow[]; schools: { id: string; name: string }[] },
 ): AddChildFields {
   const grade = catalogs.grades.find((g) => g.id === v.gradeId);
   return {
@@ -63,6 +103,7 @@ export function buildAddChildFields(
     last_name: v.lastName.trim(),
     grade_id: v.gradeId,
     district_id: v.cityId,
+    city_district_id: v.cityDistrictId,
     school_id: v.schoolId,
     password: v.password,
     city: catalogs.cities.find((c) => c.id === v.cityId)?.name ?? "",
@@ -86,11 +127,20 @@ export function ChildInfoForm({
   const { t, locale } = useT();
   const grades = useGrades();
   const cities = useCities();
+  const districts = useCityDistricts();
   const schools = useSchools(value.cityId);
 
+  const cityRayons = rayonsOfCity(districts.data, value.cityId);
+  const hasDistricts = cityRayons.length > 0;
+
   // Cascade rule: once the selected city's schools arrive, keep the current
-  // school if it belongs to this city, clear it if it is foreign.
-  const schoolRows = (schools.data ?? []) as SchoolRow[];
+  // school if it belongs to this city (and the chosen rayon's narrowed list),
+  // clear it if it is foreign.
+  const schoolRows = filterSchoolsByRayon(
+    (schools.data ?? []) as SchoolRow[],
+    hasDistricts,
+    value.cityDistrictId,
+  );
   const schoolsReady = schools.isSuccess;
   useEffect(() => {
     if (!schoolsReady) return;
@@ -109,6 +159,11 @@ export function ChildInfoForm({
     kind: "option",
     value: c.id,
     label: c.name,
+  }));
+  const rayonItems: SelectItem[] = cityRayons.map((d) => ({
+    kind: "option",
+    value: d.id,
+    label: d.name,
   }));
 
   // Private schools first under their own header, then public (fetch order is
@@ -154,11 +209,27 @@ export function ChildInfoForm({
         placeholder={t("addchild.field.selectCity")}
         items={cityItems}
         value={value.cityId}
-        onChange={(cityId) => onChange({ cityId })}
+        // A school belongs to one city and a rayon to one city — changing the
+        // city always clears the rayon; the school clears via the list effect.
+        onChange={(cityId) =>
+          onChange(cityId !== value.cityId ? { cityId, cityDistrictId: "" } : { cityId })
+        }
         disabled={disabled}
         error={err("cityId")}
         closeLabel={t("dpay.cancel")}
       />
+      {hasDistricts ? (
+        <SelectField
+          label={`${t("addchild.field.district")} *`}
+          placeholder={t("addchild.field.selectDistrict")}
+          items={rayonItems}
+          value={value.cityDistrictId}
+          onChange={(cityDistrictId) => onChange({ cityDistrictId })}
+          disabled={disabled}
+          error={err("cityDistrictId")}
+          closeLabel={t("dpay.cancel")}
+        />
+      ) : null}
       <SelectField
         label={`${t("addchild.field.school")} *`}
         placeholder={

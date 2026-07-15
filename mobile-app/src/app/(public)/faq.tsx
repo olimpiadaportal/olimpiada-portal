@@ -1,11 +1,11 @@
-// Public FAQ (web /faq parity): the ten faq.q*/faq.a* pairs as a pressable
-// accordion. No layout animation — expansion is an instant conditional render,
-// which also inherently respects reduce-motion settings.
+// Public FAQ (web /faq parity): the ten faq.q*/faq.a* pairs as expandable
+// accordion cards — LayoutAnimation eases the expansion (plan §4-Public);
+// lucide chevron rotates on the open item.
 import React, { useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { LayoutAnimation, Pressable, ScrollView, View } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Path } from "react-native-svg";
+import { ChevronDown } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -17,15 +17,7 @@ const QUESTION_COUNT = 10;
 function Chevron({ open, color }: { open: boolean; color: string }) {
   return (
     <View style={{ transform: [{ rotate: open ? "180deg" : "0deg" }] }}>
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="m6 9 6 6 6-6"
-          stroke={color}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+      <ChevronDown size={18} color={color} strokeWidth={2} />
     </View>
   );
 }
@@ -40,6 +32,11 @@ export default function Faq() {
     q: t(`faq.q${i + 1}`),
     a: t(`faq.a${i + 1}`),
   }));
+
+  function toggle(i: number) {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpen((cur) => (cur === i ? null : i));
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.bg }}>
@@ -72,12 +69,14 @@ export default function Faq() {
                 accessibilityRole="button"
                 accessibilityLabel={item.q}
                 accessibilityState={{ expanded: isOpen }}
-                onPress={() => setOpen(isOpen ? null : i)}
+                onPress={() => toggle(i)}
+                android_ripple={{ color: tokens.chipBg }}
                 style={({ pressed }) => ({
                   flexDirection: "row",
                   alignItems: "center",
                   gap: spacing.md,
                   padding: spacing.lg,
+                  minHeight: 48,
                   opacity: pressed ? 0.8 : 1,
                 })}
               >

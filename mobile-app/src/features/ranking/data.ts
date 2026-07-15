@@ -5,15 +5,17 @@
 import { supabase } from "@/lib/supabase";
 
 export type Board = "points" | "streak";
-export type Scope = "global" | "subject" | "grade" | "city" | "school";
+export type Scope = "global" | "subject" | "grade" | "city" | "district" | "school";
 export type PeriodUrl = "month" | "all";
 
-/** get_leaderboard row (migration 048): server-formatted "Firstname L." +
- * city/school/grade context. Render as-is — NEVER re-derive names locally. */
+/** get_leaderboard row (migrations 048 + 058): server-formatted "Firstname L."
+ * + city/district/school/grade context (district derives from the student's
+ * SCHOOL server-side). Render as-is — NEVER re-derive names locally. */
 export type LbRow = {
   rank: number;
   display_name: string;
   city: string | null;
+  district: string | null;
   school: string | null;
   grade_level: number | null;
   value: number;
@@ -29,17 +31,21 @@ export type StreakStatus = {
   hours_until_loss: number | null;
 };
 
-/** The child's own scope ids (grade/city/school tabs exist only when set). */
+/** The child's own scope ids (grade/city/district/school tabs exist only when
+ * set). districtId = the child's OWN rayon, resolved the same way the board
+ * derives it (migration 058): the SCHOOL's city_district_id first, falling
+ * back to the stored students.city_district_id. */
 export type ScopeIds = {
   gradeId: string | null;
   cityId: string | null;
+  districtId: string | null;
   schoolId: string | null;
 };
 
 export async function fetchScopeIds(profileId: string): Promise<ScopeIds> {
   const { data, error } = await supabase
     .from("students")
-    .select("grade_id, district_id, school_id")
+    .select("grade_id, district_id, school_id, city_district_id, school:school_id(city_district_id)")
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw error;
@@ -47,10 +53,15 @@ export async function fetchScopeIds(profileId: string): Promise<ScopeIds> {
     grade_id?: string | null;
     district_id?: string | null;
     school_id?: string | null;
+    city_district_id?: string | null;
+    school?: { city_district_id?: string | null } | { city_district_id?: string | null }[] | null;
   };
+  // Single-object FK embed; a defensive array unwrap keeps us safe either way.
+  const school = Array.isArray(s.school) ? s.school[0] ?? null : s.school ?? null;
   return {
     gradeId: s.grade_id ?? null,
     cityId: s.district_id ?? null,
+    districtId: school?.city_district_id ?? s.city_district_id ?? null,
     schoolId: s.school_id ?? null,
   };
 }

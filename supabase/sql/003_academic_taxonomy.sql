@@ -4,7 +4,8 @@
 -- OlympIQ — canonical root SQL file 003 of 013.
 --
 -- Responsibility : Academic taxonomy & future school/partner readiness:
---                  districts, schools, grades, subjects, topics, subtopics.
+--                  districts, city_districts, schools, grades, subjects,
+--                  topics, subtopics.
 -- Run order      : After 002. Before 004 (content references taxonomy).
 -- Safe to rerun  : Yes (CREATE TABLE IF NOT EXISTS). Non-destructive.
 -- Notes          : schools/districts are future-ready references (no partner
@@ -30,27 +31,104 @@ create table if not exists public.districts (
 );
 
 -- -----------------------------------------------------------------------------
+-- city_districts : intra-city administrative districts/rayons (migration 053).
+-- NAMING NOTE: public.districts holds CITIES (historic naming); city_districts
+-- holds the rayons INSIDE a city (Bakı → Yasamal, Nəsimi, …). Admin-managed;
+-- schools link here and students inherit the district through their school
+-- (single source of truth — never duplicated on students or leaderboard rows).
+-- Seeds (Bakı's 12 official rayons) live in 012; RLS in 010.
+-- -----------------------------------------------------------------------------
+create table if not exists public.city_districts (
+  id         uuid primary key default gen_random_uuid(),
+  city_id    uuid not null references public.districts (id) on delete cascade,
+  name       text not null,
+  status     public.catalog_status not null default 'active',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint uq_city_districts_city_name unique (city_id, name)
+);
+
+comment on table public.city_districts is
+  'Intra-city administrative districts/rayons (migration 053). city_id references '
+  'public.districts (the CITIES table, historic naming). Admin-managed; schools link '
+  'here and students inherit the district through their school.';
+
+-- -----------------------------------------------------------------------------
 -- schools : a school MUST belong to a city (districts). district_id is MANDATORY.
 -- Admins create schools later; sample schools (under Bakı) are seeded in 012.
 -- Ordering everywhere: PRIVATE first (is_private), then numeric school_number
 -- ASCENDING (so "2" before "10"), NULL numbers last, then name. school_number is
 -- a stored sort key parsed from the AZ name ("N nömrəli ...") — backfilled in 012.
 -- (Round 12 / migration 029.)
+-- city_district_id (migration 053): the school's rayon within its city; the
+-- guard trigger below rejects mismatched city/district pairs and requires a
+-- district for NEW schools when the chosen city has active districts.
 -- -----------------------------------------------------------------------------
 create table if not exists public.schools (
-  id            uuid primary key default gen_random_uuid(),
-  name          text not null,
-  district_id   uuid not null references public.districts (id) on delete restrict,
-  status        public.catalog_status not null default 'active',
-  is_private    boolean not null default false,   -- private schools sort before public
-  school_number int,                              -- numeric sort key parsed from name; NULL = unnumbered
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
+  id               uuid primary key default gen_random_uuid(),
+  name             text not null,
+  district_id      uuid not null references public.districts (id) on delete restrict,
+  status           public.catalog_status not null default 'active',
+  is_private       boolean not null default false,   -- private schools sort before public
+  school_number    int,                              -- numeric sort key parsed from name; NULL = unnumbered
+  city_district_id uuid references public.city_districts (id) on delete set null,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
 );
+
+comment on column public.schools.city_district_id is
+  'The school''s administrative district within its city (migration 053). NULL = '
+  'not yet assigned (manual-review list). Leaderboard district derives from here.';
 
 -- Display-ordering index (private first, number asc nulls last, name).
 create index if not exists ix_schools_display_order
   on public.schools (is_private desc, school_number asc nulls last, name);
+
+create index if not exists idx_schools_city_district on public.schools (city_district_id);
+
+-- Guard: the district must belong to the school's city; NEW schools in a city
+-- that has active districts must pick one. Existing NULL rows keep working
+-- (edits that do not touch the district are allowed) so the backfill/review
+-- flow can proceed gradually. (Migration 053.)
+create or replace function public.school_district_guard()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.city_district_id is not null then
+    if not exists (
+      select 1 from public.city_districts cd
+      where cd.id = new.city_district_id and cd.city_id = new.district_id
+    ) then
+      raise exception 'school: district does not belong to the selected city'
+        using errcode = 'check_violation';
+    end if;
+  elsif tg_op = 'INSERT' then
+    if exists (
+      select 1 from public.city_districts cd
+      where cd.city_id = new.district_id and cd.status = 'active'
+    ) then
+      raise exception 'school: district is required for this city'
+        using errcode = 'check_violation';
+    end if;
+  elsif tg_op = 'UPDATE' and old.city_district_id is not null then
+    -- never silently unset an assigned district while the city has districts
+    if exists (
+      select 1 from public.city_districts cd
+      where cd.city_id = new.district_id and cd.status = 'active'
+    ) then
+      raise exception 'school: district is required for this city'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_school_district_guard on public.schools;
+create trigger trg_school_district_guard
+  before insert or update of city_district_id, district_id on public.schools
+  for each row execute function public.school_district_guard();
 
 -- -----------------------------------------------------------------------------
 -- grades : grade levels 1..11.
@@ -87,6 +165,9 @@ create table if not exists public.topics (
   -- 'olympiad' = created by olympiad package bulk uploads, hidden from every
   -- Exams surface. Subtopics inherit scope through their parent topic.
   scope       text not null default 'exam' check (scope in ('exam', 'olympiad')),
+  -- School term Rüb 1..4 (migration 054): NULL = legacy row awaiting manual
+  -- review (never auto-assigned); consistency triggers live in 011.
+  term        smallint check (term between 1 and 4),
   order_index integer not null default 0,
   status      public.catalog_status not null default 'active',
   created_at  timestamptz not null default now(),
@@ -98,6 +179,10 @@ comment on column public.topics.scope is
   'surfaces; olympiad = created by olympiad package bulk uploads, hidden from every '
   'Exams surface. Subtopics inherit scope through their parent topic.';
 
+comment on column public.topics.term is
+  'School term (Rüb) 1..4 this topic is taught in (migration 054). NULL = legacy row '
+  'awaiting manual review; excluded from daily-round generation.';
+
 -- -----------------------------------------------------------------------------
 -- subtopics : nested detail under a topic.
 -- -----------------------------------------------------------------------------
@@ -105,11 +190,16 @@ create table if not exists public.subtopics (
   id          uuid primary key default gen_random_uuid(),
   topic_id    uuid not null references public.topics (id) on delete cascade,
   name        text not null,
+  -- Term inherited from the parent topic (migration 054; trigger-enforced in 011).
+  term        smallint check (term between 1 and 4),
   order_index integer not null default 0,
   status      public.catalog_status not null default 'active',
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+comment on column public.subtopics.term is
+  'Inherited from the parent topic (kept equal by trigger). NULL = legacy/unreviewed.';
 
 -- -----------------------------------------------------------------------------
 -- wallpapers : predefined child-dashboard wallpaper catalog (no arbitrary colors).

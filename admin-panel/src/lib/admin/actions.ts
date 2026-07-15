@@ -116,7 +116,21 @@ function buildPayload(res: Resource, formData: FormData): BuiltPayload {
       }
       payload[f.name] = n;
     } else if (f.type === "reference" || f.type === "select") {
-      payload[f.name] = val === "" ? null : val;
+      // Enum whitelist + required enforcement (server-side; the client's
+      // `required`/option list is UX only). Covers e.g. topics.term (1..4).
+      if (val === "") {
+        if (f.required) return { invalid: "number" };
+        payload[f.name] = null;
+        continue;
+      }
+      if (
+        f.type === "select" &&
+        f.options &&
+        !f.options.some((o) => o.value === val)
+      ) {
+        return { invalid: "number" };
+      }
+      payload[f.name] = val;
     } else {
       // Cap: taxonomy/config names ≤ 120 (server-side, mirrors the UI limit).
       if (val.length > TEXT_MAX) return { invalid: "text" };

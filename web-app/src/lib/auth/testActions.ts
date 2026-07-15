@@ -21,6 +21,7 @@ import { notifyAttemptGraded } from "@/lib/notifications/events";
 
 const PG_CHECK_VIOLATION = "23514";
 const PG_NO_DATA_FOUND = "P0002";
+const PG_UNIQUE_VIOLATION = "23505";
 
 // Caps mirror the DB-side limits (037): topics ≤50, subtopics ≤100; the
 // answers payload can never legitimately exceed the 25-question draw.
@@ -129,6 +130,52 @@ export async function startTopicTest(
   }
   const d = data as { attempt_id?: string; resumed?: boolean } | null;
   if (!d?.attempt_id || !isUuid(String(d.attempt_id))) return { error: t("test.err.generic") };
+
+  redirect(`/child/test/run/${d.attempt_id}${d.resumed ? "?resumed=1" : ""}`);
+}
+
+// ---------------------------------------------------------------------------
+// startDailyRound — daily-round form action (migration 056).
+// day='today'  → RATED round (timed 25min, ONE per student/subject/day — the
+//                uniqueness is DB-enforced; the UI only reflects it);
+// day='yesterday' → unlimited UNTIMED practice replay of yesterday's stored
+//                round (never affects points/streak).
+// Success = redirect to the shared player. Errors land back on the test home
+// as whitelisted ?err= codes (never raw Postgres text).
+// ---------------------------------------------------------------------------
+export async function startDailyRound(formData: FormData): Promise<void> {
+  await requireChild();
+
+  const subjectId = String(formData.get("subject_id") ?? "");
+  // Whitelist, never pass the raw client string to the RPC.
+  const day = String(formData.get("day") ?? "") === "yesterday" ? "yesterday" : "today";
+  if (!isUuid(subjectId)) redirect("/child/test?err=1");
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("start_daily_round_attempt", {
+    p_subject_id: subjectId,
+    p_day: day,
+  });
+  if (error) {
+    if (error.code === PG_UNIQUE_VIOLATION) {
+      // 'daily: already attempted today' — the day is consumed.
+      redirect("/child/test?err=already");
+    }
+    if (error.code === PG_NO_DATA_FOUND) {
+      // today: pool too short ('not enough eligible questions') → round not
+      // available yet; yesterday: 'no round was held yesterday'.
+      redirect(day === "yesterday" ? "/child/test?err=noyest" : "/child/test?err=nopool");
+    }
+    if (error.code === PG_CHECK_VIOLATION) {
+      // Distinguish the two friendly cases server-side (the message itself
+      // never reaches the client — only a whitelisted code does).
+      const noGrade = String(error.message ?? "").includes("grade");
+      redirect(noGrade ? "/child/test?err=nograde" : "/child/test?err=noaccess");
+    }
+    redirect("/child/test?err=1");
+  }
+  const d = data as { attempt_id?: string; resumed?: boolean } | null;
+  if (!d?.attempt_id || !isUuid(String(d.attempt_id))) redirect("/child/test?err=1");
 
   redirect(`/child/test/run/${d.attempt_id}${d.resumed ? "?resumed=1" : ""}`);
 }

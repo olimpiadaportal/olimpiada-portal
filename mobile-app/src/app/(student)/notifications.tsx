@@ -1,15 +1,18 @@
-// Student notification inbox (web /child/notifications parity): the child only
-// READS the inbox — preferences are parent-managed, so unlike the parent
-// profile there is no prefs UI here at all. Same SHARED store as the header
-// bell (useNotifications — one unread state, Realtime inserts keep working),
-// same category chips / detail sheet / mark-read + delete actions as the
-// parent screen, with student-audience deep links and the arena background.
+// Student notification inbox (web /child/notifications parity, redesigned):
+// the child only READS the inbox — preferences are parent-managed, so unlike
+// the parent profile there is no prefs UI here at all. Same SHARED store as
+// the header bell (useNotifications — one unread state, Realtime inserts keep
+// working), same DATE-GROUPED sections / category chips / detail sheet /
+// mark-read + delete actions as the parent screen, with student-audience deep
+// links and the arena background (rows/sheets keep the app tokens — the
+// existing theming mechanism of this route).
 import React, { useMemo, useState } from "react";
-import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { RefreshControl, SectionList, View } from "react-native";
+import { BellOff } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
-import { AppText } from "@/components/AppText";
+import { SectionHeader } from "@/components/SectionHeader";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing } from "@/theme/tokens";
 import { useArena } from "@/features/arena/useArena";
@@ -21,14 +24,16 @@ import {
 } from "@/features/notifications/useNotifications";
 import {
   CategoryChips,
+  DayHeader,
   NotificationDetailSheet,
   NotificationRow,
   categoryLabelKey,
+  groupByDay,
   relativeTime,
 } from "@/features/notifications/components";
 
 export default function StudentNotifications() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { arena } = useArena();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -61,6 +66,15 @@ export default function StudentNotifications() {
   };
 
   const shown = filter ? items.filter((n) => n.category === filter) : items;
+  const sections = useMemo(
+    () =>
+      groupByDay(
+        shown,
+        { today: t("mob.notif.today"), yesterday: t("mob.notif.yesterday") },
+        locale,
+      ),
+    [shown, t, locale],
+  );
 
   // Root-relative paths (action_url or a markdown link in the body) go through
   // the SAME deep-link allowlist as push/universal links — STUDENT audience, so
@@ -106,9 +120,10 @@ export default function StudentNotifications() {
     );
   } else {
     body = (
-      <FlatList
-        data={shown}
+      <SectionList
+        sections={sections}
         keyExtractor={(n) => n.id}
+        stickySectionHeadersEnabled={false}
         contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.xl, flexGrow: 1 }}
         refreshControl={
           <RefreshControl
@@ -118,7 +133,14 @@ export default function StudentNotifications() {
             colors={[arena.lime]}
           />
         }
-        ListEmptyComponent={<EmptyState title={t("notif.empty")} body={t("notif.emptyHint")} />}
+        ListEmptyComponent={
+          <EmptyState
+            title={t("notif.empty")}
+            body={t("notif.emptyHint")}
+            icon={<BellOff size={26} color={arena.muted} strokeWidth={2} />}
+          />
+        }
+        renderSectionHeader={({ section }) => <DayHeader title={section.title} />}
         renderItem={({ item }) => (
           <NotificationRow
             item={item}
@@ -135,16 +157,12 @@ export default function StudentNotifications() {
     <Screen background={arena.bg}>
       <View style={{ flex: 1, gap: spacing.md, paddingTop: spacing.md }}>
         {unreadCount > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("notif.markAllRead")}
-            onPress={() => void markAllRead()}
-            style={{ alignSelf: "flex-end" }}
-          >
-            <AppText variant="label" color={arena.lime}>
-              {t("notif.markAllRead")}
-            </AppText>
-          </Pressable>
+          <SectionHeader
+            title={t("mob.notif.unread").replace("{n}", String(unreadCount))}
+            color={arena.muted}
+            actionColor={arena.lime}
+            action={{ label: t("notif.markAllRead"), onPress: () => void markAllRead() }}
+          />
         ) : null}
 
         <CategoryChips

@@ -1,7 +1,9 @@
 // Shared parent-surface UI primitives: scrollable screen body (headers come
-// from the navigator, so no top inset here), pills, summary rows, the child
-// selector chips and the bottom-sheet shell every commerce sheet reuses
-// (plain RN Modal — AccountSheet pattern).
+// from the navigator, so no top inset by default), tinted pills, summary rows
+// (with an optional lucide icon chip), the child selector chips (Avatar-led),
+// the gradient-border card (active/popular highlight pattern) and the
+// bottom-sheet shell every commerce sheet reuses (plain RN Modal —
+// AccountSheet pattern, grab handle included).
 import React from "react";
 import {
   KeyboardAvoidingView,
@@ -11,12 +13,21 @@ import {
   RefreshControl,
   ScrollView,
   View,
+  type ViewStyle,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
+import { Avatar } from "@/components/Avatar";
+import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing } from "@/theme/tokens";
+import { gradients, radius, shadow, spacing } from "@/theme/tokens";
 import type { ChildRow } from "@/lib/data";
+
+/** Soft tint from a 6-digit hex token (#rrggbb + alpha byte). */
+function tint(hex: string, alpha: string): string {
+  return /^#[0-9a-fA-F]{6}$/.test(hex) ? `${hex}${alpha}` : hex;
+}
 
 /** Scroll body for screens that live under a navigator header. */
 export function ScreenScroll({
@@ -24,12 +35,15 @@ export function ScreenScroll({
   refreshing = false,
   onRefresh,
   keyboard = false,
+  topInset = false,
 }: {
   children: React.ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
   /** Wrap in KeyboardAvoidingView (form screens). */
   keyboard?: boolean;
+  /** Add the safe-area top padding (screens without a navigator header). */
+  topInset?: boolean;
 }) {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
@@ -38,6 +52,7 @@ export function ScreenScroll({
       style={{ flex: 1, backgroundColor: tokens.bg }}
       contentContainerStyle={{
         padding: spacing.lg,
+        paddingTop: topInset ? insets.top + spacing.sm : spacing.lg,
         paddingBottom: insets.bottom + spacing.xxl,
         gap: spacing.lg,
       }}
@@ -67,7 +82,7 @@ export function ScreenScroll({
   );
 }
 
-/** Status pill (web .pill contract; tone recolours for access states). */
+/** Status pill (web .pill contract): tone recolours text AND soft background. */
 export function Pill({
   label,
   tone = "muted",
@@ -84,11 +99,17 @@ export function Pill({
         : tone === "accent"
           ? tokens.pillText
           : tokens.muted;
+  const bg =
+    tone === "ok"
+      ? tint(tokens.ok, "1F")
+      : tone === "bad"
+        ? tint(tokens.danger, "1F")
+        : tokens.pillBg;
   return (
     <View
       style={{
         alignSelf: "flex-start",
-        backgroundColor: tokens.pillBg,
+        backgroundColor: bg,
         borderRadius: 999,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.xs,
@@ -101,15 +122,19 @@ export function Pill({
   );
 }
 
-/** Label/value line used in quote summaries, billing rows and detail sheets. */
+/** Label/value line used in quote summaries, billing rows and detail sheets.
+ *  Optional leading lucide icon (detail sheets). */
 export function KeyRow({
   label,
   value,
   strong = false,
+  icon,
 }: {
   label: string;
   value: string;
   strong?: boolean;
+  /** Leading glyph (lucide, size 16–18, muted). */
+  icon?: React.ReactNode;
 }) {
   const { tokens } = useTheme();
   return (
@@ -120,15 +145,19 @@ export function KeyRow({
         alignItems: "center",
         gap: spacing.md,
         paddingVertical: spacing.xs,
+        minHeight: icon ? 32 : undefined,
       }}
     >
-      <AppText variant={strong ? "label" : "muted"} style={{ flexShrink: 1 }}>
-        {label}
-      </AppText>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1 }}>
+        {icon ?? null}
+        <AppText variant={strong ? "label" : "muted"} style={{ flexShrink: 1 }}>
+          {label}
+        </AppText>
+      </View>
       <AppText
         variant={strong ? "title" : "body"}
         color={strong ? tokens.text : undefined}
-        style={strong ? { fontSize: 18 } : undefined}
+        style={[{ flexShrink: 1, textAlign: "right" }, strong ? { fontSize: 18 } : null]}
       >
         {value}
       </AppText>
@@ -148,7 +177,36 @@ export function childDisplayName(c: ChildRow): string {
   return [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || "—";
 }
 
-/** Horizontal child selector chips (subscription/olympiads tabs). */
+/** Brand-gradient BORDER wrap (active plan / popular card highlight): a 2px
+ *  LinearGradient frame around a flat Card (MA gradient-border pattern). */
+export function GradientBorderCard({
+  children,
+  style,
+  innerStyle,
+}: {
+  children: React.ReactNode;
+  style?: ViewStyle;
+  innerStyle?: ViewStyle;
+}) {
+  const { tokens } = useTheme();
+  return (
+    <LinearGradient
+      colors={[...gradients.brand]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[{ borderRadius: radius.lg, padding: 2 }, shadow("card", tokens.shadow), style]}
+    >
+      <Card
+        variant="flat"
+        style={[{ borderWidth: 0, borderRadius: radius.lg - 2 }, innerStyle]}
+      >
+        {children}
+      </Card>
+    </LinearGradient>
+  );
+}
+
+/** Horizontal child selector chips (subscription/olympiads tabs) — Avatar-led. */
 export function ChildChips({
   childrenList,
   selectedId,
@@ -178,34 +236,22 @@ export function ChildChips({
             accessibilityState={{ selected: active }}
             accessibilityLabel={name}
             onPress={() => onSelect(c.profile_id)}
-            style={{
+            android_ripple={{ color: tokens.pillBg }}
+            style={({ pressed }) => ({
               flexDirection: "row",
               alignItems: "center",
               gap: spacing.sm,
               backgroundColor: active ? tokens.accent : tokens.chipBg,
               borderRadius: 999,
-              paddingVertical: spacing.sm,
-              paddingHorizontal: spacing.lg,
-            }}
+              paddingVertical: spacing.xs + 2,
+              paddingLeft: spacing.xs + 2,
+              paddingRight: spacing.lg,
+              minHeight: 44,
+              opacity: pressed ? 0.85 : 1,
+              overflow: "hidden",
+            })}
           >
-            <View
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 11,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: active ? "rgba(255,255,255,0.25)" : tokens.pillBg,
-              }}
-            >
-              <AppText
-                variant="label"
-                color={active ? "#ffffff" : tokens.pillText}
-                style={{ fontSize: 12 }}
-              >
-                {(name[0] ?? "•").toUpperCase()}
-              </AppText>
-            </View>
+            <Avatar name={name} seed={c.profile_id} size={32} />
             <AppText variant="label" color={active ? "#ffffff" : tokens.chipText}>
               {name}
             </AppText>
@@ -216,7 +262,8 @@ export function ChildChips({
   );
 }
 
-/** Bottom-sheet modal shell (AccountSheet pattern: dim scrim + rounded sheet). */
+/** Bottom-sheet modal shell (AccountSheet pattern: dim scrim + rounded sheet
+ *  with a grab handle). */
 export function SheetShell({
   visible,
   onClose,
@@ -238,15 +285,18 @@ export function SheetShell({
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
       />
       <View
-        style={{
-          backgroundColor: tokens.surface,
-          borderTopLeftRadius: radius.xl,
-          borderTopRightRadius: radius.xl,
-          padding: spacing.xl,
-          paddingBottom: insets.bottom + spacing.xl,
-          gap: spacing.lg,
-          maxHeight: "88%",
-        }}
+        style={[
+          {
+            backgroundColor: tokens.surface,
+            borderTopLeftRadius: radius.xl,
+            borderTopRightRadius: radius.xl,
+            padding: spacing.xl,
+            paddingBottom: insets.bottom + spacing.xl,
+            gap: spacing.lg,
+            maxHeight: "88%",
+          },
+          shadow("float", tokens.shadow),
+        ]}
       >
         <View
           style={{

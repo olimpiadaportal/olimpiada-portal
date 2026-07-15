@@ -30,8 +30,10 @@ export const NAV: NavGroup[] = [
       { label: "nav.subjects", href: "/manage/subjects", adminOnly: true },
       { label: "nav.topics", href: "/manage/topics", adminOnly: true },
       { label: "nav.subtopics", href: "/manage/subtopics", adminOnly: true },
-      { label: "nav.cities", href: "/cities", adminOnly: true },
-      { label: "nav.schools", href: "/schools", adminOnly: true },
+      // Round 21: the separate Cities / Districts / Schools pages merged into
+      // ONE hierarchical Locations screen. The label is resolved with a local
+      // trilingual fallback in the layout until messages.ts gains the key.
+      { label: "nav.locations", href: "/locations", adminOnly: true },
     ],
   },
   {

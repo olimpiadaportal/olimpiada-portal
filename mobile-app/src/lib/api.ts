@@ -141,7 +141,11 @@ export type AddChildFields = {
   first_name: string;
   last_name: string;
   grade_id: string;
+  /** NAMING TRAP (web parity): district_id = the CITY (historic naming). */
   district_id: string;
+  /** Round 21: the intra-city rayon (city_districts.id). Required by the
+   *  server when the chosen city has active rayons; "" → null server-side. */
+  city_district_id?: string;
   school_id: string;
   password: string;
   city?: string;

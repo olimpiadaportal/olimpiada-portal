@@ -6,11 +6,12 @@ import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import { ChartColumn } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
-import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
+import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
@@ -50,6 +51,7 @@ function LoadingSkeleton() {
 
 export default function ParentAnalytics() {
   const { t } = useT();
+  const { tokens } = useTheme();
   const router = useRouter();
   const config = useMobileConfig();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -87,11 +89,12 @@ export default function ParentAnalytics() {
     );
   } else if (kids.length === 0) {
     body = (
-      <Card style={{ alignItems: "center", gap: spacing.lg }}>
-        <AppText variant="muted" style={{ textAlign: "center" }}>
-          {t("ana.noChildren")}
-        </AppText>
-        <Button title={t("ana.addChild")} onPress={() => router.push("/(parent)/add-child")} />
+      <Card>
+        <EmptyState
+          title={t("ana.noChildren")}
+          icon={<ChartColumn size={26} color={tokens.muted} strokeWidth={2} />}
+          action={{ label: t("ana.addChild"), onPress: () => router.push("/(parent)/add-child") }}
+        />
       </Card>
     );
   } else if (dashQ.isPending) {

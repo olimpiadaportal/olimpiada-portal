@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useActionState } from "react";
 import { saveRow, type SaveState } from "@/lib/admin/actions";
 import type { ResourceField } from "@/lib/admin/resources";
@@ -11,11 +12,15 @@ function FieldInput({
   options,
   value,
   selectPlaceholder,
+  onReferenceChange,
 }: {
   field: ResourceField;
   options?: { value: string; label: string }[];
   value: unknown;
   selectPlaceholder: string;
+  // Lets the form observe reference selects (e.g. the subtopic form's parent
+  // topic) without making every field controlled.
+  onReferenceChange?: (name: string, value: string) => void;
 }) {
   if (field.type === "boolean") {
     return (
@@ -29,6 +34,11 @@ function FieldInput({
         name={field.name}
         defaultValue={value == null ? "" : String(value)}
         required={field.required}
+        onChange={
+          field.type === "reference" && onReferenceChange
+            ? (e) => onReferenceChange(field.name, e.target.value)
+            : undefined
+        }
       >
         <option value="">{selectPlaceholder}</option>
         {opts.map((o) => (
@@ -69,6 +79,7 @@ export function ResourceForm({
   submitLabel,
   savingLabel,
   selectPlaceholder,
+  termByTopic,
 }: {
   slug: string;
   fields: ResourceField[];
@@ -78,11 +89,25 @@ export function ResourceForm({
   submitLabel: string;
   savingLabel: string;
   selectPlaceholder: string;
+  // Subtopics only: parent-topic id → its term (Rüb) or null. When provided,
+  // the "term" field is NOT an editable select — it shows the term inherited
+  // from the currently selected parent topic (read-only) and posts it via a
+  // hidden input so the server payload always matches the parent.
+  termByTopic?: Record<string, number | null>;
 }) {
   const [state, formAction, pending] = useActionState<SaveState, FormData>(
     saveRow,
     null,
   );
+  const [topicSel, setTopicSel] = useState(
+    defaultValues?.["topic_id"] == null ? "" : String(defaultValues["topic_id"]),
+  );
+
+  const termField = fields.find((f) => f.name === "term");
+  const termLabelFor = (n: number): string =>
+    termField?.options?.find((o) => o.value === String(n))?.label ?? String(n);
+  const inheritedTerm: number | null =
+    termByTopic && topicSel ? termByTopic[topicSel] ?? null : null;
 
   return (
     <form action={formAction} className="form">
@@ -96,12 +121,32 @@ export function ResourceForm({
               {f.label}
               {f.required && <span className="req"> *</span>}
             </span>
-            <FieldInput
-              field={f}
-              options={optionsByField[f.name]}
-              value={defaultValues?.[f.name]}
-              selectPlaceholder={selectPlaceholder}
-            />
+            {f.name === "term" && termByTopic ? (
+              <>
+                {/* Inherited from the parent topic — read-only. */}
+                <input type="hidden" name="term" value={inheritedTerm ?? ""} />
+                <input
+                  type="text"
+                  value={inheritedTerm != null ? termLabelFor(inheritedTerm) : "—"}
+                  readOnly
+                  disabled
+                />
+              </>
+            ) : (
+              <FieldInput
+                field={f}
+                options={optionsByField[f.name]}
+                value={defaultValues?.[f.name]}
+                selectPlaceholder={selectPlaceholder}
+                onReferenceChange={
+                  termByTopic
+                    ? (name, value) => {
+                        if (name === "topic_id") setTopicSel(value);
+                      }
+                    : undefined
+                }
+              />
+            )}
           </label>
         ))}
       </div>

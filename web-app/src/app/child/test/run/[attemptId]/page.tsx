@@ -16,6 +16,8 @@ const KEYS = [
   "test.run.submitConfirm", "test.run.back", "test.run.cancelTitle", "test.run.cancelMsg",
   "test.run.cancelConfirm", "test.run.keepGoing", "test.run.timeUp",
   "test.run.leaveTitle", "test.run.leaveMsg", "test.run.leaveStay", "test.run.leaveConfirm",
+  "test.run.noLimit", "test.run.ratedBadge", "test.run.practiceBadge",
+  "test.img.alt", "test.img.hint",
   "test.err.generic", "arena.quizPrev", "arena.quizQuestion", "arena.quizOf",
 ];
 
@@ -56,13 +58,25 @@ export default async function TestRunPage({
 
   // Since migration 047 purchased-olympiad attempts run on this SAME player
   // (kind:'olympiad'); their list/notice home is /child/olympiads, not the
-  // test home.
+  // test home. Migration 056 adds kind:'daily' (rated today-rounds + untimed
+  // yesterday replays) — both live on the test home.
   const isOlympiad = attempt.kind === "olympiad";
+  const isDaily = attempt.kind === "daily";
   const homeHref = isOlympiad ? "/child/olympiads" : "/child/test";
 
   // Already finished attempts never open the player.
   if (attempt.status === "graded") redirect(`/child/test/result/${attemptId}`);
   if (attempt.status !== "in_progress") redirect(`${homeHref}?notice=closed`);
+
+  // Question figures (migration 057): the payload carries {bucket, path} refs;
+  // resolve public URLs here (getPublicUrl is a pure URL builder — no request).
+  attempt.questions = attempt.questions.map((q) => ({
+    ...q,
+    image_url:
+      q.image?.bucket && q.image?.path
+        ? supabase.storage.from(q.image.bucket).getPublicUrl(q.image.path).data.publicUrl
+        : null,
+  }));
 
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
@@ -72,25 +86,42 @@ export default async function TestRunPage({
   // The RPC payload carries subject_id + questions[].topic_id but NO names, so
   // resolve them here (public-read taxonomy) for the player header. Any read
   // failure degrades to no label rather than blocking the attempt. Olympiad
-  // attempts skip the topic line (their header shows the package label instead).
+  // attempts skip the topic line (their header shows the package label instead);
+  // daily rounds draw across MANY topics — listing them all would flood the
+  // header, so they skip it too.
   let subjectName = "";
   let topicNames: string[] = [];
-  const topicIds = isOlympiad
-    ? []
-    : Array.from(
-        new Set(
-          (attempt.questions ?? [])
-            .map((q) => q.topic_id)
-            .filter((id): id is string => typeof id === "string" && id.length > 0),
-        ),
-      );
-  const [{ data: subjectRow }, topicsRes] = await Promise.all([
+  const topicIds =
+    isOlympiad || isDaily
+      ? []
+      : Array.from(
+          new Set(
+            (attempt.questions ?? [])
+              .map((q) => q.topic_id)
+              .filter((id): id is string => typeof id === "string" && id.length > 0),
+          ),
+        );
+  const [{ data: subjectRow }, topicsRes, { data: attRow }] = await Promise.all([
     supabase.from("subjects").select("name").eq("id", attempt.subject_id).maybeSingle(),
     topicIds.length > 0
       ? supabase.from("topics").select("id, name").in("id", topicIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    // is_rated lives on the attempt row (own row under RLS), not in the RPC
+    // payload — it drives the header badge ("counts for the rating" / practice).
+    supabase
+      .from("test_attempts")
+      .select("is_rated")
+      .eq("id", attemptId)
+      .maybeSingle(),
   ]);
+  const rated = !!(attRow as { is_rated?: boolean } | null)?.is_rated;
   subjectName = ((subjectRow as { name?: string } | null)?.name ?? "").trim();
+  // Daily rounds title the top bar "Round of the day — <subject>".
+  if (isDaily) {
+    dict["test.run.title"] = subjectName
+      ? `${t("test.run.daily")} — ${subjectName}`
+      : t("test.run.daily");
+  }
   // Preserve the questions' topic order; de-duplicate names.
   const nameById = new Map<string, string>(
     (((topicsRes.data ?? []) as { id: string; name: string }[]) || []).map((r) => [r.id, r.name]),
@@ -144,10 +175,13 @@ export default async function TestRunPage({
         data={attempt}
         resumed={resumed === "1"}
         dict={dict}
-        subjectName={subjectName}
+        // Daily titles already carry the subject ("Günün raundu — <subject>");
+        // repeating it in the meta line would be noise.
+        subjectName={isDaily ? "" : subjectName}
         topicNames={topicNames}
         modeLabel={modeLabel}
         exitHref={homeHref}
+        rated={rated}
       />
     </div>
   );

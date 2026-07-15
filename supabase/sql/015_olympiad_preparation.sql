@@ -37,7 +37,7 @@ create table if not exists public.olympiad_packages (
   cover_media_id       uuid references public.media_assets (id) on delete set null,
   price_amount         numeric(10,2) not null default 0,
   currency             text not null default 'AZN',
-  questions_per_attempt integer not null default 25 check (questions_per_attempt > 0),
+  questions_per_attempt integer not null default 25 check (questions_per_attempt > 0), -- display-legacy since migration 057 (attempts draw the WHOLE pool)
   duration_minutes     int not null default 25 check (duration_minutes between 5 and 240), -- attempt time limit (migration 047; drives deadline_at)
   event_starts_at      timestamptz,                          -- planned event date shown to students (Round 8; NULL = undated)
   status               public.catalog_status not null default 'inactive', -- active = listed; archived = delisted (purchasers keep access)
@@ -51,7 +51,7 @@ alter table public.olympiad_packages
   add column if not exists event_starts_at timestamptz;
 
 comment on table public.olympiad_packages is
-  'Olympiad-Preparation add-on listing (Admin-only). Parent buys; child gets LIFETIME access. Each attempt = questions_per_attempt (25) server-side random from the pool. Archive only — never delete purchased packages.';
+  'Olympiad-Preparation add-on listing (Admin-only). Parent buys; child gets LIFETIME access. Each attempt draws ALL of the package''s published questions in random order (migration 057; questions_per_attempt is display-legacy). Archive only — never delete purchased packages.';
 comment on column public.olympiad_packages.event_starts_at is
   'Planned event date/time shown on the student "Olimpiadalar" tab (NULL = undated/planned).';
 
@@ -70,8 +70,9 @@ create table if not exists public.olympiad_package_translations (
 );
 
 -- -----------------------------------------------------------------------------
--- olympiad_package_questions : the curated question pool for a package. The
--- attempt engine random-selects `questions_per_attempt` from this pool server-side.
+-- olympiad_package_questions : the curated question pool for a package. Since
+-- migration 057 the attempt engine draws the WHOLE published pool server-side
+-- (random order; questions_per_attempt is display-legacy).
 -- Mirrors test_questions. Pool membership is SENSITIVE (not exposed to students).
 -- -----------------------------------------------------------------------------
 create table if not exists public.olympiad_package_questions (
@@ -250,6 +251,41 @@ create policy "olympiad_purchases_select" on public.olympiad_purchases for selec
 drop policy if exists "olympiad_purchases_write" on public.olympiad_purchases;
 create policy "olympiad_purchases_write" on public.olympiad_purchases for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
+
+-- -----------------------------------------------------------------------------
+-- get_olympiad_pool_counts (Round 21) : the REAL published-question count per
+-- package. Cards used to show olympiad_packages.questions_per_attempt
+-- (display-legacy, default 25, never written by the admin form) — a 50-question
+-- package still said "25". SECURITY DEFINER so parents/children get correct
+-- counts regardless of row-level visibility; returns counts only.
+-- -----------------------------------------------------------------------------
+create or replace function public.get_olympiad_pool_counts(p_package_ids uuid[])
+returns table (package_id uuid, question_count int)
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if p_package_ids is null or cardinality(p_package_ids) = 0 then
+    return;
+  end if;
+  if cardinality(p_package_ids) > 100 then
+    raise exception 'olympiad pool counts: too many package ids' using errcode = 'check_violation';
+  end if;
+  return query
+    select q.olympiad_package_id, count(*)::int
+    from public.questions q
+    where q.olympiad_package_id = any(p_package_ids)
+      and q.status = 'published'
+    group by q.olympiad_package_id;
+end;
+$$;
+comment on function public.get_olympiad_pool_counts(uuid[]) is
+  'Real published pool size per olympiad package (Round 21) — replaces the '
+  'display-legacy questions_per_attempt on every card. Counts only; RLS-proof.';
+revoke all on function public.get_olympiad_pool_counts(uuid[]) from public, anon;
+grant execute on function public.get_olympiad_pool_counts(uuid[]) to authenticated, service_role;
 
 -- =============================================================================
 -- End of 015_olympiad_preparation.sql

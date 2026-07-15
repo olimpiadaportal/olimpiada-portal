@@ -18,7 +18,9 @@
 
 ## Non-negotiable mobile rules
 
-- Same product model as web (parent-only registration with mandatory E.164 phone; child = 8-digit ID + parent password; children never purchase; server-side trust boundary; users never choose difficulty; MCQ = exactly 4 options).
+- **Android is the owner's manual-testing device (2026-07-14, physical phone + Expo Go):** assume reported bugs were seen on Android; verify fixes against Android behavior first, but keep everything iOS-correct in the same change (safe areas, shadows/elevation, keyboard, back gesture). iOS device testing comes later.
+
+- Same product model as web (parent-only registration with mandatory E.164 phone; child = 8-digit ID + parent password; children never purchase; server-side trust boundary; users never choose difficulty; **MCQ = exactly 5 options A–E since Round 20** — was 4; legacy 4-option questions can still surface in practice/olympiad runners, so option rendering stays data-driven). Round-20 **and Round-21** platform changes (daily rated rounds vs untimed practice, terms, district column + mandatory add-child rayon, question images, all-questions olympiads, REAL olympiad pool counts, tests-tab readiness pre-flight, new arena-home layout) are catalogued as the **M3.1 parity pass** in the master plan §7.2c + §7.2d — read them before touching the shipped M2/M3 screens.
 - **No service-role key, ever, anywhere in this app.** Anon key + user JWT + RLS direct; privileged flows only through the web-app BFF (`/api/mobile/v1/*`).
 - Admin control plane first: payment mode/flags/maintenance/locales/contact/min-version come from `get_mobile_config()`, CMS text overrides from `get_mobile_content(locale)` — never hardcode a gate and never read `feature_flags`/`system_settings`/`site_content` directly (they are admin-RLS-locked anyway).
 - UI identical to web: tokens mirrored from `web-app/src/app/globals.css` (Energetic light / dark / arena / arena-light / the 5 arena palettes); i18n keys SYNCED from web `messages.ts` + runtime CMS overrides (az default/en/ru, natural phrasing, every string ×3).

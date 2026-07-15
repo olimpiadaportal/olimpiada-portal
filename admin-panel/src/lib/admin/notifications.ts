@@ -18,7 +18,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
+import { localStrings as ntfLocalStrings } from "@/app/(protected)/notifications/labels";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,13 +34,17 @@ const CODE_RE = /^[a-z0-9_]+$/;
 
 const LOCALES = ["az", "en", "ru"] as const;
 const AUDIENCE_TYPES = new Set([
+  "all_users",
   "all_parents",
   "all_children",
+  "olympiad_buyers",
   "parent",
   "by_subject",
 ]);
 // Hard cap on how many parents one "specific parent(s)" send may target.
 const PROFILE_IDS_MAX = 500;
+// Hard cap on how many packages one "olympiad buyers" send may target.
+const PACKAGE_IDS_MAX = 100;
 // in_app is always forced on; email/push only deliver when their master flag is
 // enabled (enforced in create_notification), but the request may still list them.
 const CHANNELS = ["in_app", "email", "push"] as const;
@@ -86,8 +91,9 @@ export async function sendNotification(
 
   // Audience filter — { profile_ids: [...] } for parent (one or more selected
   // parents; the DB lb_notify_audience resolves the uuid array), { subject_id }
-  // for by_subject, {} otherwise. Every id is UUID-validated before it reaches
-  // the RPC, deduped, and the count is capped.
+  // for by_subject, { package_ids, package_titles } for olympiad_buyers,
+  // {} otherwise. Every id is UUID-validated before it reaches the RPC,
+  // deduped, and the count is capped.
   let filter: Record<string, unknown> = {};
   if (audienceType === "parent") {
     const ids = Array.from(
@@ -108,6 +114,52 @@ export async function sendNotification(
     const subjectId = f(formData, "subject_id");
     if (!UUID_RE.test(subjectId)) return { error: t("ntfadmin.err.subject") };
     filter = { subject_id: subjectId };
+  } else if (audienceType === "olympiad_buyers") {
+    // Friendly trilingual message from the LOCAL labels until messages.ts
+    // gains ntfadmin.err.packages.
+    const lt = ntfLocalStrings(await getLocale());
+    const pkgErr = lt("ntfadmin.err.packages");
+    const ids = Array.from(
+      new Set(
+        f(formData, "package_ids")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    );
+    const valid = ids.filter((id) => UUID_RE.test(id));
+    if (valid.length === 0 || valid.length !== ids.length) {
+      return { error: pkgErr };
+    }
+    if (valid.length > PACKAGE_IDS_MAX) return { error: pkgErr };
+
+    // Every selected package must exist and be ACTIVE — verified here for a
+    // friendly message; the RPC re-validates the same rule as the backstop.
+    const check = await (await createClient())
+      .from("olympiad_packages")
+      .select("id", { count: "exact", head: true })
+      .in("id", valid)
+      .eq("status", "active");
+    if ((check.count ?? 0) !== valid.length) return { error: pkgErr };
+
+    // Title snapshot for the history/detail view — capped, strings only. The
+    // DB resolver ignores extra filter keys, so this is metadata-only.
+    let titles: string[] = [];
+    const rawTitles = f(formData, "package_titles");
+    if (rawTitles && rawTitles.length <= 20000) {
+      try {
+        const parsed = JSON.parse(rawTitles);
+        if (Array.isArray(parsed)) {
+          titles = parsed
+            .filter((x): x is string => typeof x === "string")
+            .map((x) => x.slice(0, 200))
+            .slice(0, PACKAGE_IDS_MAX);
+        }
+      } catch {
+        titles = []; // snapshot is optional — never fail the send over it
+      }
+    }
+    filter = { package_ids: valid, package_titles: titles };
   }
 
   // Optional schedule — the client already converted the datetime-local value to
@@ -142,6 +194,15 @@ export async function sendNotification(
     p_action_url: null,
   });
   if (error || !data) {
+    // Backstop: the RPC re-validates olympiad_buyers packages (must exist and
+    // be ACTIVE) with errcode check_violation — surface the friendly message.
+    if (
+      audienceType === "olympiad_buyers" &&
+      (error as { code?: string } | null)?.code === "23514"
+    ) {
+      const lt = ntfLocalStrings(await getLocale());
+      return { error: lt("ntfadmin.err.packages") };
+    }
     console.error("[admin] notification send failed", error?.message);
     return { error: t("err.server") };
   }
@@ -163,6 +224,11 @@ export async function sendNotification(
       recipients,
       template_code: templateCode ?? undefined,
       scheduled: !!scheduledIso,
+      // Metadata only — the selected package COUNT, never titles/bodies.
+      package_count:
+        audienceType === "olympiad_buyers"
+          ? (filter.package_ids as string[]).length
+          : undefined,
     },
   });
 
@@ -175,7 +241,11 @@ export async function sendNotification(
 // =====================================================================
 export async function previewCount(
   audienceType: string,
-  filter: { profile_ids?: string[]; subject_id?: string },
+  filter: {
+    profile_ids?: string[];
+    subject_id?: string;
+    package_ids?: string[];
+  },
 ): Promise<number> {
   await requireAdmin(); // authorize FIRST
   if (!AUDIENCE_TYPES.has(audienceType)) return 0;
@@ -191,6 +261,12 @@ export async function previewCount(
     const sid = filter?.subject_id ?? "";
     if (!UUID_RE.test(sid)) return 0;
     resolved = { subject_id: sid };
+  } else if (audienceType === "olympiad_buyers") {
+    const ids = Array.from(new Set(filter?.package_ids ?? [])).filter((id) =>
+      UUID_RE.test(id),
+    );
+    if (ids.length === 0) return 0;
+    resolved = { package_ids: ids.slice(0, PACKAGE_IDS_MAX) };
   }
 
   const supabase = await createClient();

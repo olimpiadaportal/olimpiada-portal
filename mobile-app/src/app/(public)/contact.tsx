@@ -7,11 +7,13 @@ import React from "react";
 import { Linking, Pressable, ScrollView, View } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Mail, MapPin, Phone } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
+import { ListRow } from "@/components/ListRow";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing } from "@/theme/tokens";
+import { spacing } from "@/theme/tokens";
 import { useMobileConfig } from "@/lib/configQueries";
 import { useT } from "@/i18n/useT";
 
@@ -24,32 +26,6 @@ const SOCIALS = [
 
 function isHttpUrl(v: string): boolean {
   return /^https?:\/\//i.test(v);
-}
-
-function ContactRow({
-  label,
-  value,
-  onPress,
-}: {
-  label: string;
-  value: string;
-  onPress?: () => void;
-}) {
-  const { tokens } = useTheme();
-  return (
-    <View style={{ gap: 2 }}>
-      <AppText variant="muted">{label}</AppText>
-      {onPress ? (
-        <Pressable accessibilityRole="link" accessibilityLabel={value} onPress={onPress} hitSlop={4}>
-          <AppText variant="label" color={tokens.accent}>
-            {value}
-          </AppText>
-        </Pressable>
-      ) : (
-        <AppText variant="label">{value}</AppText>
-      )}
-    </View>
-  );
 }
 
 export default function Contact() {
@@ -103,22 +79,28 @@ export default function Contact() {
             onRetry={() => void config.refetch()}
           />
         ) : (
-          <Card style={{ gap: spacing.lg }}>
+          <Card style={{ gap: spacing.sm }}>
             {email ? (
-              <ContactRow
-                label={t("contact.emailLabel")}
-                value={email}
+              <ListRow
+                icon={<Mail size={20} color={tokens.accent} strokeWidth={2} />}
+                title={t("contact.emailLabel")}
+                subtitle={email}
                 onPress={() => void Linking.openURL(`mailto:${email}`)}
               />
             ) : null}
             {phone ? (
-              <ContactRow
-                label={t("contact.phoneLabel")}
-                value={phone}
+              <ListRow
+                icon={<Phone size={20} color={tokens.accent} strokeWidth={2} />}
+                title={t("contact.phoneLabel")}
+                subtitle={phone}
                 onPress={() => void Linking.openURL(`tel:${phone.replace(/\s+/g, "")}`)}
               />
             ) : null}
-            <ContactRow label={t("contact.address")} value={t("contact.addressValue")} />
+            <ListRow
+              icon={<MapPin size={20} color={tokens.accent} strokeWidth={2} />}
+              title={t("contact.address")}
+              subtitle={t("contact.addressValue")}
+            />
             <AppText variant="muted">{t("contact.shortNote")}</AppText>
           </Card>
         )}
@@ -133,9 +115,11 @@ export default function Contact() {
                 onPress={() => void Linking.openURL(s.url)}
                 style={({ pressed }) => ({
                   backgroundColor: tokens.pillBg,
-                  borderRadius: radius.md,
+                  borderRadius: 999,
                   paddingVertical: spacing.sm,
                   paddingHorizontal: spacing.lg,
+                  minHeight: 36,
+                  justifyContent: "center",
                   opacity: pressed ? 0.8 : 1,
                 })}
               >

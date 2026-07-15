@@ -38,6 +38,16 @@ const STATUS_OPTIONS = [
   { value: "archived", label: "Archived" },
 ];
 
+// Academic term (Rüb) 1..4 — topics carry it (required); a subtopic INHERITS
+// it from its parent topic (the form shows it read-only and posts the
+// inherited value; the DB cascade/guards keep everything consistent).
+const TERM_OPTIONS = [
+  { value: "1", label: "Term 1" },
+  { value: "2", label: "Term 2" },
+  { value: "3", label: "Term 3" },
+  { value: "4", label: "Term 4" },
+];
+
 export const RESOURCES: Record<string, Resource> = {
   grades: {
     slug: "grades",
@@ -68,6 +78,9 @@ export const RESOURCES: Record<string, Resource> = {
     ],
     listColumns: ["name", "status"],
   },
+  // Round 21: the "Order" (order_index) input is retired from the UI (the DB
+  // column stays); the REQUIRED "Rüb" (term) select replaces it. Subtopics
+  // show the term read-only — it is inherited from the parent topic.
   topics: {
     slug: "topics",
     table: "topics",
@@ -75,15 +88,15 @@ export const RESOURCES: Record<string, Resource> = {
     labelPlural: "Topics",
     group: "Taxonomy",
     adminOnly: true,
-    orderBy: "order_index",
+    orderBy: "name",
     fields: [
       { name: "subject_id", label: "Subject", type: "reference", required: true, ref: { table: "subjects", labelColumn: "name", orderBy: "name" } },
       { name: "grade_id", label: "Grade", type: "reference", ref: { table: "grades", labelColumn: "name", orderBy: "level" } },
       { name: "name", label: "Name", type: "text", required: true },
-      { name: "order_index", label: "Order", type: "number", step: "1" },
+      { name: "term", label: "Term", type: "select", required: true, options: TERM_OPTIONS },
       { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
     ],
-    listColumns: ["subject_id", "grade_id", "name", "order_index", "status"],
+    listColumns: ["subject_id", "grade_id", "name", "term", "status"],
   },
   subtopics: {
     slug: "subtopics",
@@ -92,14 +105,16 @@ export const RESOURCES: Record<string, Resource> = {
     labelPlural: "Subtopics",
     group: "Taxonomy",
     adminOnly: true,
-    orderBy: "order_index",
+    orderBy: "name",
     fields: [
       { name: "topic_id", label: "Topic", type: "reference", required: true, ref: { table: "topics", labelColumn: "name", orderBy: "name" } },
       { name: "name", label: "Name", type: "text", required: true },
-      { name: "order_index", label: "Order", type: "number", step: "1" },
+      // Read-only inherited value (ResourceForm renders it from the selected
+      // parent topic when the page passes termByTopic; posted as hidden).
+      { name: "term", label: "Term", type: "select", options: TERM_OPTIONS },
       { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
     ],
-    listColumns: ["topic_id", "name", "order_index", "status"],
+    listColumns: ["topic_id", "name", "term", "status"],
   },
   // NOTE: question-types moved OUT of this registry to a dedicated advanced
   // page (/question-types + lib/admin/question-types.ts): the per-type

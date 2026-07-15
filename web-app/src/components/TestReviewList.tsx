@@ -7,6 +7,7 @@
 // per-state client filtering. The per-question rendering is unchanged from the
 // original server markup (states, chosen/correct tags, explanation).
 import { useMemo, useState } from "react";
+import { QuestionImage } from "@/components/QuestionImage";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
@@ -23,6 +24,8 @@ export type ReviewListQuestion = {
   question_id: string;
   body: string | null;
   prompt: string | null;
+  /** Public URL of the question figure (resolved server-side; migration 057). */
+  image_url?: string | null;
   state: ReviewState;
   explanation: string | null;
   options: ReviewListOption[];
@@ -97,6 +100,14 @@ export function TestReviewList({
               </span>
             </div>
             <div className="arena-q-body">{q.body}</div>
+            {q.image_url && (
+              <QuestionImage
+                url={q.image_url}
+                alt={tt("test.img.alt")}
+                hint={tt("test.img.hint")}
+                closeLabel={tt("test.img.close")}
+              />
+            )}
             {q.prompt && <p className="arena-q-prompt">{q.prompt}</p>}
             <div className="tst-review-opts">
               {q.options.map((o, oi) => {

@@ -16,15 +16,16 @@ const SUPABASE_HOST = supabaseHost();
 const isDev = process.env.NODE_ENV === "development";
 
 // Content-Security-Policy (Round 7 hardening) — STRICTER than the web-app:
-// the admin panel uses no external fonts and no iframes, and must NEVER be
-// frameable (frame-ancestors 'none' → clickjacking protection for privileged
-// UI). script-src 'unsafe-inline' is required by Next.js hydration inline
-// scripts; 'unsafe-eval' is DEV-ONLY (react-refresh).
+// no iframes, and must NEVER be frameable (frame-ancestors 'none' →
+// clickjacking protection for privileged UI). script-src 'unsafe-inline' is
+// required by Next.js hydration inline scripts; 'unsafe-eval' is DEV-ONLY
+// (react-refresh). Google Fonts (the two explicit origins only, never
+// wildcards) is allowed for the Website Content "Sayt şrifti" font previews.
 const CSP = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "font-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
   `img-src 'self' data: blob: https://${SUPABASE_HOST}`,
   `connect-src 'self' https://${SUPABASE_HOST} wss://${SUPABASE_HOST}`,
   "frame-src 'none'",

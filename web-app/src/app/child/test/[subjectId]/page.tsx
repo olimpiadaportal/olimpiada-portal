@@ -13,13 +13,16 @@ const KEYS = [
   "test.setup.topic", "test.setup.subtopic", "test.setup.topicPh",
   "test.setup.subtopicPh", "test.setup.noSubtopics", "test.setup.selectWarn",
   "test.setup.rulesTitle", "test.setup.qCount",
-  "test.setup.duration", "test.setup.rule1", "test.setup.rule2",
+  "test.setup.noLimit", "test.setup.noPoints",
+  "test.setup.rulePractice1", "test.setup.rulePractice2",
   "test.setup.rule3", "test.setup.rule4", "test.setup.scoringTitle",
-  "test.setup.scoring", "test.setup.consent", "test.setup.start",
+  "test.setup.practiceScoring", "test.setup.consent", "test.setup.start",
   "test.setup.starting",
 ];
 
 // TEST ENGINE (T1) — topic/subtopic picker + instructions gate for a subject.
+// Since migration 057 topic tests are UNTIMED PRACTICE (no countdown, no
+// points/streak) — the rules copy says so explicitly.
 export default async function TestSetupPage({
   params,
 }: {

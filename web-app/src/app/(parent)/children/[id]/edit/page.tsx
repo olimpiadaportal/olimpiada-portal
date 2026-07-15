@@ -12,6 +12,9 @@ const KEYS = [
   "addchild.field.selectCity", "addchild.field.selectSchool",
   "addchild.field.selectGrade", "addchild.field.cityFirst",
   "addchild.field.privateSchools", "addchild.field.publicSchools",
+  // Round 21: intra-city district (rayon) cascade between City and School.
+  "addchild.field.district", "addchild.field.selectDistrict",
+  "addchild.field.noDistricts",
   "parent.child.idLabel", "parent.dash.idPending",
   "childedit.save", "childedit.saving", "childedit.saved", "childedit.back",
   "childedit.internalId", "childedit.idNote",
@@ -19,7 +22,7 @@ const KEYS = [
   "auth.child.err.firstNameRequired", "auth.child.err.lastNameRequired",
   "auth.child.err.nameTooLong",
   "addchild.err.cityRequired", "addchild.err.schoolRequired",
-  "addchild.err.gradeRequired",
+  "addchild.err.gradeRequired", "addchild.err.districtRequired",
   "childedit.err.generic", "childedit.err.notYourChild",
 ];
 
@@ -39,7 +42,7 @@ export default async function EditChildPage({
     .from("students")
     .select(
       "profile_id, first_name, last_name, child_unique_id, class_grade, " +
-        "grade_id, district_id, school_id, created_by_parent_profile_id",
+        "grade_id, district_id, city_district_id, school_id, created_by_parent_profile_id",
     )
     .eq("profile_id", id)
     .maybeSingle();
@@ -48,25 +51,38 @@ export default async function EditChildPage({
   }
   const c = child as any;
 
-  // Catalogs: cities (active districts), schools (active, private-first), grades
-  // — same data-loading pattern the Add-Child flow uses.
-  const [{ data: cityRows }, { data: schoolRows }, { data: gradeRows }] = await Promise.all([
-    supabase.from("districts").select("id, name").eq("status", "active").order("name"),
-    supabase
-      .from("schools")
-      .select("id, name, district_id, is_private, school_number")
-      .eq("status", "active")
-      .order("is_private", { ascending: false })
-      .order("school_number", { ascending: true, nullsFirst: false })
-      .order("name"),
-    supabase.from("grades").select("id, level, name").order("level", { ascending: true }),
-  ]);
+  // Catalogs: cities (active districts), rayons (city_districts), schools
+  // (active, private-first), grades — same data-loading pattern the Add-Child
+  // flow uses. NAMING: `districts` = cities; `city_districts` = the rayons.
+  const [{ data: cityRows }, { data: cityDistrictRows }, { data: schoolRows }, { data: gradeRows }] =
+    await Promise.all([
+      supabase.from("districts").select("id, name").eq("status", "active").order("name"),
+      supabase
+        .from("city_districts")
+        .select("id, name, city_id")
+        .eq("status", "active")
+        .order("name"),
+      supabase
+        .from("schools")
+        .select("id, name, district_id, city_district_id, is_private, school_number")
+        .eq("status", "active")
+        .order("is_private", { ascending: false })
+        .order("school_number", { ascending: true, nullsFirst: false })
+        .order("name"),
+      supabase.from("grades").select("id, level, name").order("level", { ascending: true }),
+    ]);
 
   const cities = (cityRows ?? []) as { id: string; name: string }[];
+  const cityDistricts = (cityDistrictRows ?? []) as {
+    id: string;
+    name: string;
+    city_id: string;
+  }[];
   const schools = (schoolRows ?? []) as {
     id: string;
     name: string;
     district_id: string | null;
+    city_district_id: string | null;
     is_private: boolean;
     school_number: number | null;
   }[];
@@ -96,10 +112,12 @@ export default async function EditChildPage({
           firstName: c.first_name ?? "",
           lastName: c.last_name ?? "",
           districtId: c.district_id ?? "",
+          cityDistrictId: c.city_district_id ?? "",
           schoolId: c.school_id ?? "",
           gradeId: c.grade_id ?? "",
         }}
         cities={cities}
+        cityDistricts={cityDistricts}
         schools={schools}
         grades={grades}
         dict={dict}

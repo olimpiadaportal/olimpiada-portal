@@ -1,13 +1,16 @@
-// Parent notification inbox (web NotificationsPanel parity): category filter
-// chips derived from the loaded items, mark-read-on-tap + validated deep-link
+// Parent notification inbox (web NotificationsPanel parity, redesigned):
+// DATE-GROUPED list (today / yesterday / older days), category filter chips
+// derived from the loaded items, mark-read-on-tap + validated deep-link
 // navigation via the allowlist router, a detail sheet for items without a
-// usable link (with per-item delete), mark-all-read and pull-to-refresh.
+// usable link (with per-item delete), a mark-all-read header action and
+// pull-to-refresh.
 import React, { useMemo, useState } from "react";
-import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { RefreshControl, SectionList, View } from "react-native";
+import { BellOff } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
-import { AppText } from "@/components/AppText";
+import { SectionHeader } from "@/components/SectionHeader";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -19,14 +22,16 @@ import {
 } from "@/features/notifications/useNotifications";
 import {
   CategoryChips,
+  DayHeader,
   NotificationDetailSheet,
   NotificationRow,
   categoryLabelKey,
+  groupByDay,
   relativeTime,
 } from "@/features/notifications/components";
 
 export default function ParentNotifications() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -59,6 +64,15 @@ export default function ParentNotifications() {
   };
 
   const shown = filter ? items.filter((n) => n.category === filter) : items;
+  const sections = useMemo(
+    () =>
+      groupByDay(
+        shown,
+        { today: t("mob.notif.today"), yesterday: t("mob.notif.yesterday") },
+        locale,
+      ),
+    [shown, t, locale],
+  );
 
   // Root-relative paths (action_url or a markdown link in the body) go through
   // the SAME deep-link allowlist as push/universal links; anything that does
@@ -103,9 +117,10 @@ export default function ParentNotifications() {
     );
   } else {
     body = (
-      <FlatList
-        data={shown}
+      <SectionList
+        sections={sections}
         keyExtractor={(n) => n.id}
+        stickySectionHeadersEnabled={false}
         contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.xl, flexGrow: 1 }}
         refreshControl={
           <RefreshControl
@@ -115,7 +130,14 @@ export default function ParentNotifications() {
             colors={[tokens.accent]}
           />
         }
-        ListEmptyComponent={<EmptyState title={t("notif.empty")} body={t("notif.emptyHint")} />}
+        ListEmptyComponent={
+          <EmptyState
+            title={t("notif.empty")}
+            body={t("notif.emptyHint")}
+            icon={<BellOff size={26} color={tokens.muted} strokeWidth={2} />}
+          />
+        }
+        renderSectionHeader={({ section }) => <DayHeader title={section.title} />}
         renderItem={({ item }) => (
           <NotificationRow
             item={item}
@@ -132,16 +154,10 @@ export default function ParentNotifications() {
     <Screen>
       <View style={{ flex: 1, gap: spacing.md, paddingTop: spacing.md }}>
         {unreadCount > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("notif.markAllRead")}
-            onPress={() => void markAllRead()}
-            style={{ alignSelf: "flex-end" }}
-          >
-            <AppText variant="label" color={tokens.accent}>
-              {t("notif.markAllRead")}
-            </AppText>
-          </Pressable>
+          <SectionHeader
+            title={t("mob.notif.unread").replace("{n}", String(unreadCount))}
+            action={{ label: t("notif.markAllRead"), onPress: () => void markAllRead() }}
+          />
         ) : null}
 
         <CategoryChips

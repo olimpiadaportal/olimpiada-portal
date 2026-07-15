@@ -88,9 +88,30 @@ export async function getSystemSetting(key: string): Promise<any> {
  */
 export type ContentOverrides = Record<string, { az: string; en: string; ru: string }>;
 
-const fetchContentOverrides = unstable_cache(
-  async (): Promise<ContentOverrides> => {
-    const out: ContentOverrides = {};
+// Per-field font sizes (owner item 16): the admin CMS stores a field's optional
+// size in a SIBLING row keyed `<key>#style` whose `az` column holds a tiny JSON
+// blob ({"fontSize":24}) — text rows stay plain strings (backward compatible).
+const STYLE_KEY_SUFFIX = "#style";
+const FS_MIN = 12;
+const FS_MAX = 72;
+
+function parseStyleRow(az: unknown): number | null {
+  if (typeof az !== "string" || !az || az.length > 200) return null;
+  try {
+    const parsed = JSON.parse(az) as { fontSize?: unknown };
+    const n = Number(parsed?.fontSize);
+    return Number.isInteger(n) && n >= FS_MIN && n <= FS_MAX ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+const fetchSiteContentRows = unstable_cache(
+  async (): Promise<{ overrides: ContentOverrides; fontSizes: Record<string, number> }> => {
+    const out: { overrides: ContentOverrides; fontSizes: Record<string, number> } = {
+      overrides: {},
+      fontSizes: {},
+    };
     try {
       const supabase = getAdminClient();
       const { data, error } = await supabase
@@ -98,7 +119,14 @@ const fetchContentOverrides = unstable_cache(
         .select("key, az, en, ru");
       if (error || !data) return out;
       for (const row of data as { key: string; az: string; en: string; ru: string }[]) {
-        out[row.key] = {
+        if (row.key.endsWith(STYLE_KEY_SUFFIX)) {
+          const size = parseStyleRow(row.az);
+          if (size !== null) {
+            out.fontSizes[row.key.slice(0, -STYLE_KEY_SUFFIX.length)] = size;
+          }
+          continue; // never merge style rows into the text dictionary
+        }
+        out.overrides[row.key] = {
           az: typeof row.az === "string" ? row.az : "",
           en: typeof row.en === "string" ? row.en : "",
           ru: typeof row.ru === "string" ? row.ru : "",
@@ -109,14 +137,29 @@ const fetchContentOverrides = unstable_cache(
       return out;
     }
   },
-  ["site-content-overrides"],
+  // v2: the cached shape changed from a plain overrides map to
+  // { overrides, fontSizes } — new cache key so a stale persisted entry from a
+  // previous deploy can never be read back in the old shape.
+  ["site-content-rows-v2"],
   { revalidate: 60 },
 );
 
 export const getContentOverrides = cache(async (): Promise<ContentOverrides> => {
   if (!isServiceRoleConfigured) return {};
-  return fetchContentOverrides();
+  return (await fetchSiteContentRows()).overrides;
 });
+
+/**
+ * Admin-chosen per-field font sizes (px) keyed by i18n key. The root layout
+ * turns them into `--cms-fs-*` CSS variables on <body>; safe fallback = empty
+ * map (nothing injected, rendering identical to today).
+ */
+export const getContentFontSizes = cache(
+  async (): Promise<Record<string, number>> => {
+    if (!isServiceRoleConfigured) return {};
+    return (await fetchSiteContentRows()).fontSizes;
+  },
+);
 
 // NOTE: any future email sender (receipts, expiry warnings, digests, …) must
 // gate on isFeatureEnabled("notifications_email") before sending. Supabase
@@ -137,11 +180,65 @@ export type PublicSiteSettings = {
   social: { facebook: string; instagram: string; youtube: string; tiktok: string };
 };
 
+// MAINTENANCE (owner item 12 — 0–5s propagation): the two maintenance keys
+// live in their OWN tiny cached fetch with a 4-SECOND TTL, so flipping the
+// admin toggle reaches any SSR/navigation within ~4s instead of the old 60s.
+// The other chrome settings deliberately KEEP the 60s cache below. The public
+// /api/maintenance-status route (client poll on the maintenance splash) reads
+// the DB directly, uncached.
+export type MaintenanceStatus = {
+  enabled: boolean;
+  message: Partial<Record<Locale, string>>;
+  updatedAt?: string;
+};
+
+const fetchMaintenanceStatus = unstable_cache(
+  async (): Promise<MaintenanceStatus> => {
+    const out: MaintenanceStatus = { enabled: false, message: {} };
+    try {
+      const supabase = getAdminClient();
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("key, value_json, updated_at")
+        .in("key", ["platform.maintenance_mode", "platform.maintenance_message"]);
+      if (error || !data) return out;
+      for (const row of data as {
+        key: string;
+        value_json: unknown;
+        updated_at: string | null;
+      }[]) {
+        if (row.key === "platform.maintenance_mode") {
+          out.enabled = row.value_json === true;
+          if (row.updated_at) out.updatedAt = row.updated_at;
+        } else if (
+          row.key === "platform.maintenance_message" &&
+          row.value_json &&
+          typeof row.value_json === "object"
+        ) {
+          const m = row.value_json as Record<string, unknown>;
+          for (const l of locales) {
+            const v = typeof m[l] === "string" ? (m[l] as string).trim() : "";
+            if (v) out.message[l] = v;
+          }
+        }
+      }
+      return out;
+    } catch {
+      return out;
+    }
+  },
+  ["maintenance-status"],
+  { revalidate: 4 },
+);
+
+export const getMaintenanceStatus = cache(async (): Promise<MaintenanceStatus> => {
+  if (!isServiceRoleConfigured) return { enabled: false, message: {} };
+  return fetchMaintenanceStatus();
+});
+
 const fetchPublicSiteSettings = unstable_cache(
-  async (): Promise<PublicSiteSettings> => {
-  const out: PublicSiteSettings = {
-    maintenanceMode: false,
-    maintenanceMessage: {},
+  async (): Promise<Omit<PublicSiteSettings, "maintenanceMode" | "maintenanceMessage">> => {
+  const out = {
     supportEmail: "",
     supportPhone: "",
     social: { facebook: "", instagram: "", youtube: "", tiktok: "" },
@@ -152,8 +249,6 @@ const fetchPublicSiteSettings = unstable_cache(
       .from("system_settings")
       .select("key, value_json")
       .in("key", [
-        "platform.maintenance_mode",
-        "platform.maintenance_message",
         "contact.support_email",
         "contact.support_phone",
         "social.facebook",
@@ -165,18 +260,6 @@ const fetchPublicSiteSettings = unstable_cache(
     const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
     for (const row of data as { key: string; value_json: unknown }[]) {
       switch (row.key) {
-        case "platform.maintenance_mode":
-          out.maintenanceMode = row.value_json === true;
-          break;
-        case "platform.maintenance_message":
-          if (row.value_json && typeof row.value_json === "object") {
-            const m = row.value_json as Record<string, unknown>;
-            for (const l of locales) {
-              const v = str(m[l]);
-              if (v) out.maintenanceMessage[l] = v;
-            }
-          }
-          break;
         case "contact.support_email":
           out.supportEmail = str(row.value_json);
           break;
@@ -216,7 +299,16 @@ export const getPublicSiteSettings = cache(async (): Promise<PublicSiteSettings>
       social: { facebook: "", instagram: "", youtube: "", tiktok: "" },
     };
   }
-  return fetchPublicSiteSettings();
+  // Two independent caches: maintenance at 4s, the rest of the chrome at 60s.
+  const [maintenance, rest] = await Promise.all([
+    fetchMaintenanceStatus(),
+    fetchPublicSiteSettings(),
+  ]);
+  return {
+    maintenanceMode: maintenance.enabled,
+    maintenanceMessage: maintenance.message,
+    ...rest,
+  };
 });
 
 /**

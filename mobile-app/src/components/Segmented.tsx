@@ -1,13 +1,12 @@
+// Segmented control (web LanguageSegmented / ThemeToggle "segmented" parity):
+// a soft full-round track with a raised active chip (redesign radii/shadow
+// standard). API unchanged.
 import React from "react";
 import { Pressable, View } from "react-native";
 import { AppText } from "./AppText";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing } from "@/theme/tokens";
+import { shadow, spacing } from "@/theme/tokens";
 
-/**
- * Segmented control (web LanguageSegmented / ThemeToggle "segmented" parity):
- * a soft track with a raised active segment.
- */
 export function Segmented<T extends string>({
   options,
   value,
@@ -24,7 +23,7 @@ export function Segmented<T extends string>({
       style={{
         flexDirection: "row",
         backgroundColor: tokens.chipBg,
-        borderRadius: radius.md,
+        borderRadius: 999,
         padding: 3,
         alignSelf: "flex-start",
       }}
@@ -38,13 +37,18 @@ export function Segmented<T extends string>({
             accessibilityState={{ selected: active }}
             accessibilityLabel={o.label}
             onPress={() => onChange(o.value)}
-            style={{
-              paddingVertical: spacing.sm,
-              paddingHorizontal: spacing.lg,
-              borderRadius: radius.sm,
-              backgroundColor: active ? tokens.surface : "transparent",
-              elevation: active ? 1 : 0,
-            }}
+            style={[
+              {
+                paddingVertical: spacing.sm,
+                paddingHorizontal: spacing.lg,
+                borderRadius: 999,
+                backgroundColor: active ? tokens.surface : "transparent",
+                minHeight: 36,
+                alignItems: "center",
+                justifyContent: "center",
+              },
+              active ? shadow("card", tokens.shadow) : null,
+            ]}
           >
             <AppText
               variant="label"

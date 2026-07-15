@@ -2,11 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
-import { getDict, getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { OlympiadForm } from "@/components/OlympiadForm";
-import { BulkUploadModal } from "@/components/BulkUploadModal";
 import { OlympiadCoverUploader } from "@/components/OlympiadCoverUploader";
+import {
+  OlympiadQuestionManager,
+  type OlympiadPoolRow,
+} from "@/components/OlympiadQuestionManager";
 import { archiveOlympiadPackage } from "@/lib/admin/olympiad";
+import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
+import { localDict } from "../../labels";
 
 const FORM_KEYS = [
   "oly2.subject", "oly2.grade", "oly2.price", "oly2.statusLabel",
@@ -17,6 +22,13 @@ const FORM_KEYS = [
   "oly2.duration", "oly2.durationHelp",
 ];
 
+// NOTE (Round 20): BULK upload is CREATION-ONLY — the bulk-upload section
+// (button + modal) was removed from this edit page and the DB RPC rejects
+// imports into a package that already has questions.
+// Round 21 item 2: AFTER creation the pool is managed question by question
+// below (add/edit/archive/delete via OlympiadQuestionManager). Attempts
+// include ALL of a package's published questions (questions_per_attempt is
+// legacy/display-only); the count shown is the real pool row count.
 export default async function EditOlympiadPage({
   params,
 }: {
@@ -25,6 +37,7 @@ export default async function EditOlympiadPage({
   await requireAdmin();
   const { id } = await params;
   const t = await getT();
+  const lt = olympiadLocalStrings(await getLocale());
   const supabase = await createClient();
 
   const { data: pkg } = await supabase
@@ -55,38 +68,84 @@ export default async function EditOlympiadPage({
   const tr: Record<string, { title: string; desc: string }> = {};
   for (const x of (trs ?? []) as any[]) tr[x.locale] = { title: x.title, desc: x.description ?? "" };
 
-  const [{ data: subjects }, { data: grades }, { data: qtypes }, { count: poolCount }, fullDict] =
+  const [{ data: subjects }, { data: grades }, { data: poolQuestions }, { data: topicRows }] =
     await Promise.all([
       supabase.from("subjects").select("id, name").order("name"),
       supabase.from("grades").select("id, name, level").order("level"),
-      supabase
-        .from("question_types")
-        .select("name, status, options_required, correct_required")
-        .order("code"),
-      // PRIVATE pool size: questions owned by THIS package only.
+      // PRIVATE pool: questions owned by THIS package only, with what the
+      // list needs (az/primary body excerpt, option count, image flag).
       supabase
         .from("questions")
-        .select("id", { count: "exact", head: true })
-        .eq("olympiad_package_id", id),
-      getDict(),
+        .select(
+          "id, status, primary_locale, updated_at, question_translations(locale, body, media_asset_id), answer_options(count)",
+        )
+        .eq("olympiad_package_id", id)
+        .order("created_at", { ascending: true }),
+      // Optional taxonomy for the editor: OLYMPIAD-scoped topics of the
+      // package's subject (module separation — never exam topics).
+      supabase
+        .from("topics")
+        .select("id, grade_id, name")
+        .eq("scope", "olympiad")
+        .eq("subject_id", (pkg as any).subject_id)
+        .order("name"),
     ]);
+
+  // Topics without a grade match any grade; grade-bound topics must match the
+  // package's grade.
+  const pkgGradeId = (pkg as any).grade_id ?? null;
+  const poolTopics = ((topicRows ?? []) as any[])
+    .filter((tp) => tp.grade_id == null || pkgGradeId == null || tp.grade_id === pkgGradeId)
+    .map((tp) => ({ id: String(tp.id), name: String(tp.name) }));
+  let poolSubtopics: { id: string; topic_id: string; name: string }[] = [];
+  if (poolTopics.length > 0) {
+    const { data: subRows } = await supabase
+      .from("subtopics")
+      .select("id, topic_id, name")
+      .in("topic_id", poolTopics.map((tp) => tp.id))
+      .order("name");
+    poolSubtopics = ((subRows ?? []) as any[]).map((st) => ({
+      id: String(st.id),
+      topic_id: String(st.topic_id),
+      name: String(st.name),
+    }));
+  }
+
+  // Pre-shaped list rows (small payload; the edit modal loads the full
+  // trilingual question on demand).
+  const poolRows: OlympiadPoolRow[] = ((poolQuestions ?? []) as any[]).map((q, i) => {
+    const trs = (q.question_translations ?? []) as {
+      locale: string;
+      body: string | null;
+      media_asset_id: string | null;
+    }[];
+    const body =
+      trs.find((x) => x.locale === "az")?.body ??
+      trs.find((x) => x.locale === q.primary_locale)?.body ??
+      trs[0]?.body ??
+      "";
+    return {
+      id: String(q.id),
+      num: i + 1,
+      excerpt: body.length > 90 ? `${body.slice(0, 90)}…` : body,
+      search: trs
+        .map((x) => (x.body ?? "").slice(0, 500))
+        .join(" ")
+        .toLowerCase(),
+      optionCount: Number(q.answer_options?.[0]?.count ?? 0),
+      hasImage: trs.some((x) => x.media_asset_id),
+      status: String(q.status),
+      updatedAt: String(q.updated_at ?? "").slice(0, 10),
+    };
+  });
+  const subjectName =
+    ((subjects ?? []) as any[]).find((s) => s.id === (pkg as any).subject_id)?.name ?? "";
+  const gradeName =
+    ((grades ?? []) as any[]).find((g) => g.id === pkgGradeId)?.name ?? "";
+  const poolDict = localDict(await getLocale());
 
   const formDict: Record<string, string> = {};
   for (const k of FORM_KEYS) formDict[k] = t(k);
-
-  // Bulk-import modal inputs: subject AND grade come from the PACKAGE row
-  // server-side, so the modal only needs the type hints for validation.
-  const activeTypeNames = ((qtypes ?? []) as any[])
-    .filter((r) => r.status === "active")
-    .map((r) => String(r.name));
-  // Structure rules for the shared bulk-import modal's client-side validation.
-  const activeTypeRules = ((qtypes ?? []) as any[])
-    .filter((r) => r.status === "active")
-    .map((r) => ({
-      name: String(r.name),
-      options_required: r.options_required ?? null,
-      correct_required: r.correct_required ?? null,
-    }));
 
   return (
     <div className="page">
@@ -134,14 +193,21 @@ export default async function EditOlympiadPage({
       <section className="card" style={{ marginTop: 16 }}>
         <h3>{t("oly2.pool")}</h3>
         <p className="muted">
-          {t("olybulk.count")}: <b>{poolCount ?? 0}</b>
+          {t("olybulk.count")}: <b>{poolRows.length}</b>
         </p>
-        <BulkUploadModal
-          dict={fullDict}
+        {/* Attempts use the FULL published pool; bulk upload is creation-only,
+            but individual questions are managed right here (Round 21). */}
+        <p className="hint">{lt("oly2.allQuestionsNote")}</p>
+        <p className="hint">{poolDict["olyq.manageNote"]}</p>
+        <p className="hint">{poolDict["olyq.archivedNote"]}</p>
+        <OlympiadQuestionManager
+          dict={poolDict}
           packageId={(pkg as any).id}
-          typeNames={activeTypeNames}
-          typeRules={activeTypeRules}
-          triggerClassName="btn"
+          subjectName={subjectName}
+          gradeName={gradeName}
+          topics={poolTopics}
+          subtopics={poolSubtopics}
+          rows={poolRows}
         />
       </section>
       <section className="card" style={{ marginTop: 16 }}>

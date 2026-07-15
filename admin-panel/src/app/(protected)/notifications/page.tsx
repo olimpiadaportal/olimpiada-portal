@@ -7,6 +7,7 @@ import {
   NotificationComposer,
   type ComposerStrings,
   type SubjectOption,
+  type PackageOption,
   type TemplateRow,
 } from "@/components/NotificationComposer";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@/components/NotificationTemplates";
 import { SETTING_META, FLAG_META, LOCALE_OPTIONS } from "@/lib/admin/settings-meta";
 import { getT, getLocale } from "@/i18n/server";
+import { localStrings } from "./labels";
 
 // Notifications module — Administrator-only (nav entry is adminOnly and the page
 // guards with requireAdmin(); the RPCs additionally require the notifications.send
@@ -36,19 +38,21 @@ export default async function NotificationsPage() {
   await requireAdmin();
   const t = await getT();
   const locale = await getLocale();
+  const lt = localStrings(locale);
   const supabase = await createClient();
 
   const [
     { data: historyRows },
     { data: templateRows },
     { data: subjectRows },
+    { data: packageRows },
     { data: flagRows },
     { data: settingRows },
   ] = await Promise.all([
     supabase
       .from("admin_notifications")
       .select(
-        "id, title, body, template_code, channels, audience_type, status, total_recipients, delivered_count, failed_count, scheduled_at, sent_at, created_at",
+        "id, title, body, template_code, channels, audience_type, audience_filter, status, total_recipients, delivered_count, failed_count, scheduled_at, sent_at, created_at",
       )
       .order("created_at", { ascending: false })
       .limit(100),
@@ -58,6 +62,11 @@ export default async function NotificationsPage() {
       .order("code")
       .order("locale"),
     supabase.from("subjects").select("id, name").order("name"),
+    // ACTIVE olympiad packages (az titles) for the olympiad_buyers audience.
+    supabase
+      .from("olympiad_packages")
+      .select("id, code, status, olympiad_package_translations(locale, title)")
+      .eq("status", "active"),
     supabase.from("feature_flags").select("key, enabled"),
     supabase.from("system_settings").select("key, value_json"),
   ]);
@@ -67,6 +76,21 @@ export default async function NotificationsPage() {
     name: s.name,
   }));
 
+  // az title preferred; any translation, then the internal code as fallback.
+  const packages: PackageOption[] = ((packageRows ?? []) as any[])
+    .map((p) => {
+      const trs = (p.olympiad_package_translations ?? []) as {
+        locale: string;
+        title: string;
+      }[];
+      const az = trs.find((x) => x.locale === "az");
+      return {
+        id: p.id as string,
+        title: String(az?.title ?? trs[0]?.title ?? p.code ?? p.id),
+      };
+    })
+    .sort((a, b) => a.title.localeCompare(b.title, "az"));
+
   const templates: TemplateRow[] = ((templateRows ?? []) as any[]).map((r) => ({
     id: r.id,
     code: r.code,
@@ -74,6 +98,30 @@ export default async function NotificationsPage() {
     subject: r.subject ?? null,
     body: r.body,
   }));
+
+  // For olympiad_buyers sends the composer stores a title snapshot in
+  // audience_filter.package_titles (the DB resolver ignores extra keys);
+  // legacy/handmade rows without one fall back to the raw package ids.
+  const historyPackageTitles = (r: any): string[] | undefined => {
+    if (r.audience_type !== "olympiad_buyers") return undefined;
+    const filter =
+      r.audience_filter && typeof r.audience_filter === "object"
+        ? (r.audience_filter as Record<string, unknown>)
+        : {};
+    const titles = Array.isArray(filter.package_titles)
+      ? (filter.package_titles as unknown[])
+          .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+          .map((x) => x.slice(0, 200))
+          .slice(0, 100)
+      : [];
+    if (titles.length > 0) return titles;
+    const ids = Array.isArray(filter.package_ids)
+      ? (filter.package_ids as unknown[])
+          .filter((x): x is string => typeof x === "string")
+          .slice(0, 100)
+      : [];
+    return ids.length > 0 ? ids : undefined;
+  };
 
   const history: HistoryRow[] = ((historyRows ?? []) as any[]).map((r) => ({
     id: r.id,
@@ -89,6 +137,7 @@ export default async function NotificationsPage() {
     scheduledAt: r.scheduled_at ?? null,
     sentAt: r.sent_at ?? null,
     createdAt: r.created_at,
+    packageTitles: historyPackageTitles(r),
   }));
 
   const flagEnabled = new Map(
@@ -104,8 +153,12 @@ export default async function NotificationsPage() {
 
   // -------------------------------- strings --------------------------------
   const audienceLabels: Record<string, string> = {
+    // all_users / olympiad_buyers come from the LOCAL trilingual labels until
+    // messages.ts gains the ntfadmin.audience.* keys.
+    all_users: lt("ntfadmin.audience.all_users"),
     all_parents: t("ntfadmin.audience.all_parents"),
     all_children: t("ntfadmin.audience.all_children"),
+    olympiad_buyers: lt("ntfadmin.audience.olympiad_buyers"),
     parent: t("ntfadmin.audience.parent"),
     by_subject: t("ntfadmin.audience.by_subject"),
     individual: t("ntfadmin.audience.individual"),
@@ -139,12 +192,24 @@ export default async function NotificationsPage() {
     channelInAppNote: t("ntfadmin.channel.inAppNote"),
     channelOffNote: t("ntfadmin.channel.offNote"),
     audience: t("ntfadmin.composer.audience"),
+    audAllUsers: audienceLabels.all_users,
     audAllParents: audienceLabels.all_parents,
     audAllChildren: audienceLabels.all_children,
+    audOlympiadBuyers: audienceLabels.olympiad_buyers,
     audParent: audienceLabels.parent,
     audBySubject: audienceLabels.by_subject,
     subject: t("ntfadmin.composer.subject"),
     subjectChoose: t("ntfadmin.composer.subjectChoose"),
+    pkgLabel: lt("ntfadmin.pkg.label"),
+    pkgSearch: lt("ntfadmin.pkg.search"),
+    pkgEmpty: lt("ntfadmin.pkg.empty"),
+    pkgNoMatch: lt("ntfadmin.pkg.noMatch"),
+    pkgChosen: lt("ntfadmin.pkg.chosen"),
+    pkgSelectAll: lt("ntfadmin.pkg.selectAll"),
+    pkgClear: lt("ntfadmin.pkg.clear"),
+    pkgRemove: lt("ntfadmin.pkg.remove"),
+    pkgHint: lt("ntfadmin.pkg.hint"),
+    zeroRecipients: lt("ntfadmin.zeroRecipients"),
     recipients: t("ntfadmin.composer.recipients"),
     recipientsCounting: t("ntfadmin.composer.recipientsCounting"),
     recipientsPick: t("ntfadmin.composer.recipientsPick"),
@@ -182,6 +247,7 @@ export default async function NotificationsPage() {
     detailTitle: t("ntfadmin.history.detailTitle"),
     bodyLabel: t("ntfadmin.history.bodyLabel"),
     templateLabel: t("ntfadmin.history.templateLabel"),
+    packagesLabel: lt("ntfadmin.history.packagesLabel"),
     scheduledAtLabel: t("ntfadmin.history.scheduledAtLabel"),
     sentAtLabel: t("ntfadmin.history.sentAtLabel"),
     createdAtLabel: t("ntfadmin.history.createdAtLabel"),
@@ -288,6 +354,7 @@ export default async function NotificationsPage() {
       <h3>{composerStrings.heading}</h3>
       <NotificationComposer
         subjects={subjects}
+        packages={packages}
         templates={templates}
         strings={composerStrings}
       />

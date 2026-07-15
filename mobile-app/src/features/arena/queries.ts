@@ -16,6 +16,7 @@ export const QK = {
   attempts: (id: string) => ["arena", "attempts", id] as const,
   streak: ["arena", "streak"] as const,
   rank: ["arena", "lb-rank"] as const,
+  rankAllTime: ["arena", "lb-rank-all-time"] as const,
 };
 
 const ARENA_STALE_MS = 60_000;
@@ -250,18 +251,19 @@ export function useStreakStatus() {
   });
 }
 
-// ---- leaderboard quick-look (this-month global rank) -------------------------------
+// ---- leaderboard rank (global points; month for the quick-look card, all-time
+// for the hero rank ring) ------------------------------------------------------------
 // The child-scoped RPC (get_child_leaderboard_summary is parent/admin-only; a
 // child session must use get_my_leaderboard_rank — same as the web child home).
 
 export type MyLbRank = { rank: number | null; total: number; value: number };
 
-async function fetchMyLeaderboardRank(): Promise<MyLbRank | null> {
+async function fetchMyLeaderboardRank(period: "month" | "all_time"): Promise<MyLbRank | null> {
   const { data, error } = await supabase.rpc("get_my_leaderboard_rank", {
     p_board: "points",
     p_scope: "global",
     p_scope_id: null,
-    p_period: "month",
+    p_period: period,
   });
   if (error || !data || typeof data !== "object") return null;
   const o = data as Record<string, unknown>;
@@ -276,8 +278,20 @@ export function useMyLeaderboardRank(enabled: boolean) {
   const profileId = useStudentProfileId();
   return useQuery({
     queryKey: QK.rank,
-    queryFn: fetchMyLeaderboardRank,
+    queryFn: () => fetchMyLeaderboardRank("month"),
     enabled: enabled && !!profileId,
+    staleTime: ARENA_STALE_MS,
+  });
+}
+
+/** Hero rank panel: REAL global ALL-TIME points rank (Round-21 web parity —
+ * read regardless of the leaderboard flag, exactly like the web dashboard). */
+export function useMyAllTimeRank() {
+  const profileId = useStudentProfileId();
+  return useQuery({
+    queryKey: QK.rankAllTime,
+    queryFn: () => fetchMyLeaderboardRank("all_time"),
+    enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
   });
 }

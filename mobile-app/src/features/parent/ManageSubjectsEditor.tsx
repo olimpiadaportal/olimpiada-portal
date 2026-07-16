@@ -13,6 +13,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { bffUpdateSubjects } from "@/lib/api";
 import { useT } from "@/i18n/useT";
+import { subjectLabel } from "@/lib/subjectLabel";
 import {
   INTERVAL_PER_KEY,
   estimateTotal,
@@ -130,7 +131,7 @@ export function ManageSubjectsEditor({
         {subjects.map((s) => (
           <SubjectCheckRow
             key={s.id}
-            name={s.name}
+            name={subjectLabel(t, s.code, s.name)}
             priceText={fmtMoney(s.prices[iv] ?? 0, "AZN")}
             checked={selected.has(s.id)}
             onToggle={() => toggle(s.id)}
@@ -146,13 +147,13 @@ export function ManageSubjectsEditor({
         {toAdd.length > 0 ? (
           <KeyRow
             label={t("subjedit.pendingAdd")}
-            value={toAdd.map((s) => s.name).join(", ")}
+            value={toAdd.map((s) => subjectLabel(t, s.code, s.name)).join(", ")}
           />
         ) : null}
         {toRemove.length > 0 ? (
           <KeyRow
             label={t("subjedit.pendingRemove")}
-            value={toRemove.map((s) => s.name).join(", ")}
+            value={toRemove.map((s) => subjectLabel(t, s.code, s.name)).join(", ")}
           />
         ) : null}
         {hasDiff && selected.size > 0 ? (
@@ -193,13 +194,18 @@ export function ManageSubjectsEditor({
         pending={pending}
         rows={[
           ...(toAdd.length > 0
-            ? [{ label: t("subjedit.pendingAdd"), value: toAdd.map((s) => s.name).join(", ") }]
+            ? [
+                {
+                  label: t("subjedit.pendingAdd"),
+                  value: toAdd.map((s) => subjectLabel(t, s.code, s.name)).join(", "),
+                },
+              ]
             : []),
           ...(toRemove.length > 0
             ? [
                 {
                   label: t("subjedit.pendingRemove"),
-                  value: toRemove.map((s) => s.name).join(", "),
+                  value: toRemove.map((s) => subjectLabel(t, s.code, s.name)).join(", "),
                 },
               ]
             : []),

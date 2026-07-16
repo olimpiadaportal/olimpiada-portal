@@ -81,8 +81,8 @@ Request: `{"first_name","last_name","grade_id","district_id","city_district_id"?
 Round 21: `city_district_id` (intra-city rayon, from the public-readable
 `city_districts` table) is REQUIRED by the server whenever the chosen city
 (`district_id` — naming trap: that field is the CITY) has active rayons; the
-failure maps to `addchild.err.districtRequired`. The M3.1 wizard must add the
-District select between City and School.
+failure maps to `addchild.err.districtRequired`. The wizard's District select
+between City and School SHIPPED in Round 22.
 
 | Status | Body |
 |---|---|

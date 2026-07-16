@@ -3,6 +3,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { TestRunner, type TestAttemptData } from "@/components/TestRunner";
 import { ChildNavActive } from "@/components/ChildNav";
 
@@ -102,7 +103,11 @@ export default async function TestRunPage({
           ),
         );
   const [{ data: subjectRow }, topicsRes, { data: attRow }] = await Promise.all([
-    supabase.from("subjects").select("name").eq("id", attempt.subject_id).maybeSingle(),
+    supabase
+      .from("subjects")
+      .select("code, name")
+      .eq("id", attempt.subject_id)
+      .maybeSingle(),
     topicIds.length > 0
       ? supabase.from("topics").select("id, name").in("id", topicIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
@@ -115,7 +120,10 @@ export default async function TestRunPage({
       .maybeSingle(),
   ]);
   const rated = !!(attRow as { is_rated?: boolean } | null)?.is_rated;
-  subjectName = ((subjectRow as { name?: string } | null)?.name ?? "").trim();
+  const subjRow = subjectRow as { code?: string | null; name?: string } | null;
+  subjectName = subjRow?.name
+    ? subjectLabel(t, subjRow.code, subjRow.name).trim()
+    : "";
   // Daily rounds title the top bar "Round of the day — <subject>".
   if (isDaily) {
     dict["test.run.title"] = subjectName

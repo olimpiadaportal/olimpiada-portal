@@ -27,6 +27,7 @@ import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { startDailyRoundAttempt } from "./api";
 import { useRecentAttempts, useRoundReadiness, useSubjectAccess } from "./queries";
 import { displayStatus, findLiveAttempt, isLiveAttempt } from "./logic";
@@ -260,7 +261,9 @@ export function TestsHomeScreen() {
               {t("test.home.continueTitle")}
             </AppText>
             <AppText color={arena.muted} style={{ fontSize: 13 }} numberOfLines={2}>
-              {(live.subject_name ?? "—") + " · " + t("test.home.continueSub")}
+              {subjectLabel(t, live.subject_code, live.subject_name) +
+                " · " +
+                t("test.home.continueSub")}
             </AppText>
           </View>
           <View
@@ -288,7 +291,7 @@ export function TestsHomeScreen() {
               key={s.id}
               arena={arena}
               subjectId={s.id}
-              name={s.name}
+              name={subjectLabel(t, s.code, s.name)}
               state={subjectCardState(s.id, rows, readinessBySubject.get(s.id), now)}
             />
           ))}
@@ -609,7 +612,7 @@ function AttemptRow({
       <View style={{ flex: 1, gap: 2 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
           <AppText variant="label" color={arena.ink} numberOfLines={1} style={{ flexShrink: 1 }}>
-            {row.subject_name ?? "—"}
+            {subjectLabel(t, row.subject_code, row.subject_name)}
           </AppText>
           {row.is_rated ? (
             <View

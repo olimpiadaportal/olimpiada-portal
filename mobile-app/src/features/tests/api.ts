@@ -52,7 +52,7 @@ export async function fetchSubjectAccess(
       .maybeSingle(),
     supabase
       .from("child_subscriptions")
-      .select("status, subscription_subjects(subjects(id, name))")
+      .select("status, subscription_subjects(subjects(id, code, name))")
       .eq("student_profile_id", profileId)
       .in("status", ["trialing", "active"]),
   ]);
@@ -66,24 +66,38 @@ export async function fetchSubjectAccess(
       "inactive") as string;
   const hasAccess = access === "trialing" || access === "active" || freeNow;
 
-  const subjMap = new Map<string, string>();
+  const subjMap = new Map<string, { code: string | null; name: string }>();
   for (const s of (subsRes.data ?? []) as any[]) {
     for (const ss of s.subscription_subjects ?? []) {
-      if (ss.subjects) subjMap.set(ss.subjects.id, ss.subjects.name);
+      if (ss.subjects) {
+        subjMap.set(ss.subjects.id, {
+          code: ss.subjects.code ?? null,
+          name: ss.subjects.name,
+        });
+      }
     }
   }
   if (freeNow) {
     const { data: priced, error } = await supabase
       .from("subjects_pricing")
-      .select("subjects(id, name)")
+      .select("subjects(id, code, name)")
       .eq("status", "active");
     if (!error) {
       for (const row of (priced ?? []) as any[]) {
-        if (row.subjects) subjMap.set(row.subjects.id, row.subjects.name);
+        if (row.subjects) {
+          subjMap.set(row.subjects.id, {
+            code: row.subjects.code ?? null,
+            name: row.subjects.name,
+          });
+        }
       }
     }
   }
-  const subjects: ChildSubject[] = Array.from(subjMap, ([id, name]) => ({ id, name }));
+  const subjects: ChildSubject[] = Array.from(subjMap, ([id, v]) => ({
+    id,
+    code: v.code,
+    name: v.name,
+  }));
   return { freeNow, access, hasAccess, subjects };
 }
 
@@ -96,7 +110,7 @@ export async function fetchRecentAttempts(profileId: string): Promise<AttemptLis
   const { data, error } = await supabase
     .from("test_attempts")
     .select(
-      "id, kind, is_rated, status, score, max_score, started_at, submitted_at, deadline_at, subject_id, subjects(name)",
+      "id, kind, is_rated, status, score, max_score, started_at, submitted_at, deadline_at, subject_id, subjects(code, name)",
     )
     .eq("student_profile_id", profileId)
     .in("kind", ["daily", "test"])
@@ -114,6 +128,7 @@ export async function fetchRecentAttempts(profileId: string): Promise<AttemptLis
     submitted_at: r.submitted_at,
     deadline_at: r.deadline_at,
     subject_id: r.subject_id ?? null,
+    subject_code: r.subjects?.code ?? null,
     subject_name: r.subjects?.name ?? null,
   }));
 }
@@ -288,15 +303,23 @@ async function fetchAttemptMeta(
   locale: Locale,
 ): Promise<AttemptMeta> {
   const isOlympiad = attempt.kind === "olympiad";
-  const meta: AttemptMeta = { subjectName: "", topicNames: [], olympiadTitle: null };
+  const meta: AttemptMeta = {
+    subjectName: "",
+    subjectCode: null,
+    topicNames: [],
+    olympiadTitle: null,
+  };
   try {
-    // Subject name (public-read taxonomy).
+    // Subject name + code (public-read taxonomy). The screen resolves the
+    // display label via subjectLabel(t, code, name).
     const { data: subjectRow } = await supabase
       .from("subjects")
-      .select("name")
+      .select("code, name")
       .eq("id", attempt.subject_id)
       .maybeSingle();
-    meta.subjectName = ((subjectRow as { name?: string } | null)?.name ?? "").trim();
+    const subjRow = subjectRow as { code?: string | null; name?: string } | null;
+    meta.subjectName = (subjRow?.name ?? "").trim();
+    meta.subjectCode = subjRow?.code ?? null;
 
     if (!isOlympiad) {
       // Distinct topic names in question order (web run page parity).
@@ -447,7 +470,7 @@ export async function fetchAttemptRow(
   const { data, error } = await supabase
     .from("test_attempts")
     .select(
-      "id, kind, is_rated, status, deadline_at, started_at, submitted_at, duration_seconds, subjects(name)",
+      "id, kind, is_rated, status, deadline_at, started_at, submitted_at, duration_seconds, subjects(code, name)",
     )
     .eq("id", attemptId)
     .eq("student_profile_id", profileId)
@@ -464,6 +487,7 @@ export async function fetchAttemptRow(
     started_at: r.started_at,
     submitted_at: r.submitted_at,
     duration_seconds: r.duration_seconds,
+    subject_code: r.subjects?.code ?? null,
     subject_name: r.subjects?.name ?? null,
   };
 }

@@ -144,9 +144,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     section: "landing",
     menu: "hero",
     defaults: {
-      az: "1–11-ci siniflər üçün olimpiada hazırlığı",
-      en: "Olympiad preparation for grades 1–11",
-      ru: "Подготовка к олимпиадам для 1–11 классов",
+      az: "OlympIQ — Hər gün bir pillə yuxarı",
+      en: "OlympIQ — One step higher every day",
+      ru: "OlympIQ — каждый день на ступень выше",
     },
   },
   {
@@ -155,9 +155,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     menu: "hero",
     multiline: true,
     defaults: {
-      az: "Azərbaycan şagirdləri üçün abunə əsaslı təhsil platforması — valideyn idarə edir, uşaq öyrənir.",
-      en: "A subscription learning platform for Azerbaijani students — managed by parents, built for children to learn.",
-      ru: "Образовательная платформа по подписке для учеников Азербайджана — родитель управляет, ребёнок учится.",
+      az: "1–11-ci siniflər üçün olimpiada hazırlığı portalı. Şagirdlər üçün abunə əsaslı platforma — valideyn idarə edir, uşaq öyrənir.",
+      en: "An olympiad preparation portal for grades 1–11. A subscription-based platform for students — the parent manages, the child learns.",
+      ru: "Портал подготовки к олимпиадам для 1–11 классов. Платформа по подписке для школьников — родитель управляет, ребёнок учится.",
     },
   },
   {
@@ -187,9 +187,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     section: "landing",
     menu: "hero",
     defaults: {
-      az: "Fənn abunələri",
-      en: "Subject subscriptions",
-      ru: "Подписки на предметы",
+      az: "Fənn paketləri",
+      en: "Subject packages",
+      ru: "Предметные пакеты",
     },
   },
   {
@@ -237,7 +237,7 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     key: "nav.about",
     section: "landing",
     menu: "nav",
-    defaults: { az: "Haqqında", en: "About", ru: "О нас" },
+    defaults: { az: "Haqqımızda", en: "About us", ru: "О нас" },
   },
   {
     key: "nav.contact",
@@ -262,25 +262,25 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     key: "stats.title",
     section: "landing",
     menu: "stats",
-    defaults: { az: "Rəqəmlərlə OlympIQ", en: "OlympIQ in numbers", ru: "OlympIQ в цифрах" },
+    defaults: { az: "OlympIQ Rəqəmlərlə", en: "OlympIQ in numbers", ru: "OlympIQ в цифрах" },
   },
   {
     key: "stats.tests",
     section: "landing",
     menu: "stats",
-    defaults: { az: "Həll edilən testlər", en: "Tests completed", ru: "Пройдено тестов" },
+    defaults: { az: "Test bazası", en: "Question bank", ru: "База тестов" },
   },
   {
     key: "stats.olympiads",
     section: "landing",
     menu: "stats",
-    defaults: { az: "Olimpiada paketləri", en: "Olympiad packages", ru: "Олимпиадных пакетов" },
+    defaults: { az: "Olimpiada paketi", en: "Olympiad packages", ru: "Олимпиадные пакеты" },
   },
   {
     key: "stats.students",
     section: "landing",
     menu: "stats",
-    defaults: { az: "Fəal şagirdlər", en: "Active students", ru: "Активных учеников" },
+    defaults: { az: "Aktiv məktəbli", en: "Active students", ru: "Активные школьники" },
   },
   {
     key: "stats.successRate",
@@ -300,9 +300,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     section: "landing",
     menu: "about",
     defaults: {
-      az: "Hər uşağın olimpiada yolu buradan başlayır",
-      en: "Where every child's olympiad journey begins",
-      ru: "Здесь начинается путь каждого ребёнка к олимпиадам",
+      az: "Böyük zirvələr kiçik addımlarla fəth olunur",
+      en: "Great peaks are conquered in small steps",
+      ru: "Большие вершины покоряются маленькими шагами",
     },
   },
   {
@@ -311,9 +311,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     menu: "about",
     multiline: true,
     defaults: {
-      az: "OlympIQ — Azərbaycanda 1–11-ci sinif şagirdləri üçün olimpiada hazırlığı platformasıdır. Gündəlik məşq, real formatda cəhdlər və valideyn nəzarəti — hamısı bir yerdə.",
-      en: "OlympIQ is an olympiad preparation platform for grade 1–11 students in Azerbaijan. Daily practice, real-format attempts, and parent oversight — all in one place.",
-      ru: "OlympIQ — платформа подготовки к олимпиадам для учеников 1–11 классов в Азербайджане. Ежедневная практика, попытки в реальном формате и родительский контроль — всё в одном месте.",
+      az: "Hər bir olimpiada qalibinin uğurunun arxasında planlı hazırlıq, davamlı məşq və düzgün istiqamətləndirmə dayanır. OlympIQ məhz bu məqsədlə yaradılmış süni intellekt əsaslı olimpiada hazırlıq platformasıdır. Platformamız 1–11-ci sinif şagirdlərinə biliklərini sistemli şəkildə inkişaf etdirmək, olimpiadalara peşəkar səviyyədə hazırlaşmaq və potensiallarını tam üzə çıxarmaq imkanı yaradır.",
+      en: "Behind every olympiad winner's success stand planned preparation, consistent practice and the right guidance. OlympIQ is an AI-powered olympiad preparation platform built exactly for that. It gives students in grades 1–11 the opportunity to grow their knowledge systematically, prepare for olympiads at a professional level and unlock their full potential.",
+      ru: "За успехом каждого победителя олимпиады стоят планомерная подготовка, постоянная практика и правильное направление. OlympIQ — платформа олимпиадной подготовки на основе искусственного интеллекта, созданная именно для этого. Она даёт ученикам 1–11 классов возможность системно развивать знания, готовиться к олимпиадам на профессиональном уровне и полностью раскрывать свой потенциал.",
     },
   },
   {
@@ -321,9 +321,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     section: "landing",
     menu: "about",
     defaults: {
-      az: "Öyrən, məşq et, irəlilə",
-      en: "Learn, practice, improve",
-      ru: "Учись, тренируйся, расти",
+      az: "Öyrən, cəhd et, yüksəl!",
+      en: "Learn, try, rise!",
+      ru: "Учись, пробуй, поднимайся!",
     },
   },
   {
@@ -483,16 +483,16 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     menu: "footer",
     multiline: true,
     defaults: {
-      az: "Azərbaycan şagirdlərini olimpiadalara hazırlayan abunə platforması.",
-      en: "A subscription platform preparing Azerbaijani students for olympiads.",
-      ru: "Платформа по подписке, которая готовит учеников Азербайджана к олимпиадам.",
+      az: "1–11-ci siniflər üçün olimpiada hazırlığı portalı",
+      en: "An olympiad preparation portal for grades 1–11",
+      ru: "Портал подготовки к олимпиадам для 1–11 классов",
     },
   },
   {
     key: "footer.product",
     section: "landing",
     menu: "footer",
-    defaults: { az: "Məhsul", en: "Product", ru: "Продукт" },
+    defaults: { az: "Xidmət", en: "Services", ru: "Сервис" },
   },
   {
     key: "footer.company",
@@ -511,9 +511,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     section: "landing",
     menu: "footer",
     defaults: {
-      az: "şagirdləri olimpiadalara hazırlayırıq.",
-      en: "preparing students for olympiads.",
-      ru: "готовим учеников к олимпиадам.",
+      az: "Hər gün bir pillə yuxarı",
+      en: "One step higher every day",
+      ru: "Каждый день на ступень выше",
     },
   },
 

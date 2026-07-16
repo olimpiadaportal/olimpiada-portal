@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect";
 
 // L1 — REAL leaderboard consuming the live DB engine through the child's own
@@ -96,12 +97,13 @@ export default async function ChildLeaderboardPage({
       .maybeSingle(),
     supabase
       .from("subjects")
-      .select("id, name")
+      .select("id, code, name")
       .eq("status", "active")
       .order("name", { ascending: true }),
   ]);
-  const activeSubjects = ((subjectRows ?? []) as { id: string; name: string }[])
-    .filter((s) => !!s.id);
+  const activeSubjects = (
+    (subjectRows ?? []) as { id: string; code: string | null; name: string }[]
+  ).filter((s) => !!s.id);
   const gradeId: string | null = (student as any)?.grade_id ?? null;
   const cityId: string | null = (student as any)?.district_id ?? null;
   const schoolId: string | null = (student as any)?.school_id ?? null;
@@ -211,10 +213,13 @@ export default async function ChildLeaderboardPage({
   };
   const cur = { board, scope, period: periodUrl, subject: subjectId, district: districtId };
 
-  const selectedSubjectName =
+  const selectedSubject =
     scope === "subject"
-      ? (activeSubjects.find((s) => s.id === subjectId)?.name ?? null)
+      ? (activeSubjects.find((s) => s.id === subjectId) ?? null)
       : null;
+  const selectedSubjectName = selectedSubject
+    ? subjectLabel(t, selectedSubject.code, selectedSubject.name)
+    : null;
 
   // Streak-card state messaging (t() has no interpolation — manual replace).
   let streakMsg = "";
@@ -385,7 +390,7 @@ export default async function ChildLeaderboardPage({
               value={subjectId ?? ""}
               options={activeSubjects.map((s) => ({
                 id: s.id,
-                name: s.name,
+                name: subjectLabel(t, s.code, s.name),
                 href: href({ ...cur, subject: s.id }),
               }))}
             />

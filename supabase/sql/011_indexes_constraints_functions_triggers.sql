@@ -1442,7 +1442,7 @@ grant execute on function public.setup_parent(uuid, text) to service_role;
 -- at the END of this file so the function-privilege REVOKEs below run AFTER 010's
 -- blanket grants — otherwise anon/authenticated's EXECUTE grant would remain.
 -- Server-side pricing + subscription creation: price = sum(subject pricing for the
--- interval); sibling discount (2nd 15% / 3rd+ 20%) and trial length are computed
+-- interval); sibling discount (2nd 10% / 3rd+ 15%, investor 2026-07-15) and trial length are computed
 -- HERE, never by the client. quote_* is read-only (preview); create_* writes the
 -- subscription as a 7-day trial and flips the child to access 'trialing'. Real
 -- charge/webhook is provider-specific and out of scope until a provider is chosen.
@@ -1501,7 +1501,7 @@ begin
     and cs.student_profile_id <> p_student_profile_id
     and cs.status in ('trialing', 'active', 'past_due');
 
-  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 15 else 20 end;
+  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
   v_amt := round(v_base * v_pct / 100.0, 2);
   v_total := v_base - v_amt;
 
@@ -1682,7 +1682,7 @@ begin
   where cs.owner_parent_profile_id = v_owner
     and cs.student_profile_id <> p_student_profile_id
     and cs.status in ('trialing', 'active', 'past_due');
-  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 15 else 20 end;
+  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
 
   v_amt   := round(v_base * v_pct / 100.0, 2);
   v_total := v_base - v_amt;
@@ -1750,7 +1750,7 @@ begin
   where cs.owner_parent_profile_id = v_owner
     and cs.student_profile_id <> p_student_profile_id
     and cs.status in ('trialing', 'active', 'past_due');
-  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 15 else 20 end;
+  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
 
   v_amt   := round(v_base * v_pct / 100.0, 2);
   v_total := v_base - v_amt;

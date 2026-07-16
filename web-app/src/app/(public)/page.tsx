@@ -17,10 +17,10 @@ type PubLbRow = {
   value: number;
 };
 
-// Stat cards use ILLUSTRATIVE placeholder numbers for the investor review.
-// Replace with live figures once analytics/reporting are wired.
+// Stat cards use ILLUSTRATIVE placeholder numbers (investor-reviewed copy,
+// docx 2026-07-15). Replace with live figures once analytics/reporting are wired.
 const STATS: { key: string; num: string; ico: "test" | "medal" | "users" | "up" }[] = [
-  { key: "stats.tests", num: "500+", ico: "test" }, // placeholder
+  { key: "stats.tests", num: "25,000+", ico: "test" }, // placeholder
   { key: "stats.olympiads", num: "60+", ico: "medal" }, // placeholder
   { key: "stats.students", num: "3,000+", ico: "users" }, // placeholder
   { key: "stats.successRate", num: "95%", ico: "up" }, // placeholder

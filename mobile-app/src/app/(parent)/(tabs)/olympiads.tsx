@@ -30,6 +30,7 @@ import { gradients, radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { publicStorageUrl, type OlympiadPackageRow } from "@/lib/data";
 import { bffPurchaseOlympiad } from "@/lib/api";
 import { fmtDate, fmtMoney, resolvePosture } from "@/features/parent/commerce";
@@ -342,7 +343,7 @@ export default function ParentOlympiads() {
                         {pkg.subject?.name ? (
                           <Chip
                             icon={<BookOpen size={13} color={tokens.chipText} strokeWidth={2} />}
-                            label={pkg.subject.name}
+                            label={subjectLabel(t, pkg.subject.code, pkg.subject.name)}
                           />
                         ) : null}
                         {pkg.grade ? (
@@ -421,7 +422,7 @@ export default function ParentOlympiads() {
                 <KeyRow
                   icon={<BookOpen size={16} color={tokens.muted} strokeWidth={2} />}
                   label={t("oly4.subject")}
-                  value={detail.subject.name}
+                  value={subjectLabel(t, detail.subject.code, detail.subject.name)}
                 />
               ) : null}
               <KeyRow

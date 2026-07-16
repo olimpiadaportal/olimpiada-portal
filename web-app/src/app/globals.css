@@ -4520,6 +4520,21 @@ ul.clean li {
   color: var(--muted);
 }
 
+/* Investor-approved intro prose under the hero (Round 23) — plain paragraphs
+   in the lead's voice, full content width. */
+.about2-prose {
+  margin: 34px 0 8px;
+  display: grid;
+  gap: 14px;
+}
+.about2-prose p {
+  margin: 0;
+  max-width: 76ch;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
 .about2-chips {
   display: flex;
   flex-wrap: wrap;

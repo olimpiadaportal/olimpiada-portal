@@ -45,6 +45,8 @@ export function resolvePosture(
 
 export type SubjectOption = {
   id: string;
+  /** subjects.code — drives the locale-aware label (subj.<code>) in the UI. */
+  code: string | null;
   name: string;
   /** interval → per-subject price (from subjects_pricing). */
   prices: Record<string, number>;
@@ -83,7 +85,12 @@ export function groupPricing(rows: SubjectPricingRow[]): SubjectOption[] {
     if (!Number.isFinite(amount)) continue;
     let s = map.get(row.subject_id);
     if (!s) {
-      s = { id: row.subject_id, name: row.subject?.name ?? "—", prices: {} };
+      s = {
+        id: row.subject_id,
+        code: row.subject?.code ?? null,
+        name: row.subject?.name ?? "—",
+        prices: {},
+      };
       map.set(row.subject_id, s);
     }
     s.prices[row.interval] = amount;

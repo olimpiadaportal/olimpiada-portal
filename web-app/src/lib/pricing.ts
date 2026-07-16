@@ -21,7 +21,8 @@ export type PerSubjectPrices = Record<PlanInterval, number>;
 
 // Display-only fallback when the DB is unreachable — matches the canonical
 // seed under supabase/sql (checkout still reprices authoritatively).
-const FALLBACK: PerSubjectPrices = { week: 1, month: 3, year: 30 };
+// 3/9/90 = the investor-approved public pricing (docx 2026-07-15).
+const FALLBACK: PerSubjectPrices = { week: 3, month: 9, year: 90 };
 
 const fetchPerSubjectPrices = unstable_cache(
   async (): Promise<PerSubjectPrices> => {

@@ -31,8 +31,10 @@ import {
   type SubjectsUpdateState,
 } from "@/lib/auth/subscriptionService";
 import { DemoPaymentModal } from "@/components/DemoPaymentModal";
+import { useT } from "@/i18n/I18nProvider";
+import { subjectLabel } from "@/lib/subjectLabel";
 
-type Subj = { id: string; name: string; prices: Record<string, number> };
+type Subj = { id: string; code: string | null; name: string; prices: Record<string, number> };
 
 const INTERVAL_KEY: Record<string, string> = {
   week: "pricing.weekly",
@@ -58,6 +60,8 @@ export function ManageSubjects({
   dict: Record<string, string>;
 }) {
   const tt = (k: string) => dict[k] ?? k;
+  // Locale-aware subject labels (subj.<code>) via the app-wide provider dict.
+  const t = useT();
   const intervalLabel = tt(INTERVAL_KEY[interval] ?? "pricing.monthly");
 
   const covered = useMemo(() => new Set(coveredIds), [coveredIds]);
@@ -172,7 +176,7 @@ export function ManageSubjects({
                       disabled={saving || isLastOne}
                       title={isLastOne ? tt("subjedit.minOne") : undefined}
                     />
-                    <span className="subjedit-name">{s.name}</span>
+                    <span className="subjedit-name">{subjectLabel(t, s.code, s.name)}</span>
                     {isActive && (
                       <span className="subjedit-chip-active">{tt("subjedit.activeChip")}</span>
                     )}
@@ -198,7 +202,7 @@ export function ManageSubjects({
                 <span className="subjedit-pending-label">{tt("subjedit.pendingAdd")}:</span>
                 {toAdd.map((s) => (
                   <span key={s.id} className="subjedit-chip add">
-                    {s.name}
+                    {subjectLabel(t, s.code, s.name)}
                   </span>
                 ))}
               </div>
@@ -208,7 +212,7 @@ export function ManageSubjects({
                 <span className="subjedit-pending-label">{tt("subjedit.pendingRemove")}:</span>
                 {toRemove.map((s) => (
                   <span key={s.id} className="subjedit-chip remove">
-                    {s.name}
+                    {subjectLabel(t, s.code, s.name)}
                   </span>
                 ))}
               </div>

@@ -35,6 +35,7 @@ import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchOlympiadCatalog, publicStorageUrl, type OlympiadPackageRow } from "@/lib/data";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { fmtDate } from "@/features/parent/commerce";
 import { SheetShell } from "@/features/parent/ui";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -322,7 +323,11 @@ export function OlympiadsScreen() {
                     <View style={{ padding: spacing.lg, gap: spacing.md }}>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
                         {pkg.subject?.name ? (
-                          <Chip label={pkg.subject.name} color={arena.muted} bg={arena.panel2} />
+                          <Chip
+                            label={subjectLabel(t, pkg.subject.code, pkg.subject.name)}
+                            color={arena.muted}
+                            bg={arena.panel2}
+                          />
                         ) : null}
                         {pkg.grade ? (
                           <Chip
@@ -467,7 +472,7 @@ export function OlympiadsScreen() {
               <ListRow
                 icon={<BookOpen size={18} color={arena.blue} strokeWidth={2} />}
                 title={t("oly4.subject")}
-                value={detail.subject.name}
+                value={subjectLabel(t, detail.subject.code, detail.subject.name)}
               />
             ) : null}
             {detail.grade ? (

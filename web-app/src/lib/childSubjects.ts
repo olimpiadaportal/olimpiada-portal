@@ -10,7 +10,9 @@ import { createClient } from "@/lib/supabase/server";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
 
-export type ChildSubject = { id: string; name: string };
+// `code` drives the locale-aware display label (subj.<code> via subjectLabel);
+// `name` stays the raw DB fallback. Ids remain the stored/submitted values.
+export type ChildSubject = { id: string; code: string | null; name: string };
 
 export type ChildSubjectAccess = {
   /** giveaway OR free-access interval currently active */
@@ -39,7 +41,7 @@ export async function getChildSubjectAccess(
         .maybeSingle(),
       supabase
         .from("child_subscriptions")
-        .select("status, subscription_subjects(subjects(id, name))")
+        .select("status, subscription_subjects(subjects(id, code, name))")
         .eq("student_profile_id", childProfileId)
         .in("status", ["trialing", "active"]),
     ]);
@@ -48,10 +50,15 @@ export async function getChildSubjectAccess(
   const access = (student as any)?.access_status ?? "inactive";
   const hasAccess = access === "trialing" || access === "active" || freeNow;
 
-  const subjMap = new Map<string, string>();
+  const subjMap = new Map<string, { code: string | null; name: string }>();
   for (const s of (subs ?? []) as any[]) {
     for (const ss of s.subscription_subjects ?? []) {
-      if (ss.subjects) subjMap.set(ss.subjects.id, ss.subjects.name);
+      if (ss.subjects) {
+        subjMap.set(ss.subjects.id, {
+          code: ss.subjects.code ?? null,
+          name: ss.subjects.name,
+        });
+      }
     }
   }
   // Free window: every subject with ACTIVE pricing is available (active
@@ -59,13 +66,18 @@ export async function getChildSubjectAccess(
   if (freeNow) {
     const { data: priced } = await supabase
       .from("subjects_pricing")
-      .select("subjects(id, name)")
+      .select("subjects(id, code, name)")
       .eq("status", "active");
     for (const row of (priced ?? []) as any[]) {
-      if (row.subjects) subjMap.set(row.subjects.id, row.subjects.name);
+      if (row.subjects) {
+        subjMap.set(row.subjects.id, {
+          code: row.subjects.code ?? null,
+          name: row.subjects.name,
+        });
+      }
     }
   }
-  const subjects = Array.from(subjMap, ([id, name]) => ({ id, name }));
+  const subjects = Array.from(subjMap, ([id, v]) => ({ id, code: v.code, name: v.name }));
 
   return { freeNow, access, hasAccess, subjects };
 }

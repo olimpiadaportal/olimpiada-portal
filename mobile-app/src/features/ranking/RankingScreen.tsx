@@ -25,6 +25,7 @@ import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchActiveSubjects } from "@/lib/data";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { SelectField } from "@/features/profile/SelectField";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useArena } from "@/features/arena/useArena";
@@ -71,7 +72,9 @@ export function RankingScreen() {
 
   const activeSubjects = useMemo(
     () =>
-      ((subjectsQ.data ?? []) as { id: string; name: string }[]).filter((s) => !!s.id),
+      ((subjectsQ.data ?? []) as { id: string; code: string | null; name: string }[]).filter(
+        (s) => !!s.id,
+      ),
     [subjectsQ.data],
   );
   const gradeId = scopeIdsQ.data?.gradeId ?? null;
@@ -186,10 +189,13 @@ export function RankingScreen() {
     }
   }
 
-  const selectedSubjectName =
+  const selectedSubjectRow =
     scope === "subject"
-      ? activeSubjects.find((s) => s.id === subjectId)?.name ?? null
+      ? (activeSubjects.find((s) => s.id === subjectId) ?? null)
       : null;
+  const selectedSubjectName = selectedSubjectRow
+    ? subjectLabel(t, selectedSubjectRow.code, selectedSubjectRow.name)
+    : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: arena.bg }}>
@@ -235,7 +241,10 @@ export function RankingScreen() {
                 <SelectField
                   label={t("lb.subjectLabel")}
                   value={subjectId ?? ""}
-                  options={activeSubjects.map((s) => ({ id: s.id, label: s.name }))}
+                  options={activeSubjects.map((s) => ({
+                    id: s.id,
+                    label: subjectLabel(t, s.code, s.name),
+                  }))}
                   onChange={(id) => setSubjectSel(id)}
                   placeholder={t("lb.subjectLabel")}
                 />

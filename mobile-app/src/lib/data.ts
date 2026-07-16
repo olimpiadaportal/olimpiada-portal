@@ -67,19 +67,23 @@ export async function fetchSchools(cityId: string) {
   return data ?? [];
 }
 
+// subject.code drives the locale-aware display label (subj.<code> via
+// subjectLabel); subject.name stays the raw DB (az) fallback.
 export type SubjectPricingRow = {
   subject_id: string;
   interval: string;
   amount: number;
   currency: string;
-  subject: { name: string } | null;
+  subject: { code: string | null; name: string } | null;
 };
 
 /** Active per-subject pricing (anon-readable; feeds pricing + wizard). */
 export async function fetchSubjectsPricing(): Promise<SubjectPricingRow[]> {
   const { data, error } = await supabase
     .from("subjects_pricing")
-    .select("subject_id, interval, amount:price_amount, currency, subject:subject_id(name)")
+    .select(
+      "subject_id, interval, amount:price_amount, currency, subject:subject_id(code, name)",
+    )
     .eq("status", "active");
   if (error) throw error;
   return (data ?? []) as unknown as SubjectPricingRow[];
@@ -88,7 +92,7 @@ export async function fetchSubjectsPricing(): Promise<SubjectPricingRow[]> {
 export async function fetchActiveSubjects() {
   const { data, error } = await supabase
     .from("subjects")
-    .select("id, name")
+    .select("id, code, name")
     .eq("status", "active")
     .order("name");
   if (error) throw error;
@@ -184,7 +188,7 @@ export type OlympiadPackageRow = {
   questions_per_attempt: number;
   duration_minutes: number;
   event_starts_at: string | null;
-  subject: { name: string } | null;
+  subject: { code: string | null; name: string } | null;
   grade: { level: number; name: string } | null;
   cover: { bucket: string; path: string } | null;
   title: string;
@@ -195,7 +199,7 @@ export async function fetchOlympiadCatalog(locale: Locale): Promise<OlympiadPack
   const { data, error } = await supabase
     .from("olympiad_packages")
     .select(
-      "id, price_amount, currency, questions_per_attempt, duration_minutes, event_starts_at, subject:subject_id(name), grade:grade_id(level, name), cover:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+      "id, price_amount, currency, questions_per_attempt, duration_minutes, event_starts_at, subject:subject_id(code, name), grade:grade_id(level, name), cover:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
     )
     .eq("status", "active")
     .order("event_starts_at", { ascending: true, nullsFirst: false });
@@ -243,14 +247,14 @@ export type ChildSubscriptionRow = {
   current_period_end: string | null;
   total_amount: number | null;
   currency: string | null;
-  subjects: { subject_id: string; name: string }[];
+  subjects: { subject_id: string; code: string | null; name: string }[];
 };
 
 export async function fetchChildSubscriptions(): Promise<ChildSubscriptionRow[]> {
   const { data, error } = await supabase
     .from("child_subscriptions")
     .select(
-      "id, student_profile_id, status, billing_interval:interval, current_period_end, total_amount, currency, subscription_subjects(subject_id, subject:subject_id(name))",
+      "id, student_profile_id, status, billing_interval:interval, current_period_end, total_amount, currency, subscription_subjects(subject_id, subject:subject_id(code, name))",
     )
     .in("status", ["trialing", "active", "canceled", "past_due"])
     .order("created_at", { ascending: false });
@@ -265,6 +269,7 @@ export async function fetchChildSubscriptions(): Promise<ChildSubscriptionRow[]>
     currency: s.currency,
     subjects: (s.subscription_subjects ?? []).map((x: any) => ({
       subject_id: x.subject_id,
+      code: x.subject?.code ?? null,
       name: x.subject?.name ?? "",
     })),
   }));

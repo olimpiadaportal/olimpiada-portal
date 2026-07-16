@@ -36,7 +36,7 @@ Before Admin Panel work:
 - Administrator can manage platform-wide settings and sensitive modules.
 - Content Manager is limited to regular educational content/question workflows.
 - Content Manager must not access payment management, subscriptions, pricing plans, News, Olympiad Preparation packages or their question pool, parent/child account monitoring, role management, sensitive exports, feature flags, system settings, or broad user PII. News, Olympiad packages, and all payment/subscription/business modules are Admin-only.
-- There is NO "Discount Settings" / coupons module. The sibling discount is fixed in business logic (1st child 0%, 2nd child 15%, 3rd+ child 20%) and computed backend-side; never make it admin-configurable.
+- There is NO "Discount Settings" / coupons module. The sibling discount is fixed in business logic (1st child 0%, 2nd child 10%, 3rd+ child 15% — investor-approved 2026-07-15) and computed backend-side; never make it admin-configurable.
 - Users never choose difficulty. Tests draw a random mixed set server-side; easy/medium/hard stay in the model only for auto-mixing.
 - Olympiad packages auto-archive listings after the olympiad date but purchasers keep lifetime access; never delete purchased olympiad packages or purchase records.
 - Sensitive actions require confirmation and audit logging, including News, olympiad package, pricing, subscription, payment-monitoring, and parent/child-monitoring actions.

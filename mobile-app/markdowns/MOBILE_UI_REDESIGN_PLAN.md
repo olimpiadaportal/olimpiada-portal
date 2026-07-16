@@ -1,5 +1,13 @@
 # OlympIQ Mobile — UI/UX Redesign Plan (M3.2, 2026-07-14)
 
+> **SHIPPED (Round 22).** This plan was executed in full. **Round 23 then
+> superseded parts of §3:** the final onboarding slide offers **Log in +
+> Register ONLY** (no student-login CTA, no public info links) and Login
+> carries a single Register link — the "OlympIQ haqqında" replay link, footer
+> links and gallery button were removed. §6's out-of-pass items: maintenance
+> short-cadence refetch is now part of the M3.1 tail; the public top-10 idea
+> is DROPPED (see the execution plan's M3.1 section).
+
 Owner mandate (Round 22): the shipped M1–M3 app works but looks plain — redesign
 every screen to a modern, eye-catching, senior-grade standard. Colors and
 component placement follow the WEB APP (Energetic light `#7c3aed`+`#ff8a00` on

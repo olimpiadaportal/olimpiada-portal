@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { subjectLabel } from "@/lib/subjectLabel";
 import {
   AnalyticsDashboard,
   type AnalyticsChild,
@@ -109,14 +110,15 @@ export default async function ParentAnalytics({
     try {
       const { data: pricing } = await supabase
         .from("subjects_pricing")
-        .select("subject_id, subjects(id, name)")
+        .select("subject_id, subjects(id, code, name)")
         .eq("status", "active");
       const seen = new Set<string>();
       for (const row of (pricing ?? []) as any[]) {
         const s = row.subjects;
         if (s?.id && !seen.has(s.id)) {
           seen.add(s.id);
-          platformSubjects.push({ id: s.id, name: s.name ?? "—" });
+          // Locale-aware tab label (subj.<code>); the id stays the RPC/URL value.
+          platformSubjects.push({ id: s.id, name: subjectLabel(t, s.code, s.name) });
         }
       }
       platformSubjects.sort((a, b) => a.name.localeCompare(b.name));
@@ -152,14 +154,16 @@ export default async function ParentAnalytics({
           try {
             const { data: covered } = await supabase
               .from("subscription_subjects")
-              .select("child_subscription_id, subjects(id, name)")
+              .select("child_subscription_id, subjects(id, code, name)")
               .in("child_subscription_id", Array.from(subToChild.keys()));
             for (const row of (covered ?? []) as any[]) {
               const childId = subToChild.get(row.child_subscription_id);
               const subj = row.subjects;
               if (!childId || !subj?.id) continue;
               if (!activeByChild.has(childId)) activeByChild.set(childId, new Map());
-              activeByChild.get(childId)!.set(subj.id, subj.name ?? "—");
+              activeByChild
+                .get(childId)!
+                .set(subj.id, subjectLabel(t, subj.code, subj.name));
             }
           } catch {
             // Covered-subject tabs only degrade; the metric stays intact.

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect";
 
 // Parent-panel leaderboard — the SAME board the student arena shows (points |
@@ -106,7 +107,7 @@ export default async function ParentLeaderboardPage({
   ] = await Promise.all([
     supabase
       .from("subjects")
-      .select("id, name")
+      .select("id, code, name")
       .eq("status", "active")
       .order("name", { ascending: true }),
     supabase.from("grades").select("id, level, name").order("level", { ascending: true }),
@@ -116,9 +117,9 @@ export default async function ParentLeaderboardPage({
       .select("id", { count: "exact", head: true })
       .eq("status", "active"),
   ]);
-  const activeSubjects = ((subjectRows ?? []) as { id: string; name: string }[]).filter(
-    (s) => !!s.id,
-  );
+  const activeSubjects = (
+    (subjectRows ?? []) as { id: string; code: string | null; name: string }[]
+  ).filter((s) => !!s.id);
   const grades = ((gradeRows ?? []) as { id: string; level: number; name: string }[]).filter(
     (g) => !!g.id,
   );
@@ -437,7 +438,7 @@ export default async function ParentLeaderboardPage({
                 value={subjectId ?? ""}
                 options={activeSubjects.map((s) => ({
                   id: s.id,
-                  name: s.name,
+                  name: subjectLabel(t, s.code, s.name),
                   href: href({ ...cur, subject: s.id }),
                 }))}
               />

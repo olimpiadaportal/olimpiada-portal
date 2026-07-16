@@ -23,6 +23,7 @@ import { SectionHeader } from "@/components/SectionHeader";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing, radius } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { useAttemptRow, useTestResult } from "./queries";
 import { isLiveAttempt, usedMinutes } from "./logic";
 import {
@@ -148,9 +149,14 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
           {isOlympiad ? t("test.result.olympiadTitle") : t("test.result.title")}
         </AppText>
         <AppText color={arena.muted} style={{ fontSize: 14 }}>
-          {isOlympiad
-            ? [t("test.run.olympiad"), row!.subject_name ?? ""].filter(Boolean).join(" · ")
-            : (row!.subject_name ?? "")}
+          {(() => {
+            const subj = row!.subject_name
+              ? subjectLabel(t, row!.subject_code, row!.subject_name)
+              : "";
+            return isOlympiad
+              ? [t("test.run.olympiad"), subj].filter(Boolean).join(" · ")
+              : subj;
+          })()}
         </AppText>
       </View>
 

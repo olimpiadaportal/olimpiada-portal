@@ -1,12 +1,13 @@
 // Login: segmented Parent | Student (web /login + /child-login parity).
 // Parent = direct Supabase password sign-in; Student = 8-digit ID + parent
 // password through the BFF (lockout + throttle live server-side).
-// Redesign (plan §3/§4): brand header, card-grouped fields, gradient primary
-// CTA, an "About OlympIQ" link that reopens the onboarding (?review=1) and
-// the public info links so nothing becomes unreachable post-onboarding.
+// Redesign (plan §3/§4, tightened Round 23): brand header, card-grouped
+// fields, gradient primary CTA and ONE register link — nothing else. The
+// owner's rule: auth surfaces carry no marketing/info links (the public pages
+// stay routable in-app; pricing shows up inside the parent flows).
 import React, { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
-import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/components/Screen";
 import { BrandMark } from "@/components/BrandMark";
 import { AppText } from "@/components/AppText";
@@ -18,7 +19,6 @@ import { spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 import { useAuthStore } from "@/features/auth/authStore";
-import { useMobileConfig } from "@/lib/configQueries";
 import { bffUrl, isBffConfigured } from "@/lib/env";
 
 type Tab = "parent" | "student";
@@ -29,7 +29,6 @@ export default function Login() {
   const { t } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
-  const config = useMobileConfig().data;
 
   const parentLogin = useAuthStore((s) => s.parentLogin);
   const childLogin = useAuthStore((s) => s.childLogin);
@@ -68,16 +67,6 @@ export default function Login() {
     const res = await childLogin(childId, childPw);
     setPending(false);
     if (res.error) setError(t(res.error));
-  }
-
-  const links: { key: string; label: string; href: Href }[] = [
-    { key: "pricing", label: t("nav.pricing"), href: "/(public)/pricing" },
-    { key: "about", label: t("nav.about"), href: "/(public)/about" },
-    { key: "faq", label: t("nav.faq"), href: "/(public)/faq" },
-    { key: "contact", label: t("nav.contact"), href: "/(public)/contact" },
-  ];
-  if (config?.flags.newsPublic) {
-    links.push({ key: "news", label: t("nav.news"), href: "/(public)/news" });
   }
 
   return (
@@ -179,49 +168,18 @@ export default function Login() {
           </Card>
         )}
 
-        {/* Onboarding replay + public info links (plan §3). */}
-        <View style={{ gap: spacing.md, alignItems: "center" }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("mob.login.about")}
-            onPress={() => router.push("/(public)/welcome?review=1")}
-            hitSlop={8}
-          >
-            <AppText variant="label" color={tokens.accent}>
-              {t("mob.login.about")}
-            </AppText>
-          </Pressable>
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              justifyContent: "center",
-              gap: spacing.sm,
-            }}
-          >
-            {links.map((l) => (
-              <Pressable
-                key={l.key}
-                accessibilityRole="button"
-                accessibilityLabel={l.label}
-                onPress={() => router.push(l.href)}
-                style={({ pressed }) => ({
-                  backgroundColor: tokens.chipBg,
-                  borderRadius: 999,
-                  paddingVertical: spacing.sm,
-                  paddingHorizontal: spacing.lg,
-                  minHeight: 36,
-                  justifyContent: "center",
-                  opacity: pressed ? 0.8 : 1,
-                })}
-              >
-                <AppText variant="label" color={tokens.chipText}>
-                  {l.label}
-                </AppText>
-              </Pressable>
-            ))}
-          </View>
-        </View>
+        {/* The one non-auth affordance: parent registration. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("nav.register")}
+          onPress={() => router.push("/(public)/register")}
+          hitSlop={8}
+          style={{ alignItems: "center", minHeight: 44, justifyContent: "center" }}
+        >
+          <AppText variant="label" color={tokens.accent}>
+            {t("nav.register")}
+          </AppText>
+        </Pressable>
       </View>
     </Screen>
   );

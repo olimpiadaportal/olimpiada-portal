@@ -40,6 +40,7 @@ import { AppText } from "@/components/AppText";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { cancelTestAttempt, saveTestAnswers, submitTestAttempt } from "./api";
 import { useAttemptRow, useTestAttempt } from "./queries";
 import {
@@ -699,7 +700,7 @@ function RunnerActive({
           <AppText color={arena.muted} style={{ fontSize: 12, lineHeight: 17 }}>
             {[
               meta.subjectName
-                ? `${t("test.run.subject")}: ${meta.subjectName}`
+                ? `${t("test.run.subject")}: ${subjectLabel(t, meta.subjectCode, meta.subjectName)}`
                 : null,
               !isOlympiad && meta.topicNames.length > 0
                 ? `${t("test.run.topic")}: ${meta.topicNames.join(", ")}`

@@ -14,6 +14,7 @@ import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { ProgressRing } from "@/components/ProgressRing";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { useMobileConfig } from "@/lib/configQueries";
 import { isSupabaseConfigured } from "@/lib/env";
 import { useArena } from "@/features/arena/useArena";
@@ -377,7 +378,9 @@ export default function StudentArena() {
         {strength.length === 0 ? (
           <AppText color={arena.muted}>{t("arena.noStrength")}</AppText>
         ) : (
-          strength.map((s) => <StrengthBar key={s.id} name={s.name} pct={s.pct} />)
+          strength.map((s) => (
+            <StrengthBar key={s.id} name={subjectLabel(t, s.code, s.name)} pct={s.pct} />
+          ))
         )}
       </ArenaPanel>
 
@@ -397,7 +400,7 @@ export default function StudentArena() {
                 }}
               >
                 <AppText color={arena.ink} numberOfLines={1} style={{ flex: 1, fontWeight: "600" }}>
-                  {r.subjects?.name ?? "—"} · {t(`kind.${r.kind}`)}
+                  {subjectLabel(t, r.subjects?.code, r.subjects?.name)} · {t(`kind.${r.kind}`)}
                 </AppText>
                 <AppText color={arena.lime} style={{ fontFamily: MONO, fontWeight: "700" }}>
                   {Math.round(Number(r.score ?? 0))}/{Math.round(Number(r.max_score ?? 0))}

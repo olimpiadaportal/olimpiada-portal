@@ -28,6 +28,7 @@ import { SectionHeader } from "@/components/SectionHeader";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { startTopicTestAttempt } from "./api";
 import { useSetupTopics, useSubjectAccess } from "./queries";
 import { setupSelectionValid } from "./logic";
@@ -161,7 +162,7 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
       <View style={{ gap: spacing.sm }}>
         <Eyebrow arena={arena}>{t("test.setup.eyebrow")}</Eyebrow>
         <AppText variant="heading" color={arena.ink}>
-          {subject.name}
+          {subjectLabel(t, subject.code, subject.name)}
         </AppText>
       </View>
 

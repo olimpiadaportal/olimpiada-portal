@@ -85,7 +85,7 @@ Before Supabase work:
 - Children can never purchase, check out, or edit any payment/subscription/access row; all purchases originate from the parent account.
 - Subscription activation, blocking, price, discount, trial dates, and access flags are backend/webhook-verified and service-role-only — never client-writable.
 - The 8-digit child ID is server-generated, unique, and collision-safe; never trust a client-provided ID.
-- Sibling discount is a fixed business rule (2nd 15% / 3rd+ 20%) — no Discount-Settings admin module.
+- Sibling discount is a fixed business rule (2nd 10% / 3rd+ 15%, investor-approved 2026-07-15) — no Discount-Settings admin module.
 - Only Administrators manage News, Olympiad Preparation packages/pools, and payment/subscription modules.
 - Content Managers access only permitted content-management areas and must NOT manage News, Olympiad Preparation, or payment/subscription modules.
 - Purchased olympiad packages keep lifetime access and remain readable after listing archive.

@@ -1,12 +1,13 @@
 // First-launch onboarding (plan §3): three swipeable slides (vector gradient
 // heroes, no binary assets) + StepDots + "Keç" skip. The final slide carries
-// the auth CTAs and the public info links (News only while news_public is on).
-// Shown ONCE per install: the olympiq.seenWelcome flag is set the moment the
-// user leaves via ANY path (skip, CTA, info link, slide-complete), after which
-// every signed-out landing — including this route itself, e.g. after logout —
-// goes straight to Login. Login's "About OlympIQ" link reopens it manually
-// with ?review=1. The giveaway countdown mounts on top whenever the
-// server-resolved payment mode is "giveaway" (web GiveawayBanner parity).
+// ONLY the two auth CTAs — Log in + Register (owner, Round 23: auth surfaces
+// stay minimal per industry standard; students sign in via the Login screen's
+// parent|student tabs, and the public info pages are reachable in-app, not
+// from the auth funnel). Shown ONCE per install: the olympiq.seenWelcome flag
+// is set the moment the user leaves via ANY path (skip, CTA, slide-complete),
+// after which every signed-out landing — including this route itself, e.g.
+// after logout — goes straight to Login. The giveaway countdown mounts on top
+// whenever the server-resolved payment mode is "giveaway".
 import React, { useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter, type Href } from "expo-router";
@@ -61,16 +62,6 @@ export default function Welcome() {
 
   const giveawayEndsAt =
     config?.payment.mode === "giveaway" ? config.payment.giveawayEndsAt : null;
-
-  const links: { key: string; label: string; href: Href }[] = [
-    { key: "pricing", label: t("nav.pricing"), href: "/(public)/pricing" },
-    { key: "about", label: t("nav.about"), href: "/(public)/about" },
-    { key: "faq", label: t("nav.faq"), href: "/(public)/faq" },
-    { key: "contact", label: t("nav.contact"), href: "/(public)/contact" },
-  ];
-  if (config?.flags.newsPublic) {
-    links.push({ key: "news", label: t("nav.news"), href: "/(public)/news" });
-  }
 
   function leaveTo(href: Href, replace = false) {
     markSeen();
@@ -217,52 +208,10 @@ export default function Welcome() {
                 onPress={() => leaveTo("/(public)/login", true)}
               />
               <Button
-                title={t("mob.welcome.studentLogin")}
-                variant="ghost"
-                onPress={() => leaveTo("/(public)/login?tab=student", true)}
-              />
-              <Button
                 title={t("nav.register")}
                 variant="ghost"
                 onPress={() => leaveTo("/(public)/register", true)}
               />
-              <View
-                style={{
-                  flexDirection: "row",
-                  flexWrap: "wrap",
-                  justifyContent: "center",
-                  gap: spacing.sm,
-                }}
-              >
-                {links.map((l) => (
-                  <Pressable
-                    key={l.key}
-                    accessibilityRole="button"
-                    accessibilityLabel={l.label}
-                    onPress={() => leaveTo(l.href)}
-                    style={({ pressed }) => ({
-                      backgroundColor: tokens.chipBg,
-                      borderRadius: 999,
-                      paddingVertical: spacing.sm,
-                      paddingHorizontal: spacing.lg,
-                      minHeight: 36,
-                      justifyContent: "center",
-                      opacity: pressed ? 0.8 : 1,
-                    })}
-                  >
-                    <AppText variant="label" color={tokens.chipText}>
-                      {l.label}
-                    </AppText>
-                  </Pressable>
-                ))}
-              </View>
-              {__DEV__ ? (
-                <Button
-                  title={t("mob.gallery.title")}
-                  variant="ghost"
-                  onPress={() => leaveTo("/gallery")}
-                />
-              ) : null}
             </View>
           )}
         </View>

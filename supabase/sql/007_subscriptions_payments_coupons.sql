@@ -156,7 +156,7 @@ create table if not exists public.subjects_pricing (
 
 -- -----------------------------------------------------------------------------
 -- launch_promo_config : singleton (launch promo window + trial length).
--- Sibling discount is NOT here — it is a fixed business rule (2nd 15% / 3rd+ 20%)
+-- Sibling discount is NOT here — it is a fixed business rule (2nd 10% / 3rd+ 15%, investor 2026-07-15)
 -- computed server-side (no "Discount Settings" module).
 -- -----------------------------------------------------------------------------
 create table if not exists public.launch_promo_config (

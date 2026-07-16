@@ -26,6 +26,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { subjectLabel } from "@/lib/subjectLabel";
 import {
   fmtDate,
   fmtMoney,
@@ -152,7 +153,7 @@ export default function ParentSubscription() {
             label={t("subscription.subjects")}
             value={
               liveSub.subjects.length > 0
-                ? liveSub.subjects.map((s) => s.name).join(", ")
+                ? liveSub.subjects.map((s) => subjectLabel(t, s.code, s.name)).join(", ")
                 : t("billing.noSubjects")
             }
           />

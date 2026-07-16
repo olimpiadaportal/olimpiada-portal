@@ -121,36 +121,48 @@ export function useArenaAccess(): ArenaAccess {
 
 // ---- practicable subjects ------------------------------------------------------
 
-export type ArenaSubject = { id: string; name: string };
+// `code` drives the locale-aware display label (subj.<code> via subjectLabel);
+// `name` stays the raw DB fallback. Ids remain the stored/submitted values.
+export type ArenaSubject = { id: string; code: string | null; name: string };
 
 async function fetchMySubjects(profileId: string): Promise<ArenaSubject[]> {
   const { data, error } = await supabase
     .from("child_subscriptions")
-    .select("status, subscription_subjects(subjects(id, name))")
+    .select("status, subscription_subjects(subjects(id, code, name))")
     .eq("student_profile_id", profileId)
     .in("status", ["trialing", "active"]);
   if (error) throw error;
-  const map = new Map<string, string>();
+  const map = new Map<string, { code: string | null; name: string }>();
   for (const s of (data ?? []) as any[]) {
     for (const ss of s.subscription_subjects ?? []) {
-      if (ss.subjects) map.set(ss.subjects.id, ss.subjects.name);
+      if (ss.subjects) {
+        map.set(ss.subjects.id, {
+          code: ss.subjects.code ?? null,
+          name: ss.subjects.name,
+        });
+      }
     }
   }
-  return Array.from(map, ([id, name]) => ({ id, name }));
+  return Array.from(map, ([id, v]) => ({ id, code: v.code, name: v.name }));
 }
 
 /** Free windows unlock every actively-priced subject (public pricing RLS). */
 async function fetchPricedSubjects(): Promise<ArenaSubject[]> {
   const { data, error } = await supabase
     .from("subjects_pricing")
-    .select("subjects(id, name)")
+    .select("subjects(id, code, name)")
     .eq("status", "active");
   if (error) throw error;
-  const map = new Map<string, string>();
+  const map = new Map<string, { code: string | null; name: string }>();
   for (const row of (data ?? []) as any[]) {
-    if (row.subjects) map.set(row.subjects.id, row.subjects.name);
+    if (row.subjects) {
+      map.set(row.subjects.id, {
+        code: row.subjects.code ?? null,
+        name: row.subjects.name,
+      });
+    }
   }
-  return Array.from(map, ([id, name]) => ({ id, name }));
+  return Array.from(map, ([id, v]) => ({ id, code: v.code, name: v.name }));
 }
 
 export function useMySubjects() {
@@ -178,10 +190,10 @@ export function mergeSubjects(
   subscribed: ArenaSubject[] | undefined,
   priced: ArenaSubject[] | undefined,
 ): ArenaSubject[] {
-  const map = new Map<string, string>();
-  for (const s of subscribed ?? []) map.set(s.id, s.name);
-  for (const s of priced ?? []) map.set(s.id, s.name);
-  return Array.from(map, ([id, name]) => ({ id, name }));
+  const map = new Map<string, ArenaSubject>();
+  for (const s of subscribed ?? []) map.set(s.id, s);
+  for (const s of priced ?? []) map.set(s.id, s);
+  return Array.from(map.values());
 }
 
 // ---- graded attempts → ministats / strength / recents ---------------------------
@@ -192,13 +204,13 @@ export type ArenaAttempt = {
   score: number | null;
   max_score: number | null;
   subject_id: string | null;
-  subjects: { name: string } | null;
+  subjects: { code: string | null; name: string } | null;
 };
 
 async function fetchMyAttempts(profileId: string): Promise<ArenaAttempt[]> {
   const { data, error } = await supabase
     .from("test_attempts")
-    .select("id, kind, score, max_score, subject_id, subjects(name)")
+    .select("id, kind, score, max_score, subject_id, subjects(code, name)")
     .eq("student_profile_id", profileId)
     .eq("status", "graded")
     .order("submitted_at", { ascending: false })

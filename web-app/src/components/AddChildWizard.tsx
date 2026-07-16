@@ -39,8 +39,9 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
-import { useLocale } from "@/i18n/I18nProvider";
+import { useLocale, useT } from "@/i18n/I18nProvider";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { addChild } from "@/lib/auth/parentService";
 import {
   subscribeChild,
@@ -64,7 +65,7 @@ type School = {
   school_number?: number | null;
 };
 type Grade = { id: string; level: number; name: string };
-type Subj = { id: string; name: string; prices: Record<string, number> };
+type Subj = { id: string; code: string | null; name: string; prices: Record<string, number> };
 
 type StepId = "info" | "subjects" | "plan" | "payment" | "done";
 
@@ -124,6 +125,8 @@ export function AddChildWizard({
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const locale = useLocale();
+  // Locale-aware subject labels (subj.<code>) via the app-wide provider dict.
+  const t = useT();
   // Same fallback chain the Subscription page uses for the popular badge:
   // skip keys the dict doesn't resolve (getT returns the key itself when a
   // key is missing, so `v === k` means "not translated").
@@ -538,7 +541,7 @@ export function AddChildWizard({
                       checked={sel.has(s.id)}
                       onChange={() => toggleSubject(s.id)}
                     />{" "}
-                    {s.name}
+                    {subjectLabel(t, s.code, s.name)}
                   </span>
                   <span className="muted">{s.prices[interval] ?? "—"} AZN</span>
                 </label>

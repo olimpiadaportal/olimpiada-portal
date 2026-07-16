@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { startOlympiad } from "@/lib/auth/childActions";
+import { subjectLabel } from "@/lib/subjectLabel";
 import {
   OlympiadPlannedCard,
   type PlannedDict,
@@ -49,7 +50,7 @@ export default async function ChildOlympiadsPage({
       supabase
         .from("olympiad_packages")
         .select(
-          "id, price_amount, currency, event_starts_at, subjects(name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+          "id, price_amount, currency, event_starts_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
         )
         .eq("status", "active")
         .order("created_at"),
@@ -146,7 +147,9 @@ export default async function ChildOlympiadsPage({
       const tr = pickTr(p.olympiad_package_translations);
       const n = poolCounts.get(p.id) ?? 0;
       const questionsText = `${n} ${t("oly4.questions")}`;
-      const subject: string | null = p.subjects?.name ?? null;
+      const subject: string | null = p.subjects?.name
+        ? subjectLabel(t, p.subjects?.code, p.subjects.name)
+        : null;
       const typeName: string | null = p.olympiad_types?.name ?? null;
       let coverUrl: string | null = null;
       const m = p.media_assets;

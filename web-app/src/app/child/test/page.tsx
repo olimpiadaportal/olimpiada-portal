@@ -3,6 +3,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { getChildSubjectAccess } from "@/lib/childSubjects";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { startDailyRound } from "@/lib/auth/testActions";
 
 // DAILY ROUNDS (migration 056) — test home restructured into three sections:
@@ -84,7 +85,7 @@ export default async function TestHomePage({
       supabase
         .from("test_attempts")
         .select(
-          "id, kind, is_rated, status, score, max_score, started_at, submitted_at, deadline_at, subjects(name)",
+          "id, kind, is_rated, status, score, max_score, started_at, submitted_at, deadline_at, subjects(code, name)",
         )
         .eq("student_profile_id", child.profileId)
         .in("kind", ["daily", "test"])
@@ -161,14 +162,15 @@ export default async function TestHomePage({
             // start action still guards and maps to ?err= codes).
             const readiness = readinessBySubject.get(s.id);
             const notReady = !!readiness && !readiness.ready;
+            const label = subjectLabel(t, s.code, s.name);
             return (
               <div className="tst-daily" key={s.id}>
                 <div className="tst-daily-head">
                   <span className="arena-round-icon">
-                    {s.name.trim()[0]?.toUpperCase() ?? "?"}
+                    {label.trim()[0]?.toUpperCase() ?? "?"}
                   </span>
                   <div className="tst-daily-titles">
-                    <div className="arena-round-title">{s.name}</div>
+                    <div className="arena-round-title">{label}</div>
                     <div className="arena-round-meta">
                       {t("test.rounds.timedBadge")} · {t("test.rounds.rated")}
                     </div>
@@ -230,10 +232,10 @@ export default async function TestHomePage({
               <div className="tst-daily ghost" key={s.id}>
                 <div className="tst-daily-head">
                   <span className="arena-round-icon">
-                    {s.name.trim()[0]?.toUpperCase() ?? "?"}
+                    {subjectLabel(t, s.code, s.name).trim()[0]?.toUpperCase() ?? "?"}
                   </span>
                   <div className="tst-daily-titles">
-                    <div className="arena-round-title">{s.name}</div>
+                    <div className="arena-round-title">{subjectLabel(t, s.code, s.name)}</div>
                     <div className="arena-round-meta">
                       {t("kind.practice")} · {t("test.rounds.practiceMeta")}
                     </div>
@@ -283,7 +285,7 @@ export default async function TestHomePage({
               <div className="arena-round" key={r.id}>
                 <div className="arena-round-body">
                   <div className="arena-round-title">
-                    {r.subjects?.name ?? "—"} · {kindLabel}
+                    {subjectLabel(t, r.subjects?.code, r.subjects?.name)} · {kindLabel}
                     {r.is_rated && (
                       <span className="tst-rated-chip">{t("test.rounds.ratedChip")}</span>
                     )}

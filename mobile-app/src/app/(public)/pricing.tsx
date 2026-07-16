@@ -32,6 +32,7 @@ import { fetchSubjectsPricing, type SubjectPricingRow } from "@/lib/data";
 import { isSupabaseConfigured } from "@/lib/env";
 import { useMobileConfig } from "@/lib/configQueries";
 import { useT } from "@/i18n/useT";
+import { subjectLabel } from "@/lib/subjectLabel";
 
 const PRICING_STALE_MS = 5 * 60_000;
 
@@ -154,7 +155,9 @@ export default function Pricing() {
                 }}
               >
                 <Icon size={18} color={tokens.accent} strokeWidth={2} />
-                <AppText style={{ flex: 1 }}>{r.subject?.name ?? ""}</AppText>
+                <AppText style={{ flex: 1 }}>
+                  {subjectLabel(t, r.subject?.code, r.subject?.name)}
+                </AppText>
                 <AppText variant="mono" color={tokens.accent}>
                   {formatAmount(r.amount)} {r.currency}
                 </AppText>

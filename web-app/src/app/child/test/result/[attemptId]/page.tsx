@@ -4,6 +4,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { ChildNavActive } from "@/components/ChildNav";
 
 type TopicRow = { topic_id: string | null; name: string | null; total: number; correct: number };
@@ -38,7 +39,7 @@ export default async function TestResultPage({
   const { data: att } = await supabase
     .from("test_attempts")
     .select(
-      "id, kind, status, deadline_at, started_at, submitted_at, duration_seconds, subjects(name)",
+      "id, kind, status, deadline_at, started_at, submitted_at, duration_seconds, subjects(code, name)",
     )
     .eq("id", attemptId)
     .eq("student_profile_id", child.profileId)
@@ -102,7 +103,7 @@ export default async function TestResultPage({
               {a.subjects?.name ? <span aria-hidden="true"> · </span> : null}
             </>
           )}
-          {a.subjects?.name ?? ""}
+          {a.subjects?.name ? subjectLabel(t, a.subjects?.code, a.subjects.name) : ""}
         </p>
       </section>
 

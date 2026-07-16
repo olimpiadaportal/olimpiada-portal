@@ -8,8 +8,10 @@ import {
   type SubscribeState,
   type QuoteResult,
 } from "@/lib/auth/subscriptionService";
+import { useT } from "@/i18n/I18nProvider";
+import { subjectLabel } from "@/lib/subjectLabel";
 
-type Subj = { id: string; name: string; prices: Record<string, number> };
+type Subj = { id: string; code: string | null; name: string; prices: Record<string, number> };
 
 const INTERVAL_KEY: Record<string, string> = {
   week: "pricing.weekly",
@@ -27,6 +29,8 @@ export function SubscribeForm({
   dict: Record<string, string>;
 }) {
   const tt = (k: string) => dict[k] ?? k;
+  // Locale-aware subject labels (subj.<code>) via the app-wide provider dict.
+  const t = useT();
   const [state, action, pending] = useActionState<SubscribeState, FormData>(
     subscribeChild,
     null,
@@ -137,7 +141,7 @@ export function SubscribeForm({
                   checked={sel.has(s.id)}
                   onChange={() => toggle(s.id)}
                 />{" "}
-                {s.name}
+                {subjectLabel(t, s.code, s.name)}
               </span>
               <span className="muted">{s.prices[interval] ?? "—"} AZN</span>
             </label>

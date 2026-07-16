@@ -237,14 +237,15 @@ on conflict (code) do nothing;
 insert into public.launch_promo_config (id, trial_days) values (1, 7)
 on conflict (id) do nothing;
 
--- Placeholder per-subject pricing (1 AZN/subject weekly; configurable by admin).
+-- Per-subject pricing (investor-approved public pricing 3/9/90 AZN, docx
+-- 2026-07-15; admin-configurable — checkout always reprices server-side).
 insert into public.subjects_pricing (subject_id, interval, price_amount, currency, status)
 select s.id, i.interval, i.price, 'AZN', 'active'
 from public.subjects s
 cross join (values
-  ('week'::public.plan_interval, 1.00),
-  ('month'::public.plan_interval, 3.00),
-  ('year'::public.plan_interval, 30.00)
+  ('week'::public.plan_interval, 3.00),
+  ('month'::public.plan_interval, 9.00),
+  ('year'::public.plan_interval, 90.00)
 ) as i(interval, price)
 where s.code in ('math', 'science', 'english', 'informatics', 'az_language')
 on conflict (subject_id, interval) do nothing;

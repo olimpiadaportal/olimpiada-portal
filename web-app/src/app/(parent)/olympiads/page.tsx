@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { subjectLabel } from "@/lib/subjectLabel";
 import {
   OlympiadPurchase,
   type PolyChild,
@@ -56,7 +57,7 @@ export default async function ParentOlympiadCatalogPage() {
     supabase
       .from("olympiad_packages")
       .select(
-        "id, price_amount, currency, event_starts_at, subjects(name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+        "id, price_amount, currency, event_starts_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
       )
       .eq("status", "active")
       .order("created_at"),
@@ -123,7 +124,9 @@ export default async function ParentOlympiadCatalogPage() {
       title: tr?.title ?? "—",
       desc: typeof tr?.description === "string" ? tr.description.trim() : "",
       coverUrl,
-      subject: p.subjects?.name ?? null,
+      subject: p.subjects?.name
+        ? subjectLabel(t, p.subjects?.code, p.subjects.name)
+        : null,
       typeName: p.olympiad_types?.name ?? null,
       dateText: Number.isFinite(ts) ? fmt.format(new Date(ts)) : null,
       questionsText: `${n} ${t("poly.questions")}`,

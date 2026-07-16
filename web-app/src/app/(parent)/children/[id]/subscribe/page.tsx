@@ -51,13 +51,25 @@ export default async function SubscribePage({
 
   const { data: pricing } = await supabase
     .from("subjects_pricing")
-    .select("subject_id, interval, price_amount, subjects(name)")
+    .select("subject_id, interval, price_amount, subjects(code, name)")
     .eq("status", "active");
 
-  const map = new Map<string, { id: string; name: string; prices: Record<string, number> }>();
+  // `code` drives the locale-aware label (subj.<code>) in the client editors;
+  // `name` stays the DB fallback. Submitted values remain subject UUIDs.
+  const map = new Map<
+    string,
+    { id: string; code: string | null; name: string; prices: Record<string, number> }
+  >();
   for (const row of (pricing ?? []) as any[]) {
     const sid = row.subject_id;
-    if (!map.has(sid)) map.set(sid, { id: sid, name: row.subjects?.name ?? "—", prices: {} });
+    if (!map.has(sid)) {
+      map.set(sid, {
+        id: sid,
+        code: row.subjects?.code ?? null,
+        name: row.subjects?.name ?? "—",
+        prices: {},
+      });
+    }
     map.get(sid)!.prices[row.interval] = Number(row.price_amount);
   }
   const subjects = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));

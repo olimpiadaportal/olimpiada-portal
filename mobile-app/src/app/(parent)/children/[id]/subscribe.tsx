@@ -16,6 +16,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { bffActivateFree } from "@/lib/api";
 import {
   extractChildUniqueId,
@@ -169,7 +170,7 @@ export default function ChildSubscribeScreen() {
       {liveSub.subjects.length > 0 ? (
         <KeyRow
           label={t("subscription.subjects")}
-          value={liveSub.subjects.map((s) => s.name).join(", ")}
+          value={liveSub.subjects.map((s) => subjectLabel(t, s.code, s.name)).join(", ")}
         />
       ) : null}
     </Card>

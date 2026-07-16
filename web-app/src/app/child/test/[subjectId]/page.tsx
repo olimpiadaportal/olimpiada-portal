@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
 import { getChildSubjectAccess } from "@/lib/childSubjects";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { TestSetup, type SetupTopic } from "@/components/TestSetup";
 
 // Strings resolved server-side into an explicit-KEYS dict for the client
@@ -94,7 +95,7 @@ export default async function TestSetupPage({
     <>
       <section style={{ marginBottom: 22 }}>
         <p className="arena-eyebrow">{t("test.setup.eyebrow")}</p>
-        <h1>{subject.name}</h1>
+        <h1>{subjectLabel(t, subject.code, subject.name)}</h1>
       </section>
       <TestSetup subjectId={subjectId} topics={pickerTopics} dict={dict} />
     </>

@@ -13,6 +13,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { bffQuote, bffSubscribe } from "@/lib/api";
 import { useT } from "@/i18n/useT";
+import { subjectLabel } from "@/lib/subjectLabel";
 import {
   INTERVALS,
   INTERVAL_NAME_KEY,
@@ -311,7 +312,7 @@ export function SubscribeFlow({
               {subjects.map((s) => (
                 <SubjectCheckRow
                   key={s.id}
-                  name={s.name}
+                  name={subjectLabel(t, s.code, s.name)}
                   priceText={fmtMoney(s.prices[interval] ?? 0, "AZN")}
                   checked={sel.has(s.id)}
                   onToggle={() => toggle(s.id)}

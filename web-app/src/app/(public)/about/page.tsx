@@ -55,6 +55,14 @@ export default async function AboutPage() {
         </div>
       </section>
 
+      {/* Investor-approved intro prose (docx 2026-07-15) — three paragraphs
+          continuing the hero lead; plain text, no new layout machinery. */}
+      <section className="about2-prose">
+        <p>{t("about2.hero.p2")}</p>
+        <p>{t("about2.hero.p3")}</p>
+        <p>{t("about2.hero.p4")}</p>
+      </section>
+
       {BLOCKS.map(({ key, Art }, i) => (
         <section
           className={i % 2 === 1 ? "about2-block about2-rev" : "about2-block"}

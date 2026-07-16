@@ -5,6 +5,7 @@ import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
+import { subjectLabel } from "@/lib/subjectLabel";
 
 export default async function ChildDashboard() {
   const child = await requireChild();
@@ -38,14 +39,14 @@ export default async function ChildDashboard() {
       // Subjects this child is subscribed to (for practice).
       supabase
         .from("child_subscriptions")
-        .select("status, subscription_subjects(subjects(id, name))")
+        .select("status, subscription_subjects(subjects(id, code, name))")
         .eq("student_profile_id", child.profileId)
         .in("status", ["trialing", "active"]),
       // Graded attempts → real mini-stats + per-subject strength (no
       // fabrication; all 0 / empty until the child actually finishes rounds).
       supabase
         .from("test_attempts")
-        .select("id, kind, score, max_score, subject_id, subjects(name)")
+        .select("id, kind, score, max_score, subject_id, subjects(code, name)")
         .eq("student_profile_id", child.profileId)
         .eq("status", "graded")
         .order("submitted_at", { ascending: false })
@@ -75,10 +76,14 @@ export default async function ChildDashboard() {
   const access = (student as any)?.access_status ?? "inactive";
   const hasAccess = access === "trialing" || access === "active" || freeNow;
 
+  // id → locale-aware display label (subj.<code> via subjectLabel; DB name as
+  // the fallback). Only labels change — ids stay the stored values.
   const subjMap = new Map<string, string>();
   for (const s of (subs ?? []) as any[]) {
     for (const ss of s.subscription_subjects ?? []) {
-      if (ss.subjects) subjMap.set(ss.subjects.id, ss.subjects.name);
+      if (ss.subjects) {
+        subjMap.set(ss.subjects.id, subjectLabel(t, ss.subjects.code, ss.subjects.name));
+      }
     }
   }
   // Giveaway: every subject with ACTIVE pricing becomes practicable, merged
@@ -88,10 +93,12 @@ export default async function ChildDashboard() {
   if (freeNow) {
     const { data: priced } = await supabase
       .from("subjects_pricing")
-      .select("subjects(id, name)")
+      .select("subjects(id, code, name)")
       .eq("status", "active");
     for (const row of (priced ?? []) as any[]) {
-      if (row.subjects) subjMap.set(row.subjects.id, row.subjects.name);
+      if (row.subjects) {
+        subjMap.set(row.subjects.id, subjectLabel(t, row.subjects.code, row.subjects.name));
+      }
     }
   }
   const subjects = Array.from(subjMap, ([id, name]) => ({ id, name }));
@@ -325,7 +332,7 @@ export default async function ChildDashboard() {
               <div className="arena-round" key={r.id}>
                 <div className="arena-round-body">
                   <div className="arena-round-title">
-                    {r.subjects?.name ?? "—"} · {t(`kind.${r.kind}`)}
+                    {subjectLabel(t, r.subjects?.code, r.subjects?.name)} · {t(`kind.${r.kind}`)}
                   </div>
                 </div>
                 <span className="arena-pts mono">

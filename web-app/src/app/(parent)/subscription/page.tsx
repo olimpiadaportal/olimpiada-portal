@@ -8,6 +8,7 @@ import { CancelSubscription } from "@/components/CancelSubscription";
 import { BillingTabs } from "@/components/BillingTabs";
 import { InvoicesSection, type InvoiceRow } from "@/components/InvoicesSection";
 import { getPerSubjectPrices } from "@/lib/pricing";
+import { subjectLabel } from "@/lib/subjectLabel";
 
 // R8 billing — one-page SaaS subscription center with internal tabs
 // [Plans | Billing | Invoices] that smooth-scroll to same-page sections.
@@ -181,12 +182,12 @@ export default async function ParentSubscription({
         try {
           const { data: covered } = await supabase
             .from("subscription_subjects")
-            .select("child_subscription_id, subjects(name)")
+            .select("child_subscription_id, subjects(code, name)")
             .in("child_subscription_id", liveSubIds);
           for (const row of (covered ?? []) as any[]) {
             const list = subjectsBySub.get(row.child_subscription_id) ?? [];
             const nm = row.subjects?.name;
-            if (nm) list.push(nm);
+            if (nm) list.push(subjectLabel(t, row.subjects?.code, nm));
             subjectsBySub.set(row.child_subscription_id, list);
           }
         } catch {

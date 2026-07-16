@@ -92,7 +92,7 @@ export default async function NewChildPage() {
     supabase.from("grades").select("id, level, name").order("level", { ascending: true }),
     supabase
       .from("subjects_pricing")
-      .select("subject_id, interval, price_amount, subjects(name)")
+      .select("subject_id, interval, price_amount, subjects(code, name)")
       .eq("status", "active"),
   ]);
 
@@ -112,12 +112,23 @@ export default async function NewChildPage() {
   }[];
   const grades = (gradeRows ?? []) as { id: string; level: number; name: string }[];
 
-  // Collapse the pricing rows into per-subject { id, name, prices } (same shape
-  // the subscribe flow uses).
-  const map = new Map<string, { id: string; name: string; prices: Record<string, number> }>();
+  // Collapse the pricing rows into per-subject { id, code, name, prices } (same
+  // shape the subscribe flow uses). `code` drives the locale-aware label
+  // (subj.<code>) in the wizard; `name` stays the DB fallback.
+  const map = new Map<
+    string,
+    { id: string; code: string | null; name: string; prices: Record<string, number> }
+  >();
   for (const row of (pricing ?? []) as any[]) {
     const sid = row.subject_id;
-    if (!map.has(sid)) map.set(sid, { id: sid, name: row.subjects?.name ?? "—", prices: {} });
+    if (!map.has(sid)) {
+      map.set(sid, {
+        id: sid,
+        code: row.subjects?.code ?? null,
+        name: row.subjects?.name ?? "—",
+        prices: {},
+      });
+    }
     map.get(sid)!.prices[row.interval] = Number(row.price_amount);
   }
   const subjects = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));

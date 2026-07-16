@@ -36,6 +36,8 @@ export type TestAttemptData = {
 /** Names resolved OUTSIDE the RPC payload (subject/topic/package labels). */
 export type AttemptMeta = {
   subjectName: string;
+  /** subjects.code — drives the locale-aware label (subj.<code>) in the UI. */
+  subjectCode: string | null;
   topicNames: string[];
   /** Olympiad package title (locale/az fallback) — null for kind='test'. */
   olympiadTitle: string | null;
@@ -114,7 +116,9 @@ export type ReviewPayload = {
 
 // ---- app-side reads (tests home / setup / result guards) ---------------------------
 
-export type ChildSubject = { id: string; name: string };
+// `code` drives the locale-aware display label (subj.<code> via subjectLabel);
+// `name` stays the raw DB fallback. Ids remain the stored/submitted values.
+export type ChildSubject = { id: string; code: string | null; name: string };
 
 /** Mirror of web getChildSubjectAccess() (childSubjects.ts). */
 export type SubjectAccess = {
@@ -136,6 +140,7 @@ export type AttemptListRow = {
   submitted_at: string | null;
   deadline_at: string | null;
   subject_id: string | null;
+  subject_code: string | null;
   subject_name: string | null;
 };
 
@@ -161,6 +166,7 @@ export type AttemptRowMeta = {
   started_at: string | null;
   submitted_at: string | null;
   duration_seconds: number | null;
+  subject_code: string | null;
   subject_name: string | null;
 };
 

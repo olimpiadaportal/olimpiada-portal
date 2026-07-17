@@ -81,14 +81,14 @@ const RULES: RouteRule[] = [
   // the AUTH screens, so info/news targets are reachable in-session too.
   { prefix: "/login", audience: "public", target: "/(public)/login" },
   { prefix: "/register", audience: "public", target: "/(public)/register" },
-  // News: signed-in readers get their own list tab; a single-slug article
-  // opens the shared (public) article screen (there is no authed article
-  // route — the in-tab article surfaces are local-state modals, not routes).
+  // News: signed-in readers get their own list tab, and a single-slug article
+  // opens the ROLE's own article route (own shell theme + back behavior);
+  // signed out, marketing links keep landing on the public surface.
   {
     pattern: /^\/news\/([^/]+)$/,
     audience: "public",
     target: "/(public)/welcome",
-    roleTargets: { parent: "/(public)/news/{param}", student: "/(public)/news/{param}" },
+    roleTargets: { parent: "/(parent)/news/{param}", student: "/(student)/news/{param}" },
   },
   {
     prefix: "/news",

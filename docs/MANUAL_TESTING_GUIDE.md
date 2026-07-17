@@ -1420,3 +1420,14 @@ If anything doesn't match, tell me the **OO-#** + what you saw.
 - Child arena: profile drawer gains About / FAQ / Contact rows (arena-themed pages, no pricing anywhere in the child panel).
 
 If anything doesn't match, tell me the **PP-#** + what you saw.
+
+---
+
+# Round 25 (2026-07-17) — in-app news article routes (mobile).
+
+## QQ1. News articles open inside the app shell
+- Signed-in student: tap a news notification (or deep link to /news/some-slug) → the article opens INSIDE the student shell (arena background, themed header, native back returns into the app).
+- Signed-in parent: same → article opens in the parent shell.
+- The news TABS' own in-list reading experience is unchanged; signed-out users still see the public article page.
+
+If anything doesn't match, tell me the **QQ-#** + what you saw.

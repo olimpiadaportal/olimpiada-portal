@@ -1,9 +1,11 @@
 "use server";
 
 // Parent auth + child-creation server actions.
-// Registration uses the service-role admin client (admin.createUser, no email
-// dependency) → setup_parent RPC → sign in for cookies. addChild reuses the
-// Stage-8 createChild service, authorizing the current parent first.
+// Registration uses supabase.auth.signUp (F2): with Supabase "Confirm email"
+// OFF (current state) signUp returns a session → immediate login; with it ON
+// (requires Auth SMTP) the user is routed to /verify-email until confirmed.
+// setup_parent (service-role RPC) provisions the role either way. addChild
+// reuses the Stage-8 createChild service, authorizing the current parent first.
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";

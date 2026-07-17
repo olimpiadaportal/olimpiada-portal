@@ -54,15 +54,15 @@ describe("resolveDeepLink allowlist", () => {
       kind: "open",
       target: "/(student)/(tabs)/news",
     });
-    // A single-slug article opens the shared (public) article screen for both
-    // roles — the actual ARTICLE, not the list (no authed article route exists).
+    // A single-slug article opens the role's OWN article route — the actual
+    // ARTICLE inside the role shell, never the shared (public) screen.
     expect(resolveDeepLink("/news/summer-camp-2026", "parent")).toEqual({
       kind: "open",
-      target: "/(public)/news/summer-camp-2026",
+      target: "/(parent)/news/summer-camp-2026",
     });
     expect(resolveDeepLink("/news/summer-camp-2026", "student")).toEqual({
       kind: "open",
-      target: "/(public)/news/summer-camp-2026",
+      target: "/(student)/news/summer-camp-2026",
     });
     // Multi-segment /news paths fall through to the list rule.
     expect(resolveDeepLink("/news/a/b", "parent")).toEqual({

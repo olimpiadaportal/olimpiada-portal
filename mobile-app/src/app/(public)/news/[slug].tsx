@@ -1,7 +1,8 @@
 // News article. The news_public flag gates the SIGNED-OUT surface only (web
-// parity: in-app news is ungated) — signed-in readers land here too, via
-// /news/{slug} notification deep links (the in-tab article surfaces are
-// local-state modals, not routes).
+// parity: in-app news is ungated). Signed-in /news/{slug} deep links resolve
+// to the ROLE article routes ((parent|student)/news/[slug]) — this screen
+// serves the public news list; the signed-in fallback below stays for direct
+// in-session pushes.
 import React from "react";
 import { View } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";

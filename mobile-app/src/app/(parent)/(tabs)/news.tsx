@@ -1,8 +1,8 @@
 // Parent in-app news tab — the SAME shared list as the public /news route but
 // UNGATED (web parity: /dashboard/news ignores the news_public flag; it only
 // governs the public site). Articles open as a full-screen modal driven by
-// local state because the (public) layout redirects signed-in users away from
-// (public)/news/[slug], and this stage may not add new (parent) route files.
+// local state (the owner-approved in-tab UX); deep links to a single article
+// land on the (parent)/news/[slug] route instead.
 import React, { useState } from "react";
 import { Modal, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

@@ -33,6 +33,7 @@ export default function StudentLayout() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="notifications" options={{ title: t("notif.title") }} />
       <Stack.Screen name="profile" options={{ title: t("drawer.profileBtn") }} />
+      <Stack.Screen name="news/[slug]" options={{ title: t("nav.news") }} />
       <Stack.Screen name="test/[subjectId]" options={{ headerShown: false }} />
       <Stack.Screen name="test/run/[attemptId]" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="test/result/[attemptId]" options={{ headerShown: false }} />

@@ -29,6 +29,7 @@ export default function ParentLayout() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="notifications" options={{ title: t("notif.title") }} />
       <Stack.Screen name="profile" options={{ title: t("nav.profile") }} />
+      <Stack.Screen name="news/[slug]" options={{ title: t("nav.news") }} />
       <Stack.Screen name="add-child" options={{ title: t("parent.dash.addChild") }} />
       <Stack.Screen name="children/[id]/edit" options={{ title: t("childedit.title") }} />
       <Stack.Screen name="children/[id]/subscribe" options={{ title: t("sub.title") }} />

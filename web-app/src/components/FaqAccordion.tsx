@@ -5,6 +5,16 @@
 
 export type FaqItem = { q: string; a: string };
 
+// The canonical FAQ list (faq.q1..q10 / a1..a10) shared by the public /faq
+// page and the in-app parent (/help/faq) and student (/child/help/faq) pages.
+// Pass the server-resolved translator so admin Site-Content overrides apply.
+export function buildFaqItems(t: (key: string) => string): FaqItem[] {
+  return Array.from({ length: 10 }, (_, i) => {
+    const n = i + 1;
+    return { q: t(`faq.q${n}`), a: t(`faq.a${n}`) };
+  });
+}
+
 export default function FaqAccordion({ items }: { items: FaqItem[] }) {
   return (
     <div className="faq-list">

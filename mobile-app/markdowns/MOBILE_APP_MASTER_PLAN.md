@@ -255,7 +255,7 @@ Cold start to Welcome/Home ≤ 2.5s on a mid-tier Android (4GB RAM class); JS bu
 
 ## 16. Observability & error handling
 
-Global error boundary per navigator (branded "something went wrong" + retry/report); BFF/network errors normalized to `{error, retryable}` → standard toast/inline patterns; **sentry-expo optional** — single owner decision (privacy posture, backlog C6): if ON → crashes + handled-error breadcrumbs, PII-scrubbed, EU routing; if OFF → local `expo-updates` release health only. No product analytics SDK in v1 (documented). Structured console logging stripped from production builds.
+Global error boundary per navigator (branded "something went wrong" + retry/report); BFF/network errors normalized to `{error, retryable}` → standard toast/inline patterns; **sentry-expo optional** — single owner decision (privacy posture, backlog C6): if ON → crashes + handled-error breadcrumbs, PII-scrubbed, EU routing; if OFF → local `expo-updates` release health only. **DECIDED at M4 (2026-07-16): OFF for v1** — no crash SDK ships (cleanest privacy labels + zero new tracking dep); store-vitals dashboards + staged rollout are the release-health signal; revisit post-launch on owner request (backlog C6). No product analytics SDK in v1 (documented). Structured console logging stripped from production builds.
 
 ## 17. Store & payments compliance
 

@@ -4,7 +4,7 @@
 //   4/5. role tabs   6. unknown role -> retry + logout escape
 // Renders the router Stack only once every gate has passed.
 import React, { useEffect, useRef } from "react";
-import { AppState, Platform } from "react-native";
+import { AppState, Platform, View } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import * as ExpoLinking from "expo-linking";
 import Constants from "expo-constants";
@@ -19,6 +19,11 @@ import {
 import { isSupabaseConfigured } from "@/lib/env";
 import { clampLocale, useLocaleStore } from "@/i18n";
 import { useAuthStore } from "@/features/auth/authStore";
+import { ensureAndroidChannels, initPushDisplay } from "@/features/push/registration";
+import { usePushRegistration, usePushTapRouting } from "@/features/push/usePush";
+import { useAppLockStore } from "@/features/applock/appLockStore";
+import { useAppLock } from "@/features/applock/useAppLock";
+import { LockOverlay } from "@/features/applock/LockOverlay";
 import { useSeenWelcome } from "./seenWelcome";
 import {
   BootErrorView,
@@ -47,12 +52,25 @@ export function RootGate() {
   const seenHydrated = useSeenWelcome((s) => s.hydrated);
   const hydrateSeenWelcome = useSeenWelcome((s) => s.hydrate);
 
-  // Boot: restore the session + persisted locale + welcome-once flag.
+  const lockHydrated = useAppLockStore((s) => s.hydrated);
+  const hydrateAppLock = useAppLockStore((s) => s.hydrate);
+
+  // Boot: restore the session + persisted locale + welcome-once/app-lock
+  // flags, and set the push display policy (foreground pushes stay silent —
+  // the in-app Realtime toast covers foreground; no registration here).
   useEffect(() => {
     void hydrateLocale();
     void hydrateSeenWelcome();
+    void hydrateAppLock();
     void restore();
-  }, [hydrateLocale, hydrateSeenWelcome, restore]);
+    void initPushDisplay();
+  }, [hydrateLocale, hydrateSeenWelcome, hydrateAppLock, restore]);
+
+  // Android notification channels (processor sends channelId = category);
+  // re-running on a locale switch just renames them in the OS settings UI.
+  useEffect(() => {
+    if (localeHydrated) void ensureAndroidChannels(locale);
+  }, [localeHydrated, locale]);
 
   // Foreground: refresh config + session state (maintenance/force-update can
   // interrupt a running session; staleTime keeps this cheap).
@@ -106,9 +124,20 @@ export function RootGate() {
     if (target) router.push(target as never);
   }, [authStatus, role, router]);
 
+  // Push: register behind signed-in + role + notifications_push flag (flag
+  // OFF = zero registration calls); notification taps route action_url
+  // through the same allowlist as URL deep links.
+  usePushRegistration();
+  usePushTapRouting(booted);
+
+  // Biometric app-lock lifecycle (cold-start / long-background relock).
+  useAppLock();
+
   // ---- gates, in priority order ----
 
-  if (!localeHydrated || !seenHydrated || authStatus === "restoring") return <SplashView />;
+  if (!localeHydrated || !seenHydrated || !lockHydrated || authStatus === "restoring") {
+    return <SplashView />;
+  }
 
   if (!isSupabaseConfigured) {
     return <BootErrorView onRetry={() => void config.refetch()} />;
@@ -131,5 +160,12 @@ export function RootGate() {
     }
   }
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  // The lock overlay sits ON TOP of the navigator — the Stack never unmounts,
+  // so navigation state survives a lock/unlock cycle.
+  return (
+    <View style={{ flex: 1 }}>
+      <Stack screenOptions={{ headerShown: false }} />
+      <LockOverlay />
+    </View>
+  );
 }

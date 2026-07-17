@@ -4,11 +4,22 @@
 // (student)/profile — web ChildProfileDrawer parity). Plain RN Modal, restyled
 // per plan §2: grab handle, ListRow rows, lucide icons, eyebrow section
 // headers, safe-area padded bottom.
-import React from "react";
-import { Modal, Pressable, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Modal, Pressable, Switch, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Globe, LogOut, SunMoon, UserRound } from "lucide-react-native";
+import * as LocalAuthentication from "expo-local-authentication";
+import {
+  CircleHelp,
+  Fingerprint,
+  Globe,
+  Info,
+  LogOut,
+  Mail,
+  SunMoon,
+  Tag,
+  UserRound,
+} from "lucide-react-native";
 import { AppText } from "./AppText";
 import { ListRow } from "./ListRow";
 import { Segmented } from "./Segmented";
@@ -18,6 +29,7 @@ import { useLocaleStore, isLocale, type Locale } from "@/i18n";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { useAuthStore } from "@/features/auth/authStore";
+import { useAppLockStore } from "@/features/applock/appLockStore";
 
 function IconChip({ children }: { children: React.ReactNode }) {
   const { tokens } = useTheme();
@@ -54,6 +66,43 @@ export function AccountSheet({
   const config = useMobileConfig();
   const role = useAuthStore((s) => s.role);
   const signOut = useAuthStore((s) => s.signOut);
+  const lockEnabled = useAppLockStore((s) => s.enabled);
+  const setLockEnabled = useAppLockStore((s) => s.setEnabled);
+
+  // Biometric availability (hardware + enrolled), probed when the sheet opens.
+  const [bioAvailable, setBioAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!visible) return;
+    let live = true;
+    void (async () => {
+      try {
+        const [hw, enrolled] = await Promise.all([
+          LocalAuthentication.hasHardwareAsync(),
+          LocalAuthentication.isEnrolledAsync(),
+        ]);
+        if (live) setBioAvailable(hw && enrolled);
+      } catch {
+        if (live) setBioAvailable(false);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [visible]);
+
+  // Both directions require a successful biometric/device-credential prompt —
+  // otherwise anyone holding the phone could switch the lock off.
+  const toggleAppLock = async () => {
+    try {
+      const res = await LocalAuthentication.authenticateAsync({
+        promptMessage: t("mob.lock.prompt"),
+        disableDeviceFallback: false,
+      });
+      if (res.success) setLockEnabled(!lockEnabled);
+    } catch {
+      // prompt failed/cancelled — the switch stays as-is
+    }
+  };
 
   const supported = (config.data?.locales.supported ?? ["az", "en", "ru"]).filter(isLocale);
   const localeOptions = (supported.length > 0 ? supported : (["az", "en", "ru"] as Locale[])).map(
@@ -124,6 +173,67 @@ export function AccountSheet({
               onChange={(v) => theme.setPreference(v)}
             />
           </View>
+        </View>
+        {role === "parent" || role === "student" ? (
+          <View style={{ gap: spacing.xs }}>
+            <AppText variant="eyebrow">{t("mob.lock.section")}</AppText>
+            <ListRow
+              icon={<Fingerprint size={20} color={tokens.accent} strokeWidth={2} />}
+              title={t("mob.lock.title")}
+              subtitle={bioAvailable === false ? t("mob.lock.unavailable") : t("mob.lock.subtitle")}
+              trailing={
+                <Switch
+                  accessibilityRole="switch"
+                  accessibilityLabel={t("mob.lock.title")}
+                  accessibilityState={{ disabled: bioAvailable !== true }}
+                  value={lockEnabled}
+                  disabled={bioAvailable !== true}
+                  onValueChange={() => void toggleAppLock()}
+                  trackColor={{ false: tokens.border, true: tokens.accent }}
+                  thumbColor="#ffffff"
+                />
+              }
+            />
+          </View>
+        ) : null}
+        {/* INFO: the (public) info screens are viewable in-session now; pricing
+            stays parent-only — children never see commerce. */}
+        <View style={{ gap: spacing.xs }}>
+          <AppText variant="eyebrow">{t("mob.info.section")}</AppText>
+          <ListRow
+            icon={<Info size={20} color={tokens.accent} strokeWidth={2} />}
+            title={t("nav.about")}
+            onPress={() => {
+              onClose();
+              router.push("/(public)/about");
+            }}
+          />
+          <ListRow
+            icon={<CircleHelp size={20} color={tokens.accent} strokeWidth={2} />}
+            title={t("nav.faq")}
+            onPress={() => {
+              onClose();
+              router.push("/(public)/faq");
+            }}
+          />
+          <ListRow
+            icon={<Mail size={20} color={tokens.accent} strokeWidth={2} />}
+            title={t("nav.contact")}
+            onPress={() => {
+              onClose();
+              router.push("/(public)/contact");
+            }}
+          />
+          {role === "parent" ? (
+            <ListRow
+              icon={<Tag size={20} color={tokens.accent} strokeWidth={2} />}
+              title={t("nav.pricing")}
+              onPress={() => {
+                onClose();
+                router.push("/(public)/pricing");
+              }}
+            />
+          ) : null}
         </View>
         <View style={{ gap: spacing.xs }}>
           <AppText variant="eyebrow">{t("drawer2.session")}</AppText>

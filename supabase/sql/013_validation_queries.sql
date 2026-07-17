@@ -1029,6 +1029,23 @@ select '67_round_readiness_pool_counts' as check_name,
              and has_function_privilege('anon','public.get_olympiad_pool_counts(uuid[])','EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
+-- 68) Notification template kind (migration 067): broadcast fan-outs derive
+--     type/category from the template code (news broadcasts file under "news"),
+--     both the immediate and the scheduled path use the mapping, the mapping
+--     itself resolves news_published → news, and the helper stays out of
+--     client reach.
+select '68_notification_template_kind' as check_name,
+       case when to_regprocedure('public.notify_template_kind(text)') is not null
+             and position('notify_template_kind' in
+                   pg_get_functiondef('public.admin_send_notification(text,text,text[],text,jsonb,timestamptz,text,text)'::regprocedure)) > 0
+             and position('notify_template_kind' in
+                   pg_get_functiondef('public.dispatch_scheduled_notifications()'::regprocedure)) > 0
+             and (select k.n_type = 'news_published' and k.n_category = 'news'
+                    from public.notify_template_kind('news_published') k)
+             and has_function_privilege('authenticated','public.notify_template_kind(text)','EXECUTE') = false
+             and has_function_privilege('anon','public.notify_template_kind(text)','EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

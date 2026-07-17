@@ -1,6 +1,7 @@
-// Public news article. Same news_public gate as the public list (web parity);
-// signed-in readers never land here — the parent tab presents the shared
-// ArticleView in-tab because the (public) layout redirects authenticated users.
+// News article. The news_public flag gates the SIGNED-OUT surface only (web
+// parity: in-app news is ungated) — signed-in readers land here too, via
+// /news/{slug} notification deep links (the in-tab article surfaces are
+// local-state modals, not routes).
 import React from "react";
 import { View } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
@@ -10,6 +11,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useMobileConfig } from "@/lib/configQueries";
 import { useT } from "@/i18n/useT";
+import { useAuthStore } from "@/features/auth/authStore";
 
 export default function PublicNewsArticle() {
   const { t } = useT();
@@ -17,6 +19,7 @@ export default function PublicNewsArticle() {
   const params = useLocalSearchParams<{ slug?: string }>();
   const slug = typeof params.slug === "string" ? params.slug : "";
   const config = useMobileConfig();
+  const signedIn = useAuthStore((s) => s.status) === "signedIn";
 
   let body: React.ReactNode;
   if (config.isPending) {
@@ -35,7 +38,7 @@ export default function PublicNewsArticle() {
         onRetry={() => void config.refetch()}
       />
     );
-  } else if (!config.data.flags.newsPublic) {
+  } else if (!config.data.flags.newsPublic && !signedIn) {
     body = (
       <View style={{ padding: spacing.lg }}>
         <GateNotice title={t("nav.news")} body={t("news.unavailable")} />

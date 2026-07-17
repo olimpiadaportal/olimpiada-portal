@@ -20,6 +20,7 @@ import {
   Dumbbell,
   History,
   Play,
+  RotateCcw,
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -312,6 +313,36 @@ export function TestsHomeScreen() {
         </Panel>
       )}
 
+      {/* ---- Previous day's rounds — unlimited UNTIMED practice replays
+           (web /child/test section 2 parity: between today's cards and the
+           history; one practice-only notice + a Replay row per subject). ---- */}
+      <SectionHeader
+        title={t("test.rounds.yesterday")}
+        color={arena.muted}
+        style={{ marginTop: spacing.sm }}
+      />
+      {access.hasAccess && access.subjects.length > 0 ? (
+        <>
+          <Notice arena={arena}>{t("test.rounds.practiceNote")}</Notice>
+          <View style={{ gap: spacing.md }}>
+            {access.subjects.map((s) => (
+              <ReplayRow
+                key={s.id}
+                arena={arena}
+                subjectId={s.id}
+                name={subjectLabel(t, s.code, s.name)}
+              />
+            ))}
+          </View>
+        </>
+      ) : (
+        <Panel arena={arena}>
+          <AppText color={arena.muted}>
+            {access.hasAccess ? t("child.noSubjects") : t("child.lockedNote")}
+          </AppText>
+        </Panel>
+      )}
+
       {/* ---- Recent attempts ---- */}
       <SectionHeader
         title={t("test.rounds.recent")}
@@ -528,6 +559,103 @@ function SubjectCard({
         </AppText>
         <ChevronRight size={16} color={arena.dim} strokeWidth={2} />
       </Pressable>
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Previous-day replay row (M3.1, web section-2 parity): Replay fires
+// start_daily_round_attempt(subject, 'yesterday') — an unlimited UNTIMED
+// practice attempt (null deadline → the runner's ∞ no-limit pill + practice
+// badge) that never affects points/streak/boards. Deliberately NO pre-flight
+// existence check (the snapshot table is not client-readable — the web also
+// click-then-maps): no_data_found lands inline as test.rounds.noYesterday.
+// ---------------------------------------------------------------------------
+function ReplayRow({
+  arena,
+  subjectId,
+  name,
+}: {
+  arena: ArenaTokens;
+  subjectId: string;
+  name: string;
+}) {
+  const { t } = useT();
+  const router = useRouter();
+  const [starting, setStarting] = useState(false);
+  // The mapped i18n KEY (translated at render) — never raw Postgres text.
+  const [errKey, setErrKey] = useState<string | null>(null);
+
+  const startReplay = async () => {
+    if (starting) return;
+    setStarting(true);
+    setErrKey(null);
+    try {
+      const res = await startDailyRoundAttempt(subjectId, "yesterday");
+      if (res.ok) {
+        setStarting(false);
+        router.push({
+          pathname: "/(student)/test/run/[attemptId]",
+          params: {
+            attemptId: res.data.attempt_id,
+            resumed: res.data.resumed ? "1" : "0",
+          },
+        });
+        return;
+      }
+      setErrKey(res.errorKey);
+    } catch {
+      setErrKey("test.err.generic");
+    }
+    setStarting(false);
+  };
+
+  return (
+    <Panel arena={arena} style={{ gap: spacing.md }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: radius.md,
+            backgroundColor: tint(arena.blue, 0.14),
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <AppText variant="title" color={arena.blue}>
+            {name.trim()[0]?.toUpperCase() ?? "?"}
+          </AppText>
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <AppText variant="label" color={arena.ink} style={{ fontSize: 16 }}>
+            {name}
+          </AppText>
+          <AppText color={arena.dim} style={{ fontSize: 12 }} numberOfLines={1}>
+            {t("kind.practice")} · {t("test.rounds.practiceMeta")}
+          </AppText>
+        </View>
+        <ArenaButton
+          arena={arena}
+          kind="ghost"
+          title={t("test.rounds.replay")}
+          pendingTitle={t("test.setup.starting")}
+          pending={starting}
+          icon={<RotateCcw size={15} color={arena.ink} strokeWidth={2.5} />}
+          onPress={() => void startReplay()}
+        />
+      </View>
+      {/* Inline mapped note: noYesterday is informational (web tst-notice);
+          anything else is the generic/access error tone. */}
+      {errKey ? (
+        errKey === "test.rounds.noYesterday" ? (
+          <Notice arena={arena}>{t(errKey)}</Notice>
+        ) : (
+          <AppText color={arena.red} style={{ fontSize: 13 }}>
+            {t(errKey)}
+          </AppText>
+        )
+      ) : null}
     </Panel>
   );
 }

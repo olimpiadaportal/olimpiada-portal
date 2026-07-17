@@ -13,6 +13,8 @@ export type TestQuestion = {
   topic_id: string | null;
   body: string | null;
   prompt: string | null;
+  /** Optional locale-aware figure ref from the RPC payload (migration 057). */
+  image?: { bucket: string; path: string } | null;
   selected_option_ids: string[];
   is_marked: boolean;
   options: TestOption[];
@@ -101,6 +103,8 @@ export type ReviewQuestion = {
   question_id: string;
   body: string | null;
   prompt: string | null;
+  /** Optional locale-aware figure ref from the RPC payload (migration 057). */
+  image?: { bucket: string; path: string } | null;
   is_correct: boolean | null;
   selected_option_ids: string[];
   explanation: string | null;
@@ -170,7 +174,7 @@ export type AttemptRowMeta = {
   subject_name: string | null;
 };
 
-/** start_daily_round_attempt('today') result — errors mapped to i18n keys. */
+/** start_daily_round_attempt (today/yesterday) result — errors mapped to i18n keys. */
 export type StartRoundResult =
   | { ok: true; data: { attempt_id: string; resumed: boolean } }
   | {

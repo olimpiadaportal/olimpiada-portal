@@ -5026,12 +5026,57 @@ $$;
 revoke all on function public.get_notification_target_count(text, jsonb) from public, anon;
 grant execute on function public.get_notification_target_count(text, jsonb) to authenticated, service_role;
 
+-- notify_template_kind — template code → notification (type, category) for the
+-- broadcast fan-out paths (migration 067): a news_published broadcast files
+-- under "news" (newspaper icon / News filter chip) instead of the generic
+-- announcement pair; unknown/NULL codes keep admin_announcement/announcement.
+-- The category set matches the client filter chips.
+create or replace function public.notify_template_kind(
+  p_template_code text,
+  out n_type text,
+  out n_category text
+)
+returns record
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select
+    case p_template_code
+      when 'news_published'        then 'news_published'
+      when 'olympiad_purchased'    then 'olympiad_purchased'
+      when 'attempt_graded'        then 'attempt_graded'
+      when 'personal_best'         then 'personal_best'
+      when 'streak_milestone'      then 'streak_milestone'
+      when 'subscription_canceled' then 'subscription_canceled'
+      when 'subject_charge_failed' then 'subject_charge_failed'
+      when 'subject_expiring'      then 'subject_expiring'
+      when 'giveaway_ending'       then 'giveaway_ending'
+      else 'admin_announcement'
+    end,
+    case p_template_code
+      when 'news_published'        then 'news'
+      when 'olympiad_purchased'    then 'olympiad'
+      when 'attempt_graded'        then 'progress'
+      when 'personal_best'         then 'progress'
+      when 'streak_milestone'      then 'progress'
+      when 'subscription_canceled' then 'billing'
+      when 'subject_charge_failed' then 'billing'
+      when 'subject_expiring'      then 'billing'
+      when 'giveaway_ending'       then 'announcement'
+      else 'announcement'
+    end
+$$;
+revoke all on function public.notify_template_kind(text) from public, anon, authenticated;
+grant execute on function public.notify_template_kind(text) to service_role;
+
 -- admin_send_notification — the broadcast path. authenticated + in-body admin
 -- check. Immediate send (scheduled_at null) fans out now; else stored 'scheduled'
 -- and dispatched by cron. Returns the admin_notifications id + recipient count.
 -- Migration 060: audience whitelist extended (all_users, olympiad_buyers);
 -- olympiad_buyers requires well-formed package_ids of existing ACTIVE packages,
 -- validated BEFORE anything is stored.
+-- Migration 067: fan-out type/category derive from the template code.
 create or replace function public.admin_send_notification(
   p_title         text,
   p_body          text,
@@ -5054,6 +5099,7 @@ declare
   v_n     int := 0;
   v_key   text;
   v_pkg_n int;
+  v_kind  record;
 begin
   if not (public.is_admin() or public.has_permission('notifications.send')) then
     raise exception 'notify: forbidden' using errcode = 'insufficient_privilege';
@@ -5103,14 +5149,16 @@ begin
     return jsonb_build_object('id', v_id, 'status', 'scheduled', 'recipients', coalesce(v_n,0));
   end if;
 
-  -- Immediate fan-out (idempotent per recipient+broadcast).
+  -- Immediate fan-out (idempotent per recipient+broadcast). Type/category come
+  -- from the template so e.g. the news broadcast files under "news".
+  select * into v_kind from public.notify_template_kind(p_template_code);
   for v_rec in select a.profile_id from public.lb_notify_audience(p_audience_type, coalesce(p_audience_filter,'{}'::jsonb)) a
   loop
     v_key := 'admin:' || v_id::text || ':' || v_rec::text;
     perform public.create_notification(
-      v_rec, 'admin_announcement', p_title, p_body,
+      v_rec, v_kind.n_type, p_title, p_body,
       jsonb_build_object('admin_notification_id', v_id),
-      coalesce(p_channels,'{in_app}'), v_key, 3, p_action_url, 'announcement', null);
+      coalesce(p_channels,'{in_app}'), v_key, 3, p_action_url, v_kind.n_category, null);
     v_n := v_n + 1;
   end loop;
 
@@ -5253,7 +5301,7 @@ grant execute on function public.mark_delivery_result(uuid, public.delivery_stat
 -- dispatch scheduled broadcasts whose time has come (cron / processor).
 create or replace function public.dispatch_scheduled_notifications()
 returns int language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_row record; v_rec uuid; v_n int; v_total int := 0;
+declare v_row record; v_rec uuid; v_n int; v_total int := 0; v_kind record;
 begin
   for v_row in
     select * from public.admin_notifications
@@ -5262,12 +5310,14 @@ begin
   loop
     update public.admin_notifications set status = 'sending' where id = v_row.id;
     v_n := 0;
+    -- Migration 067: type/category derive from the stored template code.
+    select * into v_kind from public.notify_template_kind(v_row.template_code);
     for v_rec in select a.profile_id from public.lb_notify_audience(v_row.audience_type, v_row.audience_filter) a
     loop
       perform public.create_notification(
-        v_rec, 'admin_announcement', v_row.title, v_row.body,
+        v_rec, v_kind.n_type, v_row.title, v_row.body,
         jsonb_build_object('admin_notification_id', v_row.id),
-        v_row.channels, 'admin:' || v_row.id::text || ':' || v_rec::text, 3, null, 'announcement', null);
+        v_row.channels, 'admin:' || v_row.id::text || ':' || v_rec::text, 3, null, v_kind.n_category, null);
       v_n := v_n + 1;
     end loop;
     update public.admin_notifications

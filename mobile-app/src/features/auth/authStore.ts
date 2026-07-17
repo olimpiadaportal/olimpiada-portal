@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { queryClient } from "@/lib/queryClient";
 import { bffChildLogin, bffRegisterParent, type SessionTokens } from "@/lib/api";
 import { clearPendingLink } from "@/lib/deeplink";
+import { deregisterPushToken } from "@/features/push/registration";
 
 export type SessionRole = "parent" | "student" | "unknown";
 export type AuthStatus = "restoring" | "signedOut" | "signedIn";
@@ -134,6 +135,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    try {
+      // De-register push BEFORE the session dies: the push_tokens DELETE is
+      // an own-row RLS policy and needs the still-valid JWT. Best-effort —
+      // logout never blocks on it (also clears the stored token + badge).
+      await deregisterPushToken();
+    } catch {
+      // orphaned tokens are invalidated server-side on DeviceNotRegistered
+    }
     try {
       await supabase.auth.signOut();
     } catch {

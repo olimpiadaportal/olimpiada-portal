@@ -170,6 +170,7 @@ export default async function ParentLayout({
           <div className="site-foot-col">
             <p className="site-foot-h">{t("app.brand")}</p>
             <Link href="/dashboard">{t("nav.home")}</Link>
+            <Link href="/help/about">{t("nav.about")}</Link>
             <Link href="/help/faq">{t("help.faqTitle")}</Link>
             <Link href="/help/contact">{t("help.contactTitle")}</Link>
           </div>

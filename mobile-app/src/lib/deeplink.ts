@@ -16,20 +16,44 @@ export function isSafeRelativeUrl(url: string): boolean {
 
 export type Role = "parent" | "student" | null;
 
+/** Lowercase UUID shape (server ids are Postgres uuids — always lowercase). */
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
 type RouteRule = {
-  /** Web path prefix ("/news" also matches "/news/some-slug"). */
-  prefix: string;
+  /** Web path prefix ("/child/test" also matches "/child/test/run"). Unused when `pattern` is set. */
+  prefix?: string;
   /** Exact-only rules refuse sub-paths ("/" must not swallow everything). */
   exact?: boolean;
+  /** Full-path match for dynamic segments (UUID ids, news slugs); capture 1
+   *  fills "{param}" in the target. Non-matches fall through to later rules. */
+  pattern?: RegExp;
   /** Which sessions may open it; "public" = no session needed. */
   audience: "public" | "parent" | "student";
-  /** The expo-router target (M1 targets are the shells; deeper screens land in M2/M3). */
+  /** The expo-router target. */
   target: string;
+  /** Public rules only: a signed-in session lands on ITS surface instead
+   *  (e.g. /news → the role's own news tab). */
+  roleTargets?: Partial<Record<"parent" | "student", string>>;
+  /** Public rules only: roles that must never open it — children never see
+   *  commerce, so /pricing blocks student sessions. */
+  blockedRoles?: readonly ("parent" | "student")[];
 };
 
-// Order matters: first match wins; longer prefixes come first.
+// Order matters: first match wins; dynamic patterns and longer prefixes come first.
 const RULES: RouteRule[] = [
-  // Student surface.
+  // Student surface. Result/review ARE deep-linkable: their RPCs are
+  // owner+graded gated server-side (the runner itself stays unlinkable —
+  // non-UUID or /run/ paths fall through to the Tests tab).
+  {
+    pattern: new RegExp(`^/child/test/result/(${UUID})$`),
+    audience: "student",
+    target: "/(student)/test/result/{param}",
+  },
+  {
+    pattern: new RegExp(`^/child/test/review/(${UUID})$`),
+    audience: "student",
+    target: "/(student)/test/review/{param}",
+  },
   { prefix: "/child/test", audience: "student", target: "/(student)/(tabs)/tests" },
   { prefix: "/child/olympiads", audience: "student", target: "/(student)/(tabs)/olympiads" },
   { prefix: "/child/leaderboard", audience: "student", target: "/(student)/(tabs)/ranking" },
@@ -38,23 +62,44 @@ const RULES: RouteRule[] = [
   { prefix: "/child/profile", audience: "student", target: "/(student)/profile" },
   { prefix: "/child-login", audience: "public", target: "/(public)/login?tab=student" },
   { prefix: "/child", exact: true, audience: "student", target: "/(student)/(tabs)/home" },
-  // Parent surface.
+  // Parent surface. A child's olympiad page (notification action_url) → the
+  // olympiads tab; other /children/... paths keep landing on the parent home.
   { prefix: "/dashboard/news", audience: "parent", target: "/(parent)/(tabs)/news" },
   { prefix: "/dashboard", exact: true, audience: "parent", target: "/(parent)/(tabs)/home" },
+  {
+    pattern: new RegExp(`^/children/(${UUID})/olympiads$`),
+    audience: "parent",
+    target: "/(parent)/(tabs)/olympiads",
+  },
   { prefix: "/children", audience: "parent", target: "/(parent)/(tabs)/home" },
   { prefix: "/analytics", audience: "parent", target: "/(parent)/(tabs)/analytics" },
   { prefix: "/olympiads", audience: "parent", target: "/(parent)/(tabs)/olympiads" },
   { prefix: "/subscription", audience: "parent", target: "/(parent)/(tabs)/subscription" },
   { prefix: "/notifications", audience: "parent", target: "/(parent)/notifications" },
   { prefix: "/profile", audience: "parent", target: "/(parent)/profile" },
-  // Public surface.
+  // Public surface. The (public) guard now only bounces signed-in users off
+  // the AUTH screens, so info/news targets are reachable in-session too.
   { prefix: "/login", audience: "public", target: "/(public)/login" },
   { prefix: "/register", audience: "public", target: "/(public)/register" },
-  { prefix: "/news", audience: "public", target: "/(public)/welcome" },
-  { prefix: "/pricing", audience: "public", target: "/(public)/welcome" },
-  { prefix: "/about", audience: "public", target: "/(public)/welcome" },
-  { prefix: "/faq", audience: "public", target: "/(public)/welcome" },
-  { prefix: "/contact", audience: "public", target: "/(public)/welcome" },
+  // News: signed-in readers get their own list tab; a single-slug article
+  // opens the shared (public) article screen (there is no authed article
+  // route — the in-tab article surfaces are local-state modals, not routes).
+  {
+    pattern: /^\/news\/([^/]+)$/,
+    audience: "public",
+    target: "/(public)/welcome",
+    roleTargets: { parent: "/(public)/news/{param}", student: "/(public)/news/{param}" },
+  },
+  {
+    prefix: "/news",
+    audience: "public",
+    target: "/(public)/welcome",
+    roleTargets: { parent: "/(parent)/(tabs)/news", student: "/(student)/(tabs)/news" },
+  },
+  { prefix: "/pricing", audience: "public", target: "/(public)/pricing", blockedRoles: ["student"] },
+  { prefix: "/about", audience: "public", target: "/(public)/about" },
+  { prefix: "/faq", audience: "public", target: "/(public)/faq" },
+  { prefix: "/contact", audience: "public", target: "/(public)/contact" },
   { prefix: "/", exact: true, audience: "public", target: "/(public)/welcome" },
 ];
 
@@ -76,14 +121,29 @@ export function resolveDeepLink(rawPath: string, role: Role): ResolvedLink {
   const path = rawPath.split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
 
   for (const rule of RULES) {
-    const matches = rule.exact
-      ? path === rule.prefix
-      : path === rule.prefix || path.startsWith(`${rule.prefix}/`);
-    if (!matches) continue;
+    let param: string | undefined;
+    if (rule.pattern) {
+      const m = rule.pattern.exec(path);
+      if (!m) continue;
+      param = m[1];
+    } else if (rule.prefix) {
+      const matches = rule.exact
+        ? path === rule.prefix
+        : path === rule.prefix || path.startsWith(`${rule.prefix}/`);
+      if (!matches) continue;
+    } else {
+      continue;
+    }
+    const fill = (target: string) =>
+      param === undefined ? target : target.replace("{param}", param);
 
-    if (rule.audience === "public") return { kind: "open", target: rule.target };
+    if (rule.audience === "public") {
+      if (role !== null && rule.blockedRoles?.includes(role)) return { kind: "mismatch" };
+      const target = (role !== null ? rule.roleTargets?.[role] : undefined) ?? rule.target;
+      return { kind: "open", target: fill(target) };
+    }
     if (role === null) return { kind: "deferred", path, audience: rule.audience };
-    if (role === rule.audience) return { kind: "open", target: rule.target };
+    if (role === rule.audience) return { kind: "open", target: fill(rule.target) };
     return { kind: "mismatch" };
   }
   return null;

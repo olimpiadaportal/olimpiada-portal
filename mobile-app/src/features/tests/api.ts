@@ -241,24 +241,34 @@ export async function startTopicTestAttempt(
 }
 
 // ---------------------------------------------------------------------------
-// start_daily_round_attempt (today = RATED, timed 25min, ONE per subject/day)
-// — the web startDailyRound error mapping (testActions.ts), as i18n keys:
+// start_daily_round_attempt — the web startDailyRound error mapping
+// (testActions.ts), as i18n keys:
+//   day='today'     → RATED round (timed 25min, ONE per subject/day);
+//   day='yesterday' → unlimited UNTIMED practice replay of yesterday's stored
+//                     round (M3.1; never affects points/streak/boards).
 //   unique_violation → day consumed (caller flips the card to attempted);
-//   no_data_found    → pool can't build today's round yet;
+//   no_data_found    → today: pool can't build the round yet;
+//                      yesterday: no round was held yesterday (web ?err=noyest);
 //   check_violation  → 'grade' in the message = no grade, else no access.
-// Raw Postgres text never reaches the UI. Previous-day replays stay out (M3.1).
+// Raw Postgres text never reaches the UI.
 // ---------------------------------------------------------------------------
-export async function startDailyRoundAttempt(subjectId: string): Promise<StartRoundResult> {
+export async function startDailyRoundAttempt(
+  subjectId: string,
+  day: "today" | "yesterday" = "today",
+): Promise<StartRoundResult> {
   const { data, error } = await supabase.rpc("start_daily_round_attempt", {
     p_subject_id: subjectId,
-    p_day: "today",
+    p_day: day,
   });
   if (error) {
     if (error.code === PG_UNIQUE_VIOLATION) {
       return { ok: false, already: true, errorKey: "test.rounds.alreadyNote" };
     }
     if (error.code === PG_NO_DATA_FOUND) {
-      return { ok: false, errorKey: "test.rounds.noRoundYet" };
+      return {
+        ok: false,
+        errorKey: day === "yesterday" ? "test.rounds.noYesterday" : "test.rounds.noRoundYet",
+      };
     }
     if (error.code === PG_CHECK_VIOLATION) {
       const noGrade = String(error.message ?? "").includes("grade");
@@ -275,6 +285,8 @@ export async function startDailyRoundAttempt(subjectId: string): Promise<StartRo
 // ---------------------------------------------------------------------------
 // get_test_attempt + display names (subject/topics or the olympiad package
 // title). Name lookups degrade to empty labels rather than blocking the run.
+// Questions carry an optional locale-aware `image` {bucket,path} ref
+// (migration 057) — resolved to a public URL at render (web run-page parity).
 // ---------------------------------------------------------------------------
 export async function fetchTestAttempt(
   attemptId: string,

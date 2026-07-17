@@ -43,7 +43,20 @@
           }
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#7c3aed"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "OlympIQ istifadəçini təsdiqləmək üçün Face ID istifadə edir."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

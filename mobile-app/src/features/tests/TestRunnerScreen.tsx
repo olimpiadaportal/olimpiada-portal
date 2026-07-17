@@ -41,6 +41,7 @@ import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { publicStorageUrl } from "@/lib/data";
 import { cancelTestAttempt, saveTestAnswers, submitTestAttempt } from "./api";
 import { useAttemptRow, useTestAttempt } from "./queries";
 import {
@@ -58,6 +59,7 @@ import {
 } from "./logic";
 import type { AttemptMeta, TestAttemptData } from "./types";
 import { ConfirmModal } from "./ConfirmModal";
+import { QuestionImage } from "./QuestionImage";
 import { ArenaButton, Notice, Panel, tint, useArena } from "./ui";
 
 const TESTS_TAB = "/(student)/(tabs)/tests" as const;
@@ -780,6 +782,17 @@ function RunnerActive({
           <AppText color={arena.ink} style={{ fontSize: 17, lineHeight: 24 }}>
             {q.body ?? ""}
           </AppText>
+          {/* Question figure between body and options (web TestRunner parity;
+              close label mirrors the web runner's modal: test.run.back). */}
+          {q.image?.bucket && q.image.path ? (
+            <QuestionImage
+              arena={arena}
+              url={publicStorageUrl(q.image.bucket, q.image.path)}
+              alt={t("test.img.alt")}
+              hint={t("test.img.hint")}
+              closeLabel={t("test.run.back")}
+            />
+          ) : null}
           {q.prompt ? (
             <AppText color={arena.muted} style={{ fontSize: 14, lineHeight: 20 }}>
               {q.prompt}

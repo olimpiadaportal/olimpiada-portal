@@ -1345,3 +1345,78 @@ If anything doesn't match, tell me the **LL-#** + what you saw.
 - Review: All/Correct/Wrong/Skipped chips with counts, verdict-colored question cards, ✓/✗ option markers.
 
 If anything doesn't match, tell me the **MM-#** + what you saw.
+
+---
+
+# Stage M3.1 (2026-07-16) — mobile parity tail. Checks on Android/Expo Go.
+
+## NN1. Previous-day round replays (student, Tests tab)
+- Between today's subject cards and the history list: a "Previous Day's Rounds" section with the practice-only notice (replays never affect the leaderboard) and one Replay row per subject.
+- A subject whose round existed YESTERDAY: Replay opens the runner as UNTIMED practice (∞ pill + practice badge), same 25 questions as yesterday's round, repeatable any number of times; the result never changes points/streak/ranking.
+- A subject with NO round yesterday: an inline "yesterday's round doesn't exist" note appears on that row — no crash, no navigation.
+
+## NN2. Question images in the mobile runner and review
+- A question with an image (create one via admin if needed): the image renders between the question text and the options, in the runner AND in the review; tap → full-screen dark viewer, tap anywhere / X / Android back closes it.
+- Image-less questions render exactly as before; a broken image hides silently.
+
+## NN3. Maintenance mode reaches the phone fast (admin-controlled)
+- With the app OPEN in the foreground: flip maintenance ON in admin Settings → the maintenance screen appears within ~30 s (or instantly on re-foreground). Flip it OFF → the app exits maintenance within ~5–10 s on its own (it polls fast while the gate is up). Backgrounded app does not poll (battery-safe).
+
+## NN4. iOS pass (when you get a device)
+- Repeat NN1–NN3 plus a smoke of MM3–MM10 on iPhone; everything was built iOS-correct (safe areas, shadows, modals) but is untested on hardware.
+
+If anything doesn't match, tell me the **NN-#** + what you saw.
+
+---
+
+# Stage M4 (2026-07-16) — push, app-lock, launch pack + the two Android-test hotfixes. Checks on Android/Expo Go unless noted.
+
+## OO1. HOTFIX — student login works from a physical phone
+- Prereq: the web-app dev server is running on the PC (`npm run dev` in `web-app/`) and the phone is on the SAME Wi-Fi network. Restart the Expo dev server after pulling this change (the fix is in the compiled env module).
+- Student login (8-digit ID + parent password) now succeeds from the phone; registration from the phone works too. Parent login keeps working as before.
+- If it still fails: open `http://<PC-LAN-IP>:3000` in the phone's browser — if that doesn't load, Windows Firewall is blocking Node.js (allow it for private networks) or the phone is on a different network.
+
+## OO2. HOTFIX — notification filter chips
+- Notifications screen (parent AND student): the Hamısı / Elanlar / Olimpiadalar filters are now compact pill chips in one horizontal row (44px tall), not giant columns. The list starts right below them.
+
+## OO3. Biometric app-lock (opt-in)
+- Avatar → account sheet: a new SECURITY section with an "App lock" switch between APPEARANCE and SESSION. On a phone without fingerprint/PIN enrolled the switch is disabled with a hint.
+- Turning it ON asks for your fingerprint/PIN first; turning it OFF asks again (can't be disabled by someone else).
+- With lock ON: background the app for over a minute (or kill + reopen) → a branded lock screen covers the app; fingerprint/PIN unlocks it exactly where you left off; Android back does NOT bypass it; "Log out" on the lock screen works as an escape. A fresh login never lands on the lock screen.
+
+## OO4. Push notifications — Expo Go expectation vs real test
+- **In Expo Go on Android, receiving push is NOT possible** (Expo removed it in SDK 53+) — the app detects Expo Go and silently skips token registration; nothing breaks. In-app toasts/inbox/badge keep working via Realtime.
+- The REAL push test needs, in order: 1) `eas init` run once in `mobile-app/` (Expo account), 2) an Android development build (`eas build --profile development --platform android`) installed on the phone, 3) `EXPO_ACCESS_TOKEN` set in `web-app/.env.local`, 4) admin Settings → **notifications_push** flag ON, 5) the processor triggered (locally: `POST /api/notifications/process` with the `x-processor-key` header — exact steps in `mobile-app/markdowns/RELEASE_RUNBOOK.md` §4).
+- Then: admin composer → send an announcement with the "Mobil tətbiq" channel → the phone shows it (app closed or backgrounded); tapping it opens the right screen; a student session never opens parent-only targets.
+- Flag-off regression: with **notifications_push OFF**, a fresh login must create ZERO rows in `push_tokens` (Supabase table editor).
+
+## OO5. Web/admin regression (quick)
+- Web app still builds/works (the only web change is the notification processor + push sender — invisible in the UI).
+- Admin Settings: the **notifications_push** flag toggle and the Mobile App version page work as before (they now actually drive mobile push + the force-update gate).
+
+If anything doesn't match, tell me the **OO-#** + what you saw.
+
+---
+
+# Round 24 (2026-07-16) — notification tap-routing, live ticker, rating card, in-app info pages. Android/Expo Go + web.
+
+## PP1. Notification taps land on the RIGHT screen (mobile)
+- Parent inbox: tap an "Olimpiada paketi alındı" notification → the **Olympiads tab** (was: Home). Tap a subscription-cancel notification → Subscription tab.
+- Student inbox: tap an olympiad-purchase notification → student **Olympiads tab**; tap a graded-round notification → the actual **result screen** for that attempt (was: Tests tab).
+- A news-publish notification (publish any news in admin) → opens the actual **article** for both parent and student (was: bounced to Home).
+- Plain admin-composer announcements (no link) still open the detail sheet — unchanged and correct.
+
+## PP2. Student home — live ticker + rating card
+- The CANLI stats line now **scrolls continuously** (calm, seamless loop, same feel as the web arena); CANLI and BU GÜN stay highlighted. With Android "Remove animations" (accessibility) ON, it renders static — no motion.
+- The REYTINQ card labels never truncate ("SERIYA · REKORD 0" wraps instead of "REKO…") — check in az/en/ru.
+
+## PP3. In-app info pages (mobile)
+- Avatar → account sheet: new INFO section — About, FAQ, Contact (both roles) + **Pricing (parent only — students never see it, even via links)**. Each opens the page with a working back arrow returning into the app.
+- Parent profile's FAQ and Contact rows now actually open those pages (they used to bounce to Home).
+- The welcome/login/register screens still bounce signed-in users to their home — only the info pages opened up.
+
+## PP4. In-app info pages (web parity)
+- Parent panel: **About** in the footer (Home / About / FAQ / Contact); /help/about matches the public About (admin Site-Content edits apply). Parent /help/contact now shows the real admin-configured support email/phone.
+- Child arena: profile drawer gains About / FAQ / Contact rows (arena-themed pages, no pricing anywhere in the child panel).
+
+If anything doesn't match, tell me the **PP-#** + what you saw.

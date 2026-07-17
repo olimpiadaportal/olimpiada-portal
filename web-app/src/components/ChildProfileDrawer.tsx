@@ -71,6 +71,13 @@ export function ChildProfileDrawer({
     session?: string;
     themeLight?: string;
     themeDark?: string;
+    // Info-page rows (web parity with the mobile account sheet): section label
+    // + About / FAQ / Contact links into /child/help/*. Optional with catalog
+    // fallbacks so existing call sites keep compiling.
+    help?: string;
+    about?: string;
+    faq?: string;
+    contact?: string;
   };
 }) {
   const [open, setOpen] = useState(false);
@@ -86,6 +93,10 @@ export function ChildProfileDrawer({
     drawer.appearance ?? tf(["drawer2.appearance"], drawer.theme);
   const sessionLabel =
     drawer.session ?? tf(["drawer2.session"], SESSION_FALLBACK[locale] ?? "Session");
+  const helpLabel = drawer.help ?? tf(["nav.help"], "Help");
+  const aboutLabel = drawer.about ?? tf(["nav.about"], "About");
+  const faqLabel = drawer.faq ?? tf(["nav.faq"], "FAQ");
+  const contactLabel = drawer.contact ?? tf(["nav.contact"], "Contact");
 
   // Close on Escape; move focus into the panel when opened.
   useEffect(() => {
@@ -186,6 +197,81 @@ export function ChildProfileDrawer({
               <circle cx="12" cy="7" r="4" />
             </svg>
             <span>{drawer.profileBtn}</span>
+          </Link>
+        </div>
+
+        {/* Info pages (About / FAQ / Contact) — arena-shell routes so the
+            student never leaves the authed area; chevrons come from the
+            .drawer-link::after CSS (no inline chevron SVGs). */}
+        <div className="drawer-section">
+          <span className="drawer-section-label">{helpLabel}</span>
+          <Link
+            href="/child/help/about"
+            className="drawer-link"
+            onClick={() => setOpen(false)}
+          >
+            <svg
+              className="drawer2-row-ic"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4" />
+              <path d="M12 8h.01" />
+            </svg>
+            <span>{aboutLabel}</span>
+          </Link>
+          <Link
+            href="/child/help/faq"
+            className="drawer-link"
+            onClick={() => setOpen(false)}
+          >
+            <svg
+              className="drawer2-row-ic"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <path d="M12 17h.01" />
+            </svg>
+            <span>{faqLabel}</span>
+          </Link>
+          <Link
+            href="/child/help/contact"
+            className="drawer-link"
+            onClick={() => setOpen(false)}
+          >
+            <svg
+              className="drawer2-row-ic"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+            </svg>
+            <span>{contactLabel}</span>
           </Link>
         </div>
 

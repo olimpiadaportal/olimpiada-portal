@@ -3257,6 +3257,24 @@ ul.clean li {
   gap: 32px;
 }
 
+/* Arena token remap for the student help pages (/child/help/*): the shared
+   FAQ/contact/About surfaces are token-driven (--surface/--border/--text/…),
+   which the arena redefines only as --panel/--line/--ink. Map them here — the
+   exact .arena .ntf trick — so these pages follow the arena dark/light themes
+   AND every light palette (sky/bubblegum/mint/sunset/rainbow). --muted comes
+   from the .arena scope itself; --shadow stays inherited from the root
+   [data-theme] tokens (soft purple in light, deep in dark). */
+.arena .help-page,
+.arena .about2 {
+  --surface: var(--panel, #141d33);
+  --border: var(--line, #26314f);
+  --text: var(--ink, #eef3ff);
+  --chip-bg: var(--panel2, #1a2542);
+  --pill-bg: var(--panel2, #1a2542);
+  --accent: var(--blue, #2f6bff);
+  --accent-2: var(--gold, #ffc94d);
+}
+
 /* ==========================================================================
    ROUND4 PHASE4 — subscription cards + cancel modal + arena controls
    --------------------------------------------------------------------------

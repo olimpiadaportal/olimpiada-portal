@@ -198,6 +198,11 @@ export default async function ChildLayout({
                 session: t("drawer2.session"),
                 themeLight: t("drawer2.themeLight"),
                 themeDark: t("drawer2.themeDark"),
+                // Info-page rows → /child/help/* (About / FAQ / Contact).
+                help: t("nav.help"),
+                about: t("nav.about"),
+                faq: t("nav.faq"),
+                contact: t("nav.contact"),
               }}
             />
           </div>

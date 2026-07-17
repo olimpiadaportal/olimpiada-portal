@@ -200,8 +200,16 @@ export function CategoryChips({
     ...categories.map((c) => ({ value: c as string | null, label: labelFor(c) })),
   ];
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+    // flexGrow:0 kills the ScrollView's implicit flexGrow:1 (it would split the
+    // screen's free height with the list and stretch every chip to fill it);
+    // alignItems:"center" keeps chips at their natural 44px control height.
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ flexGrow: 0 }}
+      contentContainerStyle={{ alignItems: "center" }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
         {chips.map((c) => {
           const on = c.value === active;
           return (

@@ -15,6 +15,7 @@ import { AppText } from "@/components/AppText";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { publicStorageUrl } from "@/lib/data";
 import { useAttemptRow, useTestReview } from "./queries";
 import {
   LETTERS,
@@ -23,6 +24,7 @@ import {
   type ReviewState,
 } from "./logic";
 import type { ReviewQuestion } from "./types";
+import { QuestionImage } from "./QuestionImage";
 import {
   ArenaButton,
   BackBar,
@@ -289,6 +291,17 @@ function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
       <AppText color={arena.ink} style={{ fontSize: 16, lineHeight: 23 }}>
         {q.body ?? ""}
       </AppText>
+      {/* Question figure between body and options (web TestReviewList parity;
+          close label mirrors the web review: test.img.close). */}
+      {q.image?.bucket && q.image.path ? (
+        <QuestionImage
+          arena={arena}
+          url={publicStorageUrl(q.image.bucket, q.image.path)}
+          alt={t("test.img.alt")}
+          hint={t("test.img.hint")}
+          closeLabel={t("test.img.close")}
+        />
+      ) : null}
       {q.prompt ? (
         <AppText color={arena.muted} style={{ fontSize: 14, lineHeight: 20 }}>
           {q.prompt}

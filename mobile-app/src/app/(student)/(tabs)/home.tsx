@@ -6,8 +6,17 @@
 // and the recent-rounds strip. The old today's-rounds mirror and the news
 // mini panel are gone (rounds live on the Tests tab, news on the News tab).
 // Pull-to-refresh refetches everything.
-import React, { useState } from "react";
-import { Platform, Pressable, View, type DimensionValue } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  Animated,
+  Easing,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+  type DimensionValue,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { AppText } from "@/components/AppText";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
@@ -41,21 +50,133 @@ import {
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
-/** Ministat cell (web .arena-ministat: mono value over tiny uppercase key). */
+/** Ministat cell (web .arena-ministat: mono value over tiny uppercase key).
+ * The value stays one line; the label may wrap to 2 centered lines so long
+ * keys ("SERIYA · REKORD 0") never ellipsize on narrow phones. */
 function MiniStat({ value, label }: { value: string; label: string }) {
   const { arena } = useArena();
   return (
     <View style={{ flex: 1, alignItems: "center", gap: 2 }}>
-      <AppText color={arena.ink} style={{ fontFamily: MONO, fontSize: 20, fontWeight: "700" }}>
+      <AppText
+        color={arena.ink}
+        numberOfLines={1}
+        style={{ fontFamily: MONO, fontSize: 20, fontWeight: "700" }}
+      >
         {value}
       </AppText>
       <AppText
         color={arena.dim}
-        numberOfLines={1}
-        style={{ fontFamily: MONO, fontSize: 9, textTransform: "uppercase", letterSpacing: 1 }}
+        numberOfLines={2}
+        style={{
+          fontFamily: MONO,
+          fontSize: 9,
+          lineHeight: 12,
+          textTransform: "uppercase",
+          letterSpacing: 1,
+          textAlign: "center",
+        }}
       >
         {label}
       </AppText>
+    </View>
+  );
+}
+
+/** Marquee pace (px/s) — matches the web ticker's calm 28s linear loop. */
+const TICKER_SPEED = 35;
+
+/** Decorative live ticker (web .arena-ticker): the line rendered twice in a
+ * nowrap track, translateX 0 → -one-copy-width, linear, looped — a seamless
+ * auto-scroll. Reduce-motion renders the static single-line version instead.
+ * The horizontal ScrollView (scroll disabled) only lifts the width constraint
+ * so each copy measures its full single-line width; it also clips overflow. */
+function Ticker({ points, accuracy, rounds }: { points: number; accuracy: number; rounds: number }) {
+  const { arena } = useArena();
+  const { t } = useT();
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [runWidth, setRunWidth] = useState(0);
+  const shift = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    let live = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((v) => {
+        if (live) setReduceMotion(v);
+      })
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => {
+      live = false;
+      sub.remove();
+    };
+  }, []);
+
+  const stats = ` · ${t("arena.statPoints")} ${points} · ${t("arena.statAccuracy")} ${accuracy}% · ${t("arena.statRounds")} ${rounds} · `;
+
+  // A stat/locale change re-measures the copy (onLayout) and restarts the
+  // loop from 0 so the two copies never drift apart.
+  useEffect(() => {
+    if (reduceMotion || runWidth <= 0) return;
+    shift.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(shift, {
+        toValue: -runWidth,
+        duration: (runWidth / TICKER_SPEED) * 1000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [reduceMotion, runWidth, shift]);
+
+  const textStyle = { fontFamily: MONO, fontSize: 11, letterSpacing: 1 } as const;
+  // One copy of the line; tickerLive/tickerToday are lime bold (web <b>).
+  const run = (measure: boolean) => (
+    <AppText
+      color={arena.dim}
+      numberOfLines={1}
+      onLayout={measure ? (e) => setRunWidth(Math.ceil(e.nativeEvent.layout.width)) : undefined}
+      style={[textStyle, { flexShrink: 0 }]}
+    >
+      <AppText color={arena.lime} style={[textStyle, { fontWeight: "700" }]}>
+        {t("arena.tickerLive")}
+      </AppText>
+      {stats}
+      <AppText color={arena.lime} style={[textStyle, { fontWeight: "700" }]}>
+        {t("arena.tickerToday")}
+      </AppText>
+      {" · OlympIQ · "}
+    </AppText>
+  );
+
+  return (
+    <View
+      style={{
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: arena.line,
+        paddingVertical: spacing.sm,
+        overflow: "hidden",
+      }}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      {reduceMotion ? (
+        <AppText color={arena.dim} numberOfLines={1} style={textStyle}>
+          {t("arena.tickerLive")} · {t("arena.statPoints")} {points} · {t("arena.statAccuracy")}{" "}
+          {accuracy}% · {t("arena.statRounds")} {rounds} · {t("arena.tickerToday")} · OlympIQ
+        </AppText>
+      ) : (
+        <ScrollView horizontal scrollEnabled={false} showsHorizontalScrollIndicator={false}>
+          <Animated.View
+            style={{ flexDirection: "row", transform: [{ translateX: shift }] }}
+          >
+            {run(true)}
+            {run(false)}
+          </Animated.View>
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -297,25 +418,7 @@ export default function StudentArena() {
       ) : null}
 
       {/* ---- Ticker (decorative, web .arena-ticker) ---- */}
-      <View
-        style={{
-          borderTopWidth: 1,
-          borderBottomWidth: 1,
-          borderColor: arena.line,
-          paddingVertical: spacing.sm,
-        }}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      >
-        <AppText
-          color={arena.dim}
-          numberOfLines={1}
-          style={{ fontFamily: MONO, fontSize: 11, letterSpacing: 1 }}
-        >
-          {t("arena.tickerLive")} · {t("arena.statPoints")} {points} · {t("arena.statAccuracy")}{" "}
-          {accuracy}% · {t("arena.statRounds")} {roundsCount} · {t("arena.tickerToday")} · OlympIQ
-        </AppText>
-      </View>
+      <Ticker points={points} accuracy={accuracy} rounds={roundsCount} />
 
       {/* ---- Locked card (web .arena-locked, same trilingual texts) ---- */}
       {!access.hasAccess ? (

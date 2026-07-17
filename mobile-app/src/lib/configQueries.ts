@@ -2,6 +2,8 @@
 // maintenance/version/payment mode) and get_mobile_content() (CMS text
 // overrides). Both RPCs are anon-callable whitelist readers — the app never
 // touches feature_flags/system_settings/site_content directly.
+import { useSyncExternalStore } from "react";
+import { AppState } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 import { isSupabaseConfigured } from "./env";
@@ -9,12 +11,39 @@ import { parseMobileConfig, type MobileConfig } from "./mobileConfig";
 import type { Locale } from "@/i18n";
 
 const CONFIG_STALE_MS = 5 * 60_000;
+// M3.1 maintenance cadence (web ≤5s splash-poll parity, adapted to mobile):
+// while the app is FOREGROUNDED the config refetches every 30s so an admin
+// maintenance flip is noticed without a re-foreground; while the maintenance
+// gate is actually up (maintenance.on) it polls every 5s so the app exits
+// maintenance promptly when the admin turns it off. The interval is fully
+// disabled while the app is backgrounded (AppState gate below +
+// refetchIntervalInBackground:false); the boot fetch and the RootGate
+// foreground invalidation are unchanged.
+const ACTIVE_POLL_MS = 30_000;
+const MAINTENANCE_POLL_MS = 5_000;
+
+// Shared AppState mirror (one RN listener per subscriber, no re-render churn):
+// the refetch interval only runs while the app is active.
+function subscribeAppState(onChange: () => void): () => void {
+  const sub = AppState.addEventListener("change", onChange);
+  return () => sub.remove();
+}
+function isAppActive(): boolean {
+  return AppState.currentState === "active";
+}
 
 export function useMobileConfig() {
+  const appActive = useSyncExternalStore(subscribeAppState, isAppActive);
   return useQuery<MobileConfig>({
     queryKey: ["mobile-config"],
     enabled: isSupabaseConfigured,
     staleTime: CONFIG_STALE_MS,
+    // Foreground-only cadence: maintenance-on → 5s, otherwise 30s (see above).
+    refetchInterval: appActive
+      ? (query) =>
+          query.state.data?.maintenance.on ? MAINTENANCE_POLL_MS : ACTIVE_POLL_MS
+      : false,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("get_mobile_config");
       if (error) throw error;

@@ -1,11 +1,14 @@
 # Notifications — Mobile Integration Contract
 
-Status: the notification foundation is **implemented and mobile-ready** (DB engine
-migration `2026_07_07_042`). The mobile app (React Native + Expo) needs **no schema
-changes** to plug in: the in-app inbox/bell/prefs ship with the parent/student
-stages (M2/M3), and PUSH is wired at stage **M4** of
-`MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md`; it registers tokens and consumes
-the same RPCs the web app uses. This document is the exact contract.
+Status: **PUSH IS WIRED END-TO-END (M4, 2026-07-16)** on top of the notification
+foundation (DB engine migration `2026_07_07_042` — no schema changes were needed,
+exactly as this contract promised). Mobile: `mobile-app/src/features/push/`
+(flag-gated registration via `upsert_push_token`, logout own-row delete, allowlist
+tap routing). Web: `sendPushDelivery` in `web-app/src/lib/notifications/delivery.ts`
+(Expo Push API; `DeviceNotRegistered` → `is_valid=false`, failure-count retirement
+at 5) + the processor's Vercel-cron GET entrypoint. Ops: `mobile-app/markdowns/
+RELEASE_RUNBOOK.md` §4 (enable order: `EXPO_ACCESS_TOKEN` → trigger → flag ON).
+This document remains the exact contract.
 
 ## 1. What already exists (server side)
 

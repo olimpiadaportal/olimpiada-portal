@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/features/auth/authStore";
+import { setAppBadge } from "@/features/push/badge";
 
 export type NotificationItem = {
   id: string;
@@ -114,6 +115,14 @@ export function useNotifications(limit = PAGE_LIMIT) {
     acquireLive(profileId, refresh);
     return () => releaseLive(refresh);
   }, [profileId, refresh]);
+
+  // Keep the OS app-icon badge in step with the unread count (push sets it
+  // in the background; markAllRead/inbox-open clears it through this same
+  // effect). setAppBadge dedupes across the several mounted consumers.
+  useEffect(() => {
+    if (!profileId || unread.data === undefined) return;
+    void setAppBadge(unread.data);
+  }, [profileId, unread.data]);
 
   const markRead = useCallback(
     async (id: string) => {

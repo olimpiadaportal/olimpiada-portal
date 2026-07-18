@@ -91,6 +91,20 @@ describe("resolveDeepLink allowlist", () => {
     });
     // Children never see commerce — a student session must not open pricing.
     expect(resolveDeepLink("/pricing", "student")).toEqual({ kind: "mismatch" });
+    // The subjects catalog is informational (NOT commerce): open for everyone,
+    // students included.
+    expect(resolveDeepLink("/subjects", null)).toEqual({
+      kind: "open",
+      target: "/(public)/subjects",
+    });
+    expect(resolveDeepLink("/subjects", "parent")).toEqual({
+      kind: "open",
+      target: "/(public)/subjects",
+    });
+    expect(resolveDeepLink("/subjects", "student")).toEqual({
+      kind: "open",
+      target: "/(public)/subjects",
+    });
   });
 
   it("routes role links for the matching role", () => {
@@ -140,6 +154,25 @@ describe("resolveDeepLink allowlist", () => {
     });
     // The other role never opens it.
     expect(resolveDeepLink(`/child/test/result/${id}`, "parent")).toEqual({ kind: "mismatch" });
+  });
+
+  it("routes /leaderboard to the parent full-board screen", () => {
+    expect(resolveDeepLink("/leaderboard", "parent")).toEqual({
+      kind: "open",
+      target: "/(parent)/leaderboard",
+    });
+    // Signed out → deferred for the parent audience; a student session never
+    // opens the parent board (its own board keeps the /child/leaderboard rule).
+    expect(resolveDeepLink("/leaderboard", null)).toEqual({
+      kind: "deferred",
+      path: "/leaderboard",
+      audience: "parent",
+    });
+    expect(resolveDeepLink("/leaderboard", "student")).toEqual({ kind: "mismatch" });
+    expect(resolveDeepLink("/child/leaderboard", "student")).toEqual({
+      kind: "open",
+      target: "/(student)/(tabs)/ranking",
+    });
   });
 
   it("routes a child's olympiad page to the parent olympiads tab", () => {

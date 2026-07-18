@@ -60,6 +60,11 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "nav.accounts", href: "/accounts", adminOnly: true },
       { label: "nav.freeAccess", href: "/free-access", adminOnly: true },
+      // Per-subject subscription prices (week/month/year). Administrator-only —
+      // Content Managers must never reach pricing. The "nav.subscriptions"
+      // soon-placeholder below is a DIFFERENT future module (subscription
+      // monitoring), intentionally left untouched.
+      { label: "nav.pricing", href: "/pricing", adminOnly: true },
       { label: "nav.leaderboard", href: "/leaderboard", adminOnly: true },
       // Administrator-only (requires notifications.send, which only admins hold —
       // Content Managers never see or reach it, same posture as News/Olympiad).

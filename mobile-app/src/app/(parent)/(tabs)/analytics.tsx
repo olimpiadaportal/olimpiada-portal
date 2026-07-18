@@ -141,7 +141,11 @@ export default function ParentAnalytics() {
           lbQ.isPending ? (
             <Skeleton height={100} />
           ) : (
-            <LeaderboardPanel summary={(lbQ.data ?? null) as LbSummary | null} t={t} />
+            <LeaderboardPanel
+              summary={(lbQ.data ?? null) as LbSummary | null}
+              t={t}
+              onViewFull={() => router.push("/(parent)/leaderboard")}
+            />
           )
         ) : null}
       </View>

@@ -64,6 +64,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.lock.lockedTitle": "Tətbiq kilidlidir",
     "mob.lock.lockedBody": "Davam etmək üçün kimliyini təsdiqlə.",
     "mob.lock.unlock": "Kilidi aç",
+    "mob.plb.viewFull": "Tam reytinqə bax",
   },
   en: {
     "mob.welcome.tagline": "The most fun way to prepare for olympiads",
@@ -124,6 +125,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.lock.lockedTitle": "App is locked",
     "mob.lock.lockedBody": "Confirm your identity to continue.",
     "mob.lock.unlock": "Unlock",
+    "mob.plb.viewFull": "View full leaderboard",
   },
   ru: {
     "mob.welcome.tagline": "Самый увлекательный способ готовиться к олимпиадам",
@@ -184,5 +186,6 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.lock.lockedTitle": "Приложение заблокировано",
     "mob.lock.lockedBody": "Подтвердите личность, чтобы продолжить.",
     "mob.lock.unlock": "Разблокировать",
+    "mob.plb.viewFull": "Открыть полный рейтинг",
   },
 };

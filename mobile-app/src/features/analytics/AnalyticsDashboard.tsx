@@ -353,7 +353,16 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
 
 /* ---------------------------- leaderboard panel ---------------------------- */
 
-export function LeaderboardPanel({ summary, t }: { summary: LbSummary | null; t: T }) {
+export function LeaderboardPanel({
+  summary,
+  t,
+  onViewFull,
+}: {
+  summary: LbSummary | null;
+  t: T;
+  /** Opens the full parent leaderboard browser (SectionHeader action). */
+  onViewFull?: () => void;
+}) {
   const tiles = lbHasActivity(summary)
     ? [
         {
@@ -373,7 +382,12 @@ export function LeaderboardPanel({ summary, t }: { summary: LbSummary | null; t:
 
   return (
     <View style={{ gap: spacing.sm }}>
-      <SectionHeader title={t("plb.improvementTitle")} />
+      <SectionHeader
+        title={t("plb.improvementTitle")}
+        action={
+          onViewFull ? { label: t("mob.plb.viewFull"), onPress: onViewFull } : undefined
+        }
+      />
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("plb.improvementSub")}
       </AppText>

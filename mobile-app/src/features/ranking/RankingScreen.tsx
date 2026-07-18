@@ -15,21 +15,20 @@
 //   * self-row highlight + the sticky my-rank card, and the streak status card
 //     with at-risk urgency. Everything arena-palette-aware.
 import React, { useMemo, useState } from "react";
-import { Platform, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { AppText } from "@/components/AppText";
-import { Avatar } from "@/components/Avatar";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
-import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchActiveSubjects } from "@/lib/data";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { SelectField } from "@/features/profile/SelectField";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useArena } from "@/features/arena/useArena";
 import { ArenaChip, ArenaEyebrow, ArenaPanel, ArenaScroll } from "@/features/arena/ui";
+import { BoardRowList, MONO, lbFormatValue } from "./BoardList";
 import {
   fetchLeaderboard,
   fetchMyRank,
@@ -37,12 +36,9 @@ import {
   fetchStreakStatus,
   type Board,
   type LbArgs,
-  type LbRow,
   type PeriodUrl,
   type Scope,
 } from "./data";
-
-const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
 export function RankingScreen() {
   const { arena, theme } = useArena();
@@ -154,25 +150,6 @@ export function RankingScreen() {
     void meQ.refetch();
     if (board === "streak") void streakQ.refetch();
   };
-
-  const fmtValue = (v: number): string =>
-    board === "points" ? String(Math.round(Number(v))) : `${Number(v)} ${t("lb.days")}`;
-
-  // Context under the participant name, exactly what the web table shows
-  // (points: city/district/school/grade; streak: district only — its sole
-  // context column since migration 058).
-  const ctxOf = (r: LbRow): string =>
-    (board === "points"
-      ? [
-          r.city?.trim() || null,
-          r.district?.trim() || null,
-          r.school?.trim() || null,
-          r.grade_level != null ? formatGradeLabel(r.grade_level, locale) : null,
-        ]
-      : [r.district?.trim() || null]
-    )
-      .filter((p): p is string => !!p)
-      .join(" · ");
 
   const emptyKey =
     board === "streak" ? "lb.empty.streak" : periodUrl === "month" ? "lb.empty.month" : "lb.empty.all";
@@ -334,62 +311,21 @@ export function RankingScreen() {
             <EmptyState title={t(emptyKey)} />
           ) : (
             <ArenaPanel style={{ padding: spacing.sm, gap: 0 }}>
-              {rows.map((r, i) => {
-                const ctx = ctxOf(r);
-                const name = (r.display_name ?? "").trim() || "—";
-                return (
-                  <View
-                    key={`${r.rank}-${i}`}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: spacing.md,
-                      paddingVertical: spacing.md,
-                      paddingHorizontal: spacing.sm,
-                      borderRadius: radius.sm,
-                      backgroundColor: r.is_self ? arena.panel2 : "transparent",
-                      borderTopWidth: i === 0 ? 0 : 1,
-                      borderTopColor: arena.line,
-                    }}
-                  >
-                    <View style={{ width: 34, alignItems: "center" }}>
-                      <AppText
-                        color={r.rank <= 3 ? arena.lime : arena.muted}
-                        style={{
-                          fontFamily: MONO,
-                          fontVariant: ["tabular-nums"],
-                          fontWeight: r.rank <= 3 ? "900" : "400",
-                        }}
-                      >
-                        {String(r.rank)}
-                      </AppText>
-                    </View>
-                    <Avatar name={name} seed={r.is_self ? profileId : name} size={34} />
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <AppText variant="label" color={arena.ink} numberOfLines={1}>
-                        {name}
-                        {r.is_self ? (
-                          <AppText variant="label" color={arena.lime}>
-                            {" "}
-                            · {t("lb.you")}
-                          </AppText>
-                        ) : null}
-                      </AppText>
-                      {ctx ? (
-                        <AppText color={arena.dim} style={{ fontSize: 11 }} numberOfLines={1}>
-                          {ctx}
-                        </AppText>
-                      ) : null}
-                    </View>
-                    <AppText
-                      color={r.is_self ? arena.lime : arena.ink}
-                      style={{ fontFamily: MONO, fontVariant: ["tabular-nums"], fontWeight: "700" }}
-                    >
-                      {fmtValue(r.value)}
-                    </AppText>
-                  </View>
-                );
-              })}
+              <BoardRowList
+                rows={rows}
+                board={board}
+                t={t}
+                locale={locale}
+                selfSeed={profileId}
+                colors={{
+                  ink: arena.ink,
+                  muted: arena.muted,
+                  dim: arena.dim,
+                  line: arena.line,
+                  selfBg: arena.panel2,
+                  highlight: arena.lime,
+                }}
+              />
             </ArenaPanel>
           )}
         </ArenaScroll>
@@ -446,8 +382,8 @@ export function RankingScreen() {
           >
             {me
               ? board === "points"
-                ? `${Math.round(Number(me.value))} ${t("lb.pointsUnit")}`
-                : `${Number(me.value)} ${t("lb.days")}`
+                ? `${lbFormatValue(board, me.value, t)} ${t("lb.pointsUnit")}`
+                : lbFormatValue(board, me.value, t)
               : "—"}
           </AppText>
         </View>

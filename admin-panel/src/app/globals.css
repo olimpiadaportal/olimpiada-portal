@@ -2908,3 +2908,54 @@ a.qpage-link:hover {
     max-height: 46vh;
   }
 }
+
+/* Subscription pricing (/pricing): one form per subject × interval cell. */
+.pricing-table td {
+  vertical-align: top;
+}
+
+.pricing-subject {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.price-cell {
+  min-width: 200px;
+}
+
+.price-cell-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.price-input {
+  width: 96px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.price-input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.price-currency {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.price-cell-foot {
+  min-height: 18px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.price-not-set {
+  color: var(--muted);
+  font-size: 12px;
+}

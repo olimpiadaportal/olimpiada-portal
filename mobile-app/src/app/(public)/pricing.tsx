@@ -24,6 +24,7 @@ import {
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ListRow } from "@/components/ListRow";
 import { Segmented } from "@/components/Segmented";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -250,6 +251,16 @@ export default function Pricing() {
         <Card style={{ gap: spacing.sm }}>
           <AppText variant="label">{t("pricing2.sibling.title")}</AppText>
           <AppText variant="muted">{t("pricing2.sibling.body")}</AppText>
+        </Card>
+
+        {/* Subjects catalog cross-link (info surface, web /subjects parity). */}
+        <Card style={{ paddingVertical: spacing.sm }}>
+          <ListRow
+            icon={<BookOpen size={20} color={tokens.accent} strokeWidth={2} />}
+            title={t("nav.subjects")}
+            subtitle={t("subjects.lead")}
+            onPress={() => router.push("/(public)/subjects")}
+          />
         </Card>
 
         <AppText variant="muted" style={{ fontSize: 12 }}>

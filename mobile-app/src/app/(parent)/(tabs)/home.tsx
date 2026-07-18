@@ -5,10 +5,10 @@
 // quick actions) and the Add-Child CTA — a gradient hero card when the family
 // has no children yet, a compact section action otherwise.
 import React from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Flame, GraduationCap, Plus, UserRoundPlus } from "lucide-react-native";
+import { ChevronRight, Flame, GraduationCap, Plus, UserRoundPlus } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
@@ -146,11 +146,20 @@ function ChildCard({
         </AppText>
       ) : null}
 
-      {/* Leaderboard quick-look (flag-gated). */}
+      {/* Leaderboard quick-look (flag-gated) — taps open the full board. */}
       {leaderboardOn ? (
-        <View
-          accessibilityLabel={t("plb.title")}
-          style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${t("plb.title")}. ${t("mob.plb.viewFull")}`}
+          onPress={() => router.push("/(parent)/leaderboard")}
+          android_ripple={{ color: tokens.chipBg }}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: spacing.md,
+            minHeight: 32,
+            opacity: pressed ? 0.7 : 1,
+          })}
         >
           {lbRanked ? (
             <>
@@ -168,7 +177,9 @@ function ChildCard({
           ) : (
             <AppText variant="muted">{t("plb.notRankedShort")}</AppText>
           )}
-        </View>
+          <View style={{ flex: 1 }} />
+          <ChevronRight size={16} color={tokens.muted} strokeWidth={2} />
+        </Pressable>
       ) : null}
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>

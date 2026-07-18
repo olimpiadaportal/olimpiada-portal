@@ -6,6 +6,7 @@ import { IdleTimeout } from "@/components/IdleTimeout";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { getLocale, getT } from "@/i18n/server";
 import { localStrings as locationStrings } from "./locations/labels";
+import { localStrings as pricingStrings } from "./pricing/labels";
 
 export default async function ProtectedLayout({
   children,
@@ -15,12 +16,16 @@ export default async function ProtectedLayout({
   const locale = await getLocale();
 
   // Nav labels not yet in the shared dictionary fall back to the local
-  // trilingual locations strings (t() returns the key itself when missing) —
-  // currently just nav.locations (Round 21 merged Cities/Districts/Schools).
+  // trilingual module strings (t() returns the key itself when missing) —
+  // currently nav.locations (Round 21 merged Cities/Districts/Schools) and
+  // nav.pricing (subscription pricing).
   const ltLocations = locationStrings(locale);
+  const ltPricing = pricingStrings(locale);
   const navLabel = (key: string) => {
     const v = t(key);
-    return v === key ? ltLocations(key) : v;
+    if (v !== key) return v;
+    const l = ltLocations(key);
+    return l !== key ? l : ltPricing(key);
   };
 
   const roleLabel = ctx.isAdmin

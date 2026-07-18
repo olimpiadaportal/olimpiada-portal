@@ -1046,6 +1046,44 @@ select '68_notification_template_kind' as check_name,
              and has_function_privilege('anon','public.notify_template_kind(text)','EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
+-- 69) Attempt-graded notification trigger (migration 068): grading notifies
+--     from the DB so EVERY grading path (web action, mobile direct RPC, legacy
+--     practice) notifies exactly once. The trigger is attached to
+--     test_attempts on the -> 'graded' transition, references the DEFINER
+--     trigger fn, and the fn keeps web parity: the IDENTICAL idempotency key
+--     format ('attempt:' || new.id::text), the attempt_graded type, the
+--     result-page action_url and the progress category, all through
+--     create_notification.
+select '69_attempt_graded_trigger' as check_name,
+       case when exists (select 1 from pg_trigger
+                          where tgname='trg_notify_attempt_graded'
+                            and tgrelid='public.test_attempts'::regclass
+                            and tgfoid='public.notify_attempt_graded_tg()'::regprocedure)
+             and to_regprocedure('public.notify_attempt_graded_tg()') is not null
+             and position('''attempt:'' || new.id::text' in
+                   pg_get_functiondef('public.notify_attempt_graded_tg()'::regprocedure)) > 0
+             and position('attempt_graded' in
+                   pg_get_functiondef('public.notify_attempt_graded_tg()'::regprocedure)) > 0
+             and position('/child/test/result/' in
+                   pg_get_functiondef('public.notify_attempt_graded_tg()'::regprocedure)) > 0
+             and position('create_notification' in
+                   pg_get_functiondef('public.notify_attempt_graded_tg()'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 70) Admin subject pricing RPC (migration 069): the ONLY admin write path
+--     into subjects_pricing exists, anon can never execute it, and the body
+--     carries the Administrator-only guard (is_admin — content managers never
+--     pass) plus the audit_logs write.
+select '70_admin_subject_pricing' as check_name,
+       case when to_regprocedure('public.admin_upsert_subject_price(uuid,text,numeric)') is not null
+             and has_function_privilege('anon','public.admin_upsert_subject_price(uuid,text,numeric)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.admin_upsert_subject_price(uuid,text,numeric)','EXECUTE') = true
+             and position('is_admin' in
+                   pg_get_functiondef('public.admin_upsert_subject_price(uuid,text,numeric)'::regprocedure)) > 0
+             and position('audit_logs' in
+                   pg_get_functiondef('public.admin_upsert_subject_price(uuid,text,numeric)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

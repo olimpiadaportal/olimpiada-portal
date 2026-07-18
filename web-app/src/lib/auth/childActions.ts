@@ -1,7 +1,9 @@
 "use server";
 
 // Child-app server actions: login (8-digit ID + parent password → Stage-8
-// childLogin), logout, and practice/olympiad attempt start + grading.
+// childLogin), logout, and olympiad attempt start. (The legacy random-practice
+// actions and their PracticeRunner flow were removed — topic tests and daily
+// rounds on the shared timed player replaced them.)
 import { createHash } from "node:crypto";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -48,21 +50,6 @@ export async function childLogoutAction(): Promise<void> {
   redirect("/");
 }
 
-// Stage 13 — start a random 25-question practice attempt (server picks the
-// questions; difficulty is never chosen). The student RPC is owner-checked.
-export async function startPractice(formData: FormData): Promise<void> {
-  await requireChild();
-  const subjectId = String(formData.get("subject_id") ?? "");
-  if (!subjectId) redirect("/child");
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("start_practice_attempt", {
-    p_subject_id: subjectId,
-    p_count: 25,
-  });
-  if (error || !data) redirect("/child?practice=empty");
-  redirect(`/child/practice/${data}`);
-}
-
 // Stage 14 / migration 047 — child starts (or TRUE-resumes) a TIMED olympiad
 // attempt on a purchased package. The RPC now returns the test-engine jsonb
 // contract {attempt_id, resumed, deadline_at, duration_seconds, count} and the
@@ -92,38 +79,4 @@ export async function startOlympiad(formData: FormData): Promise<void> {
     redirect("/child/olympiads?err=1");
   }
   redirect(`/child/test/run/${d.attempt_id}${d.resumed ? "?resumed=1" : ""}`);
-}
-
-export type GradeState =
-  | {
-      ok: boolean;
-      score?: number;
-      max?: number;
-      results?: { question_id: string; is_correct: boolean }[];
-      error?: string;
-    }
-  | null;
-
-export async function gradePractice(
-  _prev: GradeState,
-  formData: FormData,
-): Promise<GradeState> {
-  await requireChild();
-  const attemptId = String(formData.get("attempt_id") ?? "");
-  let answers: unknown = [];
-  try {
-    answers = JSON.parse(String(formData.get("answers") ?? "[]"));
-  } catch {
-    return { ok: false, error: "bad" };
-  }
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("grade_practice_attempt", {
-    p_attempt_id: attemptId,
-    p_answers: answers,
-  });
-  // R7 security: no raw Postgres error text to the client (same generic marker
-  // the JSON-parse failure path uses).
-  if (error) return { ok: false, error: "bad" };
-  const d = data as { score: number; max: number; results: any[] };
-  return { ok: true, score: d.score, max: d.max, results: d.results };
 }

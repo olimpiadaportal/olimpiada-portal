@@ -7,8 +7,8 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 
 // Signed-in users are bounced only off the AUTH surfaces — the info screens
-// (about/faq/contact/pricing/news) stay reachable in-session (profile help
-// links, account-sheet INFO rows, /news/{slug} deep links all push them).
+// (about/subjects/faq/contact/pricing/news) stay reachable in-session (profile
+// help links, account-sheet INFO rows, /news/{slug} deep links all push them).
 const AUTH_SCREENS = ["welcome", "login", "register"];
 
 export default function PublicLayout() {

@@ -1776,6 +1776,100 @@ revoke all on function public.remove_subscription_subject(uuid, uuid) from publi
 grant execute on function public.remove_subscription_subject(uuid, uuid) to service_role;
 
 -- -----------------------------------------------------------------------------
+-- Admin subject pricing (migration 069): the ONLY admin write path into
+-- subjects_pricing (everything else is service-role only). Administrator-only
+-- via the in-body is_admin() guard (content managers never pass — pricing is
+-- an Admin-only module); validates subject/interval/amount server-side; the
+-- currency is never client-set; every change audits into audit_logs with the
+-- same shape the admin panel's writeAuditLog helper records.
+-- -----------------------------------------------------------------------------
+create or replace function public.admin_upsert_subject_price(
+  p_subject_id uuid,
+  p_interval   text,
+  p_amount     numeric
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor uuid := public.current_profile_id();
+  v_old   numeric(12,2);
+  v_new   numeric(12,2);
+  v_id    uuid;
+  v_cur   text;
+begin
+  -- Administrator ONLY — guard before reading/using any input. is_admin() is
+  -- has_role('administrator'); content managers (or any permission holder)
+  -- must NOT pass, so no has_permission() escape hatch here.
+  if not public.is_admin() then
+    raise exception 'pricing: forbidden' using errcode = 'insufficient_privilege';
+  end if;
+
+  if p_subject_id is null
+     or not exists (select 1 from public.subjects s where s.id = p_subject_id) then
+    raise exception 'pricing: unknown subject' using errcode = 'check_violation';
+  end if;
+  -- Whitelist = the public.plan_interval enum values used by subjects_pricing.
+  if p_interval is null or p_interval not in ('week', 'month', 'year') then
+    raise exception 'pricing: bad interval' using errcode = 'check_violation';
+  end if;
+  -- Finite, positive, sane cap, max 2 decimals (numeric NaN/Infinity compare
+  -- greater than any number → caught by the > 10000 branch; -Infinity by <= 0).
+  if p_amount is null or p_amount <= 0 or p_amount > 10000
+     or p_amount <> round(p_amount, 2) then
+    raise exception 'pricing: bad amount' using errcode = 'check_violation';
+  end if;
+  v_new := round(p_amount, 2);
+
+  select sp.price_amount into v_old
+  from public.subjects_pricing sp
+  where sp.subject_id = p_subject_id
+    and sp.interval = p_interval::public.plan_interval;
+
+  -- Upsert on the (subject_id, interval) unique key. Currency stays whatever
+  -- the row/system uses (default 'AZN' on insert; untouched on update).
+  insert into public.subjects_pricing (subject_id, interval, price_amount)
+  values (p_subject_id, p_interval::public.plan_interval, v_new)
+  on conflict (subject_id, interval)
+  do update set price_amount = excluded.price_amount, updated_at = now()
+  returning id, currency into v_id, v_cur;
+
+  -- Same audit mechanism the other Admin-only mutations use (audit_logs row,
+  -- small metadata diff — never large bodies, never credentials).
+  insert into public.audit_logs
+    (actor_profile_id, action, target_table, target_id, metadata_json, severity, success)
+  values
+    (v_actor, 'admin.pricing.subject_price_upsert', 'subjects_pricing', v_id,
+     jsonb_build_object(
+       'subject_id', p_subject_id,
+       'interval', p_interval,
+       'old_amount', v_old,
+       'new_amount', v_new),
+     'info', true);
+
+  return jsonb_build_object(
+    'id', v_id,
+    'subject_id', p_subject_id,
+    'interval', p_interval,
+    'old_amount', v_old,
+    'new_amount', v_new,
+    'currency', v_cur);
+end;
+$$;
+comment on function public.admin_upsert_subject_price(uuid, text, numeric) is
+  'Admin-only (in-body is_admin guard — content managers never pass) upsert of '
+  'one subjects_pricing row (subject × week|month|year). Validates subject/'
+  'interval/amount server-side, never touches currency, audits into audit_logs. '
+  'Migration 069.';
+
+-- Grants: same pattern as admin_send_notification — the in-body admin check
+-- gates authenticated callers; anon/public never execute.
+revoke all on function public.admin_upsert_subject_price(uuid, text, numeric) from public, anon;
+grant execute on function public.admin_upsert_subject_price(uuid, text, numeric) to authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
 -- Round 11 (migrations 2026_07_04_025 + 027): payment-mode exclusivity +
 -- free-access grants. Three payment modes exist as feature flags — payments
 -- (real/automatic), demo_payments, giveaway_period — and the DB guarantees at
@@ -4217,6 +4311,67 @@ create trigger trg_award_points_on_graded
   for each row
   when (new.status = 'graded' and old.status is distinct from new.status)
   execute function public.award_attempt_points_tg();
+
+-- Attempt-graded notification producer (migration 068). Lives in the DB so
+-- EVERY grading path notifies exactly once (web action, mobile direct RPC,
+-- result-page idempotent submit, legacy grade_practice_attempt) — the web-app
+-- emitter is retired. Mirrors the retired web emitter EXACTLY: recipient =
+-- the attempt's student, type 'attempt_graded', fixed az title/body with
+-- structured {attempt_id, score, max} in data_json (trim_scale renders
+-- numeric(8,2) like a JS Number), priority 5, in_app channel, category
+-- 'progress', action_url '/child/test/result/<id>' and the IDENTICAL
+-- idempotency key 'attempt:<attemptId>' so a duplicate producer can never
+-- double-insert. Failure-safe like the award trigger: a notification failure
+-- must never abort grading.
+create or replace function public.notify_attempt_graded_tg()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  -- Web-emitter parity: it only fired when submit returned finite score/max
+  -- (grading always sets both in the same UPDATE that flips status; belt and
+  -- braces for any exotic path that grades without a score).
+  if new.score is null or new.max_score is null then
+    return new;
+  end if;
+  begin
+    perform public.create_notification(
+      new.student_profile_id,
+      'attempt_graded',
+      'Nəticə hazırdır',
+      'Sınağın qiymətləndirildi: ' || trim_scale(new.score)::text
+        || '/' || trim_scale(new.max_score)::text || '.',
+      jsonb_build_object(
+        'attempt_id', new.id,
+        'score', trim_scale(new.score),
+        'max', trim_scale(new.max_score)),
+      '{in_app}',
+      'attempt:' || new.id::text,     -- EXACT web key format: attempt:<attemptId>
+      5,
+      '/child/test/result/' || new.id::text,
+      'progress',
+      null);
+  exception when others then
+    -- The inbox write must never break grading (mirrors award_attempt_points_tg).
+    raise warning 'notify_attempt_graded failed for attempt %: %', new.id, sqlerrm;
+  end;
+  return new;
+end;
+$$;
+comment on function public.notify_attempt_graded_tg() is
+  'DB producer of the attempt_graded notification (migration 068): fires on the '
+  '-> graded transition for EVERY grading path (web action, mobile RPC, legacy '
+  'practice). Same idempotency key (attempt:<id>) the retired web emitter used, '
+  'so a duplicate producer can never double-insert. Failure-safe: warnings only.';
+
+drop trigger if exists trg_notify_attempt_graded on public.test_attempts;
+create trigger trg_notify_attempt_graded
+  after update of status on public.test_attempts
+  for each row
+  when (new.status = 'graded' and old.status is distinct from new.status)
+  execute function public.notify_attempt_graded_tg();
 
 --
 

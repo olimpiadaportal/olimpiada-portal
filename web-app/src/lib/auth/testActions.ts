@@ -17,7 +17,6 @@ import { createClient } from "@/lib/supabase/server";
 import { requireChild } from "@/lib/auth/session";
 import { getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
-import { notifyAttemptGraded } from "@/lib/notifications/events";
 
 const PG_CHECK_VIOLATION = "23514";
 const PG_NO_DATA_FOUND = "P0002";
@@ -232,7 +231,7 @@ export async function submitTest(
   attemptId: string,
   answers: AnswerItem[],
 ): Promise<SubmitTestResult> {
-  const child = await requireChild();
+  await requireChild();
   const t = await getT();
 
   if (!isUuid(String(attemptId ?? ""))) return { ok: false, error: t("test.err.generic") };
@@ -240,7 +239,7 @@ export async function submitTest(
   if (clean === null) return { ok: false, error: t("test.err.generic") };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("submit_test_attempt", {
+  const { error } = await supabase.rpc("submit_test_attempt", {
     p_attempt_id: attemptId,
     p_answers: clean,
   });
@@ -250,21 +249,10 @@ export async function submitTest(
     return { ok: false, error: t("test.err.generic") };
   }
 
-  // Attempt graded → notify the child with their score (best-effort; the
-  // idempotency key dedupes an idempotent re-submit of an already-graded
-  // attempt, so this never double-notifies).
-  const result = (data ?? {}) as { score?: unknown; max?: unknown };
-  const score = Number(result.score);
-  const max = Number(result.max);
-  if (Number.isFinite(score) && Number.isFinite(max)) {
-    await notifyAttemptGraded({
-      studentProfileId: child.profileId,
-      attemptId,
-      score,
-      max,
-    });
-  }
-
+  // The "attempt graded" notification is produced by the DB trigger
+  // trg_notify_attempt_graded (migration 068) on the -> graded transition, so
+  // every grading path (web, mobile, result-page idempotent submit) notifies
+  // exactly once — no web emit here anymore.
   return { ok: true };
 }
 

@@ -1431,3 +1431,27 @@ If anything doesn't match, tell me the **PP-#** + what you saw.
 - The news TABS' own in-list reading experience is unchanged; signed-out users still see the public article page.
 
 If anything doesn't match, tell me the **QQ-#** + what you saw.
+
+---
+
+# Round 26 (2026-07-17) — audit-findings close: graded notifications everywhere, parent leaderboard on mobile, Subjects page, admin pricing editor.
+
+## RR1. "Graded" notification now fires from EVERY platform
+- Submit a test from the MOBILE app (any kind: topic test, rated round, replay, olympiad) → the student's inbox gets "Nəticə hazırdır" with a working link to that result (web already did this; now it comes from the database, so both platforms behave identically).
+- Submit one from the web → still exactly ONE notification (no duplicates).
+
+## RR2. Parent full leaderboard (mobile)
+- Parent app: Analytics tab → "view full leaderboard" action on the leaderboard panel (or tap the rank row on a child card on Home) → a full top-50 board with points|streak, month|all-time, and global/subject/grade/city/rayon/school scopes — same numbers as the web parent /leaderboard.
+- With 2+ children: child chips pick whose position card is shown; a child outside the current filter says so instead of showing nothing.
+
+## RR3. Subjects catalog (mobile)
+- Account sheet → INFO → Subjects (both roles), and a Subjects link card on the Pricing screen → the four-subject catalog page matching the web /subjects. Welcome/login remain untouched (minimal).
+
+## RR4. Admin subject-price editor
+- Admin panel (Administrator only — content managers must NOT see it): Operations → Pricing → table of active subjects × week/month/year AZN prices; edit a cell → save → the public pricing pages (web + mobile) show the new price; an audit row is written. Try an invalid value (0, negative, 3+ decimals, >10000) → rejected.
+- Note shown in UI: checkout always reprices server-side; existing subscriptions unaffected until change/renewal.
+
+## RR5. Web cleanup regression
+- Web child area works as before; the old hidden /child/practice/[id] route is gone (it had no entry points).
+
+If anything doesn't match, tell me the **RR-#** + what you saw.

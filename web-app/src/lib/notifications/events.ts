@@ -139,32 +139,13 @@ export async function notifyOlympiadPurchased(input: {
   });
 }
 
-/**
- * Test attempt graded → notify the child with their score. Idempotent per
- * attempt. Best-effort.
- */
-export async function notifyAttemptGraded(input: {
-  studentProfileId: string;
-  attemptId: string;
-  score: number;
-  max: number;
-}): Promise<void> {
-  await safeCreate({
-    recipient: input.studentProfileId,
-    type: "attempt_graded",
-    title: "Nəticə hazırdır",
-    body: `Sınağın qiymətləndirildi: ${input.score}/${input.max}.`,
-    data: {
-      attempt_id: input.attemptId,
-      score: input.score,
-      max: input.max,
-    },
-    idempotencyKey: `attempt:${input.attemptId}`,
-    priority: 5,
-    actionUrl: `/child/test/result/${input.attemptId}`,
-    category: "progress",
-  });
-}
+// NOTE: the former notifyAttemptGraded emitter was retired — grading now
+// notifies via the DB trigger trg_notify_attempt_graded (migration 068), which
+// mirrors its exact contract (type 'attempt_graded', az title/body,
+// {attempt_id, score, max} data, priority 5, category 'progress',
+// '/child/test/result/<id>' action URL and the identical 'attempt:<attemptId>'
+// idempotency key), so EVERY grading path — web action, mobile direct RPC,
+// result-page idempotent submit — notifies exactly once.
 
 /**
  * Subscription canceled by the parent → notify the parent. Idempotent per

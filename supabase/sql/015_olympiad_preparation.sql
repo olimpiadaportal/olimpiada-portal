@@ -215,26 +215,35 @@ create trigger trg_audit_olympiad_purchases
   after insert or update or delete on public.olympiad_purchases
   for each row execute function public.fn_audit_row();
 
--- Admin operational alert (migration 074): a new purchase notifies every admin.
--- Lives here (not 011) because olympiad_purchases is defined in this file.
-create or replace function public.notify_admin_new_purchase_tg()
+-- Package-published notification (migration 076): the package CREATOR (content
+-- manager / admin) is notified when their package goes live. Recipient-scoped
+-- (private), idempotent per package. Lives here because olympiad_packages +
+-- translations are defined in this file. (The R74 new-purchase admin alert was
+-- removed in 076 — admins are no longer auto-notified of every purchase.)
+create or replace function public.notify_package_published_tg()
 returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_title text;
 begin
   begin
-    perform public.notify_admins(
-      'admin_new_purchase', 'Yeni olimpiada alışı',
-      'Yeni olimpiada paketi alışı: ' || trim_scale(new.amount)::text || ' ' || coalesce(new.currency, 'AZN') || '.',
-      jsonb_build_object('purchase_id', new.id, 'package_id', new.olympiad_package_id,
-                         'amount', new.amount, 'currency', new.currency),
-      'admin:purchase:' || new.id::text, '/olympiad', 'admin', 3);
-  exception when others then raise warning 'notify_admin_new_purchase failed: %', sqlerrm;
+    if new.created_by is not null then
+      select coalesce(nullif(btrim(t.title), ''), 'Olimpiada paketi') into v_title
+        from public.olympiad_package_translations t
+        where t.olympiad_package_id = new.id and t.locale = 'az' limit 1;
+      perform public.create_notification(
+        new.created_by, 'olympiad_package_published', 'Paket dərc olundu',
+        '"' || coalesce(v_title, 'Olimpiada paketi') || '" paketi indi aktivdir.',
+        jsonb_build_object('package_id', new.id, 'title', v_title),
+        array['in_app'], 'pkgpub:' || new.id::text, 4, '/olympiad', 'admin', null);
+    end if;
+  exception when others then raise warning 'notify_package_published failed: %', sqlerrm;
   end;
   return new;
 end; $$;
-drop trigger if exists trg_notify_admin_new_purchase on public.olympiad_purchases;
-create trigger trg_notify_admin_new_purchase
-  after insert on public.olympiad_purchases
-  for each row execute function public.notify_admin_new_purchase_tg();
+drop trigger if exists trg_notify_package_published on public.olympiad_packages;
+create trigger trg_notify_package_published
+  after insert or update of status on public.olympiad_packages
+  for each row when (new.status = 'active')
+  execute function public.notify_package_published_tg();
 
 -- -----------------------------------------------------------------------------
 -- Baseline privileges (RLS gates rows). Pool + purchases are NOT anon-readable.

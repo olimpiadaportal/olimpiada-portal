@@ -74,12 +74,14 @@ export const NAV: NavGroup[] = [
         adminOnly: true,
         permission: "notifications.send",
       },
-      // Received operational alerts (the topbar bell's "see all" page) —
-      // admin-only, same posture as notifications.send above: only
-      // administrator profiles ever receive these rows. Local trilingual
-      // fallback (see the layout's navLabel chain) until messages.ts gains
-      // the key.
-      { label: "nav.alerts", href: "/alerts", adminOnly: true },
+      // The admin's own received-notifications page (the topbar bell's "see
+      // all" target) — route stays admin-only. A content manager can now also
+      // RECEIVE rows (the composer's "content_managers" audience), but reads
+      // them via the topbar bell dropdown only; this dedicated page is not
+      // yet opened up to them (nav item is filtered out for CM sessions).
+      // Local trilingual fallback (see the layout's navLabel chain) until
+      // messages.ts gains the key.
+      { label: "nav.alerts", href: "/alerts" },
       { label: "nav.audit", href: "/audit", adminOnly: true },
       { label: "nav.settings", href: "/settings", adminOnly: true },
       { label: "nav.siteContent", href: "/site-content", adminOnly: true },

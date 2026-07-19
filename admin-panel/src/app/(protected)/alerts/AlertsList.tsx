@@ -11,7 +11,7 @@ import { useAdminNotifications } from "@/lib/admin/useAdminNotifications";
 import {
   PAGE_LIMIT,
   iconForType,
-  isSafeRelativeUrl,
+  isAllowedAdminActionUrl,
   type NotificationItem,
 } from "@/lib/admin/notif-types";
 
@@ -20,11 +20,13 @@ export function AlertsList({
   initialUnread,
   locale,
   strings,
+  profileId,
 }: {
   initialItems: NotificationItem[];
   initialUnread: number;
   locale: string;
   strings: Record<string, string>;
+  profileId: string | null;
 }) {
   const s = (k: string) => strings[k] ?? k;
   const router = useRouter();
@@ -32,6 +34,7 @@ export function AlertsList({
     initialItems,
     initialUnread,
     limit: PAGE_LIMIT,
+    profileId,
   });
 
   const typeLabel = (type: string): string => {
@@ -55,7 +58,10 @@ export function AlertsList({
 
   const openItem = (n: NotificationItem) => {
     void markRead(n.id);
-    if (isSafeRelativeUrl(n.action_url)) router.push(n.action_url);
+    // Only navigate for a KNOWN admin-panel route (see notif-types.ts) — a
+    // safe-shaped but unknown path (e.g. a stray web-app deep link) is marked
+    // read only, so it can never send the admin to a 404.
+    if (isAllowedAdminActionUrl(n.action_url)) router.push(n.action_url);
   };
 
   return (
@@ -85,13 +91,13 @@ export function AlertsList({
               </span>
               <div
                 className="alert-body-col"
-                role={isSafeRelativeUrl(n.action_url) ? "button" : undefined}
-                tabIndex={isSafeRelativeUrl(n.action_url) ? 0 : undefined}
+                role={isAllowedAdminActionUrl(n.action_url) ? "button" : undefined}
+                tabIndex={isAllowedAdminActionUrl(n.action_url) ? 0 : undefined}
                 onClick={() => openItem(n)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") openItem(n);
                 }}
-                style={{ cursor: isSafeRelativeUrl(n.action_url) ? "pointer" : "default" }}
+                style={{ cursor: isAllowedAdminActionUrl(n.action_url) ? "pointer" : "default" }}
               >
                 <div className="alert-row-top">
                   <span className="alert-title">{n.title}</span>

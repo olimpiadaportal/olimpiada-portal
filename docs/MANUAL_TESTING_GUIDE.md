@@ -1536,3 +1536,22 @@ If anything doesn't match, tell me the **TT-#** + what you saw.
 - Test: register a new parent (or buy an olympiad) on the web app, then check the admin bell — a new alert appears within ~60s (or on opening the bell).
 
 If anything doesn't match, tell me the **UU-#** + what you saw.
+
+---
+
+# Round 30 (2026-07-19) — fix the admin notification leak + rescope admin notifications.
+
+## VV1. Admin bell no longer shows other people's notifications (the bug)
+- Log in as an administrator: the bell / Alerts page now shows ONLY notifications addressed to YOU. The student "result ready", parent "olympiad bought", etc. that leaked in before are GONE. Right now the bell may be empty/near-empty — that's correct; admins only get admin-directed notifications.
+- Nothing you click should 404 anymore.
+
+## VV2. Admins send notifications to admins (or content managers)
+- Admin → Notifications → Compose: the audience list now includes **Administrators** and **Content managers**. Send one to Administrators → every admin (including you) receives it in the bell. This is the intended admin-to-admin channel; these are private to that audience (a content manager never sees an admin-only send).
+
+## VV3. Content managers are notified when their package goes live
+- As a content manager (or admin) who CREATED an olympiad package: when that package's status becomes active (published), the creator gets a "Paket dərc olundu" notification naming the package, linking to the Olympiad admin page. Once per package.
+
+## VV4. (Reverted) no more auto ecosystem alerts to admins
+- Admins are NO LONGER auto-notified of every new parent / purchase / subscription (that was the R29 noise). Those counts are better shown on a dashboard (a future feature) — flagged in STATUS.
+
+If anything doesn't match, tell me the **VV-#** + what you saw.

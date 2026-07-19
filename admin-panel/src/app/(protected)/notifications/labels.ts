@@ -1,11 +1,13 @@
 import type { Locale } from "@/i18n/config";
 
-// Local trilingual strings for the Notifications composer's two NEW audiences
-// (all_users / olympiad_buyers) and the olympiad-package picker — not yet in
-// the shared dictionary (admin-panel/src/i18n/messages.ts). Mirrors the
-// cities/districts labels.ts pattern; these should be migrated into
-// messages.ts by the agent that owns admin message additions (reported in
-// followups).
+// Local trilingual strings for the Notifications composer's NEW audiences
+// (all_users / olympiad_buyers / administrators / content_managers — the
+// latter two are the staff audiences added by migration 076, letting admins
+// send notifications TO admins/content managers) and the olympiad-package
+// picker — not yet in the shared dictionary (admin-panel/src/i18n/messages.ts).
+// Mirrors the cities/districts labels.ts pattern; these should be migrated
+// into messages.ts by the agent that owns admin message additions (reported
+// in followups).
 
 type Dict = Record<string, string>;
 
@@ -13,6 +15,8 @@ const STRINGS: Record<Locale, Dict> = {
   az: {
     "ntfadmin.audience.all_users": "Bütün istifadəçilər",
     "ntfadmin.audience.olympiad_buyers": "Olimpiada paketlərini alanlar",
+    "ntfadmin.audience.administrators": "Administratorlar",
+    "ntfadmin.audience.content_managers": "Kontent menecerləri",
     "ntfadmin.pkg.label": "Olimpiada paketləri",
     "ntfadmin.pkg.search": "Paket axtar…",
     "ntfadmin.pkg.empty": "Aktiv olimpiada paketi tapılmadı.",
@@ -32,6 +36,8 @@ const STRINGS: Record<Locale, Dict> = {
   en: {
     "ntfadmin.audience.all_users": "All users",
     "ntfadmin.audience.olympiad_buyers": "Olympiad package buyers",
+    "ntfadmin.audience.administrators": "Administrators",
+    "ntfadmin.audience.content_managers": "Content managers",
     "ntfadmin.pkg.label": "Olympiad packages",
     "ntfadmin.pkg.search": "Search packages…",
     "ntfadmin.pkg.empty": "No active olympiad packages found.",
@@ -51,6 +57,8 @@ const STRINGS: Record<Locale, Dict> = {
   ru: {
     "ntfadmin.audience.all_users": "Все пользователи",
     "ntfadmin.audience.olympiad_buyers": "Купившие олимпиадные пакеты",
+    "ntfadmin.audience.administrators": "Администраторы",
+    "ntfadmin.audience.content_managers": "Контент-менеджеры",
     "ntfadmin.pkg.label": "Олимпиадные пакеты",
     "ntfadmin.pkg.search": "Поиск пакетов…",
     "ntfadmin.pkg.empty": "Активные олимпиадные пакеты не найдены.",

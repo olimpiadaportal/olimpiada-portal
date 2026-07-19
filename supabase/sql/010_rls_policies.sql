@@ -676,9 +676,12 @@ create policy "sibling_discounts_write" on public.sibling_discounts for all to a
 -- =============================================================================
 
 -- notifications: recipient read + mark-read; admin/notifier send.
+-- Migration 076: SELF-SCOPED only. The former `or is_admin()` let an admin
+-- session read EVERY user's notifications (leaked the whole system into the
+-- admin bell). Admins, like everyone, read only notifications addressed to them.
 drop policy if exists "notif_select" on public.notifications;
 create policy "notif_select" on public.notifications for select to authenticated
-  using (recipient_profile_id = public.current_profile_id() or public.is_admin());
+  using (recipient_profile_id = public.current_profile_id());
 drop policy if exists "notif_update" on public.notifications;
 create policy "notif_update" on public.notifications for update to authenticated
   using (recipient_profile_id = public.current_profile_id() or public.is_admin())

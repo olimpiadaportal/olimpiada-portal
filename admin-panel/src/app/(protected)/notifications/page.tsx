@@ -153,8 +153,9 @@ export default async function NotificationsPage() {
 
   // -------------------------------- strings --------------------------------
   const audienceLabels: Record<string, string> = {
-    // all_users / olympiad_buyers come from the LOCAL trilingual labels until
-    // messages.ts gains the ntfadmin.audience.* keys.
+    // all_users / olympiad_buyers / administrators / content_managers come
+    // from the LOCAL trilingual labels until messages.ts gains the
+    // ntfadmin.audience.* keys.
     all_users: lt("ntfadmin.audience.all_users"),
     all_parents: t("ntfadmin.audience.all_parents"),
     all_children: t("ntfadmin.audience.all_children"),
@@ -162,6 +163,8 @@ export default async function NotificationsPage() {
     parent: t("ntfadmin.audience.parent"),
     by_subject: t("ntfadmin.audience.by_subject"),
     individual: t("ntfadmin.audience.individual"),
+    administrators: lt("ntfadmin.audience.administrators"),
+    content_managers: lt("ntfadmin.audience.content_managers"),
   };
   const statusLabels: Record<string, string> = {
     draft: t("ntfadmin.status.draft"),
@@ -198,6 +201,8 @@ export default async function NotificationsPage() {
     audOlympiadBuyers: audienceLabels.olympiad_buyers,
     audParent: audienceLabels.parent,
     audBySubject: audienceLabels.by_subject,
+    audAdministrators: audienceLabels.administrators,
+    audContentManagers: audienceLabels.content_managers,
     subject: t("ntfadmin.composer.subject"),
     subjectChoose: t("ntfadmin.composer.subjectChoose"),
     pkgLabel: lt("ntfadmin.pkg.label"),

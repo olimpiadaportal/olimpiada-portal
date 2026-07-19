@@ -47,11 +47,12 @@ export default async function ProtectedLayout({
     return p !== key ? p : ltAlerts(key);
   };
 
-  // Admin notification bell — only administrators ever receive these
-  // operational alerts (admin_new_parent/admin_new_purchase/
-  // admin_new_subscription), but the snapshot read is harmless (and empty)
-  // for a Content Manager session too, so it is seeded for every panel user.
-  const notifSnapshot = await getAdminInboxSnapshot(BELL_LIMIT);
+  // Admin notification bell — reads ONLY the acting admin's own rows (RLS
+  // notif_select is self-scoped since migration 076, and getAdminInboxSnapshot
+  // adds an explicit recipient_profile_id filter on top as defense in depth).
+  // Content Managers can also receive staff-audience sends now (the composer's
+  // "content_managers" audience), so the snapshot is seeded for every panel user.
+  const notifSnapshot = await getAdminInboxSnapshot(BELL_LIMIT, ctx.profileId);
   const bellStrings: Record<string, string> = {};
   for (const k of BELL_STRING_KEYS) bellStrings[k] = ltAlerts(k);
 
@@ -96,6 +97,7 @@ export default async function ProtectedLayout({
               initialUnread={notifSnapshot.unread}
               seeAllHref="/alerts"
               strings={bellStrings}
+              profileId={ctx.profileId}
             />
             <span className="avatar" aria-hidden />
             <span>{ctx.email ?? "—"}</span>

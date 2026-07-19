@@ -82,13 +82,20 @@ tokens (flag-gated). No deploy needed.
 
 ### 4.1 Processor trigger
 
-- **Vercel (primary once deployed):** `web-app/vercel.json` schedules
-  `/api/notifications/process` every 5 minutes; set the `CRON_SECRET` env var in
-  Vercel — the route accepts the cron's `Authorization: Bearer` header. NOTE: Vercel
-  Hobby limits crons to once daily — on Hobby, use the external-cron option instead.
-- **External cron (works today, no deploy dependency):** any scheduler (e.g. a
-  cron-job service or pg_cron+pg_net once prod DB exists) POSTs to
+> **The `web-app/vercel.json` cron was REMOVED (2026-07-19).** It scheduled the
+> processor every 5 minutes, which the Vercel **Hobby** plan rejects (Hobby caps
+> crons at once-per-day) — so every web-app deployment FAILED at config
+> validation until the file was deleted. Re-add it ONLY on a Vercel **Pro** plan.
+> Until then, use the external-cron option below (this costs nothing today because
+> push/email are dormant — the processor has nothing to send yet).
+
+- **External cron (recommended on Hobby, works today):** any scheduler (e.g. a
+  free cron-job.org job, or pg_cron+pg_net once the prod DB exists) POSTs to
   `/api/notifications/process` with header `x-processor-key: $NOTIFICATIONS_PROCESSOR_KEY`.
+- **Vercel cron (Pro plan only):** re-create `web-app/vercel.json` with
+  `{"crons":[{"path":"/api/notifications/process","schedule":"*/5 * * * *"}]}` and
+  set `CRON_SECRET` in Vercel — the route's GET handler accepts the cron's
+  `Authorization: Bearer ${CRON_SECRET}`.
 - Local/dev: run the POST manually with the header against `http://localhost:3000`.
 
 ### 4.2 Token hygiene (automatic)

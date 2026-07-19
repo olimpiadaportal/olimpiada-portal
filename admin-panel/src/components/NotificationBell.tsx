@@ -1,11 +1,16 @@
 "use client";
 
-// Admin topbar notification bell — receives the operational alerts DB
-// producers address to this administrator's profile (admin_new_parent,
-// admin_new_purchase, admin_new_subscription; more may follow). Shows an
-// unread badge and a dropdown of the latest items; each row marks itself
-// read and, when it carries a safe same-origin action_url, navigates there
-// (e.g. /accounts, /olympiad). "See all" links to the full /alerts page.
+// Admin topbar notification bell — the caller's OWN notification inbox
+// (RLS notif_select is self-scoped since migration 076; the reads here also
+// carry an explicit recipient_profile_id filter, see notif-inbox.ts /
+// useAdminNotifications). Today that means: sends from the notification
+// composer's staff audiences (administrators / content_managers), and
+// olympiad_package_published for a package's creator. Shows an unread badge
+// and a dropdown of the latest items; each row marks itself read and, only
+// when its action_url is an ALLOWLISTED admin-panel route (isAllowedAdminActionUrl,
+// derived from nav.ts), navigates there (e.g. /accounts, /olympiad) — a
+// non-admin-panel deep link is marked read but never navigated to. "See all"
+// links to the full /alerts page.
 // Ported/simplified from web-app/src/components/NotificationBell.tsx: no
 // cross-tab store and no Realtime — see useAdminNotifications for why.
 import { useEffect, useRef, useState } from "react";
@@ -15,7 +20,7 @@ import { useAdminNotifications } from "@/lib/admin/useAdminNotifications";
 import {
   BELL_LIMIT,
   iconForType,
-  isSafeRelativeUrl,
+  isAllowedAdminActionUrl,
   relativeTime,
   type NotificationItem,
 } from "@/lib/admin/notif-types";
@@ -25,11 +30,13 @@ export function NotificationBell({
   initialUnread,
   seeAllHref,
   strings,
+  profileId,
 }: {
   initialItems: NotificationItem[];
   initialUnread: number;
   seeAllHref: string;
   strings: Record<string, string>;
+  profileId: string | null;
 }) {
   const s = (k: string) => strings[k] ?? k;
   const router = useRouter();
@@ -39,6 +46,7 @@ export function NotificationBell({
     initialItems,
     initialUnread,
     limit: BELL_LIMIT,
+    profileId,
   });
 
   const timeLabels = {
@@ -76,7 +84,11 @@ export function NotificationBell({
   const activate = (n: NotificationItem) => {
     void markRead(n.id);
     setOpen(false);
-    if (isSafeRelativeUrl(n.action_url)) router.push(n.action_url);
+    // Only ever navigate to a KNOWN admin-panel route (allowlisted from
+    // nav.ts) — a same-origin-relative action_url is not enough on its own,
+    // since a notification row could in principle carry a web-app deep link
+    // (e.g. a stray /child/... url) that 404s in this panel.
+    if (isAllowedAdminActionUrl(n.action_url)) router.push(n.action_url);
   };
 
   const badge = unread > 99 ? "99+" : String(unread);

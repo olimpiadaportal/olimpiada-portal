@@ -1,20 +1,21 @@
-import { requireAdmin } from "@/lib/admin/guards";
+import { requirePanelAccess } from "@/lib/admin/guards";
 import { getAdminInboxSnapshot } from "@/lib/admin/notif-inbox";
 import { PAGE_LIMIT } from "@/lib/admin/notif-types";
 import { getLocale } from "@/i18n/server";
 import { localStrings } from "./labels";
 import { AlertsList } from "./AlertsList";
 
-// Full received-alerts page (Administrator's own notification inbox) — the
-// bell dropdown's "see all" target. Only administrators receive these
-// operational events today (admin_new_parent/admin_new_purchase/
-// admin_new_subscription are addressed to administrator profiles only), so
-// this stays admin-only like the other operations-group pages.
+// The signed-in panel user's OWN received-notification inbox — the bell
+// dropdown's "see all" target. Open to any panel user (requirePanelAccess),
+// NOT admin-only: content managers legitimately receive staff sends + their
+// package-published alerts, and this page shows only the caller's own rows
+// (self-scoped RLS + the explicit recipient filter), so there is nothing
+// admin-private here.
 export default async function AlertsPage() {
-  await requireAdmin();
+  const ctx = await requirePanelAccess();
   const locale = await getLocale();
   const lt = localStrings(locale);
-  const { items, unread } = await getAdminInboxSnapshot(PAGE_LIMIT);
+  const { items, unread } = await getAdminInboxSnapshot(PAGE_LIMIT, ctx.profileId);
 
   const stringKeys = [
     "alerts.bell",
@@ -28,6 +29,7 @@ export default async function AlertsPage() {
     "alerts.type.admin_new_parent",
     "alerts.type.admin_new_purchase",
     "alerts.type.admin_new_subscription",
+    "alerts.type.olympiad_package_published",
     "alerts.type.default",
   ] as const;
   const strings: Record<string, string> = {};
@@ -44,6 +46,7 @@ export default async function AlertsPage() {
         initialUnread={unread}
         locale={locale}
         strings={strings}
+        profileId={ctx.profileId}
       />
     </div>
   );

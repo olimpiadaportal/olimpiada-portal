@@ -5212,6 +5212,15 @@ begin
       join public.subscription_subjects ss on ss.child_subscription_id = cs.id
       where ss.subject_id = (p_filter->>'subject_id')::uuid
         and cs.status in ('trialing','active');
+  elsif p_type = 'administrators' then
+    -- Migration 076: staff audiences for admin-directed sends.
+    return query
+      select prr.profile_id from public.profile_roles prr
+      join public.roles r on r.id = prr.role_id where r.code = 'administrator';
+  elsif p_type = 'content_managers' then
+    return query
+      select prr.profile_id from public.profile_roles prr
+      join public.roles r on r.id = prr.role_id where r.code = 'content_manager';
   end if;
 end;
 $$;
@@ -5320,7 +5329,8 @@ begin
     raise exception 'notify: title and body required' using errcode = 'check_violation';
   end if;
   if p_audience_type not in ('all_users','all_parents','all_children','olympiad_buyers',
-                             'parent','by_subject','individual') then
+                             'parent','by_subject','individual',
+                             'administrators','content_managers') then
     raise exception 'notify: bad audience' using errcode = 'check_violation';
   end if;
 
@@ -5568,92 +5578,16 @@ revoke all on function public.prune_notifications() from public, anon, authentic
 grant execute on function public.prune_notifications() to service_role;
 
 -- =============================================================================
--- Notification PRODUCERS (migration 074): admin operational alerts, student
--- progress milestones (personal_best + streak_milestone), and the pre-expiry /
--- giveaway-ending scanners. All service-role only; all wrap create_notification
--- so a notify failure never breaks the underlying action. The two scanners are
+-- Notification PRODUCERS (migration 074, revised by 076): student progress
+-- milestones (personal_best + streak_milestone) and the pre-expiry / giveaway-
+-- ending scanners. All service-role only; all wrap create_notification so a
+-- notify failure never breaks the underlying action. The two scanners are
 -- scheduled by 016 (guarded on pg_cron). subject_charge_failed stays UNWIRED
 -- (needs the real payment provider — see the payment backlog).
+-- The R29 admin operational-alert triggers (new parent/purchase/subscription)
+-- + notify_admins were REMOVED in 076 — admins now receive only notifications
+-- sent TO them (composer 'administrators' audience) + package-published alerts.
 -- =============================================================================
-create or replace function public.notify_admins(
-  p_type       text,
-  p_title      text,
-  p_body       text,
-  p_data       jsonb,
-  p_key_base   text,
-  p_action_url text,
-  p_category   text default 'admin',
-  p_priority   int default 3
-)
-returns int
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare v_admin uuid; v_n int := 0;
-begin
-  for v_admin in
-    select pr.profile_id
-    from public.profile_roles pr
-    join public.roles r on r.id = pr.role_id
-    where r.code = 'administrator'
-  loop
-    perform public.create_notification(
-      v_admin, p_type, p_title, p_body, coalesce(p_data, '{}'::jsonb),
-      array['in_app'], p_key_base || ':' || v_admin::text, p_priority,
-      p_action_url, p_category, null);
-    v_n := v_n + 1;
-  end loop;
-  return v_n;
-end;
-$$;
-revoke all on function public.notify_admins(text,text,text,jsonb,text,text,text,int) from public, anon, authenticated;
-grant execute on function public.notify_admins(text,text,text,jsonb,text,text,text,int) to service_role;
-
-create or replace function public.notify_admin_new_parent_tg()
-returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_name text;
-begin
-  begin
-    select coalesce(nullif(btrim(p.display_name), ''), 'Yeni valideyn')
-      into v_name from public.profiles p where p.id = new.profile_id;
-    perform public.notify_admins(
-      'admin_new_parent', 'Yeni valideyn qeydiyyatı',
-      v_name || ' platformada qeydiyyatdan keçdi.',
-      jsonb_build_object('parent_profile_id', new.profile_id),
-      'admin:newparent:' || new.profile_id::text, '/accounts', 'admin', 3);
-  exception when others then raise warning 'notify_admin_new_parent failed: %', sqlerrm;
-  end;
-  return new;
-end; $$;
-drop trigger if exists trg_notify_admin_new_parent on public.parents;
-create trigger trg_notify_admin_new_parent
-  after insert on public.parents
-  for each row execute function public.notify_admin_new_parent_tg();
-
--- NOTE: notify_admin_new_purchase_tg + its trigger live in canonical 015 —
--- olympiad_purchases is defined there (after this file in run order).
-
-create or replace function public.notify_admin_new_subscription_tg()
-returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
-begin
-  begin
-    perform public.notify_admins(
-      'admin_new_subscription', 'Yeni abunə',
-      'Bir uşaq üçün yeni abunə başladıldı (' || new.status || ').',
-      jsonb_build_object('subscription_id', new.id, 'student_profile_id', new.student_profile_id,
-                         'status', new.status),
-      'admin:sub:' || new.id::text, '/accounts', 'admin', 3);
-  exception when others then raise warning 'notify_admin_new_subscription failed: %', sqlerrm;
-  end;
-  return new;
-end; $$;
-drop trigger if exists trg_notify_admin_new_subscription on public.child_subscriptions;
-create trigger trg_notify_admin_new_subscription
-  after insert on public.child_subscriptions
-  for each row when (new.status in ('trialing','active'))
-  execute function public.notify_admin_new_subscription_tg();
-
 -- Student progress milestones — fires AFTER award_attempt_points on the same
 -- '→ graded' transition (name order: trg_award_* < trg_notify_progress_*).
 create or replace function public.notify_progress_milestones_tg()

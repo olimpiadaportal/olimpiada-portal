@@ -17,6 +17,9 @@ export function useAdminNotifications(opts: {
   initialItems: NotificationItem[];
   initialUnread: number;
   limit: number;
+  /** The acting admin/CM's own profiles.id — explicit belt-and-suspenders
+   *  filter on top of RLS (notif_select is self-scoped since migration 076). */
+  profileId: string | null;
 }) {
   const [items, setItems] = useState<NotificationItem[]>(opts.initialItems);
   const [unread, setUnread] = useState<number>(opts.initialUnread);
@@ -26,8 +29,12 @@ export function useAdminNotifications(opts: {
   itemsRef.current = items;
   const limitRef = useRef(opts.limit);
   limitRef.current = opts.limit;
+  const profileIdRef = useRef(opts.profileId);
+  profileIdRef.current = opts.profileId;
 
   const refresh = useCallback(async () => {
+    const profileId = profileIdRef.current;
+    if (!profileId) return;
     try {
       const supabase = createClient();
       const nowIso = new Date().toISOString();
@@ -35,6 +42,7 @@ export function useAdminNotifications(opts: {
         supabase
           .from("notifications")
           .select(NOTIFICATION_COLUMNS)
+          .eq("recipient_profile_id", profileId)
           .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
           .order("created_at", { ascending: false })
           .limit(limitRef.current),

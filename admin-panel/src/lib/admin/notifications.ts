@@ -40,6 +40,10 @@ const AUDIENCE_TYPES = new Set([
   "olympiad_buyers",
   "parent",
   "by_subject",
+  // Migration 076 staff audiences — send TO panel users (admin_send_notification /
+  // lb_notify_audience / get_notification_target_count already resolve these).
+  "administrators",
+  "content_managers",
 ]);
 // Hard cap on how many parents one "specific parent(s)" send may target.
 const PROFILE_IDS_MAX = 500;

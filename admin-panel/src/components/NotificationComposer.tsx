@@ -66,6 +66,8 @@ export type ComposerStrings = {
   audOlympiadBuyers: string;
   audParent: string;
   audBySubject: string;
+  audAdministrators: string;
+  audContentManagers: string;
   subject: string;
   subjectChoose: string;
   // Olympiad package picker (multi-select for the olympiad_buyers audience)
@@ -115,7 +117,9 @@ type AudienceType =
   | "all_children"
   | "olympiad_buyers"
   | "parent"
-  | "by_subject";
+  | "by_subject"
+  | "administrators"
+  | "content_managers";
 
 export function NotificationComposer({
   subjects,
@@ -499,7 +503,9 @@ function ComposerForm({
         <span>{strings.audience}</span>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {/* Fixed audience ORDER (owner-specified): all users, all parents,
-              all children, olympiad buyers, specific parent(s), by subject. */}
+              all children, olympiad buyers, specific parent(s), by subject —
+              plus the two staff audiences (migration 076) appended at the
+              end: administrators, content managers. */}
           {(
             [
               ["all_users", strings.audAllUsers],
@@ -508,6 +514,8 @@ function ComposerForm({
               ["olympiad_buyers", strings.audOlympiadBuyers],
               ["parent", strings.audParent],
               ["by_subject", strings.audBySubject],
+              ["administrators", strings.audAdministrators],
+              ["content_managers", strings.audContentManagers],
             ] as [AudienceType, string][]
           ).map(([value, label]) => (
             <label

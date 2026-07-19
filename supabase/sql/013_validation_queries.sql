@@ -1190,23 +1190,19 @@ select '73_audit_trigger_coverage' as check_name,
                                     'trg_audit_child_subscriptions'))
             then 'PASS' else 'FAIL' end as status;
 
--- 74) Notification producers (migration 074): admin-alert helper + the three
---     admin INSERT triggers, the progress-milestones trigger on test_attempts,
---     and the two cron scanner functions all exist and stay service-role only.
+-- 74) Notification producers (migration 074; revised by 076): the progress-
+--     milestones trigger + the two cron scanner functions exist and stay
+--     service-role only. The R74 admin operational-alert triggers + notify_admins
+--     were REMOVED in 076 — assert they are GONE (admins get self-scoped sends).
 select '74_notification_producers' as check_name,
-       case when to_regprocedure('public.notify_admins(text,text,text,jsonb,text,text,text,int)') is not null
-             and to_regprocedure('public.notify_expiring_subscriptions()') is not null
+       case when to_regprocedure('public.notify_expiring_subscriptions()') is not null
              and to_regprocedure('public.notify_giveaway_ending()') is not null
-             and has_function_privilege('anon','public.notify_admins(text,text,text,jsonb,text,text,text,int)','EXECUTE') = false
+             and to_regprocedure('public.notify_admins(text,text,text,jsonb,text,text,text,int)') is null
              and has_function_privilege('authenticated','public.notify_expiring_subscriptions()','EXECUTE') = false
              and exists (select 1 from pg_trigger where tgname='trg_notify_progress_milestones'
                           and tgrelid='public.test_attempts'::regclass)
-             and exists (select 1 from pg_trigger where tgname='trg_notify_admin_new_parent'
-                          and tgrelid='public.parents'::regclass)
-             and exists (select 1 from pg_trigger where tgname='trg_notify_admin_new_purchase'
-                          and tgrelid='public.olympiad_purchases'::regclass)
-             and exists (select 1 from pg_trigger where tgname='trg_notify_admin_new_subscription'
-                          and tgrelid='public.child_subscriptions'::regclass)
+             and not exists (select 1 from pg_trigger where tgname in
+                   ('trg_notify_admin_new_parent','trg_notify_admin_new_purchase','trg_notify_admin_new_subscription'))
             then 'PASS' else 'FAIL' end as status;
 
 -- 75) Contact map (migration 075): the precise-map setting is seeded and
@@ -1214,6 +1210,18 @@ select '74_notification_producers' as check_name,
 select '75_contact_map' as check_name,
        case when exists (select 1 from public.system_settings where key='contact.support_map_query')
              and (public.get_mobile_config()->'contact') ? 'map_query'
+            then 'PASS' else 'FAIL' end as status;
+
+-- 76) Admin notification scope (migration 076): notif_select is self-only (no
+--     is_admin leak), the staff audiences are wired into both the resolver and
+--     the composer whitelist, and the package-published trigger is attached.
+select '76_admin_notification_scope' as check_name,
+       case when (select position('is_admin' in pg_get_expr(polqual, polrelid)) = 0
+                    from pg_policy where polname='notif_select')
+             and position('administrators' in pg_get_functiondef('public.lb_notify_audience(text,jsonb)'::regprocedure)) > 0
+             and position('content_managers' in pg_get_functiondef('public.admin_send_notification(text,text,text[],text,jsonb,timestamptz,text,text)'::regprocedure)) > 0
+             and exists (select 1 from pg_trigger where tgname='trg_notify_package_published'
+                          and tgrelid='public.olympiad_packages'::regclass)
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

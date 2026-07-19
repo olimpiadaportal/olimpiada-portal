@@ -6,11 +6,19 @@
 // These are rows of the SAME public.notifications table the web-app inbox
 // reads (see web-app/src/lib/notifications/types.ts) — an admin's session
 // simply reads its OWN rows (notif_select RLS: recipient_profile_id =
-// current_profile_id()). Today the only producers targeting an administrator
-// profile are the operational events described in STATUS: admin_new_parent,
-// admin_new_purchase, admin_new_subscription (category "admin"), but this
-// stays open-ended (no hardcoded category filter) so future admin-facing
+// current_profile_id(), self-only since migration 076 — the pre-076
+// "OR is_admin()" hole that let any admin session read EVERY notification in
+// the system is closed). Migration 076 also dropped the R29 auto
+// operational-alert producers (admin_new_parent/admin_new_purchase/
+// admin_new_subscription — their triggers are gone, so no NEW rows of these
+// types are created; the type keys below stay mapped only so any pre-076 rows
+// still render with a sane icon/label). Current producers targeting an admin
+// or content-manager profile: (a) the notification composer's staff
+// audiences ("administrators" / "content_managers"), and (b)
+// olympiad_package_published, sent to a package's creator when it goes live.
+// This stays open-ended (no hardcoded category filter) so future admin-facing
 // notification types render with a sane default icon/label.
+import { NAV } from "@/lib/admin/nav";
 
 /** One in-app notification row as returned by the inbox select. */
 export type NotificationItem = {
@@ -37,12 +45,18 @@ export const PAGE_LIMIT = 50;
 /** Emoji glyph per notification type (falls back to the bell). */
 export function iconForType(type: string): string {
   switch (type) {
+    // Pre-076 legacy types — their producer triggers are gone (migration 076),
+    // so no new rows are created, but any surviving row still gets a sane icon.
     case "admin_new_parent":
       return "\u{1F464}"; // bust in silhouette (new parent registration)
     case "admin_new_purchase":
       return "\u{1F3C5}"; // medal (new olympiad purchase)
     case "admin_new_subscription":
       return "\u{1F4B3}"; // credit card (new subscription)
+    // Migration 076: sent to a package's creator (content manager or admin)
+    // when their olympiad package goes live.
+    case "olympiad_package_published":
+      return "\u{1F4E6}"; // package (olympiad package published)
     default:
       return "\u{1F514}"; // bell
   }
@@ -67,6 +81,39 @@ export function isSafeRelativeUrl(url: unknown): url is string {
     if (c < 0x21 || c === 0x7f) return false;
   }
   return true;
+}
+
+// Known admin-panel route path segments, derived from nav.ts hrefs (e.g.
+// "/manage/grades" contributes "manage" and "grades"; "/olympiad" contributes
+// "olympiad"). Built once at module load. Used by isAllowedAdminActionUrl to
+// stop a notification from navigating an admin session to a path this panel
+// doesn't serve (e.g. a stray web-app deep link like "/child/...", which is
+// exactly what caused the owner-reported "page not found" click).
+const ADMIN_ROUTE_SEGMENTS: ReadonlySet<string> = (() => {
+  const segs = new Set<string>();
+  for (const group of NAV) {
+    for (const item of group.items) {
+      if (!item.href) continue;
+      for (const seg of item.href.split("/")) {
+        if (seg) segs.add(seg);
+      }
+    }
+  }
+  return segs;
+})();
+
+/**
+ * A notification's action_url is only navigable when it is BOTH a safe
+ * same-origin relative path (isSafeRelativeUrl) AND its first path segment is
+ * a known admin-panel route (ADMIN_ROUTE_SEGMENTS). Anything else (unsafe
+ * shape, or safe-shaped but pointing outside this panel's routes) is
+ * rejected — the caller still marks the notification read, it just never
+ * navigates.
+ */
+export function isAllowedAdminActionUrl(url: unknown): url is string {
+  if (!isSafeRelativeUrl(url)) return false;
+  const firstSegment = url.slice(1).split(/[/?#]/, 1)[0];
+  return ADMIN_ROUTE_SEGMENTS.has(firstSegment);
 }
 
 /** Compact, locale-agnostic relative time using short unit strings. */

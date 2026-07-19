@@ -16,6 +16,7 @@ import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ChildAvatar } from "@/components/ChildAvatar";
 import { PasswordField, TextField } from "@/components/TextField";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing } from "@/theme/tokens";
@@ -23,9 +24,15 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchChildren, type ChildRow } from "@/lib/data";
+import { resolveChildAvatarSource } from "@/lib/childAvatar";
 import { supabase } from "@/lib/supabase";
 import { bffEditChild, bffResetChildPassword } from "@/lib/api";
 import { filterSchoolsByRayon, rayonsOfCity } from "@/features/parent/ChildInfoForm";
+import {
+  ChildAvatarPicker,
+  applyChildAvatarChoice,
+  type ChildAvatarChoice,
+} from "@/features/parent/ChildAvatarPicker";
 import {
   useCities,
   useCityDistricts,
@@ -38,6 +45,83 @@ import { SelectField, type SelectOption } from "@/features/profile/SelectField";
 type FieldErrors = Partial<
   Record<"first" | "last" | "city" | "district" | "school" | "grade", string>
 >;
+
+/** The saved students row → the picker's initial selection. */
+function initialAvatarChoice(child: ChildRow): ChildAvatarChoice {
+  const src = resolveChildAvatarSource(child);
+  if (src.type === "photo") return { kind: "photo", file: null, previewUri: null };
+  if (src.type === "preset") return { kind: "preset", key: src.key };
+  return { kind: "default" };
+}
+
+function choicesEqual(a: ChildAvatarChoice, b: ChildAvatarChoice): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "preset" && b.kind === "preset") return a.key === b.key;
+  if (a.kind === "photo" && b.kind === "photo") return a.file === b.file;
+  return true;
+}
+
+/** Avatar header + picker — applies each selection IMMEDIATELY through the
+ *  ownership-checked BFF (a failed apply rolls the selection back). */
+function AvatarEditor({ child }: { child: ChildRow }) {
+  const { t } = useT();
+  const { tokens } = useTheme();
+  const queryClient = useQueryClient();
+  const name =
+    [child.first_name, child.last_name].filter(Boolean).join(" ").trim() || "—";
+
+  const [choice, setChoice] = useState<ChildAvatarChoice>(() => initialAvatarChoice(child));
+  const [pending, setPending] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function apply(next: ChildAvatarChoice) {
+    if (pending || choicesEqual(next, choice)) return;
+    const prev = choice;
+    setChoice(next);
+    setSaved(false);
+    setError(null);
+    const req = applyChildAvatarChoice(child.profile_id, next);
+    if (!req) return; // the existing server photo — nothing to send
+    setPending(true);
+    const res = await req;
+    setPending(false);
+    if (!res.ok) {
+      setChoice(prev); // roll back — the server state did not change
+      setError(t(res.error));
+      return;
+    }
+    setSaved(true);
+    void queryClient.invalidateQueries({ queryKey: ["children"] });
+    void queryClient.invalidateQueries({ queryKey: ["parent", "children"] });
+  }
+
+  return (
+    <Card style={{ gap: spacing.md }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
+        <ChildAvatar row={child} name={name} seed={child.profile_id} size={64} />
+        <AppText variant="title" numberOfLines={1} style={{ flex: 1 }}>
+          {name}
+        </AppText>
+      </View>
+      <ChildAvatarPicker
+        value={choice}
+        onChange={(next) => void apply(next)}
+        childName={name}
+        seed={child.profile_id}
+        disabled={pending}
+        error={error}
+        existingPhotoRow={child}
+        t={t}
+      />
+      {saved && !pending && !error ? (
+        <AppText variant="muted" color={tokens.ok}>
+          {t("childedit.saved")}
+        </AppText>
+      ) : null}
+    </Card>
+  );
+}
 
 function EditForm({
   child,
@@ -173,6 +257,7 @@ function EditForm({
 
   return (
     <View style={{ gap: spacing.lg }}>
+      <AvatarEditor child={child} />
       <AppText variant="muted">{t("childedit.intro")}</AppText>
 
       <TextField

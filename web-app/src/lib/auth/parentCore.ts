@@ -13,6 +13,7 @@ import { getAdminClient } from "@/lib/supabase/admin";
 import { validateChildInfo } from "@/lib/auth/children";
 import { NAME_MAX } from "@/lib/auth/parentValidation";
 import { isUuid } from "@/lib/uuid";
+import { writeAuditLog } from "@/lib/audit";
 
 // Internal identifiers (child_unique_id, profile/DB ids) are NEVER editable
 // here — only the human-facing info a parent may correct.
@@ -164,6 +165,14 @@ export async function deleteParentAccountCore(params: {
     .select("profile_id")
     .eq("created_by_parent_profile_id", params.parentProfileId);
   const studentIds = (students ?? []).map((s: { profile_id: string }) => s.profile_id);
+
+  // Audit BEFORE the destructive cascade starts (the account/children rows
+  // won't exist to reference afterward).
+  await writeAuditLog(params.parentProfileId, "parent.account_delete", {
+    severity: "critical",
+    metadata: { children: studentIds.length },
+  });
+
   if (studentIds.length > 0) {
     const { data: creds } = await admin
       .from("child_credentials")

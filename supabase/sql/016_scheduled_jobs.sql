@@ -92,6 +92,17 @@ begin
     perform cron.schedule('olympiq_prune_notifications', '40 20 * * *',   -- 00:40 Asia/Baku
                           'select public.prune_notifications();');
     raise notice 'pg_cron jobs olympiq_dispatch_scheduled_notifications + olympiq_prune_notifications scheduled.';
+
+    -- Notification scanners (migration 074): warn parents ~3 days before a child
+    -- subscription lapses, and all parents in the final 2 days of a giveaway.
+    -- Both idempotent (keyed by period/window end), so a daily run never spams.
+    perform cron.unschedule(jobid) from cron.job where jobname = 'olympiq_notify_expiring_subscriptions';
+    perform cron.schedule('olympiq_notify_expiring_subscriptions', '0 4 * * *',
+                          'select public.notify_expiring_subscriptions();');
+    perform cron.unschedule(jobid) from cron.job where jobname = 'olympiq_notify_giveaway_ending';
+    perform cron.schedule('olympiq_notify_giveaway_ending', '30 4 * * *',
+                          'select public.notify_giveaway_ending();');
+    raise notice 'pg_cron jobs olympiq_notify_expiring_subscriptions + olympiq_notify_giveaway_ending scheduled.';
   else
     raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry / leaderboard rollover / notifications NOT scheduled (skipped safely).';
   end if;

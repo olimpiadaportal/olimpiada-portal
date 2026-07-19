@@ -1882,13 +1882,22 @@ a.qpage-link:hover {
 
 /* ============ ROUND 10 MERGE: governance.css ============ */
 /* Round 10 (F6) — Audit log entity filter row (src/app/(protected)/audit/page.tsx).
-   Mirrors .field select styling so the native select matches existing forms. */
+   Mirrors .field select styling so the native select matches existing forms.
+   Round 22: extended to a two-row filter bar (entity/action/severity/result/
+   scope + from/to/target) — same look, just more fields; input/date/button
+   rules added alongside the original select rule. */
 .audit2-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.audit-filter-row {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
 }
 
 .audit2-filter label {
@@ -1897,7 +1906,9 @@ a.qpage-link:hover {
   color: #334155;
 }
 
-.audit2-filter select {
+.audit2-filter select,
+.audit2-filter input[type="date"],
+.audit2-filter input[type="text"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 7px 10px;
@@ -1906,9 +1917,84 @@ a.qpage-link:hover {
   color: var(--text);
 }
 
-.audit2-filter select:focus {
+.audit2-filter select:focus,
+.audit2-filter input:focus {
   outline: 2px solid rgba(79, 70, 229, 0.35);
   border-color: var(--brand);
+}
+
+.audit-target-input {
+  min-width: 220px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+
+/* ---- Round 22 — Audit "what changed" expandable details -------------------
+   Native <details>/<summary> keeps the row a plain server-rendered cell (no
+   client component needed). Kept compact so a closed row looks identical to
+   the old fixed 6-column table. */
+.audit-details summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--brand);
+  list-style: none;
+}
+
+.audit-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.audit-details summary::before {
+  content: "▸ ";
+}
+
+.audit-details[open] summary::before {
+  content: "▾ ";
+}
+
+.audit-details-body {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  max-width: 480px;
+}
+
+.audit-details-empty,
+.audit-details-label {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.audit-details-label {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.audit-kv-list,
+.audit-diff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.audit-kv-list code,
+.audit-diff-list code {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.audit-diff-old {
+  color: var(--danger-fg, #dc2626);
+  text-decoration: line-through;
+}
+
+.audit-diff-new {
+  color: var(--ok-fg);
+  font-weight: 600;
 }
 
 
@@ -2958,4 +3044,243 @@ a.qpage-link:hover {
 .price-not-set {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* =========================================================================
+   Admin notification bell (topbar) + /alerts page — the admin's own inbox of
+   operational alerts (admin_new_parent / admin_new_purchase /
+   admin_new_subscription). Token-driven off the existing --surface/--border/
+   --text/--muted/--brand palette so it matches the rest of the panel in one
+   theme (no arena/dark-mode remap needed here — the admin panel has a single
+   professional theme).
+   ========================================================================= */
+.abell {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ---- Bell trigger + unread badge ---- */
+.abell-trigger {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  line-height: 0;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.abell-trigger:hover {
+  border-color: var(--brand);
+}
+.abell-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.64rem;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* ---- Dropdown ---- */
+.abell-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 70;
+  width: 340px;
+  max-width: 92vw;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.abell-menu-head,
+.abell-menu-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+}
+.abell-menu-head {
+  border-bottom: 1px solid var(--border);
+}
+.abell-menu-foot {
+  border-top: 1px solid var(--border);
+  justify-content: center;
+}
+.abell-menu-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.abell-linkbtn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--brand);
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 8px;
+}
+.abell-linkbtn:hover {
+  background: var(--bg);
+}
+
+/* ---- List + item (shared by the dropdown and the /alerts page rows) ---- */
+.abell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.abell-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.12s ease;
+}
+.abell-list li:last-child .abell-item {
+  border-bottom: none;
+}
+.abell-item:hover {
+  background: var(--bg);
+}
+.abell-item.unread {
+  background: rgba(79, 70, 229, 0.06);
+}
+.abell-ic {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--bg);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.abell-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.abell-item-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+.abell-item-text {
+  font-size: 0.81rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.abell-time {
+  font-size: 0.71rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.abell-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+/* ---- Empty state ---- */
+.abell-empty {
+  padding: 24px 16px;
+  text-align: center;
+}
+.abell-empty-title {
+  margin: 0;
+  font-weight: 700;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.abell-empty-hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* ---- /alerts page rows (reuses .card/.card-head/.pill/.btn-ghost) ---- */
+.alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.alert-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.alert-row:last-child {
+  border-bottom: none;
+}
+.alert-row.unread {
+  background: rgba(79, 70, 229, 0.05);
+}
+.alert-body-col {
+  flex: 1;
+  min-width: 0;
+}
+.alert-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.alert-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.alert-text {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.alert-time {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
 }

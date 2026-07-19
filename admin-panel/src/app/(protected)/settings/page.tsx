@@ -188,6 +188,59 @@ export default async function SettingsPage() {
       >
         {field("contact.support_email")}
         {field("contact.support_phone")}
+        {/* WhatsApp contact — rendered directly (academic-card pattern) so the
+            labels come from the LOCAL trilingual strings until messages.ts
+            gains settings.sys.support_whatsapp.*. Same typed editor +
+            updateSetting path as email/phone; empty hides the public row. */}
+        <SettingEditor
+          settingKey="contact.support_whatsapp"
+          kind="phone"
+          value={settingValue.get("contact.support_whatsapp")}
+          exists={settingValue.has("contact.support_whatsapp")}
+          localeOptions={LOCALE_OPTIONS}
+          placeholder={SETTING_META["contact.support_whatsapp"]?.placeholder}
+          strings={{
+            ...editorBase,
+            label: lt("settings.sys.support_whatsapp.label"),
+            help: lt("settings.sys.support_whatsapp.help"),
+          }}
+        />
+        {/* Support office address — same pattern as WhatsApp directly above:
+            free text (kind "text" = string ≤ 300 server-side), empty hides
+            the public row. Local trilingual labels until messages.ts gains
+            the reserved settings.sys.support_address.* keys. */}
+        <SettingEditor
+          settingKey="contact.support_address"
+          kind="text"
+          value={settingValue.get("contact.support_address")}
+          exists={settingValue.has("contact.support_address")}
+          localeOptions={LOCALE_OPTIONS}
+          placeholder={SETTING_META["contact.support_address"]?.placeholder}
+          strings={{
+            ...editorBase,
+            label: lt("settings.sys.support_address.label"),
+            help: lt("settings.sys.support_address.help"),
+          }}
+        />
+        {/* Precise map pin for the public sites' contact-page mini-map — same
+            pattern as Address directly above: free text (kind "text" =
+            string ≤ 300 server-side), empty leaves the map deriving its pin
+            from contact.support_address. Local trilingual labels until
+            messages.ts gains the reserved settings.sys.support_map_query.*
+            keys. */}
+        <SettingEditor
+          settingKey="contact.support_map_query"
+          kind="text"
+          value={settingValue.get("contact.support_map_query")}
+          exists={settingValue.has("contact.support_map_query")}
+          localeOptions={LOCALE_OPTIONS}
+          placeholder={SETTING_META["contact.support_map_query"]?.placeholder}
+          strings={{
+            ...editorBase,
+            label: lt("settings.sys.support_map_query.label"),
+            help: lt("settings.sys.support_map_query.help"),
+          }}
+        />
       </SettingCard>
 
       <SettingCard

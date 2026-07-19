@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPerSubjectPrices, type PlanInterval } from "@/lib/pricing";
+import { PublicOlympiadPackages } from "@/components/PublicOlympiadPackages";
 
 const PLANS: { key: "weekly" | "monthly" | "yearly"; interval: PlanInterval }[] = [
   { key: "weekly", interval: "week" },
@@ -9,7 +10,10 @@ const PLANS: { key: "weekly" | "monthly" | "yearly"; interval: PlanInterval }[] 
   { key: "yearly", interval: "year" },
 ];
 
-export default async function PricingPage() {
+// /services (canonical since the Services rename; /pricing 308-redirects here
+// via next.config.mjs). Currently the subject subscription plans; an olympiad
+// packages section is planned for this page.
+export default async function ServicesPage() {
   const t = await getT();
   // launch_promo flag gates the promotional/trial MESSAGING. The actual trial
   // behavior stays governed server-side by launch_promo_config (the RPCs).
@@ -89,6 +93,10 @@ export default async function PricingPage() {
       </aside>
 
       <p className="pricing-note">{t("pricing2.note")}</p>
+
+      {/* Active olympiad packages — the shared public band (same component as
+          the landing page section), below the subscription plans. */}
+      <PublicOlympiadPackages />
     </section>
   );
 }

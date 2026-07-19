@@ -18,8 +18,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
-import { Avatar } from "@/components/Avatar";
 import { Card } from "@/components/Card";
+import { ChildAvatar } from "@/components/ChildAvatar";
 import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, shadow, spacing } from "@/theme/tokens";
 import type { ChildRow } from "@/lib/data";
@@ -251,7 +251,7 @@ export function ChildChips({
               overflow: "hidden",
             })}
           >
-            <Avatar name={name} seed={c.profile_id} size={32} />
+            <ChildAvatar row={c} name={name} seed={c.profile_id} size={32} />
             <AppText variant="label" color={active ? "#ffffff" : tokens.chipText}>
               {name}
             </AppText>

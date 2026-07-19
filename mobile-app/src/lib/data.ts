@@ -15,6 +15,10 @@ export type ChildRow = {
   grade_id: string | null;
   district_id: string | null;
   school_id: string | null;
+  // Parent-managed avatar (preset/photo; ChildAvatar resolves the display).
+  avatar_kind: string | null;
+  avatar_key: string | null;
+  avatar_media_path: string | null;
   grade: { level: number; name: string } | null;
   district: { name: string } | null;
   school: { name: string } | null;
@@ -25,7 +29,7 @@ export async function fetchChildren(): Promise<ChildRow[]> {
   const { data, error } = await supabase
     .from("students")
     .select(
-      "profile_id, first_name, last_name, child_unique_id, access_status, grade_id, district_id, school_id, grade:grade_id(level, name), district:district_id(name), school:school_id(name)",
+      "profile_id, first_name, last_name, child_unique_id, access_status, grade_id, district_id, school_id, avatar_kind, avatar_key, avatar_media_path, grade:grade_id(level, name), district:district_id(name), school:school_id(name)",
     )
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -188,6 +192,10 @@ export type OlympiadPackageRow = {
   questions_per_attempt: number;
   duration_minutes: number;
   event_starts_at: string | null;
+  /** Sale window — RLS keeps off-sale rows visible ONLY to purchaser families;
+   *  outside [start, end] the card shows the "sales ended" chip, never Buy. */
+  sale_starts_at: string | null;
+  sale_ends_at: string | null;
   subject: { code: string | null; name: string } | null;
   grade: { level: number; name: string } | null;
   cover: { bucket: string; path: string } | null;
@@ -199,7 +207,7 @@ export async function fetchOlympiadCatalog(locale: Locale): Promise<OlympiadPack
   const { data, error } = await supabase
     .from("olympiad_packages")
     .select(
-      "id, price_amount, currency, questions_per_attempt, duration_minutes, event_starts_at, subject:subject_id(code, name), grade:grade_id(level, name), cover:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+      "id, price_amount, currency, questions_per_attempt, duration_minutes, event_starts_at, sale_starts_at, sale_ends_at, subject:subject_id(code, name), grade:grade_id(level, name), cover:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
     )
     .eq("status", "active")
     .order("event_starts_at", { ascending: true, nullsFirst: false });
@@ -218,6 +226,8 @@ export async function fetchOlympiadCatalog(locale: Locale): Promise<OlympiadPack
       questions_per_attempt: p.questions_per_attempt,
       duration_minutes: p.duration_minutes,
       event_starts_at: p.event_starts_at,
+      sale_starts_at: p.sale_starts_at ?? null,
+      sale_ends_at: p.sale_ends_at ?? null,
       subject: p.subject ?? null,
       grade: p.grade ?? null,
       cover: p.cover ?? null,
@@ -225,6 +235,37 @@ export async function fetchOlympiadCatalog(locale: Locale): Promise<OlympiadPack
       description: t?.description ?? "",
     };
   });
+}
+
+// ---- public olympiad packages (anon RPC — landing/services band) ---------------
+
+/** get_public_olympiad_packages() row: ONLY active + on-sale packages ever
+ *  return (server-filtered/ordered); en/ru text is already az-fallback. */
+export type PublicOlympiadPackage = {
+  id: string;
+  code: string | null;
+  title_az: string | null;
+  title_en: string | null;
+  title_ru: string | null;
+  description_az: string | null;
+  description_en: string | null;
+  description_ru: string | null;
+  price_amount: number | string | null;
+  currency: string | null;
+  subject_code: string | null;
+  subject_name: string | null;
+  grade_level: number | null;
+  grade_label: string | null;
+  sale_ends_at: string | null;
+  event_at: string | null;
+  question_count: number | null;
+};
+
+/** Anon-callable: works signed-out on the public services screen. */
+export async function fetchPublicOlympiadPackages(): Promise<PublicOlympiadPackage[]> {
+  const { data, error } = await supabase.rpc("get_public_olympiad_packages");
+  if (error) throw error;
+  return ((data ?? []) as PublicOlympiadPackage[]).filter((r) => !!r?.id);
 }
 
 /** Own purchases (RLS: owner parent / child / linked parent). */

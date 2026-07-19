@@ -18,6 +18,7 @@ import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
 import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { validateParentRegistration } from "@/lib/auth/parentValidation";
 import { rateLimitAllow } from "@/lib/rateLimit";
+import { writeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -113,10 +114,16 @@ export async function POST(request: Request): Promise<Response> {
 
     // Provision the parent role/row now (service role; valid pre-confirmation).
     const admin = getAdminClient();
-    await admin.rpc("setup_parent", {
+    const { data: parentProfileId } = await admin.rpc("setup_parent", {
       p_auth_user_id: signUp.user.id,
       p_display_name: displayName || null,
     });
+    // registerParent has no shared "core" (unlike the other mobile BFF
+    // routes) — this call is duplicated from the web action on purpose so
+    // mobile registration is audited too.
+    if (typeof parentProfileId === "string") {
+      await writeAuditLog(parentProfileId, "parent.register");
+    }
 
     // Persist the (already validated) phone on the profile. A failure here
     // must NOT fail registration — the auth user exists; the phone can be

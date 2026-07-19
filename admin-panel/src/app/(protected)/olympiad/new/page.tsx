@@ -54,6 +54,9 @@ export default async function NewOlympiadPage() {
             ...mergeLocalDict(fullDict, locale),
             "oly2.allQuestionsNote": lt("oly2.allQuestionsNote"),
             "oly2.err.creationOnly": lt("oly2.err.creationOnly"),
+            "oly2.saleStart": lt("oly2.saleStart"),
+            "oly2.saleEnd": lt("oly2.saleEnd"),
+            "oly2.saleHint": lt("oly2.saleHint"),
           }}
           subjects={((subjects ?? []) as any[]).map((s) => ({ value: s.id, label: s.name }))}
           grades={((grades ?? []) as any[]).map((g) => ({ value: g.id, label: g.name }))}

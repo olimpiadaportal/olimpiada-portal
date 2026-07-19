@@ -88,6 +88,13 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      // Services rename: /services is the canonical page; keep the old
+      // /pricing URL working forever (bookmarks, indexed links).
+      { source: "/pricing", destination: "/services", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

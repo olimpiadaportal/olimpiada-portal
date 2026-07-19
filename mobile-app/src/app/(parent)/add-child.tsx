@@ -37,6 +37,11 @@ import {
   type ChildInfo,
   type ChildInfoErrors,
 } from "@/features/parent/ChildInfoForm";
+import {
+  ChildAvatarPicker,
+  applyChildAvatarChoice,
+  type ChildAvatarChoice,
+} from "@/features/parent/ChildAvatarPicker";
 import { SubscribeFlow, type SubscribeStep } from "@/features/parent/SubscribeFlow";
 import { extractChildUniqueId, groupChildId, resolvePosture } from "@/features/parent/commerce";
 import {
@@ -86,6 +91,7 @@ export default function AddChildScreen() {
   const invalidate = useInvalidateParentData();
 
   const [info, setInfo] = useState<ChildInfo>(EMPTY_CHILD_INFO);
+  const [avatar, setAvatar] = useState<ChildAvatarChoice>({ kind: "default" });
   const [errors, setErrors] = useState<ChildInfoErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [studentProfileId, setStudentProfileId] = useState<string | null>(null);
@@ -163,6 +169,17 @@ export default function AddChildScreen() {
           return;
         }
         setStudentProfileId(sid);
+        // Avatar apply is BEST-EFFORT right after creation (the endpoint needs
+        // the new student id): a failed preset/photo write must NEVER block
+        // the wizard — the parent can retry from the Edit screen. "default"
+        // needs no call (it IS the created state).
+        if (avatar.kind !== "default") {
+          try {
+            await applyChildAvatarChoice(sid, avatar);
+          } catch {
+            // ignore — initials bubble stays until the parent retries in Edit
+          }
+        }
         invalidate();
       }
 
@@ -193,6 +210,7 @@ export default function AddChildScreen() {
 
   function resetForAnother() {
     setInfo(EMPTY_CHILD_INFO);
+    setAvatar({ kind: "default" });
     setErrors({});
     setServerError(null);
     setStudentProfileId(null);
@@ -226,6 +244,17 @@ export default function AddChildScreen() {
                 errors={errors}
                 disabled={pending}
               />
+
+              {/* Optional avatar choice — applied AFTER the child exists. */}
+              <Card style={{ gap: spacing.xs }}>
+                <ChildAvatarPicker
+                  value={avatar}
+                  onChange={setAvatar}
+                  childName={`${info.firstName.trim()} ${info.lastName.trim()}`.trim()}
+                  disabled={pending}
+                  t={t}
+                />
+              </Card>
 
               {/* Summary card — appears once every selection resolves. */}
               {summaryReady ? (

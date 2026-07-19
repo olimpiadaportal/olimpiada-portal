@@ -1,5 +1,6 @@
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { getLocale, getT } from "@/i18n/server";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { StickerThemePicker, type StickerThemeCard } from "@/components/StickerThemePicker";
@@ -22,6 +23,7 @@ export default async function ChildProfilePage() {
     .from("students")
     .select(
       "first_name, last_name, child_unique_id, palette, city, school_name, class_grade, " +
+        "avatar_kind, avatar_key, avatar_media_path, " +
         "grade:grade_id(name, level), district:district_id(name), school:school_id(name)",
     )
     .eq("profile_id", child.profileId)
@@ -44,20 +46,28 @@ export default async function ChildProfilePage() {
   const cityInfo = (s.district?.name ?? s.city ?? "").trim() || "—";
   const schoolInfo = (s.school?.name ?? s.school_name ?? "").trim() || "—";
 
-  // Avatar public URL (degrades to initials when none / on any read failure).
-  let avatarUrl: string | null = null;
-  try {
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("avatar_media_id, media_assets:avatar_media_id(bucket, path)")
-      .eq("id", child.profileId)
-      .maybeSingle();
-    const m = (prof as any)?.media_assets;
-    if (m?.bucket && m?.path) {
-      avatarUrl = supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
+  // Avatar URL (degrades to initials when none / on any read failure).
+  // Priority: the PARENT-SET avatar (photo → signed URL via the student's own
+  // session; preset → bundled PNG) wins over the legacy self-uploaded profile
+  // avatar (public bucket).
+  let avatarUrl: string | null = await resolveChildAvatarUrl(
+    supabase,
+    student as any,
+  );
+  if (!avatarUrl) {
+    try {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("avatar_media_id, media_assets:avatar_media_id(bucket, path)")
+        .eq("id", child.profileId)
+        .maybeSingle();
+      const m = (prof as any)?.media_assets;
+      if (m?.bucket && m?.path) {
+        avatarUrl = supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
+      }
+    } catch {
+      avatarUrl = null;
     }
-  } catch {
-    avatarUrl = null;
   }
 
   // Translated strings handed to the client profile component (no client i18n).

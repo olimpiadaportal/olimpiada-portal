@@ -1,13 +1,15 @@
-// Public Contact (web /contact parity, no map on mobile v1): support email and
-// phone come from the admin control plane (get_mobile_config contact.*), tap
-// opens mailto:/tel:. Social links render only when configured, open
-// externally, and must be http(s) — config values are display data, never
-// blindly-openable URLs.
+// Public Contact (web /contact parity, no in-app map on mobile v1): support
+// email and phone come from the admin control plane (get_mobile_config
+// contact.*), tap opens mailto:/tel:. The address row taps out to the
+// device's maps app (contact.map_query when the admin set one, else the raw
+// address) — never renders a map inline. Social links render only when
+// configured, open externally, and must be http(s) — config values are
+// display data, never blindly-openable URLs.
 import React from "react";
 import { Linking, Pressable, ScrollView, View } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Mail, MapPin, Phone } from "lucide-react-native";
+import { Mail, MapPin, MessageCircle, Phone } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
 import { ListRow } from "@/components/ListRow";
@@ -36,6 +38,18 @@ export default function Contact() {
 
   const email = config.data?.contact.email ?? "";
   const phone = config.data?.contact.phone ?? "";
+  // Admin-set WhatsApp number (empty default = row hidden); the wa.me link
+  // wants digits only, the row shows the number as entered.
+  const whatsapp = config.data?.contact.whatsapp ?? "";
+  const whatsappDigits = whatsapp.replace(/\D/g, "");
+  // Admin-set support address (empty default = row hidden), same pattern as
+  // WhatsApp — mirrors web's ContactInfo behavior of hiding an unset setting.
+  const address = config.data?.contact.address ?? "";
+  // Admin-set precise map query ("lat,lng" or a place string) wins over the
+  // free-text address for the maps deep link; falls back to the address when
+  // unset. No map on mobile v1 — tapping just opens the device's maps app.
+  const mapQuery = config.data?.contact.mapQuery ?? "";
+  const mapsTarget = mapQuery || address;
   const socials = SOCIALS.map((s) => ({
     ...s,
     url: config.data?.social[s.key] ?? "",
@@ -96,11 +110,30 @@ export default function Contact() {
                 onPress={() => void Linking.openURL(`tel:${phone.replace(/\s+/g, "")}`)}
               />
             ) : null}
-            <ListRow
-              icon={<MapPin size={20} color={tokens.accent} strokeWidth={2} />}
-              title={t("contact.address")}
-              subtitle={t("contact.addressValue")}
-            />
+            {whatsapp && whatsappDigits ? (
+              <ListRow
+                icon={<MessageCircle size={20} color={tokens.accent} strokeWidth={2} />}
+                title={t("contact.whatsappLabel")}
+                subtitle={whatsapp}
+                onPress={() => void Linking.openURL(`https://wa.me/${whatsappDigits}`)}
+              />
+            ) : null}
+            {address ? (
+              <ListRow
+                icon={<MapPin size={20} color={tokens.accent} strokeWidth={2} />}
+                title={t("contact.address")}
+                subtitle={address}
+                accessibilityLabel={mapsTarget ? t("mob.contact.openMaps") : undefined}
+                onPress={
+                  mapsTarget
+                    ? () =>
+                        void Linking.openURL(
+                          `https://www.google.com/maps?q=${encodeURIComponent(mapsTarget)}`,
+                        )
+                    : undefined
+                }
+              />
+            ) : null}
             <AppText variant="muted">{t("contact.shortNote")}</AppText>
           </Card>
         )}

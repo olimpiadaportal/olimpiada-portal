@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
+import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
+import {
+  olympiadLifecycleState,
+  lifecyclePillClass,
+} from "@/lib/admin/olympiad-lifecycle";
 
 // Round 10 — server-side list filters (status + subject selects, debounced
 // title search over olympiad_package_translations) + F4 aligned-table fix
@@ -21,10 +26,6 @@ function first(sp: SearchParams, key: string): string {
   return "";
 }
 
-function pill(s: string): string {
-  return s === "active" ? "pill-ok" : s === "archived" ? "pill-warn" : "pill-muted";
-}
-
 export default async function OlympiadListPage({
   searchParams,
 }: {
@@ -32,6 +33,7 @@ export default async function OlympiadListPage({
 }) {
   await requireAdmin();
   const t = await getT();
+  const lt = olympiadLocalStrings(await getLocale());
   const supabase = await createClient();
   const sp = await searchParams;
 
@@ -68,7 +70,7 @@ export default async function OlympiadListPage({
     let qb = supabase
       .from("olympiad_packages")
       .select(
-        "id, status, price_amount, subjects(name), olympiad_package_translations(locale, title)",
+        "id, status, price_amount, sale_starts_at, sale_ends_at, subjects(name), olympiad_package_translations(locale, title)",
       );
     if (searchIds) qb = qb.in("id", searchIds);
     if (subject) qb = qb.eq("subject_id", subject);
@@ -88,6 +90,12 @@ export default async function OlympiadListPage({
     (r.olympiad_package_translations ?? []).find((x: any) => x.locale === "az")?.title ?? "—";
 
   const hasFilters = Boolean(q || subject || status);
+
+  // Derived lifecycle chip (Archived / Scheduled / Active / Expired), computed
+  // ONCE against server time — the client clock is never trusted. Note: the
+  // list intentionally shows ALL packages (admins read everything via RLS);
+  // no status/date filter is applied unless the admin picks one above.
+  const now = Date.now();
 
   return (
     <div className="page">
@@ -148,15 +156,29 @@ export default async function OlympiadListPage({
                   </td>
                 </tr>
               )}
-              {list.map((r) => (
-                <tr key={r.id}>
-                  <td>{az(r)}</td>
-                  <td>{r.subjects?.name ?? "—"}</td>
-                  <td className="nowrap">{r.price_amount} AZN</td>
-                  <td className="nowrap"><span className={`pill ${pill(r.status)}`}>{t(`oly2.status.${r.status}`)}</span></td>
-                  <td className="row-actions nowrap"><Link href={`/olympiad/${r.id}/edit`}>{t("action.edit")}</Link></td>
-                </tr>
-              ))}
+              {list.map((r) => {
+                const state = olympiadLifecycleState(
+                  {
+                    status: String(r.status),
+                    sale_starts_at: r.sale_starts_at ?? null,
+                    sale_ends_at: r.sale_ends_at ?? null,
+                  },
+                  now,
+                );
+                return (
+                  <tr key={r.id}>
+                    <td>{az(r)}</td>
+                    <td>{r.subjects?.name ?? "—"}</td>
+                    <td className="nowrap">{r.price_amount} AZN</td>
+                    <td className="nowrap">
+                      <span className={`pill ${lifecyclePillClass(state)}`}>
+                        {lt(`oly2.state.${state}`)}
+                      </span>
+                    </td>
+                    <td className="row-actions nowrap"><Link href={`/olympiad/${r.id}/edit`}>{t("action.edit")}</Link></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

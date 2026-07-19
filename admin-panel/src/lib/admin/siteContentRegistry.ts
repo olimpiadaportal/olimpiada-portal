@@ -216,10 +216,13 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     defaults: { az: "Fənlər", en: "Subjects", ru: "Предметы" },
   },
   {
+    // Services rename (investor round): the key id stays `nav.pricing` for
+    // stability; only the label VALUES changed (the page now lives at
+    // /services with a permanent /pricing redirect).
     key: "nav.pricing",
     section: "landing",
     menu: "nav",
-    defaults: { az: "Qiymətlər", en: "Pricing", ru: "Цены" },
+    defaults: { az: "Xidmətlər", en: "Services", ru: "Услуги" },
   },
   {
     key: "nav.olympiad",
@@ -372,9 +375,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     section: "landing",
     menu: "faq",
     defaults: {
-      az: "Uşağın hesabını kim yaradır?",
-      en: "Who creates the child's account?",
-      ru: "Кто создаёт аккаунт ребёнка?",
+      az: "Şagirdin hesabını kim yaradır?",
+      en: "Who creates the student's account?",
+      ru: "Кто создаёт аккаунт ученика?",
     },
   },
   {
@@ -383,9 +386,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     menu: "faq",
     multiline: true,
     defaults: {
-      az: "Yalnız valideyn. Qeydiyyatdan sonra valideyn hər uşağı əlavə edir və parol təyin edir; sistem uşağın daxil olması üçün unikal 8 rəqəmli ID verir.",
-      en: "Only a parent. After registering, a parent adds each child and sets a password; the system issues a unique 8-digit ID the child uses to log in.",
-      ru: "Только родитель. После регистрации родитель добавляет каждого ребёнка и задаёт пароль; система выдаёт уникальный 8-значный ID для входа.",
+      az: "Yalnız valideyn. Qeydiyyatdan sonra valideyn hər uşağı əlavə edir və parol təyin edir. Sistem uşağın daxil olması üçün unikal 8 rəqəmli ID verir.",
+      en: "Only the parent. After registering, the parent adds each child and sets a password. The system issues a unique 8-digit ID the student uses to log in.",
+      ru: "Только родитель. После регистрации родитель добавляет каждого ребёнка и задаёт пароль. Система выдаёт уникальный 8-значный ID, по которому ученик входит в систему.",
     },
   },
   {
@@ -393,9 +396,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     section: "landing",
     menu: "faq",
     defaults: {
-      az: "Uşaqlar necə daxil olur?",
-      en: "How do children log in?",
-      ru: "Как дети входят в систему?",
+      az: "Şagirdlər necə daxil olur?",
+      en: "How do students log in?",
+      ru: "Как ученики входят в систему?",
     },
   },
   {
@@ -404,9 +407,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     menu: "faq",
     multiline: true,
     defaults: {
-      az: "8 rəqəmli ID və valideynin təyin etdiyi parolla — e-poçt tələb olunmur.",
-      en: "With their 8-digit ID and the password the parent set — no email required.",
-      ru: "По 8-значному ID и паролю, который задал родитель — без эл. почты.",
+      az: "Şagird 8 rəqəmli ID və valideynin təyin etdiyi parolla portala daxil olur. E-poçt tələb olunmur.",
+      en: "Students log in to the portal with their 8-digit ID and the password set by the parent. No email is required.",
+      ru: "Ученик входит на портал по 8-значному ID и паролю, заданному родителем. Электронная почта не требуется.",
     },
   },
   {
@@ -425,9 +428,9 @@ export const SITE_CONTENT_REGISTRY: SiteContentEntry[] = [
     menu: "faq",
     multiline: true,
     defaults: {
-      az: "Hər fənn və hər uşaq üzrə (həftəlik, aylıq və ya illik), 7 günlük sınaq və avtomatik qardaş/bacı endirimi ilə.",
-      en: "Per subject, per child (weekly, monthly or yearly), with a 7-day trial and automatic sibling discounts.",
-      ru: "За предмет и за ребёнка (неделя, месяц или год), с 7-дневным пробным периодом и автоматическими скидками за нескольких детей.",
+      az: "Hər fənn və hər uşaq üçün (həftəlik, aylıq və ya illik) abunə paketi var. İlk 7 günlük ödənişsiz sınaq və eyni ailədən olan 2 və daha çox uşaq üçün avtomatik bacı/qardaş endirimi verilir.",
+      en: "Each subject and each child has its own subscription package (weekly, monthly or yearly). It starts with a free 7-day trial, and an automatic sibling discount applies for 2 or more children from the same family.",
+      ru: "Для каждого предмета и каждого ребёнка есть свой пакет подписки (на неделю, месяц или год). Действует бесплатный 7-дневный пробный период, а для 2 и более детей из одной семьи автоматически применяется скидка для братьев и сестёр.",
     },
   },
   // ---- landing / contact ---------------------------------------------------

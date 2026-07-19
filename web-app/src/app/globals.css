@@ -10844,3 +10844,190 @@ body[data-site-typography] .btn-ghost {
   padding: 18px 16px;
   color: var(--muted);
 }
+
+/* ==========================================================================
+   PUBLIC OLYMPIAD PACKAGES band (landing + /services) — .polypub
+   Reuses the token-driven .poly-grid/.poly-card system (light + dark parity);
+   only the section header, empty panel and the deadline chip are new.
+   ========================================================================== */
+.polypub {
+  margin-top: 46px;
+}
+.polypub-eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.polypub-title {
+  margin: 0;
+}
+.polypub-sub {
+  margin: 6px 0 18px;
+  color: var(--muted);
+}
+.polypub-panel {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.polypub-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
+}
+[data-theme="light"] .polypub-panel {
+  box-shadow: 0 1px 2px var(--shadow), 0 10px 26px -16px var(--shadow-lg);
+}
+.polypub-empty {
+  margin: 0;
+  padding: 18px 16px;
+  color: var(--muted);
+}
+/* Sales-deadline chip: secondary-accent emphasis (the urgency element). */
+.polypub-deadline {
+  color: var(--accent-2, var(--accent));
+  font-weight: 700;
+}
+/* The CTA is a compact card button, not a full-width hero button. */
+.polypub-cta {
+  padding: 8px 16px;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+/* "See all" link shown when a capped band (landing limit=6) comes back full. */
+.polypub-more {
+  margin-top: 20px;
+  text-align: center;
+}
+
+/* ==========================================================================
+   CHILD AVATAR (parent-managed) — shared renderer + Add/Edit picker
+   ========================================================================== */
+/* Renderer (components/ChildAvatar): photo/preset image … */
+.child-ava-img {
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  flex: none;
+}
+/* … or the initials bubble (the historical default look). */
+.child-ava-mark {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+  font-weight: 800;
+  line-height: 1;
+  flex: none;
+  user-select: none;
+}
+
+/* Picker (components/ChildAvatarPicker) — radio cards: Default / Boy / Girl /
+   Upload photo. Token-driven so light + dark both work. */
+.cavp {
+  display: grid;
+  gap: 10px;
+}
+.cavp-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cavp-opt {
+  appearance: none;
+  cursor: pointer;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  min-width: 86px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cavp-opt:hover {
+  border-color: var(--accent);
+}
+.cavp-opt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cavp-opt.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.cavp-opt:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.cavp-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: inline-grid;
+  place-items: center;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+  overflow: hidden;
+}
+.cavp-thumb-upload {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.cavp-opt-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.cavp-file-btns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cavp-file-btn {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+.cavp-remove-btn {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 6px 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--danger, #dc2626);
+}
+.cavp-remove-btn:hover {
+  text-decoration: underline;
+}
+.cavp-hint {
+  margin: 0;
+}
+/* Parent dashboard child-card head: avatar + name on one line. */
+.child-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.child-card-head strong {
+  overflow-wrap: anywhere;
+}

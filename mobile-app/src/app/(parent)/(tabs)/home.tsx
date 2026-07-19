@@ -10,8 +10,8 @@ import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { ChevronRight, Flame, GraduationCap, Plus, UserRoundPlus } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
-import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
+import { ChildAvatar } from "@/components/ChildAvatar";
 import { Card } from "@/components/Card";
 import { CountdownBanner } from "@/components/CountdownBanner";
 import { HeaderAvatarButton } from "@/components/HeaderAvatarButton";
@@ -96,7 +96,7 @@ function ChildCard({
     <Card style={{ gap: spacing.md }}>
       {/* Identity row: avatar + name/place + access pill. */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-        <Avatar name={name} seed={child.profile_id} size={48} />
+        <ChildAvatar row={child} name={name} seed={child.profile_id} size={48} />
         <View style={{ flex: 1, gap: 2 }}>
           <AppText variant="title" numberOfLines={1} style={{ fontSize: 18 }}>
             {name}

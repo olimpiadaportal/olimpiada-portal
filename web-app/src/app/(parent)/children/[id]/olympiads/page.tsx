@@ -33,7 +33,7 @@ export default async function ParentOlympiadsPage({
 
   const { data: packages } = await supabase
     .from("olympiad_packages")
-    .select("id, price_amount, currency, event_starts_at, olympiad_package_translations(locale, title)")
+    .select("id, price_amount, currency, event_starts_at, sale_starts_at, sale_ends_at, olympiad_package_translations(locale, title)")
     .eq("status", "active")
     .order("created_at");
   const { data: purchases } = await supabase
@@ -53,6 +53,17 @@ export default async function ParentOlympiadsPage({
   const isPast = (p: any): boolean => {
     const ts = p.event_starts_at ? Date.parse(p.event_starts_at) : NaN;
     return Number.isFinite(ts) && ts <= Date.now();
+  };
+  // Sale window: RLS hides off-sale rows from non-purchaser families; a row a
+  // sibling owns can still surface here, so keep the buy CTA off it (the
+  // purchase_olympiad RPC rejects off-sale buys server-side either way).
+  const isOffSale = (p: any): boolean => {
+    const start = p.sale_starts_at ? Date.parse(p.sale_starts_at) : NaN;
+    const end = p.sale_ends_at ? Date.parse(p.sale_ends_at) : NaN;
+    return (
+      (Number.isFinite(start) && start > Date.now()) ||
+      (Number.isFinite(end) && end <= Date.now())
+    );
   };
 
   return (
@@ -75,6 +86,8 @@ export default async function ParentOlympiadsPage({
                   <span className="pill">{t("oly3.owned")}</span>
                 ) : isPast(p) ? (
                   <span className="pill">{t("oly4.status.held")}</span>
+                ) : isOffSale(p) ? (
+                  <span className="pill">{t("poly.notOnSale")}</span>
                 ) : paymentsOn ? (
                   <form action={buyOlympiad}>
                     <input type="hidden" name="student_id" value={id} />

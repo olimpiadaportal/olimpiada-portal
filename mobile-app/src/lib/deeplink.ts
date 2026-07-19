@@ -98,6 +98,10 @@ const RULES: RouteRule[] = [
     roleTargets: { parent: "/(parent)/(tabs)/news", student: "/(student)/(tabs)/news" },
   },
   { prefix: "/pricing", audience: "public", target: "/(public)/pricing", blockedRoles: ["student"] },
+  // Web rename: /pricing became /services ("Xidmətlər") — both paths stay
+  // valid and open the SAME screen with the SAME student block (no commerce
+  // for children). Old links/pushes keep working via the /pricing rule above.
+  { prefix: "/services", audience: "public", target: "/(public)/pricing", blockedRoles: ["student"] },
   { prefix: "/about", audience: "public", target: "/(public)/about" },
   { prefix: "/subjects", audience: "public", target: "/(public)/subjects" },
   { prefix: "/faq", audience: "public", target: "/(public)/faq" },

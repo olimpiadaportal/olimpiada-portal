@@ -1455,3 +1455,84 @@ If anything doesn't match, tell me the **QQ-#** + what you saw.
 - Web child area works as before; the old hidden /child/practice/[id] route is gone (it had no entry points).
 
 If anything doesn't match, tell me the **RR-#** + what you saw.
+
+---
+
+# Round 27 (2026-07-18) — INVESTOR round 2: copy, Services, olympiad sales windows, child avatars, WhatsApp.
+
+## SS1. Investor copy (web + mobile pick up automatically)
+- /faq: the 10 Q&As match the investor document (az); EN/RU read naturally.
+- /register: subtitle "Övladınızı əlavə etmək və idarə etmək üçün valideyn kimi qeydiyyatdan keçin."
+- /subjects: lead "Övladınıza lazım olan fənləri seçin. İstənilən vaxt yenilərini əlavə edə bilərsiniz."
+
+## SS2. Services rename + routes
+- Nav/footer say **Xidmətlər / Services / Услуги** (web + mobile); the page lives at **/services**; typing **/pricing** redirects there (old links keep working). Admin's internal Pricing module (subscription prices) is unrelated and unchanged.
+
+## SS3. Olympiad sales windows (admin-controlled, server-enforced)
+- Admin → Olympiad package edit: new "sale start" and "sale end" datetime fields (Baku time), end must be after start; the list + edit header show the derived state (Scheduled / Active / Expired / Archived) and the edit page states exactly when the package is publicly purchasable.
+- Set a sale end in the past on a test package → it disappears from the landing/services lists and from non-buyer catalogs (web + mobile) but STAYS in admin; buying it via the app is impossible (server rejects with "satış müddəti bitib").
+- A family that ALREADY bought it still sees it, still opens attempts, results, everything (lifetime access).
+
+## SS4. Landing + Services active-packages section
+- Landing page and /services (web) and the mobile services screen show "Aktiv olimpiada paketləri" cards (name, subject, grade, price, sales-until/event date, question count, CTA) — from the database, only currently-on-sale packages; a localized empty state when none.
+
+## SS5. Add-Child photo / preset avatar
+- Add-Child (web + mobile): choose Default (initials) / Oğlan / Qız / upload a photo (png/jpeg/webp ≤2MB; preview, replace, remove). Edit-Child can change it later; switching preset↔photo replaces cleanly.
+- The avatar shows on parent child cards, the edit screen, the child's own header/profile (web + mobile) and as a small avatar in admin accounts. Leaderboards stay initials-only (no child photos anywhere public).
+- Privacy: photos are in a PRIVATE bucket — a signed-in parent can only ever load their own children's photos.
+
+## SS6. WhatsApp contact (admin-configured)
+- Admin → Settings → Support: new WhatsApp field (empty = hidden). Set a number → the web Contact page and mobile Contact screen show a WhatsApp row opening wa.me. BLOCKER: no real investor-approved number yet — the field stays empty until you have one.
+
+If anything doesn't match, tell me the **SS-#** + what you saw.
+
+---
+
+# Round 28 (2026-07-19) — admin-controlled address, landing top-6 + see-all, audit-log coverage & filtering.
+
+## TT1. Address is admin-controlled (web + mobile, dynamic)
+- Admin → Settings → Support: a new **Address** field (seeded with the current office address). Edit it → the web Contact page (/contact, /help/contact, /child/help/contact) and the mobile Contact screen show the new address (web caches ~60s; mobile within the config refetch window).
+- Clear the field → the address block disappears entirely on both (same as the WhatsApp row).
+
+## TT2. Landing shows the latest 6 + "see all"
+- Seed 7+ active on-sale olympiad packages → the landing page shows only **6** cards + a "Hamısına bax / See all / Смотреть все" link → opens **/olympiad-packages** listing ALL active packages. With ≤6 packages the link is hidden. The /services page still lists all packages (no cap).
+
+## TT3. Olympiad sales-window end-to-end (carried from Round 27 — please test now)
+- Admin → Olympiad → edit a test package: set a **sale end** in the past (Baku time). Then:
+  - It disappears from the landing, /services, /olympiad-packages, and the mobile services screen (for anyone who hasn't bought it).
+  - A parent who did NOT buy it cannot purchase it (server rejects with "satış müddəti bitib").
+  - A family that ALREADY bought it still sees it in "My Olympiads" and can still open attempts/results (lifetime access).
+- Admin still sees it in the package list with an **Expired** chip.
+
+## TT4. Audit log covers the important actions + is filterable
+- Admin → Audit: the page now defaults to ALL activity (not just staff). Do a few actions and confirm rows appear with details:
+  - Register a parent, add a child, subscribe, cancel a subscription, buy an olympiad, edit a subject price, flip a feature flag, change a setting.
+  - Each row has a **"Show details"** expander showing what changed ("field: old → new" for edits; "created:"/"removed:" for inserts/deletes; metadata for app actions). Any password/token/secret-like field renders as ••• (never shown).
+- Filters (combine, with "clear all"): entity, action, severity, success, actor-scope (All / Staff / Users & system), date from/to, and a target-id search. Prev/Next pages 50 at a time.
+- Money-trail check: a NEW subscription and a NEW payment row now produce audit entries (previously only status changes were logged).
+
+If anything doesn't match, tell me the **TT-#** + what you saw.
+
+---
+
+# Round 29 (2026-07-19) — admin-controlled map, dormant notifications wired, admin notification bell.
+
+## UU1. Contact map follows the admin address / precise pin
+- Admin → Settings → Support: a new "map location" field under Address. Leave it EMPTY → the /contact map (web) shows the admin-set Address. Set precise coordinates (e.g. `40.3719,49.8371`) → the map pins exactly there.
+- Web /contact, /help/contact, /child/help/contact all update. Mobile Contact screen: the address row is now tappable → opens the same location in the phone's Google Maps.
+
+## UU2. Student achievement notifications (auto)
+- **Streak milestone:** when a student's daily-round streak reaches 3/7/14/30/60/100 days, they get a "Seriya davam edir 🔥" notification (once per milestone per day; never spammed).
+- **Personal best:** when a student beats their previous best score on a RATED daily round (not their first-ever attempt), they get a "Yeni rekord!" notification. Both link to the leaderboard.
+- These fire automatically on grading (web + mobile submissions both, since it's a DB trigger).
+
+## UU3. Subscription-expiry + giveaway notifications (scheduled)
+- **Subject expiring:** a daily job notifies a parent ~3 days before a child's subscription lapses ("Abunə bitmək üzrədir"). Once per billing period.
+- **Giveaway ending:** during an active giveaway, a daily job warns all parents in the final 2 days.
+- These run via pg_cron (already enabled on dev). To see one immediately without waiting for the schedule, an admin can run in Supabase SQL editor: `select public.notify_expiring_subscriptions();` — it creates the due notifications now (idempotent, safe to re-run).
+
+## UU4. Admin notification bell (NEW)
+- Log in as an administrator: a bell icon in the top bar with an unread badge. It shows operational alerts — **new parent registration**, **new olympiad purchase**, **new subscription** — as they happen. Clicking an alert jumps to the relevant admin page (Accounts / Olympiad). "See all" opens the new **Alerts** page (mark read / delete).
+- Test: register a new parent (or buy an olympiad) on the web app, then check the admin bell — a new alert appears within ~60s (or on opening the bell).
+
+If anything doesn't match, tell me the **UU-#** + what you saw.

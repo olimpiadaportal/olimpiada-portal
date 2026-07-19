@@ -21,6 +21,7 @@ import {
   validateChildInfo,
   validateChildPassword,
 } from "@/lib/auth/children";
+import { writeAuditLog } from "@/lib/audit";
 
 export type CreateChildResult =
   // childUniqueId is now allocated on subscribe, so it is null at create time.
@@ -95,6 +96,11 @@ export async function createChild(params: {
     const studentProfileId: string | undefined = row?.new_student_profile_id;
     if (!studentProfileId) throw new Error("provisioning returned no student id");
 
+    await writeAuditLog(parentProfileId, "parent.child_create", {
+      targetTable: "students",
+      targetId: studentProfileId,
+    });
+
     // childUniqueId is null until the parent chooses a plan (subscribe step).
     return { ok: true, childUniqueId: null, studentProfileId };
   } catch (e) {
@@ -147,6 +153,12 @@ export async function resetChildPassword(params: {
       password_set_at: new Date().toISOString(),
     })
     .eq("student_profile_id", studentProfileId);
+
+  await writeAuditLog(parentProfileId, "parent.child_password_reset", {
+    severity: "warning",
+    targetTable: "students",
+    targetId: studentProfileId,
+  });
 
   return { ok: true };
 }

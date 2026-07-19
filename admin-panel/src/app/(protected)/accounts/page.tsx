@@ -12,8 +12,9 @@ import type {
   SchoolOpt,
 } from "@/components/CreateChildForm";
 import { AccountDeleteButton } from "@/components/AccountDeleteButton";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
+import { localStrings } from "./labels";
 
 // Round 10 (F5) — debounced account search applied at QUERY level over the
 // useful identifiers: parent display name OR email (profiles .or(ilike));
@@ -51,6 +52,7 @@ export default async function AccountsPage({
 }) {
   await requireAdmin();
   const t = await getT();
+  const la = localStrings(await getLocale());
   const supabase = await createClient();
   const serviceReady = hasServiceRole();
   const sp = await searchParams;
@@ -103,7 +105,7 @@ export default async function AccountsPage({
     const { data } = await supabase
       .from("students")
       .select(
-        "profile_id, created_by_parent_profile_id, first_name, last_name, child_unique_id, access_status, grade_id, district_id, school_id, class_grade",
+        "profile_id, created_by_parent_profile_id, first_name, last_name, child_unique_id, access_status, grade_id, district_id, school_id, class_grade, avatar_kind, avatar_key",
       )
       .in("created_by_parent_profile_id", shownParentIds)
       .order("created_at", { ascending: true });
@@ -154,6 +156,33 @@ export default async function AccountsPage({
     const list = childrenByParent.get(pid) ?? [];
     list.push(c);
     childrenByParent.set(pid, list);
+  }
+
+  // Child avatar (READ-ONLY): preset → the shared boy/girl art from
+  // public/avatars (same PNGs as the web-app); custom photo → a plain
+  // indicator pill. The photo lives in the PRIVATE child-avatars bucket and
+  // the panel has no signed-URL preview path, so the object is deliberately
+  // NOT fetched here. Labels are trilingual via ./labels.
+  function childAvatar(c: any) {
+    if (c.avatar_kind === "photo") {
+      return (
+        <span className="pill pill-muted">{la("accounts.avatar.photo")}</span>
+      );
+    }
+    const key =
+      c.avatar_key === "girl" ? "girl" : c.avatar_key === "boy" ? "boy" : null;
+    if (!key) return null;
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={`/avatars/child-${key}.png`}
+        alt={la(`accounts.avatar.${key}`)}
+        title={la(`accounts.avatar.${key}`)}
+        width={28}
+        height={28}
+        style={{ borderRadius: "50%", objectFit: "cover", flex: "0 0 auto" }}
+      />
+    );
   }
 
   const resetStrings = {
@@ -326,7 +355,18 @@ export default async function AccountsPage({
                       [c.first_name, c.last_name].filter(Boolean).join(" ") || "—";
                     return (
                       <tr key={c.profile_id}>
-                        <td>{name}</td>
+                        <td>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            {childAvatar(c)}
+                            {name}
+                          </span>
+                        </td>
                         <td className="muted nowrap">{c.child_unique_id ?? "—"}</td>
                         <td className="nowrap">
                           <span className={`pill ${accessPill(c.access_status)}`}>

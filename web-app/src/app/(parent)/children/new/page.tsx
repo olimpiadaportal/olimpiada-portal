@@ -49,6 +49,11 @@ const KEYS = [
   "addchild.err.cityRequired", "addchild.err.schoolRequired",
   "addchild.err.gradeRequired", "addchild.err.districtRequired",
   "sub.err.invalid",
+  // avatar section (preset boy/girl or photo upload; default = initials)
+  "addchild.avatar.title", "addchild.avatar.hint", "addchild.avatar.default",
+  "addchild.avatar.boy", "addchild.avatar.girl", "addchild.avatar.upload",
+  "addchild.avatar.replace", "addchild.avatar.removePhoto",
+  "addchild.avatar.photoSelected", "addchild.avatar.requirements",
 ];
 
 export default async function NewChildPage() {

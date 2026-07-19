@@ -9,6 +9,8 @@ import { BillingTabs } from "@/components/BillingTabs";
 import { InvoicesSection, type InvoiceRow } from "@/components/InvoicesSection";
 import { getPerSubjectPrices } from "@/lib/pricing";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { resolveChildAvatarUrl } from "@/lib/childAvatar";
+import { ChildAvatar } from "@/components/ChildAvatar";
 
 // R8 billing — one-page SaaS subscription center with internal tabs
 // [Plans | Billing | Invoices] that smooth-scroll to same-page sections.
@@ -61,6 +63,8 @@ type Card = {
   interval: string | null;
   subjects: string[];
   status: SubStatus;
+  /** Parent-managed avatar display URL (signed photo / preset PNG) or null. */
+  avatarUrl: string | null;
 };
 
 // M8: per-subject prices come from the DB (subjects_pricing via getPerSubjectPrices)
@@ -145,7 +149,9 @@ export default async function ParentSubscription({
     try {
       const { data: children } = await supabase
         .from("students")
-        .select("profile_id, first_name, last_name")
+        .select(
+          "profile_id, first_name, last_name, avatar_kind, avatar_key, avatar_media_path",
+        )
         .eq("created_by_parent_profile_id", parent.profileId)
         .order("created_at", { ascending: true });
       const kids = (children ?? []) as any[];
@@ -195,19 +201,23 @@ export default async function ParentSubscription({
         }
       }
 
-      return kids.map((c): Card => {
-        const sub = subByChild.get(c.profile_id) ?? null;
-        return {
-          studentProfileId: c.profile_id,
-          subscriptionId: sub?.id ?? null,
-          name:
-            `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() ||
-            t("subscription.child"),
-          interval: sub?.interval ?? null,
-          subjects: sub ? subjectsBySub.get(sub.id) ?? [] : [],
-          status: normalizeStatus(sub?.status),
-        };
-      });
+      return await Promise.all(
+        kids.map(async (c): Promise<Card> => {
+          const sub = subByChild.get(c.profile_id) ?? null;
+          return {
+            studentProfileId: c.profile_id,
+            subscriptionId: sub?.id ?? null,
+            name:
+              `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() ||
+              t("subscription.child"),
+            interval: sub?.interval ?? null,
+            subjects: sub ? subjectsBySub.get(sub.id) ?? [] : [],
+            status: normalizeStatus(sub?.status),
+            // Parent-managed avatar (signed photo URL / preset PNG / null).
+            avatarUrl: await resolveChildAvatarUrl(supabase, c),
+          };
+        }),
+      );
     } catch {
       return [];
     }
@@ -357,9 +367,13 @@ export default async function ParentSubscription({
                 className={`bkids-tab${active ? " active" : ""}`}
                 aria-current={active ? "page" : undefined}
               >
-                <span className="bkids-mark" aria-hidden="true">
-                  {(c.name.trim()[0] ?? "•").toUpperCase()}
-                </span>
+                {c.avatarUrl ? (
+                  <ChildAvatar url={c.avatarUrl} name={c.name} size={24} />
+                ) : (
+                  <span className="bkids-mark" aria-hidden="true">
+                    {(c.name.trim()[0] ?? "•").toUpperCase()}
+                  </span>
+                )}
                 <span className="bkids-name">{c.name}</span>
               </Link>
             );
@@ -388,9 +402,13 @@ export default async function ParentSubscription({
             return (
               <div className="billing-child" key={c.studentProfileId}>
                 <div className="billing-child-head">
-                  <span className="billing-child-mark" aria-hidden="true">
-                    {initial}
-                  </span>
+                  {c.avatarUrl ? (
+                    <ChildAvatar url={c.avatarUrl} name={c.name} size={40} />
+                  ) : (
+                    <span className="billing-child-mark" aria-hidden="true">
+                      {initial}
+                    </span>
+                  )}
                   <span className="billing-child-name">{c.name}</span>
                   <span className={badgeClass(c.status)}>
                     {t(`subscription.status.${c.status}`)}

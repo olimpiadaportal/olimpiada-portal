@@ -11,6 +11,11 @@ import {
 } from "@/components/OlympiadQuestionManager";
 import { archiveOlympiadPackage } from "@/lib/admin/olympiad";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
+import {
+  olympiadLifecycleState,
+  lifecyclePillClass,
+} from "@/lib/admin/olympiad-lifecycle";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { localDict } from "../../labels";
 
 const FORM_KEYS = [
@@ -37,15 +42,51 @@ export default async function EditOlympiadPage({
   await requireAdmin();
   const { id } = await params;
   const t = await getT();
-  const lt = olympiadLocalStrings(await getLocale());
+  const locale = await getLocale();
+  const lt = olympiadLocalStrings(locale);
   const supabase = await createClient();
 
   const { data: pkg } = await supabase
     .from("olympiad_packages")
-    .select("id, subject_id, grade_id, price_amount, status, event_starts_at, duration_minutes, cover_media_id")
+    .select("id, subject_id, grade_id, price_amount, status, event_starts_at, sale_starts_at, sale_ends_at, duration_minutes, cover_media_id")
     .eq("id", id)
     .maybeSingle();
   if (!pkg) notFound();
+
+  // Derived lifecycle chip + effective public availability — computed HERE in
+  // the server component from the DB row against SERVER time (no client clock
+  // trust). Dates render as Baku wall-clock (lib/admin/datetime.ts).
+  const lifecycle = olympiadLifecycleState(
+    {
+      status: String((pkg as any).status),
+      sale_starts_at: (pkg as any).sale_starts_at ?? null,
+      sale_ends_at: (pkg as any).sale_ends_at ?? null,
+    },
+    Date.now(),
+  );
+  const saleStartLabel = formatBakuDateTime((pkg as any).sale_starts_at, locale);
+  const saleEndLabel = formatBakuDateTime((pkg as any).sale_ends_at, locale);
+  const availabilityLines: string[] = [];
+  if (lifecycle === "archived") {
+    availabilityLines.push(lt("oly2.avail.archived"));
+  } else if (lifecycle === "inactive") {
+    availabilityLines.push(lt("oly2.avail.inactive"));
+  } else if (lifecycle === "scheduled") {
+    availabilityLines.push(
+      lt("oly2.avail.scheduled").replace("{date}", saleStartLabel),
+    );
+    if (saleEndLabel) {
+      availabilityLines.push(lt("oly2.avail.closes").replace("{date}", saleEndLabel));
+    }
+  } else if (lifecycle === "expired") {
+    availabilityLines.push(lt("oly2.avail.expired").replace("{date}", saleEndLabel));
+  } else if (saleEndLabel) {
+    availabilityLines.push(
+      lt("oly2.avail.openUntil").replace("{date}", saleEndLabel),
+    );
+  } else {
+    availabilityLines.push(lt("oly2.avail.open"));
+  }
 
   // Resolve the current cover image (if any) to a public URL for preview.
   let currentCover: { url: string; mime: string } | null = null;
@@ -142,18 +183,30 @@ export default async function EditOlympiadPage({
     ((subjects ?? []) as any[]).find((s) => s.id === (pkg as any).subject_id)?.name ?? "";
   const gradeName =
     ((grades ?? []) as any[]).find((g) => g.id === pkgGradeId)?.name ?? "";
-  const poolDict = localDict(await getLocale());
+  const poolDict = localDict(locale);
 
   const formDict: Record<string, string> = {};
   for (const k of FORM_KEYS) formDict[k] = t(k);
+  // Local trilingual additions (sale window) until messages.ts gains the keys.
+  for (const k of ["oly2.saleStart", "oly2.saleEnd", "oly2.saleHint"]) {
+    formDict[k] = lt(k);
+  }
 
   return (
     <div className="page">
       <div className="page-head">
         <div className="head-row">
           <div>
-            <h1>{t("nav.olympiad")}</h1>
+            <h1 style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              {t("nav.olympiad")}
+              <span className={`pill ${lifecyclePillClass(lifecycle)}`}>
+                {lt(`oly2.state.${lifecycle}`)}
+              </span>
+            </h1>
             <p className="muted">{tr.az?.title ?? ""}</p>
+            {availabilityLines.map((line, i) => (
+              <p className="hint" key={i}>{line}</p>
+            ))}
           </div>
           <Link className="btn-ghost" href="/olympiad">{t("manage.back")}</Link>
         </div>
@@ -170,6 +223,8 @@ export default async function EditOlympiadPage({
             price: String((pkg as any).price_amount ?? 0),
             status: (pkg as any).status,
             event: (pkg as any).event_starts_at ?? "",
+            saleStart: (pkg as any).sale_starts_at ?? "",
+            saleEnd: (pkg as any).sale_ends_at ?? "",
             duration: String((pkg as any).duration_minutes ?? 25),
             tr,
           }}

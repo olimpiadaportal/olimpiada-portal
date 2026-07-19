@@ -247,6 +247,59 @@ export const bffUpdateStudentName = (firstName: string, lastName: string) =>
     "profile.err.updateFailed",
   );
 
+// ---- child avatar (parent-managed; POST /children/[id]/avatar) -----------------
+// One endpoint, three request shapes (web childAvatarCore twins): multipart
+// `file` → photo (byte-sniffed server-side, png/jpeg/webp ≤2MB), JSON
+// {"preset":"boy"|"girl"} → bundled preset, JSON {"remove":true} → back to the
+// default initials bubble. Ownership is re-verified by the BFF; errors are
+// i18n keys.
+
+export type ChildAvatarState = {
+  avatar_kind: string;
+  avatar_key: string | null;
+  has_photo: boolean;
+};
+
+export type ChildAvatarInput =
+  | { file: { uri: string; name: string; type: string } }
+  | { preset: "boy" | "girl" }
+  | { remove: true };
+
+export async function bffSetChildAvatar(
+  childId: string,
+  input: ChildAvatarInput,
+): Promise<BffResult<ChildAvatarState>> {
+  const path = `/api/mobile/v1/children/${childId}/avatar`;
+  const fallback = "childedit.err.generic";
+  if (!("file" in input)) {
+    return bffAuthedPost<ChildAvatarState>(path, input, fallback);
+  }
+  // Photo branch — multipart (bffUploadAvatar pattern: bearer only, no manual
+  // Content-Type so fetch writes the multipart boundary itself).
+  if (!isBffConfigured) return { ok: false, error: fallback, retryable: false };
+  try {
+    const form = new FormData();
+    // @ts-expect-error React Native FormData file shape
+    form.append("file", input.file);
+    const res = await fetch(`${bffUrl}${path}`, {
+      method: "POST",
+      headers: { ...(await bearer()) },
+      body: form,
+    });
+    const o = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (res.ok && o.ok === true) {
+      return { ok: true, data: (o.data ?? null) as ChildAvatarState };
+    }
+    return {
+      ok: false,
+      error: typeof o.error === "string" && o.error.length > 0 ? o.error : fallback,
+      retryable: o.retryable === true,
+    };
+  } catch {
+    return { ok: false, error: fallback, retryable: true };
+  }
+}
+
 /** Avatar upload: multipart with the sniffed-on-server file. */
 export async function bffUploadAvatar(file: {
   uri: string;

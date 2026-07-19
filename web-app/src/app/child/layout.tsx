@@ -1,5 +1,6 @@
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { getT, getLocale } from "@/i18n/server";
 import { getLocaleSettings, isFeatureEnabled } from "@/lib/flags";
 import { getSiteTypography } from "@/lib/siteTypography";
@@ -52,7 +53,7 @@ export default async function ChildLayout({
   const [
     { giveaway },
     { data: student },
-    avatarUrl,
+    legacyAvatarUrl,
     { data: streakStatus },
     olympiadOn,
     leaderboardOn,
@@ -63,11 +64,12 @@ export default async function ChildLayout({
     getPaymentModeInfo(),
     supabase
       .from("students")
-      .select("first_name, palette")
+      .select("first_name, palette, avatar_kind, avatar_key, avatar_media_path")
       .eq("profile_id", child.profileId)
       .maybeSingle(),
-    // Avatar public URL for the drawer trigger (degrades to initials on any
-    // failure — never blocks the shell from rendering).
+    // LEGACY self-uploaded avatar URL (public bucket) for the drawer trigger
+    // (degrades to initials on any failure — never blocks the shell from
+    // rendering). The PARENT-SET avatar resolved below takes priority.
     (async (): Promise<string | null> => {
       try {
         const { data: prof } = await supabase
@@ -109,6 +111,13 @@ export default async function ChildLayout({
 
   const firstName = (student as any)?.first_name ?? "";
   const initial = (firstName.trim()[0] ?? "?").toUpperCase();
+
+  // Drawer-trigger avatar priority: the PARENT-SET avatar (photo → signed URL
+  // via the student's OWN session — storage RLS lets the student read their own
+  // object; preset → bundled PNG) wins over the legacy self-uploaded profile
+  // avatar; both fall back to the initials bubble.
+  const avatarUrl =
+    (await resolveChildAvatarUrl(supabase, student as any)) ?? legacyAvatarUrl;
 
   // Round 12: the child's chosen LIGHT-MODE palette (data-palette drives the
   // [data-theme="light"] .arena[data-palette] overrides in globals.css). Only a

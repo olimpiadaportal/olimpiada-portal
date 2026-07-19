@@ -19,6 +19,7 @@ export function ListRow({
   danger = false,
   disabled = false,
   style,
+  accessibilityLabel,
 }: {
   /** Leading glyph (usually a lucide icon, size 18–20). */
   icon?: React.ReactNode;
@@ -35,6 +36,8 @@ export function ListRow({
   danger?: boolean;
   disabled?: boolean;
   style?: ViewStyle;
+  /** Overrides the default "title. subtitle" a11y label (e.g. an action row whose subtitle is display data, not the action). */
+  accessibilityLabel?: string;
 }) {
   const { tokens } = useTheme();
   const tint = danger ? tokens.danger : tokens.text;
@@ -92,7 +95,7 @@ export function ListRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
+      accessibilityLabel={accessibilityLabel ?? (subtitle ? `${title}. ${subtitle}` : title)}
       accessibilityState={{ disabled }}
       onPress={disabled ? undefined : onPress}
       android_ripple={disabled ? undefined : { color: tokens.chipBg }}

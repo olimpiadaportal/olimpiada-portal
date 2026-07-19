@@ -19,6 +19,7 @@ import { applyAllocatedChildEmail } from "@/lib/auth/childAccountService";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isUuid } from "@/lib/uuid";
 import { notifySubscriptionCanceled } from "@/lib/notifications/events";
+import { writeAuditLog } from "@/lib/audit";
 
 // The per-child free-access probe differs by surface — web uses the
 // caller-scoped `is_child_free_access_active` RPC through the COOKIE client
@@ -129,6 +130,13 @@ export async function subscribeChildCore(params: {
     if (!emailRes.ok) return { ok: false, errorKey: "sub.err.idFailed" };
   }
 
+  const total = Number(result.total ?? 0);
+  await writeAuditLog(parentProfileId, "parent.subscription_create", {
+    targetTable: "students",
+    targetId: studentId,
+    metadata: { interval, subjects: subjectIds.length, total },
+  });
+
   revalidatePath("/dashboard");
   // L2: whitelist-copy the typed fields only — never spread the raw RPC payload
   // (it may carry internal fields like auth_user_id) back to the client.
@@ -138,7 +146,7 @@ export async function subscribeChildCore(params: {
       base: Number(result.base ?? 0),
       discount_percent: Number(result.discount_percent ?? 0),
       discount: Number(result.discount ?? 0),
-      total: Number(result.total ?? 0),
+      total,
       trial_days: Number(result.trial_days ?? 0),
       currency: String(result.currency ?? "AZN"),
       childUniqueId,
@@ -265,6 +273,11 @@ export async function cancelChildSubscriptionCore(params: {
     subscriptionId,
   });
 
+  await writeAuditLog(parentProfileId, "parent.subscription_cancel", {
+    targetTable: "child_subscriptions",
+    targetId: subscriptionId,
+  });
+
   revalidatePath("/subscription");
   revalidatePath("/dashboard");
   return { ok: true };
@@ -341,6 +354,23 @@ export async function updateSubscriptionSubjectsCore(params: {
       p_subject_id: id,
     });
     if (error) return { ok: false, errorKey: "subjedit.err.removeFailed" };
+  }
+
+  // One entry per operation type actually performed (a single request can add
+  // AND remove subjects at once).
+  if (toAdd.length > 0) {
+    await writeAuditLog(parentProfileId, "parent.subscription_subjects_change", {
+      targetTable: "students",
+      targetId: studentId,
+      metadata: { op: "add", subject_count: toAdd.length },
+    });
+  }
+  if (toRemove.length > 0) {
+    await writeAuditLog(parentProfileId, "parent.subscription_subjects_change", {
+      targetTable: "students",
+      targetId: studentId,
+      metadata: { op: "remove", subject_count: toRemove.length },
+    });
   }
 
   revalidatePath(`/children/${studentId}/subscribe`);

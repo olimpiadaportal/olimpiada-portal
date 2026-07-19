@@ -18,7 +18,13 @@ describe("parseMobileConfig", () => {
       },
       maintenance: { on: false, message: { az: "a", en: "b", ru: "c" } },
       locales: { supported: ["az", "ru"], default: "az" },
-      contact: { email: "x@y.z", phone: "+994" },
+      contact: {
+        email: "x@y.z",
+        phone: "+994",
+        whatsapp: "+994 50 123 45 67",
+        address: "Səbail rayonu, Akademik Əhəd Yaqubov küç, 52C, Bakı, Azərbaycan",
+        map_query: "40.3777,49.8920",
+      },
       social: { facebook: "f", instagram: "i", youtube: "y", tiktok: "t" },
       version: {
         ios: { min: "1.2.0", latest: "1.3.0", force: true, store_url: "https://apple", message: { az: "", en: "", ru: "" } },
@@ -30,6 +36,11 @@ describe("parseMobileConfig", () => {
     expect(cfg.flags.olympiadModule).toBe(true);
     expect(cfg.flags.notificationsPush).toBe(false);
     expect(cfg.locales.supported).toEqual(["az", "ru"]);
+    expect(cfg.contact.whatsapp).toBe("+994 50 123 45 67");
+    expect(cfg.contact.address).toBe(
+      "Səbail rayonu, Akademik Əhəd Yaqubov küç, 52C, Bakı, Azərbaycan",
+    );
+    expect(cfg.contact.mapQuery).toBe("40.3777,49.8920");
     expect(cfg.version.ios.force).toBe(true);
   });
 
@@ -39,6 +50,9 @@ describe("parseMobileConfig", () => {
     expect(cfg.flags.newsPublic).toBe(false);
     expect(cfg.flags.leaderboard).toBe(false);
     expect(cfg.maintenance.on).toBe(false);
+    expect(cfg.contact.whatsapp).toBe("");
+    expect(cfg.contact.address).toBe("");
+    expect(cfg.contact.mapQuery).toBe("");
     expect(cfg.locales.supported).toEqual(["az", "en", "ru"]);
     expect(cfg.locales.default).toBe("az");
     expect(cfg.version.android.force).toBe(false);

@@ -1084,6 +1084,138 @@ select '70_admin_subject_pricing' as check_name,
                    pg_get_functiondef('public.admin_upsert_subject_price(uuid,text,numeric)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
+-- 71) Olympiad sales window (migration 070; extended by 072): the window
+--     columns + sanity CHECK exist; the canonical predicate, the shared
+--     visibility helper and the anon-callable public listing RPC are all
+--     present (anon EXECUTE on the listing; the helper feeds BOTH select
+--     policies so packages and translations can never drift);
+--     purchase_olympiad carries the package_not_on_sale guard;
+--     start_olympiad_attempt stays window-free (purchasers keep LIFETIME
+--     attempts after the window). Plus the contact.support_whatsapp config
+--     surfaced by get_mobile_config. Migration 072: the listing RPC is the
+--     SINGLE (p_limit int default null) function — the zero-arg overload is
+--     gone, so no-args callers resolve via the default — with the
+--     least(p_limit, 100) cap; and contact.support_address is seeded +
+--     surfaced by get_mobile_config alongside email/phone/whatsapp.
+select '71_olympiad_sales_window' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='olympiad_packages'
+                            and column_name='sale_starts_at')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='olympiad_packages'
+                            and column_name='sale_ends_at')
+             and exists (select 1 from pg_constraint
+                          where conname='chk_olympiad_sales_window'
+                            and conrelid='public.olympiad_packages'::regclass)
+             and to_regprocedure('public.olympiad_package_on_sale(public.catalog_status,timestamptz,timestamptz)') is not null
+             and to_regprocedure('public.get_public_olympiad_packages(integer)') is not null
+             and to_regprocedure('public.get_public_olympiad_packages()') is null
+             and (select count(*) from pg_proc p
+                  join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname='public'
+                    and p.proname='get_public_olympiad_packages') = 1
+             and has_function_privilege('anon','public.get_public_olympiad_packages(integer)','EXECUTE') = true
+             and position('olympiad_package_on_sale' in
+                   pg_get_functiondef('public.get_public_olympiad_packages(integer)'::regprocedure)) > 0
+             and position('least(p_limit, 100)' in
+                   pg_get_functiondef('public.get_public_olympiad_packages(integer)'::regprocedure)) > 0
+             and position('package_not_on_sale' in
+                   pg_get_functiondef('public.purchase_olympiad(uuid,uuid)'::regprocedure)) > 0
+             and position('olympiad_package_on_sale' in
+                   pg_get_functiondef('public.can_view_olympiad_package(uuid)'::regprocedure)) > 0
+             and exists (select 1 from pg_policies
+                          where schemaname='public' and tablename='olympiad_packages'
+                            and policyname='olympiad_packages_select'
+                            and qual like '%can_view_olympiad_package%')
+             and exists (select 1 from pg_policies
+                          where schemaname='public' and tablename='olympiad_package_translations'
+                            and policyname='olympiad_pkg_tr_select'
+                            and qual like '%can_view_olympiad_package%')
+             and position('olympiad_package_on_sale' in
+                   pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) = 0
+             and exists (select 1 from public.system_settings where key='contact.support_whatsapp')
+             and position('contact.support_whatsapp' in
+                   pg_get_functiondef('public.get_mobile_config()'::regprocedure)) > 0
+             -- 072: address seeded as a JSON string (non-empty by default;
+             -- admins may later blank it, so only shape is asserted here).
+             and exists (select 1 from public.system_settings
+                          where key='contact.support_address'
+                            and jsonb_typeof(value_json) = 'string')
+             and position('contact.support_address' in
+                   pg_get_functiondef('public.get_mobile_config()'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
+-- 72) Child avatars (migration 071): the students avatar columns + kind CHECK
+--     exist; the child-avatars bucket is PRIVATE; all four family-gated
+--     storage policies are present and none is reachable by anon (the DEFINER
+--     path/ownership helper is also out of anon reach).
+select '72_child_avatars' as check_name,
+       case when (select count(*) from information_schema.columns
+                   where table_schema='public' and table_name='students'
+                     and column_name in ('avatar_kind','avatar_key','avatar_media_path')) = 3
+             and exists (select 1 from pg_constraint
+                          where conname='chk_students_avatar_kind'
+                            and conrelid='public.students'::regclass)
+             and exists (select 1 from storage.buckets
+                          where id='child-avatars' and public = false)
+             and (select count(*) from pg_policies
+                   where schemaname='storage' and tablename='objects'
+                     and policyname in ('read child-avatars','insert child-avatars',
+                                        'update child-avatars','delete child-avatars')) = 4
+             and not exists (select 1 from pg_policies
+                              where schemaname='storage' and tablename='objects'
+                                and policyname like '%child-avatars%'
+                                and roles::text[] && array['anon','public'])
+             and to_regprocedure('public.can_access_child_avatar(text,boolean)') is not null
+             and has_function_privilege('anon','public.can_access_child_avatar(text,boolean)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.can_access_child_avatar(text,boolean)','EXECUTE') = true
+            then 'PASS' else 'FAIL' end as status;
+
+-- 73) Audit trigger coverage (migration 073): the money trail (subscriptions,
+--     payments, child_subscriptions), payment sessions, accounts (students,
+--     profiles, child_credentials) and config (system_settings, feature_flags,
+--     subjects_pricing) all carry an audit trigger firing on INSERT or UPDATE;
+--     the three money-trail triggers specifically now fire on INSERT (they were
+--     UPDATE-only before), so new subscription/payment rows are captured.
+select '73_audit_trigger_coverage' as check_name,
+       case when (select count(*) from pg_trigger
+                   where tgname in ('trg_audit_subscriptions','trg_audit_payments',
+                     'trg_audit_child_subscriptions','trg_audit_checkout_sessions',
+                     'trg_audit_students','trg_audit_profiles','trg_audit_child_credentials',
+                     'trg_audit_system_settings','trg_audit_feature_flags','trg_audit_subjects_pricing')
+                     and (tgtype & 4 > 0 or tgtype & 16 > 0)) = 10
+             -- money-trail INSERT is now captured (was UPDATE-only)
+             and (select bool_and(tgtype & 4 > 0) from pg_trigger
+                   where tgname in ('trg_audit_subscriptions','trg_audit_payments',
+                                    'trg_audit_child_subscriptions'))
+            then 'PASS' else 'FAIL' end as status;
+
+-- 74) Notification producers (migration 074): admin-alert helper + the three
+--     admin INSERT triggers, the progress-milestones trigger on test_attempts,
+--     and the two cron scanner functions all exist and stay service-role only.
+select '74_notification_producers' as check_name,
+       case when to_regprocedure('public.notify_admins(text,text,text,jsonb,text,text,text,int)') is not null
+             and to_regprocedure('public.notify_expiring_subscriptions()') is not null
+             and to_regprocedure('public.notify_giveaway_ending()') is not null
+             and has_function_privilege('anon','public.notify_admins(text,text,text,jsonb,text,text,text,int)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.notify_expiring_subscriptions()','EXECUTE') = false
+             and exists (select 1 from pg_trigger where tgname='trg_notify_progress_milestones'
+                          and tgrelid='public.test_attempts'::regclass)
+             and exists (select 1 from pg_trigger where tgname='trg_notify_admin_new_parent'
+                          and tgrelid='public.parents'::regclass)
+             and exists (select 1 from pg_trigger where tgname='trg_notify_admin_new_purchase'
+                          and tgrelid='public.olympiad_purchases'::regclass)
+             and exists (select 1 from pg_trigger where tgname='trg_notify_admin_new_subscription'
+                          and tgrelid='public.child_subscriptions'::regclass)
+            then 'PASS' else 'FAIL' end as status;
+
+-- 75) Contact map (migration 075): the precise-map setting is seeded and
+--     get_mobile_config surfaces it under contact.map_query.
+select '75_contact_map' as check_name,
+       case when exists (select 1 from public.system_settings where key='contact.support_map_query')
+             and (public.get_mobile_config()->'contact') ? 'map_query'
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

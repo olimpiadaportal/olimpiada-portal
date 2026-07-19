@@ -27,7 +27,7 @@ export type MobileConfig = {
   };
   maintenance: { on: boolean; message: TriMessage };
   locales: { supported: string[]; default: string };
-  contact: { email: string; phone: string };
+  contact: { email: string; phone: string; whatsapp: string; address: string; mapQuery: string };
   social: { facebook: string; instagram: string; youtube: string; tiktok: string };
   version: { ios: PlatformGate; android: PlatformGate };
 };
@@ -95,7 +95,13 @@ export function parseMobileConfig(raw: unknown): MobileConfig {
       supported: supported.length > 0 ? supported : ["az", "en", "ru"],
       default: str(loc.default, "az") || "az",
     },
-    contact: { email: str(contact.email), phone: str(contact.phone) },
+    contact: {
+      email: str(contact.email),
+      phone: str(contact.phone),
+      whatsapp: str(contact.whatsapp),
+      address: str(contact.address),
+      mapQuery: str(contact.map_query),
+    },
     social: {
       facebook: str(social.facebook),
       instagram: str(social.instagram),

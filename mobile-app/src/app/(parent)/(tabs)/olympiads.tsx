@@ -257,6 +257,18 @@ export default function ParentOlympiads() {
     const ts = pkg.event_starts_at ? Date.parse(pkg.event_starts_at) : NaN;
     return Number.isFinite(ts) && ts <= now;
   };
+  // Web parity: outside [sale_starts_at, sale_ends_at] the card shows the
+  // "Satış bitib" chip instead of Buy. Cosmetic only — purchase_olympiad
+  // rejects off-sale buys server-side (poly.err.notOnSale) either way. RLS
+  // keeps such rows visible ONLY to purchaser families (lifetime access).
+  const isOffSale = (pkg: OlympiadPackageRow) => {
+    const saleStart = pkg.sale_starts_at ? Date.parse(pkg.sale_starts_at) : NaN;
+    const saleEnd = pkg.sale_ends_at ? Date.parse(pkg.sale_ends_at) : NaN;
+    return (
+      (Number.isFinite(saleStart) && saleStart > now) ||
+      (Number.isFinite(saleEnd) && saleEnd <= now)
+    );
+  };
   // REAL pool size (missing row / still loading → 0, web coalesce parity).
   const questionCount = (pkg: OlympiadPackageRow) => poolCounts.data?.get(pkg.id) ?? 0;
 
@@ -372,7 +384,9 @@ export default function ParentOlympiads() {
                             : t("oly4.dateTbd")
                         }
                       />
-                      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                      <View
+                        style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
+                      >
                         <Button
                           title={t("oly4.details")}
                           variant="ghost"
@@ -380,14 +394,20 @@ export default function ParentOlympiads() {
                           onPress={() => setDetail(pkg)}
                         />
                         {canBuy && selected && !owned && !past ? (
-                          <Button
-                            title={t("poly.buyFor").replace(
-                              "{name}",
-                              childDisplayName(selected),
-                            )}
-                            style={{ flex: 1, minHeight: 44, paddingVertical: spacing.sm }}
-                            onPress={() => startBuy(pkg)}
-                          />
+                          isOffSale(pkg) ? (
+                            // Sale window closed for this family-visible row —
+                            // chip instead of Buy (web .poly-chip parity).
+                            <Pill label={t("poly.notOnSale")} tone="muted" />
+                          ) : (
+                            <Button
+                              title={t("poly.buyFor").replace(
+                                "{name}",
+                                childDisplayName(selected),
+                              )}
+                              style={{ flex: 1, minHeight: 44, paddingVertical: spacing.sm }}
+                              onPress={() => startBuy(pkg)}
+                            />
+                          )
                         ) : null}
                       </View>
                     </View>
@@ -453,6 +473,9 @@ export default function ParentOlympiads() {
             </View>
             {ownedForSelected.has(detail.id) ? (
               <AppText variant="muted">{t("poly.modal.already")}</AppText>
+            ) : canBuy && selected && !isPast(detail) && isOffSale(detail) ? (
+              // Sales ended (server rejects such buys with poly.err.notOnSale).
+              <AppText variant="muted">{t("poly.err.notOnSale")}</AppText>
             ) : canBuy && selected && !isPast(detail) ? (
               <Button
                 variant="gradient"

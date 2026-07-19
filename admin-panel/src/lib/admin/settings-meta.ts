@@ -114,6 +114,39 @@ export const SETTING_META: Record<string, SettingMeta> = {
     helpKey: "settings.sys.support_phone.help",
     placeholder: "+994 12 345 67 89",
   },
+  // WhatsApp contact shown on the public sites' contact surfaces. Free text
+  // like the phone (kind "phone" = string ≤ 300 server-side); empty hides the
+  // row. Rendered on the Support card with LOCAL trilingual labels (see
+  // settings/labels.ts) until messages.ts gains the reserved keys below.
+  "contact.support_whatsapp": {
+    kind: "phone",
+    labelKey: "settings.sys.support_whatsapp.label",
+    helpKey: "settings.sys.support_whatsapp.help",
+    placeholder: "+994 50 123 45 67",
+  },
+  // Support office address shown on the public sites' contact surfaces. Free
+  // text like the WhatsApp field above (kind "text" = string ≤ 300
+  // server-side); empty hides the row. Rendered directly under the WhatsApp
+  // field on the Support card with LOCAL trilingual labels (see
+  // settings/labels.ts) until messages.ts gains the reserved keys below.
+  "contact.support_address": {
+    kind: "text",
+    labelKey: "settings.sys.support_address.label",
+    helpKey: "settings.sys.support_address.help",
+  },
+  // Precise map pin/query shown on the public sites' contact-page mini-map.
+  // Free text like the address above (kind "text" = string ≤ 300
+  // server-side); empty means the map keeps deriving its pin from
+  // contact.support_address (see supabase/sql/migrations/
+  // 2026_07_19_075_contact_map.sql). Rendered directly under the Address
+  // field on the Support card with LOCAL trilingual labels (see
+  // settings/labels.ts) until messages.ts gains the reserved keys below.
+  "contact.support_map_query": {
+    kind: "text",
+    labelKey: "settings.sys.support_map_query.label",
+    helpKey: "settings.sys.support_map_query.help",
+    placeholder: "40.3719,49.8371",
+  },
   "social.facebook": {
     kind: "url",
     labelKey: "settings.sys.social_facebook.label",

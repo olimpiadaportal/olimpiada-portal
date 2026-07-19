@@ -143,6 +143,32 @@ export const messages: Record<Locale, Record<string, string>> = {
     "poly.modal.success": "Alış tamamlandı! Paket artıq övladınızın \"Olimpiadalarım\" bölməsində görünür.",
     "poly.modal.already": "Bu paket bu övlad üçün artıq alınıb.",
     "poly.err.generic": "Alış zamanı xəta baş verdi. Zəhmət olmasa bir az sonra yenidən cəhd edin.",
+    // Sale window (olympiad_packages.sale_starts_at/sale_ends_at)
+    "poly.err.notOnSale": "Bu paketin satış müddəti artıq bitib.",
+    "poly.notOnSale": "Satış bitib",
+    // ---- Public olympiad packages section (landing + Services) ----
+    "polyPub.eyebrow": "Olimpiadalar",
+    "polyPub.title": "Aktiv olimpiada paketləri",
+    "polyPub.sub": "Övladınız üçün olimpiada paketi seçin — satış müddəti bitmədən qoşulun.",
+    "polyPub.empty": "Hazırda satışda olimpiada paketi yoxdur. Yeni paketlər tezliklə elan olunacaq.",
+    "polyPub.salesUntil": "Satış {date} tarixinədək",
+    "polyPub.eventAt": "Olimpiada tarixi: {date}",
+    "polyPub.cta": "Qeydiyyatdan keç",
+    "polyPub.ctaParent": "Paketi əldə et",
+    "polyPub.seeAll": "Hamısına bax",
+    "polyPub.pageTitle": "Bütün olimpiada paketləri",
+    "polyPub.pageLead": "Övladınız üçün uyğun olimpiada paketini seçin — bütün aktiv paketlər burada.",
+    // ---- Child avatar (Add/Edit-Child, parent-managed) ----
+    "addchild.avatar.title": "Profil şəkli",
+    "addchild.avatar.hint": "Övladınız üçün hazır avatar seçin və ya şəkil yükləyin (istəyə bağlıdır).",
+    "addchild.avatar.default": "Standart",
+    "addchild.avatar.boy": "Oğlan",
+    "addchild.avatar.girl": "Qız",
+    "addchild.avatar.upload": "Şəkil yüklə",
+    "addchild.avatar.replace": "Şəkli dəyiş",
+    "addchild.avatar.removePhoto": "Şəkli sil",
+    "addchild.avatar.photoSelected": "Şəkil seçildi",
+    "addchild.avatar.requirements": "PNG, JPEG və ya WebP, maksimum 2 MB.",
     // ---- Round 8 (merged) ----
     "about2.hero.eyebrow": "Haqqımızda",
     "about2.hero.title": "Böyük zirvələr kiçik addımlarla fəth olunur",
@@ -396,7 +422,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "auth.child.passwordReset": "Parol yeniləndi.",
     "nav.home": "Ana səhifə",
     "nav.subjects": "Fənlər",
-    "nav.pricing": "Qiymətlər",
+    "nav.pricing": "Xidmətlər",
     "nav.news": "Xəbərlər",
     "nav.about": "Haqqımızda",
     "nav.faq": "FAQ",
@@ -427,14 +453,14 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Valideyn idarədədir: hər uşağın hesabını yaradır və idarə edir, fənləri seçir və irəliləyişi izləyir — hamısı bir yerdə.",
     "subjects.title": "Fənlər",
     "subjects.lead":
-      "Uşağınıza lazım olan fənləri seçin. İstənilən vaxt yenilərini əlavə edə bilərsiniz.",
+      "Övladınıza lazım olan fənləri seçin. İstənilən vaxt yenilərini əlavə edə bilərsiniz.",
     "subjects.note":
       "Qiymət hər fənn və hər uşaq üzrədir. Qardaş/bacı endirimi avtomatik tətbiq olunur.",
     "subject.math": "Riyaziyyat",
     "subject.science": "Elm",
     "subject.logic": "Məntiq",
     "subject.english": "İngilis dili",
-    "pricing.title": "Qiymətlər",
+    "pricing.title": "Xidmətlər",
     "pricing.lead": "Hər uşaq üçün sadə, fənn üzrə qiymət.",
     "pricing.perSubject": "fənn üzrə",
     "pricing.weekly": "Həftəlik",
@@ -448,19 +474,20 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pricing.note":
       "Yalnız valideyn ödəniş edə bilər. Uşaqlar qiymət və ödənişləri görmür.",
     "faq.title": "Tez-tez verilən suallar",
-    "faq.q1": "Uşağın hesabını kim yaradır?",
+    "faq.q1": "Şagirdin hesabını kim yaradır?",
     "faq.a1":
-      "Yalnız valideyn. Qeydiyyatdan sonra valideyn hər uşağı əlavə edir və parol təyin edir; sistem uşağın daxil olması üçün unikal 8 rəqəmli ID verir.",
-    "faq.q2": "Uşaqlar necə daxil olur?",
+      "Yalnız valideyn. Qeydiyyatdan sonra valideyn hər uşağı əlavə edir və parol təyin edir. Sistem uşağın daxil olması üçün unikal 8 rəqəmli ID verir.",
+    "faq.q2": "Şagirdlər necə daxil olur?",
     "faq.a2":
-      "8 rəqəmli ID və valideynin təyin etdiyi parolla — e-poçt tələb olunmur.",
+      "Şagird 8 rəqəmli ID və valideynin təyin etdiyi parolla portala daxil olur. E-poçt tələb olunmur.",
     "faq.q3": "Qiymət necə işləyir?",
     "faq.a3":
-      "Hər fənn və hər uşaq üzrə (həftəlik, aylıq və ya illik), 7 günlük sınaq və avtomatik qardaş/bacı endirimi ilə.",
+      "Hər fənn və hər uşaq üçün (həftəlik, aylıq və ya illik) abunə paketi var. İlk 7 günlük ödənişsiz sınaq və eyni ailədən olan 2 və daha çox uşaq üçün avtomatik bacı/qardaş endirimi verilir.",
     "faq.q4": "Olimpiada Hazırlığı nədir?",
-    "faq.a4": "Ömürlük giriş və 25 suallıq cəhdlərlə ayrıca birdəfəlik alış.",
-    "faq.q5": "Uşaqlar alış edə bilərmi?",
-    "faq.a5": "Xeyr. Bütün ödənişləri valideyn edir.",
+    "faq.a4":
+      "Olimpiadaların mövzularına uyğun tərtib edilmiş suallara limitsiz giriş.",
+    "faq.q5": "Şagird özü alış edə bilərmi?",
+    "faq.a5": "Xeyr. Bütün ödənişləri və abunə paketi seçimlərini yalnız valideyn edir.",
     "contact.title": "Əlaqə",
     "contact.lead": "Sual və ya rəyiniz var? Eşitmək istərdik.",
     "contact.email": "E-poçt",
@@ -509,7 +536,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "parent.auth.noAccount": "Hesabınız yoxdur?",
     "parent.auth.haveAccount": "Artıq hesabınız var?",
     "parent.auth.registerNote":
-      "Uşaqlarınızı əlavə etmək və idarə etmək üçün valideyn kimi qeydiyyatdan keçin.",
+      "Övladınızı əlavə etmək və idarə etmək üçün valideyn kimi qeydiyyatdan keçin.",
     "parent.err.email": "Düzgün e-poçt daxil edin.",
     "parent.err.password": "Parol ən az 8 simvol olmalıdır.",
     "parent.err.tooMany":
@@ -852,25 +879,26 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — FAQ (extended) —
     "faq.q6": "7 günlük pulsuz sınaq necə işləyir?",
     "faq.a6":
-      "Hər yeni fənn 7 günlük pulsuz sınaqla başlayır. Sınaq müddətində ödəniş alınmır; sınaq bitdikdən sonra seçdiyiniz dövr üzrə ödəniş başlayır. İstənilən vaxt ləğv edə bilərsiniz.",
-    "faq.q7": "Bir neçə uşaq üçün endirim varmı?",
+      "Platformada seçilən hər yeni fənn üçün şagirdə 7 günlük pulsuz sınaq müddəti verilir. Sınaq müddətində ödəniş alınmır. Sınaq bitdikdən sonra seçdiyiniz dövr üzrə ödəniş başlayır.",
+    "faq.q7": "Bir ailədən olan 2 və daha çox uşaq üçün endirim varmı?",
     "faq.a7":
-      "Bəli. Qardaş/bacı endirimi avtomatik tətbiq olunur: 2-ci uşaq üçün −10%, 3-cü və sonrakı uşaqlar üçün −15%. Heç bir kod daxil etmək lazım deyil.",
+      "Bəli. Bacı/qardaş endirimi avtomatik tətbiq olunur. Valideyn qeydiyyat edərkən 2-ci uşaq üçün 10%, 3-cü və sonrakı uşaqlar üçün 15% endirim tətbiq olunur. Heç bir kod daxil etmək lazım deyil. Sistem avtomatik özü hesablayır.",
     "faq.q8": "Testlər necə keçirilir?",
     "faq.a8":
       "Hər test üçün suallar serverdə təsadüfi seçilir (olimpiada cəhdləri 25 sualdan ibarətdir). Şagird çətinlik səviyyəsini özü seçmir — bu, ədalətli və obyektiv qiymətləndirməni təmin edir.",
     "faq.q9": "Məlumatlarımız necə qorunur?",
     "faq.a9":
-      "Şəxsi məlumatlar təhlükəsiz saxlanılır və yalnız xidmətin işləməsi üçün istifadə olunur. Uşaq hesabları valideynə bağlıdır, uşaqlar e-poçt və ya ödəniş məlumatı daxil etmir.",
+      "Şəxsi məlumatlar təhlükəsiz saxlanılır və yalnız xidmətin işləməsi üçün istifadə olunur. Uşaq hesabları valideynə bağlıdır, uşaqlar e-poçt və ya ödəniş məlumatı daxil etmir. Platformadakı məlumatlar 3-cü tərəfə ötürülmür.",
     "faq.q10": "Hansı dillər dəstəklənir? Necə əlaqə saxlaya bilərəm?",
     "faq.a10":
-      "Platforma Azərbaycan (əsas), ingilis və rus dillərində işləyir. Sual və ya dəstək üçün bizimlə e-poçt vasitəsilə əlaqə saxlaya bilərsiniz — Əlaqə səhifəsinə baxın.",
+      "Platforma Azərbaycan (əsas), ingilis və rus dillərində işləyir. Sual və ya dəstək üçün bizimlə e-poçt və WhatsApp üzərindən əlaqə saxlaya bilərsiniz — Əlaqə səhifəsinə baxın.",
 
     // — Contact (details) —
     "contact.address": "Ünvan",
     "contact.addressValue": "Hökumət Evi, Bakı, Azərbaycan",
     "contact.emailLabel": "Dəstək e-poçtu",
     "contact.phoneLabel": "Telefon",
+    "contact.whatsappLabel": "WhatsApp",
     "maintenance.title": "Texniki işlər aparılır",
     "maintenance.body":
       "Sayt qısa müddətlik texniki xidmətdədir. Zəhmət olmasa bir azdan yenidən yoxlayın.",
@@ -1330,6 +1358,32 @@ export const messages: Record<Locale, Record<string, string>> = {
     "poly.modal.success": "Purchase complete! The package now appears in your child's \"My Olympiads\" section.",
     "poly.modal.already": "This package is already owned for this child.",
     "poly.err.generic": "Something went wrong during the purchase. Please try again in a moment.",
+    // Sale window (olympiad_packages.sale_starts_at/sale_ends_at)
+    "poly.err.notOnSale": "Sales for this package have ended.",
+    "poly.notOnSale": "Sales ended",
+    // ---- Public olympiad packages section (landing + Services) ----
+    "polyPub.eyebrow": "Olympiads",
+    "polyPub.title": "Active olympiad packages",
+    "polyPub.sub": "Pick an olympiad package for your child — join before sales close.",
+    "polyPub.empty": "There are no olympiad packages on sale right now. New packages will be announced soon.",
+    "polyPub.salesUntil": "On sale until {date}",
+    "polyPub.eventAt": "Olympiad date: {date}",
+    "polyPub.cta": "Sign up",
+    "polyPub.ctaParent": "Get this package",
+    "polyPub.seeAll": "See all",
+    "polyPub.pageTitle": "All olympiad packages",
+    "polyPub.pageLead": "Find the right olympiad package for your child — every active package is listed here.",
+    // ---- Child avatar (Add/Edit-Child, parent-managed) ----
+    "addchild.avatar.title": "Profile picture",
+    "addchild.avatar.hint": "Choose a ready-made avatar for your child or upload a photo (optional).",
+    "addchild.avatar.default": "Default",
+    "addchild.avatar.boy": "Boy",
+    "addchild.avatar.girl": "Girl",
+    "addchild.avatar.upload": "Upload photo",
+    "addchild.avatar.replace": "Replace photo",
+    "addchild.avatar.removePhoto": "Remove photo",
+    "addchild.avatar.photoSelected": "Photo selected",
+    "addchild.avatar.requirements": "PNG, JPEG or WebP, up to 2 MB.",
     // ---- Round 8 (merged) ----
     "about2.hero.eyebrow": "About us",
     "about2.hero.title": "Great peaks are conquered in small steps",
@@ -1583,7 +1637,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "auth.child.passwordReset": "Password updated.",
     "nav.home": "Home",
     "nav.subjects": "Subjects",
-    "nav.pricing": "Pricing",
+    "nav.pricing": "Services",
     "nav.news": "News",
     "nav.about": "About us",
     "nav.faq": "FAQ",
@@ -1620,7 +1674,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subject.science": "Science",
     "subject.logic": "Logic",
     "subject.english": "English",
-    "pricing.title": "Pricing",
+    "pricing.title": "Services",
     "pricing.lead": "Simple, per-subject pricing for each child.",
     "pricing.perSubject": "per subject",
     "pricing.weekly": "Weekly",
@@ -1632,19 +1686,20 @@ export const messages: Record<Locale, Record<string, string>> = {
       "A launch promotion runs at start; prices are illustrative and set by the platform.",
     "pricing.note": "Only parents can purchase. Children never see prices or payments.",
     "faq.title": "Frequently asked questions",
-    "faq.q1": "Who creates the child's account?",
+    "faq.q1": "Who creates the student's account?",
     "faq.a1":
-      "Only a parent. After registering, a parent adds each child and sets a password; the system issues a unique 8-digit ID the child uses to log in.",
-    "faq.q2": "How do children log in?",
-    "faq.a2": "With their 8-digit ID and the password the parent set — no email required.",
+      "Only the parent. After registering, the parent adds each child and sets a password. The system issues a unique 8-digit ID the student uses to log in.",
+    "faq.q2": "How do students log in?",
+    "faq.a2":
+      "Students log in to the portal with their 8-digit ID and the password set by the parent. No email is required.",
     "faq.q3": "How does pricing work?",
     "faq.a3":
-      "Per subject, per child (weekly, monthly or yearly), with a 7-day trial and automatic sibling discounts.",
+      "Each subject and each child has its own subscription package (weekly, monthly or yearly). It starts with a free 7-day trial, and an automatic sibling discount applies for 2 or more children from the same family.",
     "faq.q4": "What is Olympiad Preparation?",
     "faq.a4":
-      "A separate one-time purchase with lifetime access and 25-question practice attempts.",
-    "faq.q5": "Can children make purchases?",
-    "faq.a5": "No. All payments are made by the parent.",
+      "Unlimited access to questions built around olympiad topics.",
+    "faq.q5": "Can students make purchases themselves?",
+    "faq.a5": "No. All payments and subscription choices are made only by the parent.",
     "contact.title": "Contact",
     "contact.lead": "Questions or feedback? We'd love to hear from you.",
     "contact.email": "Email",
@@ -1693,7 +1748,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "parent.auth.noAccount": "No account yet?",
     "parent.auth.haveAccount": "Already have an account?",
     "parent.auth.registerNote":
-      "Register as a parent to add and manage your children.",
+      "Register as a parent to add and manage your child.",
     "parent.err.email": "Enter a valid email.",
     "parent.err.password": "Password must be at least 8 characters.",
     "parent.err.tooMany":
@@ -2036,25 +2091,26 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — FAQ (extended) —
     "faq.q6": "How does the 7-day free trial work?",
     "faq.a6":
-      "Every new subject starts with a 7-day free trial. You are not charged during the trial; billing for the period you chose begins after the trial ends. You can cancel at any time.",
-    "faq.q7": "Is there a discount for multiple children?",
+      "Every new subject selected on the platform gives the student a 7-day free trial. You are not charged during the trial; once it ends, billing starts for the period you chose.",
+    "faq.q7": "Is there a discount for 2 or more children from the same family?",
     "faq.a7":
-      "Yes. A sibling discount is applied automatically: −10% for the 2nd child and −15% for the 3rd and beyond. No code needs to be entered.",
+      "Yes. The sibling discount is applied automatically: 10% for the 2nd child and 15% for the 3rd and subsequent children. No code is needed — the system calculates it automatically.",
     "faq.q8": "How do the tests work?",
     "faq.a8":
       "Questions are selected randomly on the server for each test (olympiad attempts consist of 25 questions). Students never choose the difficulty themselves — this keeps assessment fair and objective.",
     "faq.q9": "How is our data protected?",
     "faq.a9":
-      "Personal data is stored securely and used only to operate the service. Child accounts are linked to the parent, and children never enter email or payment details.",
+      "Personal data is stored securely and used only to operate the service. Child accounts are linked to the parent, and children never enter email or payment details. Platform data is never shared with third parties.",
     "faq.q10": "Which languages are supported? How can I get in touch?",
     "faq.a10":
-      "The platform works in Azerbaijani (default), English, and Russian. For questions or support, you can reach us by email — see the Contact page.",
+      "The platform works in Azerbaijani (default), English, and Russian. For questions or support, you can reach us by email or WhatsApp — see the Contact page.",
 
     // — Contact (details) —
     "contact.address": "Address",
     "contact.addressValue": "Government House of Baku, Azerbaijan",
     "contact.emailLabel": "Support email",
     "contact.phoneLabel": "Phone",
+    "contact.whatsappLabel": "WhatsApp",
     "maintenance.title": "We’ll be right back",
     "maintenance.body":
       "The site is briefly down for maintenance. Please check back in a little while.",
@@ -2514,6 +2570,32 @@ export const messages: Record<Locale, Record<string, string>> = {
     "poly.modal.success": "Покупка завершена! Пакет уже отображается в разделе «Мои олимпиады» вашего ребёнка.",
     "poly.modal.already": "Этот пакет уже куплен для этого ребёнка.",
     "poly.err.generic": "Во время покупки произошла ошибка. Пожалуйста, попробуйте ещё раз чуть позже.",
+    // Sale window (olympiad_packages.sale_starts_at/sale_ends_at)
+    "poly.err.notOnSale": "Продажи этого пакета уже завершены.",
+    "poly.notOnSale": "Продажи завершены",
+    // ---- Public olympiad packages section (landing + Services) ----
+    "polyPub.eyebrow": "Олимпиады",
+    "polyPub.title": "Активные олимпиадные пакеты",
+    "polyPub.sub": "Выберите олимпиадный пакет для вашего ребёнка — присоединяйтесь до окончания продаж.",
+    "polyPub.empty": "Сейчас в продаже нет олимпиадных пакетов. Новые пакеты появятся совсем скоро.",
+    "polyPub.salesUntil": "Продажа до {date}",
+    "polyPub.eventAt": "Дата олимпиады: {date}",
+    "polyPub.cta": "Зарегистрироваться",
+    "polyPub.ctaParent": "Приобрести пакет",
+    "polyPub.seeAll": "Смотреть все",
+    "polyPub.pageTitle": "Все олимпиадные пакеты",
+    "polyPub.pageLead": "Выберите подходящий олимпиадный пакет для вашего ребёнка — здесь собраны все активные пакеты.",
+    // ---- Child avatar (Add/Edit-Child, parent-managed) ----
+    "addchild.avatar.title": "Фото профиля",
+    "addchild.avatar.hint": "Выберите готовый аватар для ребёнка или загрузите фото (необязательно).",
+    "addchild.avatar.default": "Стандартный",
+    "addchild.avatar.boy": "Мальчик",
+    "addchild.avatar.girl": "Девочка",
+    "addchild.avatar.upload": "Загрузить фото",
+    "addchild.avatar.replace": "Заменить фото",
+    "addchild.avatar.removePhoto": "Удалить фото",
+    "addchild.avatar.photoSelected": "Фото выбрано",
+    "addchild.avatar.requirements": "PNG, JPEG или WebP, до 2 МБ.",
     // ---- Round 8 (merged) ----
     "about2.hero.eyebrow": "О нас",
     "about2.hero.title": "Большие вершины покоряются маленькими шагами",
@@ -2767,7 +2849,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "auth.child.passwordReset": "Пароль обновлён.",
     "nav.home": "Главная",
     "nav.subjects": "Предметы",
-    "nav.pricing": "Цены",
+    "nav.pricing": "Услуги",
     "nav.news": "Новости",
     "nav.about": "О нас",
     "nav.faq": "FAQ",
@@ -2804,7 +2886,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subject.science": "Наука",
     "subject.logic": "Логика",
     "subject.english": "Английский",
-    "pricing.title": "Цены",
+    "pricing.title": "Услуги",
     "pricing.lead": "Простые цены за каждый предмет для каждого ребёнка.",
     "pricing.perSubject": "за предмет",
     "pricing.weekly": "Еженедельно",
@@ -2816,19 +2898,20 @@ export const messages: Record<Locale, Record<string, string>> = {
       "На старте действует акция; цены ориентировочные и устанавливаются платформой.",
     "pricing.note": "Покупать может только родитель. Дети не видят цен и платежей.",
     "faq.title": "Частые вопросы",
-    "faq.q1": "Кто создаёт аккаунт ребёнка?",
+    "faq.q1": "Кто создаёт аккаунт ученика?",
     "faq.a1":
-      "Только родитель. После регистрации родитель добавляет каждого ребёнка и задаёт пароль; система выдаёт уникальный 8-значный ID для входа.",
-    "faq.q2": "Как дети входят в систему?",
-    "faq.a2": "По 8-значному ID и паролю, который задал родитель — без эл. почты.",
+      "Только родитель. После регистрации родитель добавляет каждого ребёнка и задаёт пароль. Система выдаёт уникальный 8-значный ID, по которому ученик входит в систему.",
+    "faq.q2": "Как ученики входят в систему?",
+    "faq.a2":
+      "Ученик входит на портал по 8-значному ID и паролю, заданному родителем. Электронная почта не требуется.",
     "faq.q3": "Как работает оплата?",
     "faq.a3":
-      "За предмет и за ребёнка (неделя, месяц или год), с 7-дневным пробным периодом и автоматическими скидками за нескольких детей.",
+      "Для каждого предмета и каждого ребёнка есть свой пакет подписки (на неделю, месяц или год). Действует бесплатный 7-дневный пробный период, а для 2 и более детей из одной семьи автоматически применяется скидка для братьев и сестёр.",
     "faq.q4": "Что такое «Подготовка к олимпиадам»?",
     "faq.a4":
-      "Отдельная разовая покупка с пожизненным доступом и попытками по 25 вопросов.",
-    "faq.q5": "Могут ли дети совершать покупки?",
-    "faq.a5": "Нет. Все платежи совершает родитель.",
+      "Безлимитный доступ к вопросам, составленным по олимпиадным темам.",
+    "faq.q5": "Может ли ученик покупать самостоятельно?",
+    "faq.a5": "Нет. Все платежи и выбор пакетов подписки совершает только родитель.",
     "contact.title": "Контакты",
     "contact.lead": "Вопросы или отзывы? Будем рады услышать вас.",
     "contact.email": "Эл. почта",
@@ -2877,7 +2960,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "parent.auth.noAccount": "Нет аккаунта?",
     "parent.auth.haveAccount": "Уже есть аккаунт?",
     "parent.auth.registerNote":
-      "Зарегистрируйтесь как родитель, чтобы добавлять детей и управлять ими.",
+      "Зарегистрируйтесь как родитель, чтобы добавить ребёнка и управлять его аккаунтом.",
     "parent.err.email": "Введите корректную эл. почту.",
     "parent.err.password": "Пароль должен содержать не менее 8 символов.",
     "parent.err.tooMany":
@@ -3220,25 +3303,26 @@ export const messages: Record<Locale, Record<string, string>> = {
     // — FAQ (extended) —
     "faq.q6": "Как работает 7-дневный бесплатный период?",
     "faq.a6":
-      "Каждый новый предмет начинается с 7-дневного бесплатного периода. Во время него оплата не списывается; списание за выбранный период начинается после его окончания. Отменить можно в любой момент.",
-    "faq.q7": "Есть ли скидка за нескольких детей?",
+      "За каждый новый предмет, выбранный на платформе, ученик получает 7-дневный бесплатный пробный период. Во время пробного периода оплата не списывается. После его окончания начинается оплата за выбранный период.",
+    "faq.q7": "Есть ли скидка для 2 и более детей из одной семьи?",
     "faq.a7":
-      "Да. Скидка за нескольких детей применяется автоматически: −10% за 2-го ребёнка и −15% за 3-го и последующих. Промокод вводить не нужно.",
+      "Да. Скидка для братьев и сестёр применяется автоматически: 10% на 2-го ребёнка и 15% на 3-го и последующих детей. Никакой код вводить не нужно — система рассчитывает всё сама.",
     "faq.q8": "Как проходят тесты?",
     "faq.a8":
       "Вопросы для каждого теста подбираются на сервере случайным образом (олимпиадная попытка состоит из 25 вопросов). Ученик не выбирает сложность сам — это обеспечивает честную и объективную оценку.",
     "faq.q9": "Как защищены наши данные?",
     "faq.a9":
-      "Личные данные хранятся безопасно и используются только для работы сервиса. Аккаунты детей привязаны к родителю, а дети не вводят эл. почту и платёжные данные.",
+      "Личные данные хранятся безопасно и используются только для работы сервиса. Аккаунты детей привязаны к родителю, а дети не вводят эл. почту и платёжные данные. Данные платформы не передаются третьим лицам.",
     "faq.q10": "Какие языки поддерживаются? Как с вами связаться?",
     "faq.a10":
-      "Платформа работает на азербайджанском (основной), английском и русском языках. По вопросам и за поддержкой свяжитесь с нами по эл. почте — см. страницу «Контакты».",
+      "Платформа работает на азербайджанском (основной), английском и русском языках. По вопросам и за поддержкой свяжитесь с нами по эл. почте или WhatsApp — см. страницу «Контакты».",
 
     // — Contact (details) —
     "contact.address": "Адрес",
     "contact.addressValue": "Дом Правительства, Баку, Азербайджан",
     "contact.emailLabel": "Эл. почта поддержки",
     "contact.phoneLabel": "Телефон",
+    "contact.whatsappLabel": "WhatsApp",
     "maintenance.title": "Идут технические работы",
     "maintenance.body":
       "Сайт временно недоступен из-за технического обслуживания. Пожалуйста, зайдите чуть позже.",

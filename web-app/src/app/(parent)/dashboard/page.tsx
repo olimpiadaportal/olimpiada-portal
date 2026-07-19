@@ -5,6 +5,8 @@ import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
+import { resolveChildAvatarUrl } from "@/lib/childAvatar";
+import { ChildAvatar } from "@/components/ChildAvatar";
 import { ChildCardActions } from "@/components/ChildCardActions";
 import { InfoCarousel, type InfoSlide } from "@/components/InfoCarousel";
 import { ParentNewsPanel } from "@/components/ParentNewsPanel";
@@ -44,10 +46,24 @@ export default async function ParentDashboard() {
   // Children list.
   const { data: children } = await supabase
     .from("students")
-    .select("profile_id, first_name, last_name, child_unique_id, access_status, class_grade")
+    .select(
+      "profile_id, first_name, last_name, child_unique_id, access_status, class_grade, avatar_kind, avatar_key, avatar_media_path",
+    )
     .eq("created_by_parent_profile_id", parent.profileId)
     .order("created_at", { ascending: true });
   const list = (children ?? []) as any[];
+
+  // Parent-managed avatars (photo → short-lived signed URL via the parent's
+  // OWN session client — private bucket, RLS-scoped; preset → bundled PNG;
+  // null → the initials bubble). Best-effort per child.
+  const avatarByChild = new Map<string, string | null>(
+    await Promise.all(
+      list.map(
+        async (c) =>
+          [c.profile_id as string, await resolveChildAvatarUrl(supabase, c)] as const,
+      ),
+    ),
+  );
 
   // M10: a per-child FREE-ACCESS interval shows the same "free" pill the
   // giveaway uses instead of the raw access_status. Per-child check (small N)
@@ -117,11 +133,17 @@ export default async function ParentDashboard() {
               const lb = leaderboardOn ? lbByChild.get(c.profile_id) : null;
               const lbRanked =
                 !!lb && lb.rank_month != null && Number(lb.points_month ?? 0) > 0;
+              const childName = [c.first_name, c.last_name].filter(Boolean).join(" ");
               return (
               <div className="card" key={c.profile_id}>
-                <strong>
-                  {c.first_name} {c.last_name}
-                </strong>
+                <div className="child-card-head">
+                  <ChildAvatar
+                    url={avatarByChild.get(c.profile_id) ?? null}
+                    name={childName || "?"}
+                    size={44}
+                  />
+                  <strong>{childName}</strong>
+                </div>
                 <p className="muted">
                   {t("parent.dash.childId")}:{" "}
                   {c.child_unique_id ? (

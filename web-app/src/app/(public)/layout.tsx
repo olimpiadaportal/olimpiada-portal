@@ -13,9 +13,9 @@ const GVW_KEYS = [
   "gvw.days", "gvw.hours", "gvw.minutes", "gvw.seconds", "gvw.ended",
 ] as const;
 
-// Public top nav: Pricing, About, FAQ, Contact, News.
+// Public top nav: Services, About, FAQ, Contact, News.
 const NAV: [string, string][] = [
-  ["/pricing", "nav.pricing"],
+  ["/services", "nav.pricing"],
   ["/about", "nav.about"],
   ["/faq", "nav.faq"],
   ["/contact", "nav.contact"],
@@ -27,7 +27,7 @@ const FOOTER_COLS: { head: string; links: [string, string][] }[] = [
   {
     head: "footer.product",
     links: [
-      ["/pricing", "nav.pricing"],
+      ["/services", "nav.pricing"],
       ["/news", "nav.news"],
       ["/register", "nav.register"],
     ],

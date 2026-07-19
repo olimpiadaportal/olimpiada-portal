@@ -107,6 +107,30 @@ describe("resolveDeepLink allowlist", () => {
     });
   });
 
+  it("routes /services exactly like /pricing (web rename; both stay valid)", () => {
+    expect(resolveDeepLink("/services", null)).toEqual({
+      kind: "open",
+      target: "/(public)/pricing",
+    });
+    expect(resolveDeepLink("/services", "parent")).toEqual({
+      kind: "open",
+      target: "/(public)/pricing",
+    });
+    // Children never see commerce — the student block mirrors /pricing.
+    expect(resolveDeepLink("/services", "student")).toEqual({ kind: "mismatch" });
+    // Sub-paths behave like the /pricing prefix rule.
+    expect(resolveDeepLink("/services/anything", "parent")).toEqual({
+      kind: "open",
+      target: "/(public)/pricing",
+    });
+    // The old path keeps working unchanged.
+    expect(resolveDeepLink("/pricing", "parent")).toEqual({
+      kind: "open",
+      target: "/(public)/pricing",
+    });
+    expect(resolveDeepLink("/pricing", "student")).toEqual({ kind: "mismatch" });
+  });
+
   it("routes role links for the matching role", () => {
     expect(resolveDeepLink("/dashboard", "parent")).toEqual({
       kind: "open",

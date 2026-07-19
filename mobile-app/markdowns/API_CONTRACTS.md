@@ -328,3 +328,24 @@ unlink only (object/row kept; old avatar objects are never deleted — identical
 to both web actions). The role only decides which web routes are revalidated
 (parent `/dashboard`, student `/child`). Statuses/bodies/error keys unchanged
 from the M2 table.
+
+## Round 27 additions (2026-07-18, investor round 2)
+
+- **`POST /api/mobile/v1/children/[id]/avatar`** (Bearer PARENT, ownership
+  re-verified): multipart `file` (png/jpeg/webp, byte-sniffed, ≤2MB) OR JSON
+  `{"preset":"boy"|"girl"}` OR `{"remove":true}` → `{ok:true, data:{avatar_kind,
+  avatar_key, has_photo}}`; errors = i18n keys (`childedit.err.notYourChild`
+  → 403). Photo objects live in the PRIVATE `child-avatars` bucket at
+  `students/<student_profile_id>/<uuid>.<ext>`; clients render via their OWN
+  session's `createSignedUrl` (RLS: creator/linked parent + the student).
+  `students` rows now carry `avatar_kind` ('preset'|'photo'), `avatar_key`
+  ('boy'|'girl'|null), `avatar_media_path` — mobile reads them via RLS in
+  `fetchChildren`/`studentProfile`.
+- **`get_public_olympiad_packages()`** (anon RPC): server-filtered active+on-sale
+  packages for the public services screen — id, code, trilingual title/description,
+  price/currency, subject_code/name, grade, `sale_ends_at`, `event_at`,
+  `question_count`. Package RLS now hides off-sale/archived rows from
+  non-purchasers; purchaser families keep lifetime visibility/attempts. The BFF
+  purchase route returns `poly.err.notOnSale` (409) after sales close.
+- **`get_mobile_config().contact`** gained `whatsapp` (admin-set, empty default —
+  hide the row when empty).

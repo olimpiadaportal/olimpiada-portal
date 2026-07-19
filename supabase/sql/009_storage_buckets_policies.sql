@@ -59,6 +59,19 @@ values ('sticker-assets', 'sticker-assets', true, 2097152,
         array['image/png','image/webp'])
 on conflict (id) do nothing;
 
+-- child-avatars : parent-uploaded child photos (migration 071). PRIVATE
+-- (public = false): objects are non-enumerable and every read goes through a
+-- signed URL or the ownership policies below. Path convention:
+-- students/<student_profile_id>/<file>. 2 MB backstop, images only (SVG banned
+-- platform-wide; no GIF for avatars).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('child-avatars', 'child-avatars', false, 2097152,
+        array['image/png','image/jpeg','image/webp'])
+on conflict (id) do nothing;
+
+-- Privacy backstop: if the bucket pre-exists as public, force it private.
+update storage.buckets set public = false where id = 'child-avatars' and public;
+
 -- -----------------------------------------------------------------------------
 -- !!! VALIDATION WARNING — TEST THIS FILE ON SUPABASE DEV/STAGING FIRST !!!
 -- `storage.objects` is owned by `supabase_storage_admin`, not `postgres`. On some
@@ -143,6 +156,73 @@ create policy "admin manage sticker-assets"
   to authenticated
   using (bucket_id = 'sticker-assets' and public.is_admin())
   with check (bucket_id = 'sticker-assets' and public.is_admin());
+
+-- ===== child-avatars: PRIVATE — family-only access, no anon path =============
+-- Backported from migrations/2026_07_18_071_child_avatars.sql. ONE DEFINER
+-- helper gates all four policies (the students/parent_student_links lookups
+-- must not depend on those tables' RLS — same reason is_parent_linked_to_student
+-- is DEFINER). Path is validated structurally (students/<uuid>/<file>) before
+-- any lookup.
+--   write (p_for_write=true) : creator parent | active linked parent | admin
+--   read  (p_for_write=false): the same set PLUS the student themself
+create or replace function public.can_access_child_avatar(
+  p_object_name text,
+  p_for_write   boolean
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public.is_admin()
+      or (
+        split_part(coalesce(p_object_name, ''), '/', 1) = 'students'
+        and split_part(p_object_name, '/', 3) <> ''         -- a file under the student folder
+        and exists (
+          select 1
+          from public.students s
+          where s.profile_id::text = split_part(p_object_name, '/', 2)
+            and (
+              s.created_by_parent_profile_id = public.current_profile_id()
+              or public.is_parent_linked_to_student(s.profile_id)
+              or (not p_for_write and s.profile_id = public.current_profile_id())
+            )
+        )
+      )
+$$;
+comment on function public.can_access_child_avatar(text, boolean) is
+  'storage.objects gate for the PRIVATE child-avatars bucket (migration 071). '
+  'Object path students/<student_profile_id>/<file>. Write: the creator parent, '
+  'an ACTIVE linked parent, or an admin. Read: the same set plus the student '
+  'themself. anon never has a path (policies are TO authenticated).';
+revoke all on function public.can_access_child_avatar(text, boolean) from public, anon;
+grant execute on function public.can_access_child_avatar(text, boolean) to authenticated, service_role;
+
+drop policy if exists "read child-avatars" on storage.objects;
+create policy "read child-avatars"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'child-avatars' and public.can_access_child_avatar(name, false));
+
+drop policy if exists "insert child-avatars" on storage.objects;
+create policy "insert child-avatars"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'child-avatars' and public.can_access_child_avatar(name, true));
+
+drop policy if exists "update child-avatars" on storage.objects;
+create policy "update child-avatars"
+  on storage.objects for update
+  to authenticated
+  using (bucket_id = 'child-avatars' and public.can_access_child_avatar(name, true))
+  with check (bucket_id = 'child-avatars' and public.can_access_child_avatar(name, true));
+
+drop policy if exists "delete child-avatars" on storage.objects;
+create policy "delete child-avatars"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'child-avatars' and public.can_access_child_avatar(name, true));
 
 -- ===== Private buckets: admin-imports, reports — no public access ============
 -- admin-imports: admins (and content importers) only.

@@ -14,6 +14,7 @@ import {
   createOlympiadPackageWithQuestions,
   type OlympiadCreateState,
 } from "@/lib/admin/olympiad";
+import { DateTimeLocalField } from "@/components/DateTimeLocalField";
 import { localeNames, locales, type Locale } from "@/i18n/config";
 import {
   downloadBulkTemplate,
@@ -76,15 +77,6 @@ export function OlympiadCreateForm({
     return o;
   });
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
-
-  // Optional planned event date/time — same hidden-ISO pattern as OlympiadForm.
-  const [eventIso, setEventIso] = useState("");
-  const [eventLocal, setEventLocal] = useState("");
-  const onEvent = (v: string) => {
-    setEventLocal(v);
-    const d = v ? new Date(v) : null;
-    setEventIso(d && !Number.isNaN(d.getTime()) ? d.toISOString() : "");
-  };
 
   // ---- Bulk file state (client pre-validation mirror) ---------------------
   const [fileName, setFileName] = useState("");
@@ -181,23 +173,25 @@ export function OlympiadCreateForm({
           <option value="archived">{tt("oly2.status.archived")}</option>
         </select>
       </label>
-      <div className="field">
-        <span className="field-label">{tt("oly2.eventAt")}</span>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            type="datetime-local"
-            value={eventLocal}
-            onChange={(e) => onEvent(e.target.value)}
-          />
-          {eventLocal !== "" && (
-            <button type="button" className="btn-ghost" onClick={() => onEvent("")}>
-              {tt("oly2.eventClear")}
-            </button>
-          )}
-        </div>
-        <p className="hint">{tt("oly2.eventAtHint")}</p>
-        <input type="hidden" name="event_starts_at" value={eventIso} />
-      </div>
+      {/* Planned event date + public sale window — hidden-ISO convention
+          documented in lib/admin/datetime.ts (shared DateTimeLocalField). */}
+      <DateTimeLocalField
+        name="event_starts_at"
+        label={tt("oly2.eventAt")}
+        clearLabel={tt("oly2.eventClear")}
+        hint={tt("oly2.eventAtHint")}
+      />
+      <DateTimeLocalField
+        name="sale_starts_at"
+        label={tt("oly2.saleStart")}
+        clearLabel={tt("oly2.eventClear")}
+      />
+      <DateTimeLocalField
+        name="sale_ends_at"
+        label={tt("oly2.saleEnd")}
+        clearLabel={tt("oly2.eventClear")}
+        hint={tt("oly2.saleHint")}
+      />
       {locales.map((l) => (
         <div key={l} style={{ marginTop: 12 }}>
           <h3>

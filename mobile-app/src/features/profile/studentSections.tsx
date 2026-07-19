@@ -29,9 +29,9 @@ import {
   X,
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
-import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { ChildAvatar } from "@/components/ChildAvatar";
 import { ListRow } from "@/components/ListRow";
 import { PasswordField, TextField } from "@/components/TextField";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -91,10 +91,13 @@ export function StudentIdentityCard({ profile, t }: { profile: StudentProfile; t
   return (
     <Card style={{ gap: spacing.lg }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
-        <Avatar
+        {/* Parent-set avatar (preset/photo, signed via the student's OWN
+            session) wins over the legacy self-uploaded photo (web parity). */}
+        <ChildAvatar
+          row={profile.avatar}
           name={profile.name || "—"}
           seed={profileId}
-          url={profile.avatarUrl}
+          fallbackUrl={profile.avatarUrl}
           size={64}
         />
         <View style={{ flex: 1, gap: 2 }}>

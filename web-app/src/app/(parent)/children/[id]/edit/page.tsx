@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
+import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { ChildInfoEditForm } from "@/components/ChildInfoEditForm";
 
 // All i18n keys the (client) edit form needs, resolved server-side into a dict.
@@ -24,6 +25,11 @@ const KEYS = [
   "addchild.err.cityRequired", "addchild.err.schoolRequired",
   "addchild.err.gradeRequired", "addchild.err.districtRequired",
   "childedit.err.generic", "childedit.err.notYourChild",
+  // avatar section (preset boy/girl or photo upload; default = initials)
+  "addchild.avatar.title", "addchild.avatar.hint", "addchild.avatar.default",
+  "addchild.avatar.boy", "addchild.avatar.girl", "addchild.avatar.upload",
+  "addchild.avatar.replace", "addchild.avatar.removePhoto",
+  "addchild.avatar.photoSelected", "addchild.avatar.requirements",
 ];
 
 // Parent edits a child's profile info after creation (name/grade/city/school).
@@ -42,7 +48,8 @@ export default async function EditChildPage({
     .from("students")
     .select(
       "profile_id, first_name, last_name, child_unique_id, class_grade, " +
-        "grade_id, district_id, city_district_id, school_id, created_by_parent_profile_id",
+        "grade_id, district_id, city_district_id, school_id, created_by_parent_profile_id, " +
+        "avatar_kind, avatar_key, avatar_media_path",
     )
     .eq("profile_id", id)
     .maybeSingle();
@@ -93,6 +100,13 @@ export default async function EditChildPage({
 
   const childName = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim();
 
+  // Existing PHOTO avatar → a short-lived signed URL via the parent's own
+  // session client (the private bucket's RLS covers the linked family).
+  const avatarPhotoUrl =
+    c.avatar_kind === "photo"
+      ? await resolveChildAvatarUrl(supabase, c)
+      : null;
+
   return (
     <section className="prose wiz-page">
       <div className="wiz-head">
@@ -115,6 +129,11 @@ export default async function EditChildPage({
           cityDistrictId: c.city_district_id ?? "",
           schoolId: c.school_id ?? "",
           gradeId: c.grade_id ?? "",
+        }}
+        initialAvatar={{
+          kind: c.avatar_kind ?? "preset",
+          key: c.avatar_key ?? null,
+          photoUrl: avatarPhotoUrl,
         }}
         cities={cities}
         cityDistricts={cityDistricts}

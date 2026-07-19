@@ -57,7 +57,7 @@ export default async function ParentOlympiadCatalogPage() {
     supabase
       .from("olympiad_packages")
       .select(
-        "id, price_amount, currency, event_starts_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+        "id, price_amount, currency, event_starts_at, sale_starts_at, sale_ends_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
       )
       .eq("status", "active")
       .order("created_at"),
@@ -119,6 +119,15 @@ export default async function ParentOlympiadCatalogPage() {
     }
     const ts = p.event_starts_at ? Date.parse(p.event_starts_at) : NaN;
     const price = Number(p.price_amount ?? 0);
+    // Sale window (DB round: RLS hides off-sale rows from non-purchasers, so an
+    // off-sale row only reaches a family that already owns it via ANOTHER
+    // child; the RPC rejects such buys server-side either way). Cosmetic gate:
+    // outside [sale_starts_at, sale_ends_at] the card shows a chip, not Buy.
+    const saleStart = p.sale_starts_at ? Date.parse(p.sale_starts_at) : NaN;
+    const saleEnd = p.sale_ends_at ? Date.parse(p.sale_ends_at) : NaN;
+    const offSale =
+      (Number.isFinite(saleStart) && saleStart > Date.now()) ||
+      (Number.isFinite(saleEnd) && saleEnd <= Date.now());
     return {
       id: p.id,
       title: tr?.title ?? "—",
@@ -135,6 +144,7 @@ export default async function ParentOlympiadCatalogPage() {
       // M12: the event already happened → archived for purchase display
       // (no buy CTA; purchasers keep their access as before).
       past: Number.isFinite(ts) && ts <= Date.now(),
+      offSale,
     };
   });
 
@@ -157,6 +167,7 @@ export default async function ParentOlympiadCatalogPage() {
     modalSuccess: t("poly.modal.success"),
     modalAlready: t("poly.modal.already"),
     pastLabel: t("oly4.status.held"),
+    notOnSaleLabel: t("poly.notOnSale"),
   };
 
   return (

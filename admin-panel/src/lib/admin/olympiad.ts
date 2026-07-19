@@ -22,6 +22,7 @@ import {
   type ActiveTypeRule,
 } from "@/lib/admin/bulk-validate";
 import { getT, getLocale, type T } from "@/i18n/server";
+import { parseIsoTimestamp } from "@/lib/admin/datetime";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import { localeNames } from "@/i18n/config";
 import { localStrings as poolStrings } from "@/app/(protected)/olympiad/labels";
@@ -81,6 +82,8 @@ type PackageFields = {
   status: string;
   titleAz: string;
   eventAt: string | null;
+  saleStartAt: string | null;
+  saleEndAt: string | null;
   durationMinutes: number;
 };
 
@@ -89,7 +92,11 @@ type PackageFields = {
 const DURATION_MIN = 5;
 const DURATION_MAX = 240;
 
-function parsePackageFields(fd: FormData, t: T): { error: string } | PackageFields {
+function parsePackageFields(
+  fd: FormData,
+  t: T,
+  lt: (key: string) => string,
+): { error: string } | PackageFields {
   const subjectId = s(fd, "subject_id");
   if (!subjectId) return { error: t("oly2.err.subject") };
   // Grade is REQUIRED: bulk-imported pool questions inherit the package's
@@ -125,14 +132,24 @@ function parsePackageFields(fd: FormData, t: T): { error: string } | PackageFiel
     if (s(fd, `desc_${loc}`).length > DESC_MAX) return { error: t("err.tooLong") };
   }
 
-  // Optional planned event date/time (Round 8). The form submits an ISO string
-  // (client-side timezone-correct); empty clears the date back to NULL.
-  const eventRaw = s(fd, "event_starts_at");
-  let eventAt: string | null = null;
-  if (eventRaw) {
-    const ts = Date.parse(eventRaw);
-    if (!Number.isFinite(ts)) return { error: t("err.server") };
-    eventAt = new Date(ts).toISOString();
+  // Optional planned event date/time (Round 8) + optional public sale window.
+  // All three arrive as UTC ISO strings from hidden fields (the client converts
+  // the admin's Baku wall-clock entry — convention in lib/admin/datetime.ts);
+  // empty clears back to NULL, malformed/out-of-bounds values are rejected.
+  const eventAt = parseIsoTimestamp(s(fd, "event_starts_at"));
+  if (eventAt === undefined) return { error: lt("oly2.err.badDate") };
+  const saleStartAt = parseIsoTimestamp(s(fd, "sale_starts_at"));
+  if (saleStartAt === undefined) return { error: lt("oly2.err.badDate") };
+  const saleEndAt = parseIsoTimestamp(s(fd, "sale_ends_at"));
+  if (saleEndAt === undefined) return { error: lt("oly2.err.badDate") };
+  // Mirror the DB CHECK (sale_ends_at > sale_starts_at when both set) so the
+  // admin gets a friendly message instead of a constraint violation.
+  if (
+    saleStartAt &&
+    saleEndAt &&
+    Date.parse(saleEndAt) <= Date.parse(saleStartAt)
+  ) {
+    return { error: lt("oly2.err.saleWindow") };
   }
   return {
     subjectId,
@@ -141,6 +158,8 @@ function parsePackageFields(fd: FormData, t: T): { error: string } | PackageFiel
     status,
     titleAz,
     eventAt,
+    saleStartAt,
+    saleEndAt,
     durationMinutes: durationNum,
   };
 }
@@ -212,8 +231,9 @@ export async function saveOlympiadPackage(
 ): Promise<OlympiadState> {
   const ctx = await requireAdmin();
   const t = await getT();
+  const lt = olympiadLocalStrings(await getLocale());
   const id = s(fd, "__id");
-  const fields = parsePackageFields(fd, t);
+  const fields = parsePackageFields(fd, t, lt);
   if ("error" in fields) return { error: fields.error };
 
   const supabase = await createClient();
@@ -225,6 +245,8 @@ export async function saveOlympiadPackage(
     price_amount: fields.price,
     status: fields.status,
     event_starts_at: fields.eventAt,
+    sale_starts_at: fields.saleStartAt,
+    sale_ends_at: fields.saleEndAt,
     duration_minutes: fields.durationMinutes,
   };
   let pkgId = id;
@@ -520,8 +542,9 @@ export async function createOlympiadPackageWithQuestions(
 ): Promise<OlympiadCreateState> {
   const ctx = await requireAdmin();
   const t = await getT();
+  const lt = olympiadLocalStrings(await getLocale());
 
-  const fields = parsePackageFields(fd, t);
+  const fields = parsePackageFields(fd, t, lt);
   if ("error" in fields) return { error: fields.error };
   if (!UUID_RE.test(fields.subjectId)) return { error: t("oly2.err.subject") };
   if (!UUID_RE.test(fields.gradeId)) return { error: t("oly2.err.grade") };
@@ -554,6 +577,8 @@ export async function createOlympiadPackageWithQuestions(
       price_amount: fields.price,
       status: fields.status,
       event_starts_at: fields.eventAt,
+      sale_starts_at: fields.saleStartAt,
+      sale_ends_at: fields.saleEndAt,
       duration_minutes: fields.durationMinutes,
     },
     fields.titleAz,

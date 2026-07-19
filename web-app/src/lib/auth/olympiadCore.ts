@@ -11,6 +11,7 @@ import { getAdminClient } from "@/lib/supabase/admin";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { notifyOlympiadPurchased } from "@/lib/notifications/events";
+import { writeAuditLog } from "@/lib/audit";
 
 export type PurchaseOlympiadCoreResult =
   | { ok: true; already?: boolean }
@@ -79,16 +80,32 @@ export async function purchaseOlympiadForChildCore(params: {
   // server-side (client-sent amounts are ignored by design).
   const { data: pkg } = await admin
     .from("olympiad_packages")
-    .select("id, status, price_amount, currency")
+    .select("id, status, price_amount, currency, sale_starts_at, sale_ends_at")
     .eq("id", packageId)
     .maybeSingle();
   if (!pkg || (pkg as { status?: string }).status !== "active") return fail;
 
+  // Sale window pre-check BEFORE the payment seam (never charge for an
+  // off-sale package). The purchase_olympiad RPC re-enforces this atomically
+  // (check_violation, hint 'package_not_on_sale') — this is the early exit.
+  {
+    const p = pkg as { sale_starts_at?: string | null; sale_ends_at?: string | null };
+    const saleStart = p.sale_starts_at ? Date.parse(p.sale_starts_at) : NaN;
+    const saleEnd = p.sale_ends_at ? Date.parse(p.sale_ends_at) : NaN;
+    if (
+      (Number.isFinite(saleStart) && saleStart > Date.now()) ||
+      (Number.isFinite(saleEnd) && saleEnd <= Date.now())
+    ) {
+      return { ok: false, errorKey: "poly.err.notOnSale" };
+    }
+  }
+
+  const amount = Number((pkg as { price_amount?: number }).price_amount ?? 0);
   const payment = await processOlympiadPayment({
     parentProfileId,
     studentProfileId: studentId,
     packageId,
-    amount: Number((pkg as { price_amount?: number }).price_amount ?? 0),
+    amount,
     currency: String((pkg as { currency?: string }).currency ?? "AZN"),
   });
   if (!payment.ok) return fail;
@@ -104,7 +121,17 @@ export async function purchaseOlympiadForChildCore(params: {
     const already =
       (error as { code?: string }).code === "23505" ||
       /duplicate key|unique/i.test(error.message ?? "");
-    if (!already) return fail;
+    if (!already) {
+      // Sale window: purchase_olympiad rejects off-sale purchases with a
+      // check_violation carrying hint 'package_not_on_sale' (server-time
+      // authoritative — the UI hiding is only cosmetic). Map it to the
+      // specific trilingual key; everything else stays the generic failure.
+      const hint = (error as { hint?: string | null }).hint ?? "";
+      if (hint === "package_not_on_sale") {
+        return { ok: false, errorKey: "poly.err.notOnSale" };
+      }
+      return fail;
+    }
   }
 
   // Notify the child + the owning parent (best-effort; idempotency keys dedupe a
@@ -115,12 +142,23 @@ export async function purchaseOlympiadForChildCore(params: {
     packageId,
   });
 
+  const existing =
+    error != null ||
+    (data as { existing?: boolean } | null)?.existing === true;
+
+  // Only a GENUINE new purchase is audited — a re-purchase of an
+  // already-owned package is a no-op (no charge, no new access).
+  if (!existing) {
+    await writeAuditLog(parentProfileId, "parent.olympiad_purchase", {
+      targetTable: "olympiad_packages",
+      targetId: packageId,
+      metadata: { package_id: packageId, amount },
+    });
+  }
+
   revalidatePath("/olympiads");
   revalidatePath(`/children/${studentId}/olympiads`);
   revalidatePath("/subscription");
 
-  const existing =
-    error != null ||
-    (data as { existing?: boolean } | null)?.existing === true;
   return existing ? { ok: true, already: true } : { ok: true };
 }

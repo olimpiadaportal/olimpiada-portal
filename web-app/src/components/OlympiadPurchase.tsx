@@ -36,6 +36,8 @@ export type PolyPackage = {
   ownedBy: string[];
   /** M12: event date already passed → archived for purchase (no buy CTA). */
   past: boolean;
+  /** Sale window closed/not open (server-evaluated) → chip instead of Buy. */
+  offSale: boolean;
 };
 
 export type PolyDict = {
@@ -59,6 +61,9 @@ export type PolyDict = {
   modalAlready: string;
   /** M12: label shown on past-event (archived) packages instead of a buy CTA. */
   pastLabel: string;
+  /** Sale window closed — shown instead of a buy CTA (purchase_olympiad
+      rejects off-sale buys server-side either way). */
+  notOnSaleLabel: string;
 };
 
 // Inline-SVG medal for the branded gradient placeholder (no external images —
@@ -331,6 +336,10 @@ export function OlympiadPurchase({
                     ) : pkg.past ? (
                       // M12: the event was already held — archived; never buyable.
                       <span className="poly-chip">{dict.pastLabel}</span>
+                    ) : pkg.offSale ? (
+                      // Sale window closed for this (family-visible) package —
+                      // the server rejects such buys with poly.err.notOnSale.
+                      <span className="poly-chip">{dict.notOnSaleLabel}</span>
                     ) : canBuy && child ? (
                       <button
                         type="button"

@@ -177,6 +177,19 @@ export type PublicSiteSettings = {
   maintenanceMessage: Partial<Record<Locale, string>>;
   supportEmail: string;
   supportPhone: string;
+  // Admin-configured WhatsApp contact (system_settings key
+  // `contact.support_whatsapp`, empty default — same naming family as
+  // support_email/phone). The Contact page renders its row ONLY when non-empty.
+  whatsapp: string;
+  // Admin-configured physical address (system_settings key
+  // `contact.support_address`, empty default). ContactInfo renders the whole
+  // address block ONLY when non-empty — same pattern as whatsapp/phone.
+  address: string;
+  // Admin-configured precise map pin (system_settings key
+  // `contact.support_map_query`, empty default) — a "lat,lng" pair or a place
+  // query for an exact Google Maps pin. Contact map precedence: mapQuery, else
+  // address, else a hardcoded fallback (see ContactInfo.tsx).
+  mapQuery: string;
   social: { facebook: string; instagram: string; youtube: string; tiktok: string };
 };
 
@@ -241,6 +254,9 @@ const fetchPublicSiteSettings = unstable_cache(
   const out = {
     supportEmail: "",
     supportPhone: "",
+    whatsapp: "",
+    address: "",
+    mapQuery: "",
     social: { facebook: "", instagram: "", youtube: "", tiktok: "" },
   };
   try {
@@ -251,6 +267,9 @@ const fetchPublicSiteSettings = unstable_cache(
       .in("key", [
         "contact.support_email",
         "contact.support_phone",
+        "contact.support_whatsapp",
+        "contact.support_address",
+        "contact.support_map_query",
         "social.facebook",
         "social.instagram",
         "social.youtube",
@@ -265,6 +284,15 @@ const fetchPublicSiteSettings = unstable_cache(
           break;
         case "contact.support_phone":
           out.supportPhone = str(row.value_json);
+          break;
+        case "contact.support_whatsapp":
+          out.whatsapp = str(row.value_json);
+          break;
+        case "contact.support_address":
+          out.address = str(row.value_json);
+          break;
+        case "contact.support_map_query":
+          out.mapQuery = str(row.value_json);
           break;
         case "social.facebook":
           out.social.facebook = str(row.value_json);
@@ -285,7 +313,9 @@ const fetchPublicSiteSettings = unstable_cache(
     return out;
   }
   },
-  ["public-site-settings"],
+  // v4: shape gained `mapQuery` — new cache key so a stale persisted entry
+  // from a previous deploy can never be read back without the field.
+  ["public-site-settings-v4"],
   { revalidate: 60 },
 );
 
@@ -296,6 +326,9 @@ export const getPublicSiteSettings = cache(async (): Promise<PublicSiteSettings>
       maintenanceMessage: {},
       supportEmail: "",
       supportPhone: "",
+      whatsapp: "",
+      address: "",
+      mapQuery: "",
       social: { facebook: "", instagram: "", youtube: "", tiktok: "" },
     };
   }

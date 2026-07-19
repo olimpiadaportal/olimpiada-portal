@@ -4,9 +4,25 @@ import { Sidebar } from "@/components/Sidebar";
 import { SignOutButton } from "@/components/SignOutButton";
 import { IdleTimeout } from "@/components/IdleTimeout";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { NotificationBell } from "@/components/NotificationBell";
+import { getAdminInboxSnapshot } from "@/lib/admin/notif-inbox";
+import { BELL_LIMIT } from "@/lib/admin/notif-types";
 import { getLocale, getT } from "@/i18n/server";
 import { localStrings as locationStrings } from "./locations/labels";
 import { localStrings as pricingStrings } from "./pricing/labels";
+import { localStrings as alertsStrings } from "./alerts/labels";
+
+const BELL_STRING_KEYS = [
+  "alerts.bell",
+  "alerts.markAllRead",
+  "alerts.seeAll",
+  "alerts.empty",
+  "alerts.emptyHint",
+  "alerts.timeNow",
+  "alerts.timeMin",
+  "alerts.timeHour",
+  "alerts.timeDay",
+] as const;
 
 export default async function ProtectedLayout({
   children,
@@ -17,16 +33,27 @@ export default async function ProtectedLayout({
 
   // Nav labels not yet in the shared dictionary fall back to the local
   // trilingual module strings (t() returns the key itself when missing) —
-  // currently nav.locations (Round 21 merged Cities/Districts/Schools) and
-  // nav.pricing (subscription pricing).
+  // currently nav.locations (Round 21 merged Cities/Districts/Schools),
+  // nav.pricing (subscription pricing) and nav.alerts (received alerts page).
   const ltLocations = locationStrings(locale);
   const ltPricing = pricingStrings(locale);
+  const ltAlerts = alertsStrings(locale);
   const navLabel = (key: string) => {
     const v = t(key);
     if (v !== key) return v;
     const l = ltLocations(key);
-    return l !== key ? l : ltPricing(key);
+    if (l !== key) return l;
+    const p = ltPricing(key);
+    return p !== key ? p : ltAlerts(key);
   };
+
+  // Admin notification bell — only administrators ever receive these
+  // operational alerts (admin_new_parent/admin_new_purchase/
+  // admin_new_subscription), but the snapshot read is harmless (and empty)
+  // for a Content Manager session too, so it is seeded for every panel user.
+  const notifSnapshot = await getAdminInboxSnapshot(BELL_LIMIT);
+  const bellStrings: Record<string, string> = {};
+  for (const k of BELL_STRING_KEYS) bellStrings[k] = ltAlerts(k);
 
   const roleLabel = ctx.isAdmin
     ? t("common.administrator")
@@ -64,6 +91,12 @@ export default async function ProtectedLayout({
         <header className="topbar">
           <div className="topbar-title">{roleLabel}</div>
           <div className="account-chip">
+            <NotificationBell
+              initialItems={notifSnapshot.items}
+              initialUnread={notifSnapshot.unread}
+              seeAllHref="/alerts"
+              strings={bellStrings}
+            />
             <span className="avatar" aria-hidden />
             <span>{ctx.email ?? "—"}</span>
             <LanguageSwitcher current={locale} />

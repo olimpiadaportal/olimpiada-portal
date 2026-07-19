@@ -636,6 +636,14 @@ insert into public.system_settings (key, value_json) values
   -- redesigned admin Settings (typed controls; no raw-JSON editors).
   ('contact.support_email',         '""'::jsonb),
   ('contact.support_phone',         '""'::jsonb),
+  -- Migration 070: admin-configured WhatsApp contact line. Empty by default —
+  -- no real number exists yet; UIs hide the line while empty.
+  ('contact.support_whatsapp',      '""'::jsonb),
+  -- Migration 072: admin-editable support/office address, seeded with the live
+  -- contact-page address so switching to a setting changes nothing visibly.
+  ('contact.support_address',       '"Səbail rayonu, Akademik Əhəd Yaqubov küç, 52C, Bakı, Azərbaycan"'::jsonb),
+  -- Migration 075: precise map location (empty = the map derives from the address).
+  ('contact.support_map_query',     '""'::jsonb),
   ('platform.maintenance_mode',     'false'::jsonb),
   ('platform.maintenance_message',  '{"az":"","en":"","ru":""}'::jsonb),
   ('social.facebook',               '""'::jsonb),

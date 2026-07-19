@@ -39,10 +39,15 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
+import {
+  ChildAvatarPicker,
+  type ChildAvatarChoice,
+} from "@/components/ChildAvatarPicker";
 import { useLocale, useT } from "@/i18n/I18nProvider";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { addChild } from "@/lib/auth/parentService";
+import { saveChildAvatar } from "@/lib/auth/childAvatarActions";
 import {
   subscribeChild,
   quoteSubscription,
@@ -167,6 +172,12 @@ export function AddChildWizard({
   // The created child's profile id (returned by addChild; used by
   // subscribeChild / activateChildGiveaway).
   const [studentProfileId, setStudentProfileId] = useState<string | null>(null);
+  // Avatar (preset boy/girl or an uploaded photo; "default" = initials bubble).
+  // Applied AFTER the child row exists (the photo path needs the profile id);
+  // avatarDone guards a Back/retry from re-applying it.
+  const [avatarChoice, setAvatarChoice] = useState<ChildAvatarChoice>("default");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarDone, setAvatarDone] = useState(false);
 
   // Step 2 — subjects.
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -282,6 +293,26 @@ export function AddChildWizard({
         }
         sid = res.studentProfileId;
         setStudentProfileId(sid);
+      }
+
+      // Apply the chosen avatar now that the child row exists (the photo path
+      // needs the student profile id). Best-effort: an avatar failure never
+      // blocks the wizard — the parent can set it later from Edit-Child.
+      if (!avatarDone && avatarChoice !== "default") {
+        const afd = new FormData();
+        afd.set("student_profile_id", sid);
+        if (avatarChoice === "photo") {
+          if (avatarFile) {
+            afd.set("choice", "photo");
+            afd.set("avatar_file", avatarFile);
+          }
+        } else {
+          afd.set("choice", avatarChoice);
+        }
+        if (afd.has("choice")) {
+          const av = await saveChildAvatar(null, afd);
+          if (av?.ok) setAvatarDone(true);
+        }
       }
 
       if (freeFlow) {
@@ -507,6 +538,20 @@ export function AddChildWizard({
               />
             </label>
             <p className="hint">{tt("parent.child.passwordHint")}</p>
+
+            {/* Avatar (optional): preset Boy/Girl, an uploaded photo, or the
+                default initials bubble. Applied server-side after creation. */}
+            <div className="field">
+              <span className="field-label">{tt("addchild.avatar.title")}</span>
+              <ChildAvatarPicker
+                choice={avatarChoice}
+                onChoiceChange={setAvatarChoice}
+                file={avatarFile}
+                onFileChange={setAvatarFile}
+                disabled={pending || avatarDone}
+                dict={dict}
+              />
+            </div>
 
             {infoErrors.length > 0 && (
               <ul className="form-error">

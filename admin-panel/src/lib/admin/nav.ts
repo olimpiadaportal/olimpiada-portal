@@ -74,6 +74,12 @@ export const NAV: NavGroup[] = [
         adminOnly: true,
         permission: "notifications.send",
       },
+      // Received operational alerts (the topbar bell's "see all" page) —
+      // admin-only, same posture as notifications.send above: only
+      // administrator profiles ever receive these rows. Local trilingual
+      // fallback (see the layout's navLabel chain) until messages.ts gains
+      // the key.
+      { label: "nav.alerts", href: "/alerts", adminOnly: true },
       { label: "nav.audit", href: "/audit", adminOnly: true },
       { label: "nav.settings", href: "/settings", adminOnly: true },
       { label: "nav.siteContent", href: "/site-content", adminOnly: true },

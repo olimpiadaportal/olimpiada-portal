@@ -20,6 +20,11 @@ import { startTransition, useActionState, useMemo, useState } from "react";
 import { useLocale } from "@/i18n/I18nProvider";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { updateChildProfile, type UpdateChildState } from "@/lib/auth/parentService";
+import { saveChildAvatar } from "@/lib/auth/childAvatarActions";
+import {
+  ChildAvatarPicker,
+  type ChildAvatarChoice,
+} from "@/components/ChildAvatarPicker";
 
 type City = { id: string; name: string };
 // NAMING (Round 21): `districts` is the CITIES table (historic naming) —
@@ -46,6 +51,7 @@ export function ChildInfoEditForm({
   studentProfileId,
   childUniqueId,
   initial,
+  initialAvatar,
   cities,
   cityDistricts,
   schools,
@@ -61,6 +67,12 @@ export function ChildInfoEditForm({
     cityDistrictId: string;
     schoolId: string;
     gradeId: string;
+  };
+  /** Parent-managed avatar state (photoUrl = short-lived signed URL). */
+  initialAvatar: {
+    kind: string;
+    key: string | null;
+    photoUrl: string | null;
   };
   cities: City[];
   cityDistricts: CityDistrict[];
@@ -82,6 +94,20 @@ export function ChildInfoEditForm({
   const [schoolId, setSchoolId] = useState(initial.schoolId);
   const [gradeId, setGradeId] = useState(initial.gradeId);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  // Avatar (parent-managed): the picker mirrors the stored state; Save only
+  // dispatches the avatar action when the selection actually changed.
+  const initialChoice: ChildAvatarChoice =
+    initialAvatar.kind === "photo"
+      ? "photo"
+      : initialAvatar.key === "boy" || initialAvatar.key === "girl"
+        ? initialAvatar.key
+        : "default";
+  const [avatarChoice, setAvatarChoice] = useState<ChildAvatarChoice>(initialChoice);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  // What the SERVER currently has (advances after a successful save).
+  const [avatarBaseline, setAvatarBaseline] = useState<ChildAvatarChoice>(initialChoice);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   // Rayons of the chosen city. A city with NO active rayons skips the district
   // field entirely (its schools attach directly to the city).
@@ -175,7 +201,35 @@ export function ChildInfoEditForm({
     fd.set("school_name", citySchools.find((s) => s.id === schoolId)?.name ?? "");
     fd.set("class_grade", grades.find((g) => g.id === gradeId)?.name ?? "");
 
-    startTransition(() => {
+    // Avatar: dispatch its own ownership-checked action only when the picker
+    // state changed. "photo" without a new file = keep the stored photo;
+    // back to "default" from anything else = remove.
+    let avatarAction: "photo" | "boy" | "girl" | "remove" | null = null;
+    if (avatarChoice === "photo") {
+      if (avatarFile) avatarAction = "photo";
+    } else if (avatarChoice === "boy" || avatarChoice === "girl") {
+      if (avatarChoice !== avatarBaseline) avatarAction = avatarChoice;
+    } else if (avatarBaseline !== "default") {
+      avatarAction = "remove";
+    }
+
+    startTransition(async () => {
+      if (avatarAction) {
+        const afd = new FormData();
+        afd.set("student_profile_id", studentProfileId);
+        afd.set("choice", avatarAction);
+        if (avatarAction === "photo" && avatarFile) {
+          afd.set("avatar_file", avatarFile);
+        }
+        const av = await saveChildAvatar(null, afd);
+        if (av?.ok) {
+          setAvatarBaseline(avatarChoice);
+          setAvatarFile(null);
+          setAvatarError(null);
+        } else {
+          setAvatarError(av?.error ?? null);
+        }
+      }
       action(fd);
     });
   }
@@ -330,6 +384,23 @@ export function ChildInfoEditForm({
           <span className="field-error">{tt(fieldErrors.grade)}</span>
         )}
       </label>
+
+      {/* Avatar (parent-managed): preset Boy/Girl, an uploaded photo, or the
+          default initials bubble. Saved through its own ownership-checked
+          action when the selection changed. */}
+      <div className="field">
+        <span className="field-label">{tt("addchild.avatar.title")}</span>
+        <ChildAvatarPicker
+          choice={avatarChoice}
+          onChoiceChange={setAvatarChoice}
+          file={avatarFile}
+          onFileChange={setAvatarFile}
+          currentPhotoUrl={initialAvatar.photoUrl}
+          disabled={pending}
+          dict={dict}
+        />
+        {avatarError && <span className="field-error">{avatarError}</span>}
+      </div>
 
       {/* Read-only identifiers — display only, never editable. */}
       <div className="prof2-rows" style={{ marginTop: 4 }}>

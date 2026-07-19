@@ -337,6 +337,30 @@ alter table public.students
   add column if not exists last_active_date date,
   add column if not exists streak_tz        text not null default 'Asia/Baku';
 
+-- -----------------------------------------------------------------------------
+-- CHILD AVATARS (backported from migrations/2026_07_18_071_child_avatars.sql)
+-- A parent uploads a child PHOTO (PRIVATE child-avatars bucket, see 009) or
+-- picks a PRESET ('boy'/'girl'). The DEFAULT state (kind='preset', NULL key)
+-- IS the initials avatar — the skip default; no backfill needed.
+-- -----------------------------------------------------------------------------
+alter table public.students
+  add column if not exists avatar_kind       text not null default 'preset',
+  add column if not exists avatar_key        text,
+  add column if not exists avatar_media_path text;
+
+do $$ begin
+  alter table public.students
+    add constraint chk_students_avatar_kind
+    check (avatar_kind in ('preset', 'photo'));
+exception when duplicate_object then null; end $$;
+
+comment on column public.students.avatar_kind is
+  'Child avatar mode: preset (avatar_key names a stable preset; NULL key = the default initials avatar) or photo (avatar_media_path points into the PRIVATE child-avatars bucket).';
+comment on column public.students.avatar_key is
+  'Preset avatar key (e.g. boy, girl). Stable app-side catalog — validated in the parent server actions, intentionally NOT a DB whitelist so future presets need no migration. NULL with kind=preset = initials avatar (the skip default).';
+comment on column public.students.avatar_media_path is
+  'Storage object path (students/<student_profile_id>/<file>) inside the PRIVATE child-avatars bucket. Served via signed URLs only. NULL unless avatar_kind = photo.';
+
 -- =============================================================================
 -- End of 002_core_profiles_roles_permissions.sql
 -- =============================================================================

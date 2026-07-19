@@ -1,7 +1,9 @@
-// Public pricing (web /pricing parity): pricing2.* copy, one plan card per
-// interval behind a Segmented switcher (the clean mobile pattern for three
-// dense cards), real per-subject prices from subjects_pricing, trial line
-// gated by the launch_promo flag, fixed sibling-discount callout. Prices are
+// Public pricing / SERVICES (web /services parity): pricing2.* copy, one plan
+// card per interval behind a Segmented switcher (the clean mobile pattern for
+// three dense cards), real per-subject prices from subjects_pricing, trial
+// line gated by the launch_promo flag, fixed sibling-discount callout, and the
+// active-olympiad-packages band (anon get_public_olympiad_packages RPC — the
+// same server-filtered rows as the web landing/services section). Prices are
 // display-only — checkout always reprices server-side.
 // Redesign (plan §4-Public): the popular interval gets a gradient border +
 // "Populyar" pill, per-subject rows carry lucide subject glyphs, the CTA is
@@ -16,9 +18,13 @@ import {
   BookOpen,
   Brain,
   Calculator,
+  CalendarDays,
   Check,
+  CircleHelp,
+  Clock3,
   FlaskConical,
   Languages,
+  Trophy,
   type LucideIcon,
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
@@ -29,11 +35,19 @@ import { Segmented } from "@/components/Segmented";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, spacing } from "@/theme/tokens";
-import { fetchSubjectsPricing, type SubjectPricingRow } from "@/lib/data";
+import {
+  fetchPublicOlympiadPackages,
+  fetchSubjectsPricing,
+  type PublicOlympiadPackage,
+  type SubjectPricingRow,
+} from "@/lib/data";
 import { isSupabaseConfigured } from "@/lib/env";
 import { useMobileConfig } from "@/lib/configQueries";
 import { useT } from "@/i18n/useT";
+import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { formatGradeLabel } from "@/lib/gradeLabel";
+import { useAuthStore } from "@/features/auth/authStore";
 
 const PRICING_STALE_MS = 5 * 60_000;
 
@@ -74,6 +88,216 @@ function Pill({ text }: { text: string }) {
       <AppText variant="label" color={tokens.pillText} style={{ fontSize: 12 }}>
         {text}
       </AppText>
+    </View>
+  );
+}
+
+/* ---------------- active olympiad packages (web PublicOlympiadPackages) ------ */
+
+const PKG_STALE_MS = 5 * 60_000;
+
+const INTL_LOCALE: Record<Locale, string> = { az: "az-AZ", en: "en-GB", ru: "ru-RU" };
+
+/** Sale/event deadlines are DATE-ONLY in the product's home timezone. */
+function pkgDate(iso: string | null, locale: Locale): string | null {
+  if (!iso) return null;
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return null;
+  try {
+    return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
+      timeZone: "Asia/Baku",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(new Date(ts));
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+/** Localized pick with az fallback (the RPC already az-falls-back en/ru; the
+ *  extra guards keep empty strings out either way). */
+function pickText(
+  locale: Locale,
+  az: string | null,
+  en: string | null,
+  ru: string | null,
+): string {
+  const v = locale === "en" ? en : locale === "ru" ? ru : az;
+  return (v ?? "").trim() || (az ?? "").trim();
+}
+
+function MetaChip({ icon, label }: { icon: React.ReactNode; label: string }) {
+  const { tokens } = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.xs,
+        backgroundColor: tokens.chipBg,
+        borderRadius: 999,
+        paddingHorizontal: spacing.md,
+        paddingVertical: 3,
+      }}
+    >
+      {icon}
+      <AppText variant="label" color={tokens.chipText} style={{ fontSize: 12 }}>
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
+function PublicPackagesSection() {
+  const { t, locale } = useT();
+  const { tokens } = useTheme();
+  const router = useRouter();
+  const role = useAuthStore((s) => s.role);
+  const status = useAuthStore((s) => s.status);
+
+  const q = useQuery({
+    queryKey: ["public-oly-packages"],
+    queryFn: fetchPublicOlympiadPackages,
+    enabled: isSupabaseConfigured,
+    staleTime: PKG_STALE_MS,
+  });
+
+  // CTA auth state picks the TARGET only (web parity): signed out → register,
+  // parent → the olympiads tab (which re-gates server-side). Students never
+  // see commerce — no CTA for a student session (this screen is deep-link
+  // blocked for them anyway).
+  const isParent = status === "signedIn" && role === "parent";
+  const showCta = isParent || status === "signedOut";
+  const onCta = () =>
+    isParent
+      ? router.push("/(parent)/(tabs)/olympiads")
+      : router.push("/(public)/register");
+  const ctaLabel = isParent ? t("polyPub.ctaParent") : t("polyPub.cta");
+
+  return (
+    <View style={{ gap: spacing.lg }}>
+      <View style={{ gap: spacing.sm }}>
+        <AppText variant="eyebrow">{t("polyPub.eyebrow")}</AppText>
+        <AppText variant="heading">{t("polyPub.title")}</AppText>
+        <AppText variant="muted">{t("polyPub.sub")}</AppText>
+      </View>
+
+      {q.isPending && isSupabaseConfigured ? (
+        <Card style={{ gap: spacing.md }}>
+          <Skeleton height={22} width="60%" />
+          <Skeleton height={14} />
+          <Skeleton height={14} width="80%" />
+          <Skeleton height={28} width="40%" />
+        </Card>
+      ) : q.isError && !q.data ? (
+        <ErrorRetry
+          message={t("mob.boot.error")}
+          retryLabel={t("mob.retry")}
+          onRetry={() => void q.refetch()}
+        />
+      ) : (q.data ?? []).length === 0 ? (
+        <Card>
+          <AppText variant="muted">{t("polyPub.empty")}</AppText>
+        </Card>
+      ) : (
+        <View style={{ gap: spacing.lg }}>
+          {(q.data ?? []).map((r: PublicOlympiadPackage) => {
+            const title = pickText(locale, r.title_az, r.title_en, r.title_ru) || "—";
+            const desc = pickText(
+              locale,
+              r.description_az,
+              r.description_en,
+              r.description_ru,
+            );
+            const subject =
+              r.subject_code || r.subject_name
+                ? subjectLabel(t, r.subject_code, r.subject_name)
+                : null;
+            const grade =
+              r.grade_level != null || r.grade_label
+                ? formatGradeLabel(r.grade_level, locale, r.grade_label)
+                : null;
+            const saleEnds = pkgDate(r.sale_ends_at, locale);
+            const eventAt = pkgDate(r.event_at, locale);
+            const price = Number(r.price_amount ?? 0);
+            const priceText =
+              price > 0 ? `${price} ${r.currency ?? "AZN"}` : t("poly.free");
+            const questions = Number(r.question_count ?? 0) || 0;
+            return (
+              <Card key={r.id} style={{ gap: spacing.md }}>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                  {subject ? (
+                    <MetaChip
+                      icon={<Trophy size={13} color={tokens.chipText} strokeWidth={2} />}
+                      label={subject}
+                    />
+                  ) : null}
+                  {grade && grade !== "—" ? (
+                    <MetaChip
+                      icon={<BookOpen size={13} color={tokens.chipText} strokeWidth={2} />}
+                      label={grade}
+                    />
+                  ) : null}
+                  <MetaChip
+                    icon={<CircleHelp size={13} color={tokens.chipText} strokeWidth={2} />}
+                    label={`${questions} ${t("poly.questions")}`}
+                  />
+                </View>
+                <AppText variant="title" style={{ fontSize: 18 }}>
+                  {title}
+                </AppText>
+                {desc ? (
+                  <AppText variant="muted" numberOfLines={3}>
+                    {desc}
+                  </AppText>
+                ) : null}
+                <View style={{ gap: spacing.sm }}>
+                  {saleEnds ? (
+                    <View
+                      style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
+                    >
+                      <Clock3 size={16} color={tokens.accent2} strokeWidth={2} />
+                      <AppText variant="muted" style={{ flex: 1, fontSize: 13 }}>
+                        {t("polyPub.salesUntil").replace("{date}", saleEnds)}
+                      </AppText>
+                    </View>
+                  ) : null}
+                  {eventAt ? (
+                    <View
+                      style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
+                    >
+                      <CalendarDays size={16} color={tokens.muted} strokeWidth={2} />
+                      <AppText variant="muted" style={{ flex: 1, fontSize: 13 }}>
+                        {t("polyPub.eventAt").replace("{date}", eventAt)}
+                      </AppText>
+                    </View>
+                  ) : null}
+                </View>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: spacing.md,
+                  }}
+                >
+                  <AppText variant="mono" color={tokens.accent} style={{ fontSize: 18, fontWeight: "700" }}>
+                    {priceText}
+                  </AppText>
+                  {showCta ? (
+                    <Button
+                      title={ctaLabel}
+                      style={{ minHeight: 44, paddingVertical: spacing.sm }}
+                      onPress={onCta}
+                    />
+                  ) : null}
+                </View>
+              </Card>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -266,6 +490,10 @@ export default function Pricing() {
         <AppText variant="muted" style={{ fontSize: 12 }}>
           {t("pricing2.note")}
         </AppText>
+
+        {/* Active olympiad packages — the shared public band, below the
+            subscription plans (web /services parity). */}
+        <PublicPackagesSection />
       </ScrollView>
     </View>
   );

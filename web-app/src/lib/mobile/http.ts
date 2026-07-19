@@ -55,6 +55,9 @@ export function unauthorizedResponse(): Response {
 export function statusForErrorKey(key: string): number {
   if (key.endsWith(".notYourChild")) return 403;
   if (key.startsWith("gate.")) return 409;
+  // Sale window closed between listing and purchase — a conflict with current
+  // server state, like the payment-mode gates.
+  if (key === "poly.err.notOnSale") return 409;
   return 400;
 }
 

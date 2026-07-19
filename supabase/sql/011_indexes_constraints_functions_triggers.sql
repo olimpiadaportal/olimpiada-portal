@@ -265,14 +265,16 @@ create trigger trg_audit_parent_student_links
   after insert or update or delete on public.parent_student_links
   for each row execute function public.fn_audit_row();
 
+-- Money trail (migration 073): INSERT+UPDATE so NEW subscription/payment rows
+-- are captured, not just status transitions.
 drop trigger if exists trg_audit_subscriptions on public.subscriptions;
 create trigger trg_audit_subscriptions
-  after update on public.subscriptions
+  after insert or update on public.subscriptions
   for each row execute function public.fn_audit_row();
 
 drop trigger if exists trg_audit_payments on public.payments;
 create trigger trg_audit_payments
-  after update on public.payments
+  after insert or update on public.payments
   for each row execute function public.fn_audit_row();
 
 -- Content actions (create/edit/archive/publish/etc.) — backported from
@@ -285,6 +287,46 @@ create trigger trg_audit_questions
 drop trigger if exists trg_audit_tests on public.tests;
 create trigger trg_audit_tests
   after insert or update or delete on public.tests
+  for each row execute function public.fn_audit_row();
+
+-- Round-28 audit coverage (migration 073): money trail, accounts, credentials
+-- and config get full before/after rows. child_credentials holds NO secret
+-- material (password lives in Supabase Auth). Tables keyed on key/profile_id
+-- get a null target_id; their contents still land in before_json/after_json.
+drop trigger if exists trg_audit_checkout_sessions on public.checkout_sessions;
+create trigger trg_audit_checkout_sessions
+  after insert or update on public.checkout_sessions
+  for each row execute function public.fn_audit_row();
+
+drop trigger if exists trg_audit_students on public.students;
+create trigger trg_audit_students
+  after insert or update or delete on public.students
+  for each row execute function public.fn_audit_row();
+
+drop trigger if exists trg_audit_profiles on public.profiles;
+create trigger trg_audit_profiles
+  after update or delete on public.profiles
+  for each row execute function public.fn_audit_row();
+
+drop trigger if exists trg_audit_child_credentials on public.child_credentials;
+create trigger trg_audit_child_credentials
+  after insert or update on public.child_credentials
+  for each row execute function public.fn_audit_row();
+
+drop trigger if exists trg_audit_system_settings on public.system_settings;
+create trigger trg_audit_system_settings
+  after update on public.system_settings
+  for each row execute function public.fn_audit_row();
+
+-- feature_flags: reconciles a dev-only drifted trigger into canonical.
+drop trigger if exists trg_audit_feature_flags on public.feature_flags;
+create trigger trg_audit_feature_flags
+  after insert or update or delete on public.feature_flags
+  for each row execute function public.fn_audit_row();
+
+drop trigger if exists trg_audit_subjects_pricing on public.subjects_pricing;
+create trigger trg_audit_subjects_pricing
+  after insert or update on public.subjects_pricing
   for each row execute function public.fn_audit_row();
 
 -- -----------------------------------------------------------------------------
@@ -481,8 +523,14 @@ begin
     'maintenance', jsonb_build_object('on', v_maint_on, 'message', v_maint_msg),
     'locales', jsonb_build_object('supported', v_locales, 'default', v_default_loc),
     'contact', jsonb_build_object(
-        'email', coalesce((select value_json->>0 from public.system_settings where key='contact.support_email'), ''),
-        'phone', coalesce((select value_json->>0 from public.system_settings where key='contact.support_phone'), '')),
+        'email',    coalesce((select value_json->>0 from public.system_settings where key='contact.support_email'), ''),
+        'phone',    coalesce((select value_json->>0 from public.system_settings where key='contact.support_phone'), ''),
+        -- Migration 070: admin-configured WhatsApp line (empty = hidden in UIs).
+        'whatsapp', coalesce((select value_json->>0 from public.system_settings where key='contact.support_whatsapp'), ''),
+        -- Migration 072: admin-editable support/office address (contact page).
+        'address',  coalesce((select value_json->>0 from public.system_settings where key='contact.support_address'), ''),
+        -- Migration 075: precise map query/coordinates (empty = derive from address).
+        'map_query', coalesce((select value_json->>0 from public.system_settings where key='contact.support_map_query'), '')),
     'social', jsonb_build_object(
         'facebook',  coalesce((select value_json->>0 from public.system_settings where key='social.facebook'), ''),
         'instagram', coalesce((select value_json->>0 from public.system_settings where key='social.instagram'), ''),
@@ -594,9 +642,10 @@ create trigger trg_set_updated_at before update on public.launch_promo_config
   for each row execute function public.set_updated_at();
 
 -- Audit subscription/payment status changes (money table).
+-- Migration 073: INSERT+UPDATE+DELETE so a new child subscription is captured.
 drop trigger if exists trg_audit_child_subscriptions on public.child_subscriptions;
 create trigger trg_audit_child_subscriptions
-  after update on public.child_subscriptions
+  after insert or update or delete on public.child_subscriptions
   for each row execute function public.fn_audit_row();
 
 -- -----------------------------------------------------------------------------
@@ -2459,7 +2508,8 @@ declare
   v_price     numeric(10,2);
   v_currency  text;
   v_status    public.catalog_status;
-  v_event     timestamptz;
+  v_starts    timestamptz;
+  v_ends      timestamptz;
   v_existing  uuid;
   v_ex_status text;
   v_id        uuid;
@@ -2468,13 +2518,18 @@ begin
   from public.students where profile_id = p_student_profile_id;
   if v_owner is null then raise exception 'purchase: child has no owning parent'; end if;
 
-  select price_amount, currency, status, event_starts_at
-    into v_price, v_currency, v_status, v_event
+  select price_amount, currency, status, sale_starts_at, sale_ends_at
+    into v_price, v_currency, v_status, v_starts, v_ends
   from public.olympiad_packages where id = p_package_id;
   if v_price is null then raise exception 'purchase: package not found'; end if;
-  -- Audit M12 (migration 035): past-event packages are treated as archived for sale.
-  if v_status <> 'active' or (v_event is not null and v_event <= now()) then
-    raise exception 'purchase: package not available' using errcode = 'check_violation';
+  -- Sales window (migration 070; supersedes the migration-035 event-date gate,
+  -- carried over by 070's one-time sale_ends_at := event_starts_at backfill):
+  -- the ONE canonical predicate — olympiad_package_on_sale, defined in 015.
+  -- Off-sale = not purchasable, full stop (existing purchasers are unaffected —
+  -- this guard only blocks NEW purchases).
+  if not public.olympiad_package_on_sale(v_status, v_starts, v_ends) then
+    raise exception 'purchase: package not on sale'
+      using errcode = 'check_violation', hint = 'package_not_on_sale';
   end if;
 
   -- Lifetime: one purchase per child/package (idempotent).
@@ -2504,7 +2559,9 @@ end;
 $$;
 
 comment on function public.purchase_olympiad(uuid, uuid) is
-  'Parent one-time LIFETIME purchase of an olympiad package for a child. service_role only (payment stubbed). Past-event packages are not sellable.';
+  'Parent one-time LIFETIME purchase of an olympiad package for a child. '
+  'service_role only (payment stubbed). Migration 070: only packages passing '
+  'olympiad_package_on_sale are purchasable (hint package_not_on_sale otherwise).';
 
 -- Migration 047: olympiad attempts run on the TIMED test engine (jsonb return,
 -- TRUE resume, deadline from olympiad_packages.duration_minutes, pre-inserted
@@ -5509,6 +5566,201 @@ begin
 end; $$;
 revoke all on function public.prune_notifications() from public, anon, authenticated;
 grant execute on function public.prune_notifications() to service_role;
+
+-- =============================================================================
+-- Notification PRODUCERS (migration 074): admin operational alerts, student
+-- progress milestones (personal_best + streak_milestone), and the pre-expiry /
+-- giveaway-ending scanners. All service-role only; all wrap create_notification
+-- so a notify failure never breaks the underlying action. The two scanners are
+-- scheduled by 016 (guarded on pg_cron). subject_charge_failed stays UNWIRED
+-- (needs the real payment provider — see the payment backlog).
+-- =============================================================================
+create or replace function public.notify_admins(
+  p_type       text,
+  p_title      text,
+  p_body       text,
+  p_data       jsonb,
+  p_key_base   text,
+  p_action_url text,
+  p_category   text default 'admin',
+  p_priority   int default 3
+)
+returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_admin uuid; v_n int := 0;
+begin
+  for v_admin in
+    select pr.profile_id
+    from public.profile_roles pr
+    join public.roles r on r.id = pr.role_id
+    where r.code = 'administrator'
+  loop
+    perform public.create_notification(
+      v_admin, p_type, p_title, p_body, coalesce(p_data, '{}'::jsonb),
+      array['in_app'], p_key_base || ':' || v_admin::text, p_priority,
+      p_action_url, p_category, null);
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end;
+$$;
+revoke all on function public.notify_admins(text,text,text,jsonb,text,text,text,int) from public, anon, authenticated;
+grant execute on function public.notify_admins(text,text,text,jsonb,text,text,text,int) to service_role;
+
+create or replace function public.notify_admin_new_parent_tg()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_name text;
+begin
+  begin
+    select coalesce(nullif(btrim(p.display_name), ''), 'Yeni valideyn')
+      into v_name from public.profiles p where p.id = new.profile_id;
+    perform public.notify_admins(
+      'admin_new_parent', 'Yeni valideyn qeydiyyatı',
+      v_name || ' platformada qeydiyyatdan keçdi.',
+      jsonb_build_object('parent_profile_id', new.profile_id),
+      'admin:newparent:' || new.profile_id::text, '/accounts', 'admin', 3);
+  exception when others then raise warning 'notify_admin_new_parent failed: %', sqlerrm;
+  end;
+  return new;
+end; $$;
+drop trigger if exists trg_notify_admin_new_parent on public.parents;
+create trigger trg_notify_admin_new_parent
+  after insert on public.parents
+  for each row execute function public.notify_admin_new_parent_tg();
+
+-- NOTE: notify_admin_new_purchase_tg + its trigger live in canonical 015 —
+-- olympiad_purchases is defined there (after this file in run order).
+
+create or replace function public.notify_admin_new_subscription_tg()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  begin
+    perform public.notify_admins(
+      'admin_new_subscription', 'Yeni abunə',
+      'Bir uşaq üçün yeni abunə başladıldı (' || new.status || ').',
+      jsonb_build_object('subscription_id', new.id, 'student_profile_id', new.student_profile_id,
+                         'status', new.status),
+      'admin:sub:' || new.id::text, '/accounts', 'admin', 3);
+  exception when others then raise warning 'notify_admin_new_subscription failed: %', sqlerrm;
+  end;
+  return new;
+end; $$;
+drop trigger if exists trg_notify_admin_new_subscription on public.child_subscriptions;
+create trigger trg_notify_admin_new_subscription
+  after insert on public.child_subscriptions
+  for each row when (new.status in ('trialing','active'))
+  execute function public.notify_admin_new_subscription_tg();
+
+-- Student progress milestones — fires AFTER award_attempt_points on the same
+-- '→ graded' transition (name order: trg_award_* < trg_notify_progress_*).
+create or replace function public.notify_progress_milestones_tg()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_streak int; v_last date; v_prev numeric; v_this numeric;
+begin
+  begin
+    select current_streak, last_active_date into v_streak, v_last
+      from public.students where profile_id = new.student_profile_id;
+    if v_streak in (3, 7, 14, 30, 60, 100) then
+      perform public.create_notification(
+        new.student_profile_id, 'streak_milestone', 'Seriya davam edir 🔥',
+        v_streak::text || ' günlük seriya! Davam et.',
+        jsonb_build_object('days', v_streak),
+        array['in_app'],
+        'streak:' || new.student_profile_id::text || ':' || v_streak::text || ':' || coalesce(v_last::text, 'x'),
+        4, '/child/leaderboard', 'progress', null);
+    end if;
+    if new.is_rated then
+      select coalesce(max(points), 0) into v_prev
+        from public.student_points_ledger
+        where student_profile_id = new.student_profile_id and attempt_id <> new.id;
+      select coalesce(points, 0) into v_this
+        from public.student_points_ledger where attempt_id = new.id;
+      if v_this > v_prev and v_prev > 0 then
+        perform public.create_notification(
+          new.student_profile_id, 'personal_best', 'Yeni rekord!',
+          'Yeni şəxsi rekordun: ' || trim_scale(v_this)::text || ' xal 🎉',
+          jsonb_build_object('points', v_this),
+          array['in_app'],
+          'pb:' || new.student_profile_id::text || ':' || new.id::text,
+          4, '/child/leaderboard', 'progress', null);
+      end if;
+    end if;
+  exception when others then raise warning 'notify_progress_milestones failed: %', sqlerrm;
+  end;
+  return new;
+end; $$;
+drop trigger if exists trg_notify_progress_milestones on public.test_attempts;
+create trigger trg_notify_progress_milestones
+  after update of status on public.test_attempts
+  for each row
+  when (new.status = 'graded' and old.status is distinct from new.status)
+  execute function public.notify_progress_milestones_tg();
+
+-- Pre-expiry scanner (cron): parents whose child subscription lapses within 3
+-- days. Idempotency keyed by (subscription, period_end) → once per period.
+create or replace function public.notify_expiring_subscriptions()
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_row record; v_days int; v_name text; v_n int := 0;
+begin
+  for v_row in
+    select cs.id, cs.owner_parent_profile_id, cs.current_period_end,
+           s.first_name, s.last_name
+    from public.child_subscriptions cs
+    join public.students s on s.profile_id = cs.student_profile_id
+    where cs.status in ('trialing', 'active')
+      and cs.current_period_end is not null
+      and cs.current_period_end > now()
+      and cs.current_period_end <= now() + interval '3 days'
+      and cs.owner_parent_profile_id is not null
+  loop
+    v_days := greatest(1, ceil(extract(epoch from (v_row.current_period_end - now())) / 86400.0)::int);
+    v_name := coalesce(nullif(btrim(coalesce(v_row.first_name, '') || ' ' || coalesce(v_row.last_name, '')), ''), 'övladınız');
+    perform public.create_notification(
+      v_row.owner_parent_profile_id, 'subject_expiring', 'Abunə bitmək üzrədir',
+      v_name || ' üçün abunə ' || v_days::text || ' gün sonra bitir.',
+      jsonb_build_object('child_name', v_name, 'days', v_days, 'subscription_id', v_row.id),
+      array['in_app'],
+      'subexp:' || v_row.id::text || ':' || v_row.current_period_end::text,
+      3, '/subscription', 'billing', null);
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end; $$;
+revoke all on function public.notify_expiring_subscriptions() from public, anon, authenticated;
+grant execute on function public.notify_expiring_subscriptions() to service_role;
+
+-- Giveaway-ending scanner (cron): warn all parents in the final 2 days of an
+-- active giveaway. Idempotency keyed by (parent, window end) → once per window.
+create or replace function public.notify_giveaway_ending()
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_start timestamptz; v_dur int; v_end timestamptz; v_days int; v_parent uuid; v_n int := 0;
+begin
+  if not public.is_giveaway_active() then return 0; end if;
+  select nullif(value_json #>> '{}', '')::timestamptz into v_start
+    from public.system_settings where key = 'giveaway.started_at';
+  select nullif(value_json #>> '{}', '')::int into v_dur
+    from public.system_settings where key = 'giveaway.duration_days';
+  if v_start is null or coalesce(v_dur, 0) <= 0 then return 0; end if;
+  v_end := v_start + make_interval(days => v_dur);
+  if now() < v_end - interval '2 days' or now() >= v_end then return 0; end if;
+  v_days := greatest(1, ceil(extract(epoch from (v_end - now())) / 86400.0)::int);
+  for v_parent in select profile_id from public.parents loop
+    perform public.create_notification(
+      v_parent, 'giveaway_ending', 'Kampaniya bitir',
+      'Pulsuz kampaniya ' || v_days::text || ' gün sonra başa çatır.',
+      jsonb_build_object('ends_at', v_end, 'days', v_days),
+      array['in_app'],
+      'gvw:' || v_parent::text || ':' || v_end::text,
+      4, '/services', 'announcement', null);
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end; $$;
+revoke all on function public.notify_giveaway_ending() from public, anon, authenticated;
+grant execute on function public.notify_giveaway_ending() to service_role;
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

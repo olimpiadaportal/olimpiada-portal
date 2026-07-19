@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import AboutUs from "@/components/AboutUs";
+import { PublicOlympiadPackages } from "@/components/PublicOlympiadPackages";
 
 // get_public_leaderboard row (migration 058): global all-time points top-10,
 // names pre-anonymized server-side ("Şagird XXXX") — rendered verbatim.
@@ -203,6 +204,14 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* Active olympiad packages (public listing) — the shared band the
+          /services page renders below its plans. The landing has no pricing
+          section of its own, so it sits directly below the offer/stats band.
+          Capped to 6 rows here; a full page shows a "see all" link to the
+          unlimited /olympiad-packages page (see the component's heuristic
+          comment). */}
+      <PublicOlympiadPackages limit={6} />
 
       {/* usp-values-scope: CSS scope for the redesigned "What sets us apart"
           (about.values) card grid. The section markup lives in

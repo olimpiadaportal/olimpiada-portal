@@ -13,9 +13,13 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireParent } from "@/lib/auth/session";
 import { removeAvatarCore, setAvatarCore } from "@/lib/auth/avatarCore";
+import { updateOwnPhoneCore } from "@/lib/auth/phoneCore";
+import { rateLimitAllow } from "@/lib/rateLimit";
 import { getT } from "@/i18n/server";
 
 export type ProfileActionState = { ok?: boolean; error?: string } | null;
+
+const WINDOW_15_MIN = 15 * 60_000;
 
 // Update the logged-in parent's display name (full name). Self-row update via
 // the SSR client — the profiles_update RLS policy allows id = current_profile.
@@ -37,6 +41,33 @@ export async function updateOwnName(
 
   revalidatePath("/profile");
   revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+// Add or change the logged-in parent's contact phone. Registration writes it
+// best-effort, so accounts do exist with none — this is both the "add" and the
+// "change" path. The E.164 rule, the single-column self-row write and the audit
+// entry live in lib/auth/phoneCore (shared with the mobile BFF); this action is
+// the cookie-session wrapper acting through the SSR client.
+export async function updateOwnPhone(
+  _prev: ProfileActionState,
+  formData: FormData,
+): Promise<ProfileActionState> {
+  const parent = await requireParent();
+  const t = await getT();
+  // Throttle per profile like the other self-service mutations — the phone is
+  // an account contact channel, not a free-text field.
+  if (!rateLimitAllow("phoneupdate", parent.profileId, 5, WINDOW_15_MIN)) {
+    return { error: t("parent.err.tooMany") };
+  }
+
+  const supabase = await createClient();
+  const res = await updateOwnPhoneCore(
+    supabase,
+    parent.profileId,
+    String(formData.get("phone") ?? ""),
+  );
+  if (!res.ok) return { error: t(res.errorKey) };
   return { ok: true };
 }
 

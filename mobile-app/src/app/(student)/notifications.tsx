@@ -18,6 +18,7 @@ import { spacing } from "@/theme/tokens";
 import { useArena } from "@/features/arena/useArena";
 import { useT } from "@/i18n/useT";
 import { isSafeRelativeUrl, resolveDeepLink } from "@/lib/deeplink";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import {
   useNotifications,
   type NotificationItem,
@@ -42,7 +43,12 @@ export default function StudentNotifications() {
 
   const [filter, setFilter] = useState<string | null>(null);
   const [detail, setDetail] = useState<NotificationItem | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+
+  // throwOnError so a failed re-read reaches the hook — refetchQueries swallows
+  // errors otherwise and the toast would claim success over a stale inbox.
+  const { refreshing, onRefresh } = usePullRefresh([
+    () => queryClient.refetchQueries({ queryKey: ["notifications"] }, { throwOnError: true }),
+  ]);
 
   const timeLabels = {
     now: t("notif.timeNow"),
@@ -95,15 +101,6 @@ export default function StudentNotifications() {
     setDetail(n);
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await queryClient.refetchQueries({ queryKey: ["notifications"] });
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   let body: React.ReactNode;
   if (loading) {
     body = (
@@ -128,9 +125,10 @@ export default function StudentNotifications() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => void onRefresh()}
+            onRefresh={onRefresh}
             tintColor={arena.lime}
             colors={[arena.lime]}
+            accessibilityLabel={t("mob.refreshing")}
           />
         }
         ListEmptyComponent={

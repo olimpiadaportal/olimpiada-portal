@@ -13,6 +13,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { Segmented } from "@/components/Segmented";
 import { ChildIdField, PasswordField, TextField } from "@/components/TextField";
 import { spacing } from "@/theme/tokens";
@@ -38,40 +39,47 @@ export default function Login() {
   const [childId, setChildId] = useState("");
   const [childPw, setChildPw] = useState("");
   const [pending, setPending] = useState(false);
+  // The i18n KEY, not the rendered sentence — the language switcher above can
+  // change the locale while an error is on screen, and the message has to
+  // follow it.
   const [error, setError] = useState<string | null>(null);
 
   async function submitParent() {
     if (!email.trim() || !parentPw) {
-      setError(t("parent.err.required"));
+      setError("parent.err.required");
       return;
     }
     setPending(true);
     setError(null);
     const res = await parentLogin(email, parentPw);
     setPending(false);
-    if (res.error) setError(t(res.error));
+    if (res.error) setError(res.error);
     // Success: the (public) layout redirects to the role home.
   }
 
   async function submitChild() {
     if (childId.length !== 8) {
-      setError(t("auth.child.err.idFormat"));
+      setError("auth.child.err.idFormat");
       return;
     }
     if (!childPw) {
-      setError(t("auth.child.err.passwordRequired"));
+      setError("auth.child.err.passwordRequired");
       return;
     }
     setPending(true);
     setError(null);
     const res = await childLogin(childId, childPw);
     setPending(false);
-    if (res.error) setError(t(res.error));
+    if (res.error) setError(res.error);
   }
 
   return (
     <Screen scroll>
-      <View style={{ gap: spacing.xl, paddingTop: spacing.xl }}>
+      <View style={{ gap: spacing.xl, paddingTop: spacing.sm }}>
+        {/* This screen has no native header, so the language chip rides in the
+            content — in flow, not absolute: the form scrolls under a keyboard
+            and a floating chip would sit on top of the fields. */}
+        <LocaleSwitcher align="end" />
         <View style={{ alignItems: "center", gap: spacing.lg }}>
           <BrandMark size={56} />
           <Segmented<Tab>
@@ -113,7 +121,7 @@ export default function Login() {
               />
               {error ? (
                 <AppText variant="muted" color={tokens.danger}>
-                  {error}
+                  {t(error)}
                 </AppText>
               ) : null}
               <Button
@@ -155,7 +163,7 @@ export default function Login() {
             />
             {error ? (
               <AppText variant="muted" color={tokens.danger}>
-                {error}
+                {t(error)}
               </AppText>
             ) : null}
             <Button

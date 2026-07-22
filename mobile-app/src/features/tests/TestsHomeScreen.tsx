@@ -29,6 +29,7 @@ import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { startDailyRoundAttempt } from "./api";
 import { useRecentAttempts, useRoundReadiness, useSubjectAccess } from "./queries";
 import { displayStatus, findLiveAttempt, isLiveAttempt } from "./logic";
@@ -144,6 +145,8 @@ export function TestsHomeScreen() {
     }, [qc]),
   );
 
+  const { refreshing, onRefresh } = usePullRefresh([accessQ, attemptsQ, readinessQ]);
+
   const pad = {
     padding: spacing.lg,
     paddingBottom: insets.bottom + spacing.xl,
@@ -200,14 +203,12 @@ export function TestsHomeScreen() {
       contentContainerStyle={pad}
       refreshControl={
         <RefreshControl
-          refreshing={attemptsQ.isRefetching || accessQ.isRefetching}
-          onRefresh={() => {
-            void accessQ.refetch();
-            void attemptsQ.refetch();
-            void readinessQ.refetch();
-          }}
-          tintColor={arena.blue}
-          colors={[arena.blue]}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          // Lime is the arena's refresh tint everywhere else (ArenaScroll).
+          tintColor={arena.lime}
+          colors={[arena.lime]}
+          accessibilityLabel={t("mob.refreshing")}
         />
       }
     >

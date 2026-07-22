@@ -24,6 +24,24 @@ function sanitizeNational(raw: string): string {
   return raw.replace(/[\s\-().]/g, "").replace(/^0+/, "");
 }
 
+// Splits a stored E.164 number back into (country, national) so the EDIT case
+// opens on the number the parent already has. Dial codes overlap (+1 vs +1242,
+// +7 vs +7…), so the LONGEST matching prefix wins; among countries sharing one
+// dial code the first entry is used — the pair still recomposes to the exact
+// same E.164 string, which is all that is submitted.
+function splitE164(value: string): { iso2: string; national: string } {
+  const digits = /^\+[1-9][0-9]{6,14}$/.test(value) ? value.slice(1) : "";
+  if (!digits) return { iso2: DEFAULT_ISO2, national: "" };
+  let best: { iso2: string; dial: string } | null = null;
+  for (const c of COUNTRIES) {
+    if (digits.startsWith(c.dial) && (!best || c.dial.length > best.dial.length)) {
+      best = { iso2: c.iso2, dial: c.dial };
+    }
+  }
+  if (!best) return { iso2: DEFAULT_ISO2, national: "" };
+  return { iso2: best.iso2, national: digits.slice(best.dial.length) };
+}
+
 export function PhoneField({
   locale,
   label,
@@ -31,6 +49,7 @@ export function PhoneField({
   searchLabel,
   placeholder,
   invalidMessage,
+  initialE164,
 }: {
   /** Active UI locale (az/en/ru) — drives Intl.DisplayNames country names. */
   locale: string;
@@ -43,6 +62,11 @@ export function PhoneField({
   placeholder: string;
   /** Localized message the browser shows when the number is invalid. */
   invalidMessage: string;
+  /**
+   * Existing E.164 number to open on (the profile EDIT case). Absent/invalid →
+   * the registration case: default country, empty number.
+   */
+  initialE164?: string;
 }) {
   const id = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -50,8 +74,9 @@ export function PhoneField({
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [iso2, setIso2] = useState<string>(DEFAULT_ISO2);
-  const [national, setNational] = useState("");
+  const seed = useMemo(() => splitE164(initialE164 ?? ""), [initialE164]);
+  const [iso2, setIso2] = useState<string>(seed.iso2);
+  const [national, setNational] = useState(seed.national);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hl, setHl] = useState(0);

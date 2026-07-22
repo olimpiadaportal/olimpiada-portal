@@ -23,6 +23,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { fetchActiveSubjects } from "@/lib/data";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
@@ -193,6 +194,10 @@ export default function ParentLeaderboard() {
     enabled: leaderboardOn && scopeUsable && !!childId,
   });
 
+  // The board query is enabled-gated, so its own isRefetching flag can never
+  // turn on while the scope is unusable — the hook's boolean always does.
+  const { refreshing, onRefresh } = usePullRefresh([listQ, childrenQ, childId ? posQ : null]);
+
   if (config.data && !leaderboardOn) {
     return (
       <ScreenScroll>
@@ -217,12 +222,6 @@ export default function ParentLeaderboard() {
     config.isPending || scopeCatalogPending || (scopeUsable && listQ.isPending);
   const rows = scopeUsable ? (listQ.data ?? []) : [];
 
-  const onRefresh = () => {
-    void listQ.refetch();
-    void childrenQ.refetch();
-    if (childId) void posQ.refetch();
-  };
-
   const selectedChild = kids.find((k) => k.profile_id === childId) ?? null;
   const pos = posQ.data ?? null;
   const childMeta = selectedChild
@@ -237,7 +236,7 @@ export default function ParentLeaderboard() {
     : "";
 
   return (
-    <ScreenScroll refreshing={listQ.isRefetching} onRefresh={onRefresh}>
+    <ScreenScroll refreshing={refreshing} onRefresh={onRefresh}>
       {/* Board switch: Points | Streak */}
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <Chip

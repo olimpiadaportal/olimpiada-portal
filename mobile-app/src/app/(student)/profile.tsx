@@ -11,6 +11,7 @@ import { View } from "react-native";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useArena } from "@/features/arena/useArena";
 import { ArenaScroll } from "@/features/arena/ui";
 import { useStudentProfile } from "@/features/profile/studentProfile";
@@ -27,13 +28,11 @@ export default function StudentProfileScreen() {
   const { t } = useT();
   const { arena, palette } = useArena();
   const profileQ = useStudentProfile();
+  const { refreshing, onRefresh } = usePullRefresh([profileQ]);
 
   return (
     <View style={{ flex: 1, backgroundColor: arena.bg }}>
-      <ArenaScroll
-        onRefresh={() => void profileQ.refetch()}
-        refreshing={profileQ.isRefetching}
-      >
+      <ArenaScroll onRefresh={onRefresh} refreshing={refreshing}>
         {profileQ.isPending ? (
           <View style={{ gap: spacing.md }}>
             <Skeleton height={140} />

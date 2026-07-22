@@ -17,6 +17,7 @@ import { Screen } from "@/components/Screen";
 import { BrandMark } from "@/components/BrandMark";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { StepDots } from "@/components/StepDots";
 import { CountdownBanner } from "@/components/CountdownBanner";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -78,7 +79,10 @@ export default function Welcome() {
   return (
     <Screen padded={false}>
       <View style={{ flex: 1, paddingHorizontal: spacing.lg }}>
-        {/* Header: brand + skip */}
+        {/* Header: brand + skip + language. The switcher sits LAST so it keeps
+            the same hard-right position on every slide — skip unmounts on the
+            final one, and a control that slid sideways mid-onboarding would
+            read as a layout glitch. */}
         <View
           style={{
             flexDirection: "row",
@@ -89,18 +93,23 @@ export default function Welcome() {
           }}
         >
           <BrandMark size={30} />
-          {!lastSlide ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("mob.onb.skip")}
-              onPress={() => leaveTo("/(public)/login", true)}
-              hitSlop={12}
-            >
-              <AppText variant="label" color={tokens.muted}>
-                {t("mob.onb.skip")}
-              </AppText>
-            </Pressable>
-          ) : null}
+          {/* gap lg keeps the skip link's generous hitSlop from swallowing taps
+              meant for the chip beside it. */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
+            {!lastSlide ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("mob.onb.skip")}
+                onPress={() => leaveTo("/(public)/login", true)}
+                hitSlop={12}
+              >
+                <AppText variant="label" color={tokens.muted}>
+                  {t("mob.onb.skip")}
+                </AppText>
+              </Pressable>
+            ) : null}
+            <LocaleSwitcher />
+          </View>
         </View>
 
         {giveawayEndsAt ? (

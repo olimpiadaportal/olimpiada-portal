@@ -9,7 +9,7 @@
 // "Populyar" pill, per-subject rows carry lucide subject glyphs, the CTA is
 // the screen's one gradient button, the disclaimer stays a muted footnote.
 import React, { useState } from "react";
-import { ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -42,7 +42,8 @@ import {
   type SubjectPricingRow,
 } from "@/lib/data";
 import { isSupabaseConfigured } from "@/lib/env";
-import { useMobileConfig } from "@/lib/configQueries";
+import { useContentOverrides, useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
@@ -303,7 +304,7 @@ function PublicPackagesSection() {
 }
 
 export default function Pricing() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -318,6 +319,11 @@ export default function Pricing() {
     enabled: isSupabaseConfigured,
     staleTime: PRICING_STALE_MS,
   });
+
+  // Prices, the promo flag and the surrounding CMS copy are three separate
+  // reads — a pull that skipped one would show a half-updated price page.
+  const overridesQ = useContentOverrides(locale);
+  const { refreshing, onRefresh } = usePullRefresh([q, config, overridesQ]);
 
   const interval = PLANS.find((p) => p.key === plan)?.interval ?? "month";
   const rows: SubjectPricingRow[] = (q.data ?? [])
@@ -421,6 +427,15 @@ export default function Pricing() {
           paddingBottom: insets.bottom + spacing.xl,
           gap: spacing.lg,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={tokens.accent}
+            colors={[tokens.accent]}
+            accessibilityLabel={t("mob.refreshing")}
+          />
+        }
       >
         <View style={{ gap: spacing.sm }}>
           <AppText variant="heading">{t("pricing2.title")}</AppText>

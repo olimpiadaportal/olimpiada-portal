@@ -14,6 +14,7 @@ import { Button } from "@/components/Button";
 import { PasswordField, TextField } from "@/components/TextField";
 import { PhoneField, E164_RE } from "@/components/PhoneField";
 import { Card } from "@/components/Card";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { radius, spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
@@ -30,21 +31,24 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
+  // The i18n KEY, not the rendered sentence — the language switcher above can
+  // change the locale while an error is on screen, and the message has to
+  // follow it.
   const [error, setError] = useState<string | null>(null);
   const [verifySent, setVerifySent] = useState(false);
 
   async function submit() {
     // Client-side mirrors of the server rules — UX only, the BFF re-validates.
-    if (!firstName.trim() || !lastName.trim()) return setError(t("parent.err.required"));
-    if (!email.trim()) return setError(t("parent.err.email"));
-    if (!E164_RE.test(phone)) return setError(t("parent.err.phone"));
-    if (password.length < 8) return setError(t("parent.err.password"));
+    if (!firstName.trim() || !lastName.trim()) return setError("parent.err.required");
+    if (!email.trim()) return setError("parent.err.email");
+    if (!E164_RE.test(phone)) return setError("parent.err.phone");
+    if (password.length < 8) return setError("parent.err.password");
 
     setPending(true);
     setError(null);
     const res = await registerParent({ firstName, lastName, email, password, phone });
     setPending(false);
-    if (res.error) return setError(t(res.error));
+    if (res.error) return setError(res.error);
     if (res.verifyEmail) setVerifySent(true);
     // Tokens case: the (public) layout redirects into the parent tabs.
   }
@@ -83,7 +87,11 @@ export default function Register() {
 
   return (
     <Screen scroll>
-      <View style={{ gap: spacing.lg, paddingTop: spacing.xl }}>
+      <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
+        {/* No native header on this screen, so the language chip rides in the
+            content — in flow, not absolute: the form scrolls under a keyboard
+            and a floating chip would sit on top of the fields. */}
+        <LocaleSwitcher align="end" />
         <View style={{ alignItems: "center", gap: spacing.md }}>
           <BrandMark size={56} />
           <AppText variant="title">{t("parent.auth.register")}</AppText>
@@ -137,7 +145,7 @@ export default function Register() {
           />
           {error ? (
             <AppText variant="muted" color={tokens.danger}>
-              {error}
+              {t(error)}
             </AppText>
           ) : null}
           <Button

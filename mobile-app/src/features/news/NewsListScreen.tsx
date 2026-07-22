@@ -11,8 +11,10 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { fetchNews } from "@/lib/data";
 import { isSupabaseConfigured } from "@/lib/env";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
 import { NewsCard } from "./NewsCard";
+import { useCanLikeNews, useMyNewsLikes, useToggleNewsLike } from "./likes";
 
 const NEWS_STALE_MS = 5 * 60_000;
 
@@ -28,8 +30,11 @@ function SkeletonCard() {
 
 export function NewsListScreen({
   onOpenArticle,
+  spinnerTint,
 }: {
   onOpenArticle: (slug: string) => void;
+  /** Spinner colour for surfaces off the app palette (the student arena tab). */
+  spinnerTint?: string;
 }) {
   const { t, locale } = useT();
   const { tokens } = useTheme();
@@ -41,11 +46,19 @@ export function NewsListScreen({
     enabled: isSupabaseConfigured,
     staleTime: NEWS_STALE_MS,
   });
+  const { refreshing, onRefresh } = usePullRefresh([q]);
+
+  // Optional by design: the likes query stays silent for signed-out viewers, so
+  // the public list keeps rendering exactly as before.
+  const likedIds = useMyNewsLikes();
+  const canLike = useCanLikeNews();
+  const toggleLike = useToggleNewsLike();
 
   const pad = {
     padding: spacing.lg,
     paddingBottom: insets.bottom + spacing.lg,
   } as const;
+  const spinner = spinnerTint ?? tokens.accent;
 
   if (!isSupabaseConfigured) {
     return (
@@ -79,9 +92,21 @@ export function NewsListScreen({
     <FlatList
       data={q.data ?? []}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => (
-        <NewsCard item={item} onPress={() => onOpenArticle(item.slug)} />
-      )}
+      renderItem={({ item }) => {
+        const liked = likedIds.has(item.id);
+        return (
+          <NewsCard
+            item={item}
+            liked={liked}
+            canLike={canLike}
+            onToggleLike={() => void toggleLike(item.id, !liked)}
+            onPress={() => onOpenArticle(item.slug)}
+          />
+        );
+      }}
+      // FlatList is pure: without this the hearts would not repaint when the
+      // viewer's like set arrives or changes.
+      extraData={likedIds}
       contentContainerStyle={[pad, { gap: spacing.lg, flexGrow: 1 }]}
       ListEmptyComponent={
         <View style={{ flex: 1, justifyContent: "center" }}>
@@ -90,10 +115,11 @@ export function NewsListScreen({
       }
       refreshControl={
         <RefreshControl
-          refreshing={q.isRefetching}
-          onRefresh={() => void q.refetch()}
-          tintColor={tokens.accent}
-          colors={[tokens.accent]}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={spinner}
+          colors={[spinner]}
+          accessibilityLabel={t("mob.refreshing")}
         />
       }
     />

@@ -25,6 +25,7 @@ import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { isSupabaseConfigured } from "@/lib/env";
 import { useArena } from "@/features/arena/useArena";
 import {
@@ -232,8 +233,9 @@ export default function StudentArena() {
   // Hero ring: all-time global rank — read like the web regardless of the flag.
   const allTimeQ = useMyAllTimeRank();
   const refreshArena = useRefreshArena();
-
-  const [refreshing, setRefreshing] = useState(false);
+  // useRefreshArena already awaits the whole arena/news/config key tree, so it
+  // is the single source this screen needs.
+  const { refreshing, onRefresh } = usePullRefresh([refreshArena]);
 
   if (!isSupabaseConfigured) {
     return (
@@ -310,20 +312,11 @@ export default function StudentArena() {
   const streakCurrent = streak?.current ?? 0;
   const streakBest = streak?.best ?? 0;
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await refreshArena();
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   const goTests = () => router.push("/(student)/(tabs)/tests");
   const goRanking = () => router.push("/(student)/(tabs)/ranking");
 
   return (
-    <ArenaScroll refreshing={refreshing} onRefresh={() => void onRefresh()}>
+    <ArenaScroll refreshing={refreshing} onRefresh={onRefresh}>
       {/* ---- Hero (web .arena-hero-left): welcome + today CTA → Tests tab ---- */}
       <View
         style={{

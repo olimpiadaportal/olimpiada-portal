@@ -22,6 +22,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import type { ChildRow } from "@/lib/data";
 import { useOwnProfile } from "@/features/profile/useOwnProfile";
@@ -277,13 +278,12 @@ export default function ParentHome() {
   const kids = children.data ?? [];
   const hasKids = kids.length > 0;
 
-  const refreshing = children.isRefetching || freeAccess.isRefetching;
-  const onRefresh = () => {
-    void children.refetch();
-    void freeAccess.refetch();
-    void config.refetch();
-    for (const q of lbQueries) void q.refetch();
-  };
+  const { refreshing, onRefresh } = usePullRefresh([
+    children,
+    freeAccess,
+    config,
+    ...lbQueries,
+  ]);
 
   const timeLabels = {
     d: t("gvw.days"),

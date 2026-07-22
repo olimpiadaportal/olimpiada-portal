@@ -29,6 +29,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { publicStorageUrl, type OlympiadPackageRow } from "@/lib/data";
@@ -183,6 +184,9 @@ export default function ParentOlympiads() {
   const purchases = useOlympiadPurchases(olympiadOn);
   const poolCounts = useOlympiadPoolCounts((catalog.data ?? []).map((p) => p.id));
   const invalidate = useInvalidateParentData();
+  // poolCounts drives the REAL question count on every card, so a pull that
+  // skipped it would leave the most load-bearing number stale.
+  const { refreshing, onRefresh } = usePullRefresh([children, catalog, purchases, poolCounts]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OlympiadPackageRow | null>(null);
@@ -218,12 +222,6 @@ export default function ParentOlympiads() {
   }
 
   const loading = config.isPending || children.isPending || catalog.isPending;
-  const onRefresh = () => {
-    void children.refetch();
-    void catalog.refetch();
-    void purchases.refetch();
-    void poolCounts.refetch();
-  };
 
   async function confirmBuy() {
     if (!buying || !selected || buyPending) return;
@@ -273,10 +271,7 @@ export default function ParentOlympiads() {
   const questionCount = (pkg: OlympiadPackageRow) => poolCounts.data?.get(pkg.id) ?? 0;
 
   return (
-    <ScreenScroll
-      onRefresh={onRefresh}
-      refreshing={catalog.isRefetching || purchases.isRefetching}
-    >
+    <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
       <AppText variant="muted">{t("poly.subtitle")}</AppText>
 
       {loading ? (
@@ -400,10 +395,9 @@ export default function ParentOlympiads() {
                             <Pill label={t("poly.notOnSale")} tone="muted" />
                           ) : (
                             <Button
-                              title={t("poly.buyFor").replace(
-                                "{name}",
-                                childDisplayName(selected),
-                              )}
+                              // Short, name-free label: this button shares the row
+                              // with Details, and the confirm sheet names the child.
+                              title={t("poly.buyNow")}
                               style={{ flex: 1, minHeight: 44, paddingVertical: spacing.sm }}
                               onPress={() => startBuy(pkg)}
                             />
@@ -479,7 +473,7 @@ export default function ParentOlympiads() {
             ) : canBuy && selected && !isPast(detail) ? (
               <Button
                 variant="gradient"
-                title={t("poly.buyFor").replace("{name}", childDisplayName(selected))}
+                title={t("poly.buyNow")}
                 onPress={() => startBuy(detail)}
               />
             ) : posture.webOnly ? (

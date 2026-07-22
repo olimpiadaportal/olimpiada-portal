@@ -83,13 +83,31 @@ async function resolveBearerUserForRoles(
 
     // Profile + role check in ONE query: inner joins make the row disappear
     // unless a profile_roles→roles row with an allowed code exists.
+    //
+    // The `!profile_id` hint is MANDATORY, not decoration: profile_roles has
+    // TWO foreign keys to profiles (profile_id = the membership, assigned_by =
+    // who granted it). Without the hint PostgREST cannot choose between them
+    // and answers HTTP 300 PGRST201 ("more than one relationship was found")
+    // instead of a row — which this resolver would read as "not a parent" and
+    // turn into a 401 on EVERY authenticated mobile BFF call. The admin panel
+    // hit the same trap (see accounts/page.tsx); keep both spellings in sync.
     const { data: profile, error: profileError } = await admin
       .from("profiles")
-      .select("id, profile_roles!inner(roles!inner(code))")
+      .select("id, profile_roles!profile_id!inner(roles!inner(code))")
       .eq("auth_user_id", authUserId)
       .in("profile_roles.roles.code", [...roleCodes])
       .maybeSingle();
-    if (profileError || !profile?.id) return null;
+    if (profileError) {
+      // A QUERY failure is an operational fault, not "this user is not a
+      // parent" — the client still gets a plain 401 (never leak internals),
+      // but it must not vanish silently the way PGRST201 did. Code only.
+      console.error(
+        "mobileBearer: role resolution query failed",
+        profileError.code ?? "unknown_error",
+      );
+      return null;
+    }
+    if (!profile?.id) return null;
 
     // Which allowed code matched. No account holds both roles in practice;
     // roleCodes order decides the theoretical tie.

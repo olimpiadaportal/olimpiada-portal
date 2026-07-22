@@ -10,11 +10,13 @@ import { useActionState, useState } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
 import { AvatarUploader } from "@/components/AvatarUploader";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
+import { PhoneField } from "@/components/PhoneField";
 import { ProfileNameEditor } from "@/components/ProfileNameEditor";
 import { parentLogout } from "@/lib/auth/parentService";
 import {
   updateOwnPassword,
   updateOwnName,
+  updateOwnPhone,
   type ProfileActionState,
 } from "@/lib/auth/profileActions";
 
@@ -25,6 +27,7 @@ export function ParentProfile({
   phone,
   initials,
   avatarUrl,
+  locale,
   dict,
 }: {
   /** Header display name (falls back to email/account when blank). */
@@ -36,6 +39,8 @@ export function ParentProfile({
   phone?: string | null;
   initials: string;
   avatarUrl: string | null;
+  /** Active UI locale — drives the phone field's localized country names. */
+  locale: string;
   dict: Record<string, string>;
 }) {
   const t = (k: string) => dict[k] ?? k;
@@ -99,10 +104,7 @@ export function ParentProfile({
             <span className="prof2-row-label">{t("prof2.email")}</span>
             <span className="prof2-row-value">{email || "—"}</span>
           </div>
-          <div className="prof2-row">
-            <span className="prof2-row-label">{t("profile.phoneLabel")}</span>
-            <span className="prof2-row-value">{phone || "—"}</span>
-          </div>
+          <PhoneRowEditor current={phone ?? ""} locale={locale} t={t} />
         </div>
       </section>
 
@@ -182,5 +184,84 @@ export function ParentProfile({
         </form>
       </section>
     </div>
+  );
+}
+
+// Phone add/edit module. registerParent writes profiles.phone best-effort, so
+// accounts legitimately have none — the affordance therefore says "Add number"
+// when it is empty and "Change" when it is not. States mirror the security
+// card's password form (collapsed CTA → form → error/success, which stays open
+// so the confirmation is read where the change was made); it renders as an
+// Account-information row so identity data stays in ONE card, next to its
+// sibling ProfileNameEditor. Lives here rather than in its own module because
+// it is bound to these rows' markup.
+function PhoneRowEditor({
+  current,
+  locale,
+  t,
+}: {
+  /** Stored E.164 number, or "" when the account has none. */
+  current: string;
+  locale: string;
+  t: (k: string) => string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [state, formAction, pending] = useActionState<ProfileActionState, FormData>(
+    updateOwnPhone,
+    null,
+  );
+
+  if (!editing) {
+    return (
+      <div className="prof2-row prof2-row-editable">
+        <span className="prof2-row-label">{t("profile.phoneLabel")}</span>
+        <span className="prof2-row-value">{current || "—"}</span>
+        <button
+          type="button"
+          className="prof2-btn prof2-btn-ghost prof2-row-edit"
+          onClick={() => setEditing(true)}
+          aria-expanded={false}
+        >
+          {current ? t("profile.phoneEdit") : t("profile.addPhone")}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form action={formAction} className="prof2-name-form">
+      {/* The registration field, unchanged: country selector + national part,
+          composing the hidden `phone` E.164 value the action reads. The .form
+          wrapper is what gives its inputs the shared field styling. */}
+      <div className="form">
+        <PhoneField
+          locale={locale}
+          label={t("profile.phoneLabel")}
+          countryLabel={t("parent.auth.phoneCountry")}
+          searchLabel={t("parent.auth.phoneSearch")}
+          placeholder={t("parent.auth.phonePh")}
+          invalidMessage={t("parent.err.phone")}
+          // EDIT opens on the number the parent already has (the field mounts
+          // fresh each time `editing` flips, so seeding state is enough).
+          initialE164={current}
+        />
+      </div>
+      <p className="prof2-sec-hint">{t("profile.phoneHint")}</p>
+      <div className="prof2-form-actions">
+        <button type="submit" className="prof2-btn prof2-btn-primary" disabled={pending}>
+          {pending ? t("profile.saving") : t("profile.save")}
+        </button>
+        <button
+          type="button"
+          className="prof2-btn prof2-btn-ghost"
+          onClick={() => setEditing(false)}
+          disabled={pending}
+        >
+          {t("profile.cancel")}
+        </button>
+      </div>
+      {state?.ok && <p className="prof2-ok">{t("profile.phoneSaved")}</p>}
+      {state?.error && <p className="prof2-error">{state.error}</p>}
+    </form>
   );
 }

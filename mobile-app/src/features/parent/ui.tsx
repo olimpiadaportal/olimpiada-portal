@@ -22,6 +22,7 @@ import { Card } from "@/components/Card";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, shadow, spacing } from "@/theme/tokens";
+import { useT } from "@/i18n/useT";
 import type { ChildRow } from "@/lib/data";
 
 /** Soft tint from a 6-digit hex token (#rrggbb + alpha byte). */
@@ -46,6 +47,7 @@ export function ScreenScroll({
   topInset?: boolean;
 }) {
   const { tokens } = useTheme();
+  const { t } = useT();
   const insets = useSafeAreaInsets();
   const scroll = (
     <ScrollView
@@ -64,6 +66,10 @@ export function ScreenScroll({
             onRefresh={onRefresh}
             tintColor={tokens.accent}
             colors={[tokens.accent]}
+            // Android draws the spinner from the scroll view's own top edge;
+            // on a headerless screen that puts it under the status bar.
+            progressViewOffset={topInset ? insets.top : 0}
+            accessibilityLabel={t("mob.refreshing")}
           />
         ) : undefined
       }

@@ -160,36 +160,7 @@ export function useNotifications(limit = PAGE_LIMIT) {
   };
 }
 
-// ---- preferences (parent manages self + each child) ----------------------------
-
-export type NotificationPrefs = {
-  in_app_enabled: boolean;
-  email_enabled: boolean;
-  push_enabled: boolean;
-};
-
-export async function fetchPrefs(profileId: string | null): Promise<NotificationPrefs> {
-  const { data, error } = await supabase.rpc("get_notification_preferences", {
-    p_profile: profileId,
-  });
-  if (error || !data) return { in_app_enabled: true, email_enabled: true, push_enabled: true };
-  const o = data as Record<string, unknown>;
-  return {
-    in_app_enabled: o.in_app_enabled !== false,
-    email_enabled: o.email_enabled !== false,
-    push_enabled: o.push_enabled !== false,
-  };
-}
-
-export async function savePrefs(
-  profileId: string | null,
-  prefs: NotificationPrefs,
-): Promise<boolean> {
-  const { error } = await supabase.rpc("set_notification_preferences", {
-    p_profile: profileId,
-    p_in_app: prefs.in_app_enabled,
-    p_email: prefs.email_enabled,
-    p_push: prefs.push_enabled,
-  });
-  return !error;
-}
+// Notification-preference read/write (get/set_notification_preferences) lives
+// only on the WEB parent profile now — the mobile profile dropped that section
+// (Round 33). The RPCs stay in the DB; re-add typed wrappers here if a mobile
+// preferences surface returns.

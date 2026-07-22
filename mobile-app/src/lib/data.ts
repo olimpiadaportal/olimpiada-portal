@@ -178,6 +178,42 @@ export async function bumpNewsView(newsId: string): Promise<void> {
   );
 }
 
+/** Article ids the caller has liked. news_likes_select_own already narrows the
+ *  rows to this profile, so no filter is needed (and anon holds no grant at
+ *  all — callers must keep this query signed-in only). */
+export async function fetchMyNewsLikes(): Promise<string[]> {
+  const { data, error } = await supabase.from("news_likes").select("news_id");
+  if (error) throw error;
+  return (data ?? []).map((r: { news_id: string }) => r.news_id);
+}
+
+/**
+ * Like/unlike on the caller's OWN JWT (news_likes grants insert/delete to
+ * authenticated, scoped to profile_id = current_profile_id()) — no BFF needed.
+ * news.like_count is never written here: the security-definer trigger owns it.
+ * Returns false so the caller can roll its optimistic patch back.
+ */
+export async function setNewsLike(
+  newsId: string,
+  profileId: string,
+  liked: boolean,
+): Promise<boolean> {
+  if (liked) {
+    const { error } = await supabase
+      .from("news_likes")
+      .insert({ news_id: newsId, profile_id: profileId });
+    // 23505 = the (news_id, profile_id) primary key already holds the row, so
+    // the requested state is the state — a duplicate can never double-count.
+    return !error || error.code === "23505";
+  }
+  const { error } = await supabase
+    .from("news_likes")
+    .delete()
+    .eq("news_id", newsId)
+    .eq("profile_id", profileId);
+  return !error;
+}
+
 /** Public URL for a Storage object (news covers, sticker previews, avatars). */
 export function publicStorageUrl(bucket: string, path: string): string {
   return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;

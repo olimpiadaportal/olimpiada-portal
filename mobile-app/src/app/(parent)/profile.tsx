@@ -1,23 +1,19 @@
 // Parent profile screen (web ParentProfile parity, stacked section cards):
-// identity (avatar + name/email/phone), security (self-service password
-// change), flag-gated notification preferences (self + one row per child),
-// help links (FAQ / Contact) and the double-confirm danger zone wired to the
-// audited BFF delete flow.
+// identity (avatar + name/email/phone), the phone add/edit module, security
+// (self-service password change), help links (FAQ / Contact) and the
+// double-confirm danger zone wired to the audited BFF delete flow.
 import React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
-import { BellRing, CircleHelp, Mail } from "lucide-react-native";
+import { useQueryClient } from "@tanstack/react-query";
+import { CircleHelp, Mail } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
-import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
-import { ListRow } from "@/components/ListRow";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
-import { useMobileConfig } from "@/lib/configQueries";
-import { fetchChildren } from "@/lib/data";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useOwnProfile } from "@/features/profile/useOwnProfile";
 import {
@@ -25,24 +21,22 @@ import {
   IdentityCard,
   LinkRow,
   PasswordSection,
-  PrefRow,
+  PhoneSection,
 } from "@/features/profile/sections";
 
 export default function ParentProfile() {
   const { t } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
-  const config = useMobileConfig();
+  const queryClient = useQueryClient();
   const signOut = useAuthStore((s) => s.signOut);
 
   const profileQ = useOwnProfile();
-  const childrenQ = useQuery({ queryKey: ["children"], queryFn: fetchChildren });
 
-  const notificationsOn = config.data?.flags.notifications === true;
-  const kids = childrenQ.data ?? [];
+  const { refreshing, onRefresh } = usePullRefresh([profileQ]);
 
   return (
-    <Screen scroll>
+    <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
       <View style={{ gap: spacing.lg }}>
         {profileQ.isPending ? (
           <View style={{ gap: spacing.md }}>
@@ -59,48 +53,13 @@ export default function ParentProfile() {
           <IdentityCard profile={profileQ.data} t={t} />
         )}
 
+        <PhoneSection
+          current={profileQ.data?.phone ?? null}
+          t={t}
+          onSaved={() => void queryClient.invalidateQueries({ queryKey: ["own-profile"] })}
+        />
+
         <PasswordSection t={t} />
-
-        {notificationsOn ? (
-          <Card style={{ gap: spacing.lg }}>
-            <ListRow
-              icon={<BellRing size={18} color={tokens.accent} strokeWidth={2} />}
-              title={t("notif.prefs.title")}
-              subtitle={t("notif.prefs.desc")}
-              chevron={false}
-            />
-
-            <View style={{ gap: spacing.sm }}>
-              <AppText variant="eyebrow">{t("notif.prefs.yourChannels")}</AppText>
-              <PrefRow
-                target={null}
-                label={
-                  profileQ.data?.displayName.trim() || profileQ.data?.email || t("prof2.name")
-                }
-                t={t}
-              />
-            </View>
-
-            <View style={{ gap: spacing.lg }}>
-              <AppText variant="eyebrow">{t("notif.prefs.children")}</AppText>
-              {kids.length === 0 ? (
-                <AppText variant="muted">{t("notif.prefs.noChildren")}</AppText>
-              ) : (
-                kids.map((c) => (
-                  <PrefRow
-                    key={c.profile_id}
-                    target={c.profile_id}
-                    label={
-                      `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() ||
-                      (c.child_unique_id ?? "—")
-                    }
-                    t={t}
-                  />
-                ))
-              )}
-            </View>
-          </Card>
-        ) : null}
 
         <Card>
           <LinkRow

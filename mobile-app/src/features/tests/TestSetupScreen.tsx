@@ -10,7 +10,7 @@
 // noPoints facts, rulePractice1/2 + rule3/4, practiceScoring). The
 // validation/start flow is byte-identical to M3.
 import React, { useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -29,6 +29,7 @@ import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { startTopicTestAttempt } from "./api";
 import { useSetupTopics, useSubjectAccess } from "./queries";
 import { setupSelectionValid } from "./logic";
@@ -50,6 +51,8 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
   const [warned, setWarned] = useState(false);
   const [starting, setStarting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+
+  const { refreshing, onRefresh } = usePullRefresh([accessQ, topicsQ]);
 
   const pad = {
     paddingTop: insets.top + spacing.md,
@@ -156,7 +159,22 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
   ] as const;
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: arena.bg }} contentContainerStyle={pad}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: arena.bg }}
+      contentContainerStyle={pad}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={arena.lime}
+          colors={[arena.lime]}
+          // No navigator header here: the content starts at the top inset and
+          // the Android spinner has to as well.
+          progressViewOffset={insets.top}
+          accessibilityLabel={t("mob.refreshing")}
+        />
+      }
+    >
       <BackBar arena={arena} label={t("test.run.back")} onPress={goBack} />
 
       <View style={{ gap: spacing.sm }}>

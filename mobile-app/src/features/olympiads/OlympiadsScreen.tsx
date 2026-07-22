@@ -33,6 +33,7 @@ import { ListRow } from "@/components/ListRow";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchOlympiadCatalog, publicStorageUrl, type OlympiadPackageRow } from "@/lib/data";
 import { subjectLabel } from "@/lib/subjectLabel";
@@ -123,6 +124,8 @@ export function OlympiadsScreen() {
     staleTime: 0,
   });
 
+  const { refreshing, onRefresh } = usePullRefresh([catalogQ, poolCountsQ, ownedQ, liveQ]);
+
   const [detail, setDetail] = useState<OlympiadPackageRow | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
@@ -193,12 +196,6 @@ export function OlympiadsScreen() {
   }
 
   const loading = config.isPending || catalogQ.isPending || ownedQ.isPending;
-  const onRefresh = () => {
-    void catalogQ.refetch();
-    void poolCountsQ.refetch();
-    void ownedQ.refetch();
-    void liveQ.refetch();
-  };
 
   const liveTitle = live?.packageId
     ? (ownedQ.data ?? []).find((o) => o.packageId === live.packageId)?.title ?? null
@@ -210,10 +207,7 @@ export function OlympiadsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: arena.bg }}>
-      <ArenaScroll
-        onRefresh={onRefresh}
-        refreshing={catalogQ.isRefetching || ownedQ.isRefetching}
-      >
+      <ArenaScroll onRefresh={onRefresh} refreshing={refreshing}>
         <ArenaEyebrow>{t("oly4.eyebrow")}</ArenaEyebrow>
 
         {loading ? (

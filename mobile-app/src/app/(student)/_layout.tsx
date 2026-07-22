@@ -27,6 +27,10 @@ export default function StudentLayout() {
         headerStyle: { backgroundColor: arena.panel },
         headerTitleStyle: { color: arena.ink },
         headerTintColor: arena.lime,
+        // Chevron only. iOS otherwise labels the back button with the previous
+        // scene's title — "(tabs)" for a push out of the tab group. Adding
+        // headerBackTitleStyle here would silently re-enable that label.
+        headerBackButtonDisplayMode: "minimal",
         contentStyle: { backgroundColor: arena.bg },
       }}
     >

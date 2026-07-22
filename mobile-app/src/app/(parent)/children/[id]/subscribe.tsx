@@ -16,6 +16,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { bffActivateFree } from "@/lib/api";
 import {
@@ -108,11 +109,7 @@ export default function ChildSubscribeScreen() {
     invalidate();
   }
 
-  const onRefresh = () => {
-    void children.refetch();
-    void subs.refetch();
-    void freeAccess.refetch();
-  };
+  const { refreshing, onRefresh } = usePullRefresh([children, subs, freeAccess, config]);
 
   if (loading) {
     return (
@@ -126,7 +123,7 @@ export default function ChildSubscribeScreen() {
 
   if (children.isError) {
     return (
-      <ScreenScroll onRefresh={onRefresh} refreshing={children.isRefetching}>
+      <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
         <ErrorRetry
           message={t("mob.boot.error")}
           retryLabel={t("mob.retry")}
@@ -138,8 +135,10 @@ export default function ChildSubscribeScreen() {
 
   if (!child) {
     // Ownership miss (or bad deep link): never render another family's child.
+    // A pull still re-reads the list, so a child created on another device
+    // resolves here without leaving the screen.
     return (
-      <ScreenScroll>
+      <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
         <GateNotice title={t("sub.title")} body={t("sub.err.notYourChild")} />
         <Button title={t("addchild.back")} variant="ghost" onPress={() => router.back()} />
       </ScreenScroll>
@@ -177,7 +176,7 @@ export default function ChildSubscribeScreen() {
   ) : null;
 
   return (
-    <ScreenScroll onRefresh={onRefresh} refreshing={subs.isRefetching || children.isRefetching}>
+    <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
       <AppText variant="muted">{childName}</AppText>
 
       {flowDone ? (

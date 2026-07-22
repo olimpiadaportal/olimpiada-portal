@@ -603,6 +603,9 @@ function RunnerActive({
   const runTitle = isOlympiad ? t("test.run.olympiad") : t("test.run.title");
 
   return (
+    // No pull-to-refresh here on purpose: a running attempt is a timed,
+    // autosaved session behind a leave guard — re-reading it mid-answer would
+    // fight the local draft and the deadline.
     <ScrollView
       style={{ flex: 1, backgroundColor: arena.bg }}
       contentContainerStyle={[pad, { gap: spacing.lg }]}

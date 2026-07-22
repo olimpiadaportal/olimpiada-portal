@@ -23,6 +23,10 @@ export default function ParentLayout() {
         headerStyle: { backgroundColor: tokens.surface },
         headerTitleStyle: { color: tokens.text },
         headerTintColor: tokens.accent,
+        // Chevron only. iOS otherwise labels the back button with the previous
+        // scene's title — "(tabs)" for a push out of the tab group. Adding
+        // headerBackTitleStyle here would silently re-enable that label.
+        headerBackButtonDisplayMode: "minimal",
         contentStyle: { backgroundColor: tokens.bg },
       }}
     >

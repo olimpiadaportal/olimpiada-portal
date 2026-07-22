@@ -8,6 +8,7 @@ import { Modal, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NewsListScreen } from "@/features/news/NewsListScreen";
 import { ArticleView } from "@/features/news/ArticleView";
+import { ToastHost } from "@/components/Toast";
 import { useTheme } from "@/theme/ThemeProvider";
 
 export default function ParentNews() {
@@ -26,6 +27,10 @@ export default function ParentNews() {
         <View style={{ flex: 1, backgroundColor: tokens.bg, paddingTop: insets.top }}>
           {slug ? <ArticleView slug={slug} onBack={() => setSlug(null)} /> : null}
         </View>
+        {/* A Modal is its own native window, so the root ToastHost is behind
+            it — the article's pull feedback needs a host in here. Sibling of
+            the padded body so it keeps its own single safe-area offset. */}
+        <ToastHost />
       </Modal>
     </View>
   );

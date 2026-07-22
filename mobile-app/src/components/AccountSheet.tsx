@@ -10,7 +10,6 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import {
-  BookOpen,
   CircleHelp,
   Fingerprint,
   Globe,
@@ -223,14 +222,6 @@ export function AccountSheet({
             onPress={() => {
               onClose();
               router.push("/(public)/contact");
-            }}
-          />
-          <ListRow
-            icon={<BookOpen size={20} color={tokens.accent} strokeWidth={2} />}
-            title={t("nav.subjects")}
-            onPress={() => {
-              onClose();
-              router.push("/(public)/subjects");
             }}
           />
           {role === "parent" ? (

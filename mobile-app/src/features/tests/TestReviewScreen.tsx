@@ -230,6 +230,8 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
   );
 
   return (
+    // No pull-to-refresh: the review payload is handed over in memory and is
+    // never persisted, so there is nothing a re-read could fetch.
     <FlatList
       style={{ flex: 1, backgroundColor: arena.bg }}
       contentContainerStyle={pad}

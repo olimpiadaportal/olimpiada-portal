@@ -216,6 +216,19 @@ export const gradients = {
   brand: BRAND_GRADIENT,
 } as const;
 
+/**
+ * Translucent fill derived from a #rrggbb token — the web's
+ * color-mix(in srgb, var(--accent-2) 13%, transparent) equivalent. The palette
+ * only ships a purple tinted surface (chipBg/pillBg), so anything that needs an
+ * orange-tinted surface has to mix it here. Non-hex input passes through.
+ */
+export function tint(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
 /** Radii + spacing + type scale (web: 14–22px radii; scale 12…28). */
 export const radius = { sm: 10, md: 14, lg: 18, xl: 22 } as const;
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
@@ -230,6 +243,21 @@ export const fontSize = {
 
 /** Display tier (hero numbers/titles): 32/40 tight, weight 800 (redesign §1). */
 export const display = { size: 32, lineHeight: 40 } as const;
+
+/**
+ * Reading line heights for prose, mirroring the web's 1.25–1.65 ratios
+ * (globals.css .about2-* copy). RN's default leading is both tighter than the
+ * web's and platform-dependent, which shows up as soon as a paragraph wraps
+ * past two lines — so text blocks opt into these instead of hardcoding a
+ * number per screen. "compact" is the same 14px copy inside dense surfaces,
+ * where the airy 1.65 ratio costs more height than it buys.
+ */
+export const lineHeight = {
+  compact: 20,
+  body: 23,
+  subtitle: 24,
+  heading: 34,
+} as const;
 
 /** Named font weights (RN wants string literals). */
 export const weight = {

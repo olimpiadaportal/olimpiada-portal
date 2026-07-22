@@ -1,5 +1,6 @@
-// News list card (web .news-card parity): cover via expo-image, title, date,
-// read-only view/like counters. Pure visual — the surface decides navigation.
+// News list card (web .news-card parity): cover via expo-image, title, date, a
+// read-only view counter and the interactive like pill. Pure visual — the
+// surface decides navigation and the caller owns the like write.
 import React from "react";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
@@ -10,6 +11,7 @@ import { radius, spacing } from "@/theme/tokens";
 import { publicStorageUrl, type NewsListItem } from "@/lib/data";
 import { useT } from "@/i18n/useT";
 import { formatNewsDate } from "./format";
+import { NewsLikeButton } from "./NewsLikeButton";
 
 function MetaChip({ text }: { text: string }) {
   const { tokens } = useTheme();
@@ -31,9 +33,15 @@ function MetaChip({ text }: { text: string }) {
 
 export function NewsCard({
   item,
+  liked,
+  canLike,
+  onToggleLike,
   onPress,
 }: {
   item: NewsListItem;
+  liked: boolean;
+  canLike: boolean;
+  onToggleLike: () => void;
   onPress: () => void;
 }) {
   const { t, locale } = useT();
@@ -47,6 +55,14 @@ export function NewsCard({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={item.title}
+      // The card is one accessibility element, which hides the nested heart from
+      // VoiceOver/TalkBack — expose liking as a custom action instead.
+      accessibilityActions={
+        canLike ? [{ name: "like", label: liked ? t("news.liked") : t("news.like") }] : undefined
+      }
+      onAccessibilityAction={(e) => {
+        if (e.nativeEvent.actionName === "like") onToggleLike();
+      }}
       onPress={onPress}
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
@@ -74,7 +90,13 @@ export function NewsCard({
           >
             {date ? <AppText variant="muted">{date}</AppText> : null}
             <MetaChip text={`${views} ${t("news.views")}`} />
-            <MetaChip text={`♥ ${likes}`} />
+            <NewsLikeButton
+              compact
+              count={likes}
+              liked={liked}
+              canLike={canLike}
+              onToggle={onToggleLike}
+            />
           </View>
         </View>
       </Card>

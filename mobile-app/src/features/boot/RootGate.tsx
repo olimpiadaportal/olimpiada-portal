@@ -57,7 +57,7 @@ export function RootGate() {
 
   // Boot: restore the session + persisted locale + welcome-once/app-lock
   // flags, and set the push display policy (foreground pushes stay silent —
-  // the in-app Realtime toast covers foreground; no registration here).
+  // the Realtime inbox refresh covers foreground; no registration here).
   useEffect(() => {
     void hydrateLocale();
     void hydrateSeenWelcome();

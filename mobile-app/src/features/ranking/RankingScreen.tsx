@@ -22,6 +22,7 @@ import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/Statu
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { fetchActiveSubjects } from "@/lib/data";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { SelectField } from "@/features/profile/SelectField";
@@ -132,6 +133,14 @@ export function RankingScreen() {
     enabled: leaderboardOn && !!profileId && board === "streak",
   });
 
+  // All three are enabled-gated, so their own isRefetching flags stay false
+  // until the scope ids land — the hook's boolean does not.
+  const { refreshing, onRefresh } = usePullRefresh([
+    listQ,
+    meQ,
+    board === "streak" ? streakQ : null,
+  ]);
+
   if (config.data && !leaderboardOn) {
     return (
       <ArenaScroll>
@@ -144,12 +153,6 @@ export function RankingScreen() {
   const rows = listQ.data ?? [];
   const me = meQ.data ?? null;
   const streak = board === "streak" ? streakQ.data ?? null : null;
-
-  const onRefresh = () => {
-    void listQ.refetch();
-    void meQ.refetch();
-    if (board === "streak") void streakQ.refetch();
-  };
 
   const emptyKey =
     board === "streak" ? "lb.empty.streak" : periodUrl === "month" ? "lb.empty.month" : "lb.empty.all";
@@ -177,7 +180,7 @@ export function RankingScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: arena.bg }}>
       <View style={{ flex: 1 }}>
-        <ArenaScroll onRefresh={onRefresh} refreshing={listQ.isRefetching}>
+        <ArenaScroll onRefresh={onRefresh} refreshing={refreshing}>
           <ArenaEyebrow>{t("lb.eyebrow")}</ArenaEyebrow>
 
           {/* Board tabs: Points | Streak (web .arena-tabs) */}

@@ -15,6 +15,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import {
   fetchChildDashboard,
   fetchChildLeaderboardSummary,
@@ -76,6 +77,8 @@ export default function ParentAnalytics() {
     queryFn: () => fetchChildLeaderboardSummary(childId!),
   });
 
+  const { refreshing, onRefresh } = usePullRefresh([childrenQ, dashQ, lbQ, config]);
+
   let body: React.ReactNode;
   if (childrenQ.isPending) {
     body = <LoadingSkeleton />;
@@ -119,7 +122,7 @@ export default function ParentAnalytics() {
   }
 
   return (
-    <Screen scroll>
+    <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
       <View style={{ gap: spacing.lg }}>
         <View style={{ gap: spacing.xs }}>
           <AppText variant="heading">{t("analytics.title")}</AppText>

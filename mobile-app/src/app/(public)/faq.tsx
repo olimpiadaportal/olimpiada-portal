@@ -2,7 +2,7 @@
 // accordion cards — LayoutAnimation eases the expansion (plan §4-Public);
 // lucide chevron rotates on the open item.
 import React, { useState } from "react";
-import { LayoutAnimation, Pressable, ScrollView, View } from "react-native";
+import { LayoutAnimation, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown } from "lucide-react-native";
@@ -10,6 +10,8 @@ import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
+import { useContentOverrides } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
 
 const QUESTION_COUNT = 10;
@@ -23,10 +25,14 @@ function Chevron({ open, color }: { open: boolean; color: string }) {
 }
 
 export default function Faq() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState<number | null>(null);
+
+  // Every question/answer is CMS-overridable — that query is the live data.
+  const overridesQ = useContentOverrides(locale);
+  const { refreshing, onRefresh } = usePullRefresh([overridesQ]);
 
   const items = Array.from({ length: QUESTION_COUNT }, (_, i) => ({
     q: t(`faq.q${i + 1}`),
@@ -56,6 +62,15 @@ export default function Faq() {
           paddingBottom: insets.bottom + spacing.xl,
           gap: spacing.md,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={tokens.accent}
+            colors={[tokens.accent]}
+            accessibilityLabel={t("mob.refreshing")}
+          />
+        }
       >
         <AppText variant="heading" style={{ marginBottom: spacing.sm }}>
           {t("faq.title")}

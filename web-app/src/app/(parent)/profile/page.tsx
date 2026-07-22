@@ -1,6 +1,6 @@
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { ParentProfile } from "@/components/ParentProfile";
 import { NotificationPreferences } from "@/components/NotificationPreferences";
@@ -22,7 +22,12 @@ const PROFILE_KEYS = [
   "profile.removeAvatar", "profile.avatarHint", "profile.noAvatar",
   "profile.err.passwordShort", "profile.err.passwordEqualsId",
   "profile.err.fileType", "profile.err.fileTooLarge", "profile.err.uploadFailed",
-  "profile.err.updateFailed", "account.deleteConfirm", "profile.phoneLabel",
+  "profile.err.updateFailed", "account.deleteConfirm",
+  // Phone row + its inline add/edit form (shares the register field's copy).
+  "profile.phoneLabel", "profile.phoneEdit", "profile.addPhone",
+  "profile.phoneHint", "profile.phoneSaved",
+  "parent.auth.phoneCountry", "parent.auth.phoneSearch", "parent.auth.phonePh",
+  "parent.err.phone",
   "auth.showPassword", "auth.hidePassword",
   // Round 8 account-settings sections (prof2.*)
   "prof2.accountInfo", "prof2.name", "prof2.email",
@@ -41,6 +46,7 @@ function initialsOf(name: string, email: string): string {
 export default async function ParentProfilePage() {
   const parent = await requireParent();
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
 
   // Parent profile display data. Degrade gracefully on any failure so the page
@@ -130,6 +136,7 @@ export default async function ParentProfilePage() {
         phone={phone}
         initials={initialsOf(name, email)}
         avatarUrl={avatarUrl}
+        locale={locale}
         dict={profileDict}
       />
       {notifBlock}

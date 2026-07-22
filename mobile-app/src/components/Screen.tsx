@@ -1,8 +1,15 @@
 import React from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
+import { useT } from "@/i18n/useT";
 
 /**
  * Base screen container: themed background, safe-area padding, optional
@@ -13,13 +20,20 @@ export function Screen({
   scroll = false,
   padded = true,
   background,
+  refreshing = false,
+  onRefresh,
 }: {
   children: React.ReactNode;
   scroll?: boolean;
   padded?: boolean;
   background?: string;
+  /** Pull-to-refresh (scroll screens only — a non-scroll Screen hosts its own
+   *  list, which carries its own RefreshControl). */
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
   const { tokens } = useTheme();
+  const { t } = useT();
   const insets = useSafeAreaInsets();
   const bg = background ?? tokens.bg;
   const pad = padded ? spacing.lg : 0;
@@ -54,6 +68,20 @@ export function Screen({
           paddingRight: pad + insets.right,
         }}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={tokens.accent}
+              colors={[tokens.accent]}
+              // The content is padded by the top inset, so the Android spinner
+              // has to start below it too.
+              progressViewOffset={insets.top}
+              accessibilityLabel={t("mob.refreshing")}
+            />
+          ) : undefined
+        }
       >
         {children}
       </ScrollView>

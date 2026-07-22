@@ -37,6 +37,10 @@ export default function PublicLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
+        // Chevron only. iOS otherwise labels the back button with the previous
+        // scene's title. Adding headerBackTitleStyle here would silently
+        // re-enable that label.
+        headerBackButtonDisplayMode: "minimal",
         // A cross-group push (e.g. parent profile → FAQ) starts a fresh
         // (public) stack, so the native back button would not render; keep it
         // for in-stack pushes and fall back to a root-stack back arrow.

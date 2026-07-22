@@ -7,7 +7,7 @@
 // visiting this route early must never end a running test. Olympiad attempts
 // (kind='olympiad') use olympiad wording and exit to the Olympiads tab.
 import React, { useEffect } from "react";
-import { ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -24,6 +24,7 @@ import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing, radius } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useAttemptRow, useTestResult } from "./queries";
 import { isLiveAttempt, usedMinutes } from "./logic";
 import {
@@ -71,6 +72,13 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
   }, [kindOk, live, attemptId, router]);
 
   const resultQ = useTestResult(attemptId, kindOk && !live && !closed);
+
+  // Mirrors the result query's own gate: it probes the idempotent submit RPC,
+  // so it must never be re-run for an attempt that is not settled.
+  const { refreshing, onRefresh } = usePullRefresh([
+    rowQ,
+    kindOk && !live && !closed ? resultQ : null,
+  ]);
 
   const pad = {
     paddingTop: insets.top + spacing.md,
@@ -135,7 +143,22 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
   const topics = (result.topics ?? []).filter((tp) => tp.total > 0);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: arena.bg }} contentContainerStyle={pad}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: arena.bg }}
+      contentContainerStyle={pad}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={arena.lime}
+          colors={[arena.lime]}
+          // No navigator header here: the content starts at the top inset and
+          // the Android spinner has to as well.
+          progressViewOffset={insets.top}
+          accessibilityLabel={t("mob.refreshing")}
+        />
+      }
+    >
       <BackBar
         arena={arena}
         label={isOlympiad ? t("test.result.backToOlympiads") : t("test.result.newTest")}

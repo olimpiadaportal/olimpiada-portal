@@ -26,6 +26,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { subjectLabel } from "@/lib/subjectLabel";
 import {
   fmtDate,
@@ -90,12 +91,7 @@ export default function ParentSubscription() {
 
   const loading =
     config.isPending || children.isPending || subs.isPending || freeAccess.isPending;
-  const onRefresh = () => {
-    void children.refetch();
-    void subs.refetch();
-    void freeAccess.refetch();
-    void config.refetch();
-  };
+  const { refreshing, onRefresh } = usePullRefresh([children, subs, freeAccess, config]);
 
   const intervalName = (iv: string | null) =>
     iv === "week" ? t("pricing.weekly") : iv === "year" ? t("pricing.yearly") : t("pricing.monthly");
@@ -112,7 +108,7 @@ export default function ParentSubscription() {
 
   if (children.isError || subs.isError) {
     return (
-      <ScreenScroll onRefresh={onRefresh} refreshing={children.isRefetching || subs.isRefetching}>
+      <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
         <ErrorRetry
           message={t("mob.boot.error")}
           retryLabel={t("mob.retry")}
@@ -165,7 +161,7 @@ export default function ParentSubscription() {
   ) : null;
 
   return (
-    <ScreenScroll onRefresh={onRefresh} refreshing={children.isRefetching || subs.isRefetching}>
+    <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
       <AppText variant="muted">{t("subscription.subtitle")}</AppText>
 
       {list.length === 0 ? (

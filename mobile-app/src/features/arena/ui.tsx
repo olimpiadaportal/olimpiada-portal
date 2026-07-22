@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
 import { radius, shadow, spacing } from "@/theme/tokens";
+import { useT } from "@/i18n/useT";
 import { useArena } from "./useArena";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
@@ -40,6 +41,7 @@ export function ArenaScroll({
   onRefresh?: () => void;
 }) {
   const { arena } = useArena();
+  const { t } = useT();
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
@@ -56,6 +58,7 @@ export function ArenaScroll({
             onRefresh={onRefresh}
             tintColor={arena.lime}
             colors={[arena.lime]}
+            accessibilityLabel={t("mob.refreshing")}
           />
         ) : undefined
       }

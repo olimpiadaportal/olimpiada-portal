@@ -1622,4 +1622,47 @@ If anything doesn't match, tell me the **WW-#** + what you saw.
 - Open the Admin Panel → **Subscriptions** on a normal desktop window: every row should be **one clean line** — no child name broken across two lines, no subject list stacked one word per row, and the Period-ends / Updated / View columns fully visible inside the card.
 - Narrow the browser window: the table should **scroll sideways** inside the card rather than squeeze the columns; the filter bar above it wraps normally.
 
-If anything doesn't match, tell me the **XX-#** + what you saw.
+---
+
+# Round 33 — investor punch-list (mobile-heavy). Test on the ANDROID phone via Expo Go.
+
+**Before you start (#7 depends on it):** the mobile app talks to the web-app BFF (`/api/mobile/v1/*`) for every write. That server must be running on the dev machine and reachable from the phone:
+- Start it: in `web-app/` run `npm run dev` (listens on `:3000`).
+- The phone and the PC must be on the SAME Wi-Fi. `mobile-app/.env` `EXPO_PUBLIC_BFF_URL` may stay `http://localhost:3000` — the app rewrites `localhost` to the dev machine's LAN IP automatically. If a write still fails, open `http://<PC-LAN-IP>:3000` in the phone's browser; if that doesn't load, it's Windows Firewall on port 3000, not the app.
+
+## YY1. #7 — the critical fixes (add child / edit child / avatars)
+- **Add a new child**: the wizard should complete and reveal the 8-digit ID — no "Uşaq hesabı yaradıla bilmir".
+- **Edit a child** (name / school / gender): Save should succeed — no "Dəyişikliklər yadda saxlanılmadı".
+- **Set a child's picture** (photo, then a boy/girl preset), then **Remove** it → back to the initials bubble.
+- **Remove your OWN parent picture** from the profile → back to initials.
+- All four failed before with the same generic error; all four should now work.
+
+## YY2. #1 — language switcher
+- Fresh install (or replay onboarding): the intro slides show a compact **globe + AZ** chip top-right that does not jump between slides; tapping it opens AZ / English / Русский, each in its own language.
+- The Login and Register screens carry the same chip top-right. Switching language re-renders the whole screen instantly (including any error already showing), and the choice survives a full app restart.
+
+## YY3. #2 — profile clean-up + back button
+- Parent profile: **no** "Notification Settings" section and **no** "Fənlər/Subjects" row in the account sheet. About / FAQ / Contact (and Pricing for parents) remain.
+- Open any sub-screen (e.g. Contact) — the top-left shows **only a chevron**, no "Tabs"/"Back"/title text. (This only differs on iOS; Android is already title-less.)
+
+## YY4. #3 — About
+- The About screen shows illustrations and reads as a compact, modern page — noticeably less endless scrolling; a "Read more" reveals the longer copy. Check both light and dark.
+
+## YY5. #4 — Olympiads buy button
+- On an Olympiad card and inside its Details popup, the purchase button reads **"Satın al" / "Buy now" / "Купить"** — never the raw text `poly.buyFor`.
+
+## YY6. #5 — news likes
+- On a news list card and inside an article, tap the ♥ — it fills, the count rises by one, and tapping again reverts it. The state matches between the list and the article, and matches what the website shows for the same article. Signed-out: the count shows but is not tappable.
+
+## YY7. #6 — contact map
+- The Contact screen shows a real map of the configured address inside a card (not a grey box). Tapping it opens directions in Google/Apple Maps. If the map can't load, a message tells you to open the address in your maps app, and the address row still opens maps when tapped.
+- (Owner: for a precise pin, set **contact.support_map_query** in Admin → settings to `lat,lng`; empty falls back to a text search for the street address.)
+
+## YY8. #8 — pull-to-refresh
+- On any list screen (home, news, notifications, olympiads, leaderboard, tests…), pull down → a top spinner appears and, when done, a brief "Məlumatlar yeniləndi / Information updated" banner. The spinner must not appear stuck or flash invisibly.
+
+## YY9. #9 — parent phone (web AND mobile)
+- **Mobile** parent profile: a phone section shows your current number (or "Add number" if none). Change it, Save → the identity card updates immediately. An invalid number is rejected; you cannot save an empty one.
+- **Web** parent profile: same behaviour, and opening the editor pre-fills your existing number and country, not a blank AZ field.
+
+If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.

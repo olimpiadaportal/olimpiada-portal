@@ -103,6 +103,7 @@ const ACTION_KEYS: Record<string, string> = {
   // web-app parent-facing server actions (Round 22 — written by the web-app,
   // read here so the panel's audit log covers parent/child activity too).
   "parent.register": "audit.action.parent_register",
+  "parent.phone_update": "audit.action.parent_phone_update",
   "parent.account_delete": "audit.action.parent_account_delete",
   "parent.child_create": "audit.action.parent_child_create",
   "parent.child_password_reset": "audit.action.parent_child_password_reset",

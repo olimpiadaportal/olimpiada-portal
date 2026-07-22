@@ -5,7 +5,7 @@
 // simple scroll of cards; viewable in-session by BOTH roles (informational,
 // not commerce).
 import React from "react";
-import { ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -19,6 +19,8 @@ import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
+import { useContentOverrides } from "@/lib/configQueries";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
 
 // The web page's fixed catalog cards (subject.* keys are synced ×3).
@@ -30,9 +32,13 @@ const SUBJECTS: { key: string; Icon: LucideIcon }[] = [
 ];
 
 export default function Subjects() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // The copy is CMS-overridable — that query is this page's live data.
+  const overridesQ = useContentOverrides(locale);
+  const { refreshing, onRefresh } = usePullRefresh([overridesQ]);
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.bg }}>
@@ -52,6 +58,15 @@ export default function Subjects() {
           paddingBottom: insets.bottom + spacing.xl,
           gap: spacing.lg,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={tokens.accent}
+            colors={[tokens.accent]}
+            accessibilityLabel={t("mob.refreshing")}
+          />
+        }
       >
         <View style={{ gap: spacing.sm }}>
           <AppText variant="display">{t("subjects.title")}</AppText>

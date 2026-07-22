@@ -1,33 +1,28 @@
-// Parent profile section cards (mobile port of web ParentProfile +
-// NotificationPreferences): identity header, change-password, per-profile
-// notification channel rows (await + revert on failure), link rows and the
+// Parent profile section cards (mobile port of web ParentProfile): identity
+// header, the phone add/edit module, change-password, link rows and the
 // double-confirm danger zone. Presentational + local state only; privileged
-// flows go through the BFF client (bffDeleteAccount) or supabase.auth.
+// flows go through the BFF client (bffUpdateParentPhone / bffDeleteAccount) or
+// supabase.auth.
 import React, { useState } from "react";
-import { Modal, Pressable, Switch, View } from "react-native";
+import { Modal, Pressable, View } from "react-native";
 import {
   KeyRound,
   Mail,
   Phone,
   TriangleAlert,
 } from "lucide-react-native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppText } from "@/components/AppText";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ListRow } from "@/components/ListRow";
+import { E164_RE, PhoneField } from "@/components/PhoneField";
 import { PasswordField } from "@/components/TextField";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { supabase } from "@/lib/supabase";
-import { bffDeleteAccount } from "@/lib/api";
+import { bffDeleteAccount, bffUpdateParentPhone } from "@/lib/api";
 import { useAuthStore } from "@/features/auth/authStore";
-import {
-  fetchPrefs,
-  savePrefs,
-  type NotificationPrefs,
-} from "@/features/notifications/useNotifications";
 import { AvatarSection } from "./AvatarPicker";
 import { type OwnProfile } from "./useOwnProfile";
 
@@ -84,6 +79,117 @@ function InfoRow({
   value: string;
 }) {
   return <ListRow icon={icon} title={label} value={value} chevron={false} />;
+}
+
+/* ------------------------------- phone number ------------------------------ */
+
+/**
+ * Add/edit module for the parent's contact number. Registration makes the
+ * phone mandatory, so this exists to fill legacy nulls and to correct a stale
+ * number — it deliberately offers no way to clear the field back to empty.
+ */
+export function PhoneSection({
+  current,
+  t,
+  onSaved,
+}: {
+  /** Stored E.164 value, or null on an account that never got one. */
+  current: string | null;
+  t: T;
+  onSaved: () => void;
+}) {
+  const { tokens } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit() {
+    if (pending) return;
+    // Client mirror of the server rule — UX only: the BFF re-runs the same
+    // E.164 check and the database constraint is the final authority.
+    if (!E164_RE.test(phone)) {
+      setError(t("parent.err.phone"));
+      return;
+    }
+    setError(null);
+    setPending(true);
+    const res = await bffUpdateParentPhone(phone);
+    setPending(false);
+    if (!res.ok) {
+      setError(t(res.error));
+      return;
+    }
+    setDone(true);
+    setOpen(false);
+    // Collapsing back to the summary means the stored value is on screen
+    // again — it has to be the one that was just saved, not the cached one.
+    onSaved();
+  }
+
+  return (
+    <Card style={{ gap: spacing.md }}>
+      <ListRow
+        icon={<Phone size={18} color={tokens.accent} strokeWidth={2} />}
+        title={t("profile.phoneLabel")}
+        subtitle={t("profile.phoneHint")}
+        chevron={false}
+      />
+      {!open ? (
+        <View style={{ gap: spacing.md }}>
+          <AppText variant="mono" color={current ? tokens.text : tokens.muted}>
+            {current ?? "—"}
+          </AppText>
+          {done ? (
+            <AppText variant="muted" color={tokens.ok}>
+              {t("profile.phoneSaved")}
+            </AppText>
+          ) : null}
+          <Button
+            title={current ? t("profile.phoneEdit") : t("profile.addPhone")}
+            variant="ghost"
+            onPress={() => {
+              setDone(false);
+              setError(null);
+              setOpen(true);
+            }}
+          />
+        </View>
+      ) : (
+        <View style={{ gap: spacing.md }}>
+          {/* Same country-code field registration uses; it renders the error
+              inline, so the section does not repeat it. */}
+          <PhoneField
+            label={t("parent.auth.phone")}
+            searchPlaceholder={t("parent.auth.phoneSearch")}
+            closeLabel={t("drawer.close")}
+            error={error}
+            onChangeE164={setPhone}
+          />
+          <View style={{ flexDirection: "row", gap: spacing.md }}>
+            <Button
+              title={t("profile.save")}
+              pendingTitle={t("profile.saving")}
+              pending={pending}
+              style={{ flex: 1 }}
+              onPress={() => void submit()}
+            />
+            <Button
+              title={t("profile.cancel")}
+              variant="ghost"
+              disabled={pending}
+              style={{ flex: 1 }}
+              onPress={() => {
+                setOpen(false);
+                setError(null);
+              }}
+            />
+          </View>
+        </View>
+      )}
+    </Card>
+  );
 }
 
 /* ----------------------------- change password ----------------------------- */
@@ -179,105 +285,6 @@ export function PasswordSection({ t }: { t: T }) {
         </View>
       )}
     </Card>
-  );
-}
-
-/* ------------------------- notification preferences ------------------------ */
-
-const DEFAULT_PREFS: NotificationPrefs = {
-  in_app_enabled: true,
-  email_enabled: true,
-  push_enabled: true,
-};
-
-type Channel = keyof NotificationPrefs;
-
-export function PrefRow({
-  target,
-  label,
-  t,
-}: {
-  /** null = the parent's own prefs; otherwise a child's profile id. */
-  target: string | null;
-  label: string;
-  t: T;
-}) {
-  const { tokens } = useTheme();
-  const queryClient = useQueryClient();
-  const queryKey = ["notif-prefs", target ?? "self"];
-  const q = useQuery({ queryKey, queryFn: () => fetchPrefs(target) });
-  const [override, setOverride] = useState<NotificationPrefs | null>(null);
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-
-  const prefs = override ?? q.data ?? DEFAULT_PREFS;
-
-  // Round-17 lesson: AWAIT the save and revert the optimistic flip on failure.
-  async function toggle(ch: Channel) {
-    if (status === "saving") return;
-    const prev = prefs;
-    const next = { ...prefs, [ch]: !prefs[ch] };
-    setOverride(next);
-    setStatus("saving");
-    const ok = await savePrefs(target, next);
-    if (ok) {
-      queryClient.setQueryData(queryKey, next);
-      setStatus("saved");
-    } else {
-      setOverride(prev);
-      setStatus("error");
-    }
-  }
-
-  const channels: { key: Channel; label: string; note: boolean }[] = [
-    { key: "in_app_enabled", label: t("notif.prefs.inApp"), note: false },
-    { key: "email_enabled", label: t("notif.prefs.email"), note: true },
-    { key: "push_enabled", label: t("notif.prefs.push"), note: true },
-  ];
-
-  return (
-    <View style={{ gap: spacing.sm }}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <AppText variant="label" numberOfLines={1} style={{ flexShrink: 1 }}>
-          {label}
-        </AppText>
-        <AppText
-          variant="muted"
-          style={{ fontSize: 12 }}
-          color={status === "error" ? tokens.danger : status === "saved" ? tokens.ok : tokens.muted}
-        >
-          {status === "saving"
-            ? t("notif.prefs.saving")
-            : status === "saved"
-              ? t("notif.prefs.saved")
-              : status === "error"
-                ? t("notif.prefs.error")
-                : ""}
-        </AppText>
-      </View>
-      {channels.map((c) => (
-        <View
-          key={c.key}
-          style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}
-        >
-          <View style={{ flex: 1 }}>
-            <AppText>{c.label}</AppText>
-            {c.note ? (
-              <AppText variant="muted" style={{ fontSize: 11 }}>
-                {t("notif.prefs.channelNote")}
-              </AppText>
-            ) : null}
-          </View>
-          <Switch
-            accessibilityLabel={`${label} — ${c.label}`}
-            value={prefs[c.key]}
-            disabled={q.isPending}
-            onValueChange={() => void toggle(c.key)}
-            trackColor={{ false: tokens.border, true: tokens.accent }}
-            thumbColor="#ffffff"
-          />
-        </View>
-      ))}
-    </View>
   );
 }
 

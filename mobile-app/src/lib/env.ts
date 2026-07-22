@@ -31,4 +31,20 @@ export const bffUrl = resolveDevBffHost(
 );
 
 export const isSupabaseConfigured = supabaseUrl.length > 0 && supabaseAnonKey.length > 0;
-export const isBffConfigured = bffUrl.length > 0;
+
+/**
+ * A usable BFF origin must be an ABSOLUTE http(s) URL: a scheme-less value
+ * ("localhost:3000") or a leftover placeholder would pass a length check, skip
+ * the LAN rewrite above and then fail at fetch time as an opaque transport
+ * error — indistinguishable from a phone that is simply offline.
+ */
+export const isBffConfigured = /^https?:\/\/\S+$/i.test(bffUrl);
+
+// Dev-only, and only when something is actually wrong: EXPO_PUBLIC_* values are
+// compiled into the bundle, so a bad origin survives until Metro is restarted
+// and otherwise surfaces much later as a generic "could not be saved".
+if (__DEV__ && !isBffConfigured) {
+  console.warn(
+    "[bff] EXPO_PUBLIC_BFF_URL is missing or is not an absolute http(s) URL — every BFF call will fail fast.",
+  );
+}

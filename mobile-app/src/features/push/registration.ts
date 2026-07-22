@@ -27,8 +27,11 @@ function devLog(msg: string): void {
 
 /**
  * Foreground display policy + iOS categories. Foreground pushes stay SILENT
- * (no banner/list/sound) — the in-app Realtime toast in useNotifications.ts
- * already covers the foreground case; only the badge is kept in sync.
+ * (no banner/list/sound): the Realtime INSERT in useNotifications.ts already
+ * refreshes the inbox and the header bell, so a second OS banner over a screen
+ * the user is looking at would be noise. Only the badge is kept in sync.
+ * (A visible in-app announcement would go through components/Toast.tsx — it is
+ * NOT wired to notifications today.)
  */
 export async function initPushDisplay(): Promise<void> {
   try {

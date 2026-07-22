@@ -2649,9 +2649,11 @@ a.qpage-link:hover {
    Progressive enhancement: without :has() support the page simply stays at
    1120px (columns are narrower but fully functional).
    Round 22: the questions list (8 columns + row actions) gets the same full
-   width so the table stops feeling squeezed on desktop. */
+   width so the table stops feeling squeezed on desktop.
+   Round 33: the subscriptions list (10 columns + row actions) joins them. */
 .admin-content:has(.locations-page),
-.admin-content:has(.questions-page) {
+.admin-content:has(.questions-page),
+.admin-content:has(.subscriptions-page) {
   max-width: 1560px;
 }
 
@@ -3283,4 +3285,32 @@ a.qpage-link:hover {
   margin-top: 4px;
   font-size: 0.75rem;
   color: var(--muted);
+}
+
+/* =========================================================================
+   Subscriptions (/subscriptions) — Round 33 list-layout fix.
+   The row carries three nowrap timestamp columns (trial end / period end /
+   updated) plus the status, amount and source pills. Left to auto-layout the
+   browser paid for them by crushing the three WRAPPABLE columns instead:
+   child names broke across two lines, the subject list stacked one word per
+   row, and the tail of the table still fell off the card. Giving the table a
+   min-width (so .table-wrap scrolls instead of squeezing) and floors to the
+   three text columns keeps every row one clean line at the widened cap.
+   ========================================================================= */
+.subs-table {
+  min-width: 1240px;
+}
+
+.subs-table .subs-child {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.subs-table .subs-parent {
+  min-width: 180px;
+}
+
+.subs-table .subs-subjects {
+  min-width: 190px;
+  max-width: 300px;
 }

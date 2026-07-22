@@ -1612,9 +1612,14 @@ If anything doesn't match, tell me the **WW-#** + what you saw.
 
 ## XX5. Mobile parity
 - Same two numbers, same removal notice, same explanatory sentence on the mobile Manage-Subjects screen; the demo pay sheet shows the Due-now amount and its button reads "Confirm" when nothing is charged.
+- Repeat XX3 on mobile (Subscription tab → Plans, and the child's Subscribe screen): after saving a removal and pulling to refresh, the subject shows **unticked with the "ends at period end" chip**, and re-ticking it cancels the removal.
 
 ## XX6. Safety
 - Double-tapping Save must not apply twice (a retry of the same change is ignored server-side).
 - Nothing real is charged anywhere yet — no payment provider is connected; the amounts are recorded on a ledger for when one is.
+
+## XX7. Admin → Subscriptions list layout
+- Open the Admin Panel → **Subscriptions** on a normal desktop window: every row should be **one clean line** — no child name broken across two lines, no subject list stacked one word per row, and the Period-ends / Updated / View columns fully visible inside the card.
+- Narrow the browser window: the table should **scroll sideways** inside the card rather than squeeze the columns; the filter bar above it wraps normally.
 
 If anything doesn't match, tell me the **XX-#** + what you saw.

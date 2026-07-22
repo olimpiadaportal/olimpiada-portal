@@ -38,6 +38,7 @@ export function SubjectCheckRow({
   checked,
   onToggle,
   chip,
+  chipTone = "active",
   disabled = false,
 }: {
   name: string;
@@ -46,6 +47,9 @@ export function SubjectCheckRow({
   onToggle: () => void;
   /** Optional trailing chip (e.g. subjedit.activeChip). */
   chip?: string;
+  /** "active" = accent pill (covered now); "ending" = muted pill (scheduled
+   *  removal), matching web's .subjedit-chip-active / -chip-ending pair. */
+  chipTone?: "active" | "ending";
   disabled?: boolean;
 }) {
   const { tokens } = useTheme();
@@ -88,13 +92,19 @@ export function SubjectCheckRow({
         {chip ? (
           <View
             style={{
-              backgroundColor: tokens.pillBg,
+              backgroundColor: chipTone === "ending" ? "transparent" : tokens.pillBg,
+              borderWidth: chipTone === "ending" ? 1 : 0,
+              borderColor: tokens.border,
               borderRadius: 999,
               paddingHorizontal: spacing.sm,
               paddingVertical: 1,
             }}
           >
-            <AppText variant="label" color={tokens.pillText} style={{ fontSize: 11 }}>
+            <AppText
+              variant="label"
+              color={chipTone === "ending" ? tokens.muted : tokens.pillText}
+              style={{ fontSize: 11 }}
+            >
               {chip}
             </AppText>
           </View>

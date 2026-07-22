@@ -86,14 +86,20 @@ export function ManageSubjectsEditor({
   studentId,
   subjects,
   coveredIds,
+  endingIds = [],
   interval,
   posture,
   onSaved,
 }: {
   studentId: string;
   subjects: SubjectOption[];
-  /** Subject ids covered by the live subscription right now. */
+  /** Subject ids in the GO-FORWARD plan (scheduled removals excluded). */
   coveredIds: string[];
+  /** Subject ids with a scheduled removal (access runs to the period end).
+   *  They render UNCHECKED with an "ends at period end" chip — otherwise a
+   *  completed removal looks like it failed and the parent has no way to
+   *  re-tick the subject to cancel it. Web ManageSubjects parity. */
+  endingIds?: string[];
   /** The live subscription's billing interval. */
   interval: string | null;
   posture: CommercePosture;
@@ -105,6 +111,8 @@ export function ManageSubjectsEditor({
 
   const coveredKey = useMemo(() => [...coveredIds].sort().join(","), [coveredIds]);
   const covered = useMemo(() => new Set(coveredKey ? coveredKey.split(",") : []), [coveredKey]);
+  const endingKey = useMemo(() => [...endingIds].sort().join(","), [endingIds]);
+  const ending = useMemo(() => new Set(endingKey ? endingKey.split(",") : []), [endingKey]);
   // User edits are the SYMMETRIC DIFFERENCE vs the live coverage, so the
   // selection is DERIVED (covered XOR toggled) and auto-resyncs when a save
   // refetches the coverage — no state-sync effect needed.
@@ -211,17 +219,27 @@ export function ManageSubjectsEditor({
       ) : null}
 
       <Card style={{ paddingVertical: spacing.xs }}>
-        {subjects.map((s) => (
-          <SubjectCheckRow
-            key={s.id}
-            name={subjectLabel(t, s.code, s.name)}
-            priceText={fmtMoney(s.prices[iv] ?? 0, "AZN")}
-            checked={selected.has(s.id)}
-            onToggle={() => toggle(s.id)}
-            chip={covered.has(s.id) ? t("subjedit.activeChip") : undefined}
-            disabled={pending}
-          />
-        ))}
+        {subjects.map((s) => {
+          const isChecked = selected.has(s.id);
+          return (
+            <SubjectCheckRow
+              key={s.id}
+              name={subjectLabel(t, s.code, s.name)}
+              priceText={fmtMoney(s.prices[iv] ?? 0, "AZN")}
+              checked={isChecked}
+              onToggle={() => toggle(s.id)}
+              chip={
+                covered.has(s.id)
+                  ? t("subjedit.activeChip")
+                  : ending.has(s.id) && !isChecked
+                    ? t("subjedit.endingChip")
+                    : undefined
+              }
+              chipTone={covered.has(s.id) ? "active" : "ending"}
+              disabled={pending}
+            />
+          );
+        })}
       </Card>
       <AppText variant="muted">{t("pricing.perSubjectNote")}</AppText>
 

@@ -226,7 +226,12 @@ export default function ParentSubscription() {
                   <ManageSubjectsEditor
                     studentId={selected.profile_id}
                     subjects={subjects.data ?? []}
-                    coveredIds={liveSub.subjects.map((s) => s.subject_id)}
+                    coveredIds={liveSub.subjects
+                      .filter((s) => !s.remove_at)
+                      .map((s) => s.subject_id)}
+                    endingIds={liveSub.subjects
+                      .filter((s) => s.remove_at)
+                      .map((s) => s.subject_id)}
                     interval={liveSub.billing_interval}
                     posture={posture}
                     onSaved={invalidate}

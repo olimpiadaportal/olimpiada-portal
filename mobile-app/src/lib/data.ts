@@ -288,14 +288,22 @@ export type ChildSubscriptionRow = {
   current_period_end: string | null;
   total_amount: number | null;
   currency: string | null;
-  subjects: { subject_id: string; code: string | null; name: string }[];
+  /** Migration 078: `remove_at` non-null = scheduled removal. The subject stays
+   *  usable until then (= the period end) but is no longer part of the
+   *  go-forward plan, so editors must render it UNCHECKED (web parity). */
+  subjects: {
+    subject_id: string;
+    code: string | null;
+    name: string;
+    remove_at: string | null;
+  }[];
 };
 
 export async function fetchChildSubscriptions(): Promise<ChildSubscriptionRow[]> {
   const { data, error } = await supabase
     .from("child_subscriptions")
     .select(
-      "id, student_profile_id, status, billing_interval:interval, current_period_end, total_amount, currency, subscription_subjects(subject_id, subject:subject_id(code, name))",
+      "id, student_profile_id, status, billing_interval:interval, current_period_end, total_amount, currency, subscription_subjects(subject_id, remove_at, subject:subject_id(code, name))",
     )
     .in("status", ["trialing", "active", "canceled", "past_due"])
     .order("created_at", { ascending: false });
@@ -312,6 +320,7 @@ export async function fetchChildSubscriptions(): Promise<ChildSubscriptionRow[]>
       subject_id: x.subject_id,
       code: x.subject?.code ?? null,
       name: x.subject?.name ?? "",
+      remove_at: x.remove_at ?? null,
     })),
   }));
 }

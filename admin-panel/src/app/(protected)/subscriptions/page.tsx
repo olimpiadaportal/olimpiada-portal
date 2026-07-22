@@ -101,7 +101,7 @@ export default async function SubscriptionsPage({
     n === null || n === 0 ? "—" : `${n.toFixed(2)} ${currency}`;
 
   return (
-    <div className="page">
+    <div className="page subscriptions-page">
       <div className="page-head">
         <h1>{t("nav.subscriptions")}</h1>
         <p className="muted">{lt("subs.subtitle")}</p>
@@ -182,7 +182,7 @@ export default async function SubscriptionsPage({
         )}
         {result.rows.length > 0 && (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table subs-table">
               <thead>
                 <tr>
                   <th>{lt("subs.col.child")}</th>
@@ -205,8 +205,8 @@ export default async function SubscriptionsPage({
                     kind === "other" ? row.provider : lt(`subs.source.${kind}`);
                   return (
                     <tr key={row.id}>
-                      <td>{row.childName}</td>
-                      <td>
+                      <td className="subs-child">{row.childName}</td>
+                      <td className="subs-parent">
                         {row.parentName}
                         {row.parentEmail && (
                           <>
@@ -215,7 +215,9 @@ export default async function SubscriptionsPage({
                           </>
                         )}
                       </td>
-                      <td>{row.subjectNames.length ? row.subjectNames.join(", ") : "—"}</td>
+                      <td className="subs-subjects">
+                        {row.subjectNames.length ? row.subjectNames.join(", ") : "—"}
+                      </td>
                       <td className="nowrap">{lt(`subs.interval.${row.interval}`)}</td>
                       <td className="nowrap">
                         <span className={`pill ${statusPillClass(row.status)}`}>

@@ -201,8 +201,49 @@ create table if not exists public.subscription_subjects (
   child_subscription_id uuid not null references public.child_subscriptions (id) on delete cascade,
   subject_id            uuid not null references public.subjects (id) on delete cascade,
   added_at              timestamptz not null default now(),
+  -- Migration 078: SCHEDULED removal. Access is kept until this timestamp
+  -- (always = the subscription's current_period_end) and the subject is
+  -- excluded from the NEXT recurring total. NULL = active. Removals never
+  -- refund; they simply lower the next renewal.
+  remove_at             timestamptz,
   primary key (child_subscription_id, subject_id)
 );
+
+-- -----------------------------------------------------------------------------
+-- subscription_changes : immutable ledger of mid-cycle subject changes
+-- (migration 078). Proration is a state machine, not a formula — several
+-- changes inside one period must each be reconstructible for the next renewal
+-- amount and for billing disputes. Written ONLY by apply_subject_change().
+-- -----------------------------------------------------------------------------
+create table if not exists public.subscription_changes (
+  id                      uuid primary key default gen_random_uuid(),
+  child_subscription_id   uuid not null references public.child_subscriptions (id) on delete cascade,
+  student_profile_id      uuid not null references public.students (profile_id) on delete cascade,
+  owner_parent_profile_id uuid references public.profiles (id) on delete set null,
+  change_type             text not null check (change_type in ('add', 'remove')),
+  subject_id              uuid not null references public.subjects (id) on delete restrict,
+  effective_at            timestamptz not null,
+  prorated_amount         numeric(12,2) not null default 0,
+  currency                text not null default 'AZN',
+  recurring_before        numeric(12,2),
+  recurring_after         numeric(12,2),
+  discount_percent        numeric(5,2) not null default 0,
+  remaining_ratio         numeric(8,6),
+  period_days             numeric(10,4),
+  idempotency_key         text,
+  -- Real-provider baseline: filled once an actual charge is captured.
+  provider                text not null default 'none',
+  provider_payment_id     text,
+  created_by_profile_id   uuid references public.profiles (id) on delete set null,
+  created_at              timestamptz not null default now()
+);
+create index if not exists idx_sub_changes_sub
+  on public.subscription_changes (child_subscription_id, created_at desc);
+create index if not exists idx_sub_changes_student
+  on public.subscription_changes (student_profile_id, created_at desc);
+create unique index if not exists uq_sub_changes_idem
+  on public.subscription_changes (child_subscription_id, idempotency_key, subject_id, change_type)
+  where idempotency_key is not null;
 
 -- -----------------------------------------------------------------------------
 -- checkout_sessions : provider-agnostic checkout (subscription | olympiad).

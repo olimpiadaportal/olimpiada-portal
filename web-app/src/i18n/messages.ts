@@ -50,6 +50,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // ---- ROUND 11 (web) merged keys ----
     "pricing.perSubjectNote": "Qiymət 1 fənn üçün hesablanır.",
     "subjedit.activeChip": "Aktiv",
+    "subjedit.endingChip": "Dövr sonunda bitir",
     "subjedit.demoModeNote": "Demo ödəniş rejimi aktivdir — kartdan real məbləğ çıxılmır.",
     "subjedit.save": "Dəyişiklikləri yadda saxla",
     "subjedit.saving": "Yadda saxlanılır…",
@@ -59,6 +60,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.pendingRemove": "Çıxarılacaq",
     "subjedit.estTotal": "Təxmini yeni məbləğ",
     "subjedit.noChanges": "Dəyişiklik yoxdur",
+    // ---- Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end) ----
+    "subjedit.billingExplainer":
+      "Fənn əlavə etdikdə cari dövrün qalan günləri üçün mütənasib məbləğ ödəyirsiniz, tam yeni tarif isə növbəti yenilənmədən başlayır; fənni sildikdə isə geri ödəniş olmur — fənn dövrün sonuna qədər aktiv qalır və plan yalnız bundan sonra ucuzlaşır.",
+    "subjedit.dueNow": "İndi ödəniləcək",
+    "subjedit.thenRate": "Sonra: {date} tarixindən etibarən {total} {currency} / {interval}",
+    "subjedit.noChargeNow":
+      "İndi heç nə ödəmirsiniz — yeni tarif ({total} {currency} / {interval}) {date} tarixindən başlayacaq.",
+    "subjedit.removalNotice":
+      "Silinən fənn(lər) {date} tarixinə qədər aktiv qalacaq, bundan sonra plan {total} {currency} / {interval} səviyyəsinə düşəcək — geri ödəniş edilmir.",
+    "pay.confirmNoCharge": "Təsdiqlə",
     "billing.giveawayNote": "Pulsuz kampaniya dövründə bütün fənlərə giriş ödənişsizdir — abunə ödənişi tələb olunmur.",
     "billing.freeChip": "Pulsuz",
     "dpay.cancel": "Ləğv et",
@@ -1265,6 +1276,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // ---- ROUND 11 (web) merged keys ----
     "pricing.perSubjectNote": "The price is calculated per subject.",
     "subjedit.activeChip": "Active",
+    "subjedit.endingChip": "Ends at period end",
     "subjedit.demoModeNote": "Demo payment mode is on — your card is never actually charged.",
     "subjedit.save": "Save changes",
     "subjedit.saving": "Saving…",
@@ -1274,6 +1286,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.pendingRemove": "Will be removed",
     "subjedit.estTotal": "Estimated new total",
     "subjedit.noChanges": "No changes yet",
+    // ---- Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end) ----
+    "subjedit.billingExplainer":
+      "Adding a subject mid-cycle only charges the days left in the current period — the full new rate starts at your next renewal; removing gives no refund, the subject just stays active until the period ends and the plan gets cheaper from then on.",
+    "subjedit.dueNow": "Due now",
+    "subjedit.thenRate": "Then: {total} {currency} / {interval} from {date}",
+    "subjedit.noChargeNow":
+      "No charge now — the new rate ({total} {currency} / {interval}) starts on {date}.",
+    "subjedit.removalNotice":
+      "Removed subject(s) stay active until {date}, then the plan drops to {total} {currency} / {interval} — no refund.",
+    "pay.confirmNoCharge": "Confirm",
     "billing.giveawayNote": "During the free giveaway period access to all subjects is free — no subscription payment is required.",
     "billing.freeChip": "Free",
     "dpay.cancel": "Cancel",
@@ -2477,6 +2499,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // ---- ROUND 11 (web) merged keys ----
     "pricing.perSubjectNote": "Цена рассчитывается за 1 предмет.",
     "subjedit.activeChip": "Активен",
+    "subjedit.endingChip": "Заканчивается в конце периода",
     "subjedit.demoModeNote": "Включён демо-режим оплаты — деньги с карты не списываются.",
     "subjedit.save": "Сохранить изменения",
     "subjedit.saving": "Сохранение…",
@@ -2486,6 +2509,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.pendingRemove": "Будут убраны",
     "subjedit.estTotal": "Примерная новая сумма",
     "subjedit.noChanges": "Изменений пока нет",
+    // ---- Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end) ----
+    "subjedit.billingExplainer":
+      "При добавлении предмета в середине периода вы платите только за оставшиеся дни — полная новая цена начинает действовать со следующего продления; при удалении возврата средств нет — предмет остаётся активным до конца периода, а тариф снижается только после этого.",
+    "subjedit.dueNow": "К оплате сейчас",
+    "subjedit.thenRate": "Далее: {total} {currency} / {interval} с {date}",
+    "subjedit.noChargeNow":
+      "Сейчас плата не взимается — новый тариф ({total} {currency} / {interval}) начнёт действовать с {date}.",
+    "subjedit.removalNotice":
+      "Удаляемые предметы останутся активными до {date}, после чего тариф снизится до {total} {currency} / {interval} — без возврата средств.",
+    "pay.confirmNoCharge": "Подтвердить",
     "billing.giveawayNote": "В период бесплатной акции доступ ко всем предметам бесплатный — оплата подписки не требуется.",
     "billing.freeChip": "Бесплатно",
     "dpay.cancel": "Отмена",

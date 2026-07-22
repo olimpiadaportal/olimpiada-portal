@@ -19,13 +19,16 @@ const KEYS = [
   // Manage-subjects (existing subscription) keys:
   "subjedit.title", "subjedit.minOne",
   // Round 11 — checkbox editor + demo-payment modal:
-  "pricing.perSubjectNote", "subjedit.activeChip", "subjedit.selectedCount",
+  "pricing.perSubjectNote", "subjedit.activeChip", "subjedit.endingChip", "subjedit.selectedCount",
   "subjedit.pendingAdd", "subjedit.pendingRemove", "subjedit.estTotal",
   "subjedit.save", "subjedit.saving", "subjedit.saved", "subjedit.noChanges",
   "subjedit.demoModeNote", "dpay.cancel",
   "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",
   "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing",
   "pay.subtotal", "pay.discount", "pay.total",
+  // Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end):
+  "subjedit.billingExplainer", "subjedit.dueNow", "subjedit.thenRate",
+  "subjedit.noChargeNow", "subjedit.removalNotice", "pay.confirmNoCharge",
   // H8 — free-window login-ID activation callout:
   "freeact.note", "freeact.cta", "freeact.activating", "freeact.done",
 ];
@@ -85,13 +88,20 @@ export default async function SubscribePage({
     .limit(1)
     .maybeSingle();
 
+  // Migration 078: a subject scheduled for removal keeps its row (access runs to
+  // remove_at = the period end) but is NO LONGER part of the go-forward plan, so
+  // it must render UNCHECKED — otherwise a completed removal looks like it
+  // failed, and the parent could not re-tick it to cancel the removal.
   let coveredIds: string[] = [];
+  let endingIds: string[] = [];
   if (sub?.id) {
     const { data: covered } = await supabase
       .from("subscription_subjects")
-      .select("subject_id")
+      .select("subject_id, remove_at")
       .eq("child_subscription_id", (sub as any).id);
-    coveredIds = ((covered ?? []) as any[]).map((r) => r.subject_id);
+    const rows = (covered ?? []) as { subject_id: string; remove_at: string | null }[];
+    coveredIds = rows.filter((r) => !r.remove_at).map((r) => r.subject_id);
+    endingIds = rows.filter((r) => r.remove_at).map((r) => r.subject_id);
   }
 
   const dict: Record<string, string> = {};
@@ -134,6 +144,7 @@ export default async function SubscribePage({
           studentId={id}
           subjects={subjects}
           coveredIds={coveredIds}
+          endingIds={endingIds}
           interval={(sub as any).interval ?? "month"}
           paymentMode={mode}
           dict={dict}

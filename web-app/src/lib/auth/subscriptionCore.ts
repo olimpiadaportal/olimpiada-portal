@@ -13,6 +13,7 @@
 // MUST authenticate first (requireParent on web, resolveBearerParent on
 // mobile). Errors are i18n KEYS, never localized text.
 import "server-only";
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { applyAllocatedChildEmail } from "@/lib/auth/childAccountService";
@@ -20,6 +21,12 @@ import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isUuid } from "@/lib/uuid";
 import { notifySubscriptionCanceled } from "@/lib/notifications/events";
 import { writeAuditLog } from "@/lib/audit";
+
+// Postgres error codes the subject-change RPCs raise on purpose (mirrors the
+// PG_* constants in lib/auth/testActions.ts) — never leaked raw, only used to
+// pick the right generic trilingual key.
+const PG_CHECK_VIOLATION = "23514";
+const PG_NO_DATA_FOUND = "P0002";
 
 // The per-child free-access probe differs by surface — web uses the
 // caller-scoped `is_child_free_access_active` RPC through the COOKIE client
@@ -283,11 +290,128 @@ export async function cancelChildSubscriptionCore(params: {
   return { ok: true };
 }
 
-// ---- Round 11 (item 1): batch subject update from the checkbox editor --------
-// The caller posts the DESIRED full subject set. The server computes the diff
-// against the live subscription and applies it through the existing re-pricing
-// RPCs — amounts are never client-set, ≥1 subject must remain, and the same
-// payment-mode gate as any other billing change applies.
+// ---- Round 32: mid-cycle subject-change preview (quote_subject_change) -------
+// Read-only preview of the SAME math apply_subject_change will charge (the RPC
+// is the single source of truth — the preview can never drift from the applied
+// amount). No payment-mode gate here: quoting is informational, exactly like
+// quoteSubscriptionCore for the initial-subscribe flow; the gate is enforced at
+// APPLY time in updateSubscriptionSubjectsCore below.
+
+export type SubjectChangeQuote = {
+  subscriptionId: string;
+  status: string;
+  interval: string;
+  currency: string;
+  discountPercent: number;
+  currentRecurringTotal: number;
+  newRecurringTotal: number;
+  /** The prorated top-up due immediately for additions (0 for a removal-only diff). */
+  dueNow: number;
+  /** True when dueNow > 0 was actually prorated (paid, non-weekly, days remaining). */
+  prorated: boolean;
+  /** True when proration applied but rounded under the 0.50 AZN minimum charge. */
+  prorationWaived: boolean;
+  addedBase: number;
+  remainingRatio: number;
+  daysRemaining: number;
+  periodDays: number | null;
+  /** When the new recurring rate (and any scheduled removal) takes effect. */
+  effectiveFrom: string | null;
+  removalsEffectiveAt: string | null;
+};
+
+export type SubjectChangeQuoteCoreResult =
+  | { ok: true; quote: SubjectChangeQuote }
+  | { ok: false; errorKey: string };
+
+export async function quoteSubjectChangeCore(params: {
+  parentProfileId: string;
+  studentId: string;
+  add: string[];
+  remove: string[];
+}): Promise<SubjectChangeQuoteCoreResult> {
+  const { parentProfileId, studentId } = params;
+  // L4: only UUID-shaped ids, same hard cap as the batch editor.
+  const add = (params.add ?? []).filter(isUuid).slice(0, 20);
+  const remove = (params.remove ?? []).filter(isUuid).slice(0, 20);
+  if (!isUuid(studentId)) return { ok: false, errorKey: "sub.err.invalid" };
+  if (add.length === 0 && remove.length === 0) {
+    return { ok: false, errorKey: "sub.err.invalid" };
+  }
+  if (!(await ownsChildCore(parentProfileId, studentId))) {
+    return { ok: false, errorKey: "sub.err.notYourChild" };
+  }
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("quote_subject_change", {
+    p_student_profile_id: studentId,
+    p_add: add,
+    p_remove: remove,
+  });
+  if (error) {
+    // no_data_found = no live subscription to change (should not normally
+    // happen — the manage-subjects page only renders once one exists — but a
+    // subscription can be canceled concurrently in another tab).
+    if ((error as { code?: string }).code === PG_NO_DATA_FOUND) {
+      return { ok: false, errorKey: "subjedit.err.addFailed" };
+    }
+    return { ok: false, errorKey: "sub.err.failed" };
+  }
+  const r = (data ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    quote: {
+      subscriptionId: String(r.subscription_id ?? ""),
+      status: String(r.status ?? ""),
+      interval: String(r.interval ?? ""),
+      currency: String(r.currency ?? "AZN"),
+      discountPercent: Number(r.discount_percent ?? 0),
+      currentRecurringTotal: Number(r.current_recurring_total ?? 0),
+      newRecurringTotal: Number(r.new_recurring_total ?? 0),
+      dueNow: Number(r.due_now ?? 0),
+      prorated: r.prorated === true,
+      prorationWaived: r.proration_waived === true,
+      addedBase: Number(r.added_base ?? 0),
+      remainingRatio: Number(r.remaining_ratio ?? 0),
+      daysRemaining: Number(r.days_remaining ?? 0),
+      periodDays: r.period_days == null ? null : Number(r.period_days),
+      effectiveFrom: typeof r.effective_from === "string" ? r.effective_from : null,
+      removalsEffectiveAt:
+        typeof r.removals_effective_at === "string" ? r.removals_effective_at : null,
+    },
+  };
+}
+
+// Deterministic idempotency key for ONE apply_subject_change call: the
+// subscription + the sorted add/remove diff + a coarse 5-minute time bucket.
+// A genuine retry of the SAME user action (network hiccup, accidental double
+// submit) within the bucket replays the identical key, so apply_subject_change's
+// unique-index replay guard returns the original outcome instead of charging
+// twice. A deliberate later change with an identical diff (e.g. re-adding a
+// subject removed weeks ago) lands in a new bucket and applies normally.
+function buildSubjectChangeIdempotencyKey(
+  subscriptionId: string,
+  toAdd: string[],
+  toRemove: string[],
+): string {
+  const BUCKET_MS = 5 * 60 * 1000;
+  const bucket = Math.floor(Date.now() / BUCKET_MS);
+  const addKey = [...toAdd].sort().join(",");
+  const removeKey = [...toRemove].sort().join(",");
+  return createHash("sha256")
+    .update(`${subscriptionId}|${addKey}|${removeKey}|${bucket}`)
+    .digest("hex");
+}
+
+// ---- Round 11 (item 1) / Round 32: batch subject update from the checkbox ----
+// editor. The caller posts the DESIRED full subject set. The server computes
+// the diff against the live subscription and applies it through ONE
+// apply_subject_change call (Round 32 — supersedes the historical per-subject
+// add_subscription_subject/remove_subscription_subject loop): additions get
+// immediate access + a prorated top-up, removals are scheduled for the period
+// end (no refund), and the recurring rate is recomputed atomically. Amounts are
+// never client-set, ≥1 subject must remain, and the same payment-mode gate as
+// any other billing change applies.
 
 export type SubjectsUpdateCoreResult =
   | { ok: true; added: number; removed: number }
@@ -326,11 +450,12 @@ export async function updateSubscriptionSubjectsCore(params: {
     .limit(1)
     .maybeSingle();
   if (!sub?.id) return { ok: false, errorKey: "subjedit.err.addFailed" };
+  const subscriptionId = (sub as { id: string }).id;
 
   const { data: covered } = await admin
     .from("subscription_subjects")
     .select("subject_id")
-    .eq("child_subscription_id", (sub as { id: string }).id);
+    .eq("child_subscription_id", subscriptionId);
   const current = new Set(
     ((covered ?? []) as { subject_id: string }[]).map((r) => r.subject_id),
   );
@@ -339,21 +464,36 @@ export async function updateSubscriptionSubjectsCore(params: {
   const toAdd = desired.filter((id) => !current.has(id));
   const toRemove = Array.from(current).filter((id) => !want.has(id));
 
-  // Apply additions first so the subscription can never transiently drop to 0
-  // subjects (the RPC would also block it, but this keeps the path clean).
-  for (const id of toAdd) {
-    const { error } = await admin.rpc("add_subscription_subject", {
-      p_student_profile_id: studentId,
-      p_subject_id: id,
-    });
-    if (error) return { ok: false, errorKey: "subjedit.err.addFailed" };
+  if (toAdd.length === 0 && toRemove.length === 0) {
+    return { ok: true, added: 0, removed: 0 };
   }
-  for (const id of toRemove) {
-    const { error } = await admin.rpc("remove_subscription_subject", {
-      p_student_profile_id: studentId,
-      p_subject_id: id,
-    });
-    if (error) return { ok: false, errorKey: "subjedit.err.removeFailed" };
+
+  const idempotencyKey = buildSubjectChangeIdempotencyKey(subscriptionId, toAdd, toRemove);
+
+  const { error } = await admin.rpc("apply_subject_change", {
+    p_student_profile_id: studentId,
+    p_add: toAdd,
+    p_remove: toRemove,
+    p_idempotency_key: idempotencyKey,
+  });
+  if (error) {
+    const code = (error as { code?: string }).code;
+    const hint = (error as { hint?: string | null }).hint ?? "";
+    // check_violation + hint 'last_subject' = the diff would leave zero
+    // subjects on the plan (the RPC's own guard — the client cap above already
+    // tries to prevent this, this is the authoritative backstop).
+    if (code === PG_CHECK_VIOLATION && hint === "last_subject") {
+      return { ok: false, errorKey: "subjedit.minOne" };
+    }
+    // no_data_found = no live subscription (race: canceled between our SELECT
+    // above and this call).
+    if (code === PG_NO_DATA_FOUND) {
+      return { ok: false, errorKey: "subjedit.err.addFailed" };
+    }
+    return {
+      ok: false,
+      errorKey: toAdd.length > 0 ? "subjedit.err.addFailed" : "subjedit.err.removeFailed",
+    };
   }
 
   // One entry per operation type actually performed (a single request can add

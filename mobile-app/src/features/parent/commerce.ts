@@ -182,11 +182,17 @@ export function isCancellable(status: string | null | undefined): boolean {
 
 // ---- formatting ----------------------------------------------------------------
 
-export function fmtMoney(amount: number | null | undefined, currency?: string | null): string {
+/** Bare numeric amount (no currency) — trims float noise but keeps honest
+ *  cents when present. Used to fill {total}-shaped i18n template slots that
+ *  carry currency in a separate {currency} placeholder (subjedit.thenRate
+ *  and friends). */
+export function fmtAmount(amount: number | null | undefined): string {
   const n = typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
-  // Trim float noise but keep honest cents when present.
-  const s = Number.isInteger(n) ? String(n) : n.toFixed(2);
-  return `${s} ${currency && currency.length > 0 ? currency : "AZN"}`;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+export function fmtMoney(amount: number | null | undefined, currency?: string | null): string {
+  return `${fmtAmount(amount)} ${currency && currency.length > 0 ? currency : "AZN"}`;
 }
 
 const INTL_LOCALE: Record<Locale, string> = { az: "az-AZ", en: "en-GB", ru: "ru-RU" };
@@ -202,6 +208,24 @@ export function fmtDate(iso: string | null | undefined, locale: Locale, withTime
       month: "long",
       year: "numeric",
       ...(withTime ? { hour: "2-digit" as const, minute: "2-digit" as const } : {}),
+    }).format(new Date(ts));
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+/** Billing dates (proration effective/renewal dates) are DATE-ONLY in the
+ *  product's home timezone — never device-local (pricing.tsx pkgDate twin). */
+export function fmtBakuDate(iso: string | null | undefined, locale: Locale): string {
+  if (!iso) return "—";
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return "—";
+  try {
+    return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
+      timeZone: "Asia/Baku",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     }).format(new Date(ts));
   } catch {
     return iso.slice(0, 10);

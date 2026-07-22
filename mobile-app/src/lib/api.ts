@@ -181,6 +181,38 @@ export const bffUpdateSubjects = (childId: string, subjectIds: string[]) =>
     "sub.err.generic",
   );
 
+/** Round-24 mid-cycle proration quote (web parity contract): additions are
+ *  charged a prorated top-up for the days left in the period (rate rises from
+ *  now on); removals never refund — access + the old rate continue until
+ *  `removals_effective_at`. No proration during a trial or on weekly plans;
+ *  amounts under 0.50 AZN are waived (`due_now` comes back 0). Read-only —
+ *  never applies anything; the apply step is still bffUpdateSubjects. */
+export type SubjectChangeQuote = {
+  subscription_id: string;
+  status: string;
+  interval: string;
+  currency: string;
+  discount_percent: number;
+  current_recurring_total: number;
+  new_recurring_total: number;
+  due_now: number;
+  prorated: boolean;
+  proration_waived: boolean;
+  added_base: number;
+  remaining_ratio: number;
+  days_remaining: number;
+  period_days: number;
+  effective_from: string;
+  removals_effective_at: string | null;
+};
+
+export const bffQuoteSubjectChange = (childId: string, add: string[], remove: string[]) =>
+  bffAuthedPost<SubjectChangeQuote>(
+    `/api/mobile/v1/children/${childId}/subjects/quote`,
+    { add, remove },
+    "sub.err.generic",
+  );
+
 export const bffActivateFree = (childId: string) =>
   bffAuthedPost<{ child_unique_id: string }>(
     `/api/mobile/v1/children/${childId}/activate-free`,

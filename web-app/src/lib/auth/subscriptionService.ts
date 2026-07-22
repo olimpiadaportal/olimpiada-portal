@@ -13,9 +13,11 @@ import { requireParent } from "@/lib/auth/session";
 import {
   activateChildGiveawayCore,
   cancelChildSubscriptionCore,
+  quoteSubjectChangeCore,
   quoteSubscriptionCore,
   subscribeChildCore,
   updateSubscriptionSubjectsCore,
+  type SubjectChangeQuote,
 } from "@/lib/auth/subscriptionCore";
 import { getT } from "@/i18n/server";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
@@ -91,6 +93,38 @@ export async function quoteSubscription(args: {
   if (!res.ok) return { ok: false, error: t(res.errorKey) };
   const { ok: _ok, ...quote } = res;
   return { ok: true, ...quote };
+}
+
+// ---- Round 32: mid-cycle subject-change preview (add/remove diff) -------------
+// The Manage-Subjects checkbox editor calls this for the PENDING diff (not the
+// full desired set — quote_child_subscription above stays for the initial
+// subscribe flow). Returns the prorated "due now" top-up + the new recurring
+// rate + when each takes effect — the SAME numbers apply_subject_change will
+// charge (one RPC is the source of truth for both).
+// Re-exported so client components (ManageSubjects) can import the quote shape
+// from this "use server" surface instead of reaching into the server-only core.
+export type { SubjectChangeQuote };
+
+export type SubjectChangeQuoteResult =
+  | { ok: true; quote: SubjectChangeQuote }
+  | { ok: false; error?: string };
+
+export async function quoteSubjectChange(args: {
+  studentId: string;
+  add: string[];
+  remove: string[];
+}): Promise<SubjectChangeQuoteResult> {
+  // M7: authorize FIRST.
+  const parent = await requireParent();
+  const t = await getT();
+  const res = await quoteSubjectChangeCore({
+    parentProfileId: parent.profileId,
+    studentId: args.studentId,
+    add: args.add,
+    remove: args.remove,
+  });
+  if (!res.ok) return { ok: false, error: t(res.errorKey) };
+  return { ok: true, quote: res.quote };
 }
 
 // ---- W2: cancel a child's current subscription (parent-initiated) -------------

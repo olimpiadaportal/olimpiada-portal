@@ -1586,3 +1586,35 @@ If anything doesn't match, tell me the **VV-#** + what you saw.
 - Admin sidebar → "Coming soon" still shows **Payments** exactly as before (greyed placeholder). Nothing about it changed.
 
 If anything doesn't match, tell me the **WW-#** + what you saw.
+
+---
+
+# Round 32 (2026-07-20) — mid-cycle subject changes are now prorated (add) / effective-at-renewal (remove).
+
+**The model:** adding a subject mid-cycle charges only the days left in the current period and gives access immediately; removing never refunds — the subject stays usable until the period ends and the plan gets cheaper from the next renewal. One renewal date per child. No proration during a trial, none on weekly plans, and amounts under 0.50 AZN are waived.
+
+## XX1. Adding a subject mid-cycle (web)
+- Parent → a child with a live MONTHLY plan → Subjects. Tick one more subject.
+- You should see **two numbers**: "İndi ödəniləcək / Due now" (a *part-month* amount, e.g. ~6 AZN for a 9 AZN subject with 20 of 30 days left) and "Then <new full rate> / month from <renewal date>".
+- The demo payment sheet must show the **Due now** amount — not the new monthly rate (this was the bug: it used to show the full recurring price as if it were a charge).
+- Save → the subject is usable immediately, and the plan's recurring rate goes up.
+
+## XX2. The explanatory sentence
+- On the same screen there is a one-line explanation of how it's calculated, in AZ/EN/RU. Switch languages and confirm all three read naturally.
+
+## XX3. Removing a subject (no refund, ends at renewal)
+- Untick a subject → the notice says it stays available until <date> and the plan drops to <lower rate> from then, **with no refund**. No payment dialog opens (nothing is due).
+- Save, then reload the page: that subject now shows **unticked** with an "ends at period end" chip — it's off the go-forward plan but still usable. Re-ticking it cancels the scheduled removal.
+- Try to untick **every** subject → blocked (at least one must remain).
+
+## XX4. Cases where nothing is charged
+- On a **trial** subscription, or a **weekly** plan, adding a subject shows "no charge now — the new rate starts on <date>" instead of a 0 charge.
+
+## XX5. Mobile parity
+- Same two numbers, same removal notice, same explanatory sentence on the mobile Manage-Subjects screen; the demo pay sheet shows the Due-now amount and its button reads "Confirm" when nothing is charged.
+
+## XX6. Safety
+- Double-tapping Save must not apply twice (a retry of the same change is ignored server-side).
+- Nothing real is charged anywhere yet — no payment provider is connected; the amounts are recorded on a ledger for when one is.
+
+If anything doesn't match, tell me the **XX-#** + what you saw.

@@ -4,27 +4,83 @@
 // payment sheet first (demo mode); removal-only diffs and free modes submit
 // directly. The BFF/server re-diffs the desired FULL set authoritatively —
 // the client never sends prices. Callers mount this only in demo/free modes.
-import React, { useMemo, useState } from "react";
+//
+// Round 24/32 (mid-cycle proration, web parity keys): the preview is no
+// longer a single recurring total. Additions get an immediate prorated
+// top-up (bffQuoteSubjectChange's due_now) while the recurring rate rises
+// from now on; removals never refund — access + the old rate continue until
+// removals_effective_at. The two numbers are quoted authoritatively
+// (diff-based, never client-computed). Copy comes from the synced
+// subjedit.dueNow/thenRate/noChargeNow/removalNotice/billingExplainer keys
+// (web messages.ts "Round 32" block) — {total}/{currency}/{interval}/{date}
+// are filled in here, never baked into a client-side sentence.
+import React, { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
-import { bffUpdateSubjects } from "@/lib/api";
+import { bffQuoteSubjectChange, bffUpdateSubjects, type SubjectChangeQuote } from "@/lib/api";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
 import {
   INTERVAL_PER_KEY,
-  estimateTotal,
+  fmtAmount,
+  fmtBakuDate,
   fmtMoney,
   isInterval,
   type CommercePosture,
   type SubjectOption,
 } from "./commerce";
 import { DemoPaySheet } from "./DemoPaySheet";
-import { SubjectCheckRow, useServerQuote } from "./SubscribeFlow";
+import { SubjectCheckRow } from "./SubscribeFlow";
 import { KeyRow } from "./ui";
+
+/** Debounced (~400ms) diff-based proration quote (BFF /subjects/quote) — the
+ *  useServerQuote (SubscribeFlow) twin, but keyed by the add/remove diff
+ *  instead of the desired full set. Result is keyed by its input, so a stale
+ *  response for an older diff simply never matches the current key. */
+function useSubjectChangeQuote(
+  studentId: string,
+  addKey: string,
+  removeKey: string,
+  enabled: boolean,
+) {
+  const key = `${studentId}|${addKey}|${removeKey}`;
+  const [result, setResult] = useState<{
+    key: string;
+    quote: SubjectChangeQuote | null;
+    error: string | null;
+  }>({ key: "", quote: null, error: null });
+
+  const active = enabled && !!studentId && (addKey.length > 0 || removeKey.length > 0);
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const res = await bffQuoteSubjectChange(
+        studentId,
+        addKey ? addKey.split(",") : [],
+        removeKey ? removeKey.split(",") : [],
+      );
+      if (!cancelled) {
+        setResult({ key, quote: res.ok ? res.data : null, error: res.ok ? null : res.error });
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [active, studentId, addKey, removeKey, key]);
+
+  const fresh = active && result.key === key;
+  return {
+    quote: fresh ? result.quote : null,
+    loading: active && !fresh,
+    error: fresh ? result.error : null,
+  };
+}
 
 export function ManageSubjectsEditor({
   studentId,
@@ -44,7 +100,7 @@ export function ManageSubjectsEditor({
   onSaved: () => void;
 }) {
   const { tokens } = useTheme();
-  const { t } = useT();
+  const { t, locale } = useT();
   const iv = isInterval(interval) ? interval : "month";
 
   const coveredKey = useMemo(() => [...coveredIds].sort().join(","), [coveredIds]);
@@ -70,16 +126,38 @@ export function ManageSubjectsEditor({
   const toRemove = subjects.filter((s) => !selected.has(s.id) && covered.has(s.id));
   const hasDiff = toAdd.length > 0 || toRemove.length > 0;
 
-  const { quote, loading: quoting } = useServerQuote(
-    studentId,
-    iv,
-    selected,
-    hasDiff && selected.size > 0,
-  );
-  const estimate = estimateTotal(subjects, selected, iv);
-  const estText = `${fmtMoney(quote ? quote.total : estimate, quote?.currency ?? "AZN")} ${t(
-    INTERVAL_PER_KEY[iv],
-  )}`;
+  const addKey = useMemo(() => toAdd.map((s) => s.id).sort().join(","), [toAdd]);
+  const removeKey = useMemo(() => toRemove.map((s) => s.id).sort().join(","), [toRemove]);
+  const {
+    quote,
+    loading: quoting,
+    error: quoteError,
+  } = useSubjectChangeQuote(studentId, addKey, removeKey, selected.size > 0);
+  const quoteInterval = quote && isInterval(quote.interval) ? quote.interval : iv;
+  // subjedit.thenRate/noChargeNow/removalNotice compose "{total} {currency} /
+  // {interval}" themselves — {interval} wants the bare word ("ay"/"il"/
+  // "həftə"), so strip the leading "/ " off the existing billing.perX key.
+  const bareInterval = t(INTERVAL_PER_KEY[quoteInterval]).replace(/^\/\s*/, "");
+
+  const fillRate = (key: string, total: number, currency: string, date: string | null) =>
+    t(key)
+      .replace("{total}", fmtAmount(total))
+      .replace("{currency}", currency)
+      .replace("{interval}", bareInterval)
+      .replace("{date}", fmtBakuDate(date, locale));
+
+  /** The DemoPaySheet total / on-screen "Due now" value: the authoritative
+   *  due_now amount, or the plain no-charge sentence when it's 0 (trial /
+   *  weekly / waived — never a bare "0 AZN"). */
+  function dueNowValueText(): string {
+    if (quoting) return t("sub.calculating");
+    if (!quote) return quoteError ? t(quoteError) : t("sub.calculating");
+    return quote.due_now > 0
+      ? fmtMoney(quote.due_now, quote.currency)
+      : fillRate("subjedit.noChargeNow", quote.new_recurring_total, quote.currency, quote.effective_from);
+  }
+
+  const noChargeConfirm = toAdd.length > 0 && !!quote && quote.due_now === 0;
 
   const toggle = (id: string) => {
     setError(null);
@@ -125,7 +203,12 @@ export function ManageSubjectsEditor({
   return (
     <View style={{ gap: spacing.md }}>
       <AppText variant="title">{t("subjedit.title")}</AppText>
-      {posture.demoPay ? <AppText variant="muted">{t("subjedit.demoModeNote")}</AppText> : null}
+      {posture.demoPay ? (
+        <>
+          <AppText variant="muted">{t("subjedit.demoModeNote")}</AppText>
+          <AppText variant="muted">{t("subjedit.billingExplainer")}</AppText>
+        </>
+      ) : null}
 
       <Card style={{ paddingVertical: spacing.xs }}>
         {subjects.map((s) => (
@@ -156,9 +239,55 @@ export function ManageSubjectsEditor({
             value={toRemove.map((s) => subjectLabel(t, s.code, s.name)).join(", ")}
           />
         ) : null}
-        {hasDiff && selected.size > 0 ? (
-          <KeyRow label={t("subjedit.estTotal")} value={quoting ? t("sub.calculating") : estText} />
+
+        {toAdd.length > 0 ? (
+          quoting ? (
+            <KeyRow label={t("subjedit.dueNow")} value={t("sub.calculating")} strong />
+          ) : quote ? (
+            quote.due_now > 0 ? (
+              <>
+                <KeyRow
+                  label={t("subjedit.dueNow")}
+                  value={fmtMoney(quote.due_now, quote.currency)}
+                  strong
+                />
+                <AppText variant="muted" style={{ marginTop: spacing.xs }}>
+                  {fillRate(
+                    "subjedit.thenRate",
+                    quote.new_recurring_total,
+                    quote.currency,
+                    quote.effective_from,
+                  )}
+                </AppText>
+              </>
+            ) : (
+              <AppText variant="muted" style={{ marginTop: spacing.xs }}>
+                {fillRate(
+                  "subjedit.noChargeNow",
+                  quote.new_recurring_total,
+                  quote.currency,
+                  quote.effective_from,
+                )}
+              </AppText>
+            )
+          ) : quoteError ? (
+            <AppText variant="muted" color={tokens.danger}>
+              {t(quoteError)}
+            </AppText>
+          ) : null
         ) : null}
+
+        {toRemove.length > 0 && quote ? (
+          <AppText variant="muted" style={{ marginTop: spacing.xs }}>
+            {fillRate(
+              "subjedit.removalNotice",
+              quote.new_recurring_total,
+              quote.currency,
+              quote.removals_effective_at,
+            )}
+          </AppText>
+        ) : null}
+
         {!hasDiff ? (
           <AppText variant="muted">{t("subjedit.noChanges")}</AppText>
         ) : (
@@ -210,10 +339,10 @@ export function ManageSubjectsEditor({
               ]
             : []),
         ]}
-        totalLabel={t("subjedit.estTotal")}
-        totalValue={quoting ? t("sub.calculating") : estText}
+        totalLabel={t("subjedit.dueNow")}
+        totalValue={dueNowValueText()}
         note={t("pay.note")}
-        confirmLabel={t("pay.payNow")}
+        confirmLabel={noChargeConfirm ? t("pay.confirmNoCharge") : t("pay.payNow")}
         error={error}
       />
     </View>

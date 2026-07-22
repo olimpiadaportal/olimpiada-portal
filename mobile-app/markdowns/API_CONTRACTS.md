@@ -142,6 +142,26 @@ Request: `{"subject_ids":["<uuid>",...],"interval"?}`
 | 409 | `{"error":"gate.paymentsOff"\|"gate.giveawayFree"\|"gate.freeAccess","retryable":false}` |
 | 500 | `{"error":"sub.err.failed","retryable":true}` |
 
+## POST /api/mobile/v1/children/:id/subjects/quote  (added Round 32 — mid-cycle proration)
+
+Read-only diff-based price preview for ManageSubjectsEditor (web ManageSubjects
+parity): quotes the effect of adding/removing subjects on the LIVE
+subscription — additions get an immediate prorated top-up for the days left
+in the current period (the recurring rate rises from now on); removals never
+refund (access + the old rate continue until `removals_effective_at`, the
+rate drops at the next renewal). No proration during a trial or on WEEKLY
+plans; amounts under 0.50 AZN are waived to 0 (`due_now`). Never applies
+anything — the apply step is still `POST .../subjects`.
+
+Request: `{"add":["<uuid>",...],"remove":["<uuid>",...]}`
+
+| Status | Body |
+|---|---|
+| 200 | `{"ok":true,"data":{"subscription_id","status","interval","currency","discount_percent","current_recurring_total","new_recurring_total","due_now","prorated","proration_waived","added_base","remaining_ratio","days_remaining","period_days","effective_from","removals_effective_at"}}` |
+| 400 | `{"error":"sub.err.invalid"\|"sub.err.failed","retryable":false}` |
+| 403 | `{"error":"sub.err.notYourChild","retryable":false}` |
+| 500 | `{"error":"sub.err.failed","retryable":true}` |
+
 ## POST /api/mobile/v1/children/:id/activate-free  (added M2)
 
 Activate a child during a FREE window (web `activateChildGiveaway` parity):

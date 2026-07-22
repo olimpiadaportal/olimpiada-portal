@@ -25,13 +25,13 @@
 // never sends prices.
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import {
-  quoteSubscription,
+  quoteSubjectChange,
   updateSubscriptionSubjectsAction,
-  type QuoteResult,
+  type SubjectChangeQuote,
   type SubjectsUpdateState,
 } from "@/lib/auth/subscriptionService";
 import { DemoPaymentModal } from "@/components/DemoPaymentModal";
-import { useT } from "@/i18n/I18nProvider";
+import { useLocale, useT } from "@/i18n/I18nProvider";
 import { subjectLabel } from "@/lib/subjectLabel";
 
 type Subj = { id: string; code: string | null; name: string; prices: Record<string, number> };
@@ -46,6 +46,7 @@ export function ManageSubjects({
   studentId,
   subjects,
   coveredIds,
+  endingIds = [],
   interval,
   paymentMode,
   dict,
@@ -53,6 +54,13 @@ export function ManageSubjects({
   studentId: string;
   subjects: Subj[];
   coveredIds: string[];
+  /**
+   * Round 32: subjects already SCHEDULED for removal — their access runs to the
+   * period end but they are no longer part of the go-forward plan, so they
+   * render unchecked with an "ends soon" hint. Re-ticking one cancels the
+   * scheduled removal (apply_subject_change clears remove_at).
+   */
+  endingIds?: string[];
   /** The live subscription's billing interval ("week" | "month" | "year"). */
   interval: string;
   /** Server-resolved payment mode; the page renders this editor only for "real" | "demo". */
@@ -62,9 +70,28 @@ export function ManageSubjects({
   const tt = (k: string) => dict[k] ?? k;
   // Locale-aware subject labels (subj.<code>) via the app-wide provider dict.
   const t = useT();
+  const locale = useLocale();
   const intervalLabel = tt(INTERVAL_KEY[interval] ?? "pricing.monthly");
 
+  // Round 32: renewal/removal dates come back from quote_subject_change as
+  // timestamptz — format them the same way the public olympiad pages do
+  // (date-only, product's home timezone), locale-aware.
+  const fmtDate = useMemo(() => {
+    const fmt = new Intl.DateTimeFormat(locale, {
+      timeZone: "Asia/Baku",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    return (iso: string | null): string => {
+      if (!iso) return "—";
+      const ts = Date.parse(iso);
+      return Number.isFinite(ts) ? fmt.format(new Date(ts)) : "—";
+    };
+  }, [locale]);
+
   const covered = useMemo(() => new Set(coveredIds), [coveredIds]);
+  const ending = useMemo(() => new Set(endingIds), [endingIds]);
   const coveredKey = useMemo(() => [...coveredIds].sort().join(","), [coveredIds]);
 
   const [selected, setSelected] = useState<Set<string>>(() => new Set(coveredIds));
@@ -74,31 +101,39 @@ export function ManageSubjects({
     setSelected(new Set(coveredKey ? coveredKey.split(",") : []));
   }, [coveredKey]);
 
-  const selectedKey = useMemo(() => [...selected].sort().join(","), [selected]);
-  const toAdd = subjects.filter((s) => selected.has(s.id) && !covered.has(s.id));
-  const toRemove = subjects.filter((s) => !selected.has(s.id) && covered.has(s.id));
+  const { toAdd, toRemove } = useMemo(
+    () => ({
+      toAdd: subjects.filter((s) => selected.has(s.id) && !covered.has(s.id)),
+      toRemove: subjects.filter((s) => !selected.has(s.id) && covered.has(s.id)),
+    }),
+    [subjects, selected, covered],
+  );
   const hasDiff = toAdd.length > 0 || toRemove.length > 0;
+  const toAddKey = useMemo(() => toAdd.map((s) => s.id).sort().join(","), [toAdd]);
+  const toRemoveKey = useMemo(() => toRemove.map((s) => s.id).sort().join(","), [toRemove]);
 
-  // Debounced (~400ms) AUTHORITATIVE price preview for the selected set.
-  // Only base/discount/total are displayed (the quote's trial fields relate to
-  // launch config, not to editing an existing subscription).
-  const [quote, setQuote] = useState<QuoteResult | null>(null);
+  // Debounced (~400ms) AUTHORITATIVE preview of the PENDING diff (Round 32:
+  // quote_subject_change, not the full-set quote_child_subscription) — the
+  // prorated "due now" top-up for additions, the new recurring rate, and when
+  // each takes effect. The same numbers apply_subject_change will charge.
+  const [quote, setQuote] = useState<SubjectChangeQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const seqRef = useRef(0);
   useEffect(() => {
-    const ids = selectedKey ? selectedKey.split(",") : [];
-    if (ids.length === 0) {
+    if (!hasDiff) {
       setQuote(null);
       setQuoting(false);
       return;
     }
+    const addIds = toAddKey ? toAddKey.split(",") : [];
+    const removeIds = toRemoveKey ? toRemoveKey.split(",") : [];
     const seq = ++seqRef.current;
     setQuoting(true);
     const timer = setTimeout(() => {
-      quoteSubscription({ studentId, interval, subjectIds: ids })
-        .then((q) => {
+      quoteSubjectChange({ studentId, add: addIds, remove: removeIds })
+        .then((res) => {
           if (seqRef.current !== seq) return; // stale response — ignore
-          setQuote(q);
+          setQuote(res.ok ? res.quote : null);
           setQuoting(false);
         })
         .catch(() => {
@@ -108,7 +143,28 @@ export function ManageSubjects({
         });
     }, 400);
     return () => clearTimeout(timer);
-  }, [selectedKey, studentId, interval]);
+  }, [hasDiff, toAddKey, toRemoveKey, studentId]);
+
+  // Full sentences shared between the inline summary and the payment sheet —
+  // built once per quote so both surfaces read identically.
+  const thenSentence = (q: SubjectChangeQuote) =>
+    tt("subjedit.thenRate")
+      .replace("{total}", String(q.newRecurringTotal))
+      .replace("{currency}", q.currency)
+      .replace("{interval}", intervalLabel)
+      .replace("{date}", fmtDate(q.effectiveFrom));
+  const noChargeSentence = (q: SubjectChangeQuote) =>
+    tt("subjedit.noChargeNow")
+      .replace("{total}", String(q.newRecurringTotal))
+      .replace("{currency}", q.currency)
+      .replace("{interval}", intervalLabel)
+      .replace("{date}", fmtDate(q.effectiveFrom));
+  const removalSentence = (q: SubjectChangeQuote) =>
+    tt("subjedit.removalNotice")
+      .replace("{date}", fmtDate(q.removalsEffectiveAt))
+      .replace("{total}", String(q.newRecurringTotal))
+      .replace("{currency}", q.currency)
+      .replace("{interval}", intervalLabel);
 
   const [state, formAction, saving] = useActionState<SubjectsUpdateState, FormData>(
     updateSubscriptionSubjectsAction,
@@ -150,6 +206,9 @@ export function ManageSubjects({
     <div className="form" style={{ maxWidth: 560 }}>
       <h2 style={{ marginBottom: 4 }}>{tt("subjedit.title")}</h2>
       <p className="subjedit-note">{tt("pricing.perSubjectNote")}</p>
+      {/* Round 32 (owner requirement): one plain-language sentence explaining
+          the mid-cycle proration model, always visible on this surface. */}
+      <p className="subjedit-note">{tt("subjedit.billingExplainer")}</p>
 
       {subjects.length === 0 ? (
         <p className="muted">{tt("sub.noSubjectsAvailable")}</p>
@@ -179,6 +238,12 @@ export function ManageSubjects({
                     <span className="subjedit-name">{subjectLabel(t, s.code, s.name)}</span>
                     {isActive && (
                       <span className="subjedit-chip-active">{tt("subjedit.activeChip")}</span>
+                    )}
+                    {/* Already scheduled for removal: still usable until the
+                        period end, but off the go-forward plan. Re-ticking it
+                        cancels the removal. */}
+                    {ending.has(s.id) && !isChecked && (
+                      <span className="subjedit-chip-ending">{tt("subjedit.endingChip")}</span>
                     )}
                     <span className="subjedit-price">
                       {price != null ? `${price} AZN / ${intervalLabel}` : "—"}
@@ -219,32 +284,31 @@ export function ManageSubjects({
             )}
 
             {quoting ? (
-              <div className="quote-row">
-                <span className="q-label">{tt("subjedit.estTotal")}</span>
-                <span>{tt("sub.calculating")}</span>
-              </div>
-            ) : quote && quote.ok ? (
+              <p className="subjedit-note">{tt("sub.calculating")}</p>
+            ) : quote ? (
               <>
-                <div className="quote-row">
-                  <span className="q-label">{tt("pay.subtotal")}</span>
-                  <span>
-                    {quote.base} {quote.currency}
-                  </span>
-                </div>
-                <div className="quote-row">
-                  <span className="q-label">{tt("pay.discount")}</span>
-                  <span>
-                    {quote.discount_percent > 0
-                      ? `−${quote.discount_percent}% (−${quote.discount} ${quote.currency})`
-                      : "0%"}
-                  </span>
-                </div>
-                <div className="quote-total">
-                  <span>{tt("subjedit.estTotal")}</span>
-                  <span>
-                    {quote.total} {quote.currency} / {intervalLabel}
-                  </span>
-                </div>
+                {/* Additions: the two clearly-labelled numbers — what's due
+                    right now (the prorated top-up), and the full new rate that
+                    starts at the next renewal. A waived/trial/weekly $0 top-up
+                    gets a plain "no charge now" sentence instead of a $0 row. */}
+                {toAdd.length > 0 &&
+                  (quote.dueNow > 0 ? (
+                    <>
+                      <div className="quote-row">
+                        <span className="q-label">{tt("subjedit.dueNow")}</span>
+                        <span>
+                          {quote.dueNow} {quote.currency}
+                        </span>
+                      </div>
+                      <p className="subjedit-note">{thenSentence(quote)}</p>
+                    </>
+                  ) : (
+                    <p className="subjedit-note">{noChargeSentence(quote)}</p>
+                  ))}
+                {/* Removals: kept until the period end, no refund, cheaper plan after. */}
+                {toRemove.length > 0 && (
+                  <p className="subjedit-note">{removalSentence(quote)}</p>
+                )}
               </>
             ) : null}
           </div>
@@ -281,17 +345,14 @@ export function ManageSubjects({
           <DemoPaymentModal
             isOpen={payOpen}
             quote={
-              !quoting && quote && quote.ok
+              !quoting && quote
                 ? {
-                    base: quote.base,
-                    discountPercent: quote.discount_percent,
-                    discount: quote.discount,
-                    total: quote.total,
-                    currency: quote.currency,
+                    dueNowLabel: `${quote.dueNow} ${quote.currency}`,
+                    thenLabel: quote.dueNow > 0 ? thenSentence(quote) : noChargeSentence(quote),
+                    noCharge: quote.dueNow <= 0,
                   }
                 : null
             }
-            intervalLabel={intervalLabel}
             pending={saving}
             onConfirm={() => {
               setPayOpen(false);

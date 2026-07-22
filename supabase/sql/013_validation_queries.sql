@@ -1236,6 +1236,23 @@ select '77_admin_subscription_lifecycle' as check_name,
              and position('audit_logs' in pg_get_functiondef('public.admin_manage_child_subscription(uuid,text,int)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
+-- 78) Mid-cycle subject-change billing (migration 078): the scheduled-removal
+--     column, the immutable change ledger (+ its self-scoped RLS and replay
+--     guard) and BOTH proration RPCs exist and stay service-role only.
+select '78_subject_change_proration' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='subscription_subjects'
+                            and column_name='remove_at')
+             and to_regclass('public.subscription_changes') is not null
+             and exists (select 1 from pg_policies where schemaname='public'
+                          and tablename='subscription_changes' and policyname='sub_changes_select')
+             and to_regclass('public.uq_sub_changes_idem') is not null
+             and to_regprocedure('public.quote_subject_change(uuid,uuid[],uuid[])') is not null
+             and to_regprocedure('public.apply_subject_change(uuid,uuid[],uuid[],text)') is not null
+             and has_function_privilege('authenticated','public.apply_subject_change(uuid,uuid[],uuid[],text)','EXECUTE') = false
+             and has_function_privilege('anon','public.quote_subject_change(uuid,uuid[],uuid[])','EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

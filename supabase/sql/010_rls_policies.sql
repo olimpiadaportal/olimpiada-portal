@@ -663,6 +663,20 @@ create policy "checkout_write" on public.checkout_sessions for all to authentica
   using (public.is_admin() or public.has_permission('payments.manage'))
   with check (public.is_admin() or public.has_permission('payments.manage'));
 
+-- subscription_changes (migration 078): the mid-cycle change ledger. Read by the
+-- owning family + admins; NO client write path at all — rows are created only by
+-- the DEFINER apply_subject_change() RPC.
+alter table public.subscription_changes enable row level security;
+drop policy if exists "sub_changes_select" on public.subscription_changes;
+create policy "sub_changes_select" on public.subscription_changes for select to authenticated
+  using (
+    owner_parent_profile_id = public.current_profile_id()
+    or student_profile_id = public.current_profile_id()
+    or public.is_parent_linked_to_student(student_profile_id)
+    or public.is_admin()
+    or public.has_permission('subscriptions.manage')
+  );
+
 drop policy if exists "sibling_discounts_select" on public.sibling_discounts;
 create policy "sibling_discounts_select" on public.sibling_discounts for select to authenticated
   using (owner_parent_profile_id = public.current_profile_id() or public.is_admin());

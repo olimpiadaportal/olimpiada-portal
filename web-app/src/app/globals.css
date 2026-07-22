@@ -7644,6 +7644,20 @@ ul.clean li {
   padding: 2px 9px;
   white-space: nowrap;
 }
+/* Round 32: subject scheduled for removal — access until the period end. */
+.subjedit-chip-ending {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
 .subjedit-price {
   flex: none;
   font-size: 0.85rem;

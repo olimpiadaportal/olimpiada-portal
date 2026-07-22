@@ -1224,6 +1224,18 @@ select '76_admin_notification_scope' as check_name,
                           and tgrelid='public.olympiad_packages'::regclass)
             then 'PASS' else 'FAIL' end as status;
 
+-- 77) Admin subscription lifecycle (migration 077): the centralized admin RPC
+--     exists, is NOT anon-executable, carries the is_admin guard + transition
+--     validation + its own audit write.
+select '77_admin_subscription_lifecycle' as check_name,
+       case when to_regprocedure('public.admin_manage_child_subscription(uuid,text,int)') is not null
+             and has_function_privilege('anon','public.admin_manage_child_subscription(uuid,text,int)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.admin_manage_child_subscription(uuid,text,int)','EXECUTE') = true
+             and position('is_admin' in pg_get_functiondef('public.admin_manage_child_subscription(uuid,text,int)'::regprocedure)) > 0
+             and position('invalid_transition' in pg_get_functiondef('public.admin_manage_child_subscription(uuid,text,int)'::regprocedure)) > 0
+             and position('audit_logs' in pg_get_functiondef('public.admin_manage_child_subscription(uuid,text,int)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

@@ -2914,17 +2914,22 @@ ul.clean li {
    Left: compact brand (small dot/logo + "Home" as the first link — NO long
    wordmark). Center-left: the section links. Far right: .pnav-right holding the
    round profile-icon drawer trigger.
-   SINGLE-ROW CONTRACT: the header must never wrap the bell/avatar onto a second
-   line, whatever the item count (the notifications flag adds an 8th link) or
-   viewport width. The links region flexes + scrolls horizontally (scrollbar
-   hidden) while .pnav-right keeps its intrinsic width. Shared with the student
-   arena header (.arena .pnav re-skins colors only). */
+   RIGHT-GROUP CONTRACT: .pnav-right (bell + avatar) must never drop to its own
+   line — it keeps its intrinsic width and stays pinned right at every viewport.
+   The LINKS, however, WRAP to a second row when they don't fit (Round 31): the
+   old `overflow-x:auto` made the whole nav scroll sideways, which the owner
+   reported as unusable on desktop. There is no hamburger pattern in this app,
+   so wrapping is the responsive fallback. Shared with the student arena header
+   (.arena .pnav re-skins colors only). */
 .pnav {
   display: flex;
   align-items: center;
   gap: 20px;
   flex-wrap: nowrap;
-  max-width: 1080px;
+  /* Round 31: widened from 1080px — 8 parent links + bell + avatar could not
+     fit, forcing horizontal scroll. Sits above the 960/1100px content columns,
+     which is intentional (full-bleed header, centered content). */
+  max-width: 1280px;
   margin: 0 auto;
   padding: 14px 28px;
   border-bottom: 1px solid var(--border);
@@ -2953,22 +2958,20 @@ ul.clean li {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
-/* Takes the free space and scrolls horizontally when the links don't fit —
-   never pushes .pnav-right to a second line. Scrollbar hidden in both engines
-   (touch/trackpad swipe still scrolls). */
+/* Round 31: takes the free space and WRAPS to further rows when the links don't
+   fit. Previously `overflow-x: auto`, which scrolled the nav sideways — the
+   owner's reported bug. .pnav-right still never drops to its own line, because
+   .pnav itself stays `flex-wrap: nowrap`; only the links inside this box wrap.
+   No hamburger pattern exists in this app, so wrapping is the responsive
+   fallback on tablet/mobile. */
 .pnav-links {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
+  row-gap: 4px;
+  flex-wrap: wrap;
   flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-.pnav-links::-webkit-scrollbar {
-  display: none;
 }
 .pnav-link {
   display: inline-flex;

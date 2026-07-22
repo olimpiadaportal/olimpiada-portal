@@ -114,8 +114,11 @@ export default async function ParentLayout({
     { href: "/olympiads", label: t("poly.nav") },
     { href: "/subscription", label: t("nav.subscription") },
     { href: "/dashboard/news", label: t("nav.news") },
-    { href: "/help/faq", label: t("help.faqTitle") },
-    { href: "/help/contact", label: t("help.contactTitle") },
+    // Short NAV labels (nav.faq/nav.contact), not the long page titles
+    // (help.faqTitle is "Tez-tez verilən suallar" / "Frequently asked
+    // questions" — 23-27 chars). The page headings keep the full titles.
+    { href: "/help/faq", label: t("nav.faq") },
+    { href: "/help/contact", label: t("nav.contact") },
   ];
 
   return (

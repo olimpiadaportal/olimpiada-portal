@@ -1555,3 +1555,34 @@ If anything doesn't match, tell me the **UU-#** + what you saw.
 - Admins are NO LONGER auto-notified of every new parent / purchase / subscription (that was the R29 noise). Those counts are better shown on a dashboard (a future feature) — flagged in STATUS.
 
 If anything doesn't match, tell me the **VV-#** + what you saw.
+
+---
+
+# Round 31 (2026-07-20) — Daily Tasks removed, navigation width fixed, Admin Subscriptions section.
+
+## WW1. Daily Tasks is gone from the Admin Panel
+- Admin sidebar: the greyed-out "Daily tasks / Gündəlik tapşırıqlar" item under "Coming soon" is gone. Only "Payments" remains there.
+- **The automated system still works:** a student can still start today's rated round (questions are generated automatically on first request). Admin → Questions still shows the **daily-round readiness** grid (eligible questions per subject × grade) — that's the admin view of the automated engine and is intentionally kept.
+
+## WW2. Parent navigation no longer scrolls sideways
+- Log in as a parent on a normal desktop window: the whole nav (Home, Analytics, Leaderboard, Olympiads, Subscription, News, FAQ, Contact) fits without any horizontal scrolling. FAQ/Contact now use short labels ("FAQ", "Əlaqə") instead of the long page titles.
+- Narrow the window: links **wrap onto a second row** instead of scrolling sideways; the bell + avatar stay pinned on the right and never drop to their own line. No page-level horizontal scrollbar at any width.
+- Check in AZ / EN / RU (AZ and RU labels are the longest).
+
+## WW3. Student navigation
+- Log in as a student: same behaviour on the arena header (it shares the same nav component) — no sideways scrolling, wraps when narrow.
+- Mobile app is unaffected (it uses a native bottom tab bar) — all parent/student destinations remain reachable there.
+
+## WW4. Admin Subscriptions section (NEW)
+- Admin sidebar → **Operations → Subscriptions** (Administrators only; a Content Manager must not see or reach it).
+- **List:** child, parent, subjects, interval, status, amount, source badge, trial/period dates. Filters: search (child/parent), status, interval, source, date range. 25 per page with Prev/Next.
+- **Detail:** open a row → full billing block, subjects, sibling-discount rank/percent, trial window, and a "Payment transaction" card that explicitly says there is **no real provider transaction** (demo/comped) — it must never look like a settled payment.
+- **Demo controls** (each asks for confirmation, each writes an audit entry): Activate / Extend (+days) / Cancel / Expire. Only the actions valid for that row's status are shown.
+  - Cancel keeps access until the period end; Expire revokes access immediately (the child's access status flips to expired).
+  - Try an invalid one (e.g. Activate on a canceled row — the button shouldn't even appear): the server rejects invalid transitions regardless.
+- Check Admin → Audit afterwards: your actions appear as `admin.subscription.activate/cancel/expire/extend` with before→after status.
+
+## WW5. Payments untouched
+- Admin sidebar → "Coming soon" still shows **Payments** exactly as before (greyed placeholder). Nothing about it changed.
+
+If anything doesn't match, tell me the **WW-#** + what you saw.

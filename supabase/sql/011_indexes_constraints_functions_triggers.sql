@@ -5697,5 +5697,161 @@ revoke all on function public.notify_giveaway_ending() from public, anon, authen
 grant execute on function public.notify_giveaway_ending() to service_role;
 
 -- =============================================================================
+-- Admin subscription lifecycle (migration 077): the ONE centralized, self-
+-- auditing entry point the Admin Panel uses to manage demo/comped
+-- subscriptions. Validated transitions only (activate/cancel/expire/extend);
+-- anything else raises check_violation with hint 'invalid_transition'. Also
+-- reconciles students.access_status for the affected child. Administrator-only
+-- via the in-body is_admin() guard. Creation stays with
+-- admin_grant_child_access() / create_child_subscription().
+-- =============================================================================
+create or replace function public.admin_manage_child_subscription(
+  p_subscription_id uuid,
+  p_action          text,
+  p_days            int default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor    uuid := public.current_profile_id();
+  v_sub      public.child_subscriptions%rowtype;
+  v_from     text;
+  v_to       text;
+  v_end      timestamptz;
+  v_student  uuid;
+begin
+  -- Administrator only (subscription/payment modules are Admin-only; content
+  -- managers must never reach this).
+  if not public.is_admin() then
+    raise exception 'subscription: forbidden' using errcode = 'insufficient_privilege';
+  end if;
+  if p_action not in ('activate', 'cancel', 'expire', 'extend') then
+    raise exception 'subscription: bad action' using errcode = 'check_violation',
+      hint = 'unknown_action';
+  end if;
+
+  select * into v_sub from public.child_subscriptions where id = p_subscription_id;
+  if not found then
+    raise exception 'subscription: not found' using errcode = 'no_data_found';
+  end if;
+  v_from    := v_sub.status::text;
+  v_student := v_sub.student_profile_id;
+  v_to      := v_from;
+  v_end     := v_sub.current_period_end;
+
+  if p_action = 'activate' then
+    if v_from not in ('incomplete', 'past_due') then
+      raise exception 'subscription: cannot activate from %', v_from
+        using errcode = 'check_violation', hint = 'invalid_transition';
+    end if;
+    v_to := 'active';
+    -- Open a period when there is none / it already lapsed.
+    if v_end is null or v_end <= now() then
+      v_end := now() + case v_sub.interval
+                         when 'week'  then interval '7 days'
+                         when 'month' then interval '30 days'
+                         else interval '365 days'
+                       end;
+    end if;
+    update public.child_subscriptions
+       set status = 'active',
+           current_period_start = coalesce(current_period_start, now()),
+           current_period_end   = v_end,
+           updated_at = now()
+     where id = p_subscription_id;
+
+  elsif p_action = 'cancel' then
+    if v_from not in ('trialing', 'active', 'past_due') then
+      raise exception 'subscription: cannot cancel from %', v_from
+        using errcode = 'check_violation', hint = 'invalid_transition';
+    end if;
+    v_to := 'canceled';
+    -- Canceled keeps access until the period end (web parity).
+    update public.child_subscriptions
+       set status = 'canceled', updated_at = now()
+     where id = p_subscription_id;
+
+  elsif p_action = 'expire' then
+    if v_from not in ('trialing', 'active', 'past_due', 'canceled') then
+      raise exception 'subscription: cannot expire from %', v_from
+        using errcode = 'check_violation', hint = 'invalid_transition';
+    end if;
+    v_to  := 'expired';
+    v_end := now();
+    update public.child_subscriptions
+       set status = 'expired', current_period_end = v_end, updated_at = now()
+     where id = p_subscription_id;
+
+  else -- extend
+    if v_from not in ('trialing', 'active', 'past_due', 'canceled') then
+      raise exception 'subscription: cannot extend from %', v_from
+        using errcode = 'check_violation', hint = 'invalid_transition';
+    end if;
+    if p_days is null or p_days < 1 or p_days > 730 then
+      raise exception 'subscription: days must be 1..730' using errcode = 'check_violation',
+        hint = 'bad_days';
+    end if;
+    -- Extend from NOW when the period already lapsed, else from its end.
+    v_end := greatest(coalesce(v_sub.current_period_end, now()), now())
+             + make_interval(days => p_days);
+    update public.child_subscriptions
+       set current_period_end = v_end, updated_at = now()
+     where id = p_subscription_id;
+  end if;
+
+  -- Reconcile the child's cached access flag for THIS student (same rules as
+  -- recompute_child_access(), applied to one row so the UI is instantly right).
+  update public.students s
+     set access_status = case
+           when exists (
+             select 1 from public.child_subscriptions cs
+             where cs.student_profile_id = s.profile_id
+               and (cs.status in ('trialing','active','past_due')
+                    or (cs.status = 'canceled' and cs.current_period_end > now()))
+               and (cs.current_period_end is null or cs.current_period_end > now())
+           ) then (
+             case when exists (
+               select 1 from public.child_subscriptions cs
+               where cs.student_profile_id = s.profile_id and cs.status = 'trialing'
+                 and (cs.current_period_end is null or cs.current_period_end > now())
+             ) then 'trialing'::public.child_access_status
+             else 'active'::public.child_access_status end)
+           else 'expired'::public.child_access_status
+         end
+   where s.profile_id = v_student;
+
+  -- Self-auditing (same mechanism as admin_upsert_subject_price).
+  insert into public.audit_logs
+    (actor_profile_id, action, target_table, target_id, metadata_json, severity, success)
+  values
+    (v_actor, 'admin.subscription.' || p_action, 'child_subscriptions', p_subscription_id,
+     jsonb_build_object(
+       'from_status', v_from,
+       'to_status', v_to,
+       'days', p_days,
+       'period_end', v_end,
+       'student_profile_id', v_student),
+     (case when p_action in ('expire', 'cancel') then 'warning' else 'info' end)::public.audit_severity,
+     true);
+
+  return jsonb_build_object(
+    'id', p_subscription_id,
+    'from_status', v_from,
+    'status', v_to,
+    'current_period_end', v_end);
+exception
+  when unique_violation then
+    -- uq_child_subscriptions_live: this child already has another live sub.
+    raise exception 'subscription: child already has a live subscription'
+      using errcode = 'unique_violation', hint = 'duplicate_live_subscription';
+end;
+$$;
+revoke all on function public.admin_manage_child_subscription(uuid, text, int) from public, anon;
+grant execute on function public.admin_manage_child_subscription(uuid, text, int) to authenticated, service_role;
+
+-- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql
 -- =============================================================================

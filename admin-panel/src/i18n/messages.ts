@@ -113,7 +113,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "accounts.child.create.err.days": "Müddət 1 ilə 730 gün arasında tam ədəd olmalıdır.",
     "accounts.child.create.err.failed": "Uşaq hesabı yaradıla bilmədi. Yenidən cəhd edin.",
     // ---- Round 10 (merged) ----
-    "nav.dailyTasks": "Gündəlik tapşırıqlar",
     "audit.subtitle2": "Administrator və kontent-menecerlərin son əməliyyatları.",
     "audit.filter.entity": "Obyekt üzrə",
     "audit.filter.all": "Hamısı",
@@ -1337,7 +1336,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "accounts.child.create.err.days": "Days must be a whole number between 1 and 730.",
     "accounts.child.create.err.failed": "Could not create the child account. Please try again.",
     // ---- Round 10 (merged) ----
-    "nav.dailyTasks": "Daily tasks",
     "audit.subtitle2": "Recent actions by administrators and content managers.",
     "audit.filter.entity": "By entity",
     "audit.filter.all": "All",
@@ -2549,7 +2547,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "accounts.child.create.err.days": "Количество дней должно быть целым числом от 1 до 730.",
     "accounts.child.create.err.failed": "Не удалось создать детский аккаунт. Попробуйте ещё раз.",
     // ---- Round 10 (merged) ----
-    "nav.dailyTasks": "Ежедневные задания",
     "audit.subtitle2": "Недавние действия администраторов и контент-менеджеров.",
     "audit.filter.entity": "По объекту",
     "audit.filter.all": "Все",

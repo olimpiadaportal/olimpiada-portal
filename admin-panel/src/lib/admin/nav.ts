@@ -61,10 +61,14 @@ export const NAV: NavGroup[] = [
       { label: "nav.accounts", href: "/accounts", adminOnly: true },
       { label: "nav.freeAccess", href: "/free-access", adminOnly: true },
       // Per-subject subscription prices (week/month/year). Administrator-only —
-      // Content Managers must never reach pricing. The "nav.subscriptions"
-      // soon-placeholder below is a DIFFERENT future module (subscription
-      // monitoring), intentionally left untouched.
+      // Content Managers must never reach pricing. Distinct from nav.subscriptions
+      // below (subscription lifecycle monitoring/management).
       { label: "nav.pricing", href: "/pricing", adminOnly: true },
+      // Round 31: subscription lifecycle monitoring (activate/extend/cancel/
+      // expire demo+comped child subscriptions). Moved out of comingSoon now
+      // that the module is built. The "nav.payments" placeholder stays in
+      // comingSoon, untouched — a separate future module.
+      { label: "nav.subscriptions", href: "/subscriptions", adminOnly: true },
       { label: "nav.leaderboard", href: "/leaderboard", adminOnly: true },
       // Administrator-only (requires notifications.send, which only admins hold —
       // Content Managers never see or reach it, same posture as News/Olympiad).
@@ -91,16 +95,16 @@ export const NAV: NavGroup[] = [
   {
     label: "group.comingSoon",
     items: [
-      // Round 10 (F11): "Tests & Daily Tasks" trimmed to Daily Tasks only —
-      // standalone tests are already covered by the Questions module. Visible
-      // to Admins AND Content Managers (CMs will manage daily tasks), so it is
-      // permission-gated rather than adminOnly.
-      { label: "nav.dailyTasks", soon: true, permission: "content.create" },
+      // Round 31: the "nav.dailyTasks" placeholder was REMOVED (owner request).
+      // Daily questions are generated AUTOMATICALLY by the daily-rounds engine
+      // (get_or_create_daily_round, lazily on first student request) — there is
+      // nothing for an admin to manage. Admin visibility into that engine lives
+      // on the Questions page as the daily-round readiness grid. The legacy
+      // daily_task_* tables were dropped back in migration 052.
       // Round 10 (F12): the "nav.reviews" placeholder was REMOVED — it never
       // had a page, and the review queue is already served by the Questions
       // list (in_review status filter + stat card, Round 9). A separate
       // Reviews module would just duplicate that flow.
-      { label: "nav.subscriptions", soon: true, adminOnly: true },
       { label: "nav.payments", soon: true, adminOnly: true },
     ],
   },

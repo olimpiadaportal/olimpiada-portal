@@ -26,7 +26,7 @@ export default async function ParentOlympiadsPage({
 
   const { data: child } = await supabase
     .from("students")
-    .select("profile_id, first_name, created_by_parent_profile_id")
+    .select("profile_id, first_name, created_by_parent_profile_id, grade_id")
     .eq("profile_id", id)
     .maybeSingle();
   if (!child || (child as any).created_by_parent_profile_id !== parent.profileId) notFound();
@@ -47,7 +47,28 @@ export default async function ParentOlympiadsPage({
     const trs = p.olympiad_package_translations ?? [];
     return (trs.find((x: any) => x.locale === locale) ?? trs.find((x: any) => x.locale === "az"))?.title ?? "—";
   };
-  const list = (packages ?? []) as any[];
+  // Round 34: only packages covering THIS child's grade (legacy grade-less
+  // packages and already-owned ones stay visible). Server-rendered filter.
+  const childGradeId: string | null = (child as any).grade_id ?? null;
+  let list = (packages ?? []) as any[];
+  if (list.length > 0) {
+    const { data: gradeRows } = await supabase
+      .from("olympiad_package_grades")
+      .select("olympiad_package_id, grade_id")
+      .in("olympiad_package_id", list.map((p) => p.id).slice(0, 100));
+    const targeted = new Map<string, string[]>();
+    for (const r of (gradeRows ?? []) as any[]) {
+      const arr = targeted.get(r.olympiad_package_id) ?? [];
+      arr.push(String(r.grade_id));
+      targeted.set(r.olympiad_package_id, arr);
+    }
+    list = list.filter((p) => {
+      const set = targeted.get(p.id);
+      if (!set) return true;
+      if (owned.has(p.id)) return true;
+      return childGradeId != null && set.includes(childGradeId);
+    });
+  }
   // M12: an event date in the past means the package is archived for purchase
   // display — no buy CTA (purchasers keep their access as before).
   const isPast = (p: any): boolean => {

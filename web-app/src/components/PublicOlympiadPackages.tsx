@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getLocale, getT } from "@/i18n/server";
 import { createClient } from "@/lib/supabase/server";
 import { subjectLabel } from "@/lib/subjectLabel";
-import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 
 // Public "active olympiad packages" section — ONE shared server component used
 // by the landing page and the /services page. Data comes from the anon-safe
@@ -31,6 +31,8 @@ type PubPkgRow = {
   subject_name: string | null;
   grade_level: number | null;
   grade_label: string | null;
+  /** Round 34: FULL target-grade set (multi-grade packages); null = legacy. */
+  grade_levels: number[] | null;
   sale_ends_at: string | null;
   event_at: string | null;
   question_count: number | null;
@@ -152,10 +154,19 @@ export async function PublicOlympiadPackages({
               r.subject_code || r.subject_name
                 ? subjectLabel(t, r.subject_code, r.subject_name)
                 : null;
+            // Round 34: prefer the full multi-grade set ("4–6" chips read as
+            // one range chip); the legacy single grade covers old rows.
+            const levels = Array.isArray(r.grade_levels)
+              ? r.grade_levels.filter((n) => Number.isInteger(n))
+              : [];
             const grade =
-              r.grade_level != null || r.grade_label
-                ? formatGradeLabel(r.grade_level, locale, r.grade_label)
-                : null;
+              levels.length > 1
+                ? formatGradeRangeLabel(levels, locale)
+                : levels.length === 1
+                  ? formatGradeLabel(levels[0], locale, r.grade_label)
+                  : r.grade_level != null || r.grade_label
+                    ? formatGradeLabel(r.grade_level, locale, r.grade_label)
+                    : null;
             const saleEnds = dateText(r.sale_ends_at);
             const eventAt = dateText(r.event_at);
             const price = Number(r.price_amount ?? 0);

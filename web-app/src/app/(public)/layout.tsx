@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getLocale, getT } from "@/i18n/server";
+import { getChild, getParent } from "@/lib/auth/session";
 import { getLocaleSettings, getPublicSiteSettings } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -101,6 +102,14 @@ export default async function PublicLayout({
   const t = await getT();
   const locale = await getLocale();
   const { enabled: enabledLocales } = await getLocaleSettings();
+  // Bug fix: this header used to be session-BLIND — an authenticated student
+  // or parent following a news notification onto a public page saw Login/
+  // Register chrome and read it as "I was logged out" (no signOut ever runs;
+  // the session survives untouched). Resolve the session here and offer the
+  // way BACK to their panel instead. Cheap: getParent/getChild are request-
+  // cached and the middleware already refreshed the cookie.
+  const [parentSession, childSession] = await Promise.all([getParent(), getChild()]);
+  const panelHref = childSession ? "/child" : parentSession ? "/dashboard" : null;
   // Social links (admin Settings → social.*): only non-empty ones render.
   const { social } = await getPublicSiteSettings();
   const socialLinks = (
@@ -134,12 +143,20 @@ export default async function PublicLayout({
           ))}
         </nav>
         <div className="site-cta">
-          <Link className="btn-ghost" href="/login">
-            {t("nav.login")}
-          </Link>
-          <Link className="btn" href="/register">
-            {t("nav.register")}
-          </Link>
+          {panelHref ? (
+            <Link className="btn" href={panelHref}>
+              {t("nav.myPanel")}
+            </Link>
+          ) : (
+            <>
+              <Link className="btn-ghost" href="/login">
+                {t("nav.login")}
+              </Link>
+              <Link className="btn" href="/register">
+                {t("nav.register")}
+              </Link>
+            </>
+          )}
         </div>
         <div className="navbar-controls">
           <ThemeToggle locale={locale} />

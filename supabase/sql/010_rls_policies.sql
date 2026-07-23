@@ -754,6 +754,13 @@ create policy "creviews_write" on public.content_reviews for all to authenticate
 drop policy if exists "media_select" on public.media_assets;
 create policy "media_select" on public.media_assets for select to authenticated
   using (visibility = 'public' or owner_profile_id = public.current_profile_id() or public.is_admin());
+-- Round 34 (migration 080): the PUBLIC website resolves news/olympiad covers
+-- through this table as ANON — without an anon policy the join returned NULL
+-- and published covers never rendered for logged-out visitors. Strictly
+-- public-visibility rows only (question/explanation media stay hidden).
+drop policy if exists "media_select_anon" on public.media_assets;
+create policy "media_select_anon" on public.media_assets for select to anon
+  using (visibility = 'public');
 drop policy if exists "media_insert" on public.media_assets;
 create policy "media_insert" on public.media_assets for insert to authenticated
   with check (owner_profile_id = public.current_profile_id() or public.is_admin()

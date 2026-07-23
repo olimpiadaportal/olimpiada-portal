@@ -44,7 +44,7 @@ export default async function ParentOlympiadCatalogPage() {
   // Parent's children — same source as the dashboard list.
   const { data: children } = await supabase
     .from("students")
-    .select("profile_id, first_name, last_name")
+    .select("profile_id, first_name, last_name, grade_id")
     .eq("created_by_parent_profile_id", parent.profileId)
     .order("created_at", { ascending: true });
   const childList: PolyChild[] = ((children ?? []) as any[]).map((c) => ({
@@ -80,18 +80,85 @@ export default async function ParentOlympiadCatalogPage() {
     ownedByPackage.set(p.olympiad_package_id, list);
   }
 
+  // Round 34: the parent storefront shows ONLY packages covering at least one
+  // of their children's grades (a package covering two of them appears once —
+  // rows are already unique). Legacy grade-less packages stay visible; owned
+  // packages stay visible to their family regardless. Server-rendered filter.
+  const childGrades = new Set(
+    ((children ?? []) as any[]).map((c) => c.grade_id).filter(Boolean),
+  );
+  const targeted = new Map<string, string[]>();
+  {
+    const ids = ((packages ?? []) as any[]).map((p) => p.id);
+    if (ids.length > 0) {
+      const { data: gradeRows } = await supabase
+        .from("olympiad_package_grades")
+        .select("olympiad_package_id, grade_id")
+        .in("olympiad_package_id", ids.slice(0, 100));
+      for (const r of (gradeRows ?? []) as any[]) {
+        const list = targeted.get(r.olympiad_package_id) ?? [];
+        list.push(String(r.grade_id));
+        targeted.set(r.olympiad_package_id, list);
+      }
+    }
+    const visible = (p: any): boolean => {
+      const set = targeted.get(p.id);
+      if (!set) return true; // legacy grade-less
+      if (ownedByPackage.has(p.id)) return true; // family already owns it
+      return set.some((g) => childGrades.has(g));
+    };
+    (packages as any[])?.splice(
+      0,
+      (packages as any[]).length,
+      ...((packages ?? []) as any[]).filter(visible),
+    );
+  }
+
   // Round 21 (item 3): the REAL published pool size per package — the legacy
   // questions_per_attempt column is display-only (default 25, never written by
   // the admin form). One RPC over the visible ids; a package with an empty
   // pool returns NO row → coalesce to 0.
   const pkgRows = (packages ?? []) as any[];
+  // Round 34 parity with mobile's my_question_count: the number a parent sees
+  // is what their FAMILY would actually receive — the sum of the pools of the
+  // package grades matching their children's grades (legacy grade-less
+  // packages keep the whole-pool count). One RPC call per distinct child
+  // grade (2–3 in practice) + one no-grade call for legacy rows.
   const poolCounts = new Map<string, number>();
   if (pkgRows.length > 0) {
-    const { data: countRows } = await supabase.rpc("get_olympiad_pool_counts", {
-      p_package_ids: pkgRows.map((p) => p.id),
-    });
-    for (const r of (countRows ?? []) as any[]) {
-      poolCounts.set(r.package_id, Number(r.question_count) || 0);
+    const legacyIds: string[] = [];
+    const idsByGrade = new Map<string, string[]>();
+    for (const p of pkgRows) {
+      const set = targeted.get(p.id);
+      if (!set) {
+        legacyIds.push(p.id);
+        continue;
+      }
+      for (const g of set) {
+        if (!childGrades.has(g)) continue;
+        const list = idsByGrade.get(g) ?? [];
+        list.push(p.id);
+        idsByGrade.set(g, list);
+      }
+    }
+    const bump = (id: string, n: number) =>
+      poolCounts.set(id, (poolCounts.get(id) ?? 0) + n);
+    for (const [gradeId, ids] of idsByGrade) {
+      const { data: countRows } = await supabase.rpc("get_olympiad_pool_counts", {
+        p_package_ids: ids.slice(0, 100),
+        p_grade_id: gradeId,
+      });
+      for (const r of (countRows ?? []) as any[]) {
+        bump(r.package_id, Number(r.question_count) || 0);
+      }
+    }
+    if (legacyIds.length > 0) {
+      const { data: countRows } = await supabase.rpc("get_olympiad_pool_counts", {
+        p_package_ids: legacyIds.slice(0, 100),
+      });
+      for (const r of (countRows ?? []) as any[]) {
+        bump(r.package_id, Number(r.question_count) || 0);
+      }
     }
   }
 

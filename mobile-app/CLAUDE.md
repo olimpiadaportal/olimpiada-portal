@@ -30,3 +30,14 @@
 - Security checklist: master plan §13 (MASVS-aligned) gates every stage; store/payments posture: master plan §17 (no real provider exists yet — commerce is mode-aware via the BFF, never client-computed).
 - Notification taps and all deep links go through the allowlist router + the `isSafeRelativeUrl` port — payloads are display data, never authorization.
 - Root Security Engineering Rules (root `CLAUDE.md`) apply to the BFF endpoints exactly like any web server code.
+
+## Screen sizing & responsiveness (Permanent — owner rule, 2026-07-23)
+
+Every screen must render cleanly from an iPhone SE / 320pt-wide Android up to a Pro Max / S24 Ultra. The rules:
+
+- **No hardcoded widths/heights for layout.** Size with flex (`flex: 1`, `flexShrink`, `flexGrow`), percentages, `aspectRatio`, and the `spacing`/`radius` tokens — a fixed pixel box that fits a Pro Max WILL overflow an SE. Fixed sizes are acceptable only for intrinsically fixed art (icons, avatars, chips).
+- **Text must never overlap or push siblings off-screen.** Long/translated strings (az/ru run long) get `numberOfLines` + `ellipsizeMode` where truncation is acceptable, or wrap inside a `flexShrink: 1` container where it is not. Never assume the az label width fits the en design.
+- **Safe areas always.** Screens render inside the safe-area helpers (`Screen`/`ScreenScroll`, `useSafeAreaInsets`) so nothing sits under the notch/Dynamic Island/status bar or the Android gesture bar. Never a bare full-screen `View` with hand-tuned top padding.
+- **Rows are flex rows.** A label + value + action row = `flexDirection: "row"` with the growing cell `flex: 1, minWidth: 0` — never absolute positioning or measured offsets.
+- **Test small first.** When checking a layout change, reason against the SMALLEST supported width (320pt) before the large ones; vertical overflow on short screens must fall back to scrolling (`ScreenScroll`), never clipping.
+- No new sizing library (`react-native-size-matters` etc.) without an owner request — the flex + token system above is the house standard and works in Expo Go.

@@ -12,6 +12,7 @@ type Dict = Record<string, string>;
 
 const STRINGS: Record<Locale, Dict> = {
   az: {
+    "olyq.allGrades": "Bütün siniflər",
     // ---- pool section on the package edit page ----
     "olyq.manageNote":
       "Sualları aşağıda tək-tək əlavə edib redaktə edə bilərsiniz; toplu yükləmə yalnız paket yaradılarkən mümkündür.",
@@ -89,6 +90,7 @@ const STRINGS: Record<Locale, Dict> = {
       "Bu suala artıq cavablar verilib, ona görə silmək mümkün deyil — bunun əvəzinə sualı arxivləşdirin.",
   },
   en: {
+    "olyq.allGrades": "All grades",
     "olyq.manageNote":
       "Add and edit questions one by one below; bulk upload is only available while creating the package.",
     "olyq.archivedNote":
@@ -160,6 +162,7 @@ const STRINGS: Record<Locale, Dict> = {
       "This question already has answer history, so it cannot be deleted — archive it instead.",
   },
   ru: {
+    "olyq.allGrades": "Все классы",
     "olyq.manageNote":
       "Добавляйте и редактируйте вопросы по одному ниже; массовая загрузка доступна только при создании пакета.",
     "olyq.archivedNote":

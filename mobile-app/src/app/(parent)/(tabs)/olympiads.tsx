@@ -30,7 +30,7 @@ import { gradients, radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
-import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { publicStorageUrl, type OlympiadPackageRow } from "@/lib/data";
 import { bffPurchaseOlympiad } from "@/lib/api";
@@ -268,7 +268,11 @@ export default function ParentOlympiads() {
     );
   };
   // REAL pool size (missing row / still loading → 0, web coalesce parity).
-  const questionCount = (pkg: OlympiadPackageRow) => poolCounts.data?.get(pkg.id) ?? 0;
+  // Round 34: the catalog RPC computes the caller-relevant published count
+  // (children's grade pools) server-side; the pool-counts RPC stays the
+  // fallback for legacy rows that predate the target-grade backfill.
+  const questionCount = (pkg: OlympiadPackageRow) =>
+    pkg.my_question_count > 0 ? pkg.my_question_count : poolCounts.data?.get(pkg.id) ?? 0;
 
   return (
     <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
@@ -353,12 +357,19 @@ export default function ParentOlympiads() {
                             label={subjectLabel(t, pkg.subject.code, pkg.subject.name)}
                           />
                         ) : null}
-                        {pkg.grade ? (
+                        {pkg.grades.length > 0 || pkg.grade ? (
                           <Chip
                             icon={
                               <GraduationCap size={13} color={tokens.chipText} strokeWidth={2} />
                             }
-                            label={formatGradeLabel(pkg.grade.level, locale, pkg.grade.name)}
+                            label={
+                              pkg.grades.length > 0
+                                ? formatGradeRangeLabel(
+                                    pkg.grades.map((g) => g.level),
+                                    locale,
+                                  )
+                                : formatGradeLabel(pkg.grade!.level, locale, pkg.grade!.name)
+                            }
                           />
                         ) : null}
                         <Chip

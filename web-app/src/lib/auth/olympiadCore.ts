@@ -130,6 +130,11 @@ export async function purchaseOlympiadForChildCore(params: {
       if (hint === "package_not_on_sale") {
         return { ok: false, errorKey: "poly.err.notOnSale" };
       }
+      // Round 34: the package's target grades do not include this child's
+      // grade — server-authoritative (the grade-filtered catalog is cosmetic).
+      if (hint === "package_not_for_grade") {
+        return { ok: false, errorKey: "poly.err.notForGrade" };
+      }
       return fail;
     }
   }

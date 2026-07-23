@@ -348,9 +348,9 @@ select '23_olympiad_private_pool' as check_name,
              and exists (select 1 from pg_indexes
                           where schemaname='public' and indexname='idx_questions_olympiad_package')
              and has_function_privilege('anon',
-                   'public.bulk_insert_olympiad_package_questions(uuid,jsonb)', 'EXECUTE') = false
+                   'public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)', 'EXECUTE') = false
              and has_function_privilege('authenticated',
-                   'public.bulk_insert_olympiad_package_questions(uuid,jsonb)', 'EXECUTE') = true
+                   'public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)', 'EXECUTE') = true
             then 'PASS' else 'FAIL' end as status;
 
 -- -----------------------------------------------------------------------------
@@ -636,7 +636,7 @@ select '43_child_id_allocator_locked' as check_name,
 --     and no attempt RPC references the phantom catalog_status column.
 select '44_olympiad_rpc_hardening' as check_name,
        case when position('content.create' in
-                 pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb)'::regprocedure)) = 0
+                 pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) = 0
              and position('catalog_status = ' in
                  pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) = 0
             then 'PASS' else 'FAIL' end as status;
@@ -719,7 +719,7 @@ select '49_test_engine_and_mcq_rules' as check_name,
              and position('assert_question_type_rules' in
                    pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure)) > 0
              and position('assert_question_type_rules' in
-                   pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb)'::regprocedure)) > 0
+                   pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
 -- 50) Leaderboard engine (migration 039) — ledger + activity tables with RLS ON,
@@ -886,7 +886,7 @@ select '59_taxonomy_module_scope' as check_name,
              and position('scope = ''exam'''
                           in pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure)) > 0
              and position('scope = ''olympiad'''
-                          in pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb)'::regprocedure)) > 0
+                          in pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) > 0
              and not exists (select 1
                                from public.topics t
                                join public.questions q on q.topic_id = t.id
@@ -1024,9 +1024,13 @@ select '67_round_readiness_pool_counts' as check_name,
                    pg_get_functiondef('public.daily_round_readiness()'::regprocedure)) > 0
              and to_regprocedure('public.get_my_round_readiness()') is not null
              and has_function_privilege('authenticated','public.get_my_round_readiness()','EXECUTE')
-             and to_regprocedure('public.get_olympiad_pool_counts(uuid[])') is not null
-             and has_function_privilege('authenticated','public.get_olympiad_pool_counts(uuid[])','EXECUTE')
-             and has_function_privilege('anon','public.get_olympiad_pool_counts(uuid[])','EXECUTE') = false
+             -- Round 34 (079): the counts RPC gained a defaulted p_grade_id —
+             -- the 1-arg overload must be GONE (ambiguity) and the 2-arg one
+             -- keeps the same privilege posture.
+             and to_regprocedure('public.get_olympiad_pool_counts(uuid[],uuid)') is not null
+             and to_regprocedure('public.get_olympiad_pool_counts(uuid[])') is null
+             and has_function_privilege('authenticated','public.get_olympiad_pool_counts(uuid[],uuid)','EXECUTE')
+             and has_function_privilege('anon','public.get_olympiad_pool_counts(uuid[],uuid)','EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
 -- 68) Notification template kind (migration 067): broadcast fan-outs derive
@@ -1251,6 +1255,54 @@ select '78_subject_change_proration' as check_name,
              and to_regprocedure('public.apply_subject_change(uuid,uuid[],uuid[],text)') is not null
              and has_function_privilege('authenticated','public.apply_subject_change(uuid,uuid[],uuid[],text)','EXECUTE') = false
              and has_function_privilege('anon','public.quote_subject_change(uuid,uuid[],uuid[])','EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+
+-- 79) Round 34 (migration 079): multi-grade olympiad packages — the grades
+--     join table + legacy-sync/pool-guard triggers, the purchase grade
+--     snapshot, per-grade RPC signatures (old overloads GONE — ambiguity),
+--     the role-aware catalog RPC (never anon), and the backfill invariants.
+select '79_olympiad_multigrade' as check_name,
+       case when to_regclass('public.olympiad_package_grades') is not null
+             and exists (select 1 from pg_trigger where tgname='trg_sync_oly_legacy_grade'
+                          and tgrelid='public.olympiad_package_grades'::regclass)
+             and exists (select 1 from pg_trigger where tgname='trg_olympiad_pool_grade_guard'
+                          and tgrelid='public.questions'::regclass)
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='olympiad_purchases'
+                            and column_name='grade_id')
+             and to_regprocedure('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)') is not null
+             and to_regprocedure('public.bulk_insert_olympiad_package_questions(uuid,jsonb)') is null
+             and to_regprocedure('public.get_olympiad_pool_counts(uuid[],uuid)') is not null
+             and to_regprocedure('public.get_olympiad_pool_counts(uuid[])') is null
+             and to_regprocedure('public.get_my_olympiad_catalog()') is not null
+             and has_function_privilege('anon','public.get_my_olympiad_catalog()','EXECUTE') = false
+             and to_regprocedure('public.remove_olympiad_package_grade(uuid,uuid)') is not null
+             and has_function_privilege('anon','public.remove_olympiad_package_grade(uuid,uuid)','EXECUTE') = false
+             and position('grade_levels' in pg_get_functiondef('public.get_public_olympiad_packages(int)'::regprocedure)) > 0
+             and position('package_not_for_grade' in pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) > 0
+             and position('package_not_for_grade' in pg_get_functiondef('public.purchase_olympiad(uuid,uuid)'::regprocedure)) > 0
+             and not exists (select 1 from public.olympiad_packages p
+                              where p.grade_id is not null
+                                and not exists (select 1 from public.olympiad_package_grades g
+                                                 where g.olympiad_package_id = p.id
+                                                   and g.grade_id = p.grade_id))
+             and not exists (select 1 from public.olympiad_packages p
+                              where p.grade_id is not null
+                                and (select count(*) from public.olympiad_package_grades g
+                                      where g.olympiad_package_id = p.id) <> 1)
+            then 'PASS' else 'FAIL' end as status;
+
+
+-- 80) Public media metadata (migration 080): anon reads ONLY public-visibility
+--     media_assets rows (news/olympiad covers on the logged-out website); the
+--     authenticated policy is untouched.
+select '80_public_media_anon_read' as check_name,
+       case when exists (select 1 from pg_policies
+                          where schemaname='public' and tablename='media_assets'
+                            and policyname='media_select_anon'
+                            and roles = '{anon}'
+                            and qual like '%visibility%public%')
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

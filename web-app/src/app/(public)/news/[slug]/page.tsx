@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getChild } from "@/lib/auth/session";
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { NewsArticleView } from "@/components/NewsArticleView";
@@ -11,6 +13,12 @@ export default async function NewsDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  // A signed-in STUDENT reads the article inside the arena (same content,
+  // student chrome + nav back to their panel) — news notifications store the
+  // public /news/<slug> path, and landing a child on marketing chrome reads
+  // as a phantom "logout". Parents keep the public page (its header now
+  // offers the way back to their panel).
+  if (await getChild()) redirect(`/child/news/${encodeURIComponent(slug)}`);
   const t = await getT();
 
   const newsEnabled = await isFeatureEnabled("news_public");

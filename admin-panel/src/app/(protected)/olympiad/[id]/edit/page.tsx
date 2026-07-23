@@ -5,12 +5,13 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { getT, getLocale } from "@/i18n/server";
 import { OlympiadForm } from "@/components/OlympiadForm";
 import { OlympiadCoverUploader } from "@/components/OlympiadCoverUploader";
+import { OlympiadGradesManager } from "@/components/OlympiadGradesManager";
 import {
   OlympiadQuestionManager,
   type OlympiadPoolRow,
 } from "@/components/OlympiadQuestionManager";
 import { archiveOlympiadPackage } from "@/lib/admin/olympiad";
-import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
+import { olympiadLocalDict, olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import {
   olympiadLifecycleState,
   lifecyclePillClass,
@@ -48,7 +49,7 @@ export default async function EditOlympiadPage({
 
   const { data: pkg } = await supabase
     .from("olympiad_packages")
-    .select("id, subject_id, grade_id, price_amount, status, event_starts_at, sale_starts_at, sale_ends_at, duration_minutes, cover_media_id")
+    .select("id, subject_id, grade_id, olympiad_type_id, price_amount, status, event_starts_at, sale_starts_at, sale_ends_at, duration_minutes, cover_media_id")
     .eq("id", id)
     .maybeSingle();
   if (!pkg) notFound();
@@ -109,7 +110,15 @@ export default async function EditOlympiadPage({
   const tr: Record<string, { title: string; desc: string }> = {};
   for (const x of (trs ?? []) as any[]) tr[x.locale] = { title: x.title, desc: x.description ?? "" };
 
-  const [{ data: subjects }, { data: grades }, { data: poolQuestions }, { data: topicRows }] =
+  const [
+    { data: subjects },
+    { data: grades },
+    { data: poolQuestions },
+    { data: topicRows },
+    { data: otypes },
+    { data: qtypeRows },
+    { data: pkgGradeRows },
+  ] =
     await Promise.all([
       supabase.from("subjects").select("id, name").order("name"),
       supabase.from("grades").select("id, name, level").order("level"),
@@ -118,7 +127,7 @@ export default async function EditOlympiadPage({
       supabase
         .from("questions")
         .select(
-          "id, status, primary_locale, updated_at, question_translations(locale, body, media_asset_id), answer_options(count)",
+          "id, status, grade_id, primary_locale, updated_at, question_translations(locale, body, media_asset_id), answer_options(count)",
         )
         .eq("olympiad_package_id", id)
         .order("created_at", { ascending: true }),
@@ -130,13 +139,37 @@ export default async function EditOlympiadPage({
         .eq("scope", "olympiad")
         .eq("subject_id", (pkg as any).subject_id)
         .order("name"),
+      supabase.from("olympiad_types").select("id, name").order("name"),
+      supabase
+        .from("question_types")
+        .select("code, name, status, options_required, correct_required")
+        .eq("status", "active")
+        .order("code"),
+      // Round 34: the package's TARGET grades — each owns a separate pool.
+      supabase
+        .from("olympiad_package_grades")
+        .select("grade_id, grades(id, name, level)")
+        .eq("olympiad_package_id", id),
     ]);
 
-  // Topics without a grade match any grade; grade-bound topics must match the
-  // package's grade.
-  const pkgGradeId = (pkg as any).grade_id ?? null;
+  // Round 34: target grades (sorted by level) + per-grade published counts.
+  const targetGrades = ((pkgGradeRows ?? []) as any[])
+    .map((r) => ({
+      id: String(r.grade_id),
+      name: String(r.grades?.name ?? ""),
+      level: Number(r.grades?.level ?? 0),
+    }))
+    .sort((a, b) => a.level - b.level);
+  const targetGradeIds = new Set(targetGrades.map((g) => g.id));
+  // Topics without a grade match any grade; grade-bound topics must match one
+  // of the package's target grades.
   const poolTopics = ((topicRows ?? []) as any[])
-    .filter((tp) => tp.grade_id == null || pkgGradeId == null || tp.grade_id === pkgGradeId)
+    .filter(
+      (tp) =>
+        tp.grade_id == null ||
+        targetGradeIds.size === 0 ||
+        targetGradeIds.has(String(tp.grade_id)),
+    )
     .map((tp) => ({ id: String(tp.id), name: String(tp.name) }));
   let poolSubtopics: { id: string; topic_id: string; name: string }[] = [];
   if (poolTopics.length > 0) {
@@ -165,9 +198,13 @@ export default async function EditOlympiadPage({
       trs.find((x) => x.locale === q.primary_locale)?.body ??
       trs[0]?.body ??
       "";
+    const gradeName =
+      ((grades ?? []) as any[]).find((g) => g.id === q.grade_id)?.name ?? "—";
     return {
       id: String(q.id),
       num: i + 1,
+      gradeId: q.grade_id ? String(q.grade_id) : "",
+      gradeName: String(gradeName),
       excerpt: body.length > 90 ? `${body.slice(0, 90)}…` : body,
       search: trs
         .map((x) => (x.body ?? "").slice(0, 500))
@@ -181,16 +218,31 @@ export default async function EditOlympiadPage({
   });
   const subjectName =
     ((subjects ?? []) as any[]).find((s) => s.id === (pkg as any).subject_id)?.name ?? "";
-  const gradeName =
-    ((grades ?? []) as any[]).find((g) => g.id === pkgGradeId)?.name ?? "";
+  // Published pool size per target grade (drives the Grades & Pools manager).
+  const publishedByGrade = new Map<string, number>();
+  for (const q of (poolQuestions ?? []) as any[]) {
+    if (q.status !== "published" || !q.grade_id) continue;
+    const k = String(q.grade_id);
+    publishedByGrade.set(k, (publishedByGrade.get(k) ?? 0) + 1);
+  }
+  const gradesWithCounts = targetGrades.map((g) => ({
+    ...g,
+    questions: publishedByGrade.get(g.id) ?? 0,
+  }));
+  const addableGrades = ((grades ?? []) as any[])
+    .filter((g) => !targetGradeIds.has(String(g.id)))
+    .map((g) => ({ value: String(g.id), label: String(g.name) }));
+  // Client-side row-validation rules for the add-grade upload (UX mirror).
+  const activeTypeRules = ((qtypeRows ?? []) as any[]).map((r) => ({
+    code: String(r.code ?? ""),
+    name: String(r.name),
+    options_required: r.options_required ?? null,
+    correct_required: r.correct_required ?? null,
+  }));
   const poolDict = localDict(locale);
 
-  const formDict: Record<string, string> = {};
+  const formDict: Record<string, string> = { ...olympiadLocalDict(locale) };
   for (const k of FORM_KEYS) formDict[k] = t(k);
-  // Local trilingual additions (sale window) until messages.ts gains the keys.
-  for (const k of ["oly2.saleStart", "oly2.saleEnd", "oly2.saleHint"]) {
-    formDict[k] = lt(k);
-  }
 
   return (
     <div className="page">
@@ -216,10 +268,10 @@ export default async function EditOlympiadPage({
           dict={formDict}
           id={(pkg as any).id}
           subjects={((subjects ?? []) as any[]).map((s) => ({ value: s.id, label: s.name }))}
-          grades={((grades ?? []) as any[]).map((g) => ({ value: g.id, label: g.name }))}
+          olympiadTypes={((otypes ?? []) as any[]).map((o) => ({ value: o.id, label: o.name }))}
           defaults={{
             subject_id: (pkg as any).subject_id,
-            grade_id: (pkg as any).grade_id ?? "",
+            olympiad_type_id: (pkg as any).olympiad_type_id ?? "",
             price: String((pkg as any).price_amount ?? 0),
             status: (pkg as any).status,
             event: (pkg as any).event_starts_at ?? "",
@@ -229,6 +281,15 @@ export default async function EditOlympiadPage({
             tr,
           }}
           submitLabel={t("manage.save")}
+        />
+      </section>
+      <section className="card" style={{ marginTop: 16 }}>
+        <OlympiadGradesManager
+          dict={{ ...poolDict, ...olympiadLocalDict(locale), "oly2.grade": t("oly2.grade"), "manage.select": t("manage.select"), "bulk.fileLabel": t("bulk.fileLabel"), "bulk.fileProblems": t("bulk.fileProblems"), "bulk.fixFile": t("bulk.fixFile"), "bulk.row": t("bulk.row") }}
+          packageId={(pkg as any).id}
+          targetGrades={gradesWithCounts}
+          addableGrades={addableGrades}
+          typeRules={activeTypeRules}
         />
       </section>
       <section className="card" style={{ marginTop: 16 }}>
@@ -259,7 +320,7 @@ export default async function EditOlympiadPage({
           dict={poolDict}
           packageId={(pkg as any).id}
           subjectName={subjectName}
-          gradeName={gradeName}
+          packageGrades={targetGrades.map((g) => ({ value: g.id, label: g.name }))}
           topics={poolTopics}
           subtopics={poolSubtopics}
           rows={poolRows}

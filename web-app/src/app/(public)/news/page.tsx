@@ -1,5 +1,7 @@
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
+import { redirect } from "next/navigation";
+import { getChild } from "@/lib/auth/session";
 import { NewsBrowser } from "@/components/NewsBrowser";
 
 // Public news list — a thin wrapper around the shared <NewsBrowser/> (R10):
@@ -10,6 +12,8 @@ export default async function NewsListPage({
 }: {
   searchParams: Promise<{ sort?: string; page?: string }>;
 }) {
+  // Student sessions read news inside the arena (see [slug] page note).
+  if (await getChild()) redirect("/child/news");
   const t = await getT();
   const sp = await searchParams;
 

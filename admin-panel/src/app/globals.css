@@ -653,6 +653,93 @@ a {
   cursor: default;
 }
 
+/* ---- Shared async-button loading state (#15, components/ActionButton) ----
+   The spinner sits inline before the pending label; the idle label stays
+   mounted as an invisible 0-height ghost so the button never changes width
+   mid-request (no table/row layout shift). */
+.btn[aria-busy="true"],
+.btn-ghost[aria-busy="true"] {
+  cursor: progress;
+}
+
+.btn-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  position: relative;
+}
+
+.btn-spinner {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: btn-spin 0.7s linear infinite;
+}
+
+.btn-ghost-label {
+  display: block;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- Round 34: olympiad multi-grade create/edit -------------------------- */
+.oly-grade-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 6px;
+}
+
+.oly-grade-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.oly-grade-check:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(79, 70, 229, 0.06);
+}
+
+.oly-grade-pool {
+  border-left: 3px solid var(--border);
+  padding-left: 12px;
+  margin-top: 10px;
+}
+
+/* One row per target grade on the edit page: name, pool count, remove. */
+.oly-grade-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.oly-grade-row:last-child {
+  border-bottom: 0;
+}
+
+.oly-grade-row .grow {
+  flex: 1;
+}
+
 /* ---- Login + standalone pages ------------------------------------------ */
 .login-wrap {
   min-height: 100vh;

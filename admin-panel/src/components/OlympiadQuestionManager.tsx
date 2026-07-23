@@ -24,6 +24,8 @@ import {
 export type OlympiadPoolRow = {
   id: string;
   num: number;
+  gradeName: string;
+  gradeId: string;
   excerpt: string;
   search: string; // lowercased text blob for the client-side filter
   optionCount: number;
@@ -38,7 +40,7 @@ export function OlympiadQuestionManager({
   dict,
   packageId,
   subjectName,
-  gradeName,
+  packageGrades,
   topics,
   subtopics,
   rows,
@@ -46,7 +48,7 @@ export function OlympiadQuestionManager({
   dict: Record<string, string>;
   packageId: string;
   subjectName: string;
-  gradeName: string;
+  packageGrades: { value: string; label: string }[];
   topics: OlympiadPoolTopic[];
   subtopics: OlympiadPoolSubtopic[];
   rows: OlympiadPoolRow[];
@@ -55,6 +57,7 @@ export function OlympiadQuestionManager({
   const router = useRouter();
 
   const [search, setSearch] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [editData, setEditData] = useState<OlympiadPoolQuestionData | null>(null);
   // Row-level busy/error feedback (edit prefill fetch, delete, archive).
@@ -65,9 +68,11 @@ export function OlympiadQuestionManager({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => r.search.includes(q));
-  }, [rows, search]);
+    let out = rows;
+    if (gradeFilter) out = out.filter((r) => r.gradeId === gradeFilter);
+    if (q) out = out.filter((r) => r.search.includes(q));
+    return out;
+  }, [rows, search, gradeFilter]);
 
   function closeModals() {
     setAddOpen(false);
@@ -157,6 +162,18 @@ export function OlympiadQuestionManager({
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 320 }}
         />
+        {packageGrades.length > 1 && (
+          <select
+            value={gradeFilter}
+            onChange={(e) => setGradeFilter(e.target.value)}
+            aria-label={tt("olyq.grade")}
+          >
+            <option value="">{tt("olyq.allGrades")}</option>
+            {packageGrades.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -168,6 +185,7 @@ export function OlympiadQuestionManager({
           <thead>
             <tr>
               <th>{tt("olyq.col.num")}</th>
+              <th>{tt("olyq.grade")}</th>
               <th>{tt("olyq.col.body")}</th>
               <th>{tt("olyq.col.options")}</th>
               <th>{tt("olyq.col.image")}</th>
@@ -180,6 +198,7 @@ export function OlympiadQuestionManager({
             {filtered.map((r) => (
               <tr key={r.id}>
                 <td>{r.num}</td>
+                <td className="col-narrow">{r.gradeName}</td>
                 <td>{r.excerpt}</td>
                 <td>
                   {r.optionCount}
@@ -260,7 +279,7 @@ export function OlympiadQuestionManager({
           dict={dict}
           packageId={packageId}
           subjectName={subjectName}
-          gradeName={gradeName}
+          packageGrades={packageGrades}
           topics={topics}
           subtopics={subtopics}
           onSaved={onSaved}
@@ -283,7 +302,8 @@ export function OlympiadQuestionManager({
             packageId={packageId}
             questionId={editData.id}
             subjectName={subjectName}
-            gradeName={gradeName}
+            packageGrades={packageGrades}
+            defaultGradeId={editData.gradeId}
             topics={topics}
             subtopics={subtopics}
             defaults={editData}

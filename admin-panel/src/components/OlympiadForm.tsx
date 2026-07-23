@@ -2,13 +2,14 @@
 
 import { useActionState, useState } from "react";
 import { saveOlympiadPackage, type OlympiadState } from "@/lib/admin/olympiad";
+import { ActionButton } from "@/components/ActionButton";
 import { DateTimeLocalField } from "@/components/DateTimeLocalField";
 import { localeNames, locales, type Locale } from "@/i18n/config";
 
 type Opt = { value: string; label: string };
 type Defaults = {
   subject_id: string;
-  grade_id: string;
+  olympiad_type_id: string;
   price: string;
   status: string;
   event?: string; // ISO timestamptz from the DB ("" = undated)
@@ -18,17 +19,20 @@ type Defaults = {
   tr: Record<string, { title: string; desc: string }>;
 };
 
+// EDIT-page metadata form (Round 34): grades are NOT edited here — they live
+// in the Grades & Pools manager below the form (a grade is only added with
+// its question file, and removed through the guarded RPC).
 export function OlympiadForm({
   dict,
   subjects,
-  grades,
+  olympiadTypes,
   defaults,
   id,
   submitLabel,
 }: {
   dict: Record<string, string>;
   subjects: Opt[];
-  grades: Opt[];
+  olympiadTypes: Opt[];
   defaults?: Defaults;
   id?: string;
   submitLabel: string;
@@ -40,7 +44,8 @@ export function OlympiadForm({
   );
   const [f, setF] = useState({
     subject_id: defaults?.subject_id ?? "",
-    grade_id: defaults?.grade_id ?? "",
+    olympiad_type_id: defaults?.olympiad_type_id ?? "",
+    olympiad_type_other: "",
     price: defaults?.price ?? "0",
     status: defaults?.status ?? "inactive",
     duration: defaults?.duration ?? "25",
@@ -55,18 +60,40 @@ export function OlympiadForm({
   return (
     <form action={action} className="form">
       {id && <input type="hidden" name="__id" value={id} />}
+      {/* Mandatory olympiad type — "Other" creates/reuses a type inline. */}
+      <label className="field">
+        <span className="field-label">{tt("oly2.type")} *</span>
+        <select
+          name="olympiad_type_id"
+          value={f.olympiad_type_id}
+          required
+          onChange={(e) => set("olympiad_type_id", e.target.value)}
+        >
+          <option value="">{tt("manage.select")}</option>
+          {olympiadTypes.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+          <option value="__other">{tt("oly2.typeOther")}</option>
+        </select>
+      </label>
+      {f.olympiad_type_id === "__other" && (
+        <label className="field">
+          <span className="field-label">{tt("oly2.typeOtherLabel")} *</span>
+          <input
+            name="olympiad_type_other"
+            value={f.olympiad_type_other}
+            maxLength={120}
+            required
+            placeholder={tt("oly2.typeOtherPh")}
+            onChange={(e) => set("olympiad_type_other", e.target.value)}
+          />
+        </label>
+      )}
       <label className="field">
         <span className="field-label">{tt("oly2.subject")} *</span>
         <select name="subject_id" value={f.subject_id} required onChange={(e) => set("subject_id", e.target.value)}>
           <option value="">{tt("manage.select")}</option>
           {subjects.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
-        </select>
-      </label>
-      <label className="field">
-        <span className="field-label">{tt("oly2.grade")} *</span>
-        <select name="grade_id" value={f.grade_id} required onChange={(e) => set("grade_id", e.target.value)}>
-          <option value="">{tt("manage.select")}</option>
-          {grades.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
         </select>
       </label>
       <label className="field">
@@ -134,9 +161,9 @@ export function OlympiadForm({
         </div>
       ))}
       {state?.error && <p className="form-error">{state.error}</p>}
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? tt("manage.saving") : submitLabel}
-      </button>
+      <ActionButton pending={pending} pendingLabel={tt("manage.saving")}>
+        {submitLabel}
+      </ActionButton>
     </form>
   );
 }

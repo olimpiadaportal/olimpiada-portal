@@ -84,7 +84,8 @@ export function OlympiadQuestionForm({
   packageId,
   questionId,
   subjectName,
-  gradeName,
+  packageGrades,
+  defaultGradeId,
   topics,
   subtopics,
   defaults,
@@ -94,8 +95,10 @@ export function OlympiadQuestionForm({
   dict: Record<string, string>;
   packageId: string;
   questionId?: string; // present = edit mode
-  subjectName: string; // display-only (the server takes both from the package)
-  gradeName: string;
+  subjectName: string; // display-only (the server takes it from the package)
+  /** Round 34: the package's target grades — the question belongs to ONE. */
+  packageGrades: { value: string; label: string }[];
+  defaultGradeId?: string;
   topics: OlympiadPoolTopic[]; // olympiad-scoped, already subject/grade-filtered
   subtopics: OlympiadPoolSubtopic[];
   defaults?: OlympiadPoolQuestionData;
@@ -122,6 +125,9 @@ export function OlympiadQuestionForm({
   );
   const [correct, setCorrect] = useState<number>(defaults?.correct ?? -1);
   const [topic, setTopic] = useState(defaults?.topicId ?? "");
+  const [gradeId, setGradeId] = useState(
+    defaultGradeId ?? (packageGrades.length === 1 ? packageGrades[0].value : ""),
+  );
   const [subtopic, setSubtopic] = useState(defaults?.subtopicId ?? "");
   const [localError, setLocalError] = useState("");
 
@@ -241,6 +247,7 @@ export function OlympiadQuestionForm({
     const fd = new FormData();
     fd.set("__package_id", packageId);
     if (questionId) fd.set("__id", questionId);
+    fd.set("grade_id", gradeId);
     fd.set("topic_id", topic);
     fd.set("subtopic_id", topic ? subtopic : "");
     fd.set("correct", String(correct));
@@ -298,8 +305,17 @@ export function OlympiadQuestionForm({
           <input type="text" value={subjectName} readOnly disabled />
         </label>
         <label className="field">
-          <span className="field-label">{tt("olyq.grade")}</span>
-          <input type="text" value={gradeName} readOnly disabled />
+          <span className="field-label">{tt("olyq.grade")} *</span>
+          {packageGrades.length === 1 ? (
+            <input type="text" value={packageGrades[0]?.label ?? ""} readOnly disabled />
+          ) : (
+            <select value={gradeId} required onChange={(e) => setGradeId(e.target.value)}>
+              <option value="">{tt("manage.select")}</option>
+              {packageGrades.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          )}
         </label>
         <label className="field">
           <span className="field-label">{tt("olyq.topic")}</span>

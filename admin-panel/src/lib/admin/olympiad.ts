@@ -77,7 +77,11 @@ function slugifyCode(input: string): string {
 
 type PackageFields = {
   subjectId: string;
-  gradeId: string;
+  /** Round 34: one package targets MULTIPLE grades (each with its own pool). */
+  gradeIds: string[];
+  /** Olympiad type — an existing id, or "__other" + the typed name. */
+  olympiadTypeId: string;
+  olympiadTypeOther: string;
   price: number;
   status: string;
   titleAz: string;
@@ -86,6 +90,10 @@ type PackageFields = {
   saleEndAt: string | null;
   durationMinutes: number;
 };
+
+/** Sentinel the type <select> uses for "Other (enter a new type)". */
+const TYPE_OTHER = "__other";
+const TYPE_NAME_MAX = 120;
 
 // olympiad_packages.duration_minutes (migration 047): attempt time limit in
 // whole minutes, DB CHECK between 5 and 240 — mirrored here.
@@ -96,13 +104,34 @@ function parsePackageFields(
   fd: FormData,
   t: T,
   lt: (key: string) => string,
+  opts: { requireGrades: boolean } = { requireGrades: true },
 ): { error: string } | PackageFields {
   const subjectId = s(fd, "subject_id");
   if (!subjectId) return { error: t("oly2.err.subject") };
-  // Grade is REQUIRED: bulk-imported pool questions inherit the package's
-  // subject AND grade, so a package can no longer be saved without one.
-  const gradeId = s(fd, "grade_id");
-  if (!gradeId) return { error: t("oly2.err.grade") };
+  // Round 34: MULTI-grade selection (checkbox group). At least one, all
+  // UUID-shaped, deduped — every selected grade will own a separate pool.
+  // Edit mode passes requireGrades:false (grades live in their own actions).
+  const gradeIds = Array.from(
+    new Set(
+      fd
+        .getAll("grade_ids")
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => v.trim())
+        .filter(Boolean),
+    ),
+  );
+  if (opts.requireGrades && gradeIds.length === 0) return { error: lt("oly2.err.grades") };
+  if (gradeIds.some((g) => !UUID_RE.test(g))) return { error: lt("oly2.err.grades") };
+  // Round 34: the olympiad type is MANDATORY and lives inside this flow now
+  // (the sidebar module was retired). "__other" carries a new type's name.
+  const olympiadTypeId = s(fd, "olympiad_type_id");
+  const olympiadTypeOther = s(fd, "olympiad_type_other").slice(0, TYPE_NAME_MAX);
+  if (!olympiadTypeId) return { error: lt("oly2.err.type") };
+  if (olympiadTypeId === TYPE_OTHER) {
+    if (!olympiadTypeOther) return { error: lt("oly2.err.typeOther") };
+  } else if (!UUID_RE.test(olympiadTypeId)) {
+    return { error: lt("oly2.err.type") };
+  }
   // Price must be a finite number ≥ 0 (negatives/NaN/Infinity rejected);
   // normalized to 2 decimals.
   const priceRaw = s(fd, "price_amount");
@@ -153,7 +182,9 @@ function parsePackageFields(
   }
   return {
     subjectId,
-    gradeId,
+    gradeIds,
+    olympiadTypeId,
+    olympiadTypeOther,
     price,
     status,
     titleAz,
@@ -162,6 +193,88 @@ function parsePackageFields(
     saleEndAt,
     durationMinutes: durationNum,
   };
+}
+
+// Resolves the package's olympiad type to an id. "__other" first tries a
+// CASE-INSENSITIVE name match (accidental duplicates like "beynəlxalq" vs
+// "Beynəlxalq" reuse the existing row) and only then inserts a new type —
+// which immediately becomes available to future packages. Existing type
+// records are never modified here.
+async function resolveOlympiadTypeId(
+  supabase: Db,
+  fields: PackageFields,
+  t: T,
+): Promise<{ error: string } | { typeId: string }> {
+  if (fields.olympiadTypeId !== TYPE_OTHER) {
+    const { data } = await supabase
+      .from("olympiad_types")
+      .select("id")
+      .eq("id", fields.olympiadTypeId)
+      .maybeSingle();
+    if (!data) return { error: t("err.server") };
+    return { typeId: data.id as string };
+  }
+  const name = fields.olympiadTypeOther;
+  // ilike with escaped wildcards = exact case-insensitive match.
+  const escaped = name.replace(/([%_\\])/g, "\\$1");
+  const { data: existing } = await supabase
+    .from("olympiad_types")
+    .select("id")
+    .ilike("name", escaped)
+    .limit(1)
+    .maybeSingle();
+  if (existing) return { typeId: existing.id as string };
+  // code = unique slug of the name (same alphabet mapping as package codes).
+  const base = slugifyCode(name) || "type";
+  let code = base;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data, error } = await supabase
+      .from("olympiad_types")
+      .insert({ code, name })
+      .select("id")
+      .single();
+    if (!error && data) return { typeId: data.id as string };
+    if ((error as { code?: string } | null)?.code === "23505") {
+      code = `${base}-${Math.random().toString(36).slice(2, 6)}`;
+      continue;
+    }
+    console.error("[admin] olympiad type insert failed", error?.message);
+    return { error: t("err.server") };
+  }
+  return { error: t("err.server") };
+}
+
+// The grades currently targeted by a package (id → grade row), ordered by level.
+async function packageGradeRows(
+  supabase: Db,
+  pkgId: string,
+): Promise<{ id: string; name: string; level: number }[]> {
+  const { data } = await supabase
+    .from("olympiad_package_grades")
+    .select("grade_id, grades(id, name, level)")
+    .eq("olympiad_package_id", pkgId);
+  return ((data ?? []) as any[])
+    .map((r) => ({
+      id: String(r.grade_id),
+      name: String(r.grades?.name ?? ""),
+      level: Number(r.grades?.level ?? 0),
+    }))
+    .sort((a, b) => a.level - b.level);
+}
+
+// Grades whose pool has ZERO published questions (blocks status='active').
+async function gradesMissingPools(
+  supabase: Db,
+  pkgId: string,
+  gradeRows: { id: string; name: string }[],
+): Promise<string[]> {
+  const { data } = await supabase
+    .from("questions")
+    .select("grade_id")
+    .eq("olympiad_package_id", pkgId)
+    .eq("status", "published");
+  const filled = new Set(((data ?? []) as any[]).map((q) => String(q.grade_id)));
+  return gradeRows.filter((g) => !filled.has(g.id)).map((g) => g.name);
 }
 
 // Insert with the auto-generated `code`; retry on a unique-violation by
@@ -233,15 +346,35 @@ export async function saveOlympiadPackage(
   const t = await getT();
   const lt = olympiadLocalStrings(await getLocale());
   const id = s(fd, "__id");
-  const fields = parsePackageFields(fd, t, lt);
+  // EDIT mode: grades are managed by the dedicated add/remove actions on the
+  // edit page (a grade is only ever added TOGETHER with its question file),
+  // so this metadata form does not carry grade checkboxes.
+  const fields = parsePackageFields(fd, t, lt, { requireGrades: !id });
   if ("error" in fields) return { error: fields.error };
 
   const supabase = await createClient();
+  // Round 34: the olympiad type is mandatory; "Other" creates/reuses a type.
+  const typeRes = await resolveOlympiadTypeId(supabase, fields, t);
+  if ("error" in typeRes) return { error: typeRes.error };
+
+  // Activation gate: an ACTIVE package must have a non-empty published pool
+  // for EVERY target grade — a student must never buy into an empty pool.
+  if (id && fields.status === "active") {
+    const gradeRows = await packageGradeRows(supabase, id);
+    const missing = await gradesMissingPools(supabase, id, gradeRows);
+    if (missing.length > 0) {
+      return {
+        error: lt("oly2.err.activeNeedsPools").replace("{grades}", missing.join(", ")),
+      };
+    }
+  }
+
   // `code` is auto-generated from the Azerbaijani title (no longer a UI input).
-  // On update we keep the existing code untouched.
+  // On update we keep the existing code untouched. grade_id is NOT written
+  // here anymore — the DB sync trigger derives it from the target-grade rows.
   const row = {
     subject_id: fields.subjectId,
-    grade_id: fields.gradeId,
+    olympiad_type_id: typeRes.typeId,
     price_amount: fields.price,
     status: fields.status,
     event_starts_at: fields.eventAt,
@@ -254,6 +387,14 @@ export async function saveOlympiadPackage(
     const inserted = await insertPackageRow(supabase, row, fields.titleAz, ctx.profileId);
     if (!inserted) return { error: t("err.server") };
     pkgId = inserted;
+    const { error: gErr } = await supabase
+      .from("olympiad_package_grades")
+      .insert(fields.gradeIds.map((g) => ({ olympiad_package_id: pkgId, grade_id: g })));
+    if (gErr) {
+      console.error("[admin] olympiad grade rows insert failed", gErr.message);
+      await rollbackNewPackage(supabase, pkgId);
+      return { error: t("err.server") };
+    }
   } else {
     const { error } = await supabase.from("olympiad_packages").update(row).eq("id", pkgId);
     if (error) {
@@ -304,11 +445,13 @@ type BulkResult = {
 
 // Reads + size-caps the uploaded JSON file (2 MB, same cap as the general
 // question-bank import). Returns the parsed array or a trilingual error.
+// Round 34: the create flow uploads ONE FILE PER GRADE (field "file_<gradeId>").
 async function readBulkFile(
   fd: FormData,
   t: T,
+  fieldName = "file",
 ): Promise<{ error: string } | { payload: unknown[]; fileName: string }> {
-  const file = fd.get("file");
+  const file = fd.get(fieldName);
   if (!(file instanceof File) || file.size === 0) {
     return { error: t("bulk.pickFile") };
   }
@@ -386,18 +529,20 @@ function validateRows(
 
 // Runs the SECURITY DEFINER pool-import RPC and merges its per-row errors
 // (mapped back to original file row numbers) with the pre-validation errors.
+// Round 34: p_grade_id targets ONE grade pool (creation-only PER GRADE).
 async function runOlympiadPoolImport(
   supabase: Db,
   t: T,
   pkgId: string,
   rows: ValidatedRows,
+  gradeId: string | null = null,
 ): Promise<{ error: string } | { result: BulkResult }> {
   const errors = [...rows.errors];
   let successful = 0;
   if (rows.validItems.length > 0) {
     const { data, error } = await supabase.rpc(
       "bulk_insert_olympiad_package_questions",
-      { p_package_id: pkgId, p_questions: rows.validItems },
+      { p_package_id: pkgId, p_questions: rows.validItems, p_grade_id: gradeId },
     );
     if (error) {
       // 23514 = the RPC's creation-only guard: the package already has
@@ -547,33 +692,69 @@ export async function createOlympiadPackageWithQuestions(
   const fields = parsePackageFields(fd, t, lt);
   if ("error" in fields) return { error: fields.error };
   if (!UUID_RE.test(fields.subjectId)) return { error: t("oly2.err.subject") };
-  if (!UUID_RE.test(fields.gradeId)) return { error: t("oly2.err.grade") };
 
   const supabase = await createClient();
-  // Every imported row inherits the package grade — resolve its level now.
-  const gradeLevel = await packageGradeLevel(supabase, fields.gradeId);
-  if (gradeLevel == null) return { error: t("oly2.err.grade") };
+  // Resolve the selected grades (level per grade — every row of a grade's
+  // file is stamped with THAT grade, whatever legacy meta it carries).
+  const { data: gradeRows } = await supabase
+    .from("grades")
+    .select("id, name, level")
+    .in("id", fields.gradeIds);
+  const grades = ((gradeRows ?? []) as any[]).map((g) => ({
+    id: String(g.id),
+    name: String(g.name),
+    level: Number(g.level),
+  }));
+  if (grades.length !== fields.gradeIds.length) return { error: lt("oly2.err.grades") };
 
-  // Validate the bulk file BEFORE creating anything: a package with zero
-  // valid questions must never be created in the first place.
-  const parsedFile = await readBulkFile(fd, t);
-  if ("error" in parsedFile) return { error: parsedFile.error };
+  const typeRes = await resolveOlympiadTypeId(supabase, fields, t);
+  if ("error" in typeRes) return { error: typeRes.error };
 
+  // Round 34: validate EVERY grade's file BEFORE creating anything. The
+  // package must not be creatable while any selected grade lacks a valid
+  // pool — a bad file in one grade blocks the whole creation, and the admin
+  // sees each failing grade + row. (Server-side; the client mirror is UX.)
   const { activeByNorm, defaultType } = await loadActiveTypeRules(supabase);
-  const rows = validateRows(parsedFile.payload, t, activeByNorm, defaultType, gradeLevel);
-  if (rows.validItems.length === 0) {
+  const perGrade: {
+    grade: { id: string; name: string; level: number };
+    rows: ValidatedRows;
+  }[] = [];
+  const badGrades: string[] = [];
+  const allErrors: { index: number; error: string }[] = [];
+  for (const grade of grades) {
+    const parsed = await readBulkFile(fd, t, `file_${grade.id}`);
+    if ("error" in parsed) {
+      badGrades.push(grade.name);
+      continue;
+    }
+    const rows = validateRows(parsed.payload, t, activeByNorm, defaultType, grade.level);
+    if (rows.validItems.length === 0 || rows.errors.length > 0) {
+      badGrades.push(grade.name);
+      for (const e of rows.errors) {
+        allErrors.push({ index: e.index, error: `${grade.name}: ${e.error}` });
+      }
+      continue;
+    }
+    perGrade.push({ grade, rows });
+  }
+  if (badGrades.length > 0) {
     return {
-      error: t("oly2.err.needQuestions"),
-      result: { total: rows.total, successful: 0, failed: rows.total, errors: rows.errors },
+      error: lt("oly2.err.gradeFiles").replace("{grades}", badGrades.join(", ")),
+      result: {
+        total: allErrors.length,
+        successful: 0,
+        failed: allErrors.length,
+        errors: allErrors,
+      },
     };
   }
 
-  // Create the package — same insert path (auto code + retry) as save.
+  // Create the package — grade_id is trigger-derived from the target rows.
   const pkgId = await insertPackageRow(
     supabase,
     {
       subject_id: fields.subjectId,
-      grade_id: fields.gradeId,
+      olympiad_type_id: typeRes.typeId,
       price_amount: fields.price,
       status: fields.status,
       event_starts_at: fields.eventAt,
@@ -586,63 +767,208 @@ export async function createOlympiadPackageWithQuestions(
   );
   if (!pkgId) return { error: t("err.server") };
 
+  // Target grades BEFORE the imports (the pool guard trigger checks them).
+  const { error: gErr } = await supabase
+    .from("olympiad_package_grades")
+    .insert(fields.gradeIds.map((g) => ({ olympiad_package_id: pkgId, grade_id: g })));
+  if (gErr) {
+    console.error("[admin] olympiad grade rows insert failed", gErr.message);
+    await rollbackNewPackage(supabase, pkgId);
+    return { error: t("err.server") };
+  }
+
   const trErr = await upsertPackageTranslations(supabase, fd, pkgId, false);
   if (trErr) {
     await rollbackNewPackage(supabase, pkgId);
     return { error: t("err.server") };
   }
 
-  const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows);
-  if ("error" in imp) {
-    await rollbackNewPackage(supabase, pkgId);
-    return { error: imp.error };
+  // Import EVERY grade's pool. Pre-validation makes per-row RPC failures
+  // exceptional (a server-side race); ANY grade ending at 0 questions — or
+  // ANY failed row — undoes the whole creation, so a package can never exist
+  // with a hole in one grade's pool.
+  const combined: BulkResult = { total: 0, successful: 0, failed: 0, errors: [] };
+  for (const { grade, rows } of perGrade) {
+    const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows, grade.id);
+    if ("error" in imp) {
+      await rollbackNewPackage(supabase, pkgId);
+      return { error: lt("oly2.err.gradeImport").replace("{grade}", grade.name) };
+    }
+    combined.total += imp.result.total;
+    combined.successful += imp.result.successful;
+    combined.failed += imp.result.failed;
+    for (const e of imp.result.errors) {
+      combined.errors.push({ index: e.index, error: `${grade.name}: ${e.error}` });
+    }
+    if (imp.result.successful === 0 || imp.result.failed > 0) {
+      await rollbackNewPackage(supabase, pkgId);
+      await writeAuditLog({
+        actorProfileId: ctx.profileId,
+        action: "admin.olympiad.create_rolled_back",
+        targetTable: "olympiad_packages",
+        targetId: pkgId,
+        metadata: { grade: grade.name, failed: imp.result.failed },
+        severity: "warning",
+        success: false,
+      });
+      return {
+        error: lt("oly2.err.gradeFiles").replace("{grades}", grade.name),
+        result: combined,
+      };
+    }
   }
-  const result = imp.result;
 
-  if (result.successful === 0) {
-    // Nothing imported → the package would be empty: undo the creation and
-    // surface the per-row errors so the admin can fix the file and retry.
-    await rollbackNewPackage(supabase, pkgId);
-    await writeAuditLog({
-      actorProfileId: ctx.profileId,
-      action: "admin.olympiad.create_rolled_back",
-      targetTable: "olympiad_packages",
-      targetId: pkgId,
-      metadata: { total: result.total, failed: result.failed },
-      severity: "warning",
-      success: false,
-    });
-    return { error: t("oly2.err.importAllFailed"), result };
-  }
-
-  // Audit like saveOlympiadPackage's create today, plus the import counters.
   await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.olympiad.create",
     targetTable: "olympiad_packages",
     targetId: pkgId,
-    metadata: { status: fields.status, price: fields.price },
-  });
-  await writeAuditLog({
-    actorProfileId: ctx.profileId,
-    action: "admin.olympiad.bulk_import",
-    targetTable: "olympiad_packages",
-    targetId: pkgId,
     metadata: {
-      total: result.total,
-      successful: result.successful,
-      failed: result.failed,
+      status: fields.status,
+      price: fields.price,
+      grades: grades.map((g) => g.level),
+      questions: combined.successful,
     },
   });
 
   revalidatePath("/olympiad");
-  if (result.failed === 0) {
-    // Everything imported — continue on the package's edit page.
-    redirect(`/olympiad/${pkgId}/edit`);
+  // All grades imported fully — continue on the package's edit page.
+  redirect(`/olympiad/${pkgId}/edit`);
+}
+
+// ---------------------------------------------------------------------------
+// Round 34 — grade management on the EDIT page. A grade is only ever ADDED
+// together with its question file (no grade can exist with an empty pool),
+// and only REMOVED through the guarded RPC (blocked while purchased; pool
+// archived, never deleted).
+// ---------------------------------------------------------------------------
+
+export type OlympiadGradeState =
+  | { ok?: boolean; error?: string; result?: BulkResult }
+  | null;
+
+export async function addOlympiadPackageGrade(
+  _prev: OlympiadGradeState,
+  fd: FormData,
+): Promise<OlympiadGradeState> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+  const lt = olympiadLocalStrings(await getLocale());
+  const pkgId = s(fd, "__id");
+  const gradeId = s(fd, "grade_id");
+  if (!UUID_RE.test(pkgId) || !UUID_RE.test(gradeId)) return { error: t("err.server") };
+
+  const supabase = await createClient();
+  const { data: pkg } = await supabase
+    .from("olympiad_packages")
+    .select("id")
+    .eq("id", pkgId)
+    .maybeSingle();
+  if (!pkg) return { error: t("err.server") };
+  const { data: grade } = await supabase
+    .from("grades")
+    .select("id, name, level")
+    .eq("id", gradeId)
+    .maybeSingle();
+  if (!grade) return { error: lt("oly2.err.grades") };
+  const { data: already } = await supabase
+    .from("olympiad_package_grades")
+    .select("grade_id")
+    .eq("olympiad_package_id", pkgId)
+    .eq("grade_id", gradeId)
+    .maybeSingle();
+  if (already) return { error: lt("oly2.err.gradeExists") };
+
+  // The new grade's pool file — validated fully BEFORE any write.
+  const parsed = await readBulkFile(fd, t, "file");
+  if ("error" in parsed) return { error: parsed.error };
+  const { activeByNorm, defaultType } = await loadActiveTypeRules(supabase);
+  const rows = validateRows(parsed.payload, t, activeByNorm, defaultType, Number(grade.level));
+  if (rows.validItems.length === 0 || rows.errors.length > 0) {
+    return {
+      error: lt("oly2.err.gradeFiles").replace("{grades}", String(grade.name)),
+      result: { total: rows.total, successful: 0, failed: rows.total, errors: rows.errors },
+    };
   }
-  // Partial success: the package exists with `successful` questions; the
-  // client shows "created with N questions, M rows skipped" + row errors.
-  return { ok: true, packageId: pkgId, result };
+
+  const { error: gErr } = await supabase
+    .from("olympiad_package_grades")
+    .insert({ olympiad_package_id: pkgId, grade_id: gradeId });
+  if (gErr) {
+    console.error("[admin] add grade failed", gErr.message);
+    return { error: t("err.server") };
+  }
+
+  const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows, gradeId);
+  const failed =
+    "error" in imp || imp.result.successful === 0 || imp.result.failed > 0;
+  if (failed) {
+    // Undo the half-added grade so no empty/partial pool is left behind. Its
+    // few just-imported questions (if any) go with it via the RPC's archive…
+    // they cannot: bulk rows are fresh and unanswered — delete them directly.
+    await supabase
+      .from("questions")
+      .delete()
+      .eq("olympiad_package_id", pkgId)
+      .eq("grade_id", gradeId);
+    await supabase
+      .from("olympiad_package_grades")
+      .delete()
+      .eq("olympiad_package_id", pkgId)
+      .eq("grade_id", gradeId);
+    return {
+      error:
+        "error" in imp
+          ? imp.error
+          : lt("oly2.err.gradeImport").replace("{grade}", String(grade.name)),
+      result: "error" in imp ? undefined : imp.result,
+    };
+  }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.grade_add",
+    targetTable: "olympiad_packages",
+    targetId: pkgId,
+    metadata: { grade: grade.name, questions: imp.result.successful },
+  });
+  revalidatePath(`/olympiad/${pkgId}/edit`);
+  return { ok: true, result: imp.result };
+}
+
+export async function removeOlympiadPackageGradeAction(
+  _prev: OlympiadGradeState,
+  fd: FormData,
+): Promise<OlympiadGradeState> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+  const lt = olympiadLocalStrings(await getLocale());
+  const pkgId = s(fd, "__id");
+  const gradeId = s(fd, "grade_id");
+  if (!UUID_RE.test(pkgId) || !UUID_RE.test(gradeId)) return { error: t("err.server") };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("remove_olympiad_package_grade", {
+    p_package_id: pkgId,
+    p_grade_id: gradeId,
+  });
+  if (error) {
+    const hint = (error as { hint?: string }).hint ?? "";
+    if (hint === "grade_has_purchases") return { error: lt("oly2.err.gradeHasPurchases") };
+    if (hint === "last_grade") return { error: lt("oly2.err.lastGrade") };
+    console.error("[admin] remove grade failed", error.message);
+    return { error: t("err.server") };
+  }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.grade_remove",
+    targetTable: "olympiad_packages",
+    targetId: pkgId,
+    metadata: { grade_id: gradeId },
+  });
+  revalidatePath(`/olympiad/${pkgId}/edit`);
+  return { ok: true };
 }
 
 // Links a browser-uploaded cover image to the package. Mirrors the hardened
@@ -814,6 +1140,7 @@ type PoolLocaleContent = {
 export type OlympiadPoolQuestionData = {
   id: string;
   status: string;
+  gradeId: string;
   topicId: string;
   subtopicId: string;
   correct: number; // order_index of the correct option, -1 when none
@@ -851,12 +1178,13 @@ async function getPoolQuestion(
   id: string;
   status: string;
   primary_locale: string;
+  grade_id: string | null;
   topic_id: string | null;
   subtopic_id: string | null;
 } | null> {
   const { data } = await supabase
     .from("questions")
-    .select("id, status, primary_locale, topic_id, subtopic_id")
+    .select("id, status, grade_id, primary_locale, topic_id, subtopic_id")
     .eq("id", qId)
     .eq("olympiad_package_id", pkgId)
     .maybeSingle();
@@ -954,6 +1282,7 @@ export async function loadOlympiadPoolQuestion(
   return {
     id: String(q.id),
     status: String(q.status),
+    gradeId: q.grade_id ? String(q.grade_id) : "",
     topicId: q.topic_id ? String(q.topic_id) : "",
     subtopicId: q.subtopic_id ? String(q.subtopic_id) : "",
     correct,
@@ -987,6 +1316,18 @@ export async function saveOlympiadPackageQuestion(
   const existing = qId ? await getPoolQuestion(supabase, pkgId, qId) : null;
   if (qId && !existing) return { error: t("err.server") };
 
+  // Round 34: the question belongs to ONE of the package's grade pools. The
+  // form sends grade_id; a single-target package may omit it (that target).
+  const pkgGrades = await packageGradeRows(supabase, pkgId);
+  let poolGradeId = s(fd, "grade_id");
+  if (!poolGradeId && pkgGrades.length === 1) poolGradeId = pkgGrades[0].id;
+  if (
+    pkgGrades.length > 0 &&
+    (!UUID_RE.test(poolGradeId) || !pkgGrades.some((g) => g.id === poolGradeId))
+  ) {
+    return { error: olympiadLocalStrings(await getLocale())("oly2.err.grades") };
+  }
+
   // ---- Optional olympiad-scoped taxonomy (never exam topics) ---------------
   const topicId = s(fd, "topic_id");
   const subtopicId = s(fd, "subtopic_id");
@@ -1003,8 +1344,8 @@ export async function saveOlympiadPackageQuestion(
       tp.scope !== "olympiad" ||
       String(tp.subject_id) !== String(pkg.subject_id) ||
       (tp.grade_id != null &&
-        pkg.grade_id != null &&
-        String(tp.grade_id) !== String(pkg.grade_id))
+        poolGradeId &&
+        String(tp.grade_id) !== String(poolGradeId))
     ) {
       return { error: lt("olyq.err.taxonomy") };
     }
@@ -1108,7 +1449,7 @@ export async function saveOlympiadPackageQuestion(
       .insert({
         olympiad_package_id: pkgId,
         subject_id: pkg.subject_id,
-        grade_id: pkg.grade_id,
+        grade_id: poolGradeId || null,
         topic_id: topicId || null,
         subtopic_id: subtopicId || null,
         type_id: qType.id,
@@ -1131,7 +1472,7 @@ export async function saveOlympiadPackageQuestion(
       .from("questions")
       .update({
         subject_id: pkg.subject_id,
-        grade_id: pkg.grade_id,
+        grade_id: poolGradeId || null,
         topic_id: topicId || null,
         subtopic_id: subtopicId || null,
         // Explicit NULL: trg_question_term_guard re-inherits the term from the

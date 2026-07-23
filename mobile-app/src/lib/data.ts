@@ -233,42 +233,64 @@ export type OlympiadPackageRow = {
   sale_starts_at: string | null;
   sale_ends_at: string | null;
   subject: { code: string | null; name: string } | null;
+  /** Single-grade legacy view (null for multi-grade packages). */
   grade: { level: number; name: string } | null;
+  /** Round 34: the FULL target set with per-grade published pool counts. */
+  grades: { grade_id: string; level: number; name: string; question_count: number }[];
+  /** Published questions the CALLER's family actually receives (server-computed). */
+  my_question_count: number;
   cover: { bucket: string; path: string } | null;
   title: string;
   description: string;
 };
 
 export async function fetchOlympiadCatalog(locale: Locale): Promise<OlympiadPackageRow[]> {
-  const { data, error } = await supabase
-    .from("olympiad_packages")
-    .select(
-      "id, price_amount, currency, questions_per_attempt, duration_minutes, event_starts_at, sale_starts_at, sale_ends_at, subject:subject_id(code, name), grade:grade_id(level, name), cover:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
-    )
-    .eq("status", "active")
-    .order("event_starts_at", { ascending: true, nullsFirst: false });
+  // Round 34: get_my_olympiad_catalog() is role-aware and SERVER-enforced —
+  // a student receives only packages covering THEIR grade; a parent only
+  // those covering at least one of their children's grades (deduped by
+  // construction; empty for a parent with no children). Owned packages come
+  // from the purchases tables instead (lifetime access, never filtered).
+  const { data, error } = await supabase.rpc("get_my_olympiad_catalog");
   if (error) throw error;
-  return (data ?? []).map((p: any) => {
-    const tr = (p.olympiad_package_translations ?? []) as {
-      locale: string;
-      title: string;
-      description: string | null;
-    }[];
-    const t = tr.find((x) => x.locale === locale) ?? tr.find((x) => x.locale === "az");
+  return ((data ?? []) as any[]).map((p: any) => {
+    const grades = Array.isArray(p.grades)
+      ? (p.grades as any[])
+          .map((g) => ({
+            grade_id: String(g.grade_id ?? ""),
+            level: Number(g.level ?? 0),
+            name: String(g.name ?? ""),
+            question_count: Number(g.question_count ?? 0) || 0,
+          }))
+          .filter((g) => g.grade_id)
+      : [];
+    const pick = (az: unknown, loc: unknown) =>
+      String((locale === "az" ? az : loc) ?? az ?? "");
     return {
       id: p.id,
       price_amount: p.price_amount,
-      currency: p.currency,
-      questions_per_attempt: p.questions_per_attempt,
+      currency: p.currency ?? "AZN",
+      questions_per_attempt: 0, // display-legacy; cards use real pool counts
       duration_minutes: p.duration_minutes,
-      event_starts_at: p.event_starts_at,
+      event_starts_at: p.event_at ?? null,
       sale_starts_at: p.sale_starts_at ?? null,
       sale_ends_at: p.sale_ends_at ?? null,
-      subject: p.subject ?? null,
-      grade: p.grade ?? null,
-      cover: p.cover ?? null,
-      title: t?.title ?? "",
-      description: t?.description ?? "",
+      subject:
+        p.subject_name != null
+          ? { code: p.subject_code ?? null, name: String(p.subject_name) }
+          : null,
+      grade:
+        grades.length === 1 ? { level: grades[0].level, name: grades[0].name } : null,
+      grades,
+      my_question_count: Number(p.my_question_count ?? 0) || 0,
+      cover:
+        p.cover_bucket && p.cover_path
+          ? { bucket: String(p.cover_bucket), path: String(p.cover_path) }
+          : null,
+      title: pick(p.title_az, locale === "en" ? p.title_en : p.title_ru),
+      description: pick(
+        p.description_az,
+        locale === "en" ? p.description_en : p.description_ru,
+      ),
     };
   });
 }
@@ -292,6 +314,8 @@ export type PublicOlympiadPackage = {
   subject_name: string | null;
   grade_level: number | null;
   grade_label: string | null;
+  /** Round 34: FULL target-grade set (multi-grade packages); null = legacy. */
+  grade_levels: number[] | null;
   sale_ends_at: string | null;
   event_at: string | null;
   question_count: number | null;

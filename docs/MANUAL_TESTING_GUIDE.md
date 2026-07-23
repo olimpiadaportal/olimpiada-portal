@@ -1671,3 +1671,41 @@ If anything doesn't match, tell me the **WW-#** + what you saw.
 - **Web** parent profile: same behaviour, and opening the editor pre-fills your existing number and country, not a blank AZ field.
 
 If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
+
+---
+
+# Round 34 — multi-grade olympiad packages + news fixes
+
+## ZZ1. Admin → create a multi-grade package
+- Admin sidebar: **"Olimpiada növləri" is gone** (types now live inside the package flow).
+- Olympiad → New: the FIRST field is **Olimpiada növü** (required). Pick "Digər (yeni növ daxil et)" → a name box appears; entering an existing name with different casing must reuse it, a new name creates it.
+- Select grades **4, 5 and 6** (checkboxes) → one upload slot appears PER grade with a status chip (Fayl seçilməyib / Hazır: n sual / n sətirdə xəta).
+- Upload valid JSON for 4 and 5 but NOT 6 → the create button stays disabled; force-submitting is rejected with a message naming grade 6. Upload all three → package creates; the edit page shows all three grades with their counts.
+
+## ZZ2. Admin → edit flows
+- Grades & Pools card: **adding a grade requires its question file in the same action**; removing a grade with purchased entitlements is refused with a friendly message; removing an unpurchased grade archives its questions (they stay listed as archived).
+- Question list: has a **grade column + grade filter**; adding/editing a single question on a multi-grade package requires picking which grade it belongs to.
+- Setting status to Active while any grade pool is empty is refused, naming the grades.
+- All save/upload/remove buttons show a **spinner + disabled state** while working (no double submits).
+
+## ZZ3. Student sees ONLY their grade
+- A grade-5 student's Olimpiadalar tab (web arena + mobile): shows the 4–6 package, does NOT show a grade-4-only package. The card's question count = the **grade-5 pool size**, not the whole package.
+- Start an attempt on the 4–6 package: every question must come from the grade-5 pool (spot-check a few against the admin pool list).
+
+## ZZ4. Parent sees only their children's grades
+- A parent with a grade-5 and a grade-10 child sees packages covering 5 or 10 — each ONCE, never duplicated; a grades 7–8 package must not appear (web catalog, per-child page, mobile tab).
+- Buying for the grade-5 child then checking the purchase in admin: it should record grade 5. Trying to buy a package for a child whose grade it doesn't cover shows the friendly "not for this grade" message.
+- Cards read **"Əldə et"** (not "Satın al") on web and mobile.
+
+## ZZ5. Public site
+- Landing/services olympiad cards show a grade RANGE chip ("4–6-cı siniflər") for multi-grade packages.
+- **Logged OUT (incognito): news covers now render** on /news and article pages (they were blank before — this was the news-image bug).
+
+## ZZ6. News notification keeps you signed in
+- As a STUDENT, click a "new article" notification → you land on the ARENA article page (student chrome, your nav intact) — no marketing header, no Login buttons.
+- As a PARENT, click it → the public article opens but the header shows **"Panelim"** (→ dashboard) instead of Login/Register. Back navigation returns you to your panel still signed in.
+
+## ZZ7. Contact map on iOS
+- On an iPhone (Expo Go / TestFlight build), the Contact map renders (previously: "Google Maps enabled API must be used in iframe"). Android unchanged. Tapping still opens directions.
+
+If anything doesn't match, tell me the **ZZ-#** + what you saw.

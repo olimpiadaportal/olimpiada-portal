@@ -42,7 +42,10 @@ export const NAV: NavGroup[] = [
       // Dedicated advanced page (structure rules: status / option & correct
       // counts) — replaced the generic /manage registry page.
       { label: "nav.questionTypes", href: "/question-types", adminOnly: true },
-      { label: "nav.olympiadTypes", href: "/manage/olympiad-types", adminOnly: true },
+      // Round 34: Olympiad Types left the sidebar — the type is now picked
+      // (or created via "Other") INSIDE the package create/edit flow. The
+      // /manage/olympiad-types registry route stays reachable for deep links;
+      // no type records were touched.
     ],
   },
   {

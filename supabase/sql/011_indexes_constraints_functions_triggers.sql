@@ -2504,17 +2504,20 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_owner     uuid;
-  v_price     numeric(10,2);
-  v_currency  text;
-  v_status    public.catalog_status;
-  v_starts    timestamptz;
-  v_ends      timestamptz;
-  v_existing  uuid;
-  v_ex_status text;
-  v_id        uuid;
+  v_owner       uuid;
+  v_price       numeric(10,2);
+  v_currency    text;
+  v_status      public.catalog_status;
+  v_starts      timestamptz;
+  v_ends        timestamptz;
+  v_child_grade uuid;
+  v_grades      uuid[];
+  v_buy_grade   uuid;
+  v_existing    uuid;
+  v_ex_status   text;
+  v_id          uuid;
 begin
-  select created_by_parent_profile_id into v_owner
+  select created_by_parent_profile_id, grade_id into v_owner, v_child_grade
   from public.students where profile_id = p_student_profile_id;
   if v_owner is null then raise exception 'purchase: child has no owning parent'; end if;
 
@@ -2532,6 +2535,21 @@ begin
       using errcode = 'check_violation', hint = 'package_not_on_sale';
   end if;
 
+  -- Round 34: when the package targets grades, the child's CURRENT grade must
+  -- be one of them, and the purchase snapshots it (attempts draw THAT pool
+  -- forever — yearly promotion never re-points a lifetime entitlement).
+  -- Empty target set = legacy grade-less package: buyable by anyone (old rule).
+  select array_agg(g.grade_id) into v_grades
+  from public.olympiad_package_grades g
+  where g.olympiad_package_id = p_package_id;
+  if v_grades is not null then
+    if v_child_grade is null or not (v_child_grade = any(v_grades)) then
+      raise exception 'purchase: package does not cover the child''s grade'
+        using errcode = 'check_violation', hint = 'package_not_for_grade';
+    end if;
+    v_buy_grade := v_child_grade;
+  end if;
+
   -- Lifetime: one purchase per child/package (idempotent).
   select id, status into v_existing, v_ex_status from public.olympiad_purchases
   where student_profile_id = p_student_profile_id and olympiad_package_id = p_package_id;
@@ -2539,9 +2557,11 @@ begin
     if v_ex_status = 'active' then
       return jsonb_build_object('purchase_id', v_existing, 'status', 'active', 'existing', true);
     end if;
-    -- Audit L17 (migration 035): re-buying after a refund records the CURRENT price/date.
+    -- Audit L17 (migration 035): re-buying after a refund records the CURRENT
+    -- price/date — and now also the CURRENT grade entitlement.
     update public.olympiad_purchases
        set status = 'active', amount = v_price, currency = v_currency,
+           grade_id = coalesce(v_buy_grade, grade_id),
            purchased_at = now(), updated_at = now()
      where id = v_existing;
     return jsonb_build_object('purchase_id', v_existing, 'status', 'active', 'existing', true);
@@ -2549,9 +2569,9 @@ begin
 
   insert into public.olympiad_purchases
     (olympiad_package_id, owner_parent_profile_id, student_profile_id,
-     amount, currency, status, purchased_at, provider)
+     amount, currency, status, purchased_at, provider, grade_id)
   values
-    (p_package_id, v_owner, p_student_profile_id, v_price, v_currency, 'active', now(), 'none')
+    (p_package_id, v_owner, p_student_profile_id, v_price, v_currency, 'active', now(), 'none', v_buy_grade)
   returning id into v_id;
 
   return jsonb_build_object('purchase_id', v_id, 'status', 'active', 'existing', false);
@@ -2561,7 +2581,10 @@ $$;
 comment on function public.purchase_olympiad(uuid, uuid) is
   'Parent one-time LIFETIME purchase of an olympiad package for a child. '
   'service_role only (payment stubbed). Migration 070: only packages passing '
-  'olympiad_package_on_sale are purchasable (hint package_not_on_sale otherwise).';
+  'olympiad_package_on_sale are purchasable (hint package_not_on_sale). '
+  'Round 34: the child''s grade must be a package target grade (hint '
+  'package_not_for_grade) and is SNAPSHOTTED on the purchase row.';
+
 
 -- Migration 047: olympiad attempts run on the TIMED test engine (jsonb return,
 -- TRUE resume, deadline from olympiad_packages.duration_minutes, pre-inserted
@@ -2570,29 +2593,33 @@ comment on function public.purchase_olympiad(uuid, uuid) is
 -- item 1 — no questions_per_attempt cap) and are marked RATED.
 drop function if exists public.start_olympiad_attempt(uuid);
 
-create function public.start_olympiad_attempt(p_package_id uuid)
+create or replace function public.start_olympiad_attempt(p_package_id uuid)
 returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_student  uuid := public.current_profile_id();
-  v_pkg      record;
-  v_duration int;
-  v_existing record;
-  v_qids     uuid[];
-  v_attempt  uuid;
-  v_deadline timestamptz;
+  v_student    uuid := public.current_profile_id();
+  v_pkg        record;
+  v_duration   int;
+  v_existing   record;
+  v_qids       uuid[];
+  v_attempt    uuid;
+  v_deadline   timestamptz;
+  v_grades     uuid[];
+  v_buy_grade  uuid;
+  v_cur_grade  uuid;
+  v_pool_grade uuid;
 begin
   if v_student is null then raise exception 'olympiad: not authenticated'; end if;
 
   -- Purchase-only (owner ruling 2026-07-06, migration 038): free-access/trial/
   -- giveaway windows cover SUBJECTS only — olympiad packages are always bought.
-  if not exists (
-    select 1 from public.olympiad_purchases
-    where student_profile_id = v_student and olympiad_package_id = p_package_id and status = 'active'
-  ) then
+  select grade_id into v_buy_grade
+  from public.olympiad_purchases
+  where student_profile_id = v_student and olympiad_package_id = p_package_id and status = 'active';
+  if not found then
     raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
   end if;
 
@@ -2603,6 +2630,27 @@ begin
     raise exception 'olympiad: package not found' using errcode = 'no_data_found';
   end if;
   v_duration := v_pkg.dur_min * 60;
+
+  -- Round 34: resolve WHICH grade's pool this child is entitled to.
+  --   purchase snapshot → current grade → the only target grade (legacy
+  --   single-grade purchases made before the snapshot column) → error.
+  -- Empty target set = legacy grade-less package → whole pool (old behavior).
+  select array_agg(g.grade_id) into v_grades
+  from public.olympiad_package_grades g
+  where g.olympiad_package_id = p_package_id;
+  if v_grades is not null then
+    select grade_id into v_cur_grade from public.students where profile_id = v_student;
+    if v_buy_grade is not null and v_buy_grade = any(v_grades) then
+      v_pool_grade := v_buy_grade;
+    elsif v_cur_grade is not null and v_cur_grade = any(v_grades) then
+      v_pool_grade := v_cur_grade;
+    elsif cardinality(v_grades) = 1 then
+      v_pool_grade := v_grades[1];
+    else
+      raise exception 'olympiad: package does not cover your grade'
+        using errcode = 'check_violation', hint = 'package_not_for_grade';
+    end if;
+  end if;
 
   -- TRUE resume: one open olympiad attempt at a time (test-engine parity).
   select id, deadline_at, duration_seconds into v_existing
@@ -2624,13 +2672,14 @@ begin
      where id = v_existing.id;
   end if;
 
-  -- ALL of the package's published questions, random order (owner item 1,
-  -- migration 057: a package may hold ANY number of questions — no cap).
+  -- ALL published questions of the ENTITLED GRADE's pool, random order
+  -- (migration 057: no cap; Round 34: never another grade's questions).
   select coalesce(array_agg(id), '{}') into v_qids from (
     select q.id
     from public.questions q
     where q.olympiad_package_id = p_package_id
       and q.status = 'published'
+      and (v_pool_grade is null or q.grade_id = v_pool_grade)
       and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct)
     order by random()
   ) picked;
@@ -2661,8 +2710,10 @@ $$;
 
 comment on function public.start_olympiad_attempt(uuid) is
   'Child starts/resumes a TIMED, RATED olympiad attempt on a PURCHASED package. '
-  'Since migration 057 the attempt contains ALL of the package''s published questions '
-  '(random order; no fixed count). Deadline from olympiad_packages.duration_minutes.';
+  'Round 34: draws ALL published questions of the ENTITLED grade''s pool only '
+  '(purchase snapshot → current grade → single target; hint '
+  'package_not_for_grade when uncovered). Deadline from duration_minutes.';
+
 
 revoke all on function public.purchase_olympiad(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.purchase_olympiad(uuid, uuid) to service_role;
@@ -2679,9 +2730,12 @@ grant execute on function public.start_olympiad_attempt(uuid) to authenticated, 
 -- CREATION-ONLY since migration 059 (owner item 15): rejected once the package
 -- already has questions. Administrator-only (audit H2); never anon-executable.
 -- ---------------------------------------------------------------------------
-create or replace function public.bulk_insert_olympiad_package_questions(
+drop function if exists public.bulk_insert_olympiad_package_questions(uuid, jsonb);
+
+create function public.bulk_insert_olympiad_package_questions(
   p_package_id uuid,
-  p_questions  jsonb
+  p_questions  jsonb,
+  p_grade_id   uuid default null
 )
 returns jsonb
 language plpgsql
@@ -2700,6 +2754,7 @@ declare
   v_topic    uuid; v_subtopic uuid;
   v_qid      uuid; v_optid uuid;
   v_pl       text; v_loc text; v_opt jsonb; v_order int;
+  v_pool_grade uuid;
 begin
   -- Audit H2 (migration 035): olympiad pools are an Admin-only module (content
   -- managers must never manage Olympiad Preparation) — no permission fallback.
@@ -2715,11 +2770,30 @@ begin
     raise exception 'bulk_insert_olympiad_package_questions: package not found';
   end if;
 
-  -- CREATION-ONLY (owner item 15, migration 059): once a package holds
-  -- questions, further bulk imports are rejected — uploads happen only during
-  -- the create-package flow (a totally-failed first import may be retried).
-  if exists (select 1 from public.questions where olympiad_package_id = p_package_id) then
-    raise exception 'olympiad: questions can only be bulk uploaded during package creation'
+  -- Round 34: the import targets ONE grade pool. Explicit p_grade_id (the new
+  -- per-grade admin flow) or the package's legacy single grade (old callers).
+  v_pool_grade := coalesce(p_grade_id,
+    (select grade_id from public.olympiad_packages where id = p_package_id));
+  if v_pool_grade is null then
+    raise exception 'bulk_insert_olympiad_package_questions: no target grade'
+      using errcode = 'check_violation', hint = 'pool_grade_missing';
+  end if;
+  if exists (select 1 from public.olympiad_package_grades g
+              where g.olympiad_package_id = p_package_id)
+     and not exists (select 1 from public.olympiad_package_grades g
+                      where g.olympiad_package_id = p_package_id
+                        and g.grade_id = v_pool_grade) then
+    raise exception 'bulk_insert_olympiad_package_questions: grade is not a package target'
+      using errcode = 'check_violation', hint = 'pool_grade_not_targeted';
+  end if;
+
+  -- CREATION-ONLY, now PER GRADE (owner item 15, migration 059 → Round 34):
+  -- once THIS grade's pool holds questions, further bulk imports into it are
+  -- rejected — each grade's pool is uploaded exactly once, during package
+  -- creation or when the grade is first added to the package.
+  if exists (select 1 from public.questions
+              where olympiad_package_id = p_package_id and grade_id = v_pool_grade) then
+    raise exception 'olympiad: questions can only be bulk uploaded once per grade'
       using errcode = 'check_violation';
   end if;
 
@@ -2733,8 +2807,10 @@ begin
       end if;
       if v_subject is null then raise exception 'no subject (package has none and item has no subject)'; end if;
 
-      select id into v_grade from public.grades where level = nullif(v_item->'meta'->>'grade_level','')::smallint;
-      if v_grade is null then raise exception 'unknown grade_level %', coalesce(v_item->'meta'->>'grade_level','(null)'); end if;
+      -- Round 34: the TARGET GRADE is authoritative for every row — a stray
+      -- meta.grade_level in the file can never leak a question into another
+      -- grade's pool.
+      v_grade := v_pool_grade;
 
       if coalesce(v_item->'meta'->>'type','') <> '' then
         select id into v_type from public.question_types where name = (v_item->'meta'->>'type');
@@ -2839,13 +2915,15 @@ begin
 end;
 $$;
 
-comment on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) is
-  'Bulk import of PRIVATE trilingual questions for one olympiad package — CREATION-'
-  'ONLY since migration 059 (rejected once the package has questions). Type optional '
-  '(single_choice, 5 options); olympiad-scoped optional taxonomy. Administrators only.';
+comment on function public.bulk_insert_olympiad_package_questions(uuid, jsonb, uuid) is
+  'Bulk import of PRIVATE trilingual questions into ONE GRADE POOL of an '
+  'olympiad package (Round 34). p_grade_id must be a package target grade '
+  '(default: the legacy single package grade). CREATION-ONLY PER GRADE — '
+  'rejected once that grade''s pool has questions. Administrators only.';
 
-revoke all on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) from public, anon;
-grant execute on function public.bulk_insert_olympiad_package_questions(uuid, jsonb) to authenticated, service_role;
+revoke all on function public.bulk_insert_olympiad_package_questions(uuid, jsonb, uuid) from public, anon;
+grant execute on function public.bulk_insert_olympiad_package_questions(uuid, jsonb, uuid) to authenticated, service_role;
+
 
 
 -- -----------------------------------------------------------------------------

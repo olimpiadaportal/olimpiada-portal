@@ -34,7 +34,7 @@ import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
-import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import { fetchOlympiadCatalog, publicStorageUrl, type OlympiadPackageRow } from "@/lib/data";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { fmtDate } from "@/features/parent/commerce";
@@ -134,6 +134,10 @@ export function OlympiadsScreen() {
 
   const poolCounts = poolCountsQ.data ?? {};
   const countOf = (packageId: string): number => poolCounts[packageId] ?? 0;
+  // Round 34: catalog rows carry the caller-relevant count (the student's
+  // OWN grade pool) — never another grade's total.
+  const catalogCountOf = (pkg: { id: string; my_question_count: number }): number =>
+    pkg.my_question_count > 0 ? pkg.my_question_count : countOf(pkg.id);
 
   const ownedIds = useMemo(
     () => new Set((ownedQ.data ?? []).map((o) => o.packageId)),
@@ -309,7 +313,7 @@ export function OlympiadsScreen() {
                           {pkg.title}
                         </AppText>
                         <AppText color={SCRIM_INK} style={{ fontSize: 12, opacity: 0.9 }}>
-                          {`${countOf(pkg.id)} ${t("oly4.questions")} · ${pkg.duration_minutes} ${t("mob.unit.min")}`}
+                          {`${catalogCountOf(pkg)} ${t("oly4.questions")} · ${pkg.duration_minutes} ${t("mob.unit.min")}`}
                         </AppText>
                       </LinearGradient>
                     </View>
@@ -323,9 +327,16 @@ export function OlympiadsScreen() {
                             bg={arena.panel2}
                           />
                         ) : null}
-                        {pkg.grade ? (
+                        {pkg.grades.length > 0 || pkg.grade ? (
                           <Chip
-                            label={formatGradeLabel(pkg.grade.level, locale, pkg.grade.name)}
+                            label={
+                              pkg.grades.length > 0
+                                ? formatGradeRangeLabel(
+                                    pkg.grades.map((g) => g.level),
+                                    locale,
+                                  )
+                                : formatGradeLabel(pkg.grade!.level, locale, pkg.grade!.name)
+                            }
                             color={arena.muted}
                             bg={arena.panel2}
                           />
@@ -469,11 +480,18 @@ export function OlympiadsScreen() {
                 value={subjectLabel(t, detail.subject.code, detail.subject.name)}
               />
             ) : null}
-            {detail.grade ? (
+            {detail.grades.length > 0 || detail.grade ? (
               <ListRow
                 icon={<GraduationCap size={18} color={arena.blue} strokeWidth={2} />}
                 title={t("lb.colGrade")}
-                value={formatGradeLabel(detail.grade.level, locale, detail.grade.name)}
+                value={
+                  detail.grades.length > 0
+                    ? formatGradeRangeLabel(
+                        detail.grades.map((g) => g.level),
+                        locale,
+                      )
+                    : formatGradeLabel(detail.grade!.level, locale, detail.grade!.name)
+                }
               />
             ) : null}
             <ListRow
@@ -488,7 +506,7 @@ export function OlympiadsScreen() {
             <ListRow
               icon={<ListChecks size={18} color={arena.blue} strokeWidth={2} />}
               title={t("oly4.qcount")}
-              value={`${countOf(detail.id)} ${t("oly4.questions")}`}
+              value={`${catalogCountOf(detail)} ${t("oly4.questions")}`}
             />
             <ListRow
               icon={<Clock size={18} color={arena.blue} strokeWidth={2} />}

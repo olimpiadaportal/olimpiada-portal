@@ -47,7 +47,7 @@ import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
-import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import { useAuthStore } from "@/features/auth/authStore";
 
 const PRICING_STALE_MS = 5 * 60_000;
@@ -215,10 +215,19 @@ function PublicPackagesSection() {
               r.subject_code || r.subject_name
                 ? subjectLabel(t, r.subject_code, r.subject_name)
                 : null;
+            // Round 34 (web parity): prefer the full multi-grade set; the
+            // legacy single grade covers old rows.
+            const levels = Array.isArray(r.grade_levels)
+              ? r.grade_levels.filter((n) => Number.isInteger(n))
+              : [];
             const grade =
-              r.grade_level != null || r.grade_label
-                ? formatGradeLabel(r.grade_level, locale, r.grade_label)
-                : null;
+              levels.length > 1
+                ? formatGradeRangeLabel(levels, locale)
+                : levels.length === 1
+                  ? formatGradeLabel(levels[0], locale, r.grade_label)
+                  : r.grade_level != null || r.grade_label
+                    ? formatGradeLabel(r.grade_level, locale, r.grade_label)
+                    : null;
             const saleEnds = pkgDate(r.sale_ends_at, locale);
             const eventAt = pkgDate(r.event_at, locale);
             const price = Number(r.price_amount ?? 0);

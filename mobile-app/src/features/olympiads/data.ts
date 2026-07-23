@@ -144,6 +144,11 @@ export async function startOlympiadAttempt(packageId: string): Promise<StartOlym
     p_package_id: packageId,
   });
   if (error) {
+    // Round 34: same errcode, distinct hint — the package no longer covers
+    // this student's grade (unreachable through the grade-filtered catalog).
+    if ((error as { hint?: string }).hint === "package_not_for_grade") {
+      return { ok: false, errorKey: "oly5.errNotForGrade" };
+    }
     if (error.code === "23514") return { ok: false, errorKey: "oly5.errNoAccess" };
     if (error.code === "P0002") return { ok: false, errorKey: "oly5.errEmpty" };
     return { ok: false, errorKey: "test.err.generic" };

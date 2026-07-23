@@ -70,6 +70,11 @@ export async function startOlympiad(formData: FormData): Promise<void> {
     // purchase for this child+package. no_data_found = the package pool has no
     // published questions yet. Raw Postgres text never reaches the client —
     // the olympiads page maps ?err= to trilingual notices.
+    // Round 34: same errcode, distinct hint — the package no longer covers
+    // this student's grade (should be unreachable through the filtered UI).
+    if ((error as { hint?: string }).hint === "package_not_for_grade") {
+      redirect("/child/olympiads?err=notforgrade");
+    }
     if (error.code === "23514") redirect("/child/olympiads?err=noaccess");
     if (error.code === "P0002") redirect("/child/olympiads?err=empty");
     redirect("/child/olympiads?err=1");

@@ -43,6 +43,16 @@ export default async function ChildOlympiadsPage({
   }
   const supabase = await createClient();
 
+  // Round 34: the storefront is GRADE-SCOPED — a student only browses packages
+  // whose target grades include their own (legacy grade-less packages stay
+  // visible). Owned packages are NOT filtered: purchases are lifetime.
+  const { data: me } = await supabase
+    .from("students")
+    .select("grade_id")
+    .eq("profile_id", child.profileId)
+    .maybeSingle();
+  const myGradeId: string | null = (me as any)?.grade_id ?? null;
+
   const [{ data: packages }, { data: purchases }, { data: openAttempts }] =
     await Promise.all([
       // Active listing is publicly browsable (RLS); covers resolve via the public
@@ -57,7 +67,7 @@ export default async function ChildOlympiadsPage({
       supabase
         .from("olympiad_purchases")
         .select(
-          "olympiad_package_id, status, olympiad_packages(olympiad_package_translations(locale, title))",
+          "olympiad_package_id, status, grade_id, olympiad_packages(olympiad_package_translations(locale, title))",
         )
         .eq("student_profile_id", child.profileId)
         .eq("status", "active"),
@@ -77,6 +87,27 @@ export default async function ChildOlympiadsPage({
   const owned = (purchases ?? []) as any[];
   const ownedIds = new Set(owned.map((p) => p.olympiad_package_id));
 
+  // Which of the active packages cover MY grade (empty target set = legacy,
+  // visible to all). Server-rendered — the client never sees other grades.
+  const activeIds = ((packages ?? []) as any[]).map((p) => p.id).filter(Boolean);
+  const coveredForMe = new Set<string>();
+  if (activeIds.length > 0) {
+    const { data: gradeRows } = await supabase
+      .from("olympiad_package_grades")
+      .select("olympiad_package_id, grade_id")
+      .in("olympiad_package_id", activeIds.slice(0, 100));
+    const targeted = new Map<string, string[]>();
+    for (const r of (gradeRows ?? []) as any[]) {
+      const list = targeted.get(r.olympiad_package_id) ?? [];
+      list.push(String(r.grade_id));
+      targeted.set(r.olympiad_package_id, list);
+    }
+    for (const id of activeIds) {
+      const set = targeted.get(id);
+      if (!set || (myGradeId && set.includes(myGradeId))) coveredForMe.add(id);
+    }
+  }
+
   // Round 21: REAL published pool size per package (RPC, migration 065) —
   // questions_per_attempt was a display-legacy default (25) the admin form
   // never writes, so a 50-question package still said "25". One call covers
@@ -90,16 +121,37 @@ export default async function ChildOlympiadsPage({
   )
     .filter(Boolean)
     .slice(0, 100); // DB-side cap; active listings never realistically exceed it.
-  const poolCounts = new Map<string, number>();
-  if (allPackageIds.length > 0) {
+  // Round 34: counts are PER GRADE POOL — the number each card shows is what
+  // THIS student would actually receive. Planned cards use the current grade;
+  // owned cards use the purchase's grade snapshot (survives promotion). One
+  // RPC call per distinct grade (2 in practice).
+  const idsByGrade = new Map<string | null, Set<string>>();
+  const wantCount = (gradeId: string | null, id: string) => {
+    const set = idsByGrade.get(gradeId) ?? new Set<string>();
+    set.add(id);
+    idsByGrade.set(gradeId, set);
+  };
+  for (const id of allPackageIds) wantCount(myGradeId, id);
+  for (const p of owned) wantCount((p.grade_id as string | null) ?? myGradeId, p.olympiad_package_id);
+  const poolCounts = new Map<string, number>(); // planned view (my grade)
+  const ownedCounts = new Map<string, number>(); // owned view (purchase grade)
+  for (const [gradeId, idSet] of idsByGrade) {
     const { data: countRows } = await supabase.rpc("get_olympiad_pool_counts", {
-      p_package_ids: allPackageIds,
+      p_package_ids: Array.from(idSet).slice(0, 100),
+      p_grade_id: gradeId,
     });
     for (const r of (countRows ?? []) as {
       package_id: string;
       question_count: number;
     }[]) {
-      poolCounts.set(r.package_id, Number(r.question_count ?? 0) || 0);
+      const n = Number(r.question_count ?? 0) || 0;
+      if (gradeId === myGradeId) poolCounts.set(r.package_id, n);
+      const ownRow = owned.find(
+        (p) =>
+          p.olympiad_package_id === r.package_id &&
+          ((p.grade_id ?? myGradeId) === gradeId),
+      );
+      if (ownRow) ownedCounts.set(r.package_id, n);
     }
   }
 
@@ -142,7 +194,7 @@ export default async function ChildOlympiadsPage({
   // Build the planned-card view models server-side (client component receives
   // only already-translated, serializable strings).
   const planned = ((packages ?? []) as any[])
-    .filter((p) => !ownedIds.has(p.id))
+    .filter((p) => !ownedIds.has(p.id) && coveredForMe.has(p.id))
     .map((p): { item: PlannedOlympiad; ts: number } => {
       const tr = pickTr(p.olympiad_package_translations);
       const n = poolCounts.get(p.id) ?? 0;
@@ -218,7 +270,10 @@ export default async function ChildOlympiadsPage({
   const playable: Playable[] = owned.map((p) => ({
     id: p.olympiad_package_id,
     title: ownedTitle(p),
-    questions: poolCounts.get(p.olympiad_package_id) ?? 0,
+    questions:
+      ownedCounts.get(p.olympiad_package_id) ??
+      poolCounts.get(p.olympiad_package_id) ??
+      0,
   }));
 
   return (
@@ -232,12 +287,17 @@ export default async function ChildOlympiadsPage({
           {t("oly5.errNoAccess")}
         </div>
       )}
+      {err === "notforgrade" && (
+        <div className="tst-notice warn" role="alert">
+          {t("oly5.errNotForGrade")}
+        </div>
+      )}
       {err === "empty" && (
         <div className="tst-notice warn" role="alert">
           {t("oly5.errEmpty")}
         </div>
       )}
-      {err && err !== "noaccess" && err !== "empty" && (
+      {err && err !== "noaccess" && err !== "empty" && err !== "notforgrade" && (
         <div className="tst-notice warn" role="alert">
           {t("test.err.generic")}
         </div>

@@ -46,6 +46,25 @@ export function buildMapEmbedUrl(query: string): string {
   return `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
 }
 
+/**
+ * iOS: the Google embed REFUSES to be a WKWebView's top-level document
+ * ("Google Maps enabled API must be used in iframe" — Android tolerated it).
+ * Rendering it through a local <iframe> wrapper satisfies that on both
+ * platforms and keeps the web-parity URL. encodeURIComponent output contains
+ * no quotes, so the src interpolation cannot break out of the attribute.
+ */
+export function buildMapWrapperHtml(query: string): string {
+  const src = buildMapEmbedUrl(query);
+  return (
+    '<!doctype html><html><head>' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<style>html,body{margin:0;padding:0;height:100%;overflow:hidden;background:transparent}' +
+    'iframe{border:0;width:100%;height:100%}</style></head>' +
+    `<body><iframe src="${src}" allowfullscreen loading="eager" ` +
+    'referrerpolicy="no-referrer-when-downgrade"></iframe></body></html>'
+  );
+}
+
 /** Documented Maps URL scheme: opens turn-by-turn directions to the address. */
 export function buildDirectionsUrl(query: string): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query)}`;
@@ -145,7 +164,7 @@ export function ContactMap({
           style={StyleSheet.absoluteFill}
         >
           <WebView
-            source={{ uri: embedUrl }}
+            source={{ html: buildMapWrapperHtml(query), baseUrl: "about:blank" }}
             // react-native-webview hands any url that fails `originWhitelist`
             // to Linking.openURL — an external open we never want — so the
             // whitelist stays wide and onShouldStartLoadWithRequest is the real

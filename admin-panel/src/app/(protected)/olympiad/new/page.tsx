@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { getDict, getLocale, getT } from "@/i18n/server";
 import { OlympiadCreateForm } from "@/components/OlympiadCreateForm";
-import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
+import { olympiadLocalDict } from "@/lib/admin/olympiad-strings";
 import { mergeLocalDict } from "@/lib/admin/question-flow-labels";
 
 // New Package = one workspace: package fields + the MANDATORY question bulk
@@ -15,9 +15,8 @@ export default async function NewOlympiadPage() {
   await requireAdmin();
   const t = await getT();
   const locale = await getLocale();
-  const lt = olympiadLocalStrings(locale);
   const supabase = await createClient();
-  const [{ data: subjects }, { data: grades }, { data: qtypes }, fullDict] =
+  const [{ data: subjects }, { data: grades }, { data: qtypes }, { data: otypes }, fullDict] =
     await Promise.all([
       supabase.from("subjects").select("id, name").order("name"),
       supabase.from("grades").select("id, name, level").order("level"),
@@ -25,6 +24,8 @@ export default async function NewOlympiadPage() {
         .from("question_types")
         .select("code, name, status, options_required, correct_required")
         .order("code"),
+      // Round 34: the mandatory type select lives INSIDE this flow now.
+      supabase.from("olympiad_types").select("id, name").order("name"),
       getDict(),
     ]);
 
@@ -49,17 +50,15 @@ export default async function NewOlympiadPage() {
       <section className="card">
         <OlympiadCreateForm
           dict={{
-            // Local trilingual additions (bulk v3 five-option rule etc.)
-            // until messages.ts gains these keys; messages.ts wins on merge.
+            // Local trilingual additions (bulk v3 five-option rule, sale
+            // window, Round-34 multi-grade/type strings) until messages.ts
+            // gains these keys; messages.ts wins on merge.
             ...mergeLocalDict(fullDict, locale),
-            "oly2.allQuestionsNote": lt("oly2.allQuestionsNote"),
-            "oly2.err.creationOnly": lt("oly2.err.creationOnly"),
-            "oly2.saleStart": lt("oly2.saleStart"),
-            "oly2.saleEnd": lt("oly2.saleEnd"),
-            "oly2.saleHint": lt("oly2.saleHint"),
+            ...olympiadLocalDict(locale),
           }}
           subjects={((subjects ?? []) as any[]).map((s) => ({ value: s.id, label: s.name }))}
           grades={((grades ?? []) as any[]).map((g) => ({ value: g.id, label: g.name }))}
+          olympiadTypes={((otypes ?? []) as any[]).map((o) => ({ value: o.id, label: o.name }))}
           typeNames={activeTypeNames}
           typeRules={activeTypeRules}
           submitLabel={t("manage.add")}

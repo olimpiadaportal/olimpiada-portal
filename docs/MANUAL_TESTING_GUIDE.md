@@ -1630,6 +1630,11 @@ If anything doesn't match, tell me the **WW-#** + what you saw.
 - Start it: in `web-app/` run `npm run dev` (listens on `:3000`).
 - The phone and the PC must be on the SAME Wi-Fi. `mobile-app/.env` `EXPO_PUBLIC_BFF_URL` may stay `http://localhost:3000` — the app rewrites `localhost` to the dev machine's LAN IP automatically. If a write still fails, open `http://<PC-LAN-IP>:3000` in the phone's browser; if that doesn't load, it's Windows Firewall on port 3000, not the app.
 
+**Testing from another network (`expo start --tunnel`, or a friend abroad):** the LAN rewrite above CANNOT help — the Expo tunnel forwards only the Metro bundler, never port 3000, so `localhost` is unreachable and **student login + every write fail** (parent login still works because it hits Supabase directly). Point the BFF at a public origin instead:
+- **Best (no tunnel to babysit):** set `EXPO_PUBLIC_BFF_URL` to your deployed web-app URL, e.g. `https://<app>.vercel.app` — **only if that deploy targets the same Supabase project the app uses** (`napxrdgnfhkrqzvjrygn`), else Bearer tokens won't validate and you get 401s. Redeploy first so it includes the latest BFF fixes.
+- **Or tunnel the dev server:** `cloudflared tunnel --url http://localhost:3000` (no account) → set `EXPO_PUBLIC_BFF_URL` to the printed `https://…trycloudflare.com` URL, then restart Expo so the new value is bundled.
+- Either way, restart `expo start` after changing `.env` (EXPO_PUBLIC_* values are baked into the bundle). If you forget and leave `localhost`, Metro's console now prints a `[bff]` warning telling you exactly this.
+
 ## YY1. #7 — the critical fixes (add child / edit child / avatars)
 - **Add a new child**: the wizard should complete and reveal the 8-digit ID — no "Uşaq hesabı yaradıla bilmir".
 - **Edit a child** (name / school / gender): Save should succeed — no "Dəyişikliklər yadda saxlanılmadı".

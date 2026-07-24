@@ -1,13 +1,20 @@
 "use client";
 
 import { signOut } from "@/app/login/actions";
+import { SubmitButton } from "@/components/ActionButton";
 
-export function SignOutButton({ label }: { label: string }) {
+export function SignOutButton({
+  label,
+  pendingLabel,
+}: {
+  label: string;
+  pendingLabel?: string;
+}) {
   return (
     <form action={signOut}>
-      <button className="btn-ghost" type="submit">
+      <SubmitButton className="btn-ghost" pendingLabel={pendingLabel}>
         {label}
-      </button>
+      </SubmitButton>
     </form>
   );
 }

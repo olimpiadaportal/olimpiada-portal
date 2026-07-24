@@ -10,6 +10,7 @@ import {
   type CityOption,
   type SchoolDistrictOption,
 } from "@/lib/admin/schools";
+import { ActionButton } from "@/components/ActionButton";
 
 export type SchoolFormLabels = {
   name: string;
@@ -183,9 +184,9 @@ export function SchoolForm({
         <p className="form-error">{mapError(state?.error, labels)}</p>
       )}
 
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? labels.saving : labels.submit}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={labels.saving}>
+        {labels.submit}
+      </ActionButton>
     </form>
   );
 }

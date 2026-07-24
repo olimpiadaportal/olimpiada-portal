@@ -22,6 +22,8 @@ export function NewQuestionModal({
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [open, setOpen] = useState(false);
+  // Reported by QuestionForm; keeps the modal undismissable mid-save.
+  const [formBusy, setFormBusy] = useState(false);
   const router = useRouter();
 
   const onSaved = useCallback(() => {
@@ -40,6 +42,7 @@ export function NewQuestionModal({
         onClose={() => setOpen(false)}
         title={tt("qnew.title")}
         closeLabel={tt("modal.close")}
+        busy={formBusy}
         wide
       >
         <QuestionForm
@@ -51,6 +54,7 @@ export function NewQuestionModal({
           stay
           withImagePicker
           onSaved={onSaved}
+          onBusyChange={setFormBusy}
         />
       </Modal>
     </>

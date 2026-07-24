@@ -5,6 +5,7 @@ import {
   updateMobileVersion,
   type MobileVersionState,
 } from "@/lib/admin/mobileApp";
+import { ActionButton } from "@/components/ActionButton";
 
 // Error codes returned by updateMobileVersion mapped to localized strings
 // passed from the server page (this client component holds no i18n dictionary).
@@ -178,9 +179,9 @@ export function MobileVersionForm({
         </p>
       )}
 
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? labels.saving : labels.save}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={labels.saving}>
+        {labels.save}
+      </ActionButton>
     </form>
   );
 }

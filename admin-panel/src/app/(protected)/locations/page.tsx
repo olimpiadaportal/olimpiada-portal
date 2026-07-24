@@ -162,6 +162,7 @@ export default async function LocationsPage({
     "action.cancel",
     "manage.saving",
     "manage.select",
+    "pend.deleting",
     "flt.noMatches",
     "modal.close",
   ]) {

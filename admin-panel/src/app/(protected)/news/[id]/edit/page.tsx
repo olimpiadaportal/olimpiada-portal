@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { getT } from "@/i18n/server";
-import { NewsForm } from "@/components/NewsForm";
+import { NewsForm, NewsFormScope, NewsToolbarSave } from "@/components/NewsForm";
 import { NewsLifecycle } from "@/components/NewsLifecycle";
 import { NewsCoverUploader } from "@/components/NewsCoverUploader";
 
@@ -16,6 +16,7 @@ const FORM_KEYS = [
 const LIFE_KEYS = [
   "news.act.publish", "news.act.reject", "news.act.to_review",
   "news.act.delete", "news.act.confirmDelete",
+  "pend.processing", "pend.deleting",
 ];
 
 export default async function EditNewsPage({
@@ -81,35 +82,40 @@ export default async function EditNewsPage({
 
       {/* Primary actions live in a sticky toolbar at the TOP of the edit page.
           Save submits the form below via the `form="…"` association; the
-          lifecycle actions (publish/unpublish/archive/delete) sit beside it. */}
-      <div
-        className="card"
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        <button className="btn" type="submit" form={FORM_ID}>
-          {t("manage.save")}
-        </button>
-        <NewsLifecycle id={n.id} status={n.status} dict={lifeDict} />
-      </div>
+          lifecycle actions (publish/unpublish/archive/delete) sit beside it.
+          NewsFormScope carries the form's pending state out to that button. */}
+      <NewsFormScope>
+        <div
+          className="card"
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <NewsToolbarSave
+            formId={FORM_ID}
+            label={t("manage.save")}
+            pendingLabel={t("manage.saving")}
+          />
+          <NewsLifecycle id={n.id} status={n.status} dict={lifeDict} />
+        </div>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <NewsForm
-          dict={dict}
-          id={n.id}
-          formId={FORM_ID}
-          hideSubmit
-          defaults={{ slug: n.slug, translations }}
-          submitLabel={t("manage.save")}
-        />
-      </section>
+        <section className="card" style={{ marginTop: 16 }}>
+          <NewsForm
+            dict={dict}
+            id={n.id}
+            formId={FORM_ID}
+            hideSubmit
+            defaults={{ slug: n.slug, translations }}
+            submitLabel={t("manage.save")}
+          />
+        </section>
+      </NewsFormScope>
 
       <section className="card" style={{ marginTop: 16 }}>
         <NewsCoverUploader
@@ -120,6 +126,7 @@ export default async function EditNewsPage({
             upload: t("news.cover.upload"),
             uploading: t("news.cover.uploading"),
             remove: t("news.cover.remove"),
+            removing: t("pend.deleting"),
             none: t("news.cover.none"),
             hint: t("news.cover.hint"),
           }}

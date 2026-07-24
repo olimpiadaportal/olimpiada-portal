@@ -14,6 +14,7 @@
 import { useActionState, useEffect, useId, useState } from "react";
 import { updateSetting, type SettingState } from "@/lib/admin/settings";
 import { type SettingEditorKind } from "@/lib/admin/settings-meta";
+import { ActionButton } from "@/components/ActionButton";
 
 export type SettingFieldKind = Exclude<SettingEditorKind, "boolean">;
 
@@ -153,13 +154,14 @@ function FieldShell({
             {strings.saved}
           </span>
         )}
-        <button
+        <ActionButton
           className="btn btn-sm"
-          type="submit"
-          disabled={pending || saveDisabled}
+          pending={pending}
+          pendingLabel={strings.saving}
+          disabled={saveDisabled}
         >
-          {pending ? strings.saving : strings.save}
-        </button>
+          {strings.save}
+        </ActionButton>
       </div>
     </form>
   );

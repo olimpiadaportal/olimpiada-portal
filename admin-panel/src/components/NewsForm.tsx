@@ -1,7 +1,16 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useActionState,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
+import { ActionButton } from "@/components/ActionButton";
 import { saveNews, type NewsState } from "@/lib/admin/news";
 import {
   isValidNewsCover,
@@ -22,7 +31,49 @@ export type NewsCoverStrings = {
   none: string;
   hint: string;
   continueEdit: string; // shown when the article was created but the upload failed
+  /** Generic failure text for a rejected upload/attach call (network error). */
+  error?: string;
 };
+
+// The edit page's Save button sits in a sticky toolbar OUTSIDE the <form>
+// (associated via the form="…" attribute), where useFormStatus cannot observe
+// the submission. NewsFormScope + NewsToolbarSave bridge the form's busy state
+// out to that button; NewsForm publishes into the scope when one is present.
+const PendingScope = createContext<{
+  pending: boolean;
+  setPending: (v: boolean) => void;
+} | null>(null);
+
+export function NewsFormScope({ children }: { children: ReactNode }) {
+  const [pending, setPending] = useState(false);
+  return (
+    <PendingScope.Provider value={{ pending, setPending }}>
+      {children}
+    </PendingScope.Provider>
+  );
+}
+
+export function NewsToolbarSave({
+  formId,
+  label,
+  pendingLabel,
+}: {
+  formId: string;
+  label: string;
+  pendingLabel: string;
+}) {
+  const scope = useContext(PendingScope);
+  return (
+    <ActionButton
+      className="btn"
+      form={formId}
+      pending={scope?.pending ?? false}
+      pendingLabel={pendingLabel}
+    >
+      {label}
+    </ActionButton>
+  );
+}
 
 export function NewsForm({
   dict,
@@ -116,11 +167,20 @@ export function NewsForm({
     (async () => {
       if (coverFile) {
         setUploading(true);
-        const err = await uploadAndAttachNewsCover(newsId, coverFile);
-        setUploading(false);
-        if (err) {
-          setCoverError(err);
+        try {
+          const err = await uploadAndAttachNewsCover(newsId, coverFile);
+          if (err) {
+            setCoverError(err);
+            return;
+          }
+        } catch {
+          // A rejected invocation (network failure) must not strand
+          // uploading=true — the Save button would spin forever. The article
+          // already exists, so surface the error + the continue-to-edit link.
+          setCoverError(cover?.strings.error ?? cover?.strings.hint ?? "");
           return;
+        } finally {
+          setUploading(false);
         }
       }
       router.push(`/news/${newsId}/edit`);
@@ -131,6 +191,13 @@ export function NewsForm({
   const busy = pending || uploading;
   // Once created, block re-submitting (it would create a duplicate article).
   const submitDisabled = busy || createdId !== null;
+
+  // Mirror busy into the surrounding NewsFormScope (edit page toolbar Save).
+  const scope = useContext(PendingScope);
+  const setScopePending = scope?.setPending;
+  useEffect(() => {
+    setScopePending?.(busy);
+  }, [busy, setScopePending]);
 
   return (
     <form id={formId} action={action} className="form">
@@ -229,9 +296,14 @@ export function NewsForm({
 
       {state?.error && <p className="form-error">{state.error}</p>}
       {!hideSubmit && (
-        <button className="btn" type="submit" disabled={submitDisabled}>
-          {busy ? tt("manage.saving") : submitLabel}
-        </button>
+        <ActionButton
+          className="btn"
+          pending={busy}
+          pendingLabel={tt("manage.saving")}
+          disabled={submitDisabled}
+        >
+          {submitLabel}
+        </ActionButton>
       )}
     </form>
   );

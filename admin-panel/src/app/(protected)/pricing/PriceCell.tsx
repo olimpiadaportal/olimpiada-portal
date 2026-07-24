@@ -9,6 +9,7 @@ import {
   saveSubjectPrice,
   type PriceSaveState,
 } from "@/lib/admin/pricing";
+import { ActionButton } from "@/components/ActionButton";
 import { parsePriceAmount, type PriceInterval } from "./shared";
 
 export type PriceCellStrings = {
@@ -80,13 +81,14 @@ export function PriceCell({
           placeholder="0.00"
         />
         <span className="price-currency">{currency}</span>
-        <button
+        <ActionButton
           className="btn btn-sm"
-          type="submit"
-          disabled={pending || !valid}
+          pending={pending}
+          pendingLabel={strings.saving}
+          disabled={!valid}
         >
-          {pending ? strings.saving : strings.save}
-        </button>
+          {strings.save}
+        </ActionButton>
       </div>
       <div className="price-cell-foot">
         {shownError ? (

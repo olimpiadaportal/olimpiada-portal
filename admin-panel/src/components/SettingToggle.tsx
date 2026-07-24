@@ -8,6 +8,7 @@
 // an inline confirmation row with Confirm/Cancel; disabling applies at once.
 import { useEffect, useState, useTransition } from "react";
 import { updateSetting } from "@/lib/admin/settings";
+import { ActionButton } from "@/components/ActionButton";
 
 export type SettingToggleStrings = {
   label: string;
@@ -23,6 +24,7 @@ export type SettingToggleStrings = {
   confirmText?: string;
   confirmYes?: string;
   cancel?: string;
+  processing?: string;
 };
 
 export function SettingToggle({
@@ -55,18 +57,24 @@ export function SettingToggle({
       const fd = new FormData();
       fd.set("__key", settingKey);
       fd.set("value_json", next ? "true" : "false");
-      const res = await updateSetting(null, fd);
-      if (res?.ok) {
-        setOn(next);
-        setFeedback({ ok: true, text: strings.saved });
-      } else {
-        setFeedback({
-          ok: false,
-          text:
-            res?.error === "settings.err.notFound"
-              ? strings.notFound
-              : (res?.error ?? strings.notFound),
-        });
+      try {
+        const res = await updateSetting(null, fd);
+        if (res?.ok) {
+          setOn(next);
+          setFeedback({ ok: true, text: strings.saved });
+        } else {
+          setFeedback({
+            ok: false,
+            text:
+              res?.error === "settings.err.notFound"
+                ? strings.notFound
+                : (res?.error ?? strings.notFound),
+          });
+        }
+      } finally {
+        // Confirm-row saves keep the row open (spinner on Confirm) until the
+        // request settles — success or failure — then it closes.
+        setConfirming(false);
       }
     });
   }
@@ -121,17 +129,15 @@ export function SettingToggle({
         <div className="confirm-row" role="group" aria-label={strings.label}>
           <p className="confirm-text">{strings.confirmText}</p>
           <div className="confirm-actions">
-            <button
+            <ActionButton
               type="button"
               className="btn btn-sm btn-warn"
-              disabled={isPending}
-              onClick={() => {
-                setConfirming(false);
-                persist(true);
-              }}
+              pending={isPending}
+              pendingLabel={strings.processing}
+              onClick={() => persist(true)}
             >
               {strings.confirmYes}
-            </button>
+            </ActionButton>
             <button
               type="button"
               className="btn-ghost"

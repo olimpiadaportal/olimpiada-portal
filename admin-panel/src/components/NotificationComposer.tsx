@@ -19,6 +19,7 @@ import {
   type SendNotificationState,
 } from "@/lib/admin/notifications";
 import { renderNotificationMarkdown } from "@/lib/admin/notif-markdown";
+import { ActionButton } from "@/components/ActionButton";
 
 // Naive "2026-07-07T14:30" → UTC ISO, interpreted in the admin's browser tz.
 // Mirrors FreeAccessManager.toUtcIso so the server never applies a TZ shift.
@@ -630,13 +631,14 @@ function ComposerForm({
       </div>
 
       <div className="row-actions">
-        <button className="btn" type="submit" disabled={!canSubmit}>
-          {pending
-            ? strings.sending
-            : schedule
-              ? strings.sendScheduled
-              : strings.send}
-        </button>
+        <ActionButton
+          className="btn"
+          pending={pending}
+          pendingLabel={strings.sending}
+          disabled={!canSubmit}
+        >
+          {schedule ? strings.sendScheduled : strings.send}
+        </ActionButton>
         {state?.error && <span className="form-error">{state.error}</span>}
       </div>
     </form>

@@ -4,6 +4,20 @@ import type { Locale } from "./config";
 // Keep all three languages in sync whenever a UI string is added.
 export const messages: Record<Locale, Record<string, string>> = {
   az: {
+    // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
+    "pend.saving": "Yadda saxlanılır…",
+    "pend.creating": "Yaradılır…",
+    "pend.updating": "Yenilənir…",
+    "pend.deleting": "Silinir…",
+    "pend.uploading": "Yüklənir…",
+    "pend.importing": "İdxal olunur…",
+    "pend.sending": "Göndərilir…",
+    "pend.processing": "İcra olunur…",
+    "pend.checking": "Yoxlanılır…",
+    "pend.signingIn": "Daxil olunur…",
+    "pend.signingOut": "Çıxış edilir…",
+    "pend.downloading": "Endirilir…",
+    "pend.loading": "Yüklənir…",
     // ---- ROUND 11 (admin-main) merged keys ----
     "audit.action.child_create": "Uşaq hesabı yaradılması",
     "audit.action.child_access_grant": "Uşağa pulsuz giriş verilməsi",
@@ -1228,6 +1242,20 @@ export const messages: Record<Locale, Record<string, string>> = {
     "audit.page.showing": "{from}–{to} arası göstərilir",
   },
   en: {
+    // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
+    "pend.saving": "Saving…",
+    "pend.creating": "Creating…",
+    "pend.updating": "Updating…",
+    "pend.deleting": "Deleting…",
+    "pend.uploading": "Uploading…",
+    "pend.importing": "Importing…",
+    "pend.sending": "Sending…",
+    "pend.processing": "Processing…",
+    "pend.checking": "Checking…",
+    "pend.signingIn": "Signing in…",
+    "pend.signingOut": "Signing out…",
+    "pend.downloading": "Downloading…",
+    "pend.loading": "Loading…",
     // ---- ROUND 11 (admin-main) merged keys ----
     "audit.action.child_create": "Child account created",
     "audit.action.child_access_grant": "Free access granted to child",
@@ -2440,6 +2468,20 @@ export const messages: Record<Locale, Record<string, string>> = {
     "audit.page.showing": "Showing {from}–{to}",
   },
   ru: {
+    // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
+    "pend.saving": "Сохранение…",
+    "pend.creating": "Создание…",
+    "pend.updating": "Обновление…",
+    "pend.deleting": "Удаление…",
+    "pend.uploading": "Загрузка…",
+    "pend.importing": "Импорт…",
+    "pend.sending": "Отправка…",
+    "pend.processing": "Обработка…",
+    "pend.checking": "Проверка…",
+    "pend.signingIn": "Вход…",
+    "pend.signingOut": "Выход…",
+    "pend.downloading": "Скачивание…",
+    "pend.loading": "Загрузка…",
     // ---- ROUND 11 (admin-main) merged keys ----
     "audit.action.child_create": "Создание детского аккаунта",
     "audit.action.child_access_grant": "Предоставление ребёнку бесплатного доступа",

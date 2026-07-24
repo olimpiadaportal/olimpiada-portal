@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { createPanelUser, type CreateUserState } from "@/lib/admin/users";
+import { ActionButton } from "@/components/ActionButton";
 import { PasswordInput } from "@/components/PasswordInput";
 
 type Strings = {
@@ -77,9 +78,9 @@ export function CreateUserForm({
       {state?.error && <p className="form-error">{state.error}</p>}
       {state?.ok && <p className="form-ok">{strings.created}</p>}
 
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? strings.submitting : strings.submit}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={strings.submitting}>
+        {strings.submit}
+      </ActionButton>
     </form>
   );
 }

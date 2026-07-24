@@ -5,6 +5,7 @@
 // delete pattern). Deleting cascades the theme's sticker rows; binaries are
 // cleaned up best-effort server-side.
 import { useActionState, useState } from "react";
+import { ActionButton } from "@/components/ActionButton";
 import {
   renameStickerTheme,
   deleteStickerTheme,
@@ -76,9 +77,13 @@ export function StickerThemeControls({
           />
         </label>
         <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-          <button className="btn" type="submit" disabled={renamePending}>
-            {renamePending ? strings.saving : strings.save}
-          </button>
+          <ActionButton
+            className="btn"
+            pending={renamePending}
+            pendingLabel={strings.saving}
+          >
+            {strings.save}
+          </ActionButton>
           {renameState?.ok && <span className="form-ok">{strings.saved}</span>}
           {renameState?.error && (
             <span className="form-error">
@@ -120,16 +125,18 @@ export function StickerThemeControls({
             <small className="muted">{strings.confirmHint}</small>
           </label>
           <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-            <button
+            <ActionButton
               className="btn"
-              type="submit"
-              disabled={deletePending || !matches}
+              pending={deletePending}
+              pendingLabel={strings.deleting}
+              disabled={!matches}
             >
-              {deletePending ? strings.deleting : strings.deleteSubmit}
-            </button>
+              {strings.deleteSubmit}
+            </ActionButton>
             <button
               type="button"
               className="btn-ghost"
+              disabled={deletePending}
               onClick={() => {
                 setDeleteOpen(false);
                 setTyped("");

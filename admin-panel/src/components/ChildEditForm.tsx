@@ -10,6 +10,7 @@ import {
   updateChildAccount,
   type UpdateChildState,
 } from "@/lib/admin/accounts";
+import { ActionButton } from "@/components/ActionButton";
 import type {
   GradeOption,
   CityOption,
@@ -278,9 +279,9 @@ function InnerForm({
       </div>
 
       <div className="row-actions">
-        <button className="btn" type="submit" disabled={pending}>
-          {pending ? strings.submitting : strings.submit}
-        </button>
+        <ActionButton className="btn" pending={pending} pendingLabel={strings.submitting}>
+          {strings.submit}
+        </ActionButton>
         <button type="button" className="btn-ghost" onClick={onClose}>
           {strings.cancel}
         </button>

@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
+import { ActionButton } from "@/components/ActionButton";
 import {
   OlympiadQuestionForm,
   type OlympiadPoolTopic,
@@ -62,6 +63,9 @@ export function OlympiadQuestionManager({
   const [editData, setEditData] = useState<OlympiadPoolQuestionData | null>(null);
   // Row-level busy/error feedback (edit prefill fetch, delete, archive).
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Which of the row's buttons is in flight — only that one shows the spinner;
+  // the row's other buttons just disable.
+  const [busyAct, setBusyAct] = useState<"edit" | "delete" | "archive" | "restore" | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   // While a save/upload is in flight the modal must not be dismissable.
   const [formBusy, setFormBusy] = useState(false);
@@ -87,6 +91,7 @@ export function OlympiadQuestionManager({
   async function onEdit(id: string) {
     setRowError(null);
     setBusyId(id);
+    setBusyAct("edit");
     try {
       const data = await loadOlympiadPoolQuestion(packageId, id);
       if (!data) {
@@ -98,6 +103,7 @@ export function OlympiadQuestionManager({
       setRowError({ id, message: tt("olyq.loadFailed") });
     } finally {
       setBusyId(null);
+      setBusyAct(null);
     }
   }
 
@@ -105,6 +111,7 @@ export function OlympiadQuestionManager({
     if (!confirm(tt("olyq.confirmDelete"))) return;
     setRowError(null);
     setBusyId(id);
+    setBusyAct("delete");
     try {
       const fd = new FormData();
       fd.set("__package_id", packageId);
@@ -117,12 +124,14 @@ export function OlympiadQuestionManager({
       router.refresh();
     } finally {
       setBusyId(null);
+      setBusyAct(null);
     }
   }
 
   async function onStatus(id: string, action: "archive" | "restore") {
     setRowError(null);
     setBusyId(id);
+    setBusyAct(action);
     try {
       const fd = new FormData();
       fd.set("__package_id", packageId);
@@ -136,6 +145,7 @@ export function OlympiadQuestionManager({
       router.refresh();
     } finally {
       setBusyId(null);
+      setBusyAct(null);
     }
   }
 
@@ -221,41 +231,49 @@ export function OlympiadQuestionManager({
                 <td>{r.updatedAt}</td>
                 <td>
                   <div className="row-actions">
-                    <button
+                    <ActionButton
                       type="button"
                       className="btn-ghost"
+                      pending={busyId === r.id && busyAct === "edit"}
+                      pendingLabel={tt("pend.loading")}
                       onClick={() => onEdit(r.id)}
                       disabled={busyId === r.id}
                     >
                       {tt("olyq.edit")}
-                    </button>
+                    </ActionButton>
                     {r.status === "archived" ? (
-                      <button
+                      <ActionButton
                         type="button"
                         className="btn-ghost"
+                        pending={busyId === r.id && busyAct === "restore"}
+                        pendingLabel={tt("pend.processing")}
                         onClick={() => onStatus(r.id, "restore")}
                         disabled={busyId === r.id}
                       >
                         {tt("olyq.restore")}
-                      </button>
+                      </ActionButton>
                     ) : (
-                      <button
+                      <ActionButton
                         type="button"
                         className="btn-ghost"
+                        pending={busyId === r.id && busyAct === "archive"}
+                        pendingLabel={tt("pend.processing")}
                         onClick={() => onStatus(r.id, "archive")}
                         disabled={busyId === r.id}
                       >
                         {tt("olyq.archive")}
-                      </button>
+                      </ActionButton>
                     )}
-                    <button
+                    <ActionButton
                       type="button"
                       className="link-danger"
+                      pending={busyId === r.id && busyAct === "delete"}
+                      pendingLabel={tt("pend.deleting")}
                       onClick={() => onDelete(r.id)}
                       disabled={busyId === r.id}
                     >
                       {tt("olyq.delete")}
-                    </button>
+                    </ActionButton>
                   </div>
                   {rowError?.id === r.id && (
                     <p className="form-error">{rowError.message}</p>

@@ -55,6 +55,9 @@ export default async function ProtectedLayout({
   const notifSnapshot = await getAdminInboxSnapshot(BELL_LIMIT, ctx.profileId);
   const bellStrings: Record<string, string> = {};
   for (const k of BELL_STRING_KEYS) bellStrings[k] = ltAlerts(k);
+  // Pending label for the bell's mark-all-read action (shared messages.ts key —
+  // the alerts labels module has no pend.* strings of its own).
+  bellStrings["pend.processing"] = t("pend.processing");
 
   const roleLabel = ctx.isAdmin
     ? t("common.administrator")
@@ -102,7 +105,10 @@ export default async function ProtectedLayout({
             <span className="avatar" aria-hidden />
             <span>{ctx.email ?? "—"}</span>
             <LanguageSwitcher current={locale} />
-            <SignOutButton label={t("action.signOut")} />
+            <SignOutButton
+              label={t("action.signOut")}
+              pendingLabel={t("pend.signingOut")}
+            />
           </div>
         </header>
         <main className="admin-content">{children}</main>

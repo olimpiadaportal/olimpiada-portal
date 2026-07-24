@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useActionState } from "react";
 import { saveRow, type SaveState } from "@/lib/admin/actions";
 import type { ResourceField } from "@/lib/admin/resources";
+import { ActionButton } from "@/components/ActionButton";
 
 type Options = Record<string, { value: string; label: string }[]>;
 
@@ -153,9 +154,9 @@ export function ResourceForm({
 
       {state?.error && <p className="form-error">{state.error}</p>}
 
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? savingLabel : submitLabel}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={savingLabel}>
+        {submitLabel}
+      </ActionButton>
     </form>
   );
 }

@@ -18,6 +18,7 @@ import {
   type CreateChildState,
   type ParentSearchResult,
 } from "@/lib/admin/accounts";
+import { ActionButton } from "@/components/ActionButton";
 import { PasswordInput } from "@/components/PasswordInput";
 
 export type GradeOption = { id: string; name: string };
@@ -519,9 +520,9 @@ function InnerForm({
       )}
 
       <div className="row-actions">
-        <button className="btn" type="submit" disabled={pending}>
-          {pending ? strings.submitting : strings.submit}
-        </button>
+        <ActionButton className="btn" pending={pending} pendingLabel={strings.submitting}>
+          {strings.submit}
+        </ActionButton>
         {!embedded && (
           <button type="button" className="btn-ghost" onClick={onClose}>
             {strings.cancel}

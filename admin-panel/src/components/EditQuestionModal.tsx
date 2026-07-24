@@ -17,6 +17,7 @@
 //     source of the old edit page's "unique key prop" React warning).
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
 import { QuestionForm } from "@/components/QuestionForm";
 import { QuestionMediaUploader } from "@/components/QuestionMediaUploader";
@@ -89,6 +90,11 @@ export function EditQuestionModal({
   // A lifecycle/delete call in flight — disables those buttons and blocks
   // dismissing the modal mid-operation.
   const [busy, setBusy] = useState(false);
+  // Which control started it ("publish" / "reject" / "to_review" / "delete")
+  // — the spinner shows only on that one; the rest just disable.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  // QuestionForm's own save/upload state — locks the modal close too.
+  const [formBusy, setFormBusy] = useState(false);
   const [actionError, setActionError] = useState("");
 
   // (Re)load the question — used on open and after transition/media changes so
@@ -144,6 +150,7 @@ export function EditQuestionModal({
   async function runTransition(action: string) {
     if (!id || busy) return;
     setBusy(true);
+    setBusyKey(action);
     setActionError("");
     try {
       const fd = new FormData();
@@ -156,6 +163,7 @@ export function EditQuestionModal({
       setActionError(tt("err.server"));
     } finally {
       setBusy(false);
+      setBusyKey(null);
     }
   }
 
@@ -163,6 +171,7 @@ export function EditQuestionModal({
     if (!id || busy) return;
     if (!confirm(tt("qact.confirmDelete"))) return;
     setBusy(true);
+    setBusyKey("delete");
     setActionError("");
     try {
       const fd = new FormData();
@@ -180,6 +189,7 @@ export function EditQuestionModal({
       setActionError(tt("err.server"));
     } finally {
       setBusy(false);
+      setBusyKey(null);
     }
   }
 
@@ -189,7 +199,7 @@ export function EditQuestionModal({
       onClose={onClose}
       title={tt("qedit.title")}
       closeLabel={tt("modal.close")}
-      busy={busy}
+      busy={busy || formBusy}
       wide
     >
       {errorText ? (
@@ -205,25 +215,29 @@ export function EditQuestionModal({
               {tt(`qstatus.${data.status}`)}
             </span>
             {rowTransitions(data.status, can).map((b) => (
-              <button
+              <ActionButton
                 key={b.action}
                 type="button"
                 className="btn-ghost"
+                pending={busyKey === b.action}
+                pendingLabel={tt("pend.processing")}
                 disabled={busy}
                 onClick={() => runTransition(b.action)}
               >
                 {tt(b.key)}
-              </button>
+              </ActionButton>
             ))}
             {isAdmin && (
-              <button
+              <ActionButton
                 type="button"
                 className="link-danger"
+                pending={busyKey === "delete"}
+                pendingLabel={tt("pend.deleting")}
                 disabled={busy}
                 onClick={runDelete}
               >
                 {tt("qact.delete")}
-              </button>
+              </ActionButton>
             )}
           </div>
           {actionError && <p className="form-error">{actionError}</p>}
@@ -242,6 +256,7 @@ export function EditQuestionModal({
             statusText={tt(`qstatus.${data.status}`)}
             stay
             onSaved={onSaved}
+            onBusyChange={setFormBusy}
             mediaSlot={
               <QuestionMediaUploader
                 key="question-media"
@@ -256,6 +271,7 @@ export function EditQuestionModal({
                   upload: tt("qmedia.upload"),
                   uploading: tt("qmedia.uploading"),
                   remove: tt("qmedia.remove"),
+                  removing: tt("pend.deleting"),
                   none: tt("qmedia.none"),
                   hint: tt("qmedia.hint"),
                 }}

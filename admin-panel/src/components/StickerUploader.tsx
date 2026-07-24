@@ -111,73 +111,88 @@ export function StickerUploader({
     setBusy(true);
     setResults([]);
 
-    const supabase = createClient();
     let anyOk = false;
+    try {
+      const supabase = createClient();
 
-    for (let idx = 0; idx < files.length; idx++) {
-      const file = files[idx];
-      setResults((prev) => [
-        ...prev,
-        { name: file.name, status: "uploading" },
-      ]);
-      const finish = (status: "ok" | "error", message?: string) => {
-        setResults((prev) =>
-          prev.map((r, i) => (i === idx ? { ...r, status, message } : r)),
-        );
-      };
+      for (let idx = 0; idx < files.length; idx++) {
+        const file = files[idx];
+        setResults((prev) => [
+          ...prev,
+          { name: file.name, status: "uploading" },
+        ]);
+        const finish = (status: "ok" | "error", message?: string) => {
+          setResults((prev) =>
+            prev.map((r, i) => (i === idx ? { ...r, status, message } : r)),
+          );
+        };
 
-      try {
-        if (file.size > MAX_SIZE) {
-          finish("error", strings.errSize);
-          continue;
-        }
-        // Sniff the REAL type from the bytes — reject anything that is not a
-        // PNG or WebP regardless of extension or claimed file.type.
-        const sniffed = await sniffImage(file);
-        if (!sniffed) {
-          finish("error", strings.errType);
-          continue;
-        }
+        try {
+          if (file.size > MAX_SIZE) {
+            finish("error", strings.errSize);
+            continue;
+          }
+          // Sniff the REAL type from the bytes — reject anything that is not a
+          // PNG or WebP regardless of extension or claimed file.type.
+          const sniffed = await sniffImage(file);
+          if (!sniffed) {
+            finish("error", strings.errType);
+            continue;
+          }
 
-        const path = `${themeId}/${uniqueId()}.${sniffed.ext}`;
-        const { error: upErr } = await supabase.storage
-          .from(BUCKET)
-          .upload(path, file, { upsert: false, contentType: sniffed.mime });
-        if (upErr) {
-          // Never surface raw storage internals.
-          console.error("[admin] sticker upload failed", upErr.message);
+          const path = `${themeId}/${uniqueId()}.${sniffed.ext}`;
+          const { error: upErr } = await supabase.storage
+            .from(BUCKET)
+            .upload(path, file, { upsert: false, contentType: sniffed.mime });
+          if (upErr) {
+            // Never surface raw storage internals.
+            console.error("[admin] sticker upload failed", upErr.message);
+            finish("error", strings.errUpload);
+            continue;
+          }
+
+          const fd = new FormData();
+          fd.set("theme_id", themeId);
+          fd.set("path", path);
+          const res = await attachStickerImage(fd);
+          if (res?.error) {
+            // Best-effort: do not leave an orphaned object behind.
+            await supabase.storage.from(BUCKET).remove([path]);
+            finish("error", attachErrorText(res.error, strings));
+            continue;
+          }
+
+          anyOk = true;
+          finish("ok", strings.done);
+        } catch (err) {
+          console.error("[admin] sticker upload unexpected error", err);
           finish("error", strings.errUpload);
-          continue;
         }
-
-        const fd = new FormData();
-        fd.set("theme_id", themeId);
-        fd.set("path", path);
-        const res = await attachStickerImage(fd);
-        if (res?.error) {
-          // Best-effort: do not leave an orphaned object behind.
-          await supabase.storage.from(BUCKET).remove([path]);
-          finish("error", attachErrorText(res.error, strings));
-          continue;
-        }
-
-        anyOk = true;
-        finish("ok", strings.done);
-      } catch (err) {
-        console.error("[admin] sticker upload unexpected error", err);
-        finish("error", strings.errUpload);
       }
+    } finally {
+      // The trigger must re-enable even on an unexpected throw.
+      setBusy(false);
     }
-
-    setBusy(false);
     e.target.value = "";
     if (anyOk) router.refresh();
   }
 
   return (
     <div className="form">
-      <label className="btn-ghost media-upload">
-        {busy ? strings.uploading : strings.button}
+      <label className="btn-ghost media-upload" aria-busy={busy || undefined}>
+        {/* The trigger is a <label>, not a <button>, so ActionButton cannot be
+            used here — mirror its pending markup (spinner + ghost label). */}
+        {busy ? (
+          <span className="btn-loading">
+            <span className="btn-spinner" aria-hidden="true" />
+            {strings.uploading}
+            <span className="btn-ghost-label" aria-hidden="true">
+              {strings.button}
+            </span>
+          </span>
+        ) : (
+          strings.button
+        )}
         <input
           type="file"
           accept="image/png,image/webp,.png,.webp"

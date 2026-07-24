@@ -46,6 +46,7 @@ import {
   type CreateFreeAccessState,
   type FreeAccessRow,
 } from "@/lib/admin/freeAccess";
+import { ActionButton } from "@/components/ActionButton";
 
 export type FreeAccessWizardStrings = {
   intro: string;
@@ -727,9 +728,14 @@ function ScheduleForm({
       </label>
 
       <div className="row-actions">
-        <button className="btn" type="submit" disabled={!canSubmit}>
-          {pending ? fa.creating : fa.create}
-        </button>
+        <ActionButton
+          className="btn"
+          pending={pending}
+          pendingLabel={fa.creating}
+          disabled={!canSubmit}
+        >
+          {fa.create}
+        </ActionButton>
         {state?.error && <span className="form-error">{state.error}</span>}
       </div>
     </form>

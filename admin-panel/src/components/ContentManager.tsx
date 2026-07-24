@@ -18,6 +18,7 @@ import {
 } from "react";
 import { saveSiteContent } from "@/lib/admin/siteContent";
 import { FIELD_FONT_SIZE_OPTIONS } from "@/lib/admin/siteContentRegistry";
+import { ActionButton } from "@/components/ActionButton";
 
 export type CmsEntry = {
   key: string;
@@ -328,14 +329,16 @@ export function ContentManager({
             >
               {strings.cancel}
             </button>
-            <button
+            <ActionButton
               type="button"
               className="btn btn-sm"
               onClick={onSave}
-              disabled={!dirty || pending}
+              pending={pending}
+              pendingLabel={strings.saving}
+              disabled={!dirty}
             >
-              {pending ? strings.saving : strings.save}
-            </button>
+              {strings.save}
+            </ActionButton>
           </div>
         </div>
       )}

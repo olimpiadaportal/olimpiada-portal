@@ -170,6 +170,7 @@ export default async function FreeAccessPage() {
     scheduleAnother: t("freeAccess.scheduleAnother"),
     deactivate: t("freeAccess.deactivate"),
     deactivateConfirm: t("freeAccess.deactivateConfirm"),
+    deactivating: t("pend.processing"),
     endBeforeStart: t("freeAccess.endBeforeStart"),
     target: t("freeAccess.target"),
     window: t("freeAccess.window"),

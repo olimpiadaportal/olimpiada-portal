@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ActionButton } from "@/components/ActionButton";
 import { createClient } from "@/lib/supabase/client";
 import { attachQuestionMedia, detachQuestionMedia } from "@/lib/admin/media";
 
@@ -35,6 +36,8 @@ type Strings = {
   upload: string;
   uploading: string;
   remove: string;
+  // Pending label for the remove button; falls back to `remove` when absent.
+  removing?: string;
   none: string;
   hint: string;
 };
@@ -56,7 +59,10 @@ export function QuestionMediaUploader({
   onChanged?: () => void;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  // Which operation is in flight — scopes the pending label to the control
+  // that started it (upload label vs remove button) while both stay disabled.
+  const [busyOp, setBusyOp] = useState<"upload" | "remove" | null>(null);
+  const busy = busyOp !== null;
   const [error, setError] = useState<string | null>(null);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -70,7 +76,7 @@ export function QuestionMediaUploader({
       return;
     }
 
-    setBusy(true);
+    setBusyOp("upload");
     try {
       const supabase = createClient();
       const ext = file.name.includes(".")
@@ -102,13 +108,13 @@ export function QuestionMediaUploader({
       router.refresh();
       onChanged?.();
     } finally {
-      setBusy(false);
+      setBusyOp(null);
       e.target.value = "";
     }
   }
 
   async function onRemove() {
-    setBusy(true);
+    setBusyOp("remove");
     try {
       const fd = new FormData();
       fd.set("question_id", questionId);
@@ -117,7 +123,7 @@ export function QuestionMediaUploader({
       router.refresh();
       onChanged?.();
     } finally {
-      setBusy(false);
+      setBusyOp(null);
     }
   }
 
@@ -133,21 +139,23 @@ export function QuestionMediaUploader({
           ) : (
             <audio src={current.url} controls />
           )}
-          <button
+          <ActionButton
             type="button"
             className="link-danger"
+            pending={busyOp === "remove"}
+            pendingLabel={strings.removing}
             onClick={onRemove}
             disabled={busy}
           >
             {strings.remove}
-          </button>
+          </ActionButton>
         </div>
       ) : (
         <p className="muted">{strings.none}</p>
       )}
 
       <label className="btn-ghost media-upload">
-        {busy ? strings.uploading : strings.upload}
+        {busyOp === "upload" ? strings.uploading : strings.upload}
         <input
           type="file"
           accept="image/*,audio/*"

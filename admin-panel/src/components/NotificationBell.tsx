@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ActionButton } from "@/components/ActionButton";
 import { useAdminNotifications } from "@/lib/admin/useAdminNotifications";
 import {
   BELL_LIMIT,
@@ -48,6 +49,20 @@ export function NotificationBell({
     limit: BELL_LIMIT,
     profileId,
   });
+
+  // Mark-all-read in-flight flag (mirrors AlertsList). The hook is optimistic —
+  // unread flips to 0 synchronously, which unmounts the button — but the state
+  // lives here so the finally still runs, and the wiring stays correct if the
+  // render condition ever changes.
+  const [allBusy, setAllBusy] = useState(false);
+  const onMarkAllRead = async () => {
+    setAllBusy(true);
+    try {
+      await markAllRead();
+    } finally {
+      setAllBusy(false);
+    }
+  };
 
   const timeLabels = {
     now: s("alerts.timeNow"),
@@ -129,9 +144,15 @@ export function NotificationBell({
           <div className="abell-menu-head">
             <span className="abell-menu-title">{s("alerts.bell")}</span>
             {unread > 0 && (
-              <button type="button" className="abell-linkbtn" onClick={() => void markAllRead()}>
+              <ActionButton
+                type="button"
+                className="abell-linkbtn"
+                pending={allBusy}
+                pendingLabel={s("pend.processing")}
+                onClick={() => void onMarkAllRead()}
+              >
                 {s("alerts.markAllRead")}
-              </button>
+              </ActionButton>
             )}
           </div>
 

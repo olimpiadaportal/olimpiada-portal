@@ -5,6 +5,7 @@
 // and the lib/admin/notifications server actions (all validation is server-side).
 import { useEffect, useState, useTransition, useActionState } from "react";
 import { Modal } from "@/components/Modal";
+import { ActionButton } from "@/components/ActionButton";
 import {
   saveTemplate,
   deleteTemplate,
@@ -321,15 +322,14 @@ function TemplateForm({
       {state?.error && <p className="form-error">{state.error}</p>}
 
       <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-        <button className="btn" type="submit" disabled={!canSubmit}>
-          {mode === "create"
-            ? pending
-              ? strings.creating
-              : strings.create
-            : pending
-              ? strings.saving
-              : strings.save}
-        </button>
+        <ActionButton
+          className="btn"
+          pending={pending}
+          pendingLabel={mode === "create" ? strings.creating : strings.saving}
+          disabled={!canSubmit}
+        >
+          {mode === "create" ? strings.create : strings.save}
+        </ActionButton>
         <button type="button" className="btn-ghost" onClick={onCancel} disabled={pending}>
           {strings.cancel}
         </button>
@@ -360,10 +360,11 @@ function DeleteConfirm({
       </p>
       <p style={{ margin: 0, fontWeight: 600 }}>{code}</p>
       <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-        <button
+        <ActionButton
           type="button"
           className="btn-warn"
-          disabled={pending}
+          pending={pending}
+          pendingLabel={strings.deleting}
           onClick={() =>
             startTransition(async () => {
               // Delete every locale row for this code (each is keyed by its id).
@@ -376,8 +377,8 @@ function DeleteConfirm({
             })
           }
         >
-          {pending ? strings.deleting : strings.deleteConfirm}
-        </button>
+          {strings.deleteConfirm}
+        </ActionButton>
         <button type="button" className="btn-ghost" onClick={onCancel} disabled={pending}>
           {strings.cancel}
         </button>

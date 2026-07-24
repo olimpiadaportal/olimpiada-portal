@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { SubmitButton } from "@/components/ActionButton";
 import {
   bulkAssignTopic,
   bulkDeleteQuestions,
@@ -121,9 +122,13 @@ export function QuestionsTable({
                   </option>
                 ))}
               </select>
-              <button className="btn-ghost" type="submit" disabled={!action}>
+              <SubmitButton
+                className="btn-ghost"
+                disabled={!action}
+                pendingLabel={tt("pend.processing")}
+              >
                 {tt("qbulk.apply")}
-              </button>
+              </SubmitButton>
             </form>
             <button
               type="button"
@@ -142,9 +147,12 @@ export function QuestionsTable({
                 }}
               >
                 <input type="hidden" name="ids" value={ids} />
-                <button className="link-danger" type="submit">
+                <SubmitButton
+                  className="link-danger"
+                  pendingLabel={tt("pend.deleting")}
+                >
                   {tt("action.delete")}
-                </button>
+                </SubmitButton>
               </form>
             )}
           </div>
@@ -204,9 +212,13 @@ export function QuestionsTable({
                   </option>
                 ))}
               </select>
-              <button className="btn-ghost" type="submit" disabled={!aTopic}>
+              <SubmitButton
+                className="btn-ghost"
+                disabled={!aTopic}
+                pendingLabel={tt("pend.saving")}
+              >
                 {tt("qbulk.assign")}
-              </button>
+              </SubmitButton>
             </form>
           )}
         </>
@@ -287,9 +299,14 @@ export function QuestionsTable({
                       <form key={a.action} action={transitionQuestion}>
                         <input type="hidden" name="__id" value={r.id} />
                         <input type="hidden" name="__action" value={a.action} />
-                        <button className="btn-ghost btn-xs" type="submit">
+                        {/* Per-form useFormStatus: only the clicked row's
+                            button spins. */}
+                        <SubmitButton
+                          className="btn-ghost btn-xs"
+                          pendingLabel={tt("pend.processing")}
+                        >
                           {tt(a.key)}
-                        </button>
+                        </SubmitButton>
                       </form>
                     ))}
                   </span>

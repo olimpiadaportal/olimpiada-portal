@@ -1,6 +1,7 @@
 "use client";
 
 import { transitionNews, deleteNews } from "@/lib/admin/news";
+import { SubmitButton } from "@/components/ActionButton";
 
 export function NewsLifecycle({
   id,
@@ -17,9 +18,9 @@ export function NewsLifecycle({
     <form action={transitionNews} style={{ display: "inline" }}>
       <input type="hidden" name="__id" value={id} />
       <input type="hidden" name="__action" value={action} />
-      <button className="btn-ghost" type="submit">
+      <SubmitButton className="btn-ghost" pendingLabel={tt("pend.processing")}>
         {label}
-      </button>
+      </SubmitButton>
     </form>
   );
 
@@ -44,9 +45,9 @@ export function NewsLifecycle({
         style={{ display: "inline" }}
       >
         <input type="hidden" name="__id" value={id} />
-        <button className="link-danger" type="submit">
+        <SubmitButton className="link-danger" pendingLabel={tt("pend.deleting")}>
           {tt("news.act.delete")}
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );

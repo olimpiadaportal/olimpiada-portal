@@ -14,6 +14,7 @@
 // when its tab is not mounted.
 import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { ActionButton } from "@/components/ActionButton";
 import {
   saveOlympiadPackageQuestion,
   type OlympiadQuestionState,
@@ -489,9 +490,9 @@ export function OlympiadQuestionForm({
       {(localError || state?.error) && (
         <p className="form-error">{localError || state?.error}</p>
       )}
-      <button className="btn" type="submit" disabled={busy}>
-        {busy ? tt("olyq.saving") : tt("olyq.save")}
-      </button>
+      <ActionButton className="btn" pending={busy} pendingLabel={tt("olyq.saving")}>
+        {tt("olyq.save")}
+      </ActionButton>
     </form>
   );
 }

@@ -314,6 +314,7 @@ export default async function ManageResourcePage({
                       id={row.id}
                       label={t("action.delete")}
                       confirmText={t("action.confirmDelete")}
+                      pendingLabel={t("pend.deleting")}
                     />
                   </td>
                 </tr>

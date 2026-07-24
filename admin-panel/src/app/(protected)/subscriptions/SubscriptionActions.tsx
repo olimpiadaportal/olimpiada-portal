@@ -11,6 +11,7 @@
 // additionally collects a days input (1..730, re-validated server-side).
 import { useActionState, useEffect, useState } from "react";
 import { Modal } from "@/components/Modal";
+import { ActionButton } from "@/components/ActionButton";
 import {
   manageSubscription,
   type ManageSubscriptionState,
@@ -130,13 +131,13 @@ export function SubscriptionActions({
               </span>
             )}
             <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-              <button
-                type="submit"
+              <ActionButton
                 className={WARN_ACTIONS.has(a) ? "btn-warn" : "btn"}
-                disabled={pending}
+                pending={pending}
+                pendingLabel={strings.submitting}
               >
-                {pending ? strings.submitting : strings.confirm[a]}
-              </button>
+                {strings.confirm[a]}
+              </ActionButton>
               <button
                 type="button"
                 className="btn-ghost"

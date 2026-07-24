@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ActionButton } from "@/components/ActionButton";
 import { detachNewsCover } from "@/lib/admin/news";
 import {
   isValidNewsCover,
@@ -17,6 +18,8 @@ type Strings = {
   upload: string;
   uploading: string;
   remove: string;
+  /** Pending label while the cover is being detached (falls back to `remove`). */
+  removing?: string;
   none: string;
   hint: string;
 };
@@ -32,6 +35,8 @@ export function NewsCoverUploader({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // Scope the remove spinner separately: `busy` also covers uploads.
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -61,6 +66,7 @@ export function NewsCoverUploader({
 
   async function onRemove() {
     setBusy(true);
+    setRemoving(true);
     try {
       const fd = new FormData();
       fd.set("news_id", newsId);
@@ -68,6 +74,7 @@ export function NewsCoverUploader({
       router.refresh();
     } finally {
       setBusy(false);
+      setRemoving(false);
     }
   }
 
@@ -79,14 +86,16 @@ export function NewsCoverUploader({
         <div className="media-current">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={current.url} alt="" className="media-preview" />
-          <button
+          <ActionButton
             type="button"
             className="link-danger"
             onClick={onRemove}
+            pending={removing}
+            pendingLabel={strings.removing}
             disabled={busy}
           >
             {strings.remove}
-          </button>
+          </ActionButton>
         </div>
       ) : (
         <p className="muted">{strings.none}</p>

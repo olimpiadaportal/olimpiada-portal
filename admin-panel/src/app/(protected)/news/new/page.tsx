@@ -45,6 +45,7 @@ export default async function NewNewsPage() {
               none: t("news.cover.none"),
               hint: t("news.cover.hint"),
               continueEdit: t("news.created.continue"),
+              error: t("error.desc"),
             },
           }}
         />

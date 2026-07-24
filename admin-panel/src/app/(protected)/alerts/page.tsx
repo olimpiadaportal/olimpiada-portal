@@ -1,7 +1,7 @@
 import { requirePanelAccess } from "@/lib/admin/guards";
 import { getAdminInboxSnapshot } from "@/lib/admin/notif-inbox";
 import { PAGE_LIMIT } from "@/lib/admin/notif-types";
-import { getLocale } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { localStrings } from "./labels";
 import { AlertsList } from "./AlertsList";
 
@@ -13,6 +13,7 @@ import { AlertsList } from "./AlertsList";
 // admin-private here.
 export default async function AlertsPage() {
   const ctx = await requirePanelAccess();
+  const t = await getT();
   const locale = await getLocale();
   const lt = localStrings(locale);
   const { items, unread } = await getAdminInboxSnapshot(PAGE_LIMIT, ctx.profileId);
@@ -34,6 +35,10 @@ export default async function AlertsPage() {
   ] as const;
   const strings: Record<string, string> = {};
   for (const k of stringKeys) strings[k] = lt(k);
+  // Pending labels for AlertsList's async actions (shared messages.ts keys —
+  // the alerts labels module has no pend.* strings of its own).
+  strings["pend.processing"] = t("pend.processing");
+  strings["pend.deleting"] = t("pend.deleting");
 
   return (
     <div className="page">

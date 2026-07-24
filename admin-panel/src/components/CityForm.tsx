@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect } from "react";
 import { saveCity, type CitySaveState } from "@/lib/admin/cities";
+import { ActionButton } from "@/components/ActionButton";
 
 // Error codes returned by saveCity mapped to localized strings passed from the
 // server page (so this client component holds no i18n dictionary itself).
@@ -77,9 +78,9 @@ export function CityForm({
         <p className="form-error">{mapError(state?.error, labels)}</p>
       )}
 
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? labels.saving : labels.submit}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={labels.saving}>
+        {labels.submit}
+      </ActionButton>
     </form>
   );
 }

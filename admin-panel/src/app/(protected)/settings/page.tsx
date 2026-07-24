@@ -111,6 +111,7 @@ export default async function SettingsPage() {
                 confirmText: t("settings.maintenanceConfirm"),
                 confirmYes: t("settings.confirm"),
                 cancel: t("action.cancel"),
+                processing: t("pend.processing"),
               }
             : {}),
         }}

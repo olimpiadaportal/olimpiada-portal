@@ -1708,4 +1708,21 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## ZZ7. Contact map on iOS
 - On an iPhone (Expo Go / TestFlight build), the Contact map renders (previously: "Google Maps enabled API must be used in iframe"). Android unchanged. Tapping still opens directions.
 
-If anything doesn't match, tell me the **ZZ-#** + what you saw.
+# ROUND 35 — admin loading buttons (every async action)
+
+## AB1. Any admin Save/Create/Delete shows a spinner
+- Admin panel → open any form (news, question, account, setting, sticker theme, olympiad…) and click **Save/Create**: the button immediately disables, shows a small spinner + "Saving…"-style text in your UI language, keeps its exact size (no layout jump), and re-enables only after the success/error message appears.
+- Rapid-double-click any Save: only ONE record/request results (the second click hits a disabled button).
+
+## AB2. Row-scoped loading
+- In a table with per-row actions (questions list, seasons, alerts): trigger one row's action — ONLY that row's button spins; other rows are untouched.
+
+## AB3. Destructive confirms + modals
+- Delete flows (taxonomy row, question type, sticker image, account): the browser confirm still appears first; after confirming, the delete button spins and can't be re-clicked.
+- Modal saves (new/edit question, seasons): while saving, the modal CANNOT be dismissed (Esc/overlay/× blocked) and closes only after completion. On error it stays open with the message.
+- Settings → a dangerous toggle (e.g. maintenance mode): the confirm row now stays visible with a spinner until the save settles, then closes.
+
+## AB4. Failed request re-enables
+- Turn off your network (or stop Supabase) and click any Save: after the failure message, the button is clickable again — never stuck spinning.
+
+If anything doesn't match, tell me the **ZZ-# / AB-#** + what you saw.

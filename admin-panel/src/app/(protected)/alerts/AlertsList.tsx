@@ -6,7 +6,9 @@
 // Clicking a row's title follows its action_url (when it's a safe same-origin
 // admin route) in addition to marking it read; the row also exposes explicit
 // "mark read" / "delete" buttons so an admin can triage without navigating away.
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ActionButton } from "@/components/ActionButton";
 import { useAdminNotifications } from "@/lib/admin/useAdminNotifications";
 import {
   PAGE_LIMIT,
@@ -36,6 +38,19 @@ export function AlertsList({
     limit: PAGE_LIMIT,
     profileId,
   });
+
+  // Per-action busy key so only the clicked control spins. The hook's mutations
+  // are optimistic (state flips immediately), but the RPC is still in flight
+  // until it settles — the finally guarantees the button re-enables on failure.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const run = async (key: string, fn: () => Promise<void>) => {
+    setBusyKey(key);
+    try {
+      await fn();
+    } finally {
+      setBusyKey(null);
+    }
+  };
 
   const typeLabel = (type: string): string => {
     const key = `alerts.type.${type}`;
@@ -70,14 +85,16 @@ export function AlertsList({
         <span className="muted">
           {s("alerts.unreadCount").replace("{n}", String(unread))}
         </span>
-        <button
+        <ActionButton
           type="button"
           className="btn-ghost btn-sm"
           disabled={unread === 0}
-          onClick={() => void markAllRead()}
+          pending={busyKey === "all"}
+          pendingLabel={s("pend.processing")}
+          onClick={() => void run("all", markAllRead)}
         >
           {s("alerts.markAllRead")}
-        </button>
+        </ActionButton>
       </div>
 
       {items.length === 0 ? (
@@ -108,22 +125,26 @@ export function AlertsList({
               </div>
               <div className="row-actions">
                 {!n.read_at && (
-                  <button
+                  <ActionButton
                     type="button"
                     className="btn-ghost btn-sm"
-                    onClick={() => void markRead(n.id)}
+                    pending={busyKey === `read:${n.id}`}
+                    pendingLabel={s("pend.processing")}
+                    onClick={() => void run(`read:${n.id}`, () => markRead(n.id))}
                   >
                     {s("alerts.markRead")}
-                  </button>
+                  </ActionButton>
                 )}
-                <button
+                <ActionButton
                   type="button"
                   className="btn-ghost btn-sm"
                   style={{ color: "#dc2626", borderColor: "#fecaca" }}
-                  onClick={() => void remove(n.id)}
+                  pending={busyKey === `del:${n.id}`}
+                  pendingLabel={s("pend.deleting")}
+                  onClick={() => void run(`del:${n.id}`, () => remove(n.id))}
                 >
                   {s("alerts.delete")}
-                </button>
+                </ActionButton>
               </div>
             </li>
           ))}

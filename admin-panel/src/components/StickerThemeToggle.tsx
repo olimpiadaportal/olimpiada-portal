@@ -4,6 +4,7 @@
 // theme with < 6 stickers; the action maps that to the "err.needsFive" code,
 // which is shown here as a friendly localized message (passed as a prop).
 import { useActionState } from "react";
+import { ActionButton } from "@/components/ActionButton";
 import {
   setStickerThemeEnabled,
   type StickerActionState,
@@ -41,9 +42,13 @@ export function StickerThemeToggle({
     <form action={action} style={{ display: "inline" }}>
       <input type="hidden" name="__id" value={id} />
       <input type="hidden" name="__enabled" value={String(!enabled)} />
-      <button type="submit" className="link-button" disabled={pending}>
-        {pending ? strings.saving : enabled ? strings.disable : strings.enable}
-      </button>
+      <ActionButton
+        className="link-button"
+        pending={pending}
+        pendingLabel={strings.saving}
+      >
+        {enabled ? strings.disable : strings.enable}
+      </ActionButton>
       {msg && (
         <span className="form-error" style={{ display: "block", marginTop: 4 }}>
           {msg}

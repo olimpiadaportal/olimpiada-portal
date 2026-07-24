@@ -11,6 +11,7 @@
 // own browser timezone) and submits it via hidden fields — mirroring
 // FreeAccessManager — so the server never applies a TZ-offset shift.
 import { useEffect, useState, useTransition, useActionState } from "react";
+import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
 import {
   createSeason,
@@ -137,6 +138,9 @@ export function SeasonManager({
 }) {
   const [modal, setModal] = useState<ModalState>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // True while a form/confirm submission is in flight — blocks Modal dismissal
+  // (Esc/overlay/×) so an in-flight action cannot lose its error feedback.
+  const [busy, setBusy] = useState(false);
   // "now" for status derivation — captured once on mount (statuses are coarse
   // enough that a per-render clock is unnecessary).
   const [now] = useState<number>(() => Date.now());
@@ -283,12 +287,14 @@ export function SeasonManager({
         onClose={() => setModal(null)}
         title={strings.newTitle}
         closeLabel={strings.close}
+        busy={busy}
       >
         <SeasonForm
           mode="create"
           strings={strings}
           onSuccess={() => close(strings.created)}
           onCancel={() => setModal(null)}
+          onPendingChange={setBusy}
         />
       </Modal>
 
@@ -298,6 +304,7 @@ export function SeasonManager({
         onClose={() => setModal(null)}
         title={strings.editTitle}
         closeLabel={strings.close}
+        busy={busy}
       >
         {editing && (
           <SeasonForm
@@ -307,6 +314,7 @@ export function SeasonManager({
             strings={strings}
             onSuccess={() => close(strings.saved)}
             onCancel={() => setModal(null)}
+            onPendingChange={setBusy}
           />
         )}
       </Modal>
@@ -323,6 +331,7 @@ export function SeasonManager({
               : strings.deleteTitle
         }
         closeLabel={strings.close}
+        busy={busy}
       >
         {confirming?.season && (
           <ConfirmAction
@@ -332,6 +341,7 @@ export function SeasonManager({
             strings={strings}
             onSuccess={(msg) => close(msg)}
             onCancel={() => setModal(null)}
+            onPendingChange={setBusy}
           />
         )}
       </Modal>
@@ -366,18 +376,27 @@ function SeasonForm({
   strings,
   onSuccess,
   onCancel,
+  onPendingChange,
 }: {
   mode: "create" | "edit";
   season?: SeasonRow;
   strings: SeasonStrings;
   onSuccess: () => void;
   onCancel: () => void;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const action = mode === "create" ? createSeason : updateSeason;
   const [state, formAction, pending] = useActionState<SeasonActionState, FormData>(
     action,
     null,
   );
+
+  // Mirror the in-flight state up to the Modal (dismissal lock); the cleanup
+  // clears it when the form unmounts mid-flight (e.g. success closes the modal).
+  useEffect(() => {
+    onPendingChange?.(pending);
+    return () => onPendingChange?.(false);
+  }, [pending, onPendingChange]);
 
   const [name, setName] = useState(season?.name ?? "");
   // Prefill datetime-local inputs from the stored ISO, rendered in the admin's
@@ -444,15 +463,14 @@ function SeasonForm({
       {state?.error && <p className="form-error">{state.error}</p>}
 
       <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-        <button className="btn" type="submit" disabled={!canSubmit}>
-          {mode === "create"
-            ? pending
-              ? strings.creating
-              : strings.create
-            : pending
-              ? strings.saving
-              : strings.save}
-        </button>
+        <ActionButton
+          className="btn"
+          pending={pending}
+          pendingLabel={mode === "create" ? strings.creating : strings.saving}
+          disabled={!canSubmit}
+        >
+          {mode === "create" ? strings.create : strings.save}
+        </ActionButton>
         <button
           type="button"
           className="btn-ghost"
@@ -488,15 +506,24 @@ function ConfirmAction({
   strings,
   onSuccess,
   onCancel,
+  onPendingChange,
 }: {
   season: SeasonRow;
   kind: "close" | "reopen" | "delete";
   strings: SeasonStrings;
   onSuccess: (notice: string) => void;
   onCancel: () => void;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // Mirror the in-flight state up to the Modal (dismissal lock); the cleanup
+  // clears it when the confirm unmounts mid-flight (success closes the modal).
+  useEffect(() => {
+    onPendingChange?.(pending);
+    return () => onPendingChange?.(false);
+  }, [pending, onPendingChange]);
 
   const cfg = {
     close: {
@@ -539,14 +566,15 @@ function ConfirmAction({
       <p style={{ margin: 0, fontWeight: 600 }}>{season.name}</p>
       {error && <p className="form-error">{error}</p>}
       <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-        <button
+        <ActionButton
           type="button"
           className={cfg.danger ? "btn-warn" : "btn"}
+          pending={pending}
+          pendingLabel={strings.working}
           onClick={submit}
-          disabled={pending}
         >
-          {pending ? strings.working : cfg.confirm}
-        </button>
+          {cfg.confirm}
+        </ActionButton>
         <button
           type="button"
           className="btn-ghost"

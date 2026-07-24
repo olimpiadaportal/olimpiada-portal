@@ -5,6 +5,7 @@ import {
   deleteQuestionType,
   type QuestionTypeDeleteState,
 } from "@/lib/admin/question-types";
+import { SubmitButton } from "@/components/ActionButton";
 
 // Delete a question type. Types that still have questions are never deleted —
 // the server returns "inUse" and we surface a friendly suggestion to
@@ -13,12 +14,14 @@ export function QuestionTypeDeleteButton({
   id,
   label,
   confirmText,
+  pendingLabel,
   errInUse,
   errGeneric,
 }: {
   id: string;
   label: string;
   confirmText: string;
+  pendingLabel?: string;
   errInUse: string;
   errGeneric: string;
 }) {
@@ -41,9 +44,9 @@ export function QuestionTypeDeleteButton({
       }}
     >
       <input type="hidden" name="__id" value={id} />
-      <button className="link-danger" type="submit">
+      <SubmitButton className="link-danger" pendingLabel={pendingLabel}>
         {label}
-      </button>
+      </SubmitButton>
       {msg && (
         <span className="form-error" style={{ display: "block", marginTop: 4 }}>
           {msg}

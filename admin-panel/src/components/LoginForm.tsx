@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { signIn, type LoginState } from "@/app/login/actions";
+import { ActionButton } from "@/components/ActionButton";
 import { PasswordInput } from "@/components/PasswordInput";
 
 export function LoginForm({
@@ -39,9 +40,9 @@ export function LoginForm({
 
       {state?.error && <p className="form-error">{state.error}</p>}
 
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? strings.submitting : strings.submit}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={strings.submitting}>
+        {strings.submit}
+      </ActionButton>
     </form>
   );
 }

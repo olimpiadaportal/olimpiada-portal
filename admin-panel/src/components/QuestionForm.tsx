@@ -22,6 +22,7 @@ import {
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { ActionButton } from "@/components/ActionButton";
 import { saveQuestion, type QuestionState } from "@/lib/admin/questions";
 import type { QuestionTaxonomy } from "@/lib/admin/question-options";
 import { localeNames, locales } from "@/i18n/config";
@@ -82,6 +83,7 @@ export function QuestionForm({
   statusText,
   stay,
   onSaved,
+  onBusyChange,
   withImagePicker,
   mediaSlot,
 }: {
@@ -97,6 +99,8 @@ export function QuestionForm({
   // `onSaved` fires so the host can close the modal and refresh the list.
   stay?: boolean;
   onSaved?: () => void;
+  // Host modals lock their close controls while a save/upload is in flight.
+  onBusyChange?: (busy: boolean) => void;
   // Create modal: local image picker whose upload is deferred until submit.
   withImagePicker?: boolean;
   // Edit modal: the existing immediate-upload media box, rendered in-place
@@ -260,6 +264,14 @@ export function QuestionForm({
 
   const busy = pending || uploading;
   const termLabel = (n: number) => tt(`term.${n}`);
+
+  // Same ref pattern as onSavedRef: report busy transitions without re-firing
+  // on callback identity changes.
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  useEffect(() => {
+    onBusyChangeRef.current?.(busy);
+  }, [busy]);
 
   return (
     <form onSubmit={handleSubmit} className="form">
@@ -523,9 +535,11 @@ export function QuestionForm({
       </label>
 
       {state?.error && <p className="form-error">{state.error}</p>}
-      <button className="btn" type="submit" disabled={busy}>
-        {busy ? tt("qform.saving") : submitLabel}
-      </button>
+      {/* pending={busy}: the action is dispatched manually (onSubmit +
+          startTransition), so useFormStatus would never see it. */}
+      <ActionButton className="btn" pending={busy} pendingLabel={tt("qform.saving")}>
+        {submitLabel}
+      </ActionButton>
     </form>
   );
 }

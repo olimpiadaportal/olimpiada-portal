@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect } from "react";
 import { saveDistrict, type DistrictSaveState } from "@/lib/admin/districts";
+import { ActionButton } from "@/components/ActionButton";
 
 // Create/edit form for a city district (rayon). Error codes returned by
 // saveDistrict are mapped to localized strings passed from the server page
@@ -111,9 +112,9 @@ export function DistrictForm({
         <p className="form-error">{mapError(state?.error, labels)}</p>
       )}
 
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? labels.saving : labels.submit}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={labels.saving}>
+        {labels.submit}
+      </ActionButton>
     </form>
   );
 }

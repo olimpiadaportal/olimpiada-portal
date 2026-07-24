@@ -130,6 +130,7 @@ export default async function StickerThemePage({
                 <StickerImageDeleteButton
                   id={img.id}
                   label={t("action.delete")}
+                  pendingLabel={lt("stkadm.deleting")}
                   confirmText={t("action.confirmDelete")}
                   errKeepFive={lt("stkadm.errKeepFive")}
                   errGeneric={t("err.server")}

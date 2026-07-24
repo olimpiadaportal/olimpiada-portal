@@ -6,6 +6,7 @@
 // permanently wipes the ledger, activity history and every cached point/streak.
 // All strings arrive translated from the server page (lb.* family).
 import { useActionState, useEffect, useState } from "react";
+import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
 import {
   resetLeaderboard,
@@ -117,9 +118,13 @@ export function LeaderboardResetControls({
             </span>
           )}
           <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-            <button type="submit" className="btn" disabled={pending}>
-              {pending ? strings.working : strings.seasonConfirm}
-            </button>
+            <ActionButton
+              className="btn"
+              pending={pending}
+              pendingLabel={strings.working}
+            >
+              {strings.seasonConfirm}
+            </ActionButton>
             <button
               type="button"
               className="btn-ghost"
@@ -168,13 +173,14 @@ export function LeaderboardResetControls({
             </span>
           )}
           <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-            <button
-              type="submit"
+            <ActionButton
               className="btn-warn"
-              disabled={pending || !ack}
+              pending={pending}
+              pendingLabel={strings.working}
+              disabled={!ack}
             >
-              {pending ? strings.working : strings.hardConfirm}
-            </button>
+              {strings.hardConfirm}
+            </ActionButton>
             <button
               type="button"
               className="btn-ghost"

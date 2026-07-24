@@ -5,6 +5,7 @@ import {
   saveQuestionType,
   type QuestionTypeSaveState,
 } from "@/lib/admin/question-types";
+import { ActionButton } from "@/components/ActionButton";
 
 // Error codes returned by saveQuestionType mapped to localized strings passed
 // from the server page (this client component holds no i18n dictionary itself
@@ -133,9 +134,9 @@ export function QuestionTypeForm({
 
       {err && <p className="form-error">{err}</p>}
 
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? labels.saving : labels.submit}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={labels.saving}>
+        {labels.submit}
+      </ActionButton>
     </form>
   );
 }

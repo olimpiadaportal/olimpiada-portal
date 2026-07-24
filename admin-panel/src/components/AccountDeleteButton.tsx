@@ -6,6 +6,7 @@ import {
   deleteChild,
   type DeleteState,
 } from "@/lib/admin/accounts";
+import { ActionButton } from "@/components/ActionButton";
 
 type Strings = {
   open: string;
@@ -80,13 +81,14 @@ export function AccountDeleteButton({
         <small className="muted">{strings.confirmHint}</small>
       </label>
       <div className="row-actions">
-        <button
+        <ActionButton
           className="btn"
-          type="submit"
-          disabled={pending || !matches}
+          pending={pending}
+          pendingLabel={strings.submitting}
+          disabled={!matches}
         >
-          {pending ? strings.submitting : strings.submit}
-        </button>
+          {strings.submit}
+        </ActionButton>
         <button
           type="button"
           className="btn-ghost"

@@ -21,6 +21,7 @@ import {
   type FreeAccessRow,
   type IntervalStatus,
 } from "@/lib/admin/freeAccess";
+import { ActionButton } from "@/components/ActionButton";
 
 // Convert a naive <input type="datetime-local"> value ("2026-07-05T14:30") to a
 // UTC ISO string, interpreting it in the admin's OWN browser timezone. "" stays "".
@@ -53,6 +54,8 @@ export type FreeAccessStrings = {
   scheduleAnother: string;
   deactivate: string;
   deactivateConfirm: string;
+  /** Pending label while a deactivation runs (falls back to `deactivate`). */
+  deactivating?: string;
   endBeforeStart: string;
   target: string;
   window: string;
@@ -218,9 +221,14 @@ function CreateForm({
       </label>
 
       <div className="row-actions">
-        <button className="btn" type="submit" disabled={!canSubmit}>
-          {pending ? strings.creating : strings.create}
-        </button>
+        <ActionButton
+          className="btn"
+          pending={pending}
+          pendingLabel={strings.creating}
+          disabled={!canSubmit}
+        >
+          {strings.create}
+        </ActionButton>
         {state?.error && <span className="form-error">{state.error}</span>}
       </div>
     </form>
@@ -462,9 +470,13 @@ function DeactivateButton({
       }}
     >
       <input type="hidden" name="id" value={id} />
-      <button type="submit" className="btn-ghost btn-sm" disabled={pending}>
+      <ActionButton
+        className="btn-ghost btn-sm"
+        pending={pending}
+        pendingLabel={strings.deactivating}
+      >
         {strings.deactivate}
-      </button>
+      </ActionButton>
     </form>
   );
 }

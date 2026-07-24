@@ -5,6 +5,7 @@
 // server action returns error CODES; the localized strings arrive as props
 // (resolved server-side on the page).
 import { useActionState, useRef } from "react";
+import { ActionButton } from "@/components/ActionButton";
 import {
   createStickerTheme,
   type StickerActionState,
@@ -54,9 +55,13 @@ export function StickerThemeForm({ strings }: { strings: Strings }) {
       </label>
       <p className="hint">{strings.hint}</p>
       <div className="row-actions" style={{ justifyContent: "flex-start" }}>
-        <button className="btn" type="submit" disabled={pending}>
-          {pending ? strings.saving : strings.submit}
-        </button>
+        <ActionButton
+          className="btn"
+          pending={pending}
+          pendingLabel={strings.saving}
+        >
+          {strings.submit}
+        </ActionButton>
         {state?.ok && <span className="form-ok">{strings.saved}</span>}
         {state?.error && (
           <span className="form-error">{errorText(state.error, strings)}</span>

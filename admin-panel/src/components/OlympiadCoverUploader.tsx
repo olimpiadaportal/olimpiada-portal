@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { attachOlympiadCover, detachOlympiadCover } from "@/lib/admin/olympiad";
+import { ActionButton } from "@/components/ActionButton";
 
 // Cover is image-only to match the olympiad-media bucket's allowed_mime_types.
 const ALLOWED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -31,6 +32,8 @@ type Strings = {
   upload: string;
   uploading: string;
   remove: string;
+  /** Pending label while the remove request runs (falls back to `remove`). */
+  removing?: string;
   none: string;
   hint: string;
 };
@@ -46,6 +49,8 @@ export function OlympiadCoverUploader({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // Scopes the remove button's spinner: `busy` is shared with the upload flow.
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -92,6 +97,7 @@ export function OlympiadCoverUploader({
 
   async function onRemove() {
     setBusy(true);
+    setRemoving(true);
     try {
       const fd = new FormData();
       fd.set("package_id", packageId);
@@ -99,6 +105,7 @@ export function OlympiadCoverUploader({
       router.refresh();
     } finally {
       setBusy(false);
+      setRemoving(false);
     }
   }
 
@@ -110,14 +117,16 @@ export function OlympiadCoverUploader({
         <div className="media-current">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={current.url} alt="" className="media-preview" />
-          <button
+          <ActionButton
             type="button"
             className="link-danger"
+            pending={removing}
+            pendingLabel={strings.removing}
             onClick={onRemove}
             disabled={busy}
           >
             {strings.remove}
-          </button>
+          </ActionButton>
         </div>
       ) : (
         <p className="muted">{strings.none}</p>

@@ -25,6 +25,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
+import { ActionButton } from "@/components/ActionButton";
 import { CityForm } from "@/components/CityForm";
 import { DistrictForm } from "@/components/DistrictForm";
 import { SchoolForm } from "@/components/SchoolForm";
@@ -855,14 +856,16 @@ function DeleteConfirm({
         >
           {l("action.cancel")}
         </button>
-        <button
+        <ActionButton
           type="button"
           className="btn btn-danger"
           onClick={onConfirm}
-          disabled={busy || blocked || (impact === null && !impactFailed)}
+          pending={busy}
+          pendingLabel={l("pend.deleting")}
+          disabled={blocked || (impact === null && !impactFailed)}
         >
-          {busy ? l("manage.saving") : l("action.delete")}
-        </button>
+          {l("action.delete")}
+        </ActionButton>
       </div>
     </Modal>
   );

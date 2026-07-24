@@ -14,6 +14,7 @@
 // (assert_question_type_rules etc.).
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
 import { bulkImportQuestions, type BulkImportState } from "@/lib/admin/questions";
 import { bulkImportOlympiadQuestions } from "@/lib/admin/olympiad";
@@ -250,9 +251,14 @@ export function BulkUploadModal({
           {!olympiad && <p className="hint">{tt("bulk.overrideHint")}</p>}
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button className="btn" type="submit" disabled={!canSubmit}>
-              {pending ? tt("bulk.submitting") : tt("bulk.submit")}
-            </button>
+            <ActionButton
+              className="btn"
+              pending={pending}
+              pendingLabel={tt("bulk.submitting")}
+              disabled={!canSubmit}
+            >
+              {tt("bulk.submit")}
+            </ActionButton>
             <button
               className="btn-ghost"
               type="button"

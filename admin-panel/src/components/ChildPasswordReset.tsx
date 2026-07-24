@@ -5,6 +5,7 @@ import {
   resetChildPassword,
   type ResetChildPasswordState,
 } from "@/lib/admin/accounts";
+import { ActionButton } from "@/components/ActionButton";
 import { PasswordInput } from "@/components/PasswordInput";
 
 type Strings = {
@@ -56,9 +57,9 @@ export function ChildPasswordReset({
         aria-label={strings.newPassword}
         strings={{ show: strings.showPassword, hide: strings.hidePassword }}
       />
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? strings.submitting : strings.submit}
-      </button>
+      <ActionButton className="btn" pending={pending} pendingLabel={strings.submitting}>
+        {strings.submit}
+      </ActionButton>
       <button
         type="button"
         className="btn-ghost"

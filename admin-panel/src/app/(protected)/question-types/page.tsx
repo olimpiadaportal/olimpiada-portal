@@ -103,6 +103,7 @@ export default async function QuestionTypesPage() {
                       id={qt.id}
                       label={t("action.delete")}
                       confirmText={t("action.confirmDelete")}
+                      pendingLabel={t("pend.deleting")}
                       errInUse={t("qt.errInUse")}
                       errGeneric={t("err.server")}
                     />

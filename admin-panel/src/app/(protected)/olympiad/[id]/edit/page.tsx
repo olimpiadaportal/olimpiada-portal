@@ -11,6 +11,7 @@ import {
   type OlympiadPoolRow,
 } from "@/components/OlympiadQuestionManager";
 import { archiveOlympiadPackage } from "@/lib/admin/olympiad";
+import { SubmitButton } from "@/components/ActionButton";
 import { olympiadLocalDict, olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import {
   olympiadLifecycleState,
@@ -301,6 +302,7 @@ export default async function EditOlympiadPage({
             upload: t("oly2.cover.upload"),
             uploading: t("oly2.cover.uploading"),
             remove: t("oly2.cover.remove"),
+            removing: t("pend.deleting"),
             none: t("oly2.cover.none"),
             hint: t("oly2.cover.hint"),
           }}
@@ -317,7 +319,7 @@ export default async function EditOlympiadPage({
         <p className="hint">{poolDict["olyq.manageNote"]}</p>
         <p className="hint">{poolDict["olyq.archivedNote"]}</p>
         <OlympiadQuestionManager
-          dict={poolDict}
+          dict={{ ...poolDict, "pend.loading": t("pend.loading"), "pend.processing": t("pend.processing"), "pend.deleting": t("pend.deleting") }}
           packageId={(pkg as any).id}
           subjectName={subjectName}
           packageGrades={targetGrades.map((g) => ({ value: g.id, label: g.name }))}
@@ -329,7 +331,9 @@ export default async function EditOlympiadPage({
       <section className="card" style={{ marginTop: 16 }}>
         <form action={archiveOlympiadPackage}>
           <input type="hidden" name="__id" value={(pkg as any).id} />
-          <button className="link-danger" type="submit">{t("oly2.archive")}</button>
+          <SubmitButton className="link-danger" pendingLabel={t("pend.processing")}>
+            {t("oly2.archive")}
+          </SubmitButton>
         </form>
       </section>
     </div>

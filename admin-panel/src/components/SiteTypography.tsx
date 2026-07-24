@@ -12,6 +12,7 @@
 // `saveSiteTypography` server action (whitelist + clamp re-run server-side).
 import { useMemo, useRef, useState, useTransition } from "react";
 import { saveSiteTypography } from "@/lib/admin/siteContent";
+import { ActionButton } from "@/components/ActionButton";
 import {
   FONT_LIBRARY,
   AZ_GLYPH_TEST,
@@ -334,14 +335,16 @@ export function SiteTypography({
             {strings.saved}
           </span>
         )}
-        <button
+        <ActionButton
           type="button"
           className="btn btn-sm"
           onClick={onSave}
-          disabled={!dirty || pending}
+          pending={pending}
+          pendingLabel={strings.saving}
+          disabled={!dirty}
         >
-          {pending ? strings.saving : strings.save}
-        </button>
+          {strings.save}
+        </ActionButton>
       </div>
     </section>
   );

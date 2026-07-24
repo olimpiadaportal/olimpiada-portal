@@ -1744,4 +1744,15 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AC5. Consistency across apps
 - Pick one student: their percent on the student board, the parent dashboard chip, parent analytics, and the mobile app must all agree (same number, same provisional state).
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-#** + what you saw.
+# ROUND 37 — automated daily rounds
+
+## AD1. Admin panel: readiness panel gone
+- Admin → Suallar (Questions): the collapsible "Günlük raund hazırlığı" table no longer exists. Everything else on the page (stat cards, chips, filters, table) is unchanged.
+
+## AD2. Rounds still generate with zero admin work ?
+- As a STUDENT with an active subject: Sınaq Testləri → start today's round. It starts normally (the first starter of the day generates the shared round automatically). A second student in the same grade+subject gets the SAME 25 questions.
+
+## AD3. Round content respects the rules
+- The 25 questions come only from Published, 5-option (A–E), term-tagged questions of the student's subject+grade (or shared), with terms up to the admin-configured current Rüb — and are spread across subtopics where the pool allows.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-#** + what you saw.

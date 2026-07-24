@@ -44,12 +44,6 @@ const STRINGS: Record<Locale, Dict> = {
     "qimg.uploadFailed": "Şəkli yükləmək mümkün olmadı. Yenidən cəhd edin.",
     "qchip.needsOptionE": "E variantı çatışmır",
     "qchip.needsTerm": "Rüb təyin edilməyib",
-    "ready.title": "Günlük raund hazırlığı",
-    "ready.subtitle":
-      "Cari rüb üzrə hər fənn × sinif üçün uyğun sual sayı (dərc olunmuş, 5 variantlı, rüblü). 25-dən az olan xanalar qırmızı göstərilir.",
-    "ready.short": "{n} xana 25-dən aşağıdır",
-    "ready.allOk": "Bütün xanalar hazırdır (25+)",
-    "ready.empty": "Məlumat yoxdur.",
     "bulk.fiveRule":
       "Hər sualda düz 5 cavab variantı (A–E) və düz 1 düzgün cavab olmalıdır.",
     "bulk.generalMeta":
@@ -108,12 +102,6 @@ const STRINGS: Record<Locale, Dict> = {
     "qimg.uploadFailed": "Could not upload the image. Try again.",
     "qchip.needsOptionE": "Needs option E",
     "qchip.needsTerm": "Needs term",
-    "ready.title": "Daily round readiness",
-    "ready.subtitle":
-      "Eligible questions per subject × grade for the current term (published, 5 options, with a term). Cells below 25 are highlighted in red.",
-    "ready.short": "{n} cells below 25",
-    "ready.allOk": "All cells ready (25+)",
-    "ready.empty": "No data.",
     "bulk.fiveRule":
       "Each question needs exactly 5 answer options (A–E) with exactly 1 correct.",
     "bulk.generalMeta":
@@ -171,12 +159,6 @@ const STRINGS: Record<Locale, Dict> = {
     "qimg.uploadFailed": "Не удалось загрузить изображение. Попробуйте ещё раз.",
     "qchip.needsOptionE": "Не хватает варианта E",
     "qchip.needsTerm": "Не указана четверть",
-    "ready.title": "Готовность ежедневного раунда",
-    "ready.subtitle":
-      "Подходящие вопросы по предметам и классам за текущую четверть (опубликованные, 5 вариантов, с четвертью). Ячейки меньше 25 выделены красным.",
-    "ready.short": "{n} ячеек ниже 25",
-    "ready.allOk": "Все ячейки готовы (25+)",
-    "ready.empty": "Нет данных.",
     "bulk.fiveRule":
       "У каждого вопроса должно быть ровно 5 вариантов ответа (A–E) и ровно 1 правильный.",
     "bulk.generalMeta":

@@ -4034,19 +4034,30 @@ begin
 
   -- Cumulative-term pool: published, general bank, term reviewed and <= current,
   -- valid 5-option questions of this subject, for this grade OR shared
-  -- (grade_id IS NULL — practice-engine parity, Round 21). Random draw = the mixture.
+  -- (grade_id IS NULL — practice-engine parity, Round 21).
+  -- Round 37: SUBTOPIC-BALANCED draw — rank randomly within each subtopic
+  -- bucket, take bucket_rank round-robin (all 1st picks before any 2nd pick),
+  -- random order inside a pass. Falls back to pure random when balance is
+  -- impossible (fewer buckets than needed picks).
   select coalesce(array_agg(id), '{}') into v_qids from (
-    select q.id
-    from public.questions q
-    where q.subject_id = p_subject_id
-      and (q.grade_id = p_grade_id or q.grade_id is null)
-      and q.status = 'published'
-      and q.olympiad_package_id is null
-      and q.term is not null and q.term <= v_term
-      and (select count(*) from public.answer_options ao where ao.question_id = q.id) = 5
-      and exists (select 1 from public.answer_options ao
-                   where ao.question_id = q.id and ao.is_correct)
-    order by random()
+    select p.id
+    from (
+      select q.id,
+             row_number() over (
+               partition by coalesce(q.subtopic_id, q.topic_id, q.id)
+               order by random()) as bucket_rank,
+             random() as tiebreak
+      from public.questions q
+      where q.subject_id = p_subject_id
+        and (q.grade_id = p_grade_id or q.grade_id is null)
+        and q.status = 'published'
+        and q.olympiad_package_id is null
+        and q.term is not null and q.term <= v_term
+        and (select count(*) from public.answer_options ao where ao.question_id = q.id) = 5
+        and exists (select 1 from public.answer_options ao
+                     where ao.question_id = q.id and ao.is_correct)
+    ) p
+    order by p.bucket_rank, p.tiebreak
     limit c_count
   ) picked;
 
@@ -4067,43 +4078,14 @@ begin
   return v_row;
 end;
 $$;
+comment on function public.get_or_create_daily_round(uuid, uuid, date) is
+  'Automated lazy daily-round generation (Round 37): first starter triggers a '
+  'race-safe, subtopic-balanced random 25-question draw from the cumulative-term '
+  'published pool (subject + grade/shared + 5-option). Shared immutable snapshot '
+  'per subject+grade+date; admins never prepare rounds.';
 revoke all on function public.get_or_create_daily_round(uuid, uuid, date) from public, anon, authenticated;
 grant execute on function public.get_or_create_daily_round(uuid, uuid, date) to service_role;
 
--- Admin readiness: eligible-question counts per subject×grade for the current
--- term (spot the "missing 7 questions" gaps BEFORE students hit them).
--- NOTE: this LANGUAGE SQL body reads questions.olympiad_package_id, a column
--- added by 015 (numeric run order) — skip body validation here; the body is
--- planned at call time and 013 #61 covers the engine.
-set check_function_bodies = off;
-create or replace function public.daily_round_readiness()
-returns table (subject_id uuid, subject_name text, grade_id uuid, grade_level int,
-               eligible int, required int)
-language sql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-  select s.id, s.name, g.id, g.level::int,
-         (select count(*)::int
-            from public.questions q
-           where q.subject_id = s.id
-             and (q.grade_id = g.id or q.grade_id is null)
-             and q.status = 'published' and q.olympiad_package_id is null
-             and q.term is not null and q.term <= public.current_academic_term()
-             and (select count(*) from public.answer_options ao where ao.question_id = q.id) = 5
-             and exists (select 1 from public.answer_options ao
-                          where ao.question_id = q.id and ao.is_correct)),
-         25
-  from public.subjects s
-  cross join public.grades g
-  where s.status = 'active'
-  order by s.name, g.level;
-$$;
-reset check_function_bodies;
-revoke all on function public.daily_round_readiness() from public, anon;
-grant execute on function public.daily_round_readiness() to authenticated, service_role;
--- (authenticated needed for the admin panel; the fn leaks only counts.)
 
 -- Student-facing pre-flight (Round 21): per active subject for the CALLING
 -- student — today's round exists / already played rated / can be started

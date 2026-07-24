@@ -2690,43 +2690,6 @@ a.qpage-link:hover {
   outline-offset: -1px;
 }
 
-/* Daily-round readiness panel (subject × grade eligible/25 grid). */
-.ready-panel {
-  margin-bottom: 16px;
-  padding: 12px 16px;
-}
-
-.ready-panel summary {
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-.ready-panel[open] summary {
-  margin-bottom: 8px;
-}
-
-.ready-flag {
-  color: #b91c1c;
-  font-weight: 600;
-}
-
-.ready-ok {
-  color: var(--ok-fg);
-  font-weight: 600;
-}
-
-.ready-table td.ready-cell {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.ready-table td.ready-cell.low {
-  color: #b91c1c;
-  background: #fef2f2;
-  font-weight: 700;
-}
-
 /* =========================================================================
    Locations (/locations) — Cities → Rayons → Schools master-detail
    (Round 21 item 7). Additive, token-driven; first master-detail pattern.

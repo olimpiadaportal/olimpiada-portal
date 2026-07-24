@@ -29,8 +29,9 @@ import { sanitizeSearchTerm } from "@/lib/admin/search";
 // Round 9 — Questions upgrades: server pagination, text search, cascading
 // filters, lifecycle stat cards. All searchParams are validated server-side
 // (whitelisted sizes, clamped page, real lifecycle statuses, uuid-shaped ids).
-// Round 21 — Rüb/term column, review chips ("needs option E" / "needs term"),
-// and the daily-round readiness panel (daily_round_readiness RPC).
+// Round 21 — Rüb/term column, review chips ("needs option E" / "needs term").
+// Round 37 — the daily-round readiness panel is GONE: rounds generate fully
+// automatically (lazy, cumulative-term, subtopic-balanced) with no admin prep.
 // ---------------------------------------------------------------------------
 
 const PAGE_SIZES = [25, 50, 100] as const;
@@ -64,15 +65,6 @@ function pageItems(current: number, total: number): (number | "…")[] {
   return items;
 }
 
-type ReadinessRow = {
-  subject_id: string;
-  subject_name: string;
-  grade_id: string;
-  grade_level: number;
-  eligible: number;
-  required: number;
-};
-
 export default async function QuestionsPage({
   searchParams,
 }: {
@@ -81,7 +73,7 @@ export default async function QuestionsPage({
   // Admin or Content Manager (content.create) may access the questions area.
   const ctx = await requirePermission("content.create");
   const locale = await getLocale();
-  // Local trilingual strings (Rüb labels, chips, readiness) fill the keys
+  // Local trilingual strings (Rüb labels, chips) fill the keys
   // messages.ts does not know yet; messages.ts wins once the keys land.
   const t = withLocalStrings(await getT(), locale);
   const supabase = await createClient();
@@ -198,7 +190,6 @@ export default async function QuestionsPage({
     { count: statPublished },
     { count: statRejected },
     { count: needsTermCount },
-    readiness,
     // For the New-question and Bulk-import modals.
     rawDict,
     selectOptions,
@@ -229,9 +220,6 @@ export default async function QuestionsPage({
       .select("id", { count: "exact", head: true })
       .is("olympiad_package_id", null)
       .is("term", null),
-    // Daily-round readiness: eligible/25 per active subject × grade for the
-    // current term (SECURITY DEFINER RPC; leaks only counts).
-    supabase.rpc("daily_round_readiness"),
     getDict(),
     loadQuestionOptions(),
     loadQuestionTaxonomy(),
@@ -371,22 +359,6 @@ export default async function QuestionsPage({
     { key: "needsTerm", label: t("qchip.needsTerm"), count: needsTermCount ?? 0 },
   ];
 
-  // ---- Daily-round readiness grid (subject rows × grade columns) -----------
-  const readyRows = ((readiness.data ?? []) as ReadinessRow[]).map((r) => ({
-    ...r,
-    eligible: Number(r.eligible ?? 0),
-    required: Number(r.required ?? 25),
-  }));
-  const readyGradeLevels = Array.from(
-    new Set(readyRows.map((r) => r.grade_level)),
-  ).sort((a, b) => a - b);
-  const readySubjects = Array.from(
-    new Map(readyRows.map((r) => [r.subject_id, r.subject_name])).entries(),
-  ).sort((a, b) => a[1].localeCompare(b[1]));
-  const readyCell = new Map<string, ReadinessRow>();
-  for (const r of readyRows) readyCell.set(`${r.subject_id}|${r.grade_level}`, r);
-  const readyShort = readyRows.filter((r) => r.eligible < r.required).length;
-
   return (
     // .questions-page widens .admin-content via :has() (like .locations-page)
     // so the table uses the full desktop width instead of the 1120px cap.
@@ -419,61 +391,6 @@ export default async function QuestionsPage({
           {t("qnotice.olympiadScoped")}
         </p>
       )}
-
-      {/* Daily-round readiness — eligible/25 per subject × grade, current
-          term. Collapsed by default; the summary carries the red shortfall
-          count so gaps stay visible at a glance. */}
-      <details className="card ready-panel">
-        <summary>
-          {t("ready.title")}
-          {" · "}
-          {readyShort > 0 ? (
-            <span className="ready-flag">
-              {t("ready.short").replace("{n}", String(readyShort))}
-            </span>
-          ) : (
-            <span className="ready-ok">{t("ready.allOk")}</span>
-          )}
-        </summary>
-        <p className="hint">{t("ready.subtitle")}</p>
-        {readyRows.length === 0 ? (
-          <p className="muted">{t("ready.empty")}</p>
-        ) : (
-          <div className="table-wrap">
-            <table className="table table-compact ready-table">
-              <thead>
-                <tr>
-                  <th>{t("qfield.subject")}</th>
-                  {readyGradeLevels.map((lv) => (
-                    <th key={lv} className="col-narrow">
-                      {lv}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {readySubjects.map(([sid, sname]) => (
-                  <tr key={sid}>
-                    <td>{sname}</td>
-                    {readyGradeLevels.map((lv) => {
-                      const cell = readyCell.get(`${sid}|${lv}`);
-                      const low = cell != null && cell.eligible < cell.required;
-                      return (
-                        <td
-                          key={lv}
-                          className={`ready-cell${low ? " low" : ""}`}
-                        >
-                          {cell ? `${cell.eligible}/${cell.required}` : "—"}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </details>
 
       {/* Lifecycle stat cards — click to filter by status (Total clears it). */}
       <div className="qstat-grid">

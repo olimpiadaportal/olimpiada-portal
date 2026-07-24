@@ -1013,20 +1013,19 @@ select '66_student_city_district' as check_name,
                    pg_get_functiondef('public.lb_rows(text,text,uuid,text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
--- 67) Round readiness + pool counts (migration 065): the daily pool accepts
---     shared (grade NULL) questions with the readiness fn in lockstep; the
---     student pre-flight and the real olympiad pool-count RPCs exist and are
---     callable by authenticated (counts/booleans only).
-select '67_round_readiness_pool_counts' as check_name,
+-- 67) Daily-round pool + counts (migrations 065 + 082): the automated draw
+--     accepts shared (grade NULL) questions and is SUBTOPIC-BALANCED; the
+--     admin readiness RPC is GONE (Round 37 — rounds need zero admin prep)
+--     while the student pre-flight stays; the olympiad pool-count RPC keeps
+--     its Round-34 signature/privileges.
+select '67_daily_round_pool_counts' as check_name,
        case when position('grade_id is null' in
                    pg_get_functiondef('public.get_or_create_daily_round(uuid,uuid,date)'::regprocedure)) > 0
-             and position('grade_id is null' in
-                   pg_get_functiondef('public.daily_round_readiness()'::regprocedure)) > 0
+             and position('bucket_rank' in
+                   pg_get_functiondef('public.get_or_create_daily_round(uuid,uuid,date)'::regprocedure)) > 0
+             and to_regprocedure('public.daily_round_readiness()') is null
              and to_regprocedure('public.get_my_round_readiness()') is not null
              and has_function_privilege('authenticated','public.get_my_round_readiness()','EXECUTE')
-             -- Round 34 (079): the counts RPC gained a defaulted p_grade_id —
-             -- the 1-arg overload must be GONE (ambiguity) and the 2-arg one
-             -- keeps the same privilege posture.
              and to_regprocedure('public.get_olympiad_pool_counts(uuid[],uuid)') is not null
              and to_regprocedure('public.get_olympiad_pool_counts(uuid[])') is null
              and has_function_privilege('authenticated','public.get_olympiad_pool_counts(uuid[],uuid)','EXECUTE')

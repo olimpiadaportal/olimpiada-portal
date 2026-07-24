@@ -124,6 +124,27 @@ create index if not exists idx_points_ledger_student_created
 create index if not exists idx_points_ledger_subject_student
   on public.student_points_ledger (subject_id, student_profile_id, created_at);
 
+-- Round 36 (migration 081): percentage-leaderboard per-attempt snapshot
+-- (counts + weighted num/den + coefficient snapshot; pct_valid gates ranking).
+alter table public.student_points_ledger
+  add column if not exists correct_count    int not null default 0,
+  add column if not exists answered_count   int not null default 0,
+  add column if not exists presented_count  int not null default 0,
+  add column if not exists weighted_num     numeric(14,4) not null default 0,
+  add column if not exists weighted_den     numeric(14,4) not null default 0,
+  add column if not exists weights_snapshot jsonb not null default '{}'::jsonb,
+  add column if not exists pct_valid        boolean not null default false;
+
+comment on column public.student_points_ledger.weighted_num is
+  'SUM(difficulty_weight x kind_weight) over CORRECT answers, snapshotted at grading.';
+comment on column public.student_points_ledger.weighted_den is
+  'SUM(difficulty_weight x kind_weight) over ALL presented questions, snapshotted at grading.';
+comment on column public.student_points_ledger.weights_snapshot is
+  'Coefficients active when the attempt was scored (kind weight, olympiad multiplier, difficulty weight map).';
+comment on column public.student_points_ledger.pct_valid is
+  'Row carries enough question-level data for percentage ranking (weighted_den > 0). '
+  'false = legacy row with no recalculable answer data - excluded from percentage boards.';
+
 create table if not exists public.student_activity_days (
   student_profile_id uuid not null references public.students (profile_id) on delete cascade,
   activity_date      date not null,           -- LOCAL date in the child's streak_tz

@@ -41,10 +41,20 @@ export type DashPayload = {
     | null;
 };
 
-/** get_child_leaderboard_summary payload (defensive-optional). */
+/** get_child_leaderboard_summary payload (defensive-optional). Round 36: the
+ * board value is a weighted percentage (pct_*); the RPC's points_* fields are
+ * deprecated and never read. */
 export type LbSummary = {
-  points_month?: number | null;
-  points_all_time?: number | null;
+  pct_month?: number | null;
+  pct_all_time?: number | null;
+  questions_month?: number | null;
+  questions_all_time?: number | null;
+  attempts_month?: number | null;
+  attempts_all_time?: number | null;
+  provisional_month?: boolean | null;
+  provisional_all_time?: boolean | null;
+  min_questions?: number | null;
+  min_attempts?: number | null;
   current_streak?: number | null;
   best_streak?: number | null;
   rank_month?: number | null;
@@ -83,6 +93,6 @@ export function dayKey(iso: string): string {
 export function lbHasActivity(lb: LbSummary | null): boolean {
   return (
     !!lb &&
-    (num(lb.points_all_time) > 0 || num(lb.points_month) > 0 || num(lb.best_streak) > 0)
+    (num(lb.attempts_all_time) > 0 || num(lb.questions_all_time) > 0 || num(lb.best_streak) > 0)
   );
 }

@@ -11,6 +11,7 @@ import { Card } from "@/components/Card";
 import { SectionHeader } from "@/components/SectionHeader";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
+import { formatPercent } from "@/lib/formatPercent";
 import { WeeklyBars, TrendLine } from "./charts";
 import {
   MIN_TOPIC_SAMPLE,
@@ -356,25 +357,34 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
 export function LeaderboardPanel({
   summary,
   t,
+  locale,
   onViewFull,
 }: {
   summary: LbSummary | null;
   t: T;
+  locale: string;
   /** Opens the full parent leaderboard browser (SectionHeader action). */
   onViewFull?: () => void;
 }) {
+  // rank_* arrive null while provisional — the tile says why, never "#—".
+  const provMonth = summary?.provisional_month === true;
+  const provAll = summary?.provisional_all_time === true;
   const tiles = lbHasActivity(summary)
     ? [
         {
-          label: t("plb.rankThisMonth"),
+          label: provMonth
+            ? `${t("plb.rankThisMonth")} · ${t("lb.provisional")}`
+            : t("plb.rankThisMonth"),
           value: summary!.rank_month != null ? `#${summary!.rank_month}` : "—",
         },
         {
-          label: t("plb.rankAllTime"),
+          label: provAll
+            ? `${t("plb.rankAllTime")} · ${t("lb.provisional")}`
+            : t("plb.rankAllTime"),
           value: summary!.rank_all_time != null ? `#${summary!.rank_all_time}` : "—",
         },
-        { label: t("plb.pointsMonth"), value: String(Math.round(num(summary!.points_month))) },
-        { label: t("plb.pointsAllTime"), value: String(Math.round(num(summary!.points_all_time))) },
+        { label: t("plb.pctMonth"), value: formatPercent(num(summary!.pct_month), locale) },
+        { label: t("plb.pctAllTime"), value: formatPercent(num(summary!.pct_all_time), locale) },
         { label: t("plb.currentStreak"), value: `\u{1F525} ${num(summary!.current_streak)}` },
         { label: t("plb.bestStreak"), value: `\u{1F525} ${num(summary!.best_streak)}` },
       ]
@@ -392,7 +402,16 @@ export function LeaderboardPanel({
         {t("plb.improvementSub")}
       </AppText>
       {tiles ? (
-        <KpiGrid kpis={tiles} />
+        <>
+          <KpiGrid kpis={tiles} />
+          {provMonth || provAll ? (
+            <AppText variant="muted" style={{ fontSize: 12 }}>
+              {t("lb.provisionalHint")
+                .replace("{q}", String(num(summary!.min_questions)))
+                .replace("{a}", String(num(summary!.min_attempts)))}
+            </AppText>
+          ) : null}
+        </>
       ) : (
         <Card style={{ alignItems: "center", gap: spacing.xs }}>
           <AppText variant="label" style={{ textAlign: "center" }}>

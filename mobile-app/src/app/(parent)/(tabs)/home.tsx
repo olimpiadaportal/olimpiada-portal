@@ -24,6 +24,7 @@ import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatPercent } from "@/lib/formatPercent";
 import type { ChildRow } from "@/lib/data";
 import { useOwnProfile } from "@/features/profile/useOwnProfile";
 import {
@@ -40,8 +41,11 @@ import {
 import { Pill, ScreenScroll, childDisplayName } from "@/features/parent/ui";
 
 // get_child_leaderboard_summary payload (defensive: any miss → "not ranked").
+// Round 36: the board is a weighted percentage — pct_month, never the
+// deprecated points_month.
 type LbSummary = {
-  points_month?: number | null;
+  pct_month?: number | null;
+  provisional_month?: boolean | null;
   current_streak?: number | null;
   rank_month?: number | null;
 };
@@ -91,7 +95,8 @@ function ChildCard({
     ? formatGradeLabel(child.grade.level, locale, child.grade.name)
     : null;
   const placeLine = [gradeText, child.school?.name].filter(Boolean).join(" • ");
-  const lbRanked = !!lb && lb.rank_month != null && Number(lb.points_month ?? 0) > 0;
+  const lbRanked = !!lb && lb.rank_month != null;
+  const lbProvisional = !!lb && lb.provisional_month === true;
 
   return (
     <Card style={{ gap: spacing.md }}>
@@ -162,13 +167,17 @@ function ChildCard({
             opacity: pressed ? 0.7 : 1,
           })}
         >
-          {lbRanked ? (
+          {lbRanked || lbProvisional ? (
             <>
-              <AppText variant="mono" color={tokens.accent} style={{ fontWeight: "700" }}>
-                #{lb!.rank_month}
-              </AppText>
+              {lbRanked ? (
+                <AppText variant="mono" color={tokens.accent} style={{ fontWeight: "700" }}>
+                  #{lb!.rank_month}
+                </AppText>
+              ) : (
+                <AppText variant="muted">{t("plb.provisionalShort")}</AppText>
+              )}
               <AppText variant="muted">
-                {Math.round(Number(lb!.points_month ?? 0))} {t("plb.pts")}
+                {formatPercent(Number(lb!.pct_month ?? 0), locale)}
               </AppText>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
                 <Flame size={14} color={tokens.accent2} strokeWidth={2} />

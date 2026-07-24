@@ -51,7 +51,7 @@ function LoadingSkeleton() {
 }
 
 export default function ParentAnalytics() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
   const config = useMobileConfig();
@@ -147,6 +147,7 @@ export default function ParentAnalytics() {
             <LeaderboardPanel
               summary={(lbQ.data ?? null) as LbSummary | null}
               t={t}
+              locale={locale}
               onViewFull={() => router.push("/(parent)/leaderboard")}
             />
           )

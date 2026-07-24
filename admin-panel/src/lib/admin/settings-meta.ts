@@ -208,10 +208,16 @@ export const SETTING_META: Record<string, SettingMeta> = {
     min: 10,
     max: 100000,
   },
-  // Leaderboard points formula (edited on the /leaderboard page, not on
-  // /settings — the Settings page renders keys explicitly per card). Ranges are
-  // enforced server-side in updateSetting via these min/max bounds. Difficulty
-  // weights are intentionally NOT here: they live on difficulty_levels.weight.
+  // Leaderboard formula (edited on the /leaderboard page, not on /settings —
+  // the Settings page renders keys explicitly per card). Ranges are enforced
+  // server-side in updateSetting via these min/max bounds. Difficulty weights
+  // are intentionally NOT here: they live on difficulty_levels.weight.
+  // Round 36 (percentage leaderboard): per_correct is a legacy point value with
+  // no ranking effect; olympiad_multiplier weights olympiad questions inside
+  // the bounded percentage; the leaderboard.rank.* minimums gate official ranks
+  // (below them a result is provisional). practice_daily_cap_per_subject has
+  // NO entry on purpose — inert since migration 057, its DB seed row is config
+  // history only and must not render as a live setting.
   "leaderboard.points.per_correct": {
     kind: "number",
     labelKey: "settings.sys.lb_per_correct.label",
@@ -220,14 +226,6 @@ export const SETTING_META: Record<string, SettingMeta> = {
     min: 1,
     max: 1000,
   },
-  "leaderboard.points.practice_daily_cap_per_subject": {
-    kind: "number",
-    labelKey: "settings.sys.lb_daily_cap.label",
-    helpKey: "settings.sys.lb_daily_cap.help",
-    placeholder: "150",
-    min: 0,
-    max: 100000,
-  },
   "leaderboard.points.olympiad_multiplier": {
     kind: "number",
     labelKey: "settings.sys.lb_olympiad_multiplier.label",
@@ -235,6 +233,22 @@ export const SETTING_META: Record<string, SettingMeta> = {
     placeholder: "1.5",
     min: 0.1,
     max: 10,
+  },
+  "leaderboard.rank.min_questions": {
+    kind: "number",
+    labelKey: "settings.sys.lb_min_questions.label",
+    helpKey: "settings.sys.lb_min_questions.help",
+    placeholder: "25",
+    min: 1,
+    max: 1000,
+  },
+  "leaderboard.rank.min_attempts": {
+    kind: "number",
+    labelKey: "settings.sys.lb_min_attempts.label",
+    helpKey: "settings.sys.lb_min_attempts.help",
+    placeholder: "2",
+    min: 1,
+    max: 100,
   },
   // Academic calendar (Round 20): the current school year + term drive the
   // daily-round question pools server-side (cumulative topic windows). Edited

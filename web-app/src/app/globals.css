@@ -9847,6 +9847,26 @@ ul.clean li {
   color: var(--muted, #6b7280);
   width: 56px;
 }
+/* Round 36 — provisional (below-threshold) rows: small badge next to the name
+   + one legend line under the board. Theme-neutral like the rest of the block. */
+.lb-prov-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--line, var(--border, #e5e7eb));
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim, var(--muted, #6b7280));
+  vertical-align: middle;
+}
+.lb-prov-note {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--dim, var(--muted, #6b7280));
+}
 .lb-part-ctx {
   display: none;
 }

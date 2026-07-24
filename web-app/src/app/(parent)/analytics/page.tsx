@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
 import {
   AnalyticsDashboard,
@@ -13,9 +14,17 @@ import {
 
 // get_child_leaderboard_summary payload (defensive-optional: any RPC error/null
 // is treated as "no leaderboard activity" and renders the honest empty state).
+// Round 36: the board value is the weighted PERCENTAGE (pct_*); the legacy
+// points_* fields still arrive but are deprecated and must never be rendered.
 type LbSummary = {
-  points_month?: number | null;
-  points_all_time?: number | null;
+  pct_month?: number | null;
+  pct_all_time?: number | null;
+  questions_month?: number | null;
+  questions_all_time?: number | null;
+  attempts_month?: number | null;
+  attempts_all_time?: number | null;
+  provisional_month?: boolean | null;
+  provisional_all_time?: boolean | null;
   current_streak?: number | null;
   best_streak?: number | null;
   rank_month?: number | null;
@@ -69,6 +78,7 @@ export default async function ParentAnalytics({
 }) {
   const parent = await requireParent();
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
   const sp = await searchParams;
 
@@ -310,8 +320,8 @@ export default async function ParentAnalytics({
   }
   const lbHasActivity =
     !!lbSummary &&
-    (Number(lbSummary.points_all_time ?? 0) > 0 ||
-      Number(lbSummary.points_month ?? 0) > 0 ||
+    (Number(lbSummary.questions_all_time ?? 0) > 0 ||
+      Number(lbSummary.attempts_all_time ?? 0) > 0 ||
       Number(lbSummary.best_streak ?? 0) > 0);
 
   const dict: Record<string, string> = {};
@@ -369,29 +379,37 @@ export default async function ParentAnalytics({
           </div>
           {lbHasActivity ? (
             <div className="ana-kpis">
+              {/* Rank KPIs: a provisional result NEVER shows as a rank — "—"
+                  plus the provisional label instead. */}
               <div className="ana-kpi">
                 <span className="ana-kpi-val">
                   {lbSummary!.rank_month != null ? `#${lbSummary!.rank_month}` : "—"}
                 </span>
-                <span className="ana-kpi-label">{t("plb.rankThisMonth")}</span>
+                <span className="ana-kpi-label">
+                  {t("plb.rankThisMonth")}
+                  {lbSummary!.provisional_month && <> · {t("plb.provisionalShort")}</>}
+                </span>
               </div>
               <div className="ana-kpi">
                 <span className="ana-kpi-val">
                   {lbSummary!.rank_all_time != null ? `#${lbSummary!.rank_all_time}` : "—"}
                 </span>
-                <span className="ana-kpi-label">{t("plb.rankAllTime")}</span>
+                <span className="ana-kpi-label">
+                  {t("plb.rankAllTime")}
+                  {lbSummary!.provisional_all_time && <> · {t("plb.provisionalShort")}</>}
+                </span>
               </div>
               <div className="ana-kpi">
                 <span className="ana-kpi-val">
-                  {Math.round(Number(lbSummary!.points_month ?? 0))}
+                  {formatPercent(Number(lbSummary!.pct_month ?? 0), locale)}
                 </span>
-                <span className="ana-kpi-label">{t("plb.pointsMonth")}</span>
+                <span className="ana-kpi-label">{t("plb.pctMonth")}</span>
               </div>
               <div className="ana-kpi">
                 <span className="ana-kpi-val">
-                  {Math.round(Number(lbSummary!.points_all_time ?? 0))}
+                  {formatPercent(Number(lbSummary!.pct_all_time ?? 0), locale)}
                 </span>
-                <span className="ana-kpi-label">{t("plb.pointsAllTime")}</span>
+                <span className="ana-kpi-label">{t("plb.pctAllTime")}</span>
               </div>
               <div className="ana-kpi">
                 <span className="ana-kpi-val">

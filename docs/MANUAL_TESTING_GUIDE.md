@@ -1725,4 +1725,23 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AB4. Failed request re-enables
 - Turn off your network (or stop Supabase) and click any Save: after the failure message, the button is clickable again — never stuck spinning.
 
-If anything doesn't match, tell me the **ZZ-# / AB-#** + what you saw.
+# ROUND 36 — percentage leaderboard (points ranking replaced)
+
+## AC1. Board shows FAİZ, not XAL
+- Student → Reytinq: the tab reads **Faiz**, the value column reads **Faiz**, rows show `87,35%`-style values (2 decimals), never `150`. Your own card shows `0%` (not `0 xal`) before any activity. The 🔥 Seriya tab is unchanged.
+- Same on the parent leaderboard page, the mobile Reytinq tab, and the public landing top-10.
+
+## AC2. Fairness — subject count doesn't rank
+- Two students with the same accuracy but different subject counts (e.g. 8/10 in four subjects vs 8/10 in two) must show the SAME percent and SHARE the same rank (ties render as 1, 1, 3 — competition ranking).
+
+## AC3. Provisional (low-sample) results
+- A brand-new student who aces one short set does NOT take place #1: their row shows **—** in the rank column with an **İlkin** badge, listed after ranked rows, and their own card explains how many questions/rounds are still needed.
+- Admin → Reytinq: the formula card is now **"Reytinq faizi düsturu"** with two new fields — minimum questions + minimum rounds. Raise "minimum questions" very high → everyone becomes provisional on the boards; put it back (default 25).
+
+## AC4. Admin scoring controls
+- The old "Günlük məşq limiti" field is GONE (it has been inert since Round 20). "Hər düzgün cavab üçün xal" now says it does not affect the ranking. "Olimpiada çəkisi" explains it weights questions and can never push a result above 100%.
+
+## AC5. Consistency across apps
+- Pick one student: their percent on the student board, the parent dashboard chip, parent analytics, and the mobile app must all agree (same number, same provisional state).
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-#** + what you saw.

@@ -4,26 +4,15 @@
 // The client only ever sends whitelist-validated enums + ids clamped against
 // real catalogs/own rows — never free-form strings — mirroring the web pages.
 import { supabase } from "@/lib/supabase";
+import { parseLbRows, parseRankPayload, type LbRow, type MyRank } from "./parse";
 
-export type Board = "points" | "streak";
+export type { LbRow, MyRank };
+
+// 'percent' = the weighted question-level percentage board (Round 36 — the old
+// 'points' arg survives server-side only as a deprecated alias).
+export type Board = "percent" | "streak";
 export type Scope = "global" | "subject" | "grade" | "city" | "district" | "school";
 export type PeriodUrl = "month" | "all";
-
-/** get_leaderboard row (migrations 048 + 058): server-formatted "Firstname L."
- * + city/district/school/grade context (district derives from the student's
- * SCHOOL server-side). Render as-is — NEVER re-derive names locally. */
-export type LbRow = {
-  rank: number;
-  display_name: string;
-  city: string | null;
-  district: string | null;
-  school: string | null;
-  grade_level: number | null;
-  value: number;
-  is_self: boolean;
-};
-
-export type MyRank = { rank: number | null; total: number; value: number };
 
 export type StreakStatus = {
   current: number;
@@ -84,7 +73,7 @@ export async function fetchLeaderboard(args: LbArgs): Promise<LbRow[]> {
     p_limit: 50,
   });
   if (error) throw error;
-  return (data ?? []) as LbRow[];
+  return parseLbRows(data);
 }
 
 export async function fetchMyRank(args: LbArgs): Promise<MyRank> {
@@ -95,17 +84,12 @@ export async function fetchMyRank(args: LbArgs): Promise<MyRank> {
     p_period: args.period,
   });
   if (error) throw error;
-  const o = (data ?? {}) as Record<string, unknown>;
-  return {
-    rank: typeof o.rank === "number" ? o.rank : null,
-    total: typeof o.total === "number" ? o.total : 0,
-    value: typeof o.value === "number" ? o.value : 0,
-  };
+  return parseRankPayload(data);
 }
 
 /** get_child_leaderboard_position payload — one child's #rank/total + value
- * under the parent board's CURRENT filters. */
-export type ChildPosition = { rank: number | null; total: number; value: number };
+ * under the parent board's CURRENT filters (same jsonb shape as my-rank). */
+export type ChildPosition = MyRank;
 
 /** A linked child's position under the given filters (parent board). The RPC
  * re-verifies the parent↔child link in-body; any error renders as "not in this
@@ -122,12 +106,7 @@ export async function fetchChildLeaderboardPosition(
     p_period: args.period,
   });
   if (error || !data) return null;
-  const o = data as Record<string, unknown>;
-  return {
-    rank: typeof o.rank === "number" ? o.rank : null,
-    total: typeof o.total === "number" ? o.total : 0,
-    value: typeof o.value === "number" ? o.value : 0,
-  };
+  return parseRankPayload(data);
 }
 
 export async function fetchStreakStatus(): Promise<StreakStatus | null> {

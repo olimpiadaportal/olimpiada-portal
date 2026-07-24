@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect";
 
@@ -19,25 +20,28 @@ import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect"
 // The old anonymization (display_name null + anon_tag) is gone.
 //
 // searchParams contract (all optional, all whitelist-validated):
-//   ?board=points|streak      (default points; streak is GLOBAL-only)
-//   ?scope=global|subject|grade|city|district|school   (points only; default
+//   ?board=percent|streak     (default percent; legacy ?board=points lands on
+//          percent too; streak is GLOBAL-only)
+//   ?scope=global|subject|grade|city|district|school   (percent only; default
 //          global; grade/city/school are offered ONLY when the child has that
 //          id; district (migration 058) is offered when the child's city has
 //          active districts; subject whenever an active subject exists)
-//   ?period=month|all         (points only; default month; all → 'all_time')
+//   ?period=month|all         (percent only; default month; all → 'all_time')
 //   ?subject=<uuid>           (subject scope only; validated against the ACTIVE
 //          subjects catalog — forged/unknown ids clamp to the first subject)
 //   ?district=<uuid>          (district scope only; validated against the
 //          child's city's ACTIVE districts — unknown ids clamp to the first)
 
-type Board = "points" | "streak";
+type Board = "percent" | "streak";
 type Scope = "global" | "subject" | "grade" | "city" | "district" | "school";
 type PeriodUrl = "month" | "all";
 
 // get_leaderboard row (migrations 048 + 058: district derived from the
-// student's school, for BOTH boards).
+// student's school, for BOTH boards). Round 36: value = UNROUNDED weighted
+// percentage; ranked rows come first with server COMPETITION ranks, then
+// provisional rows with rank=null — the server order is authoritative.
 type LbRow = {
-  rank: number;
+  rank: number | null;
   display_name: string; // ALWAYS "Firstname L." (server-formatted)
   city: string | null;
   district: string | null;
@@ -45,8 +49,21 @@ type LbRow = {
   grade_level: number | null;
   value: number;
   is_self: boolean;
+  is_provisional: boolean;
+  questions: number;
+  correct: number;
+  attempts: number;
 };
-type MyRank = { rank: number | null; total: number; value: number };
+type MyRank = {
+  rank: number | null;
+  total: number;
+  value: number;
+  is_provisional: boolean;
+  questions: number;
+  attempts: number;
+  min_questions: number;
+  min_attempts: number;
+};
 type StreakStatus = {
   current: number;
   best: number;
@@ -122,7 +139,8 @@ export default async function ChildLeaderboardPage({
   }
 
   // ---- server-side whitelists (never pass raw client strings to the RPC) ----
-  const board: Board = raw.board === "streak" ? "streak" : "points";
+  // Anything that isn't "streak" (incl. the legacy ?board=points) → percent.
+  const board: Board = raw.board === "streak" ? "streak" : "percent";
   const periodUrl: PeriodUrl = raw.period === "all" ? "all" : "month";
   // grade/city/school tabs exist ONLY when the child has the corresponding id;
   // the subject tab exists whenever the platform has at least one active
@@ -181,7 +199,16 @@ export default async function ChildLeaderboardPage({
       : Promise.resolve({ data: null } as { data: unknown }),
   ]);
   const rows = (listRes.data ?? []) as LbRow[];
-  const me = (meRes.data ?? { rank: null, total: 0, value: 0 }) as MyRank;
+  const me = (meRes.data ?? {
+    rank: null,
+    total: 0,
+    value: 0,
+    is_provisional: false,
+    questions: 0,
+    attempts: 0,
+    min_questions: 0,
+    min_attempts: 0,
+  }) as MyRank;
   const streak = (streakRes.data ?? null) as StreakStatus | null;
 
   // Link builder — default values are omitted so canonical URLs stay clean.
@@ -197,8 +224,8 @@ export default async function ChildLeaderboardPage({
     district: string | null;
   }): string => {
     const p = new URLSearchParams();
-    if (q.board !== "points") p.set("board", q.board);
-    if (q.board === "points") {
+    if (q.board !== "percent") p.set("board", q.board);
+    if (q.board === "percent") {
       if (q.scope !== "global") p.set("scope", q.scope);
       if (q.period !== "month") p.set("period", q.period);
       if (q.scope === "subject" && q.subject && q.subject !== defaultSubject) {
@@ -241,16 +268,17 @@ export default async function ChildLeaderboardPage({
         ? "lb.empty.month"
         : "lb.empty.all";
 
+  // NEVER rounded to an integer — the server's unrounded value/order rules.
   const fmtValue = (v: number): string =>
-    board === "points"
-      ? String(Math.round(Number(v)))
+    board === "percent"
+      ? formatPercent(Number(v), locale)
       : `${Number(v)} ${t("lb.days")}`;
 
   // Mobile context line under the participant name: the same columns the
-  // desktop table shows, joined into one muted line (points: city/district/
+  // desktop table shows, joined into one muted line (percent: city/district/
   // school/grade; streak: district only — its sole context column).
   const ctxOf = (r: LbRow): string =>
-    (board === "points"
+    (board === "percent"
       ? [
           r.city?.trim() || null,
           r.district?.trim() || null,
@@ -263,11 +291,11 @@ export default async function ChildLeaderboardPage({
       .join(" · ");
 
   // ---- ONE column config drives the single table for every board/scope ----
-  // Points boards (all scopes): Sıra·İştirakçı·Şəhər·Rayon·Məktəb·Sinif·Xal
+  // Percent boards (all scopes): Sıra·İştirakçı·Şəhər·Rayon·Məktəb·Sinif·Faiz
   // (district right after city, migration 058); the SUBJECT scope shows the
   // selected subject once in the caption instead of a redundant per-row
   // column. The streak board keeps its simpler layout + the district column.
-  // Ranks are PLAIN NUMBERS 1..50 — no medal icons anywhere.
+  // Ranks are PLAIN NUMBERS — no medal icons; provisional rows get "—".
   type Col = {
     id: string;
     header: string;
@@ -280,7 +308,7 @@ export default async function ChildLeaderboardPage({
       id: "rank",
       header: t("lb.colRank"),
       tdClass: "arena-rank-cell",
-      render: (r) => String(r.rank),
+      render: (r) => (r.rank !== null ? String(r.rank) : "—"),
     },
     {
       id: "participant",
@@ -293,12 +321,15 @@ export default async function ChildLeaderboardPage({
               {(r.display_name ?? "").trim() || "—"}
             </span>
             {r.is_self && <span className="arena-pts"> · {t("lb.you")}</span>}
+            {r.is_provisional && (
+              <span className="lb-prov-badge">{t("lb.provisional")}</span>
+            )}
             {ctx && <span className="lb-part-ctx">{ctx}</span>}
           </>
         );
       },
     },
-    ...(board === "points"
+    ...(board === "percent"
       ? ([
           {
             id: "city",
@@ -316,7 +347,7 @@ export default async function ChildLeaderboardPage({
       tdClass: "lb-ctx-col",
       render: (r) => r.district?.trim() || "—",
     },
-    ...(board === "points"
+    ...(board === "percent"
       ? ([
           {
             id: "school",
@@ -336,26 +367,35 @@ export default async function ChildLeaderboardPage({
       : []),
     {
       id: "value",
-      header: board === "points" ? t("lb.colPoints") : t("lb.colStreak"),
+      header: board === "percent" ? t("lb.colPercent") : t("lb.colStreak"),
       thClass: "num",
       tdClass: "num arena-pts",
       render: (r) => fmtValue(r.value),
     },
   ];
 
+  // Provisional legend — shown whenever any provisional context is visible
+  // (a provisional row on the board or the viewer themselves); thresholds
+  // come from the get_my_leaderboard_rank payload.
+  const showProvHint =
+    board === "percent" && (rows.some((r) => r.is_provisional) || me.is_provisional);
+  const provHint = t("lb.provisionalHint")
+    .replace("{q}", String(Number(me.min_questions ?? 0)))
+    .replace("{a}", String(Number(me.min_attempts ?? 0)));
+
   return (
     <section>
       <p className="arena-eyebrow">{t("lb.eyebrow")}</p>
       <h1 style={{ marginBottom: 18 }}>{t("lb.title")}</h1>
 
-      {/* Board tabs: Points | Streak */}
+      {/* Board tabs: Percent | Streak */}
       <nav className="lb-boards" aria-label={t("lb.title")}>
         <Link
-          className={`lb-board${board === "points" ? " active" : ""}`}
-          href={href({ ...cur, board: "points" })}
-          aria-current={board === "points" ? "page" : undefined}
+          className={`lb-board${board === "percent" ? " active" : ""}`}
+          href={href({ ...cur, board: "percent" })}
+          aria-current={board === "percent" ? "page" : undefined}
         >
-          {t("lb.board.points")}
+          {t("lb.board.percent")}
         </Link>
         <Link
           className={`lb-board${board === "streak" ? " active" : ""}`}
@@ -366,7 +406,7 @@ export default async function ChildLeaderboardPage({
         </Link>
       </nav>
 
-      {board === "points" && (
+      {board === "percent" && (
         <>
           {/* Scope tabs — only the scopes this child actually has. */}
           <div className="arena-chips" role="group" aria-label={t("lb.scope.global")}>
@@ -457,7 +497,7 @@ export default async function ChildLeaderboardPage({
 
       {/* Subject caption — the whole board shares one subject, so it is shown
           ONCE here instead of as a redundant per-row column. */}
-      {board === "points" && selectedSubjectName && (
+      {board === "percent" && selectedSubjectName && (
         <p className="lb-subject-caption">
           {t("lb.subjectLabel")}: <strong>{selectedSubjectName}</strong>
         </p>
@@ -483,8 +523,9 @@ export default async function ChildLeaderboardPage({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.rank} className={r.is_self ? "me" : undefined}>
+                {rows.map((r, i) => (
+                  // Index key: provisional rows all share rank=null.
+                  <tr key={i} className={r.is_self ? "me" : undefined}>
                     {cols.map((c) => (
                       <td key={c.id} className={c.tdClass}>
                         {c.render(r)}
@@ -498,6 +539,8 @@ export default async function ChildLeaderboardPage({
         )}
       </div>
 
+      {showProvHint && <p className="lb-prov-note">{provHint}</p>}
+
       {/* Sticky "Your rank" card for the CURRENT board/scope/period — visible
           even when the child is outside the top-50. A null rank under a
           non-default filter gets the honest "not participating under this
@@ -509,17 +552,25 @@ export default async function ChildLeaderboardPage({
             <div className="lb-me-rank">
               #{me.rank} <span className="lb-me-total">/ {me.total}</span>
             </div>
+          ) : me.is_provisional ? (
+            <div className="lb-me-none">
+              {t("lb.myRank.provisional")
+                .replace("{q}", String(Number(me.questions ?? 0)))
+                .replace("{mq}", String(Number(me.min_questions ?? 0)))
+                .replace("{a}", String(Number(me.attempts ?? 0)))
+                .replace("{ma}", String(Number(me.min_attempts ?? 0)))}
+            </div>
           ) : (
             <div className="lb-me-none">
-              {board === "points" && scope !== "global"
+              {board === "percent" && scope !== "global"
                 ? t("lb.myRank.notInFilter")
                 : t("lb.myRank.none")}
             </div>
           )}
         </div>
         <div className="lb-me-val">
-          {board === "points"
-            ? `${Math.round(Number(me.value))} ${t("lb.pointsUnit")}`
+          {board === "percent"
+            ? formatPercent(Number(me.value), locale)
             : `${Number(me.value)} ${t("lb.days")}`}
         </div>
       </aside>

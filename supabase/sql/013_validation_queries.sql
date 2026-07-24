@@ -1305,6 +1305,31 @@ select '80_public_media_anon_read' as check_name,
                             and qual like '%visibility%public%')
             then 'PASS' else 'FAIL' end as status;
 
+
+-- 81) Round 36 (migration 081): percentage leaderboard — ledger snapshot
+--     columns, student caches, participation settings, rewritten board fns
+--     (percent value + provisional + competition ranks), percent season/
+--     rollover standings, grant posture, and the num<=den invariant.
+select '81_percentage_leaderboard' as check_name,
+       case when exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='student_points_ledger'
+                            and column_name='weighted_den')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='pct_den_all')
+             and exists (select 1 from public.system_settings where key='leaderboard.rank.min_questions')
+             and exists (select 1 from public.system_settings where key='leaderboard.rank.min_attempts')
+             and to_regprocedure('public.lb_rows(text,text,uuid,text)') is not null
+             and has_function_privilege('authenticated','public.lb_rows(text,text,uuid,text)','EXECUTE') = false
+             and position('is_provisional' in pg_get_functiondef('public.get_leaderboard(text,text,uuid,text,int)'::regprocedure)) > 0
+             and position('rank() over' in pg_get_functiondef('public.get_leaderboard(text,text,uuid,text,int)'::regprocedure)) > 0
+             and position('weighted_num' in pg_get_functiondef('public.award_attempt_points(uuid)'::regprocedure)) > 0
+             and position('percent' in pg_get_functiondef('public.get_public_leaderboard(int)'::regprocedure)) > 0
+             and position('metric' in pg_get_functiondef('public.close_leaderboard_season(uuid)'::regprocedure)) > 0
+             and not exists (select 1 from public.student_points_ledger
+                              where pct_valid and weighted_num > weighted_den)
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

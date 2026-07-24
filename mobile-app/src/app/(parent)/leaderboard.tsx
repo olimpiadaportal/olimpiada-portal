@@ -1,5 +1,5 @@
 // Parent full leaderboard — native port of web /leaderboard (parent panel):
-// the SAME top-50 board the student arena shows (points | streak, month |
+// the SAME top-50 board the student arena shows (percent | streak, month |
 // all_time, global/subject/grade/city/district/school scopes) but with
 // CATALOG-driven filters — a parent is not scoped to one child, so grades come
 // from the grades catalog, cities from the cities catalog and district/school
@@ -103,7 +103,7 @@ export default function ParentLeaderboard() {
   const citiesQ = useCities();
   const rayonsQ = useCityDistricts();
 
-  const [board, setBoard] = useState<Board>("points");
+  const [board, setBoard] = useState<Board>("percent");
   const [scopeSel, setScopeSel] = useState<Scope>("global");
   const [periodUrl, setPeriodUrl] = useState<PeriodUrl>("month");
   const [subjectSel, setSubjectSel] = useState<string | null>(null);
@@ -237,12 +237,12 @@ export default function ParentLeaderboard() {
 
   return (
     <ScreenScroll refreshing={refreshing} onRefresh={onRefresh}>
-      {/* Board switch: Points | Streak */}
+      {/* Board switch: Percent | Streak */}
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <Chip
-          label={t("lb.board.points")}
-          active={board === "points"}
-          onPress={() => setBoard("points")}
+          label={t("lb.board.percent")}
+          active={board === "percent"}
+          onPress={() => setBoard("percent")}
         />
         <Chip
           label={`\u{1F525} ${t("lb.board.streak")}`}
@@ -251,7 +251,7 @@ export default function ParentLeaderboard() {
         />
       </View>
 
-      {board === "points" ? (
+      {board === "percent" ? (
         <>
           {/* Scope chips — catalog-driven (parents see every scope). */}
           <ScrollView
@@ -369,22 +369,33 @@ export default function ParentLeaderboard() {
           <EmptyState title={t("plb.board.empty")} />
         </Card>
       ) : (
-        <Card style={{ padding: spacing.sm, gap: 0 }}>
-          <BoardRowList
-            rows={rows}
-            board={board}
-            t={t}
-            locale={locale}
-            colors={{
-              ink: tokens.text,
-              muted: tokens.muted,
-              dim: tokens.muted,
-              line: tokens.border,
-              selfBg: tokens.chipBg,
-              highlight: tokens.accent,
-            }}
-          />
-        </Card>
+        <>
+          <Card style={{ padding: spacing.sm, gap: 0 }}>
+            <BoardRowList
+              rows={rows}
+              board={board}
+              t={t}
+              locale={locale}
+              colors={{
+                ink: tokens.text,
+                muted: tokens.muted,
+                dim: tokens.muted,
+                line: tokens.border,
+                selfBg: tokens.chipBg,
+                highlight: tokens.accent,
+              }}
+            />
+          </Card>
+          {/* Provisional legend — thresholds arrive on the child-position
+              payload (the only rank RPC this screen calls). */}
+          {board === "percent" && pos && rows.some((r) => r.is_provisional) ? (
+            <AppText variant="muted" style={{ fontSize: 12 }}>
+              {t("lb.provisionalHint")
+                .replace("{q}", String(pos.min_questions))
+                .replace("{a}", String(pos.min_attempts))}
+            </AppText>
+          ) : null}
+        </>
       )}
 
       {/* "Övladlarınızın mövqeyi" — the selected child under the CURRENT
@@ -432,7 +443,8 @@ export default function ParentLeaderboard() {
                   {childMeta || "—"}
                 </AppText>
               </View>
-              {!scopeUsable || (!posQ.isPending && (!pos || pos.rank === null)) ? (
+              {!scopeUsable ||
+              (!posQ.isPending && (!pos || (pos.rank === null && !pos.is_provisional))) ? (
                 <AppText
                   variant="muted"
                   style={{ flexShrink: 1, textAlign: "right", fontSize: 12 }}
@@ -443,20 +455,31 @@ export default function ParentLeaderboard() {
                 <Skeleton height={32} width="25%" />
               ) : (
                 <View style={{ alignItems: "flex-end", gap: 2 }}>
-                  <AppText variant="mono" color={tokens.accent} style={{ fontWeight: "700" }}>
-                    #{pos!.rank}{" "}
-                    <AppText variant="mono" color={tokens.muted} style={{ fontSize: 12 }}>
-                      / {pos!.total}
+                  {pos!.rank !== null ? (
+                    <AppText variant="mono" color={tokens.accent} style={{ fontWeight: "700" }}>
+                      #{pos!.rank}{" "}
+                      <AppText variant="mono" color={tokens.muted} style={{ fontSize: 12 }}>
+                        / {pos!.total}
+                      </AppText>
                     </AppText>
-                  </AppText>
+                  ) : (
+                    <AppText variant="muted" style={{ fontSize: 12 }}>
+                      {t("plb.provisionalShort")}
+                    </AppText>
+                  )}
                   <AppText variant="muted" style={{ fontSize: 12 }}>
-                    {board === "points"
-                      ? `${lbFormatValue(board, pos!.value, t)} ${t("lb.pointsUnit")}`
-                      : lbFormatValue(board, pos!.value, t)}
+                    {lbFormatValue(board, pos!.value, t, locale)}
                   </AppText>
                 </View>
               )}
             </Card>
+          ) : null}
+          {selectedChild && !posQ.isPending && pos?.is_provisional && scopeUsable ? (
+            <AppText variant="muted" style={{ fontSize: 12 }}>
+              {t("lb.provisionalHint")
+                .replace("{q}", String(pos.min_questions))
+                .replace("{a}", String(pos.min_attempts))}
+            </AppText>
           ) : null}
         </View>
       )}

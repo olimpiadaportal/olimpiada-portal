@@ -169,9 +169,8 @@ export async function updateSetting(
 
   // Generic numeric range rule: any "number" setting with min/max bounds in
   // SETTING_META is hard-validated here (client min/max attributes are UX only).
-  // Covers the leaderboard points-formula keys (per_correct 1..1000,
-  // daily cap 0..100000, olympiad multiplier 0.1..10) and the academic term
-  // (1..4).
+  // Covers the leaderboard formula keys (per_correct 1..1000, olympiad weight
+  // 0.1..10, rank minimums 1..1000 / 1..100) and the academic term (1..4).
   if (meta.kind === "number") {
     const n = parsed as number; // isValidForKind already guaranteed finite number
     if (
@@ -212,7 +211,7 @@ export async function updateSetting(
   });
 
   revalidatePath("/settings");
-  // The leaderboard points-formula keys are edited on /leaderboard, not on
+  // The leaderboard formula keys are edited on /leaderboard, not on
   // /settings — refresh that page too so the saved values re-render there.
   if (key.startsWith("leaderboard.")) revalidatePath("/leaderboard");
   return { ok: true, key };

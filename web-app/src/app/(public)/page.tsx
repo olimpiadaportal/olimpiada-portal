@@ -3,11 +3,14 @@ import { getT, getLocale } from "@/i18n/server";
 import { createClient } from "@/lib/supabase/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatPercent } from "@/lib/formatPercent";
 import AboutUs from "@/components/AboutUs";
 import { PublicOlympiadPackages } from "@/components/PublicOlympiadPackages";
 
-// get_public_leaderboard row (migration 058): global all-time points top-10,
-// names pre-anonymized server-side ("Şagird XXXX") — rendered verbatim.
+// get_public_leaderboard row (migration 058; Round 36: value = UNROUNDED
+// weighted percentage, provisional students already excluded, competition
+// ranks): global all-time top-10, names pre-anonymized server-side
+// ("Şagird XXXX") — rendered verbatim.
 type PubLbRow = {
   rank: number;
   display_name: string;
@@ -126,7 +129,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Public leaderboard — top-10 global all-time points, anonymized
+      {/* Public leaderboard — top-10 global all-time percentage, anonymized
           server-side. Shows ~5 rows; rows 6–10 scroll INTERNALLY under the
           sticky header (reused .lb-scroll/.lb-table + landing height cap). */}
       {lbOn && (
@@ -149,7 +152,7 @@ export default async function HomePage() {
                       <th className="lb-ctx-col">{t("lb.colDistrict")}</th>
                       <th className="lb-ctx-col">{t("lb.colSchool")}</th>
                       <th className="lb-ctx-col">{t("lb.colGrade")}</th>
-                      <th className="num">{t("lb.colPoints")}</th>
+                      <th className="num">{t("lb.colPercent")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -170,7 +173,9 @@ export default async function HomePage() {
                           <td className="lb-ctx-col">
                             {formatGradeLabel(r.grade_level, locale)}
                           </td>
-                          <td className="num plb-val">{Math.round(Number(r.value))}</td>
+                          <td className="num plb-val">
+                            {formatPercent(Number(r.value), locale)}
+                          </td>
                         </tr>
                       );
                     })}

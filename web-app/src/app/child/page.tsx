@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
+import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
 
 export default async function ChildDashboard() {
   const child = await requireChild();
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
 
   // M24: these reads are independent of each other — one concurrent batch
@@ -58,13 +60,13 @@ export default async function ChildDashboard() {
       // encouraging "not ranked yet" state and never throw.
       isFeatureEnabled("leaderboard"),
       supabase.rpc("get_my_leaderboard_rank", {
-        p_board: "points",
+        p_board: "percent",
         p_scope: "global",
         p_scope_id: null,
         p_period: "month",
       }),
       supabase.rpc("get_my_leaderboard_rank", {
-        p_board: "points",
+        p_board: "percent",
         p_scope: "global",
         p_scope_id: null,
         p_period: "all_time",
@@ -133,26 +135,27 @@ export default async function ChildDashboard() {
   const recent = graded.slice(0, 5);
 
   // L-quick — real leaderboard snapshot for the home card (safe on null/error).
+  // Round 36: value = UNROUNDED weighted percentage; rank is null while the
+  // result is provisional (below the question/round thresholds).
   const lbMe = (lbRank ?? null) as
-    | { rank: number | null; total: number; value: number }
+    | { rank: number | null; total: number; value: number; is_provisional?: boolean }
     | null;
-  // Hero rank panel — global ALL-TIME points rank (Round 21: replaces the old
-  // static "—" placeholder; honest fallback when not ranked yet).
+  // Hero rank panel — global ALL-TIME percentage rank (Round 21: replaces the
+  // old static "—" placeholder; honest fallback when not ranked yet).
   const lbAllTime = (lbRankAllTime ?? null) as
-    | { rank: number | null; total: number; value: number }
+    | { rank: number | null; total: number; value: number; is_provisional?: boolean }
     | null;
   const streakInfo = (streakStatus ?? null) as
     | { current: number; best: number }
     | null;
   const lbRanked = !!lbMe && lbMe.rank !== null;
   const allTimeRanked = !!lbAllTime && lbAllTime.rank !== null;
-  const lbMonthPoints = lbMe ? Math.round(Number(lbMe.value ?? 0)) : 0;
   const streakCurrent = Number(streakInfo?.current ?? 0) || 0;
   const streakBest = Number(streakInfo?.best ?? 0) || 0;
 
   // ---- Leaderboard quick-look (L-quick) ----
   // Gated by the `leaderboard` feature flag (hidden entirely when off).
-  // Real this-month GLOBAL rank + month points + streak from the child's
+  // Real this-month GLOBAL rank + month percentage + streak from the child's
   // own RLS-scoped RPCs; encouraging fallback when not ranked yet.
   const lbqCard = (
     <section className="lbq-card">
@@ -174,8 +177,8 @@ export default async function ChildDashboard() {
             <div className="lbq-key">{t("plb.rankThisMonth")}</div>
           </div>
           <div className="lbq-stat">
-            <div className="lbq-val mono">{lbMonthPoints}</div>
-            <div className="lbq-key">{t("plb.points")}</div>
+            <div className="lbq-val mono">{formatPercent(Number(lbMe!.value ?? 0), locale)}</div>
+            <div className="lbq-key">{t("plb.pct")}</div>
           </div>
           <div className="lbq-stat">
             <div className="lbq-val mono">🔥 {streakCurrent}</div>
@@ -259,13 +262,14 @@ export default async function ChildDashboard() {
 
         <div className="arena-rank-panel">
           <p className="arena-eyebrow">{t("arena.rankLabel")}</p>
-          {/* Real global ALL-TIME points rank; "—" + note until first ranked. */}
+          {/* Real global ALL-TIME percentage rank; "—" + note until first
+              ranked — a provisional result NEVER shows as an official rank. */}
           <span className="arena-rank-num mono">
             {allTimeRanked ? `#${lbAllTime!.rank}` : "—"}
           </span>
           {!allTimeRanked && (
             <p className="arena-muted" style={{ margin: "6px 0 0", fontSize: "0.8rem" }}>
-              {t("plb.notRanked")}
+              {lbAllTime?.is_provisional ? t("plb.provisionalShort") : t("plb.notRanked")}
             </p>
           )}
           <div className="arena-ministats">

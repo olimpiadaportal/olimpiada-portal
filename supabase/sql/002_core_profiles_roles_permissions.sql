@@ -337,6 +337,25 @@ alter table public.students
   add column if not exists last_active_date date,
   add column if not exists streak_tz        text not null default 'Asia/Baku';
 
+-- Round 36 (migration 081): cached percentage aggregates (lazy month rollover
+-- shares points_month_key with the point caches; single writer = award fn).
+alter table public.students
+  add column if not exists pct_num_month      numeric(14,4) not null default 0,
+  add column if not exists pct_den_month      numeric(14,4) not null default 0,
+  add column if not exists pct_num_all        numeric(16,4) not null default 0,
+  add column if not exists pct_den_all        numeric(16,4) not null default 0,
+  add column if not exists lb_correct_month   int not null default 0,
+  add column if not exists lb_correct_all     int not null default 0,
+  add column if not exists lb_presented_month int not null default 0,
+  add column if not exists lb_presented_all   int not null default 0,
+  add column if not exists lb_attempts_month  int not null default 0,
+  add column if not exists lb_attempts_all    int not null default 0;
+
+comment on column public.students.pct_num_all is
+  'Cached all-time weighted numerator (percentage leaderboard). Single writer = award_attempt_points().';
+comment on column public.students.pct_den_all is
+  'Cached all-time weighted denominator (percentage leaderboard). value = 100*num/den.';
+
 -- -----------------------------------------------------------------------------
 -- CHILD AVATARS (backported from migrations/2026_07_18_071_child_avatars.sql)
 -- A parent uploads a child PHOTO (PRIVATE child-avatars bucket, see 009) or

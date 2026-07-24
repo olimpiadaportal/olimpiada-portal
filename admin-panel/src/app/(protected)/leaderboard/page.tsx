@@ -11,9 +11,12 @@ import type { SeasonRow } from "@/lib/admin/leaderboard";
 
 // ---------------------------------------------------------------------------
 // Leaderboard management (L2) — Administrator-only.
-//   1) Points formula: the three leaderboard.points.* system_settings keys,
-//      edited through the existing typed SettingEditor + updateSetting action
-//      (requireAdmin + range validation + audit inside updateSetting).
+//   1) Percentage formula (Round 36): ranking = 100 × weighted correct ÷
+//      weighted total. per_correct stays as a legacy point value (no ranking
+//      effect), olympiad_multiplier acts as a question weight, and the two
+//      leaderboard.rank.* minimums gate official ranks. All edited through the
+//      existing typed SettingEditor + updateSetting action (requireAdmin +
+//      range validation + audit inside updateSetting).
 //   2) Named competition seasons: full CRUD via service-role RPCs.
 //   3) Season close / hard reset: service-role-only RPC behind resetLeaderboard
 //      (requireAdmin first, generic errors, audit row, double-confirm UI).
@@ -21,13 +24,18 @@ import type { SeasonRow } from "@/lib/admin/leaderboard";
 // admin panel — standings are a product surface, not an admin operation. The
 // per-season standings modal inside SeasonManager remains (it documents what a
 // close freezes).
+// NOTE (Round 36): the practice_daily_cap_per_subject editor was removed —
+// the setting has been inert since migration 057 (the seed row stays in the
+// DB as config history only).
 // ---------------------------------------------------------------------------
 
-// The three formula keys shown in Section 1 (must exist in SETTING_META).
+// The formula + participation-minimum keys shown in Section 1 (must exist in
+// SETTING_META).
 const LB_SETTING_KEYS = [
   "leaderboard.points.per_correct",
-  "leaderboard.points.practice_daily_cap_per_subject",
   "leaderboard.points.olympiad_multiplier",
+  "leaderboard.rank.min_questions",
+  "leaderboard.rank.min_attempts",
 ] as const;
 
 export default async function LeaderboardAdminPage() {
@@ -37,7 +45,7 @@ export default async function LeaderboardAdminPage() {
   const locale = await getLocale();
   const supabase = await createClient();
 
-  // ---- Points-formula settings values --------------------------------------
+  // ---- Percentage-formula settings values ----------------------------------
   const { data: settingRows } = await supabase
     .from("system_settings")
     .select("key, value_json")
@@ -117,7 +125,7 @@ export default async function LeaderboardAdminPage() {
         <p className="muted">{t("lb.subtitle")}</p>
       </div>
 
-      {/* ---- Section 1: points formula ---- */}
+      {/* ---- Section 1: percentage formula ---- */}
       <section className="card" style={{ marginBottom: 20 }}>
         <h3>{t("lb.config.title")}</h3>
         <p className="muted">{t("lb.config.desc")}</p>

@@ -5,10 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect";
 
-// Parent-panel leaderboard — the SAME board the student arena shows (points |
+// Parent-panel leaderboard — the SAME board the student arena shows (percent |
 // streak, month | all_time, global/subject/grade/city/district/school scopes),
 // but with catalog-driven filters: a parent is not scoped to one child, so the
 // grade list comes from the grades catalog, the city list from the cities
@@ -24,21 +25,24 @@ import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect"
 // dashboard/analytics pages use — so client-forged ids never enter the flow.
 //
 // searchParams contract (all optional, all whitelist-validated):
-//   ?board=points|streak       (default points; streak is GLOBAL-only)
-//   ?scope=global|subject|grade|city|district|school   (points only)
-//   ?period=month|all          (points only; default month)
+//   ?board=percent|streak      (default percent; legacy ?board=points lands on
+//          percent too; streak is GLOBAL-only)
+//   ?scope=global|subject|grade|city|district|school   (percent only)
+//   ?period=month|all          (percent only; default month)
 //   ?subject=<uuid>            (subject scope; clamped to active subjects)
 //   ?grade=<uuid>              (grade scope; clamped to the grades catalog)
 //   ?city=<uuid>               (city/district/school scopes; clamped to active cities)
 //   ?district=<uuid>           (district scope; clamped to the city's districts)
 //   ?school=<uuid>             (school scope; clamped to the city's schools)
 
-type Board = "points" | "streak";
+type Board = "percent" | "streak";
 type Scope = "global" | "subject" | "grade" | "city" | "district" | "school";
 type PeriodUrl = "month" | "all";
 
+// Round 36: value = UNROUNDED weighted percentage; ranked rows first with
+// server COMPETITION ranks, then provisional rows with rank=null.
 type LbRow = {
-  rank: number;
+  rank: number | null;
   display_name: string; // "Firstname L." (server-formatted)
   city: string | null;
   district: string | null;
@@ -46,8 +50,21 @@ type LbRow = {
   grade_level: number | null;
   value: number;
   is_self: boolean;
+  is_provisional: boolean;
+  questions: number;
+  correct: number;
+  attempts: number;
 };
-type ChildPos = { rank: number | null; total: number; value: number };
+type ChildPos = {
+  rank: number | null;
+  total: number;
+  value: number;
+  is_provisional: boolean;
+  questions: number;
+  attempts: number;
+  min_questions: number;
+  min_attempts: number;
+};
 type Kid = {
   profile_id: string;
   first_name: string;
@@ -127,7 +144,8 @@ export default async function ParentLeaderboardPage({
   const hasDistricts = (districtCount ?? 0) > 0;
 
   // ---- server-side whitelists (mirrors the student page) ----
-  const board: Board = raw.board === "streak" ? "streak" : "points";
+  // Anything that isn't "streak" (incl. the legacy ?board=points) → percent.
+  const board: Board = raw.board === "streak" ? "streak" : "percent";
   const periodUrl: PeriodUrl = raw.period === "all" ? "all" : "month";
   const scopeTabs: Scope[] = [
     "global",
@@ -258,8 +276,8 @@ export default async function ParentLeaderboardPage({
     school: string | null;
   }): string => {
     const p = new URLSearchParams();
-    if (q.board !== "points") p.set("board", q.board);
-    if (q.board === "points") {
+    if (q.board !== "percent") p.set("board", q.board);
+    if (q.board === "percent") {
       if (q.scope !== "global") p.set("scope", q.scope);
       if (q.period !== "month") p.set("period", q.period);
       if (q.scope === "subject" && q.subject && q.subject !== defaultSubject) {
@@ -296,15 +314,16 @@ export default async function ParentLeaderboardPage({
     school: schoolId,
   };
 
+  // NEVER rounded to an integer — the server's unrounded value/order rules.
   const fmtValue = (v: number): string =>
-    board === "points"
-      ? `${Math.round(Number(v))}`
+    board === "percent"
+      ? formatPercent(Number(v), locale)
       : `${Number(v)} ${t("lb.days")}`;
 
   // Mobile context line under the participant name (≤760px hides the context
   // columns) — same composition as the student board.
   const ctxOf = (r: LbRow): string =>
-    (board === "points"
+    (board === "percent"
       ? [
           r.city?.trim() || null,
           r.district?.trim() || null,
@@ -316,9 +335,9 @@ export default async function ParentLeaderboardPage({
       .filter((p): p is string => !!p)
       .join(" · ");
 
-  // Column config — points: Sıra·İştirakçı·Şəhər·Rayon·Məktəb·Sinif·Xal;
+  // Column config — percent: Sıra·İştirakçı·Şəhər·Rayon·Məktəb·Sinif·Faiz;
   // streak keeps the simpler layout (district context only). Ranks are PLAIN
-  // NUMBERS — no medals.
+  // NUMBERS — no medals; provisional rows get "—".
   type Col = {
     id: string;
     header: string;
@@ -331,7 +350,7 @@ export default async function ParentLeaderboardPage({
       id: "rank",
       header: t("lb.colNo"),
       tdClass: "lb-rank",
-      render: (r) => String(r.rank),
+      render: (r) => (r.rank !== null ? String(r.rank) : "—"),
     },
     {
       id: "participant",
@@ -341,12 +360,15 @@ export default async function ParentLeaderboardPage({
         return (
           <>
             <span className="plb-part-name">{(r.display_name ?? "").trim() || "—"}</span>
+            {r.is_provisional && (
+              <span className="lb-prov-badge">{t("lb.provisional")}</span>
+            )}
             {ctx && <span className="lb-part-ctx">{ctx}</span>}
           </>
         );
       },
     },
-    ...(board === "points"
+    ...(board === "percent"
       ? ([
           {
             id: "city",
@@ -364,7 +386,7 @@ export default async function ParentLeaderboardPage({
       tdClass: "lb-ctx-col",
       render: (r) => r.district?.trim() || "—",
     },
-    ...(board === "points"
+    ...(board === "percent"
       ? ([
           {
             id: "school",
@@ -384,25 +406,42 @@ export default async function ParentLeaderboardPage({
       : []),
     {
       id: "value",
-      header: board === "points" ? t("lb.colPoints") : t("lb.colStreak"),
+      header: board === "percent" ? t("lb.colPercent") : t("lb.colStreak"),
       thClass: "num",
       tdClass: "num plb-val",
       render: (r) => fmtValue(r.value),
     },
   ];
 
+  // Provisional legend — visible whenever any provisional context is on screen
+  // (a board row or a linked child's position). Thresholds come from the
+  // get_child_leaderboard_position payloads.
+  const provSource =
+    posEntries.map(([, p]) => p).find((p) => !!p && Number(p.min_questions ?? 0) > 0) ??
+    null;
+  const anyChildProvisional = posEntries.some(([, p]) => !!p?.is_provisional);
+  const showProvHint =
+    board === "percent" &&
+    !!provSource &&
+    (rows.some((r) => r.is_provisional) || anyChildProvisional);
+  const provHint = provSource
+    ? t("lb.provisionalHint")
+        .replace("{q}", String(Number(provSource.min_questions ?? 0)))
+        .replace("{a}", String(Number(provSource.min_attempts ?? 0)))
+    : "";
+
   return (
     <section>
       <h1 style={{ marginBottom: 18 }}>{t("lb.title")}</h1>
 
-      {/* Board switch: Points | Streak */}
+      {/* Board switch: Percent | Streak */}
       <nav className="plb-chips" aria-label={t("lb.title")}>
         <Link
-          className={`plb-chip${board === "points" ? " active" : ""}`}
-          href={href({ ...cur, board: "points" })}
-          aria-current={board === "points" ? "page" : undefined}
+          className={`plb-chip${board === "percent" ? " active" : ""}`}
+          href={href({ ...cur, board: "percent" })}
+          aria-current={board === "percent" ? "page" : undefined}
         >
-          {t("lb.board.points")}
+          {t("lb.board.percent")}
         </Link>
         <Link
           className={`plb-chip${board === "streak" ? " active" : ""}`}
@@ -413,7 +452,7 @@ export default async function ParentLeaderboardPage({
         </Link>
       </nav>
 
-      {board === "points" && (
+      {board === "percent" && (
         <>
           {/* Scope tabs — catalog-driven (parents see every scope). */}
           <div className="plb-chips" role="group" aria-label={t("lb.scope.global")}>
@@ -533,8 +572,9 @@ export default async function ParentLeaderboardPage({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.rank}>
+                {rows.map((r, i) => (
+                  // Index key: provisional rows all share rank=null.
+                  <tr key={i}>
                     {cols.map((c) => (
                       <td key={c.id} className={c.tdClass}>
                         {c.render(r)}
@@ -547,6 +587,8 @@ export default async function ParentLeaderboardPage({
           </div>
         )}
       </div>
+
+      {showProvHint && <p className="lb-prov-note">{provHint}</p>}
 
       {/* "Övladlarınızın mövqeyi" — one card per linked child, recomputed under
           the CURRENT filters in the same request as the board above. */}
@@ -585,12 +627,22 @@ export default async function ParentLeaderboardPage({
                       <span className="plb-kid-rank">
                         #{pos.rank} <span className="plb-kid-total">/ {pos.total}</span>
                       </span>
-                      <span className="plb-kid-val">
-                        {board === "points"
-                          ? `${Math.round(Number(pos.value))} ${t("lb.pointsUnit")}`
-                          : `${Number(pos.value)} ${t("lb.days")}`}
-                      </span>
+                      <span className="plb-kid-val">{fmtValue(Number(pos.value))}</span>
                     </div>
+                  ) : pos && pos.is_provisional ? (
+                    // Provisional child: no rank — the value + the thresholds
+                    // this child still has to reach for an official rank.
+                    <>
+                      <div className="plb-kid-pos">
+                        <span className="lb-prov-badge">{t("plb.provisionalShort")}</span>
+                        <span className="plb-kid-val">{fmtValue(Number(pos.value))}</span>
+                      </div>
+                      <div className="plb-kid-none">
+                        {t("lb.provisionalHint")
+                          .replace("{q}", String(Number(pos.min_questions ?? 0)))
+                          .replace("{a}", String(Number(pos.min_attempts ?? 0)))}
+                      </div>
+                    </>
                   ) : (
                     <div className="plb-kid-none">{t("plb.pos.notInFilter")}</div>
                   )}

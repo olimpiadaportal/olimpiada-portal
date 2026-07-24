@@ -23,6 +23,7 @@ import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { ProgressRing } from "@/components/ProgressRing";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
@@ -219,7 +220,7 @@ function StrengthBar({ name, pct }: { name: string; pct: number }) {
 }
 
 export default function StudentArena() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const router = useRouter();
   const { arena } = useArena();
   const config = useMobileConfig();
@@ -299,7 +300,8 @@ export default function StudentArena() {
 
   const lbMe = rankQ.data ?? null;
   const lbRanked = !!lbMe && lbMe.rank !== null;
-  const lbMonthPoints = lbMe ? Math.round(lbMe.value) : 0;
+  const lbProvisional = !!lbMe && lbMe.is_provisional;
+  const lbMonthPct = formatPercent(lbMe?.value ?? 0, locale);
   // All-time hero rank (honest "—" until first ranked, web parity).
   const allTime = allTimeQ.data ?? null;
   const allTimeRanked = !!allTime && allTime.rank !== null;
@@ -391,7 +393,8 @@ export default function StudentArena() {
         </ProgressRing>
         {!allTimeRanked ? (
           <AppText color={arena.muted} style={{ fontSize: 13, textAlign: "center" }}>
-            {t("plb.notRanked")}
+            {/* Provisional all-time: never a number in the ring — say so. */}
+            {allTime?.is_provisional ? t("plb.provisionalShort") : t("plb.notRanked")}
           </AppText>
         ) : null}
         <View style={{ flexDirection: "row", gap: spacing.md, alignSelf: "stretch" }}>
@@ -445,15 +448,25 @@ export default function StudentArena() {
           </View>
           {rankQ.isPending ? (
             <Skeleton height={48} />
-          ) : lbRanked ? (
-            <View style={{ flexDirection: "row", gap: spacing.md }}>
-              <MiniStat value={`#${lbMe!.rank} / ${lbMe!.total}`} label={t("plb.rankThisMonth")} />
-              <MiniStat value={String(lbMonthPoints)} label={t("plb.points")} />
-              <MiniStat
-                value={`\u{1F525} ${streakCurrent}`}
-                label={`${t("plb.streak")} · ${t("plb.best")} ${streakBest}`}
-              />
-            </View>
+          ) : lbRanked || lbProvisional ? (
+            <>
+              <View style={{ flexDirection: "row", gap: spacing.md }}>
+                <MiniStat
+                  value={lbRanked ? `#${lbMe!.rank} / ${lbMe!.total}` : "—"}
+                  label={t("plb.rankThisMonth")}
+                />
+                <MiniStat value={lbMonthPct} label={t("plb.pct")} />
+                <MiniStat
+                  value={`\u{1F525} ${streakCurrent}`}
+                  label={`${t("plb.streak")} · ${t("plb.best")} ${streakBest}`}
+                />
+              </View>
+              {lbProvisional ? (
+                <AppText color={arena.muted} style={{ fontSize: 12 }}>
+                  {t("plb.provisionalShort")}
+                </AppText>
+              ) : null}
+            </>
           ) : (
             <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
               <AppText color={arena.muted} style={{ flex: 1 }}>

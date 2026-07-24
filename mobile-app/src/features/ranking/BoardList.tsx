@@ -11,6 +11,7 @@ import { AppText } from "@/components/AppText";
 import { Avatar } from "@/components/Avatar";
 import { radius, spacing } from "@/theme/tokens";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { formatPercent } from "@/lib/formatPercent";
 import type { Locale } from "@/i18n";
 import type { Board, LbRow } from "./data";
 
@@ -35,17 +36,20 @@ export type BoardListColors = {
   highlight: string;
 };
 
-/** Board value text: points = rounded number, streak = "N days". */
-export function lbFormatValue(board: Board, value: number, t: T): string {
-  return board === "points" ? String(Math.round(Number(value))) : `${Number(value)} ${t("lb.days")}`;
+/** Board value text: percent = two-decimal locale percentage (never rounded
+ *  to an integer), streak = "N days". */
+export function lbFormatValue(board: Board, value: number, t: T, locale: Locale): string {
+  return board === "percent"
+    ? formatPercent(value, locale)
+    : `${Number(value)} ${t("lb.days")}`;
 }
 
 /** Context under the participant name, exactly what the web table shows
- *  (points: city/district/school/grade; streak: district only — its sole
+ *  (percent: city/district/school/grade; streak: district only — its sole
  *  context column since migration 058). */
 export function lbRowContext(r: LbRow, board: Board, locale: Locale): string {
   return (
-    board === "points"
+    board === "percent"
       ? [
           r.city?.trim() || null,
           r.district?.trim() || null,
@@ -96,16 +100,17 @@ export function BoardRowList({
               borderTopColor: colors.line,
             }}
           >
+            {/* Provisional rows arrive rank=null — "—" in the rank slot. */}
             <View style={{ width: 34, alignItems: "center" }}>
               <AppText
-                color={r.rank <= 3 ? colors.highlight : colors.muted}
+                color={r.rank !== null && r.rank <= 3 ? colors.highlight : colors.muted}
                 style={{
                   fontFamily: MONO,
                   fontVariant: ["tabular-nums"],
-                  fontWeight: r.rank <= 3 ? "900" : "400",
+                  fontWeight: r.rank !== null && r.rank <= 3 ? "900" : "400",
                 }}
               >
-                {String(r.rank)}
+                {r.rank !== null ? String(r.rank) : "—"}
               </AppText>
             </View>
             <Avatar name={name} seed={r.is_self && selfSeed ? selfSeed : name} size={34} />
@@ -124,12 +129,31 @@ export function BoardRowList({
                   {ctx}
                 </AppText>
               ) : null}
+              {r.is_provisional ? (
+                <View
+                  style={{
+                    alignSelf: "flex-start",
+                    borderWidth: 1,
+                    borderColor: colors.line,
+                    borderRadius: 999,
+                    paddingHorizontal: 6,
+                    paddingVertical: 1,
+                  }}
+                >
+                  <AppText
+                    color={colors.dim}
+                    style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 }}
+                  >
+                    {t("lb.provisional")}
+                  </AppText>
+                </View>
+              ) : null}
             </View>
             <AppText
               color={r.is_self ? colors.highlight : colors.ink}
               style={{ fontFamily: MONO, fontVariant: ["tabular-nums"], fontWeight: "700" }}
             >
-              {lbFormatValue(board, r.value, t)}
+              {lbFormatValue(board, r.value, t, locale)}
             </AppText>
           </View>
         );

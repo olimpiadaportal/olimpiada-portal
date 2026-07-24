@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
+import { formatPercent } from "@/lib/formatPercent";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { ChildCardActions } from "@/components/ChildCardActions";
@@ -20,10 +21,14 @@ const CHILD_KEYS = [
 const NEWS_KEYS = ["news.latest", "news.viewAll", "news.none"];
 
 // get_child_leaderboard_summary payload (all fields optional-defensive: any RPC
-// error/null is treated as "no leaderboard data" for that child).
+// error/null is treated as "no leaderboard data" for that child). Round 36:
+// the board value is the weighted PERCENTAGE (pct_*); the legacy points_*
+// fields still arrive but are deprecated and must never be rendered.
 type LbSummary = {
-  points_month?: number | null;
-  points_all_time?: number | null;
+  pct_month?: number | null;
+  pct_all_time?: number | null;
+  provisional_month?: boolean | null;
+  provisional_all_time?: boolean | null;
   current_streak?: number | null;
   best_streak?: number | null;
   rank_month?: number | null;
@@ -34,6 +39,7 @@ type LbSummary = {
 export default async function ParentDashboard() {
   const parent = await requireParent();
   const t = await getT();
+  const locale = await getLocale();
   const olympiadOn = await isFeatureEnabled("olympiad_module");
   // L-quick: the child leaderboard chip is gated by the `leaderboard` flag.
   const leaderboardOn = await isFeatureEnabled("leaderboard");
@@ -131,8 +137,8 @@ export default async function ParentDashboard() {
           <div className="children-grid">
             {list.map((c) => {
               const lb = leaderboardOn ? lbByChild.get(c.profile_id) : null;
-              const lbRanked =
-                !!lb && lb.rank_month != null && Number(lb.points_month ?? 0) > 0;
+              const lbRanked = !!lb && lb.rank_month != null;
+              const lbProvisional = !!lb && !lbRanked && !!lb.provisional_month;
               const childName = [c.first_name, c.last_name].filter(Boolean).join(" ");
               return (
               <div className="card" key={c.profile_id}>
@@ -162,20 +168,22 @@ export default async function ParentDashboard() {
                     <span className="pill">{t(`access.${c.access_status}`)}</span>
                   )}
                 </p>
-                {/* L-quick: compact leaderboard chip (rank / points / streak). */}
+                {/* L-quick: compact leaderboard chip (rank / percent / streak). */}
                 {leaderboardOn && (
                   <div className="lbchip" title={t("plb.title")}>
                     {lbRanked ? (
                       <>
                         <span className="lbchip-rank">#{lb!.rank_month}</span>
                         <span className="lbchip-item">
-                          {Math.round(Number(lb!.points_month ?? 0))}{" "}
-                          <span className="lbchip-u">{t("plb.pts")}</span>
+                          {formatPercent(Number(lb!.pct_month ?? 0), locale)}{" "}
+                          <span className="lbchip-u">{t("plb.pct")}</span>
                         </span>
                         <span className="lbchip-item">
                           🔥 {Number(lb!.current_streak ?? 0) || 0}
                         </span>
                       </>
+                    ) : lbProvisional ? (
+                      <span className="lbchip-none">{t("plb.provisionalShort")}</span>
                     ) : (
                       <span className="lbchip-none">{t("plb.notRankedShort")}</span>
                     )}

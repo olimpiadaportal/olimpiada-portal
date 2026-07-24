@@ -13,6 +13,7 @@
 import { useEffect, useState, useTransition, useActionState } from "react";
 import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
+import { formatPercent } from "@/lib/formatPercent";
 import {
   createSeason,
   updateSeason,
@@ -359,6 +360,7 @@ export function SeasonManager({
             key={standings.id}
             season={standings}
             status={deriveStatus(standings, now)}
+            locale={locale}
             strings={strings}
           />
         )}
@@ -594,10 +596,12 @@ function ConfirmAction({
 function StandingsView({
   season,
   status,
+  locale,
   strings,
 }: {
   season: SeasonRow;
   status: SeasonStatus;
+  locale: string;
   strings: SeasonStrings;
 }) {
   const [rows, setRows] = useState<SeasonStandingRow[] | null>(null);
@@ -650,7 +654,8 @@ function StandingsView({
                       </span>
                     )}
                   </td>
-                  <td className="nowrap">{r.value}</td>
+                  {/* r.value is the RPC's weighted percentage (Round 36). */}
+                  <td className="nowrap">{formatPercent(r.value, locale)}</td>
                 </tr>
               ))}
             </tbody>

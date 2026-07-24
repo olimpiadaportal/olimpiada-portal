@@ -1,11 +1,12 @@
-// Student RANKING tab — native port of web /child/leaderboard (Round-20/21):
-//   * board switch Points | Streak (streak is GLOBAL-only + all-time),
+// Student RANKING tab — native port of web /child/leaderboard (Round-20/21,
+// percentage board since Round 36):
+//   * board switch Percent | Streak (streak is GLOBAL-only + all-time),
 //   * scope chips offered ONLY for ids the child actually has (global always;
 //     subject whenever the platform has an active subject; grade/city/school
 //     when the students row carries the id; DISTRICT when the child's own
 //     rayon resolves via school → schools.city_district_id, falling back to
 //     students.city_district_id),
-//   * period toggle This month | All time (points only),
+//   * period toggle This month | All time (percent only),
 //   * subject scope = single-select over ALL active subjects with a clamped
 //     default (forged/missing selection falls back to the FIRST subject —
 //     Round-18 contract),
@@ -62,7 +63,7 @@ export function RankingScreen() {
     staleTime: 10 * 60_000,
   });
 
-  const [board, setBoard] = useState<Board>("points");
+  const [board, setBoard] = useState<Board>("percent");
   const [scopeSel, setScopeSel] = useState<Scope>("global");
   const [periodUrl, setPeriodUrl] = useState<PeriodUrl>("month");
   const [subjectSel, setSubjectSel] = useState<string | null>(null);
@@ -183,12 +184,12 @@ export function RankingScreen() {
         <ArenaScroll onRefresh={onRefresh} refreshing={refreshing}>
           <ArenaEyebrow>{t("lb.eyebrow")}</ArenaEyebrow>
 
-          {/* Board tabs: Points | Streak (web .arena-tabs) */}
+          {/* Board tabs: Percent | Streak (web .arena-tabs) */}
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <ArenaChip
-              label={t("lb.board.points")}
-              active={board === "points"}
-              onPress={() => setBoard("points")}
+              label={t("lb.board.percent")}
+              active={board === "percent"}
+              onPress={() => setBoard("percent")}
             />
             <ArenaChip
               label={`\u{1F525} ${t("lb.board.streak")}`}
@@ -197,7 +198,7 @@ export function RankingScreen() {
             />
           </View>
 
-          {board === "points" ? (
+          {board === "percent" ? (
             <>
               {/* Scope chips — only what this child actually has. */}
               <ScrollView
@@ -313,23 +314,33 @@ export function RankingScreen() {
           ) : rows.length === 0 ? (
             <EmptyState title={t(emptyKey)} />
           ) : (
-            <ArenaPanel style={{ padding: spacing.sm, gap: 0 }}>
-              <BoardRowList
-                rows={rows}
-                board={board}
-                t={t}
-                locale={locale}
-                selfSeed={profileId}
-                colors={{
-                  ink: arena.ink,
-                  muted: arena.muted,
-                  dim: arena.dim,
-                  line: arena.line,
-                  selfBg: arena.panel2,
-                  highlight: arena.lime,
-                }}
-              />
-            </ArenaPanel>
+            <>
+              <ArenaPanel style={{ padding: spacing.sm, gap: 0 }}>
+                <BoardRowList
+                  rows={rows}
+                  board={board}
+                  t={t}
+                  locale={locale}
+                  selfSeed={profileId}
+                  colors={{
+                    ink: arena.ink,
+                    muted: arena.muted,
+                    dim: arena.dim,
+                    line: arena.line,
+                    selfBg: arena.panel2,
+                    highlight: arena.lime,
+                  }}
+                />
+              </ArenaPanel>
+              {/* Provisional legend — thresholds come from the my-rank payload. */}
+              {board === "percent" && me && rows.some((r) => r.is_provisional) ? (
+                <AppText color={arena.dim} style={{ fontSize: 12 }}>
+                  {t("lb.provisionalHint")
+                    .replace("{q}", String(me.min_questions))
+                    .replace("{a}", String(me.min_attempts))}
+                </AppText>
+              ) : null}
+            </>
           )}
         </ArenaScroll>
       </View>
@@ -375,6 +386,14 @@ export function RankingScreen() {
                   / {me.total}
                 </AppText>
               </AppText>
+            ) : me && me.is_provisional ? (
+              <AppText color={arena.muted} style={{ fontSize: 12 }}>
+                {t("lb.myRank.provisional")
+                  .replace("{q}", String(me.questions))
+                  .replace("{mq}", String(me.min_questions))
+                  .replace("{a}", String(me.attempts))
+                  .replace("{ma}", String(me.min_attempts))}
+              </AppText>
             ) : (
               <AppText color={arena.muted}>{t("lb.myRank.none")}</AppText>
             )}
@@ -383,11 +402,7 @@ export function RankingScreen() {
             color={arena.lime}
             style={{ fontFamily: MONO, fontVariant: ["tabular-nums"], fontSize: 16, fontWeight: "700" }}
           >
-            {me
-              ? board === "points"
-                ? `${lbFormatValue(board, me.value, t)} ${t("lb.pointsUnit")}`
-                : lbFormatValue(board, me.value, t)
-              : "—"}
+            {me ? lbFormatValue(board, me.value, t, locale) : "—"}
           </AppText>
         </View>
       </View>

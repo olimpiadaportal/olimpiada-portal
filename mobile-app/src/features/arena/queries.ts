@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useMobileConfig } from "@/lib/configQueries";
+import { parseRankPayload, type MyRank } from "@/features/ranking/parse";
 import { ARENA_PALETTES, type ArenaPalette } from "@/theme/tokens";
 
 export const QK = {
@@ -263,27 +264,22 @@ export function useStreakStatus() {
   });
 }
 
-// ---- leaderboard rank (global points; month for the quick-look card, all-time
-// for the hero rank ring) ------------------------------------------------------------
+// ---- leaderboard rank (global percent board; month for the quick-look card,
+// all-time for the hero rank ring) ---------------------------------------------------
 // The child-scoped RPC (get_child_leaderboard_summary is parent/admin-only; a
 // child session must use get_my_leaderboard_rank — same as the web child home).
 
-export type MyLbRank = { rank: number | null; total: number; value: number };
+export type MyLbRank = MyRank;
 
 async function fetchMyLeaderboardRank(period: "month" | "all_time"): Promise<MyLbRank | null> {
   const { data, error } = await supabase.rpc("get_my_leaderboard_rank", {
-    p_board: "points",
+    p_board: "percent",
     p_scope: "global",
     p_scope_id: null,
     p_period: period,
   });
   if (error || !data || typeof data !== "object") return null;
-  const o = data as Record<string, unknown>;
-  return {
-    rank: typeof o.rank === "number" ? o.rank : null,
-    total: Number(o.total ?? 0) || 0,
-    value: Number(o.value ?? 0) || 0,
-  };
+  return parseRankPayload(data);
 }
 
 export function useMyLeaderboardRank(enabled: boolean) {
@@ -296,7 +292,7 @@ export function useMyLeaderboardRank(enabled: boolean) {
   });
 }
 
-/** Hero rank panel: REAL global ALL-TIME points rank (Round-21 web parity —
+/** Hero rank panel: REAL global ALL-TIME percent rank (Round-21 web parity —
  * read regardless of the leaderboard flag, exactly like the web dashboard). */
 export function useMyAllTimeRank() {
   const profileId = useStudentProfileId();

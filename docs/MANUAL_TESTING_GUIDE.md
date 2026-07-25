@@ -1749,7 +1749,7 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AD1. Admin panel: readiness panel gone
 - Admin → Suallar (Questions): the collapsible "Günlük raund hazırlığı" table no longer exists. Everything else on the page (stat cards, chips, filters, table) is unchanged.
 
-## AD2. Rounds still generate with zero admin work ?
+## AD2. Rounds still generate with zero admin work 
 - As a STUDENT with an active subject: Sınaq Testləri → start today's round. It starts normally (the first starter of the day generates the shared round automatically). A second student in the same grade+subject gets the SAME 25 questions.
 
 ## AD3. Round content respects the rules
@@ -1760,15 +1760,16 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AE1. Today's card texts
 - Student → Sınaq Testləri: today's cards no longer show "vaxt limiti yoxdur, xal vermir" under the practice button, and the "Bugünkü raund hələ hazır deyil" pill is gone everywhere. (Yesterday's cards keep their practice note.)
 
-## AE2. Leaving mid-round costs nothing ? Different, Basla ve mesq et
-- Start today's round, answer a few questions, close the tab WITHOUT submitting. Immediately re-entering resumes the SAME test with the timer still running. After the 25 minutes lapse, the card offers **Start** again and a NEW round begins with a **different** set of questions. Only pressing Submit locks the day.
+## AE2. Untimed — leaving mid-round costs nothing (daily TESTS only; olympiads keep their own timer)
+- Today's round has **NO time limit** (the card says "25 sual · vaxt limiti yoxdur"; no countdown in the runner).
+- Start today's round, answer a few questions, close the tab WITHOUT submitting. Re-entering (any time that day) resumes the SAME open test with your answers kept. Only pressing **Submit** locks the day — one submitted round per subject per day, server-enforced.
 
 ## AE3. Completed card behavior
 - Submit today's round: the card dims (disabled palette), shows your score, and clicking **Məşq et** on that card pops the alert "Bugünkü raundu artıq tamamladınız." instead of opening topic selection. Start is impossible until tomorrow (server-enforced).
 
 ## AE4. Yesterday's rounds are locked practice
 - If you SUBMITTED yesterday: "Dünənin Raundları" replays your EXACT 25 questions in the same order, unlimited times, untimed — and your leaderboard percent does NOT move.
-- If you MISSED yesterday (but classmates played): you still get a 25-question set for practice; pressing "Təkrar həll et" repeatedly serves the SAME set every time.
+- If you MISSED yesterday: as long as ANY student of the same grade anywhere in the country (any city/school) submitted that subject's round that day, you get their 25-question set for practice; pressing "Təkrar həll et" repeatedly serves the SAME locked set every time.
 
 ## AE5. Both apps agree
 - The same card states (start / continue / dimmed-completed + alert) behave identically on web and mobile.
@@ -1792,7 +1793,7 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AG1. One child = one catalog
 - Parent with children in DIFFERENT grades → Olimpiadalar: with the grade-2 child selected, ONLY grade-2 packages are listed (plus any package that child already owns); switching to the grade-5 child instantly swaps the list to grade-5 packages. Never a merged list. Same on web and the mobile parent tab.
 
-## AG2. Counts and ownership follow the child ? Webapp card can show the grade like mobile
+## AG2. Counts and ownership follow the child 
 - The "N sual" count on each card is the SELECTED child's grade pool (two children may see different counts on the same multi-grade package). A package bought for child A does not appear while child B (different grade) is selected.
 
 ## AG3. Everything else unchanged
@@ -1803,6 +1804,7 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AH1. The structured card
 - Parent → a child → Fənləri idarə et: remove one subject and add another. The summary is now a clean card in this order: **Seçilmiş fənlər** (count) → **Əlavə olunanlar** (green list) → **Silinənlər** (red list) → **İndi ödəniləcək** (one prominent amount) → **Növbəti ödəniş** (ONE sentence with the new rate and its start date) → **Qeyd** (removal terms, no prices).
 - The new subscription price appears exactly ONCE (in Növbəti ödəniş). No sentence starts with "Sonra:". The long always-visible billing paragraph is gone.
+- Dates in Növbəti ödəniş and Qeyd read like **"6 avqust 2026"** — never "2026 M08 6" — in az/en/ru, on web AND mobile (Android especially).
 
 ## AH2. Payment sheet matches
 - Continuing to the payment sheet: the "then" line is the same single Növbəti ödəniş sentence; a zero-charge change shows the price-free "nothing to pay now" line.

@@ -82,19 +82,15 @@ export default async function TestHomePage({
         .limit(10),
     ]);
 
-  // Card state (Round 38): ONLY a graded attempt consumes the day; a live
-  // in_progress one resumes; anything else (expired/abandoned/canceled)
-  // leaves the Start button available for a fresh set.
+  // Card state (Round 42): ONLY a graded attempt consumes the day; rounds are
+  // UNTIMED, so ANY open in_progress attempt resumes (Continue) until it is
+  // submitted; expired/abandoned/canceled leave Start available.
   const gradedBySubject = new Map<string, DailyAttempt>();
   const liveBySubject = new Map<string, DailyAttempt>();
   for (const a of (todayRated ?? []) as DailyAttempt[]) {
     if (a.status === "graded") {
       if (!gradedBySubject.has(a.subject_id)) gradedBySubject.set(a.subject_id, a);
-    } else if (
-      a.status === "in_progress" &&
-      !!a.deadline_at &&
-      new Date(a.deadline_at).getTime() > now
-    ) {
+    } else if (a.status === "in_progress") {
       if (!liveBySubject.has(a.subject_id)) liveBySubject.set(a.subject_id, a);
     }
   }

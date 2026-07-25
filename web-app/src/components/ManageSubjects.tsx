@@ -77,12 +77,18 @@ export function ManageSubjects({
   // timestamptz — format them the same way the public olympiad pages do
   // (date-only, product's home timezone), locale-aware.
   const fmtDate = useMemo(() => {
-    const fmt = new Intl.DateTimeFormat(locale, {
-      timeZone: "Asia/Baku",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
+    // Full BCP-47 tags (the bare "az" tag falls back to "2026 M08 6"-style
+    // output in engines without short-tag az data) — same mapping the other
+    // date surfaces use.
+    const fmt = new Intl.DateTimeFormat(
+      locale === "az" ? "az-Latn-AZ" : locale === "ru" ? "ru-RU" : "en-GB",
+      {
+        timeZone: "Asia/Baku",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      },
+    );
     return (iso: string | null): string => {
       if (!iso) return "—";
       const ts = Date.parse(iso);

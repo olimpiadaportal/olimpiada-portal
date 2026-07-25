@@ -11,6 +11,7 @@
 import type { PaymentMode } from "@/lib/mobileConfig";
 import type { SubjectPricingRow } from "@/lib/data";
 import type { Locale } from "@/i18n";
+import { formatLongDate } from "@/lib/formatDate";
 
 export type CommercePosture = {
   mode: PaymentMode;
@@ -195,41 +196,19 @@ export function fmtMoney(amount: number | null | undefined, currency?: string | 
   return `${fmtAmount(amount)} ${currency && currency.length > 0 ? currency : "AZN"}`;
 }
 
-const INTL_LOCALE: Record<Locale, string> = { az: "az-AZ", en: "en-GB", ru: "ru-RU" };
-
-/** Locale date (+ optional time); falls back to the ISO date part. */
+/** Locale long date (+ optional time) in the product's home timezone
+ *  (Asia/Baku). Thin wrapper over the Hermes-safe formatLongDate (Round 42:
+ *  az month names are missing from Hermes ICU — "2026 M08 6") so every
+ *  caller (ManageSubjectsEditor {date} fills, subscription tab period end,
+ *  olympiad event dates) inherits the manual-month fallback. */
 export function fmtDate(iso: string | null | undefined, locale: Locale, withTime = false): string {
-  if (!iso) return "—";
-  const ts = Date.parse(iso);
-  if (!Number.isFinite(ts)) return "—";
-  try {
-    return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      ...(withTime ? { hour: "2-digit" as const, minute: "2-digit" as const } : {}),
-    }).format(new Date(ts));
-  } catch {
-    return iso.slice(0, 10);
-  }
+  return formatLongDate(iso, locale, withTime);
 }
 
 /** Billing dates (proration effective/renewal dates) are DATE-ONLY in the
  *  product's home timezone — never device-local (pricing.tsx pkgDate twin). */
 export function fmtBakuDate(iso: string | null | undefined, locale: Locale): string {
-  if (!iso) return "—";
-  const ts = Date.parse(iso);
-  if (!Number.isFinite(ts)) return "—";
-  try {
-    return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
-      timeZone: "Asia/Baku",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(new Date(ts));
-  } catch {
-    return iso.slice(0, 10);
-  }
+  return formatLongDate(iso, locale);
 }
 
 /** "1234 5678" display grouping for the 8-digit login ID. */

@@ -195,12 +195,13 @@ export type DailyCardState =
   | { type: "ready" };
 
 /**
- * Round 38 (web gradedBySubject/liveBySubject parity): ONLY a GRADED own
- * rated daily attempt started inside today's Baku day consumes the card; a
- * live in_progress one (future deadline) resumes — but never when a graded
- * one exists; anything else (expired/abandoned/canceled) leaves the Start
- * button available and the next start serves a FRESH set. Rows arrive
- * newest-first, so the first match per bucket wins.
+ * Round 42 (web gradedBySubject/liveBySubject parity): ONLY a GRADED own
+ * rated daily attempt started inside today's Baku day consumes the card;
+ * rounds are now UNTIMED (the server no longer sets a deadline), so ANY
+ * in_progress attempt resumes (Continue) until it is submitted — but never
+ * when a graded one exists; anything else (expired/abandoned/canceled)
+ * leaves the Start button available and the next start serves a FRESH set.
+ * Rows arrive newest-first, so the first match per bucket wins.
  */
 export function dailyCardState(
   subjectId: string,
@@ -214,11 +215,7 @@ export function dailyCardState(
     if (!isTodayBaku(r.started_at, nowMs)) continue;
     if (r.status === "graded") {
       if (!graded) graded = r;
-    } else if (
-      r.status === "in_progress" &&
-      r.deadline_at !== null &&
-      Date.parse(r.deadline_at) > nowMs
-    ) {
+    } else if (r.status === "in_progress") {
       if (!live) live = r;
     }
   }

@@ -3,10 +3,11 @@
 // free windows), a prominent CONTINUE card for a live in_progress attempt, and
 // the recent history (daily rounds + practice tests) with per-row status →
 // runner/result. Locked children see the same "ask your parent" hint as the
-// web arena. Card state (Round 38, migration 083): ONLY a GRADED rated daily
-// attempt started today (Baku day) consumes the card — it dims and its
-// practice CTA alerts instead of navigating; a live in_progress attempt
-// resumes; expired/abandoned ones never lock the day, so Start renders and
+// web arena. Card state (Round 42 — daily rounds are UNTIMED server-side):
+// ONLY a GRADED rated daily attempt started today (Baku day) consumes the
+// card — it dims and its practice CTA alerts instead of navigating; ANY open
+// in_progress attempt resumes (no deadline exists anymore); expired/
+// abandoned legacy rows never lock the day, so Start renders and
 // the next start_daily_round_attempt('today') serves a fresh set (the old
 // Round-21 readiness pre-flight RPC was DROPPED server-side).
 import React, { useCallback, useRef, useState } from "react";
@@ -29,6 +30,7 @@ import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { formatLongDate } from "@/lib/formatDate";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { startDailyRoundAttempt } from "./api";
 import { useRecentAttempts, useSubjectAccess } from "./queries";
@@ -36,25 +38,12 @@ import { dailyCardState, displayStatus, findLiveAttempt, type DailyCardState } f
 import { ArenaButton, Notice, Panel, StatusPill, Eyebrow, tint, useArena } from "./ui";
 import type { AttemptListRow } from "./types";
 
-const DATE_TAGS: Record<Locale, string> = {
-  az: "az-Latn-AZ",
-  en: "en-GB",
-  ru: "ru-RU",
-};
-
+// Hermes lacks az month data ("M08" ICU fallback) — the shared helper carries
+// the month-name fallback (Round 42).
 function fmtDate(iso: string | null, locale: Locale): string {
   if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  try {
-    return new Intl.DateTimeFormat(DATE_TAGS[locale] ?? locale, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    }).format(d);
-  } catch {
-    return d.toISOString().slice(0, 10);
-  }
+  const out = formatLongDate(iso, locale);
+  return out === "—" ? "" : out;
 }
 
 const LOCKED_KEYS = new Set(["inactive", "locked", "expired"]);

@@ -213,7 +213,7 @@ describe("tests home helpers", () => {
   });
 });
 
-describe("daily card state (Round 38 — only GRADED consumes the day)", () => {
+describe("daily card state (Round 42 — untimed rounds; only GRADED consumes the day)", () => {
   const future = new Date(NOW + 60_000).toISOString();
   const past = new Date(NOW - 60_000).toISOString();
   // Baku-local midnight (fixed UTC+4, no DST) around NOW — boundary-exact.
@@ -253,32 +253,38 @@ describe("daily card state (Round 38 — only GRADED consumes the day)", () => {
     });
   });
 
-  it("live in_progress (future deadline) resumes — but graded wins over it", () => {
+  it("ANY in_progress attempt today resumes — but graded wins over it", () => {
+    // Round 42: rounds are UNTIMED, so new attempts carry a NULL deadline
+    // and must resume (Continue) until submitted.
     const live = row({
       id: "b",
       status: "in_progress",
-      deadline_at: future,
+      deadline_at: null,
       score: null,
       max_score: null,
     });
     expect(dailyCardState("s1", [live], NOW)).toEqual({ type: "live", attemptId: "b" });
     expect(dailyCardState("s1", [live, row({ id: "a" })], NOW).type).toBe("done");
+    // Legacy timed rows (pre-42 deadlines, future OR past) still resume —
+    // the deadline is irrelevant now (web `status === "in_progress"` parity).
+    expect(
+      dailyCardState("s1", [row({ id: "b2", status: "in_progress", deadline_at: future })], NOW),
+    ).toEqual({ type: "live", attemptId: "b2" });
+    expect(
+      dailyCardState("s1", [row({ id: "b3", status: "in_progress", deadline_at: past })], NOW),
+    ).toEqual({ type: "live", attemptId: "b3" });
   });
 
   it("expired/abandoned/canceled attempts NEVER lock the card (fresh Start)", () => {
-    const expired = row({ id: "c", status: "in_progress", deadline_at: past });
-    expect(dailyCardState("s1", [expired], NOW)).toEqual({ type: "ready" });
     expect(dailyCardState("s1", [row({ id: "d", status: "expired" })], NOW)).toEqual({
       type: "ready",
     });
     expect(dailyCardState("s1", [row({ id: "e", status: "canceled" })], NOW)).toEqual({
       type: "ready",
     });
-    // A rated round is always timed — a null-deadline in_progress row never
-    // counts as the live rated attempt (web !!deadline_at parity).
-    expect(
-      dailyCardState("s1", [row({ id: "f", status: "in_progress", deadline_at: null })], NOW),
-    ).toEqual({ type: "ready" });
+    expect(dailyCardState("s1", [row({ id: "e2", status: "abandoned" })], NOW)).toEqual({
+      type: "ready",
+    });
   });
 
   it("ignores other subjects, unrated/practice rows and yesterday's rounds", () => {

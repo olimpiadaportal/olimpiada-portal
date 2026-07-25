@@ -4059,7 +4059,6 @@ set search_path = public, pg_temp
 as $$
 declare
   c_count    constant int := 25;
-  c_duration constant int := 1500;   -- rated rounds: 25 minutes, test-engine parity
   v_student  uuid := public.current_profile_id();
   v_grade    uuid;
   v_date     date;
@@ -4068,7 +4067,6 @@ declare
   v_set      public.daily_practice_sets;
   v_existing record;
   v_attempt  uuid;
-  v_deadline timestamptz;
   v_source   text;
 begin
   if v_student is null then raise exception 'daily: not authenticated'; end if;
@@ -4112,25 +4110,24 @@ begin
       raise exception 'daily: already attempted today' using errcode = 'unique_violation';
     end if;
 
-    -- A LIVE attempt (deadline still running) RESUMES — same set, same timer
-    -- (a refresh must never re-draw or reset the clock). A lapsed one is
-    -- expired here and a FRESH set is drawn below (attempt not consumed).
-    select id, deadline_at, duration_seconds, question_ids into v_existing
+    -- Round 42: UNTIMED — the single open attempt resumes until it is
+    -- submitted. A legacy timed attempt (pre-086) sheds its deadline here.
+    select id, question_ids, deadline_at into v_existing
     from public.test_attempts
     where student_profile_id = v_student and subject_id = p_subject_id
       and kind = 'daily' and is_rated and status = 'in_progress'
       and round_date = v_date
     order by started_at desc limit 1;
     if v_existing.id is not null then
-      if v_existing.deadline_at is not null and v_existing.deadline_at > now() then
-        return jsonb_build_object(
-          'attempt_id', v_existing.id, 'resumed', true, 'rated', true,
-          'deadline_at', v_existing.deadline_at,
-          'duration_seconds', v_existing.duration_seconds,
-          'count', cardinality(v_existing.question_ids));
+      if v_existing.deadline_at is not null then
+        update public.test_attempts
+           set deadline_at = null, duration_seconds = null, updated_at = now()
+         where id = v_existing.id;
       end if;
-      update public.test_attempts
-         set status = 'expired', updated_at = now() where id = v_existing.id;
+      return jsonb_build_object(
+        'attempt_id', v_existing.id, 'resumed', true, 'rated', true,
+        'deadline_at', null, 'duration_seconds', null,
+        'count', cardinality(v_existing.question_ids));
     end if;
 
     -- Fresh per-student subtopic-balanced draw for THIS attempt.
@@ -4140,7 +4137,6 @@ begin
         p_subject_id, v_grade, coalesce(cardinality(v_qids), 0), c_count
         using errcode = 'no_data_found';
     end if;
-    v_deadline := now() + make_interval(secs => c_duration);
   else
     -- YESTERDAY: get-or-create the LOCKED practice set for this student.
     select * into v_set from public.daily_practice_sets
@@ -4154,8 +4150,8 @@ begin
         and ta.kind = 'daily' and ta.is_rated and ta.status = 'graded'
         and ta.round_date = v_date
       order by ta.graded_at desc limit 1;
-      -- 2) A peer's graded set (same subject + GRADE + date; earliest submit —
-      --    deterministic; question ids only, no identity attached).
+      -- 2) A peer's graded set (same subject + GRADE + date, COUNTRY-WIDE;
+      --    earliest submit — deterministic; question ids only, no identity).
       if v_qids is null then
         select ta.question_ids, 'peer' into v_qids, v_source
         from public.test_attempts ta
@@ -4211,7 +4207,7 @@ begin
      deadline_at, duration_seconds, is_rated, round_date)
   values
     (v_student, p_subject_id, 'daily', 'in_progress', v_qids,
-     v_deadline, case when v_rated then c_duration end, v_rated, v_date)
+     null, null, v_rated, v_date)
   returning id into v_attempt;
 
   insert into public.test_attempt_answers (attempt_id, question_id)
@@ -4219,19 +4215,18 @@ begin
 
   return jsonb_build_object(
     'attempt_id', v_attempt, 'resumed', false, 'rated', v_rated,
-    'deadline_at', v_deadline,
-    'duration_seconds', case when v_rated then c_duration end,
+    'deadline_at', null, 'duration_seconds', null,
     'count', cardinality(v_qids));
 exception when unique_violation then
   raise exception 'daily: already attempted today' using errcode = 'unique_violation';
 end;
 $$;
 comment on function public.start_daily_round_attempt(uuid, text) is
-  'Round 38: today = RATED per-student subtopic-balanced random 25 (timed 25min; '
-  'the day is consumed ONLY by submit — a live attempt resumes, a lapsed one is '
-  'replaced by a FRESH set); yesterday = unlimited UNTIMED practice on the '
-  'student''s LOCKED set (own graded set -> peer set -> legacy round -> '
-  'generated), never rated.';
+  'Round 42: today = RATED per-student subtopic-balanced random 25, UNTIMED — '
+  'one open attempt per subject+day resumed until SUBMITTED (submit is the only '
+  'consumption; legacy timed attempts shed their deadline on resume); yesterday '
+  '= unlimited UNTIMED practice on the student''s LOCKED set (own -> peer '
+  'country-wide by grade -> legacy round -> generated), never rated.';
 revoke all on function public.start_daily_round_attempt(uuid, text) from public, anon;
 grant execute on function public.start_daily_round_attempt(uuid, text) to authenticated, service_role;
 

@@ -1778,10 +1778,24 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AF1. Bulk import requires a Rüb
 - Admin → Suallar → Toplu idxal: a new required **"Rüb *"** dropdown sits beside Fənn and Sinif (1-ci…4-cü rüb). The form won't submit without it. The note under the fields explains that the chosen Rüb applies to EVERY question in the file (any `meta.term` inside the file is superseded). Rows no longer need `meta.term` at all.
 
-## AF2. Manual form still enforces Rüb ? Must be mandatory
-- New question with a normal topic: the Rüb field shows the topic's term read-only. With a legacy (term-less) topic: the Rüb picker is required and saving without it is blocked.
+## AF2. Manual form — Rüb is ALWAYS mandatory
+- A question can NEVER be saved without a Rüb from the manual form, in any case:
+  - topic with a Rüb → the field is auto-filled from the topic (always set, shown read-only);
+  - legacy topic without a Rüb → the Rüb picker is REQUIRED (marked *) and saving is blocked until one is chosen (the pick also upgrades the topic).
+- Try both paths and confirm no save succeeds with an empty Rüb.
 
 ## AF3. Database backstop
 - No new bank question can exist without a Rüb (server-level, not just UI). Olympiad pool questions are unaffected (their Rüb stays optional). Legacy "Rüb təyin edilməyib" questions still transition/archive normally until you assign their term via the review chip.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-#** + what you saw.
+# ROUND 40 — olympiad catalog follows the selected child
+
+## AG1. One child = one catalog
+- Parent with children in DIFFERENT grades → Olimpiadalar: with the grade-2 child selected, ONLY grade-2 packages are listed (plus any package that child already owns); switching to the grade-5 child instantly swaps the list to grade-5 packages. Never a merged list. Same on web and the mobile parent tab.
+
+## AG2. Counts and ownership follow the child
+- The "N sual" count on each card is the SELECTED child's grade pool (two children may see different counts on the same multi-grade package). A package bought for child A does not appear while child B (different grade) is selected.
+
+## AG3. Everything else unchanged
+- Childless parent → the existing "add a child" empty state. The per-child page (Övladlar → child → Olimpiadalar) and the student app were already child-scoped and behave the same.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-#** + what you saw.

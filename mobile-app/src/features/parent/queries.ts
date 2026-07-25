@@ -77,7 +77,8 @@ export const QK = {
   freeAccess: ["parent", "free-access"] as const,
   pricing: ["parent", "subjects-pricing"] as const,
   subscriptions: ["parent", "subscriptions"] as const,
-  catalog: (locale: Locale) => ["parent", "oly-catalog", locale] as const,
+  catalog: (locale: Locale, studentId: string | null) =>
+    ["parent", "oly-catalog", locale, studentId] as const,
   purchases: ["parent", "oly-purchases"] as const,
   grades: ["catalog", "grades"] as const,
   cities: ["catalog", "cities"] as const,
@@ -107,11 +108,20 @@ export function useChildSubscriptions() {
   return useQuery({ queryKey: QK.subscriptions, queryFn: fetchChildSubscriptions });
 }
 
-export function useOlympiadCatalog(locale: Locale, enabled = true) {
+/** Round 40: CHILD-scoped catalog — keyed and fetched by the selected child's
+ *  profile id, so switching chips refetches and shows ONLY that child's grade
+ *  packages (my_question_count arrives per-child from the server). Stays
+ *  disabled until a selection exists: no flash of the family union while the
+ *  children list loads, and a childless parent never fetches at all. */
+export function useOlympiadCatalog(
+  locale: Locale,
+  studentId: string | null,
+  enabled = true,
+) {
   return useQuery({
-    queryKey: QK.catalog(locale),
-    queryFn: () => fetchOlympiadCatalog(locale),
-    enabled,
+    queryKey: QK.catalog(locale, studentId),
+    queryFn: () => fetchOlympiadCatalog(locale, studentId ?? undefined),
+    enabled: enabled && studentId !== null,
   });
 }
 

@@ -1281,8 +1281,9 @@ select '79_olympiad_multigrade' as check_name,
              and to_regprocedure('public.bulk_insert_olympiad_package_questions(uuid,jsonb)') is null
              and to_regprocedure('public.get_olympiad_pool_counts(uuid[],uuid)') is not null
              and to_regprocedure('public.get_olympiad_pool_counts(uuid[])') is null
-             and to_regprocedure('public.get_my_olympiad_catalog()') is not null
-             and has_function_privilege('anon','public.get_my_olympiad_catalog()','EXECUTE') = false
+             and to_regprocedure('public.get_my_olympiad_catalog(uuid)') is not null
+             and to_regprocedure('public.get_my_olympiad_catalog()') is null
+             and has_function_privilege('anon','public.get_my_olympiad_catalog(uuid)','EXECUTE') = false
              and to_regprocedure('public.remove_olympiad_package_grade(uuid,uuid)') is not null
              and has_function_privilege('anon','public.remove_olympiad_package_grade(uuid,uuid)','EXECUTE') = false
              and position('grade_levels' in pg_get_functiondef('public.get_public_olympiad_packages(int)'::regprocedure)) > 0

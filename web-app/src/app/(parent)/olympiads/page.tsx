@@ -1,5 +1,7 @@
-// Round 9 (T7) — parent "Olimpiadalar" catalog: browse ALL active olympiad
+// Round 9 (T7) — parent "Olimpiadalar" catalog: browse active olympiad
 // packages and buy them for a selected child via the MOCK payment flow.
+// Round 40: the SELECTED child controls the visible list — this page ships the
+// family-scoped superset (grades + per-grade counts) and the client narrows it.
 //
 // Gates mirror the per-child purchase page (/children/[id]/olympiads):
 //   - olympiad_module off → friendly notice instead of the catalog;
@@ -50,6 +52,7 @@ export default async function ParentOlympiadCatalogPage() {
   const childList: PolyChild[] = ((children ?? []) as any[]).map((c) => ({
     id: c.profile_id,
     name: [c.first_name, c.last_name].filter(Boolean).join(" ") || "—",
+    gradeId: c.grade_id ? String(c.grade_id) : null,
   }));
 
   // Active packages (public listing under RLS) + ownership per child.
@@ -80,10 +83,11 @@ export default async function ParentOlympiadCatalogPage() {
     ownedByPackage.set(p.olympiad_package_id, list);
   }
 
-  // Round 34: the parent storefront shows ONLY packages covering at least one
-  // of their children's grades (a package covering two of them appears once —
-  // rows are already unique). Legacy grade-less packages stay visible; owned
-  // packages stay visible to their family regardless. Server-rendered filter.
+  // Round 34: the server ships only packages covering at least one of the
+  // family's grades (a package covering two of them appears once — rows are
+  // already unique). Legacy grade-less packages stay visible; owned packages
+  // stay visible to their family regardless. Round 40: the client then NARROWS
+  // this family superset to the SELECTED child (grade match / owned / legacy).
   const childGrades = new Set(
     ((children ?? []) as any[]).map((c) => c.grade_id).filter(Boolean),
   );
@@ -119,12 +123,13 @@ export default async function ParentOlympiadCatalogPage() {
   // the admin form). One RPC over the visible ids; a package with an empty
   // pool returns NO row → coalesce to 0.
   const pkgRows = (packages ?? []) as any[];
-  // Round 34 parity with mobile's my_question_count: the number a parent sees
-  // is what their FAMILY would actually receive — the sum of the pools of the
-  // package grades matching their children's grades (legacy grade-less
-  // packages keep the whole-pool count). One RPC call per distinct child
-  // grade (2–3 in practice) + one no-grade call for legacy rows.
-  const poolCounts = new Map<string, number>();
+  // Round 40 (was Round 34 family sums): counts are stored PER GRADE so the
+  // client can show the number the SELECTED child would actually receive.
+  // One RPC call per distinct child grade (2–3 in practice) covering that
+  // grade's matching packages + one no-grade call for legacy grade-less rows
+  // (their whole-pool count is the client-side fallback).
+  const countsByPkg = new Map<string, Record<string, number>>();
+  const legacyCounts = new Map<string, number>();
   if (pkgRows.length > 0) {
     const legacyIds: string[] = [];
     const idsByGrade = new Map<string, string[]>();
@@ -141,15 +146,15 @@ export default async function ParentOlympiadCatalogPage() {
         idsByGrade.set(g, list);
       }
     }
-    const bump = (id: string, n: number) =>
-      poolCounts.set(id, (poolCounts.get(id) ?? 0) + n);
     for (const [gradeId, ids] of idsByGrade) {
       const { data: countRows } = await supabase.rpc("get_olympiad_pool_counts", {
         p_package_ids: ids.slice(0, 100),
         p_grade_id: gradeId,
       });
       for (const r of (countRows ?? []) as any[]) {
-        bump(r.package_id, Number(r.question_count) || 0);
+        const rec = countsByPkg.get(r.package_id) ?? {};
+        rec[gradeId] = Number(r.question_count) || 0;
+        countsByPkg.set(r.package_id, rec);
       }
     }
     if (legacyIds.length > 0) {
@@ -157,7 +162,7 @@ export default async function ParentOlympiadCatalogPage() {
         p_package_ids: legacyIds.slice(0, 100),
       });
       for (const r of (countRows ?? []) as any[]) {
-        bump(r.package_id, Number(r.question_count) || 0);
+        legacyCounts.set(r.package_id, Number(r.question_count) || 0);
       }
     }
   }
@@ -178,7 +183,6 @@ export default async function ParentOlympiadCatalogPage() {
   // display-ready strings (no locale logic in the browser).
   const items: PolyPackage[] = pkgRows.map((p) => {
     const tr = pickTr(p.olympiad_package_translations);
-    const n = poolCounts.get(p.id) ?? 0;
     let coverUrl: string | null = null;
     const m = p.media_assets;
     if (m?.bucket && m?.path) {
@@ -205,7 +209,9 @@ export default async function ParentOlympiadCatalogPage() {
         : null,
       typeName: p.olympiad_types?.name ?? null,
       dateText: Number.isFinite(ts) ? fmt.format(new Date(ts)) : null,
-      questionsText: `${n} ${t("poly.questions")}`,
+      gradeIds: targeted.get(p.id) ?? null,
+      countByGrade: countsByPkg.get(p.id) ?? {},
+      fallbackCount: legacyCounts.get(p.id) ?? 0,
       priceText: price > 0 ? `${price} ${p.currency ?? "AZN"}` : t("poly.free"),
       ownedBy: ownedByPackage.get(p.id) ?? [],
       // M12: the event already happened → archived for purchase display
@@ -221,6 +227,7 @@ export default async function ParentOlympiadCatalogPage() {
     addChild: t("poly.addChild"),
     none: t("poly.none"),
     owned: t("poly.owned"),
+    questions: t("poly.questions"),
     buy: t("poly.buy"),
     price: t("poly.price"),
     modalTitle: t("poly.modal.title"),

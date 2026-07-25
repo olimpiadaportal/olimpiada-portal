@@ -701,17 +701,14 @@ grant execute on function public.get_public_olympiad_packages(int) to anon, auth
 
 -- -----------------------------------------------------------------------------
 -- 11) get_my_olympiad_catalog — role-aware, SERVER-enforced storefront filter.
---     Student: only packages covering THEIR grade. Parent: only packages
---     covering at least one of their children's grades (created-by OR active
---     link), deduped by construction; NO children → empty (nothing to buy
---     for). Legacy grade-less packages stay visible to signed-in students/
---     parents (old behavior). Returns catalog/card data ONLY — never pool
---     content. Purchases ("Olimpiadalarım") are intentionally NOT part of
---     this feed: owned packages remain accessible for life via the purchase
---     tables regardless of current grade.
+--     Round 40: an optional LINKED-child selector scopes a parent to that
+--     child's grade (the selected child is the single source of truth);
+--     no selection keeps the Round-34 family union; students see their own
+--     grade. Link + grade always resolved server-side.
 -- -----------------------------------------------------------------------------
 drop function if exists public.get_my_olympiad_catalog();
-create function public.get_my_olympiad_catalog()
+drop function if exists public.get_my_olympiad_catalog(uuid);
+create function public.get_my_olympiad_catalog(p_student uuid default null)
 returns table (
   id               uuid,
   title_az         text,
@@ -746,23 +743,54 @@ declare
 begin
   if v_profile is null then return; end if;
 
-  -- Student → own grade; otherwise parent → union of the children's grades.
+  -- Student → own grade (p_student may only be NULL or the caller itself).
   select array[s.grade_id] into v_grades
   from public.students s
   where s.profile_id = v_profile and s.grade_id is not null;
   v_student := found;
+  if v_student and p_student is not null and p_student <> v_profile then
+    raise exception 'catalog: not allowed' using errcode = 'insufficient_privilege';
+  end if;
 
   if not v_student then
-    select array_agg(distinct s.grade_id) into v_grades
-    from public.students s
-    where s.grade_id is not null
-      and (s.created_by_parent_profile_id = v_profile
-           or exists (select 1 from public.parent_student_links l
-                       where l.parent_profile_id = v_profile
-                         and l.student_profile_id = s.profile_id
-                         and l.status = 'active'));
-    -- A parent with no children has nobody to buy for → graceful empty feed.
-    if v_grades is null then return; end if;
+    if p_student is not null then
+      -- Round 40: ONE selected child — the link and the grade are resolved
+      -- server-side (clients can never widen the scope or pass a grade).
+      select array[s.grade_id] into v_grades
+      from public.students s
+      where s.profile_id = p_student and s.grade_id is not null
+        and (s.created_by_parent_profile_id = v_profile
+             or exists (select 1 from public.parent_student_links l
+                         where l.parent_profile_id = v_profile
+                           and l.student_profile_id = s.profile_id
+                           and l.status = 'active'));
+      if v_grades is null then
+        -- Not linked (or the child has no grade): linked-but-gradeless gets an
+        -- empty feed; an UNLINKED id is an authorization error.
+        if exists (select 1 from public.students s
+                    where s.profile_id = p_student
+                      and (s.created_by_parent_profile_id = v_profile
+                           or exists (select 1 from public.parent_student_links l
+                                       where l.parent_profile_id = v_profile
+                                         and l.student_profile_id = s.profile_id
+                                         and l.status = 'active'))) then
+          return;
+        end if;
+        raise exception 'catalog: not allowed' using errcode = 'insufficient_privilege';
+      end if;
+    else
+      -- Back-compat: no selection → union of the children's grades (Round 34).
+      select array_agg(distinct s.grade_id) into v_grades
+      from public.students s
+      where s.grade_id is not null
+        and (s.created_by_parent_profile_id = v_profile
+             or exists (select 1 from public.parent_student_links l
+                         where l.parent_profile_id = v_profile
+                           and l.student_profile_id = s.profile_id
+                           and l.status = 'active'));
+      -- A parent with no children has nobody to buy for → graceful empty feed.
+      if v_grades is null then return; end if;
+    end if;
   end if;
 
   return query
@@ -814,9 +842,10 @@ begin
     where g.olympiad_package_id = p.id
   ) gj on true
   left join lateral (
-    -- What THIS caller's family would actually receive: published questions
-    -- of the caller-relevant grades (all grades when the package is legacy
-    -- grade-less). Students: own grade; parents: matching children grades.
+    -- What the SCOPED audience would actually receive: published questions of
+    -- the caller-relevant grades (all grades when the package is legacy
+    -- grade-less). Student: own grade; parent: the SELECTED child's grade
+    -- (Round 40) or all matching children grades when unscoped.
     select count(*)::int as n
     from public.questions q
     where q.olympiad_package_id = p.id
@@ -839,15 +868,15 @@ begin
            coalesce(t_az.title, p.code) asc;
 end;
 $$;
-comment on function public.get_my_olympiad_catalog() is
-  'Role-aware BUYABLE olympiad catalog (Round 34): a student sees only on-sale '
-  'packages covering THEIR grade; a parent only those covering at least one of '
-  'their children''s grades (no children → empty). Grade targeting is enforced '
-  'HERE, server-side — clients cannot widen it. Card data only, incl. per-grade '
-  'published pool counts; never pool content. Purchases stay readable forever '
-  'via olympiad_purchases (lifetime access, independent of this feed).';
-revoke all on function public.get_my_olympiad_catalog() from public, anon;
-grant execute on function public.get_my_olympiad_catalog() to authenticated, service_role;
+comment on function public.get_my_olympiad_catalog(uuid) is
+  'Role-aware BUYABLE olympiad catalog (Round 40): a student sees only on-sale '
+  'packages covering THEIR grade; a parent passing a LINKED child sees only that '
+  'child''s grade (the selected child is the single source of truth — link and '
+  'grade resolved server-side); a parent without a selection keeps the family '
+  'union. Card data only, incl. per-grade published pool counts; never pool '
+  'content. Purchases stay readable forever via olympiad_purchases.';
+revoke all on function public.get_my_olympiad_catalog(uuid) from public, anon;
+grant execute on function public.get_my_olympiad_catalog(uuid) to authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
 -- 12) remove_olympiad_package_grade — THE grade-detach path (Admin-only).

@@ -5,7 +5,9 @@
 // scroll lock, focus handling). All strings arrive translated via `dict` so this
 // component never touches messages.ts and never renders a raw key.
 //
-// Flow: pick a child (segmented buttons) → each card shows OWNED pill or a
+// Flow: pick a child (segmented buttons) — Round 40: the selection FILTERS the
+// grid to that child's packages (grade match / owned / legacy grade-less) and
+// scopes each card's question count — each card shows OWNED pill or a
 // "Buy for <child>" button → button opens the modal (package / child / price +
 // mock-payment note) → Confirm runs purchaseOlympiadForChild (useActionState)
 // → success (or "already owned" after a race) INSIDE the modal; the card flips
@@ -19,7 +21,12 @@ import {
   type PurchaseOlympiadState,
 } from "@/lib/auth/olympiadService";
 
-export type PolyChild = { id: string; name: string };
+export type PolyChild = {
+  id: string;
+  name: string;
+  /** students.grade_id — drives which packages this child sees. */
+  gradeId: string | null;
+};
 
 export type PolyPackage = {
   id: string;
@@ -30,7 +37,12 @@ export type PolyPackage = {
   typeName: string | null;
   /** Localized event date, or null when the event date is not set. */
   dateText: string | null;
-  questionsText: string;
+  /** Grade ids this package targets; null = legacy grade-less (every child). */
+  gradeIds: string[] | null;
+  /** Published pool count per family-matching grade id. */
+  countByGrade: Record<string, number>;
+  /** Whole-pool count — used when the selected grade has no entry (legacy). */
+  fallbackCount: number;
   priceText: string;
   /** student profile ids that already own this package (status active). */
   ownedBy: string[];
@@ -46,6 +58,8 @@ export type PolyDict = {
   addChild: string;
   none: string;
   owned: string;
+  /** Suffix word after the pool count ("25 questions"). */
+  questions: string;
   /** Plain "Buy" — the child comes from the selector above the grid. */
   buy: string;
   price: string;
@@ -239,6 +253,20 @@ export function OlympiadPurchase({
     [childrenList, childId],
   );
 
+  // Round 40: the selected child is the single source of truth for the grid —
+  // a package shows iff it is legacy grade-less, already owned by THIS child
+  // (lifetime access), or targets this child's grade. Pure client narrowing of
+  // the server-shipped family superset, so switching children is instant.
+  const visiblePackages = useMemo(() => {
+    if (!child) return packages;
+    return packages.filter(
+      (pkg) =>
+        pkg.gradeIds === null ||
+        pkg.ownedBy.includes(child.id) ||
+        (child.gradeId !== null && pkg.gradeIds.includes(child.gradeId)),
+    );
+  }, [packages, child]);
+
   // Stable identity (it sits in the dialog effect's deps) and a same-reference
   // bail-out when the key is already present, so a repeat call can never start
   // a render loop. Declared before the early return (rules of hooks).
@@ -295,12 +323,17 @@ export function OlympiadPurchase({
         </div>
       </div>
 
-      {packages.length === 0 ? (
+      {visiblePackages.length === 0 ? (
         <p className="muted">{dict.none}</p>
       ) : (
         <div className="poly-grid">
-          {packages.map((pkg) => {
+          {visiblePackages.map((pkg) => {
             const owned = isOwned(pkg);
+            // The count the SELECTED child would receive: their grade's pool,
+            // falling back to the whole-pool count (legacy grade-less rows).
+            const questionCount =
+              (child?.gradeId != null ? pkg.countByGrade[child.gradeId] : undefined) ??
+              pkg.fallbackCount;
             return (
               <article className="poly-card" key={pkg.id}>
                 {pkg.coverUrl ? (
@@ -327,7 +360,9 @@ export function OlympiadPurchase({
                         {pkg.dateText}
                       </span>
                     )}
-                    <span className="poly-meta-item">{pkg.questionsText}</span>
+                    <span className="poly-meta-item">
+                      {questionCount} {dict.questions}
+                    </span>
                   </div>
                   <div className="poly-foot">
                     <span className="poly-price">{pkg.priceText}</span>

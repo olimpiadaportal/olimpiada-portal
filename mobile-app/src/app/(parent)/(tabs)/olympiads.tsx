@@ -180,15 +180,30 @@ export default function ParentOlympiads() {
   const freeAccess = useParentFreeAccess();
   const olympiadOn = config.data?.flags.olympiadModule === true;
   const children = useChildren();
-  const catalog = useOlympiadCatalog(locale, olympiadOn);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const list = children.data ?? [];
+  const selected = list.find((c) => c.profile_id === selectedId) ?? list[0] ?? null;
+
+  // Round 40: the catalog is scoped to the SELECTED child — the query key
+  // carries the child's profile id, so tapping another chip refetches and the
+  // list swaps to THAT child's grade packages. Disabled until the children
+  // list has loaded and a selection exists (never a family-union flash).
+  const catalog = useOlympiadCatalog(locale, selected?.profile_id ?? null, olympiadOn);
   const purchases = useOlympiadPurchases(olympiadOn);
   const poolCounts = useOlympiadPoolCounts((catalog.data ?? []).map((p) => p.id));
   const invalidate = useInvalidateParentData();
   // poolCounts drives the REAL question count on every card, so a pull that
-  // skipped it would leave the most load-bearing number stale.
-  const { refreshing, onRefresh } = usePullRefresh([children, catalog, purchases, poolCounts]);
+  // skipped it would leave the most load-bearing number stale. The catalog
+  // entry is conditional: with no selection (childless parent) the query is
+  // disabled and a pull must not force-fetch the family union.
+  const { refreshing, onRefresh } = usePullRefresh([
+    children,
+    selected ? catalog : null,
+    purchases,
+    poolCounts,
+  ]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OlympiadPackageRow | null>(null);
   const [buying, setBuying] = useState<OlympiadPackageRow | null>(null);
   const [buyPending, setBuyPending] = useState(false);
@@ -204,9 +219,6 @@ export default function ParentOlympiads() {
   // Buying runs via the demo-style sheet in BOTH demo and giveaway modes.
   const canBuy = posture.demoPay || posture.mode === "giveaway";
 
-  const list = children.data ?? [];
-  const selected = list.find((c) => c.profile_id === selectedId) ?? list[0] ?? null;
-
   const ownedForSelected = new Set(
     (purchases.data ?? [])
       .filter((p) => p.student_profile_id === selected?.profile_id)
@@ -221,7 +233,11 @@ export default function ParentOlympiads() {
     );
   }
 
-  const loading = config.isPending || children.isPending || catalog.isPending;
+  // Boot skeleton covers config + children only: the child-scoped catalog is
+  // DISABLED (pending forever) for a childless parent, so gating on it would
+  // strand that parent on the skeleton instead of the add-child empty state.
+  const loading = config.isPending || children.isPending;
+  const catalogLoading = selected !== null && catalog.isPending;
 
   async function confirmBuy() {
     if (!buying || !selected || buyPending) return;
@@ -329,7 +345,14 @@ export default function ParentOlympiads() {
             </Card>
           ) : null}
 
-          {(catalog.data ?? []).length === 0 ? (
+          {catalogLoading ? (
+            // Chip switch / first child load: keep the selector mounted and
+            // skeleton only the list area while THIS child's catalog arrives.
+            <View style={{ gap: spacing.md }}>
+              <Skeleton height={220} />
+              <Skeleton height={220} />
+            </View>
+          ) : (catalog.data ?? []).length === 0 ? (
             <EmptyState
               title={t("poly.none")}
               icon={<Medal size={26} color={tokens.muted} strokeWidth={2} />}

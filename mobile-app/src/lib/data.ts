@@ -244,13 +244,23 @@ export type OlympiadPackageRow = {
   description: string;
 };
 
-export async function fetchOlympiadCatalog(locale: Locale): Promise<OlympiadPackageRow[]> {
+export async function fetchOlympiadCatalog(
+  locale: Locale,
+  studentId?: string,
+): Promise<OlympiadPackageRow[]> {
   // Round 34: get_my_olympiad_catalog() is role-aware and SERVER-enforced —
   // a student receives only packages covering THEIR grade; a parent only
   // those covering at least one of their children's grades (deduped by
   // construction; empty for a parent with no children). Owned packages come
   // from the purchases tables instead (lifetime access, never filtered).
-  const { data, error } = await supabase.rpc("get_my_olympiad_catalog");
+  // Round 40: a parent may pass ONE LINKED child's profile id — the server
+  // then narrows to that child's grade packages and computes
+  // my_question_count from that grade's pool (a foreign id errors). null
+  // keeps the family union; students keep calling with no id (the server
+  // scopes to their own grade either way).
+  const { data, error } = await supabase.rpc("get_my_olympiad_catalog", {
+    p_student: studentId ?? null,
+  });
   if (error) throw error;
   return ((data ?? []) as any[]).map((p: any) => {
     const grades = Array.isArray(p.grades)

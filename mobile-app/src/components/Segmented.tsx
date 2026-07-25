@@ -26,6 +26,8 @@ export function Segmented<T extends string>({
         borderRadius: 999,
         padding: 3,
         alignSelf: "flex-start",
+        // Never wider than the parent — long az/ru labels compress instead.
+        maxWidth: "100%",
       }}
     >
       {options.map((o) => {
@@ -46,12 +48,15 @@ export function Segmented<T extends string>({
                 minHeight: 36,
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 1,
+                minWidth: 0,
               },
               active ? shadow("card", tokens.shadow) : null,
             ]}
           >
             <AppText
               variant="label"
+              numberOfLines={1}
               color={active ? tokens.accent : tokens.muted}
             >
               {o.label}

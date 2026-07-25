@@ -39,13 +39,17 @@ export function StreakChip() {
         paddingVertical: 4,
         paddingHorizontal: 10,
         marginRight: 6,
+        // Header rows are tight on 320pt — the chip compresses and the label
+        // truncates rather than pushing the header actions off-screen.
+        flexShrink: 1,
+        minWidth: 0,
       }}
     >
       <AppText style={{ fontSize: 11 }}>{"\u{1F525}"}</AppText>
       <AppText
         color={color}
         numberOfLines={1}
-        style={{ fontFamily: MONO, fontSize: 11, fontWeight: "700" }}
+        style={{ fontFamily: MONO, fontSize: 11, fontWeight: "700", flexShrink: 1 }}
       >
         {label}
       </AppText>

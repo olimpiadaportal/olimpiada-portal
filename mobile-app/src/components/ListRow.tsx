@@ -72,7 +72,14 @@ export function ListRow({
       {trailing !== undefined ? (
         trailing
       ) : value !== undefined ? (
-        <AppText variant="mono" color={tokens.muted} numberOfLines={1}>
+        // RN's default flexShrink is 0 — without it a long value keeps its
+        // intrinsic width and numberOfLines never engages (Round 44).
+        <AppText
+          variant="mono"
+          color={tokens.muted}
+          numberOfLines={1}
+          style={{ flexShrink: 1, minWidth: 0 }}
+        >
           {value}
         </AppText>
       ) : null}

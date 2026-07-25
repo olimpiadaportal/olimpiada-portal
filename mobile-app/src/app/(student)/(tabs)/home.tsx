@@ -62,6 +62,10 @@ function MiniStat({ value, label }: { value: string; label: string }) {
       <AppText
         color={arena.ink}
         numberOfLines={1}
+        // Numbers never truncate: wide values ("#123 / 456") scale down on
+        // narrow phones instead of ellipsizing.
+        adjustsFontSizeToFit
+        minimumFontScale={0.65}
         style={{ fontFamily: MONO, fontSize: 20, fontWeight: "700" }}
       >
         {value}
@@ -437,9 +441,12 @@ export default function StudentArena() {
               gap: spacing.md,
             }}
           >
-            <ArenaEyebrow color={arena.muted}>
-              {"\u{1F3C6}"} {t("plb.title")}
-            </ArenaEyebrow>
+            {/* Long az/ru heading wraps here instead of pushing the link off. */}
+            <View style={{ flexShrink: 1 }}>
+              <ArenaEyebrow color={arena.muted}>
+                {"\u{1F3C6}"} {t("plb.title")}
+              </ArenaEyebrow>
+            </View>
             <Pressable accessibilityRole="button" accessibilityLabel={t("plb.seeFull")} onPress={goRanking} hitSlop={8}>
               <AppText color={arena.lime} variant="label">
                 {t("plb.seeFull")} →

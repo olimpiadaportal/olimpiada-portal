@@ -670,7 +670,9 @@ function RunnerActive({
           </AppText>
           <View
             accessibilityLiveRegion="polite"
-            style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}
+            // The save-state label shrinks/wraps; the question counter (numbers)
+            // keeps its full width on narrow phones.
+            style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs, flexShrink: 1 }}
           >
             {saveState === "saving" ? (
               <CloudUpload size={13} color={arena.dim} strokeWidth={2} />
@@ -687,7 +689,8 @@ function RunnerActive({
                     ? arena.lime
                     : arena.dim
               }
-              style={{ fontSize: 12 }}
+              style={{ fontSize: 12, flexShrink: 1 }}
+              numberOfLines={1}
             >
               {saveState === "saving"
                 ? t("test.run.saving")

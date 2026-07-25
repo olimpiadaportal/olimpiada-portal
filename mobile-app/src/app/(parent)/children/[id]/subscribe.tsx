@@ -44,15 +44,20 @@ function IdReveal({ id }: { id: string }) {
     <View
       style={{
         alignSelf: "center",
+        maxWidth: "100%",
         backgroundColor: tokens.chipBg,
         borderRadius: radius.lg,
         paddingVertical: spacing.lg,
         paddingHorizontal: spacing.xl,
       }}
     >
+      {/* The ID is a number: on 320pt / large font scale it scales to fit,
+          never wraps or truncates. */}
       <AppText
         variant="mono"
         color={tokens.accent}
+        numberOfLines={1}
+        adjustsFontSizeToFit
         style={{ fontSize: 32, fontWeight: "800", letterSpacing: 2 }}
       >
         {groupChildId(id)}

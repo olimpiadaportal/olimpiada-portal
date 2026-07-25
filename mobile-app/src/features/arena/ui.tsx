@@ -135,7 +135,11 @@ export function ArenaSectionH({
     <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
       <AppText
         color={arena.muted}
+        numberOfLines={1}
         style={{
+          // Long az/ru headings compress (hairline gives way first) so the
+          // trailing action never leaves the screen on narrow phones.
+          flexShrink: 1,
           fontFamily: MONO,
           fontSize: 12,
           fontWeight: "700",
@@ -216,6 +220,10 @@ export function ArenaButton({
         // Web .arena-btn text is the fixed dark ink on lime; ghost uses ink.
         color={primary ? ARENA_BTN_INK : arena.ink}
         style={{
+          // Width-constrained buttons (flex:1 rows) wrap long az/ru labels
+          // inside the box instead of overflowing it.
+          flexShrink: 1,
+          textAlign: "center",
           fontFamily: MONO,
           fontSize: small ? 11 : 12,
           fontWeight: "700",

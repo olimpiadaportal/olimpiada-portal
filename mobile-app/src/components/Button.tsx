@@ -102,7 +102,12 @@ export function Button({
         />
       ) : null}
       {pending ? <ActivityIndicator size="small" color={fg} /> : icon}
-      <AppText variant="label" color={fg}>
+      {/* Long az/ru titles wrap inside the button instead of overflowing it. */}
+      <AppText
+        variant="label"
+        color={fg}
+        style={{ flexShrink: 1, textAlign: "center" }}
+      >
         {pending && pendingTitle ? pendingTitle : title}
       </AppText>
     </AnimatedPressable>

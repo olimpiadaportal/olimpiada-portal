@@ -62,6 +62,9 @@ function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
         flexDirection: "row",
         alignItems: "center",
         gap: spacing.xs,
+        // DB-driven labels (subject/grade names) can outgrow a 320pt card:
+        // cap the chip and truncate instead of overflowing the wrap row.
+        maxWidth: "100%",
         backgroundColor: tokens.chipBg,
         borderRadius: 999,
         paddingHorizontal: spacing.md,
@@ -69,7 +72,12 @@ function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
       }}
     >
       {icon ?? null}
-      <AppText variant="label" color={tokens.chipText} style={{ fontSize: 12 }}>
+      <AppText
+        variant="label"
+        color={tokens.chipText}
+        numberOfLines={1}
+        style={{ fontSize: 12, flexShrink: 1 }}
+      >
         {label}
       </AppText>
     </View>

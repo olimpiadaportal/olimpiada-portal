@@ -243,7 +243,9 @@ export function ArenaButton({
         />
       ) : null}
       {pending ? null : icon}
-      <AppText variant="label" color={fg}>
+      {/* flex:1 buttons (modal action rows) wrap long az/ru labels inside the
+          box on narrow phones instead of overflowing it. */}
+      <AppText variant="label" color={fg} style={{ flexShrink: 1, textAlign: "center" }}>
         {pending && pendingTitle ? pendingTitle : title}
       </AppText>
     </Pressable>

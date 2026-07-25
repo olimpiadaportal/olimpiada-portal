@@ -117,14 +117,24 @@ export function PhoneField({
                 }}
                 style={{
                   flexDirection: "row",
+                  alignItems: "center",
                   justifyContent: "space-between",
+                  gap: spacing.md,
                   paddingVertical: spacing.md,
                   borderBottomWidth: 1,
                   borderBottomColor: tokens.border,
                 }}
               >
-                <AppText style={{ fontSize: fontSize.md }}>{item.name}</AppText>
-                <AppText variant="muted">+{item.dial}</AppText>
+                {/* Long ru names shrink; the dial code never truncates. */}
+                <AppText
+                  numberOfLines={1}
+                  style={{ fontSize: fontSize.md, flexShrink: 1, minWidth: 0 }}
+                >
+                  {item.name}
+                </AppText>
+                <AppText variant="muted" style={{ flexShrink: 0 }}>
+                  +{item.dial}
+                </AppText>
               </Pressable>
             )}
           />

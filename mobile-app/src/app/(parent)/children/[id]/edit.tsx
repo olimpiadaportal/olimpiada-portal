@@ -313,8 +313,18 @@ function EditForm({
 
       {/* Read-only identifiers — display only, never editable. */}
       <Card style={{ gap: spacing.sm }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <AppText variant="muted">{t("parent.child.idLabel")}</AppText>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: spacing.md,
+          }}
+        >
+          {/* The label shrinks; the ID is a number and never compresses. */}
+          <AppText variant="muted" style={{ flexShrink: 1 }}>
+            {t("parent.child.idLabel")}
+          </AppText>
           <AppText variant="mono" style={{ fontWeight: "700" }}>
             {child.child_unique_id ?? t("parent.dash.idPending")}
           </AppText>

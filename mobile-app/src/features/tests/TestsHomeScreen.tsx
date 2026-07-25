@@ -530,7 +530,9 @@ function DailyRoundRulesGate({
           padding: spacing.xl,
         }}
       >
-        {/* Inner pressable swallows taps so the card never closes itself. */}
+        {/* Inner pressable swallows taps so the card never closes itself.
+            maxHeight + the scrolling middle keep the consent/actions reachable
+            on short screens (320pt-class) instead of clipping. */}
         <Pressable
           onPress={() => {}}
           style={[
@@ -541,6 +543,7 @@ function DailyRoundRulesGate({
               borderRadius: radius.xl,
               padding: spacing.xl,
               gap: spacing.md,
+              maxHeight: "85%",
             },
             shadow("float"),
           ]}
@@ -549,72 +552,76 @@ function DailyRoundRulesGate({
             {t("test.rounds.rulesTitle")}
           </AppText>
 
-          {/* Exam facts (web .drs-facts). */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-            {facts.map((f) => (
+          {/* Facts + rules + consent scroll when the card hits maxHeight;
+              flexGrow:0 keeps the card content-sized otherwise. */}
+          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ gap: spacing.md }}>
+            {/* Exam facts (web .drs-facts). */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+              {facts.map((f) => (
+                <View
+                  key={f}
+                  style={{
+                    backgroundColor: tint(arena.lime, 0.12),
+                    borderColor: tint(arena.lime, 0.45),
+                    borderWidth: 1,
+                    borderRadius: 999,
+                    paddingVertical: 4,
+                    paddingHorizontal: spacing.md,
+                  }}
+                >
+                  <AppText variant="label" color={arena.lime} style={{ fontSize: 11 }}>
+                    {f}
+                  </AppText>
+                </View>
+              ))}
+            </View>
+
+            {/* Daily rule bullets (web .drs-rules). */}
+            <View style={{ gap: spacing.sm }}>
+              {rules.map((r) => (
+                <View key={r} style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <AppText color={arena.lime} style={{ fontSize: 14, lineHeight: 20 }}>
+                    {"•"}
+                  </AppText>
+                  <AppText color={arena.muted} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
+                    {r}
+                  </AppText>
+                </View>
+              ))}
+            </View>
+
+            {/* Required consent tick (web .drs-consent). */}
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: consent }}
+              accessibilityLabel={t("test.setup.consent")}
+              onPress={() => setConsent((v) => !v)}
+              style={({ pressed }) => ({
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.md,
+                minHeight: 44,
+                opacity: pressed ? 0.8 : 1,
+              })}
+            >
               <View
-                key={f}
                 style={{
-                  backgroundColor: tint(arena.lime, 0.12),
-                  borderColor: tint(arena.lime, 0.45),
-                  borderWidth: 1,
-                  borderRadius: 999,
-                  paddingVertical: 4,
-                  paddingHorizontal: spacing.md,
+                  width: 24,
+                  height: 24,
+                  borderRadius: radius.sm,
+                  borderWidth: 2,
+                  borderColor: consent ? arena.lime : arena.line,
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                <AppText variant="label" color={arena.lime} style={{ fontSize: 11 }}>
-                  {f}
-                </AppText>
+                {consent ? <Check size={16} color={arena.lime} strokeWidth={3} /> : null}
               </View>
-            ))}
-          </View>
-
-          {/* Daily rule bullets (web .drs-rules). */}
-          <View style={{ gap: spacing.sm }}>
-            {rules.map((r) => (
-              <View key={r} style={{ flexDirection: "row", gap: spacing.sm }}>
-                <AppText color={arena.lime} style={{ fontSize: 14, lineHeight: 20 }}>
-                  {"•"}
-                </AppText>
-                <AppText color={arena.muted} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
-                  {r}
-                </AppText>
-              </View>
-            ))}
-          </View>
-
-          {/* Required consent tick (web .drs-consent). */}
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: consent }}
-            accessibilityLabel={t("test.setup.consent")}
-            onPress={() => setConsent((v) => !v)}
-            style={({ pressed }) => ({
-              flexDirection: "row",
-              alignItems: "center",
-              gap: spacing.md,
-              minHeight: 44,
-              opacity: pressed ? 0.8 : 1,
-            })}
-          >
-            <View
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: radius.sm,
-                borderWidth: 2,
-                borderColor: consent ? arena.lime : arena.line,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {consent ? <Check size={16} color={arena.lime} strokeWidth={3} /> : null}
-            </View>
-            <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
-              {t("test.setup.consent")}
-            </AppText>
-          </Pressable>
+              <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
+                {t("test.setup.consent")}
+              </AppText>
+            </Pressable>
+          </ScrollView>
 
           {/* Actions — confirm stays disabled until consent is ticked. */}
           <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>

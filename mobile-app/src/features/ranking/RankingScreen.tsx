@@ -266,7 +266,9 @@ export function RankingScreen() {
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xl }}>
                 <AppText style={{ fontSize: 34 }}>{"\u{1F525}"}</AppText>
-                <View>
+                {/* Both stat blocks shrink (text wraps) so long az/ru unit
+                    strings can never push the row off a 320pt screen. */}
+                <View style={{ flexShrink: 1, minWidth: 0 }}>
                   <AppText
                     color={arena.ink}
                     style={{ fontFamily: MONO, fontSize: 22, fontWeight: "900" }}
@@ -277,7 +279,7 @@ export function RankingScreen() {
                     {t("lb.streak.current")}
                   </AppText>
                 </View>
-                <View>
+                <View style={{ flexShrink: 1, minWidth: 0 }}>
                   <AppText
                     color={arena.gold}
                     style={{ fontFamily: MONO, fontSize: 22, fontWeight: "900" }}

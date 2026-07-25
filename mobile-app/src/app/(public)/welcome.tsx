@@ -94,16 +94,27 @@ export default function Welcome() {
         >
           <BrandMark size={30} />
           {/* gap lg keeps the skip link's generous hitSlop from swallowing taps
-              meant for the chip beside it. */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
+              meant for the chip beside it. The cluster shrinks (skip label
+              truncates) so the ru strings never push the chip off a 320pt
+              screen. */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.lg,
+              flexShrink: 1,
+              minWidth: 0,
+            }}
+          >
             {!lastSlide ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={t("mob.onb.skip")}
                 onPress={() => leaveTo("/(public)/login", true)}
                 hitSlop={12}
+                style={{ flexShrink: 1, minWidth: 0 }}
               >
-                <AppText variant="label" color={tokens.muted}>
+                <AppText variant="label" color={tokens.muted} numberOfLines={1}>
                   {t("mob.onb.skip")}
                 </AppText>
               </Pressable>

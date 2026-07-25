@@ -1828,4 +1828,13 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 - Every olympiad card has an "Ətraflı" button beside "Əldə et". It opens a details view (modal) with all available fields in Azerbaijani labels (növ, fənn, sinif/siniflər, sual sayı, müddət, keçirilmə tarixi, satış tarixləri, qiymət, təsvir); fields with no value are hidden (never "null"). No purchase needed to view.
 - The olympiad type sits at the top of each card; if its text is too long it scrolls right-to-left as a smooth loop (and pauses when you hover). Short type names stay still. With reduced-motion enabled in the OS, it does not animate.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-#** + what you saw.
+# ROUND 44 — mobile responsiveness sweep
+
+## AJ1. Small-screen sanity (the key check)
+- On the NARROWEST device available (or your friend's iPhone Pro): walk arena home, Sınaq, leaderboard, parent home, subscription/Fənləri idarə et, and Olimpiadalar. No text should overlap another element, push a button off-screen, or get clipped mid-word. Long subject/child names truncate with "…" or wrap — numbers, prices and dates never truncate.
+- Switch to Russian (usually the longest strings) and re-glance the same screens.
+
+## AJ2. Nothing changed visually on normal screens
+- On your usual Android phone everything should look the SAME as before — this round only makes layouts resilient; spacing, colors and order are untouched. Report anything that looks moved/resized.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-#** + what you saw.

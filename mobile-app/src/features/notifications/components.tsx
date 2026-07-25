@@ -6,6 +6,7 @@
 // The hook (useNotifications.ts) owns all state; these components only render.
 import React from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Bell,
   ChartColumn,
@@ -346,6 +347,7 @@ export function NotificationDetailSheet({
   onOpenPath: (path: string) => void;
 }) {
   const { tokens } = useTheme();
+  const insets = useSafeAreaInsets();
   if (!item) return null;
 
   const catKey = item.category ? categoryLabelKey(item.category) : undefined;
@@ -369,6 +371,9 @@ export function NotificationDetailSheet({
             borderTopLeftRadius: radius.xl,
             borderTopRightRadius: radius.xl,
             padding: spacing.xl,
+            // SheetShell parity: keep the action row above the home
+            // indicator / Android gesture bar.
+            paddingBottom: insets.bottom + spacing.xl,
             gap: spacing.lg,
             maxHeight: "80%",
           },

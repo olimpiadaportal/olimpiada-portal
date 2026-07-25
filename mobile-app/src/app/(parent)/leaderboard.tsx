@@ -237,8 +237,8 @@ export default function ParentLeaderboard() {
 
   return (
     <ScreenScroll refreshing={refreshing} onRefresh={onRefresh}>
-      {/* Board switch: Percent | Streak */}
-      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+      {/* Board switch: Percent | Streak (wraps at 320pt with long ru labels) */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
         <Chip
           label={t("lb.board.percent")}
           active={board === "percent"}
@@ -334,8 +334,8 @@ export default function ParentLeaderboard() {
             </View>
           ) : null}
 
-          {/* Period toggle: This month | All time */}
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          {/* Period toggle: This month | All time (wraps instead of overflowing) */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
             <Chip
               label={t("lb.period.month")}
               active={periodUrl === "month"}

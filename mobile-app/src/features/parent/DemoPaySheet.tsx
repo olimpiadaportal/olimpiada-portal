@@ -3,7 +3,7 @@
 // PURELY presentational — the caller's onConfirm hits the BFF, which is the
 // only place any money state changes. Never rendered in 'real' or 'off' mode.
 import React from "react";
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
@@ -50,6 +50,9 @@ export function DemoPaySheet({
       onClose={pending ? () => {} : onClose}
       closeLabel={t("dpay.cancel")}
     >
+      {/* Short screens (320×568): the sheet caps at 88% height — the body
+          scrolls instead of clipping the confirm button out of reach. */}
+      <ScrollView contentContainerStyle={{ gap: spacing.lg }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
         <AppText variant="title">{t("pay.title")}</AppText>
         <View
@@ -81,7 +84,14 @@ export function DemoPaySheet({
             {t("pay.demoBadge")}
           </AppText>
         </View>
-        <AppText variant="mono" color="#ffffff" style={{ fontSize: 20, letterSpacing: 2 }}>
+        {/* Number, never truncated: scales down on 320pt instead of wrapping. */}
+        <AppText
+          variant="mono"
+          color="#ffffff"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          style={{ fontSize: 20, letterSpacing: 2 }}
+        >
           4242 4242 4242 4242
         </AppText>
         <View style={{ flexDirection: "row", gap: spacing.xl }}>
@@ -123,6 +133,7 @@ export function DemoPaySheet({
         onPress={onConfirm}
       />
       <Button title={t("dpay.cancel")} variant="ghost" disabled={pending} onPress={onClose} />
+      </ScrollView>
     </SheetShell>
   );
 }

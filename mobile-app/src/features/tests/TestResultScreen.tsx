@@ -202,7 +202,8 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
         {usedMin !== null ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
             <Clock size={14} color={arena.muted} strokeWidth={2} />
-            <AppText color={arena.muted} style={{ fontSize: 13 }}>
+            {/* Long az/ru label wraps within the row instead of overflowing. */}
+            <AppText color={arena.muted} style={{ fontSize: 13, flexShrink: 1 }}>
               {t("test.result.timeSpent")}: {usedMin} {t("test.result.minutes")} / {durationMin}{" "}
               {t("test.result.minutes")}
             </AppText>

@@ -115,13 +115,17 @@ export function Pill({
     <View
       style={{
         alignSelf: "flex-start",
+        // 320pt safety: in identity rows the pill compresses (ellipsis) instead
+        // of pushing the flex:1 name cell to zero or off-screen.
+        flexShrink: 1,
+        maxWidth: "100%",
         backgroundColor: bg,
         borderRadius: 999,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.xs,
       }}
     >
-      <AppText variant="label" color={color} style={{ fontSize: 12 }}>
+      <AppText variant="label" color={color} numberOfLines={1} style={{ fontSize: 12 }}>
         {label}
       </AppText>
     </View>

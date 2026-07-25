@@ -3,7 +3,7 @@
 // bffCancelSubscription. After success the sheet shows cancel.done + the
 // access-until-period-end note (the server keeps access to period end).
 import React, { useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -66,6 +66,9 @@ export function CancelSheet({
 
   return (
     <SheetShell visible={visible} onClose={close} closeLabel={t("cancel.keep")}>
+      {/* Short screens (320×568): the reason list + benefits exceed the sheet's
+          88% cap — the body scrolls instead of clipping the confirm button. */}
+      <ScrollView contentContainerStyle={{ gap: spacing.lg }}>
       {done ? (
         <>
           <AppText variant="title">{t("cancel.done")}</AppText>
@@ -150,6 +153,7 @@ export function CancelSheet({
           <Button title={t("cancel.keep")} variant="ghost" disabled={pending} onPress={close} />
         </>
       )}
+      </ScrollView>
     </SheetShell>
   );
 }

@@ -3,6 +3,7 @@
 // sheet pattern) with optional group headers (private/public schools).
 import React from "react";
 import { FlatList, Modal, Pressable, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { AppText } from "@/components/AppText";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -48,6 +49,7 @@ export function SelectField({
   closeLabel: string;
 }) {
   const { tokens } = useTheme();
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = React.useState(false);
 
   const selected = items.find((i) => i.kind === "option" && i.value === value) as
@@ -92,7 +94,18 @@ export function SelectField({
       ) : null}
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: tokens.bg, padding: spacing.lg, gap: spacing.md }}>
+        {/* Full-screen modal = its own window: apply the safe-area insets so the
+            title clears the notch and the close row clears the gesture bar. */}
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: tokens.bg,
+            paddingHorizontal: spacing.lg,
+            paddingTop: insets.top + spacing.lg,
+            paddingBottom: insets.bottom + spacing.lg,
+            gap: spacing.md,
+          }}
+        >
           <AppText variant="title">{label}</AppText>
           <FlatList
             data={items}

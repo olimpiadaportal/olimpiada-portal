@@ -140,10 +140,17 @@ function MetaChip({ icon, label }: { icon: React.ReactNode; label: string }) {
         borderRadius: 999,
         paddingHorizontal: spacing.md,
         paddingVertical: 3,
+        // A long az/ru subject label must not push the chip past the card.
+        maxWidth: "100%",
       }}
     >
       {icon}
-      <AppText variant="label" color={tokens.chipText} style={{ fontSize: 12 }}>
+      <AppText
+        variant="label"
+        color={tokens.chipText}
+        numberOfLines={1}
+        style={{ fontSize: 12, flexShrink: 1, minWidth: 0 }}
+      >
         {label}
       </AppText>
     </View>
@@ -292,13 +299,22 @@ function PublicPackagesSection() {
                     gap: spacing.md,
                   }}
                 >
-                  <AppText variant="mono" color={tokens.accent} style={{ fontSize: 18, fontWeight: "700" }}>
+                  {/* The amount never truncates — the CTA shrinks instead. */}
+                  <AppText
+                    variant="mono"
+                    color={tokens.accent}
+                    style={{ fontSize: 18, fontWeight: "700", flexShrink: 0 }}
+                  >
                     {priceText}
                   </AppText>
                   {showCta ? (
                     <Button
                       title={ctaLabel}
-                      style={{ minHeight: 44, paddingVertical: spacing.sm }}
+                      style={{
+                        minHeight: 44,
+                        paddingVertical: spacing.sm,
+                        flexShrink: 1,
+                      }}
                       onPress={onCta}
                     />
                   ) : null}

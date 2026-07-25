@@ -70,9 +70,11 @@ function Chip({ label, color, bg }: { label: string; color: string; bg: string }
         borderRadius: 999,
         paddingHorizontal: spacing.md,
         paddingVertical: 3,
+        // A long translated subject/grade label must cap at the wrap-row width.
+        maxWidth: "100%",
       }}
     >
-      <AppText variant="label" color={color} style={{ fontSize: 12 }}>
+      <AppText variant="label" color={color} style={{ fontSize: 12 }} numberOfLines={1}>
         {label}
       </AppText>
     </View>
@@ -367,7 +369,9 @@ export function OlympiadsScreen() {
                           }}
                         >
                           <Calendar size={16} color={arena.dim} strokeWidth={2} />
-                          <AppText color={arena.muted} style={{ fontSize: 13 }} numberOfLines={1}>
+                          {/* Dates never truncate — when squeezed (long ru
+                              format at 320pt) the date wraps instead. */}
+                          <AppText color={arena.muted} style={{ fontSize: 13, flexShrink: 1 }}>
                             {pkg.event_starts_at
                               ? fmtDate(pkg.event_starts_at, locale, true)
                               : t("oly4.dateTbd")}

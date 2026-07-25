@@ -5,7 +5,7 @@
 // per plan §2: grab handle, ListRow rows, lucide icons, eyebrow section
 // headers, safe-area padded bottom.
 import React, { useEffect, useState } from "react";
-import { Modal, Pressable, Switch, View } from "react-native";
+import { Modal, Pressable, ScrollView, Switch, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -124,6 +124,10 @@ export function AccountSheet({
           padding: spacing.xl,
           paddingBottom: spacing.xl + insets.bottom,
           gap: spacing.lg,
+          // On short screens (320×568) the full section list is taller than
+          // the viewport — the sheet caps at screen height and scrolls so the
+          // SESSION/logout rows stay reachable.
+          flexShrink: 1,
         }}
       >
         <View
@@ -135,6 +139,7 @@ export function AccountSheet({
             backgroundColor: tokens.border,
           }}
         />
+        <ScrollView bounces={false} contentContainerStyle={{ gap: spacing.lg }}>
         {role === "parent" || role === "student" ? (
           <View style={{ gap: spacing.xs }}>
             <AppText variant="eyebrow">{t("drawer2.account")}</AppText>
@@ -248,6 +253,7 @@ export function AccountSheet({
             }}
           />
         </View>
+        </ScrollView>
       </View>
     </Modal>
   );

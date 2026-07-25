@@ -14,6 +14,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import {
   OlympiadPurchase,
   type PolyChild,
@@ -55,12 +56,13 @@ export default async function ParentOlympiadCatalogPage() {
     gradeId: c.grade_id ? String(c.grade_id) : null,
   }));
 
-  // Active packages (public listing under RLS) + ownership per child.
-  const [{ data: packages }, { data: purchases }] = await Promise.all([
+  // Active packages (public listing under RLS) + ownership per child + the
+  // grades catalog (id → level) so the details modal can label target grades.
+  const [{ data: packages }, { data: purchases }, { data: gradeCatalog }] = await Promise.all([
     supabase
       .from("olympiad_packages")
       .select(
-        "id, price_amount, currency, event_starts_at, sale_starts_at, sale_ends_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+        "id, price_amount, currency, duration_minutes, event_starts_at, sale_starts_at, sale_ends_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
       )
       .eq("status", "active")
       .order("created_at"),
@@ -74,7 +76,14 @@ export default async function ParentOlympiadCatalogPage() {
           )
           .eq("status", "active")
       : Promise.resolve({ data: [] as any[] }),
+    supabase.from("grades").select("id, level"),
   ]);
+
+  // grade id → level (for the details modal's Sinif/Siniflər label).
+  const gradeLevelById = new Map<string, number>();
+  for (const g of (gradeCatalog ?? []) as any[]) {
+    if (g?.id && Number.isInteger(g.level)) gradeLevelById.set(String(g.id), Number(g.level));
+  }
 
   const ownedByPackage = new Map<string, string[]>();
   for (const p of (purchases ?? []) as any[]) {
@@ -199,6 +208,22 @@ export default async function ParentOlympiadCatalogPage() {
     const offSale =
       (Number.isFinite(saleStart) && saleStart > Date.now()) ||
       (Number.isFinite(saleEnd) && saleEnd <= Date.now());
+    // Target-grade label (Round 43, details modal): map the package's grade ids
+    // to levels; a multi-grade package reads as a range/list, legacy grade-less
+    // rows have no label (the row is hidden).
+    const gradeSet = targeted.get(p.id) ?? null;
+    const gradeLevels = (gradeSet ?? [])
+      .map((gid) => gradeLevelById.get(gid))
+      .filter((n): n is number => typeof n === "number");
+    const gradeLabel =
+      gradeLevels.length > 1
+        ? formatGradeRangeLabel(gradeLevels, locale)
+        : gradeLevels.length === 1
+          ? formatGradeLabel(gradeLevels[0], locale)
+          : null;
+    const durationMinutes = Number.isFinite(Number(p.duration_minutes))
+      ? Number(p.duration_minutes)
+      : null;
     return {
       id: p.id,
       title: tr?.title ?? "—",
@@ -209,9 +234,13 @@ export default async function ParentOlympiadCatalogPage() {
         : null,
       typeName: p.olympiad_types?.name ?? null,
       dateText: Number.isFinite(ts) ? fmt.format(new Date(ts)) : null,
-      gradeIds: targeted.get(p.id) ?? null,
+      gradeIds: gradeSet,
+      gradeLabel,
       countByGrade: countsByPkg.get(p.id) ?? {},
       fallbackCount: legacyCounts.get(p.id) ?? 0,
+      durationMinutes,
+      saleStartText: Number.isFinite(saleStart) ? fmt.format(new Date(saleStart)) : null,
+      saleEndText: Number.isFinite(saleEnd) ? fmt.format(new Date(saleEnd)) : null,
       priceText: price > 0 ? `${price} ${p.currency ?? "AZN"}` : t("poly.free"),
       ownedBy: ownedByPackage.get(p.id) ?? [],
       // M12: the event already happened → archived for purchase display
@@ -242,6 +271,19 @@ export default async function ParentOlympiadCatalogPage() {
     modalAlready: t("poly.modal.already"),
     pastLabel: t("oly4.status.held"),
     notOnSaleLabel: t("poly.notOnSale"),
+    details: t("poly.details"),
+    detType: t("poly.det.type"),
+    detSubject: t("poly.det.subject"),
+    detGrade: t("poly.det.grade"),
+    detGrades: t("poly.det.grades"),
+    detQuestions: t("poly.det.questions"),
+    detDuration: t("poly.det.duration"),
+    detEventAt: t("poly.det.eventAt"),
+    detSaleStart: t("poly.det.saleStart"),
+    detSaleEnd: t("poly.det.saleEnd"),
+    detPrice: t("poly.det.price"),
+    detDescription: t("poly.det.description"),
+    detMinutes: t("poly.det.minutes"),
   };
 
   return (

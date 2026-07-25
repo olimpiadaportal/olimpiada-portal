@@ -61,7 +61,6 @@ type MyRank = {
   is_provisional: boolean;
   questions: number;
   attempts: number;
-  min_questions: number;
   min_attempts: number;
 };
 type StreakStatus = {
@@ -206,7 +205,6 @@ export default async function ChildLeaderboardPage({
     is_provisional: false,
     questions: 0,
     attempts: 0,
-    min_questions: 0,
     min_attempts: 0,
   }) as MyRank;
   const streak = (streakRes.data ?? null) as StreakStatus | null;
@@ -379,9 +377,10 @@ export default async function ChildLeaderboardPage({
   // come from the get_my_leaderboard_rank payload.
   const showProvHint =
     board === "percent" && (rows.some((r) => r.is_provisional) || me.is_provisional);
-  const provHint = t("lb.provisionalHint")
-    .replace("{q}", String(Number(me.min_questions ?? 0)))
-    .replace("{a}", String(Number(me.min_attempts ?? 0)));
+  const provHint = t("lb.provisionalHint").replace(
+    "{n}",
+    String(Number(me.min_attempts ?? 0)),
+  );
 
   return (
     <section>
@@ -555,10 +554,8 @@ export default async function ChildLeaderboardPage({
           ) : me.is_provisional ? (
             <div className="lb-me-none">
               {t("lb.myRank.provisional")
-                .replace("{q}", String(Number(me.questions ?? 0)))
-                .replace("{mq}", String(Number(me.min_questions ?? 0)))
                 .replace("{a}", String(Number(me.attempts ?? 0)))
-                .replace("{ma}", String(Number(me.min_attempts ?? 0)))}
+                .replace("{n}", String(Number(me.min_attempts ?? 0)))}
             </div>
           ) : (
             <div className="lb-me-none">

@@ -10,23 +10,16 @@
 // abandoned legacy rows never lock the day, so Start renders and
 // the next start_daily_round_attempt('today') serves a fresh set (the old
 // Round-21 readiness pre-flight RPC was DROPPED server-side).
-import React, { useCallback, useRef, useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Modal, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  Check,
-  ChevronRight,
-  Dumbbell,
-  History,
-  Play,
-  RotateCcw,
-} from "lucide-react-native";
+import { Check, History, Play, RotateCcw } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { SectionHeader } from "@/components/SectionHeader";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
-import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
+import { radius, shadow, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
@@ -289,13 +282,16 @@ export function TestsHomeScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// One subject card (Round 38): identity row + state row + the practice entry.
-// Not done/live → Start fires the RATED start_daily_round_attempt('today')
-// RPC (web startDailyRound parity) and lands in the shared runner; the RPC
-// re-enforces everything server-side and its error codes map back to the same
-// trilingual notes the web shows. DONE (graded today) → the card dims (web
-// .tst-daily.done parity) with the score/result link kept fully readable, and
-// the practice CTA alerts "already completed today" instead of navigating.
+// One subject card (Round 38; Round 43 rules gate): identity row + state row.
+// Fresh → "Başla" opens a RULES + consent gate (25 sual · vaxt limiti yoxdur ·
+// reytinqə təsir edir + the daily-round rule bullets); confirming fires the
+// RATED start_daily_round_attempt('today') RPC (web startDailyRound parity) and
+// lands in the shared runner — the RPC re-enforces everything server-side and
+// its error codes map to the same trilingual notes the web shows. LIVE →
+// direct "Davam et" resume (no gate). DONE (graded today) → the card dims (web
+// .tst-daily.done parity) with the score/result link kept fully readable and a
+// "used today" note; the per-card practice CTA was removed (web PracticeGate
+// deletion). The server's one-per-day unique index is the real gate.
 // ---------------------------------------------------------------------------
 function SubjectCard({
   arena,
@@ -313,14 +309,13 @@ function SubjectCard({
   const qc = useQueryClient();
   const [starting, setStarting] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+  // Round 43: the fresh Başla opens this rules/consent gate before the RPC.
+  const [gateOpen, setGateOpen] = useState(false);
 
   const done = state.type === "done";
   // Dim + desaturate the done card via the neutral dim token (no new library);
   // the score link below stays OUTSIDE the dimmed wrappers.
   const accent = done ? arena.dim : arena.blue;
-
-  const openSetup = () =>
-    router.push({ pathname: "/(student)/test/[subjectId]", params: { subjectId } });
 
   const startRound = async () => {
     if (starting) return;
@@ -330,6 +325,7 @@ function SubjectCard({
       const res = await startDailyRoundAttempt(subjectId);
       if (res.ok) {
         setStarting(false);
+        setGateOpen(false);
         router.push({
           pathname: "/(student)/test/run/[attemptId]",
           params: {
@@ -340,15 +336,18 @@ function SubjectCard({
         return;
       }
       if (res.already) {
-        // Race fallback (web ?err=already): the day was consumed elsewhere —
-        // refresh the history so the card flips to done.
+        // Server one-per-day unique index tripped: refresh so the card flips to
+        // done and mirror the block with the "used today" note (web ?err=already).
         void qc.invalidateQueries({ queryKey: ["tests", "attempts"] });
+        setCardError(t("test.rounds.usedToday"));
+      } else {
+        setCardError(t(res.errorKey));
       }
-      setCardError(t(res.errorKey));
     } catch {
       setCardError(t("test.err.generic"));
     }
     setStarting(false);
+    setGateOpen(false);
   };
 
   return (
@@ -389,14 +388,13 @@ function SubjectCard({
       {/* State row — Start renders whenever the card is not done/live
           (non-graded attempts NEVER lock it; server errors surface below). */}
       {state.type === "ready" ? (
+        // Fresh: open the rules + consent gate (never straight into the RPC).
         <ArenaButton
           arena={arena}
           kind="gradient"
           title={t("test.rounds.start")}
-          pendingTitle={t("test.setup.starting")}
-          pending={starting}
           icon={<Play size={16} color="#ffffff" strokeWidth={2.5} fill="#ffffff" />}
-          onPress={() => void startRound()}
+          onPress={() => setGateOpen(true)}
         />
       ) : state.type === "live" ? (
         <ArenaButton
@@ -454,35 +452,194 @@ function SubjectCard({
         </AppText>
       ) : null}
 
-      {/* Practice entry — the untimed/unrated topic-setup flow. After today's
-          SUBMITTED round it alerts instead of navigating (web PracticeGate). */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t("test.rounds.practiceCta")}
-        onPress={done ? () => Alert.alert(t("test.rounds.doneAlert")) : openSetup}
-        style={({ pressed }) => ({
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing.sm,
-          borderTopWidth: 1,
-          borderTopColor: arena.line,
-          paddingTop: spacing.md,
-          minHeight: 44,
-          opacity: pressed ? 0.7 : done ? 0.55 : 1,
-        })}
-      >
-        <Dumbbell size={16} color={arena.muted} strokeWidth={2} />
-        <AppText
-          variant="label"
-          color={arena.ink}
-          style={{ flex: 1, fontSize: 13 }}
-          numberOfLines={1}
-        >
-          {t("test.rounds.practiceCta")}
+      {/* DONE: the day is used up — the "come back tomorrow" note (web
+          .tst-daily-used). Only when no transient error is already showing it. */}
+      {done && !cardError ? (
+        <AppText color={arena.muted} style={{ fontSize: 13, lineHeight: 19 }}>
+          {t("test.rounds.usedToday")}
         </AppText>
-        <ChevronRight size={16} color={arena.dim} strokeWidth={2} />
-      </Pressable>
+      ) : null}
+
+      {/* Round 43: the fresh Başla rules + consent gate. */}
+      <DailyRoundRulesGate
+        arena={arena}
+        visible={gateOpen}
+        pending={starting}
+        onConfirm={() => void startRound()}
+        onClose={() => setGateOpen(false)}
+      />
     </Panel>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Round 43 — the RATED daily-round rules gate (web DailyRoundStart parity). The
+// fresh "Başla" opens this modal: exam facts (25 sual · vaxt limiti yoxdur ·
+// reytinqə təsir edir) + the daily rule bullets + a REQUIRED consent tick; the
+// confirm (label test.rounds.start) is disabled until consent is ticked and
+// calls the EXISTING startDailyRoundAttempt('today') path unchanged. Consent
+// resets every time the gate re-opens; the backdrop/back close is blocked while
+// the RPC is pending so a mid-flight tap can't strand the attempt.
+// ---------------------------------------------------------------------------
+function DailyRoundRulesGate({
+  arena,
+  visible,
+  pending,
+  onConfirm,
+  onClose,
+}: {
+  arena: ArenaTokens;
+  visible: boolean;
+  pending: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useT();
+  const [consent, setConsent] = useState(false);
+  // Fresh consent each open (never carry a previous tick into a new round).
+  useEffect(() => {
+    if (visible) setConsent(false);
+  }, [visible]);
+
+  const facts = [
+    t("test.setup.qCount"),
+    `∞ ${t("test.setup.noLimit")}`,
+    t("test.rounds.rated"),
+  ];
+  const rules = [
+    t("test.rounds.rulesRated"),
+    t("test.rounds.rulesOnce"),
+    t("test.rounds.rulesNoLimit"),
+    t("test.rounds.rulesSaved"),
+  ];
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={pending ? undefined : onClose}
+    >
+      <Pressable
+        accessibilityLabel={t("profile.cancel")}
+        onPress={pending ? undefined : onClose}
+        style={{
+          flex: 1,
+          backgroundColor: tint("#000000", 0.55),
+          justifyContent: "center",
+          padding: spacing.xl,
+        }}
+      >
+        {/* Inner pressable swallows taps so the card never closes itself. */}
+        <Pressable
+          onPress={() => {}}
+          style={[
+            {
+              backgroundColor: arena.panel,
+              borderColor: arena.line,
+              borderWidth: 1,
+              borderRadius: radius.xl,
+              padding: spacing.xl,
+              gap: spacing.md,
+            },
+            shadow("float"),
+          ]}
+        >
+          <AppText variant="title" color={arena.ink}>
+            {t("test.rounds.rulesTitle")}
+          </AppText>
+
+          {/* Exam facts (web .drs-facts). */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {facts.map((f) => (
+              <View
+                key={f}
+                style={{
+                  backgroundColor: tint(arena.lime, 0.12),
+                  borderColor: tint(arena.lime, 0.45),
+                  borderWidth: 1,
+                  borderRadius: 999,
+                  paddingVertical: 4,
+                  paddingHorizontal: spacing.md,
+                }}
+              >
+                <AppText variant="label" color={arena.lime} style={{ fontSize: 11 }}>
+                  {f}
+                </AppText>
+              </View>
+            ))}
+          </View>
+
+          {/* Daily rule bullets (web .drs-rules). */}
+          <View style={{ gap: spacing.sm }}>
+            {rules.map((r) => (
+              <View key={r} style={{ flexDirection: "row", gap: spacing.sm }}>
+                <AppText color={arena.lime} style={{ fontSize: 14, lineHeight: 20 }}>
+                  {"•"}
+                </AppText>
+                <AppText color={arena.muted} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
+                  {r}
+                </AppText>
+              </View>
+            ))}
+          </View>
+
+          {/* Required consent tick (web .drs-consent). */}
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: consent }}
+            accessibilityLabel={t("test.setup.consent")}
+            onPress={() => setConsent((v) => !v)}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.md,
+              minHeight: 44,
+              opacity: pressed ? 0.8 : 1,
+            })}
+          >
+            <View
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: radius.sm,
+                borderWidth: 2,
+                borderColor: consent ? arena.lime : arena.line,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {consent ? <Check size={16} color={arena.lime} strokeWidth={3} /> : null}
+            </View>
+            <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
+              {t("test.setup.consent")}
+            </AppText>
+          </Pressable>
+
+          {/* Actions — confirm stays disabled until consent is ticked. */}
+          <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>
+            <ArenaButton
+              arena={arena}
+              kind="ghost"
+              title={t("profile.cancel")}
+              onPress={onClose}
+              disabled={pending}
+              style={{ flex: 1 }}
+            />
+            <ArenaButton
+              arena={arena}
+              kind="gradient"
+              title={t("test.rounds.start")}
+              pendingTitle={t("test.setup.starting")}
+              pending={pending}
+              disabled={!consent}
+              onPress={onConfirm}
+              style={{ flex: 1 }}
+            />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 

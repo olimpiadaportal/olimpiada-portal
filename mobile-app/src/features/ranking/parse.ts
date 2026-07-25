@@ -31,7 +31,6 @@ export type MyRank = {
   is_provisional: boolean;
   questions: number;
   attempts: number;
-  min_questions: number;
   min_attempts: number;
 };
 
@@ -52,7 +51,6 @@ export function parseRankPayload(data: unknown): MyRank {
     is_provisional: o.is_provisional === true,
     questions: toNum(o.questions),
     attempts: toNum(o.attempts),
-    min_questions: toNum(o.min_questions),
     min_attempts: toNum(o.min_attempts),
   };
 }

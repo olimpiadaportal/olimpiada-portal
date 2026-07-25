@@ -19,7 +19,6 @@ import {
   Clock3,
   GraduationCap,
   Medal,
-  Tag,
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
@@ -52,6 +51,8 @@ import {
   SheetShell,
   childDisplayName,
 } from "@/features/parent/ui";
+import { buildOlympiadDetailRows } from "@/features/olympiads/details";
+import { TypeMarquee } from "@/features/olympiads/TypeMarquee";
 
 function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
   const { tokens } = useTheme();
@@ -373,6 +374,11 @@ export default function ParentOlympiads() {
                       heldLabel={t("oly4.status.held")}
                     />
                     <View style={{ padding: spacing.lg, gap: spacing.md }}>
+                      {/* Round 43: the olympiad type headlines the card body as
+                          an overflow-aware marquee. */}
+                      {pkg.typeName ? (
+                        <TypeMarquee text={pkg.typeName} color={tokens.accent} />
+                      ) : null}
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
                         {pkg.subject?.name ? (
                           <Chip
@@ -417,7 +423,7 @@ export default function ParentOlympiads() {
                         style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
                       >
                         <Button
-                          title={t("oly4.details")}
+                          title={t("poly.details")}
                           variant="ghost"
                           style={{ flex: 1, minHeight: 44, paddingVertical: spacing.sm }}
                           onPress={() => setDetail(pkg)}
@@ -456,7 +462,8 @@ export default function ParentOlympiads() {
         {detail ? (
           <ScrollView contentContainerStyle={{ gap: spacing.md }}>
             <AppText variant="title">{detail.title}</AppText>
-            {detail.description ? <AppText variant="muted">{detail.description}</AppText> : null}
+            {/* Round 43: every AVAILABLE field with its poly.det.* label; a
+                null/empty value is dropped (never renders "null"). */}
             <View
               style={{
                 borderRadius: radius.md,
@@ -466,39 +473,16 @@ export default function ParentOlympiads() {
                 paddingVertical: spacing.sm,
               }}
             >
-              {detail.subject?.name ? (
-                <KeyRow
-                  icon={<BookOpen size={16} color={tokens.muted} strokeWidth={2} />}
-                  label={t("oly4.subject")}
-                  value={subjectLabel(t, detail.subject.code, detail.subject.name)}
-                />
-              ) : null}
-              <KeyRow
-                icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("oly4.date")}
-                value={
-                  detail.event_starts_at
-                    ? fmtDate(detail.event_starts_at, locale, true)
-                    : t("oly4.dateTbd")
-                }
-              />
-              <KeyRow
-                icon={<CircleHelp size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("oly4.qcount")}
-                value={`${questionCount(detail)} ${t("poly.questions")}`}
-              />
-              <KeyRow
-                icon={<Clock3 size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("mob.oly.duration")}
-                value={`${detail.duration_minutes} ${t("mob.unit.min")}`}
-              />
-              <KeyRow
-                icon={<Tag size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("oly4.price")}
-                value={priceText(detail)}
-                strong
-              />
+              {buildOlympiadDetailRows(detail, questionCount(detail), locale, t).map((r) => (
+                <KeyRow key={r.key} label={r.label} value={r.value} strong={r.key === "price"} />
+              ))}
             </View>
+            {detail.description ? (
+              <View style={{ gap: spacing.xs }}>
+                <AppText variant="eyebrow">{t("poly.det.description")}</AppText>
+                <AppText variant="muted">{detail.description}</AppText>
+              </View>
+            ) : null}
             {ownedForSelected.has(detail.id) ? (
               <AppText variant="muted">{t("poly.modal.already")}</AppText>
             ) : canBuy && selected && !isPast(detail) && isOffSale(detail) ? (

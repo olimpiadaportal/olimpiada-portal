@@ -39,10 +39,17 @@ export type PolyPackage = {
   dateText: string | null;
   /** Grade ids this package targets; null = legacy grade-less (every child). */
   gradeIds: string[] | null;
+  /** Localized grade/grades label (null = legacy grade-less → row hidden). */
+  gradeLabel: string | null;
   /** Published pool count per family-matching grade id. */
   countByGrade: Record<string, number>;
   /** Whole-pool count — used when the selected grade has no entry (legacy). */
   fallbackCount: number;
+  /** Attempt time limit in minutes (null = not set → row hidden). */
+  durationMinutes: number | null;
+  /** Localized sale-window start / end (null = not set → row hidden). */
+  saleStartText: string | null;
+  saleEndText: string | null;
   priceText: string;
   /** student profile ids that already own this package (status active). */
   ownedBy: string[];
@@ -78,6 +85,20 @@ export type PolyDict = {
   /** Sale window closed — shown instead of a buy CTA (purchase_olympiad
       rejects off-sale buys server-side either way). */
   notOnSaleLabel: string;
+  /** "Ətraflı" button + details-modal row labels (Round 43). */
+  details: string;
+  detType: string;
+  detSubject: string;
+  detGrade: string;
+  detGrades: string;
+  detQuestions: string;
+  detDuration: string;
+  detEventAt: string;
+  detSaleStart: string;
+  detSaleEnd: string;
+  detPrice: string;
+  detDescription: string;
+  detMinutes: string;
 };
 
 // Inline-SVG medal for the branded gradient placeholder (no external images —
@@ -113,6 +134,100 @@ function CalendarIcon() {
       <rect x="3" y="5" width="18" height="16" rx="3" />
       <path d="M8 3v4M16 3v4M3 11h18" />
     </svg>
+  );
+}
+
+// Animated olympiad-type marquee (Round 43): the type sits in a fixed-width,
+// overflow-hidden, nowrap strip at the TOP of the card. It scrolls right-to-left
+// (seamless two-segment loop) ONLY when the text is wider than the strip —
+// short text stays static. The CSS animates strictly under
+// prefers-reduced-motion: no-preference and pauses on hover; the duplicate
+// segment sits off-screen when idle, so no animation never shows two copies.
+function TypeMarquee({ text }: { text: string }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(false);
+
+  useEffect(() => {
+    const measure = () => {
+      const w = wrapRef.current;
+      // The wrap is overflow-hidden + nowrap, so scrollWidth is the full text
+      // width and clientWidth is the visible strip — animate only when wider.
+      if (w) setOverflow(w.scrollWidth > w.clientWidth + 1);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+    // Re-measure only when the (single, stable) label changes; once a strip is
+    // known to overflow it stays overflowing at any width the card can take.
+  }, [text]);
+
+  return (
+    <div className="poly-type" ref={wrapRef} title={text}>
+      {overflow ? (
+        <span className="poly-type-track">
+          <span className="poly-type-seg">{text}</span>
+          <span className="poly-type-seg" aria-hidden="true">
+            {text}
+          </span>
+        </span>
+      ) : (
+        <span className="poly-type-static">{text}</span>
+      )}
+    </div>
+  );
+}
+
+// Read-only "Ətraflı" body — every AVAILABLE field with an az label; a row whose
+// value is null/empty is dropped entirely (never renders "null"/"undefined").
+function DetailsDialogBody({
+  pkg,
+  count,
+  dict,
+  onClose,
+}: {
+  pkg: PolyPackage;
+  count: number;
+  dict: PolyDict;
+  onClose: () => void;
+}) {
+  const multiGrade = (pkg.gradeIds?.length ?? 0) > 1;
+  const rows: { label: string; value: string }[] = [];
+  const push = (label: string, value: string | null | undefined) => {
+    const v = (value ?? "").toString().trim();
+    if (v) rows.push({ label, value: v });
+  };
+  push(dict.detType, pkg.typeName);
+  push(dict.detSubject, pkg.subject);
+  push(multiGrade ? dict.detGrades : dict.detGrade, pkg.gradeLabel);
+  push(dict.detQuestions, count > 0 ? String(count) : null);
+  push(dict.detDuration, pkg.durationMinutes ? `${pkg.durationMinutes} ${dict.detMinutes}` : null);
+  push(dict.detEventAt, pkg.dateText);
+  push(dict.detSaleStart, pkg.saleStartText);
+  push(dict.detSaleEnd, pkg.saleEndText);
+  push(dict.detPrice, pkg.priceText);
+
+  return (
+    <>
+      <dl className="poly-rows">
+        {rows.map((r) => (
+          <div className="poly-row" key={r.label}>
+            <dt>{r.label}</dt>
+            <dd>{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {pkg.desc && (
+        <div className="poly-det-desc">
+          <div className="poly-det-desc-label">{dict.detDescription}</div>
+          <p>{pkg.desc}</p>
+        </div>
+      )}
+      <div className="poly-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          {dict.modalClose}
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -241,6 +356,9 @@ export function OlympiadPurchase({
   const router = useRouter();
   const [childId, setChildId] = useState<string>(childrenList[0]?.id ?? "");
   const [buying, setBuying] = useState<PolyPackage | null>(null);
+  // Round 43: the "Ətraflı" details modal — independent of the purchase flow
+  // (viewing details never requires a purchase).
+  const [details, setDetails] = useState<PolyPackage | null>(null);
   // (childId:packageId) purchased in this session — flips cards to "owned"
   // instantly; router.refresh() then re-syncs the server-rendered props.
   const [justOwned, setJustOwned] = useState<ReadonlySet<string>>(new Set());
@@ -303,6 +421,12 @@ export function OlympiadPurchase({
     setBuying(pkg);
   };
 
+  // The pool count the SELECTED child would receive (their grade's pool, else
+  // the whole-pool fallback) — shared by the card meta and the details modal.
+  const countFor = (pkg: PolyPackage): number =>
+    (child?.gradeId != null ? pkg.countByGrade[child.gradeId] : undefined) ??
+    pkg.fallbackCount;
+
   return (
     <>
       {/* Child selector */}
@@ -331,9 +455,7 @@ export function OlympiadPurchase({
             const owned = isOwned(pkg);
             // The count the SELECTED child would receive: their grade's pool,
             // falling back to the whole-pool count (legacy grade-less rows).
-            const questionCount =
-              (child?.gradeId != null ? pkg.countByGrade[child.gradeId] : undefined) ??
-              pkg.fallbackCount;
+            const questionCount = countFor(pkg);
             return (
               <article className="poly-card" key={pkg.id}>
                 {pkg.coverUrl ? (
@@ -345,10 +467,12 @@ export function OlympiadPurchase({
                   </div>
                 )}
                 <div className="poly-body">
-                  {(pkg.subject || pkg.typeName) && (
+                  {/* Round 43: the olympiad type headlines the card as an
+                      overflow-aware marquee. */}
+                  {pkg.typeName && <TypeMarquee text={pkg.typeName} />}
+                  {pkg.subject && (
                     <div className="poly-chips">
-                      {pkg.subject && <span className="poly-chip">{pkg.subject}</span>}
-                      {pkg.typeName && <span className="poly-chip">{pkg.typeName}</span>}
+                      <span className="poly-chip">{pkg.subject}</span>
                     </div>
                   )}
                   <h3 className="poly-title">{pkg.title}</h3>
@@ -366,24 +490,35 @@ export function OlympiadPurchase({
                   </div>
                   <div className="poly-foot">
                     <span className="poly-price">{pkg.priceText}</span>
-                    {owned ? (
-                      <span className="poly-owned">{dict.owned}</span>
-                    ) : pkg.past ? (
-                      // M12: the event was already held — archived; never buyable.
-                      <span className="poly-chip">{dict.pastLabel}</span>
-                    ) : pkg.offSale ? (
-                      // Sale window closed for this (family-visible) package —
-                      // the server rejects such buys with poly.err.notOnSale.
-                      <span className="poly-chip">{dict.notOnSaleLabel}</span>
-                    ) : canBuy && child ? (
+                    <div className="poly-foot-actions">
+                      {/* Ətraflı is available on EVERY card — details never
+                          require a purchase. */}
                       <button
                         type="button"
-                        className="poly-buy"
-                        onClick={() => openBuy(pkg)}
+                        className="poly-details-btn"
+                        onClick={() => setDetails(pkg)}
                       >
-                        {dict.buy}
+                        {dict.details}
                       </button>
-                    ) : null}
+                      {owned ? (
+                        <span className="poly-owned">{dict.owned}</span>
+                      ) : pkg.past ? (
+                        // M12: the event was already held — archived; never buyable.
+                        <span className="poly-chip">{dict.pastLabel}</span>
+                      ) : pkg.offSale ? (
+                        // Sale window closed for this (family-visible) package —
+                        // the server rejects such buys with poly.err.notOnSale.
+                        <span className="poly-chip">{dict.notOnSaleLabel}</span>
+                      ) : canBuy && child ? (
+                        <button
+                          type="button"
+                          className="poly-buy"
+                          onClick={() => openBuy(pkg)}
+                        >
+                          {dict.buy}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </article>
@@ -406,6 +541,23 @@ export function OlympiadPurchase({
             dict={dict}
             onDone={onDone}
             onClose={() => setBuying(null)}
+          />
+        )}
+      </Modal>
+
+      {/* Read-only "Ətraflı" details — open for any card, no purchase needed. */}
+      <Modal
+        isOpen={details !== null}
+        onClose={() => setDetails(null)}
+        title={details?.title}
+        closeLabel={dict.modalClose}
+      >
+        {details && (
+          <DetailsDialogBody
+            pkg={details}
+            count={countFor(details)}
+            dict={dict}
+            onClose={() => setDetails(null)}
           />
         )}
       </Modal>

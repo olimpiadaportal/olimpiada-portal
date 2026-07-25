@@ -233,6 +233,9 @@ export type OlympiadPackageRow = {
   sale_starts_at: string | null;
   sale_ends_at: string | null;
   subject: { code: string | null; name: string } | null;
+  /** olympiad_types.name (get_my_olympiad_catalog) — the card's type marquee +
+   *  the "Olimpiada növü" detail row; null when the package has no type. */
+  typeName: string | null;
   /** Single-grade legacy view (null for multi-grade packages). */
   grade: { level: number; name: string } | null;
   /** Round 34: the FULL target set with per-grade published pool counts. */
@@ -287,6 +290,10 @@ export async function fetchOlympiadCatalog(
       subject:
         p.subject_name != null
           ? { code: p.subject_code ?? null, name: String(p.subject_name) }
+          : null,
+      typeName:
+        p.olympiad_type != null && String(p.olympiad_type).trim()
+          ? String(p.olympiad_type).trim()
           : null,
       grade:
         grades.length === 1 ? { level: grades[0].level, name: grades[0].name } : null,

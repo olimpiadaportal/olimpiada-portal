@@ -62,7 +62,6 @@ type ChildPos = {
   is_provisional: boolean;
   questions: number;
   attempts: number;
-  min_questions: number;
   min_attempts: number;
 };
 type Kid = {
@@ -417,7 +416,7 @@ export default async function ParentLeaderboardPage({
   // (a board row or a linked child's position). Thresholds come from the
   // get_child_leaderboard_position payloads.
   const provSource =
-    posEntries.map(([, p]) => p).find((p) => !!p && Number(p.min_questions ?? 0) > 0) ??
+    posEntries.map(([, p]) => p).find((p) => !!p && Number(p.min_attempts ?? 0) > 0) ??
     null;
   const anyChildProvisional = posEntries.some(([, p]) => !!p?.is_provisional);
   const showProvHint =
@@ -425,9 +424,7 @@ export default async function ParentLeaderboardPage({
     !!provSource &&
     (rows.some((r) => r.is_provisional) || anyChildProvisional);
   const provHint = provSource
-    ? t("lb.provisionalHint")
-        .replace("{q}", String(Number(provSource.min_questions ?? 0)))
-        .replace("{a}", String(Number(provSource.min_attempts ?? 0)))
+    ? t("lb.provisionalHint").replace("{n}", String(Number(provSource.min_attempts ?? 0)))
     : "";
 
   return (
@@ -638,9 +635,10 @@ export default async function ParentLeaderboardPage({
                         <span className="plb-kid-val">{fmtValue(Number(pos.value))}</span>
                       </div>
                       <div className="plb-kid-none">
-                        {t("lb.provisionalHint")
-                          .replace("{q}", String(Number(pos.min_questions ?? 0)))
-                          .replace("{a}", String(Number(pos.min_attempts ?? 0)))}
+                        {t("lb.provisionalHint").replace(
+                          "{n}",
+                          String(Number(pos.min_attempts ?? 0)),
+                        )}
                       </div>
                     </>
                   ) : (

@@ -16,16 +16,7 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import {
-  BookOpen,
-  Calendar,
-  Clock,
-  GraduationCap,
-  Info,
-  ListChecks,
-  Medal,
-  Trophy,
-} from "lucide-react-native";
+import { Calendar, Info, Medal, Trophy } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
@@ -55,6 +46,8 @@ import {
   startOlympiadAttempt,
   type OwnedOlympiad,
 } from "./data";
+import { buildOlympiadDetailRows } from "./details";
+import { TypeMarquee } from "./TypeMarquee";
 
 // Photo-scrim overlay: sits ON TOP of arbitrary cover images, so it cannot
 // come from theme tokens (must hold in every theme/palette).
@@ -319,6 +312,11 @@ export function OlympiadsScreen() {
                     </View>
 
                     <View style={{ padding: spacing.lg, gap: spacing.md }}>
+                      {/* Round 43: the olympiad type headlines the card body as
+                          an overflow-aware marquee. */}
+                      {pkg.typeName ? (
+                        <TypeMarquee text={pkg.typeName} color={arena.lime} />
+                      ) : null}
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
                         {pkg.subject?.name ? (
                           <Chip
@@ -376,7 +374,7 @@ export function OlympiadsScreen() {
                           </AppText>
                         </View>
                         <ArenaButton
-                          title={t("oly4.details")}
+                          title={t("poly.details")}
                           variant="ghost"
                           small
                           onPress={() => setDetail(pkg)}
@@ -469,50 +467,17 @@ export function OlympiadsScreen() {
                 />
               </View>
             ) : null}
+            {/* Round 43: every AVAILABLE field with its poly.det.* label; a
+                null/empty value is dropped (never renders "null"). */}
+            {buildOlympiadDetailRows(detail, catalogCountOf(detail), locale, t).map((r) => (
+              <ListRow key={r.key} title={r.label} value={r.value} />
+            ))}
             {detail.description ? (
-              <AppText variant="muted">{detail.description}</AppText>
+              <View style={{ gap: spacing.xs }}>
+                <ArenaEyebrow>{t("poly.det.description")}</ArenaEyebrow>
+                <AppText variant="muted">{detail.description}</AppText>
+              </View>
             ) : null}
-
-            {detail.subject?.name ? (
-              <ListRow
-                icon={<BookOpen size={18} color={arena.blue} strokeWidth={2} />}
-                title={t("oly4.subject")}
-                value={subjectLabel(t, detail.subject.code, detail.subject.name)}
-              />
-            ) : null}
-            {detail.grades.length > 0 || detail.grade ? (
-              <ListRow
-                icon={<GraduationCap size={18} color={arena.blue} strokeWidth={2} />}
-                title={t("lb.colGrade")}
-                value={
-                  detail.grades.length > 0
-                    ? formatGradeRangeLabel(
-                        detail.grades.map((g) => g.level),
-                        locale,
-                      )
-                    : formatGradeLabel(detail.grade!.level, locale, detail.grade!.name)
-                }
-              />
-            ) : null}
-            <ListRow
-              icon={<Calendar size={18} color={arena.blue} strokeWidth={2} />}
-              title={t("oly4.date")}
-              value={
-                detail.event_starts_at
-                  ? fmtDate(detail.event_starts_at, locale, true)
-                  : t("oly4.dateTbd")
-              }
-            />
-            <ListRow
-              icon={<ListChecks size={18} color={arena.blue} strokeWidth={2} />}
-              title={t("oly4.qcount")}
-              value={`${catalogCountOf(detail)} ${t("oly4.questions")}`}
-            />
-            <ListRow
-              icon={<Clock size={18} color={arena.blue} strokeWidth={2} />}
-              title={t("mob.oly.duration")}
-              value={`${detail.duration_minutes} ${t("mob.unit.min")}`}
-            />
 
             {/* Children can never purchase: an upcoming/undated listing carries
                 the "ask your parent" note; an already-held event is archived

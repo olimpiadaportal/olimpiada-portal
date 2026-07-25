@@ -7147,6 +7147,52 @@ ul.clean li {
 }
 /* End R9 T5 modal */
 
+/* ---- Round 43: daily-round rules gate (inside the shared Modal, portaled to
+   <body> so root tokens apply — never .arena-scoped). ------------------------ */
+.drs-facts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+.drs-fact {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.drs-rules {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  display: grid;
+  gap: 7px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.drs-rules li::marker {
+  color: var(--accent);
+}
+.drs-consent {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--text);
+}
+.drs-consent input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 
 /* ============ ROUND 9 MERGE: analytics.css ============ */
 /* =========================================================================
@@ -7398,6 +7444,102 @@ ul.clean li {
 .poly-buy:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ---- Round 43: animated olympiad-type marquee (top of each card) ---------- */
+/* Fixed-width, clipped, single-line strip. It only scrolls when the type text
+   is wider than the strip (the client adds .poly-type-track); short text stays
+   static. The duplicate segment sits off-screen at rest, so with no animation
+   only one copy shows. Never changes the card's width/height. */
+.poly-type {
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 100%;
+  line-height: 1.2;
+}
+.poly-type-static,
+.poly-type-seg {
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.poly-type-static {
+  display: inline-block;
+}
+.poly-type-track {
+  display: inline-flex;
+  width: max-content;
+  will-change: transform;
+}
+.poly-type-seg {
+  padding-right: 2.75rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .poly-type-track {
+    animation: poly-marquee 11s linear infinite;
+  }
+  .poly-type:hover .poly-type-track {
+    animation-play-state: paused;
+  }
+}
+@keyframes poly-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    /* Two equal segments → shifting by half the track re-enters seamlessly. */
+    transform: translateX(-50%);
+  }
+}
+
+/* ---- Round 43: card foot actions + "Ətraflı" details button --------------- */
+.poly-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.poly-details-btn {
+  appearance: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 14px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.poly-details-btn:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--accent);
+}
+.poly-details-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Details modal — free-text description block below the labelled rows. */
+.poly-det-desc {
+  margin: 0 0 14px;
+}
+.poly-det-desc-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.poly-det-desc p {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---- Purchase modal body -------------------------------------------------- */
@@ -9091,6 +9233,14 @@ ul.clean li {
 }
 .arena .tst-daily.done .arena-pts {
   opacity: 1;
+}
+/* Round 43: "you already used today's exam" note under a graded today card. */
+.arena .tst-daily-used {
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--muted);
 }
 /* Yesterday replay cards: visually distinct from today's rated cards. */
 .arena .tst-daily.ghost {

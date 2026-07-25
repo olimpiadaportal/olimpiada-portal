@@ -406,9 +406,7 @@ export function LeaderboardPanel({
           <KpiGrid kpis={tiles} />
           {provMonth || provAll ? (
             <AppText variant="muted" style={{ fontSize: 12 }}>
-              {t("lb.provisionalHint")
-                .replace("{q}", String(num(summary!.min_questions)))
-                .replace("{a}", String(num(summary!.min_attempts)))}
+              {t("lb.provisionalHint").replace("{n}", String(num(summary!.min_attempts)))}
             </AppText>
           ) : null}
         </>

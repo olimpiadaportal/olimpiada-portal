@@ -10,7 +10,6 @@ describe("parseRankPayload (get_my_leaderboard_rank / get_child_leaderboard_posi
       is_provisional: false,
       questions: 250,
       attempts: 12,
-      min_questions: 50,
       min_attempts: 3,
     });
     expect(r.rank).toBe(4);
@@ -19,7 +18,7 @@ describe("parseRankPayload (get_my_leaderboard_rank / get_child_leaderboard_posi
     expect(r.is_provisional).toBe(false);
   });
 
-  it("provisional: rank stays null and the thresholds survive for the hint", () => {
+  it("provisional: rank stays null and the round threshold survives for the hint", () => {
     const r = parseRankPayload({
       rank: null,
       total: 120,
@@ -27,14 +26,12 @@ describe("parseRankPayload (get_my_leaderboard_rank / get_child_leaderboard_posi
       is_provisional: true,
       questions: 10,
       attempts: 1,
-      min_questions: 50,
       min_attempts: 3,
     });
     expect(r.rank).toBeNull();
     expect(r.is_provisional).toBe(true);
     expect(r.questions).toBe(10);
     expect(r.attempts).toBe(1);
-    expect(r.min_questions).toBe(50);
     expect(r.min_attempts).toBe(3);
   });
 

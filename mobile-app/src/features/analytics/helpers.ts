@@ -53,7 +53,6 @@ export type LbSummary = {
   attempts_all_time?: number | null;
   provisional_month?: boolean | null;
   provisional_all_time?: boolean | null;
-  min_questions?: number | null;
   min_attempts?: number | null;
   current_streak?: number | null;
   best_streak?: number | null;

@@ -5,7 +5,7 @@ import { getT, getLocale } from "@/i18n/server";
 import { getChildSubjectAccess } from "@/lib/childSubjects";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { startDailyRound } from "@/lib/auth/testActions";
-import { PracticeGate } from "@/components/PracticeGate";
+import { DailyRoundStart } from "@/components/DailyRoundStart";
 
 // DAILY ROUNDS (Round 38, migration 083) — test home in three sections:
 //   1. Today's Rounds  — one RATED daily round per accessible subject (timed
@@ -102,6 +102,22 @@ export default async function TestHomePage({
     { day: "numeric", month: "short", year: "numeric" },
   );
 
+  // Rules-gate strings for the fresh-round Başla button (Round 43). Built here
+  // so the client island stays i18n-free; facts reuse the shared test keys.
+  const roundStartDict = {
+    start: t("test.rounds.start"),
+    rulesTitle: t("test.rounds.rulesTitle"),
+    factQuestions: t("test.setup.qCount"),
+    factNoLimit: t("test.setup.noLimit"),
+    factRated: t("test.rounds.rated"),
+    ruleRated: t("test.rounds.rulesRated"),
+    ruleOnce: t("test.rounds.rulesOnce"),
+    ruleNoLimit: t("test.rounds.rulesNoLimit"),
+    ruleSaved: t("test.rounds.rulesSaved"),
+    consent: t("test.setup.consent"),
+    cancel: t("profile.cancel"),
+  };
+
   const lockedPanel = (
     <div className="arena-locked">
       <strong>{t(`child.locked.${access}`)}</strong>
@@ -125,7 +141,7 @@ export default async function TestHomePage({
       {err === "noaccess" && <div className="tst-notice warn">{t("test.err.noAccess")}</div>}
       {err === "nograde" && <div className="tst-notice warn">{t("test.rounds.noGrade")}</div>}
       {err === "nopool" && <div className="tst-notice">{t("test.rounds.noRoundYet")}</div>}
-      {err === "already" && <div className="tst-notice">{t("test.rounds.alreadyNote")}</div>}
+      {err === "already" && <div className="tst-notice">{t("test.rounds.usedToday")}</div>}
       {err && !["noaccess", "nograde", "nopool", "already", "noyest"].includes(err) && (
         <div className="tst-notice warn">{t("test.err.generic")}</div>
       )}
@@ -169,26 +185,17 @@ export default async function TestHomePage({
                       {t("test.home.continueCta")}
                     </Link>
                   ) : (
-                    <form action={startDailyRound}>
-                      <input type="hidden" name="subject_id" value={s.id} />
-                      <input type="hidden" name="day" value="today" />
-                      <button type="submit" className="arena-btn arena-btn-sm">
-                        {t("test.rounds.start")}
-                      </button>
-                    </form>
+                    // Round 43: fresh Başla opens the rules + consent gate; the
+                    // confirm submits startDailyRound (day="today"). No topic
+                    // selection anymore.
+                    <DailyRoundStart subjectId={s.id} dict={roundStartDict} />
                   )}
                 </div>
-                {/* PRACTICE entry — the R19 topic/subtopic setup flow (untimed,
-                    unrated). After today's SUBMITTED round it alerts instead
-                    of navigating (Round 38). */}
-                <div className="tst-daily-practice">
-                  <PracticeGate
-                    href={`/child/test/${s.id}`}
-                    label={t("test.rounds.practiceCta")}
-                    done={!!done}
-                    doneAlert={t("test.rounds.doneAlert")}
-                  />
-                </div>
+                {/* Round 43: a used-up day shows the "come back tomorrow" note
+                    (the practice CTA was removed from the today cards). */}
+                {done && (
+                  <div className="tst-daily-used">{t("test.rounds.usedToday")}</div>
+                )}
               </div>
             );
           })}

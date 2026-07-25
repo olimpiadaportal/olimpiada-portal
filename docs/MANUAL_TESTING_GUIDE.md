@@ -1812,4 +1812,20 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AH3. Mobile parity
 - The mobile Manage Subjects editor shows the identical card structure and wording in all three languages.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-#** + what you saw.
+# ROUND 43 — rounds-only ranking, exam rules gate, olympiad details
+
+## AI1. Leaderboard: 2 rounds, no question minimum
+- A student with 2 completed rounds is officially RANKED even if they answered very few questions total. A student with only 1 round is provisional. The provisional hint now reads "…ən azı 2 raund…" (no mention of 25 questions) everywhere it appears (student board, own-rank card, parent dashboard/analytics).
+- Admin → Reytinq: the "Minimum sual sayı" field is GONE; only "Minimum raund sayı" remains.
+
+## AI2. Sınaq — no "Məşq et", rules gate on "Başla"
+- Today's subject cards show ONLY "Başla" (the "Məşq et" practice button is removed). "Dünənin raundları" replay is unchanged.
+- Click "Başla": a rules screen appears (25 sual · vaxt limiti yoxdur · reytinqə təsir edir) with the checkbox "Qaydaları oxudum və qəbul etdim."; you cannot start until it's ticked. Accepting starts the exam immediately — NO topic selection.
+- One attempt per day: after accepting, refreshing or reopening resumes the SAME exam (no new attempt, no new questions). After you submit, the card is disabled and shows "Bu gün üçün sınaq cəhdinizi artıq istifadə etmisiniz. Yeni sınaq sabah aktiv olacaq." Try a second tab — it cannot create a second attempt.
+- If a subject has fewer than 25 eligible questions, you get a clear error and your daily attempt is NOT used.
+
+## AI3. Olimpiadalar — "Ətraflı" + animated type
+- Every olympiad card has an "Ətraflı" button beside "Əldə et". It opens a details view (modal) with all available fields in Azerbaijani labels (növ, fənn, sinif/siniflər, sual sayı, müddət, keçirilmə tarixi, satış tarixləri, qiymət, təsvir); fields with no value are hidden (never "null"). No purchase needed to view.
+- The olympiad type sits at the top of each card; if its text is too long it scrolls right-to-left as a smooth loop (and pauses when you hover). Short type names stay still. With reduced-motion enabled in the OS, it does not animate.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-#** + what you saw.

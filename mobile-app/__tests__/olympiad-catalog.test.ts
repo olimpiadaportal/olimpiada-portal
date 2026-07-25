@@ -30,7 +30,7 @@ describe("fetchOlympiadCatalog — p_student scoping", () => {
     expect(rpc).toHaveBeenCalledWith("get_my_olympiad_catalog", { p_student: null });
   });
 
-  it("keeps the server-computed my_question_count on the mapped row", async () => {
+  it("keeps the server-computed my_question_count + olympiad type on the mapped row", async () => {
     rpc.mockResolvedValueOnce({
       data: [
         {
@@ -38,6 +38,7 @@ describe("fetchOlympiadCatalog — p_student scoping", () => {
           price_amount: 5,
           duration_minutes: 60,
           my_question_count: "40", // numeric arrives as text over PostgREST
+          olympiad_type: "Beynəlxalq",
           title_az: "Paket",
           description_az: "",
           grades: [],
@@ -48,6 +49,26 @@ describe("fetchOlympiadCatalog — p_student scoping", () => {
     const rows = await fetchOlympiadCatalog("az", CHILD);
     expect(rows).toHaveLength(1);
     expect(rows[0].my_question_count).toBe(40);
+    expect(rows[0].typeName).toBe("Beynəlxalq");
+  });
+
+  it("maps an absent olympiad type to null (no marquee / no type row)", async () => {
+    rpc.mockResolvedValueOnce({
+      data: [
+        {
+          id: "pkg-2",
+          price_amount: 0,
+          duration_minutes: 30,
+          my_question_count: 0,
+          title_az: "Paket",
+          description_az: "",
+          grades: [],
+        },
+      ],
+      error: null,
+    });
+    const rows = await fetchOlympiadCatalog("az");
+    expect(rows[0].typeName).toBeNull();
   });
 
   it("throws when the RPC errors (foreign/unlinked id is server-rejected)", async () => {

@@ -34,7 +34,6 @@ import type { SeasonRow } from "@/lib/admin/leaderboard";
 const LB_SETTING_KEYS = [
   "leaderboard.points.per_correct",
   "leaderboard.points.olympiad_multiplier",
-  "leaderboard.rank.min_questions",
   "leaderboard.rank.min_attempts",
 ] as const;
 

@@ -921,7 +921,7 @@ select '61_daily_rounds_engine' as check_name,
              and to_regclass('public.daily_practice_sets') is not null
              and to_regprocedure('public.start_daily_round_attempt(uuid,text)') is not null
              and exists (select 1 from pg_indexes
-                          where schemaname='public' and indexname='uq_rated_daily_graded_per_day')
+                          where schemaname='public' and indexname='uq_rated_daily_live_per_day')
              and not exists (select 1 from pg_indexes
                           where schemaname='public' and indexname='uq_rated_attempt_per_round')
              and position('is_rated' in
@@ -1324,8 +1324,8 @@ select '81_percentage_leaderboard' as check_name,
              and exists (select 1 from information_schema.columns
                           where table_schema='public' and table_name='students'
                             and column_name='pct_den_all')
-             and exists (select 1 from public.system_settings where key='leaderboard.rank.min_questions')
              and exists (select 1 from public.system_settings where key='leaderboard.rank.min_attempts')
+             and not exists (select 1 from public.system_settings where key='leaderboard.rank.min_questions')
              and to_regprocedure('public.lb_rows(text,text,uuid,text)') is not null
              and has_function_privilege('authenticated','public.lb_rows(text,text,uuid,text)','EXECUTE') = false
              and position('is_provisional' in pg_get_functiondef('public.get_leaderboard(text,text,uuid,text,int)'::regprocedure)) > 0

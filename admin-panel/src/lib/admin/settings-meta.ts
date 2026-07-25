@@ -234,14 +234,6 @@ export const SETTING_META: Record<string, SettingMeta> = {
     min: 0.1,
     max: 10,
   },
-  "leaderboard.rank.min_questions": {
-    kind: "number",
-    labelKey: "settings.sys.lb_min_questions.label",
-    helpKey: "settings.sys.lb_min_questions.help",
-    placeholder: "25",
-    min: 1,
-    max: 1000,
-  },
   "leaderboard.rank.min_attempts": {
     kind: "number",
     labelKey: "settings.sys.lb_min_attempts.label",

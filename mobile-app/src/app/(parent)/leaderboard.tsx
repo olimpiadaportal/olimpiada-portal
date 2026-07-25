@@ -390,9 +390,7 @@ export default function ParentLeaderboard() {
               payload (the only rank RPC this screen calls). */}
           {board === "percent" && pos && rows.some((r) => r.is_provisional) ? (
             <AppText variant="muted" style={{ fontSize: 12 }}>
-              {t("lb.provisionalHint")
-                .replace("{q}", String(pos.min_questions))
-                .replace("{a}", String(pos.min_attempts))}
+              {t("lb.provisionalHint").replace("{n}", String(pos.min_attempts))}
             </AppText>
           ) : null}
         </>
@@ -476,9 +474,7 @@ export default function ParentLeaderboard() {
           ) : null}
           {selectedChild && !posQ.isPending && pos?.is_provisional && scopeUsable ? (
             <AppText variant="muted" style={{ fontSize: 12 }}>
-              {t("lb.provisionalHint")
-                .replace("{q}", String(pos.min_questions))
-                .replace("{a}", String(pos.min_attempts))}
+              {t("lb.provisionalHint").replace("{n}", String(pos.min_attempts))}
             </AppText>
           ) : null}
         </View>

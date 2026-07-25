@@ -4100,37 +4100,28 @@ begin
   v_date := (now() at time zone 'Asia/Baku')::date - (case when v_rated then 0 else 1 end);
 
   if v_rated then
-    -- The day is consumed ONLY by a SUBMITTED (graded) round.
-    if exists (
-      select 1 from public.test_attempts
-      where student_profile_id = v_student and subject_id = p_subject_id
-        and kind = 'daily' and is_rated and status = 'graded'
-        and round_date = v_date
-    ) then
+    -- Round 43: the day is consumed AT CREATION. Look at today's live/graded
+    -- rated attempt: resume an in-progress one; block when it is completed;
+    -- otherwise (no attempt yet) draw a fresh set and create it.
+    select id, status, question_ids into v_existing
+    from public.test_attempts
+    where student_profile_id = v_student and subject_id = p_subject_id
+      and kind = 'daily' and is_rated and round_date = v_date
+      and status in ('in_progress', 'submitted', 'graded')
+    order by started_at desc limit 1;
+    if v_existing.id is not null then
+      if v_existing.status = 'in_progress' then
+        -- Untimed: reopen the same attempt (refresh / other tab / resume).
+        return jsonb_build_object(
+          'attempt_id', v_existing.id, 'resumed', true, 'rated', true,
+          'deadline_at', null, 'duration_seconds', null,
+          'count', cardinality(v_existing.question_ids));
+      end if;
       raise exception 'daily: already attempted today' using errcode = 'unique_violation';
     end if;
 
-    -- Round 42: UNTIMED — the single open attempt resumes until it is
-    -- submitted. A legacy timed attempt (pre-086) sheds its deadline here.
-    select id, question_ids, deadline_at into v_existing
-    from public.test_attempts
-    where student_profile_id = v_student and subject_id = p_subject_id
-      and kind = 'daily' and is_rated and status = 'in_progress'
-      and round_date = v_date
-    order by started_at desc limit 1;
-    if v_existing.id is not null then
-      if v_existing.deadline_at is not null then
-        update public.test_attempts
-           set deadline_at = null, duration_seconds = null, updated_at = now()
-         where id = v_existing.id;
-      end if;
-      return jsonb_build_object(
-        'attempt_id', v_existing.id, 'resumed', true, 'rated', true,
-        'deadline_at', null, 'duration_seconds', null,
-        'count', cardinality(v_existing.question_ids));
-    end if;
-
-    -- Fresh per-student subtopic-balanced draw for THIS attempt.
+    -- Fresh per-student subtopic-balanced draw. A short pool raises HERE, so
+    -- the day is never consumed on a failed draw.
     v_qids := public.draw_daily_questions(p_subject_id, v_grade, c_count);
     if coalesce(cardinality(v_qids), 0) < c_count then
       raise exception 'daily round: not enough eligible questions (subject %, grade %: have %, need %)',
@@ -4143,16 +4134,15 @@ begin
      where student_profile_id = v_student and subject_id = p_subject_id
        and for_date = v_date;
     if not found then
-      -- 1) The student's own graded set, EXACT order.
       select ta.question_ids, 'own' into v_qids, v_source
       from public.test_attempts ta
       where ta.student_profile_id = v_student and ta.subject_id = p_subject_id
         and ta.kind = 'daily' and ta.is_rated and ta.status = 'graded'
         and ta.round_date = v_date
       order by ta.graded_at desc limit 1;
-      -- 2) A peer's graded set (same subject + GRADE + date, COUNTRY-WIDE;
-      --    earliest submit — deterministic; question ids only, no identity).
       if v_qids is null then
+        -- A peer's graded set (same subject + GRADE + date, COUNTRY-WIDE;
+        -- earliest submit — deterministic; question ids only, no identity).
         select ta.question_ids, 'peer' into v_qids, v_source
         from public.test_attempts ta
         join public.students st on st.profile_id = ta.student_profile_id
@@ -4162,14 +4152,12 @@ begin
           and coalesce(cardinality(ta.question_ids), 0) > 0
         order by ta.submitted_at asc nulls last, ta.id asc limit 1;
       end if;
-      -- 3) The legacy shared round (transition window after the model change).
       if v_qids is null then
         select dr.question_ids, 'round' into v_qids, v_source
         from public.daily_rounds dr
         where dr.round_date = v_date and dr.subject_id = p_subject_id
           and dr.grade_id = v_grade;
       end if;
-      -- 4) System-generated batch (spec fallback).
       if v_qids is null then
         v_qids := public.draw_daily_questions(p_subject_id, v_grade, c_count);
         v_source := 'generated';
@@ -4187,7 +4175,6 @@ begin
     end if;
     v_qids := v_set.question_ids;
 
-    -- Unlimited retries: resume an open practice attempt on this set first.
     select id, question_ids into v_existing
     from public.test_attempts
     where student_profile_id = v_student and subject_id = p_subject_id
@@ -4218,15 +4205,17 @@ begin
     'deadline_at', null, 'duration_seconds', null,
     'count', cardinality(v_qids));
 exception when unique_violation then
+  -- A creation race (double tap / two tabs) collapses onto the winning row.
   raise exception 'daily: already attempted today' using errcode = 'unique_violation';
 end;
 $$;
 comment on function public.start_daily_round_attempt(uuid, text) is
-  'Round 42: today = RATED per-student subtopic-balanced random 25, UNTIMED — '
-  'one open attempt per subject+day resumed until SUBMITTED (submit is the only '
-  'consumption; legacy timed attempts shed their deadline on resume); yesterday '
-  '= unlimited UNTIMED practice on the student''s LOCKED set (own -> peer '
-  'country-wide by grade -> legacy round -> generated), never rated.';
+  'Round 43: today = RATED per-student subtopic-balanced random 25, UNTIMED, '
+  'consumed AT CREATION (uq_rated_daily_live_per_day: one live/graded attempt per '
+  'subject+day — resume in-progress, block when completed); a <25 pool raises '
+  'before any row is created. yesterday = unlimited UNTIMED practice on the '
+  'student''s LOCKED set (own -> peer country-wide by grade -> legacy round -> '
+  'generated), never rated.';
 revoke all on function public.start_daily_round_attempt(uuid, text) from public, anon;
 grant execute on function public.start_daily_round_attempt(uuid, text) to authenticated, service_role;
 
@@ -4545,9 +4534,7 @@ as $$
 declare
   v_board text := case when p_board = 'points' then 'percent' else p_board end;
   v_mkey  text := to_char(now() at time zone 'Asia/Baku', 'YYYY-MM');
-  v_minq  int  := coalesce((select nullif(value_json #>> '{}', '')::int
-                            from public.system_settings
-                            where key = 'leaderboard.rank.min_questions'), 25);
+  -- Round 43: eligibility is rounds-only — a single completed-attempts minimum.
   v_mina  int  := coalesce((select nullif(value_json #>> '{}', '')::int
                             from public.system_settings
                             where key = 'leaderboard.rank.min_attempts'), 2);
@@ -4578,13 +4565,11 @@ begin
       where st.current_streak > 0
         and st.last_active_date >= (now() at time zone coalesce(st.streak_tz,'Asia/Baku'))::date - 1;
   elsif p_scope = 'subject' then
-    -- Subject boards aggregate the ledger: value = 100 x SUM(num)/SUM(den) over
-    -- the period's pct-valid rows (question-level, never averaged percentages).
     return query
       select l.student_profile_id, round(100 * l.num / l.den, 4),
              st.best_streak, st.last_points_at,
              st.first_name, st.last_name, d.name, cd.name, sc.name, g.level::int,
-             (l.pres < v_minq or l.att < v_mina), l.pres::int, l.corr::int, l.att::int
+             (l.att < v_mina), l.pres::int, l.corr::int, l.att::int
       from (
         select sl.student_profile_id,
                sum(sl.weighted_num)    as num,
@@ -4606,8 +4591,6 @@ begin
       left join public.city_districts cd on cd.id = coalesce(sc.city_district_id, st.city_district_id)
       left join public.grades    g on g.id = st.grade_id;
   else
-    -- Other scopes read the cached aggregates (same architecture the points
-    -- board used; single writer = award_attempt_points, lazy month rollover).
     return query
       select st.profile_id,
              round(100 * (case when p_period = 'all_time' then st.pct_num_all
@@ -4618,12 +4601,9 @@ begin
                                else 1 end), 4),
              st.best_streak, st.last_points_at, st.first_name, st.last_name,
              d.name, cd.name, sc.name, g.level::int,
-             ((case when p_period = 'all_time' then st.lb_presented_all
-                    when st.points_month_key = v_mkey then st.lb_presented_month
-                    else 0 end) < v_minq
-              or (case when p_period = 'all_time' then st.lb_attempts_all
-                       when st.points_month_key = v_mkey then st.lb_attempts_month
-                       else 0 end) < v_mina),
+             ((case when p_period = 'all_time' then st.lb_attempts_all
+                    when st.points_month_key = v_mkey then st.lb_attempts_month
+                    else 0 end) < v_mina),
              (case when p_period = 'all_time' then st.lb_presented_all
                    when st.points_month_key = v_mkey then st.lb_presented_month
                    else 0 end)::int,
@@ -4650,17 +4630,14 @@ begin
 end;
 $$;
 comment on function public.lb_rows(text, text, uuid, text) is
-  'Internal percentage-board row source (Round 36): value = 100 x weighted correct / '
-  'weighted presented over the period (question-level normalization). Rows below the '
-  'configurable participation minimums carry is_provisional=true. board ''points'' is '
-  'a deprecated alias of ''percent''; the streak board is unchanged. service-internal only.';
+  'Internal percentage-board row source. value = 100 x weighted correct / weighted '
+  'presented over the period. Round 43: is_provisional = attempts < min_attempts '
+  '(rounds-only eligibility; questions are a secondary stat only). service-internal.';
 revoke all on function public.lb_rows(text, text, uuid, text) from public, anon, authenticated;
 grant execute on function public.lb_rows(text, text, uuid, text) to service_role;
 
--- -----------------------------------------------------------------------------
--- 6) get_leaderboard v2 - competition ranks over the UNROUNDED value;
---    provisional rows listed AFTER every ranked row with rank NULL (spec 17.9/17.10)
--- -----------------------------------------------------------------------------
+-- get_leaderboard is unchanged (reads is_provisional from lb_rows) but must be
+-- recreated because lb_rows was dropped/recreated above.
 create function public.get_leaderboard(
   p_board    text,
   p_scope    text default 'global',
@@ -4688,9 +4665,6 @@ begin
       select * from public.lb_rows(p_board, p_scope, p_scope_id, p_period)
     ),
     ranked as (
-      -- Competition ranking (1,1,3) on the UNROUNDED value ONLY: equal
-      -- percentages share a rank regardless of volume. The secondary ordering
-      -- below is display order within a tie and never changes the rank.
       select b.*,
              rank() over (order by b.value desc)::int as rnk,
              row_number() over (order by b.value desc, b.best_streak desc,
@@ -4698,8 +4672,6 @@ begin
       from base b where not b.is_provisional
     ),
     prov as (
-      -- Provisional results are never official placements: rank NULL, always
-      -- listed after the last ranked row.
       select b.*, null::int as rnk,
              (select count(*) from base x where not x.is_provisional)
                + row_number() over (order by b.value desc, b.profile_id) as ord
@@ -4722,10 +4694,9 @@ begin
 end;
 $$;
 comment on function public.get_leaderboard(text, text, uuid, text, int) is
-  'Live percentage board (Round 36): competition rank (ties share) on the unrounded '
-  'value, "First L." name, city/district/school/grade context, provisional rows after '
-  'ranked ones with rank NULL + their question/attempt counts. Numeric ranks only; '
-  'no ids leave the server.';
+  'Live percentage board: competition rank (ties share) on the unrounded value; '
+  'provisional rows (fewer than min_attempts rounds) listed after ranked ones with '
+  'rank NULL. Numeric ranks only; no ids leave the server.';
 revoke all on function public.get_leaderboard(text, text, uuid, text, int) from public, anon;
 grant execute on function public.get_leaderboard(text, text, uuid, text, int) to authenticated, service_role;
 
@@ -4745,9 +4716,6 @@ as $$
 declare
   v_me   uuid := public.current_profile_id();
   v_out  jsonb;
-  v_minq int  := coalesce((select nullif(value_json #>> '{}', '')::int
-                           from public.system_settings
-                           where key = 'leaderboard.rank.min_questions'), 25);
   v_mina int  := coalesce((select nullif(value_json #>> '{}', '')::int
                            from public.system_settings
                            where key = 'leaderboard.rank.min_attempts'), 2);
@@ -4758,7 +4726,7 @@ begin
            'total', r.total, 'value', r.value,
            'is_provisional', r.is_provisional,
            'questions', r.questions, 'attempts', r.attempts,
-           'min_questions', v_minq, 'min_attempts', v_mina)
+           'min_attempts', v_mina)
     into v_out
   from (
     select t.profile_id, t.value, t.is_provisional, t.questions, t.attempts,
@@ -4772,7 +4740,7 @@ begin
     'total', (select count(*) from public.lb_rows(p_board, p_scope, p_scope_id, p_period) t
               where not t.is_provisional),
     'value', 0, 'is_provisional', true, 'questions', 0, 'attempts', 0,
-    'min_questions', v_minq, 'min_attempts', v_mina));
+    'min_attempts', v_mina));
 end;
 $$;
 revoke all on function public.get_my_leaderboard_rank(text, text, uuid, text) from public, anon;
@@ -4794,14 +4762,10 @@ set search_path = public, pg_temp
 as $$
 declare
   v_out  jsonb;
-  v_minq int := coalesce((select nullif(value_json #>> '{}', '')::int
-                          from public.system_settings
-                          where key = 'leaderboard.rank.min_questions'), 25);
   v_mina int := coalesce((select nullif(value_json #>> '{}', '')::int
                           from public.system_settings
                           where key = 'leaderboard.rank.min_attempts'), 2);
 begin
-  -- Authorization: service role, admin, the linked parent, or the child itself.
   if not coalesce(
     auth.role() = 'service_role'
     or public.is_admin()
@@ -4816,7 +4780,7 @@ begin
            'total', r.total, 'value', r.value,
            'is_provisional', r.is_provisional,
            'questions', r.questions, 'attempts', r.attempts,
-           'min_questions', v_minq, 'min_attempts', v_mina)
+           'min_attempts', v_mina)
     into v_out
   from (
     select t.profile_id, t.value, t.is_provisional, t.questions, t.attempts,
@@ -4825,20 +4789,17 @@ begin
     from public.lb_rows(p_board, p_scope, p_scope_id, p_period) t
   ) r
   where r.profile_id = p_student;
-  -- Not on the board under these filters -> rank null (UI renders the honest
-  -- "not participating under this filter" state, never a fake 0).
   return coalesce(v_out, jsonb_build_object(
     'rank', null,
     'total', (select count(*) from public.lb_rows(p_board, p_scope, p_scope_id, p_period) t
               where not t.is_provisional),
     'value', 0, 'is_provisional', true, 'questions', 0, 'attempts', 0,
-    'min_questions', v_minq, 'min_attempts', v_mina));
+    'min_attempts', v_mina));
 end;
 $$;
 comment on function public.get_child_leaderboard_position(uuid, text, text, uuid, text) is
-  'Parent-panel per-child board position (Round 36 percentage): rank/total/value + '
-  'provisional progress for one LINKED child under the active filters. '
-  'Parent-link/admin/self enforced in-body.';
+  'Parent-panel per-child board position: rank/total/value + provisional (fewer than '
+  'min_attempts rounds). Parent-link/admin/self enforced in-body.';
 revoke all on function public.get_child_leaderboard_position(uuid, text, text, uuid, text) from public, anon;
 grant execute on function public.get_child_leaderboard_position(uuid, text, text, uuid, text) to authenticated, service_role;
 
@@ -4944,15 +4905,10 @@ declare
   v_start  date := to_date(v_key || '-01', 'YYYY-MM-DD');
   v_period uuid;
   v_rows   jsonb;
-  v_minq   int := coalesce((select nullif(value_json #>> '{}', '')::int
-                            from public.system_settings
-                            where key = 'leaderboard.rank.min_questions'), 25);
   v_mina   int := coalesce((select nullif(value_json #>> '{}', '')::int
                             from public.system_settings
                             where key = 'leaderboard.rank.min_attempts'), 2);
 begin
-  -- Archive the month's top-100 RANKED percentage standings from the ledger
-  -- (legacy points included per row for auditability; never used for ranking).
   select jsonb_agg(jsonb_build_object(
            'rank', rnk, 'student_profile_id', student_profile_id,
            'pct', pct, 'questions', pres, 'correct', corr, 'points', pts,
@@ -4975,7 +4931,7 @@ begin
       group by sl.student_profile_id
       having sum(sl.weighted_den) > 0
     ) t
-    where t.pres >= v_minq and t.att >= v_mina
+    where t.att >= v_mina
     order by ord
     limit 100
   ) ranked;
@@ -4994,7 +4950,6 @@ begin
             v_rows);
   end if;
 
-  -- Zero stale month caches (points AND percentage roll on the same key).
   update public.students
      set points_month = 0,
          pct_num_month = 0, pct_den_month = 0,
@@ -5092,7 +5047,6 @@ as $$
   from (
     select sl.student_profile_id,
            round(100 * sum(sl.weighted_num) / sum(sl.weighted_den), 4) as pct,
-           sum(sl.presented_count) as pres,
            count(*) as att
     from public.student_points_ledger sl
     where sl.created_at >= p_starts and sl.created_at < p_ends and sl.pct_valid
@@ -5100,13 +5054,10 @@ as $$
     having sum(sl.weighted_den) > 0
   ) t
   join public.students st on st.profile_id = t.student_profile_id
-  -- Seasons rank ONLY students who met the participation minimums in-window.
-  where t.pres >= coalesce((select nullif(value_json #>> '{}', '')::int
-                            from public.system_settings
-                            where key = 'leaderboard.rank.min_questions'), 25)
-    and t.att  >= coalesce((select nullif(value_json #>> '{}', '')::int
-                            from public.system_settings
-                            where key = 'leaderboard.rank.min_attempts'), 2)
+  -- Round 43: seasons rank students who met the ROUNDS minimum in-window.
+  where t.att >= coalesce((select nullif(value_json #>> '{}', '')::int
+                           from public.system_settings
+                           where key = 'leaderboard.rank.min_attempts'), 2)
   order by t.pct desc, t.student_profile_id
   limit greatest(1, least(coalesce(p_limit,100), 500));
 $$;
@@ -5263,15 +5214,11 @@ declare
   v_cur   int := 0; v_best int := 0; v_last date; v_tz text;
   v_rank_m int; v_tot_m int; v_rank_a int; v_streak_live int := 0;
   v_prov_m boolean := true; v_prov_a boolean := true;
-  v_minq int := coalesce((select nullif(value_json #>> '{}', '')::int
-                          from public.system_settings
-                          where key = 'leaderboard.rank.min_questions'), 25);
   v_mina int := coalesce((select nullif(value_json #>> '{}', '')::int
                           from public.system_settings
                           where key = 'leaderboard.rank.min_attempts'), 2);
 begin
   if v_me is null then raise exception 'summary: not authenticated'; end if;
-  -- Only the LINKED parent (or an admin) may read a child's summary.
   if not (public.is_admin() or public.is_parent_linked_to_student(p_student)) then
     raise exception 'summary: forbidden' using errcode = 'insufficient_privilege';
   end if;
@@ -5291,13 +5238,12 @@ begin
          v_pct_m, v_pct_a, v_qm, v_qa, v_am, v_aa
     from public.students where profile_id = p_student;
 
-  v_prov_m := (v_qm < v_minq or v_am < v_mina);
-  v_prov_a := (v_qa < v_minq or v_aa < v_mina);
+  -- Round 43: rounds-only eligibility.
+  v_prov_m := (v_am < v_mina);
+  v_prov_a := (v_aa < v_mina);
 
-  -- live streak (lazy loss)
   v_streak_live := case when v_last >= (now() at time zone v_tz)::date - 1 then v_cur else 0 end;
 
-  -- Ranks among RANKED (non-provisional) students only; provisional -> null.
   if not v_prov_m then
     select r.rnk, r.total into v_rank_m, v_tot_m from (
       select t.profile_id, rank() over (order by t.value desc)::int as rnk,
@@ -5323,11 +5269,9 @@ begin
     'questions_month', v_qm, 'questions_all_time', v_qa,
     'attempts_month', v_am, 'attempts_all_time', v_aa,
     'provisional_month', v_prov_m, 'provisional_all_time', v_prov_a,
-    'min_questions', v_minq, 'min_attempts', v_mina,
+    'min_attempts', v_mina,
     'current_streak', v_streak_live, 'best_streak', v_best,
     'rank_month', v_rank_m, 'total_month', coalesce(v_tot_m,0), 'rank_all_time', v_rank_a,
-    -- Deprecated legacy fields (points are no longer a ranking metric; kept for
-    -- backward compatibility until every consumer reads pct_*):
     'points_month', v_pts_m, 'points_all_time', v_pts_a);
 end;
 $$;

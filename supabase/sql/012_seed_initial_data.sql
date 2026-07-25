@@ -702,9 +702,9 @@ on conflict (key) do nothing;
 -- Round 36 (migration 081): percentage-leaderboard participation minimums
 -- (spec 17.9). RANKED placement requires BOTH; below them a student's result
 -- shows as provisional (rank withheld). Admin-editable on /leaderboard.
+-- Round 43: eligibility is rounds-only (min_questions removed).
 insert into public.system_settings (key, value_json)
 values
-  ('leaderboard.rank.min_questions', '25'::jsonb),
   ('leaderboard.rank.min_attempts',  '2'::jsonb)
 on conflict (key) do nothing;
 

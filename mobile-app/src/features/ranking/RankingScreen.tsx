@@ -335,9 +335,7 @@ export function RankingScreen() {
               {/* Provisional legend — thresholds come from the my-rank payload. */}
               {board === "percent" && me && rows.some((r) => r.is_provisional) ? (
                 <AppText color={arena.dim} style={{ fontSize: 12 }}>
-                  {t("lb.provisionalHint")
-                    .replace("{q}", String(me.min_questions))
-                    .replace("{a}", String(me.min_attempts))}
+                  {t("lb.provisionalHint").replace("{n}", String(me.min_attempts))}
                 </AppText>
               ) : null}
             </>
@@ -389,10 +387,8 @@ export function RankingScreen() {
             ) : me && me.is_provisional ? (
               <AppText color={arena.muted} style={{ fontSize: 12 }}>
                 {t("lb.myRank.provisional")
-                  .replace("{q}", String(me.questions))
-                  .replace("{mq}", String(me.min_questions))
                   .replace("{a}", String(me.attempts))
-                  .replace("{ma}", String(me.min_attempts))}
+                  .replace("{n}", String(me.min_attempts))}
               </AppText>
             ) : (
               <AppText color={arena.muted}>{t("lb.myRank.none")}</AppText>

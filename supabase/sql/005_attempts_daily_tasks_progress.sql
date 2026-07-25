@@ -122,9 +122,13 @@ alter table public.test_attempts
 comment on column public.test_attempts.round_date is
   'Baku-local date of a daily-round attempt (rated today / practice yesterday). '
   'Set server-side at start; backs the one-SUBMITTED-round-per-day guard.';
-create unique index if not exists uq_rated_daily_graded_per_day
+-- Round 43 (migration 087): the daily attempt is consumed AT CREATION — one
+-- live/graded rated daily attempt per student+subject+Baku day (expired/
+-- abandoned excluded so legacy timer-lapse duplicates never block the index).
+create unique index if not exists uq_rated_daily_live_per_day
   on public.test_attempts (student_profile_id, subject_id, round_date)
-  where kind = 'daily' and is_rated and status = 'graded';
+  where kind = 'daily' and is_rated
+    and status in ('in_progress', 'submitted', 'graded');
 
 create index if not exists idx_attempts_round on public.test_attempts (daily_round_id);
 

@@ -1111,13 +1111,16 @@ create trigger trg_subtopic_term_guard
   before insert or update of term, topic_id on public.subtopics
   for each row execute function public.subtopic_term_guard();
 
--- Questions inherit/must match their topic's term.
+-- Questions inherit/must match their topic's term; Round 39 (migration 084):
+-- a general-bank question can never END UP termless (olympiad pool exempt).
 create or replace function public.question_term_guard()
 returns trigger
 language plpgsql
 as $$
 declare v_topic_term smallint;
 begin
+  -- Migration 054: inherit the topic's term when omitted; a set term must
+  -- match the topic's term (the tree stays consistent).
   if new.topic_id is not null then
     select term into v_topic_term from public.topics where id = new.topic_id;
     if new.term is null then
@@ -1127,9 +1130,30 @@ begin
         using errcode = 'check_violation';
     end if;
   end if;
+  -- Round 39: after inheritance, a GENERAL-bank question can never end up
+  -- termless — no new bank question without a Rüb, and a term can never be
+  -- stripped. Olympiad pool rows stay exempt (optional taxonomy by design);
+  -- legacy NULL-term rows keep transitioning (this fires only on INSERT or
+  -- UPDATE OF term/topic_id) until the review queue assigns their term.
+  if new.olympiad_package_id is null and new.term is null then
+    raise exception 'question: term (Rüb 1-4) is required for bank questions'
+      using errcode = 'check_violation';
+  end if;
   return new;
 end;
 $$;
+
+drop trigger if exists trg_question_term_guard on public.questions;
+create trigger trg_question_term_guard
+  before insert or update of term, topic_id on public.questions
+  for each row execute function public.question_term_guard();
+
+comment on function public.question_term_guard() is
+  'Term guard (054 + Round 39): inherit/match the topic''s term, AND a general-'
+  'bank question can never be inserted termless or have its term stripped. '
+  'Olympiad pool questions exempt; legacy NULL-term rows transition freely '
+  'until reviewed.';
+
 drop trigger if exists trg_question_term_guard on public.questions;
 create trigger trg_question_term_guard
   before insert or update of term, topic_id on public.questions

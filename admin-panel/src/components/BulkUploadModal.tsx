@@ -61,6 +61,9 @@ export function BulkUploadModal({
   const [open, setOpen] = useState(false);
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");
+  // Round 39: mandatory batch-level Rüb — applied server-side to EVERY row
+  // (supersedes any per-row meta.term, same pattern as subject/grade).
+  const [termVal, setTermVal] = useState("");
   const [fileName, setFileName] = useState("");
   const [fileError, setFileError] = useState("");
   const [rowIssues, setRowIssues] = useState<RowIssue[]>([]);
@@ -197,8 +200,32 @@ export function BulkUploadModal({
                     <span className="hint">{tt("bulk.chooseGrade")}</span>
                   )}
                 </label>
+
+                <label className="field">
+                  <span className="field-label">
+                    {tt("qfield.term")}
+                    <span className="req"> *</span>
+                  </span>
+                  <select
+                    name="term"
+                    required
+                    value={termVal}
+                    onChange={(e) => setTermVal(e.target.value)}
+                  >
+                    <option value="">{tt("manage.select")}</option>
+                    {[1, 2, 3, 4].map((n) => (
+                      <option key={n} value={n}>
+                        {tt(`term.${n}`)}
+                      </option>
+                    ))}
+                  </select>
+                  {termVal === "" && (
+                    <span className="hint">{tt("bulk.chooseTerm")}</span>
+                  )}
+                </label>
               </div>
               <p className="hint">{tt("bulk.batchNote")}</p>
+              <p className="hint">{tt("bulk.termNote")}</p>
             </>
           )}
 

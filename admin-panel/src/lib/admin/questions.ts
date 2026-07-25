@@ -609,6 +609,13 @@ export async function bulkImportQuestions(
   if (!UUID_RE.test(gradeId)) {
     return { ok: false, error: t("qerr.gradeRequired") };
   }
+  // Round 39: the batch-level Rüb is mandatory and is applied to EVERY row
+  // below (superseding any per-row meta.term — same contract as subject/grade).
+  const termRaw = s(formData, "term");
+  if (!/^[1-4]$/.test(termRaw)) {
+    return { ok: false, error: t("qerr.termRequired") };
+  }
+  const term = Number(termRaw);
   const supabase = await createClient();
   const [{ data: subj }, { data: grade }] = await Promise.all([
     supabase.from("subjects").select("id, name").eq("id", subjectId).maybeSingle(),
@@ -664,15 +671,17 @@ export async function bulkImportQuestions(
   const validFileIndex: number[] = [];
 
   payload.forEach((item, i) => {
-    // GENERAL mode: meta.topic + meta.subtopic + meta.term (1..4) required.
-    const msg = validateBulkItem(item, t, activeByNorm, defaultType, "general");
+    // Round 39: inject the batch Rüb BEFORE validation so per-row meta.term is
+    // optional/superseded; GENERAL mode still requires meta.topic+meta.subtopic.
+    const withTerm = overrideItemMeta(item, { term });
+    const msg = validateBulkItem(withTerm, t, activeByNorm, defaultType, "general");
     if (msg) {
       errors.push({ index: i + 1, error: msg });
       return;
     }
     // Inject batch subject/grade (superseding any stale file values).
     validItems.push(
-      overrideItemMeta(item, { subject: subj.name, grade_level: grade.level }),
+      overrideItemMeta(withTerm, { subject: subj.name, grade_level: grade.level }),
     );
     validFileIndex.push(i + 1);
   });

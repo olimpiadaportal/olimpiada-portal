@@ -1336,6 +1336,26 @@ select '81_percentage_leaderboard' as check_name,
                               where pct_valid and weighted_num > weighted_den)
             then 'PASS' else 'FAIL' end as status;
 
+
+-- 82) Round 39 (migration 084): mandatory Rüb — the merged term guard enforces
+--     the general-bank requirement (bank questions can never end up termless;
+--     olympiad pool exempt) on top of the 054 inheritance/mismatch rules; the
+--     daily-pool index exists; taxonomy term columns stay in place.
+select '82_mandatory_term' as check_name,
+       case when exists (select 1 from pg_trigger where tgname='trg_question_term_guard'
+                          and tgrelid='public.questions'::regclass)
+             and position('required for bank questions' in
+                   pg_get_functiondef('public.question_term_guard()'::regprocedure)) > 0
+             and position('v_topic_term' in
+                   pg_get_functiondef('public.question_term_guard()'::regprocedure)) > 0
+             and exists (select 1 from pg_indexes where schemaname='public'
+                          and indexname='idx_questions_daily_pool')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='topics' and column_name='term')
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='subtopics' and column_name='term')
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

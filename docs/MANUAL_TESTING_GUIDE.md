@@ -1760,7 +1760,7 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AE1. Today's card texts
 - Student → Sınaq Testləri: today's cards no longer show "vaxt limiti yoxdur, xal vermir" under the practice button, and the "Bugünkü raund hələ hazır deyil" pill is gone everywhere. (Yesterday's cards keep their practice note.)
 
-## AE2. Leaving mid-round costs nothing
+## AE2. Leaving mid-round costs nothing ? Different, Basla ve mesq et
 - Start today's round, answer a few questions, close the tab WITHOUT submitting. Immediately re-entering resumes the SAME test with the timer still running. After the 25 minutes lapse, the card offers **Start** again and a NEW round begins with a **different** set of questions. Only pressing Submit locks the day.
 
 ## AE3. Completed card behavior
@@ -1773,4 +1773,15 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AE5. Both apps agree
 - The same card states (start / continue / dimmed-completed + alert) behave identically on web and mobile.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-#** + what you saw.
+# ROUND 39 — mandatory Rüb (term)
+
+## AF1. Bulk import requires a Rüb
+- Admin → Suallar → Toplu idxal: a new required **"Rüb *"** dropdown sits beside Fənn and Sinif (1-ci…4-cü rüb). The form won't submit without it. The note under the fields explains that the chosen Rüb applies to EVERY question in the file (any `meta.term` inside the file is superseded). Rows no longer need `meta.term` at all.
+
+## AF2. Manual form still enforces Rüb ? Must be mandatory
+- New question with a normal topic: the Rüb field shows the topic's term read-only. With a legacy (term-less) topic: the Rüb picker is required and saving without it is blocked.
+
+## AF3. Database backstop
+- No new bank question can exist without a Rüb (server-level, not just UI). Olympiad pool questions are unaffected (their Rüb stays optional). Legacy "Rüb təyin edilməyib" questions still transition/archive normally until you assign their term via the review chip.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-#** + what you saw.

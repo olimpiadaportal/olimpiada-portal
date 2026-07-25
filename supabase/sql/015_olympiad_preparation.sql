@@ -165,6 +165,12 @@ alter table public.questions
   add column if not exists olympiad_package_id uuid
     references public.olympiad_packages (id) on delete cascade;
 
+-- Round 39 (migration 084): the daily-round draw predicate index. Lives in
+-- 015 because the partial predicate needs olympiad_package_id (added above).
+create index if not exists idx_questions_daily_pool
+  on public.questions (subject_id, grade_id, term)
+  where status = 'published' and olympiad_package_id is null;
+
 comment on column public.questions.olympiad_package_id is
   'When set, this question is PRIVATE to that olympiad package and is excluded from the general question list and from practice random selection. NULL = general question.';
 

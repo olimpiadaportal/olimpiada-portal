@@ -20,6 +20,7 @@ export function DemoPaySheet({
   rows,
   totalLabel,
   totalValue,
+  thenText,
   note,
   confirmLabel,
   error,
@@ -32,6 +33,9 @@ export function DemoPaySheet({
   rows: { label: string; value: string }[];
   totalLabel: string;
   totalValue: string;
+  /** Optional sentence under the total (web DemoPaymentModal thenLabel):
+   *  e.g. the subjedit.nextBillingLine post-payment recurring rate. */
+  thenText?: string | null;
   /** Demo disclaimer (pay.note / poly.modal.mockNote). */
   note: string;
   confirmLabel: string;
@@ -96,6 +100,11 @@ export function DemoPaySheet({
         ))}
         <View style={{ height: 1, backgroundColor: tokens.border, marginVertical: spacing.sm }} />
         <KeyRow label={totalLabel} value={totalValue} strong />
+        {thenText ? (
+          <AppText variant="muted" style={{ marginTop: spacing.xs }}>
+            {thenText}
+          </AppText>
+        ) : null}
       </View>
 
       <AppText variant="muted">{note}</AppText>

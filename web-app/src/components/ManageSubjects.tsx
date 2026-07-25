@@ -145,26 +145,18 @@ export function ManageSubjects({
     return () => clearTimeout(timer);
   }, [hasDiff, toAddKey, toRemoveKey, studentId]);
 
-  // Full sentences shared between the inline summary and the payment sheet —
-  // built once per quote so both surfaces read identically.
-  const thenSentence = (q: SubjectChangeQuote) =>
-    tt("subjedit.thenRate")
-      .replace("{total}", String(q.newRecurringTotal))
-      .replace("{currency}", q.currency)
-      .replace("{interval}", intervalLabel)
-      .replace("{date}", fmtDate(q.effectiveFrom));
-  const noChargeSentence = (q: SubjectChangeQuote) =>
-    tt("subjedit.noChargeNow")
-      .replace("{total}", String(q.newRecurringTotal))
-      .replace("{currency}", q.currency)
-      .replace("{interval}", intervalLabel)
-      .replace("{date}", fmtDate(q.effectiveFrom));
-  const removalSentence = (q: SubjectChangeQuote) =>
-    tt("subjedit.removalNotice")
-      .replace("{date}", fmtDate(q.removalsEffectiveAt))
+  // Round 41: the new recurring rate appears in EXACTLY ONE sentence (Next
+  // billing); the removal note is price-free. Shared with the payment sheet.
+  const nextBillingSentence = (q: SubjectChangeQuote) =>
+    tt("subjedit.nextBillingLine")
+      .replace("{date}", fmtDate(q.effectiveFrom))
       .replace("{total}", String(q.newRecurringTotal))
       .replace("{currency}", q.currency)
       .replace("{interval}", intervalLabel);
+  const noChargeSentence = (q: SubjectChangeQuote) =>
+    tt("subjedit.noChargeNow").replace("{date}", fmtDate(q.effectiveFrom));
+  const noteSentence = (q: SubjectChangeQuote) =>
+    tt("subjedit.noteText").replace("{date}", fmtDate(q.removalsEffectiveAt));
 
   const [state, formAction, saving] = useActionState<SubjectsUpdateState, FormData>(
     updateSubscriptionSubjectsAction,
@@ -206,9 +198,6 @@ export function ManageSubjects({
     <div className="form" style={{ maxWidth: 560 }}>
       <h2 style={{ marginBottom: 4 }}>{tt("subjedit.title")}</h2>
       <p className="subjedit-note">{tt("pricing.perSubjectNote")}</p>
-      {/* Round 32 (owner requirement): one plain-language sentence explaining
-          the mid-cycle proration model, always visible on this surface. */}
-      <p className="subjedit-note">{tt("subjedit.billingExplainer")}</p>
 
       {subjects.length === 0 ? (
         <p className="muted">{tt("sub.noSubjectsAvailable")}</p>
@@ -255,31 +244,37 @@ export function ManageSubjects({
           </ul>
           <p className="hint">{tt("subjedit.minOne")}</p>
 
-          {/* Live summary: count, pending diff chips, server-quoted total. */}
-          <div className="wizard-summary">
+          {/* Round 41 — structured change summary (SaaS-style card): Selected ·
+              Added · Removed · Pay now · Next billing · Note. The new recurring
+              rate appears ONCE (Next billing); the note carries no prices. */}
+          <div className="wizard-summary subjedit-summary">
             <div className="quote-row">
               <span className="q-label">{tt("subjedit.selectedCount")}</span>
               <span>{selected.size}</span>
             </div>
 
             {toAdd.length > 0 && (
-              <div className="subjedit-pending">
-                <span className="subjedit-pending-label">{tt("subjedit.pendingAdd")}:</span>
-                {toAdd.map((s) => (
-                  <span key={s.id} className="subjedit-chip add">
-                    {subjectLabel(t, s.code, s.name)}
-                  </span>
-                ))}
+              <div className="subjedit-sum-block">
+                <span className="subjedit-sum-label">{tt("subjedit.pendingAdd")}</span>
+                <ul className="subjedit-sum-list">
+                  {toAdd.map((s) => (
+                    <li key={s.id} className="add">
+                      {subjectLabel(t, s.code, s.name)}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             {toRemove.length > 0 && (
-              <div className="subjedit-pending">
-                <span className="subjedit-pending-label">{tt("subjedit.pendingRemove")}:</span>
-                {toRemove.map((s) => (
-                  <span key={s.id} className="subjedit-chip remove">
-                    {subjectLabel(t, s.code, s.name)}
-                  </span>
-                ))}
+              <div className="subjedit-sum-block">
+                <span className="subjedit-sum-label">{tt("subjedit.pendingRemove")}</span>
+                <ul className="subjedit-sum-list">
+                  {toRemove.map((s) => (
+                    <li key={s.id} className="remove">
+                      {subjectLabel(t, s.code, s.name)}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
@@ -287,27 +282,31 @@ export function ManageSubjects({
               <p className="subjedit-note">{tt("sub.calculating")}</p>
             ) : quote ? (
               <>
-                {/* Additions: the two clearly-labelled numbers — what's due
-                    right now (the prorated top-up), and the full new rate that
-                    starts at the next renewal. A waived/trial/weekly $0 top-up
-                    gets a plain "no charge now" sentence instead of a $0 row. */}
-                {toAdd.length > 0 &&
-                  (quote.dueNow > 0 ? (
-                    <>
-                      <div className="quote-row">
-                        <span className="q-label">{tt("subjedit.dueNow")}</span>
-                        <span>
-                          {quote.dueNow} {quote.currency}
-                        </span>
-                      </div>
-                      <p className="subjedit-note">{thenSentence(quote)}</p>
-                    </>
-                  ) : (
-                    <p className="subjedit-note">{noChargeSentence(quote)}</p>
-                  ))}
-                {/* Removals: kept until the period end, no refund, cheaper plan after. */}
+                {/* Pay now: the prorated top-up as ONE prominent amount. A
+                    waived/trial $0 top-up shows the price-free no-charge line. */}
+                {toAdd.length > 0 && (
+                  <div className="subjedit-sum-block">
+                    <span className="subjedit-sum-label">{tt("subjedit.dueNow")}</span>
+                    {quote.dueNow > 0 ? (
+                      <span className="subjedit-sum-amount mono">
+                        {quote.dueNow} {quote.currency}
+                      </span>
+                    ) : (
+                      <p className="subjedit-note">{noChargeSentence(quote)}</p>
+                    )}
+                  </div>
+                )}
+                {/* Next billing: the ONLY place the new recurring rate appears. */}
+                <div className="subjedit-sum-block">
+                  <span className="subjedit-sum-label">{tt("subjedit.nextBilling")}</span>
+                  <p className="subjedit-sum-line">{nextBillingSentence(quote)}</p>
+                </div>
+                {/* Note: price-free removal terms. */}
                 {toRemove.length > 0 && (
-                  <p className="subjedit-note">{removalSentence(quote)}</p>
+                  <div className="subjedit-sum-block">
+                    <span className="subjedit-sum-label">{tt("subjedit.noteLabel")}</span>
+                    <p className="subjedit-sum-line muted">{noteSentence(quote)}</p>
+                  </div>
                 )}
               </>
             ) : null}
@@ -348,7 +347,8 @@ export function ManageSubjects({
               !quoting && quote
                 ? {
                     dueNowLabel: `${quote.dueNow} ${quote.currency}`,
-                    thenLabel: quote.dueNow > 0 ? thenSentence(quote) : noChargeSentence(quote),
+                    thenLabel:
+                      quote.dueNow > 0 ? nextBillingSentence(quote) : noChargeSentence(quote),
                     noCharge: quote.dueNow <= 0,
                   }
                 : null

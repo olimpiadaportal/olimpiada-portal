@@ -55,20 +55,21 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.save": "Dəyişiklikləri yadda saxla",
     "subjedit.saving": "Yadda saxlanılır…",
     "subjedit.saved": "Dəyişikliklər yadda saxlanıldı.",
-    "subjedit.selectedCount": "Seçilib",
-    "subjedit.pendingAdd": "Əlavə olunacaq",
-    "subjedit.pendingRemove": "Çıxarılacaq",
+    "subjedit.selectedCount": "Seçilmiş fənlər",
+    "subjedit.pendingAdd": "Əlavə olunanlar",
+    "subjedit.pendingRemove": "Silinənlər",
     "subjedit.estTotal": "Təxmini yeni məbləğ",
     "subjedit.noChanges": "Dəyişiklik yoxdur",
-    // ---- Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end) ----
-    "subjedit.billingExplainer":
-      "Fənn əlavə etdikdə cari dövrün qalan günləri üçün mütənasib məbləğ ödəyirsiniz, tam yeni tarif isə növbəti yenilənmədən başlayır; fənni sildikdə isə geri ödəniş olmur — fənn dövrün sonuna qədər aktiv qalır və plan yalnız bundan sonra ucuzlaşır.",
+    // ---- Round 41 — structured change summary (single price mention) ----
     "subjedit.dueNow": "İndi ödəniləcək",
-    "subjedit.thenRate": "Sonra: {date} tarixindən etibarən {total} {currency} / {interval}",
+    "subjedit.nextBilling": "Növbəti ödəniş",
+    "subjedit.nextBillingLine":
+      "{date} tarixindən etibarən abunəniz {total} {currency} / {interval} olacaq.",
+    "subjedit.noteLabel": "Qeyd",
+    "subjedit.noteText":
+      "Silinən fənn(lər) {date} tarixinə qədər aktiv qalır. Həmin tarixdən abunəniz yenilənmiş fənlərlə avtomatik davam edəcək. Silinən fənlərə görə geri ödəniş edilmir.",
     "subjedit.noChargeNow":
-      "İndi heç nə ödəmirsiniz — yeni tarif ({total} {currency} / {interval}) {date} tarixindən başlayacaq.",
-    "subjedit.removalNotice":
-      "Silinən fənn(lər) {date} tarixinə qədər aktiv qalacaq, bundan sonra plan {total} {currency} / {interval} səviyyəsinə düşəcək — geri ödəniş edilmir.",
+      "İndi heç nə ödəmirsiniz — dəyişiklik {date} tarixindən qüvvəyə minir.",
     "pay.confirmNoCharge": "Təsdiqlə",
     "billing.giveawayNote": "Pulsuz kampaniya dövründə bütün fənlərə giriş ödənişsizdir — abunə ödənişi tələb olunmur.",
     "billing.freeChip": "Pulsuz",
@@ -1298,20 +1299,21 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.save": "Save changes",
     "subjedit.saving": "Saving…",
     "subjedit.saved": "Changes saved.",
-    "subjedit.selectedCount": "Selected",
-    "subjedit.pendingAdd": "Will be added",
-    "subjedit.pendingRemove": "Will be removed",
+    "subjedit.selectedCount": "Selected subjects",
+    "subjedit.pendingAdd": "Added",
+    "subjedit.pendingRemove": "Removed",
     "subjedit.estTotal": "Estimated new total",
     "subjedit.noChanges": "No changes yet",
-    // ---- Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end) ----
-    "subjedit.billingExplainer":
-      "Adding a subject mid-cycle only charges the days left in the current period — the full new rate starts at your next renewal; removing gives no refund, the subject just stays active until the period ends and the plan gets cheaper from then on.",
-    "subjedit.dueNow": "Due now",
-    "subjedit.thenRate": "Then: {total} {currency} / {interval} from {date}",
+    // ---- Round 41 — structured change summary (single price mention) ----
+    "subjedit.dueNow": "Pay now",
+    "subjedit.nextBilling": "Next billing",
+    "subjedit.nextBillingLine":
+      "Starting from {date}, your subscription will be {total} {currency} / {interval}.",
+    "subjedit.noteLabel": "Note",
+    "subjedit.noteText":
+      "The removed subject(s) remain active until {date}. After that date, your subscription automatically continues with the updated subjects. No refund is issued for removed subjects.",
     "subjedit.noChargeNow":
-      "No charge now — the new rate ({total} {currency} / {interval}) starts on {date}.",
-    "subjedit.removalNotice":
-      "Removed subject(s) stay active until {date}, then the plan drops to {total} {currency} / {interval} — no refund.",
+      "Nothing to pay now — the change takes effect on {date}.",
     "pay.confirmNoCharge": "Confirm",
     "billing.giveawayNote": "During the free giveaway period access to all subjects is free — no subscription payment is required.",
     "billing.freeChip": "Free",
@@ -2538,20 +2540,21 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.save": "Сохранить изменения",
     "subjedit.saving": "Сохранение…",
     "subjedit.saved": "Изменения сохранены.",
-    "subjedit.selectedCount": "Выбрано",
-    "subjedit.pendingAdd": "Будут добавлены",
-    "subjedit.pendingRemove": "Будут убраны",
+    "subjedit.selectedCount": "Выбранные предметы",
+    "subjedit.pendingAdd": "Добавлено",
+    "subjedit.pendingRemove": "Удалено",
     "subjedit.estTotal": "Примерная новая сумма",
     "subjedit.noChanges": "Изменений пока нет",
-    // ---- Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end) ----
-    "subjedit.billingExplainer":
-      "При добавлении предмета в середине периода вы платите только за оставшиеся дни — полная новая цена начинает действовать со следующего продления; при удалении возврата средств нет — предмет остаётся активным до конца периода, а тариф снижается только после этого.",
+    // ---- Round 41 — structured change summary (single price mention) ----
     "subjedit.dueNow": "К оплате сейчас",
-    "subjedit.thenRate": "Далее: {total} {currency} / {interval} с {date}",
+    "subjedit.nextBilling": "Следующий платёж",
+    "subjedit.nextBillingLine":
+      "С {date} ваша подписка составит {total} {currency} / {interval}.",
+    "subjedit.noteLabel": "Примечание",
+    "subjedit.noteText":
+      "Удалённые предметы остаются активными до {date}. После этой даты подписка автоматически продолжится с обновлёнными предметами. Возврат за удалённые предметы не производится.",
     "subjedit.noChargeNow":
-      "Сейчас плата не взимается — новый тариф ({total} {currency} / {interval}) начнёт действовать с {date}.",
-    "subjedit.removalNotice":
-      "Удаляемые предметы останутся активными до {date}, после чего тариф снизится до {total} {currency} / {interval} — без возврата средств.",
+      "Сейчас платить не нужно — изменение вступит в силу {date}.",
     "pay.confirmNoCharge": "Подтвердить",
     "billing.giveawayNote": "В период бесплатной акции доступ ко всем предметам бесплатный — оплата подписки не требуется.",
     "billing.freeChip": "Бесплатно",

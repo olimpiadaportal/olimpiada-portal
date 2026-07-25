@@ -1792,10 +1792,22 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AG1. One child = one catalog
 - Parent with children in DIFFERENT grades → Olimpiadalar: with the grade-2 child selected, ONLY grade-2 packages are listed (plus any package that child already owns); switching to the grade-5 child instantly swaps the list to grade-5 packages. Never a merged list. Same on web and the mobile parent tab.
 
-## AG2. Counts and ownership follow the child
+## AG2. Counts and ownership follow the child ? Webapp card can show the grade like mobile
 - The "N sual" count on each card is the SELECTED child's grade pool (two children may see different counts on the same multi-grade package). A package bought for child A does not appear while child B (different grade) is selected.
 
 ## AG3. Everything else unchanged
 - Childless parent → the existing "add a child" empty state. The per-child page (Övladlar → child → Olimpiadalar) and the student app were already child-scoped and behave the same.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-#** + what you saw.
+# ROUND 41 — Manage Subjects summary redesign
+
+## AH1. The structured card
+- Parent → a child → Fənləri idarə et: remove one subject and add another. The summary is now a clean card in this order: **Seçilmiş fənlər** (count) → **Əlavə olunanlar** (green list) → **Silinənlər** (red list) → **İndi ödəniləcək** (one prominent amount) → **Növbəti ödəniş** (ONE sentence with the new rate and its start date) → **Qeyd** (removal terms, no prices).
+- The new subscription price appears exactly ONCE (in Növbəti ödəniş). No sentence starts with "Sonra:". The long always-visible billing paragraph is gone.
+
+## AH2. Payment sheet matches
+- Continuing to the payment sheet: the "then" line is the same single Növbəti ödəniş sentence; a zero-charge change shows the price-free "nothing to pay now" line.
+
+## AH3. Mobile parity
+- The mobile Manage Subjects editor shows the identical card structure and wording in all three languages.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-#** + what you saw.

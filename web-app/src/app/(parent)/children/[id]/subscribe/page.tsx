@@ -27,8 +27,9 @@ const KEYS = [
   "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing",
   "pay.subtotal", "pay.discount", "pay.total",
   // Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end):
-  "subjedit.billingExplainer", "subjedit.dueNow", "subjedit.thenRate",
-  "subjedit.noChargeNow", "subjedit.removalNotice", "pay.confirmNoCharge",
+  "subjedit.dueNow", "subjedit.nextBilling", "subjedit.nextBillingLine",
+  "subjedit.noteLabel", "subjedit.noteText",
+  "subjedit.noChargeNow", "pay.confirmNoCharge",
   // H8 — free-window login-ID activation callout:
   "freeact.note", "freeact.cta", "freeact.activating", "freeact.done",
 ];

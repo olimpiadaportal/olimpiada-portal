@@ -3,24 +3,24 @@
 // Save. Payment-first contract: a diff containing ANY addition opens the demo
 // payment sheet first (demo mode); removal-only diffs and free modes submit
 // directly. The BFF/server re-diffs the desired FULL set authoritatively —
-// the client never sends prices. Callers mount this only in demo/free modes.
+// the client never sends prices.
 //
-// Round 24/32 (mid-cycle proration, web parity keys): the preview is no
-// longer a single recurring total. Additions get an immediate prorated
-// top-up (bffQuoteSubjectChange's due_now) while the recurring rate rises
-// from now on; removals never refund — access + the old rate continue until
-// removals_effective_at. The two numbers are quoted authoritatively
-// (diff-based, never client-computed). Copy comes from the synced
-// subjedit.dueNow/thenRate/noChargeNow/removalNotice/billingExplainer keys
-// (web messages.ts "Round 32" block) — {total}/{currency}/{interval}/{date}
-// are filled in here, never baked into a client-side sentence.
+// Round 41 (web parity — structured change summary): the summary is a
+// SaaS-style card in a fixed order: Selected subjects (count) · Added ·
+// Removed · Pay now · Next billing · Note. The new recurring rate appears in
+// EXACTLY ONE sentence (subjedit.nextBillingLine, filled with {date}/{total}/
+// {currency}/{interval}); the no-charge line (subjedit.noChargeNow) and the
+// removal note (subjedit.noteText) are PRICE-FREE and only carry {date}. The
+// retired thenRate/removalNotice/billingExplainer keys are gone from the
+// catalog. Amounts stay authoritative (bffQuoteSubjectChange's due_now /
+// new_recurring_total — diff-based, never client-computed).
 import React, { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
-import { spacing } from "@/theme/tokens";
+import { spacing, weight } from "@/theme/tokens";
 import { bffQuoteSubjectChange, bffUpdateSubjects, type SubjectChangeQuote } from "@/lib/api";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
@@ -80,6 +80,34 @@ function useSubjectChangeQuote(
     loading: active && !fresh,
     error: fresh ? result.error : null,
   };
+}
+
+/** Summary section: small uppercase muted label over its content (web
+ *  .subjedit-sum-block twin). */
+function SumBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
+      <AppText variant="eyebrow" style={{ textTransform: "uppercase" }}>
+        {label}
+      </AppText>
+      {children}
+    </View>
+  );
+}
+
+/** Bullet line for a pending added/removed subject — 320pt-safe (the name
+ *  wraps inside flexShrink instead of pushing off-screen). */
+function SumSubjectLine({ name, color }: { name: string; color: string }) {
+  return (
+    <View style={{ flexDirection: "row", gap: spacing.sm }}>
+      <AppText variant="body" color={color}>
+        {"•"}
+      </AppText>
+      <AppText variant="body" color={color} style={{ flex: 1, flexShrink: 1, minWidth: 0 }}>
+        {name}
+      </AppText>
+    </View>
+  );
 }
 
 export function ManageSubjectsEditor({
@@ -142,27 +170,31 @@ export function ManageSubjectsEditor({
     error: quoteError,
   } = useSubjectChangeQuote(studentId, addKey, removeKey, selected.size > 0);
   const quoteInterval = quote && isInterval(quote.interval) ? quote.interval : iv;
-  // subjedit.thenRate/noChargeNow/removalNotice compose "{total} {currency} /
-  // {interval}" themselves — {interval} wants the bare word ("ay"/"il"/
-  // "həftə"), so strip the leading "/ " off the existing billing.perX key.
+  // subjedit.nextBillingLine composes "{total} {currency} / {interval}" itself
+  // — {interval} wants the bare word ("ay"/"il"/"həftə"), so strip the leading
+  // "/ " off the existing billing.perX key.
   const bareInterval = t(INTERVAL_PER_KEY[quoteInterval]).replace(/^\/\s*/, "");
 
-  const fillRate = (key: string, total: number, currency: string, date: string | null) =>
-    t(key)
-      .replace("{total}", fmtAmount(total))
-      .replace("{currency}", currency)
-      .replace("{interval}", bareInterval)
-      .replace("{date}", fmtBakuDate(date, locale));
+  // Round 41 sentences (web ManageSubjects twins): the new recurring rate
+  // appears ONLY in nextBillingSentence; the other two are price-free.
+  const nextBillingSentence = (q: SubjectChangeQuote) =>
+    t("subjedit.nextBillingLine")
+      .replace("{date}", fmtBakuDate(q.effective_from, locale))
+      .replace("{total}", fmtAmount(q.new_recurring_total))
+      .replace("{currency}", q.currency)
+      .replace("{interval}", bareInterval);
+  const noChargeSentence = (q: SubjectChangeQuote) =>
+    t("subjedit.noChargeNow").replace("{date}", fmtBakuDate(q.effective_from, locale));
+  const noteSentence = (q: SubjectChangeQuote) =>
+    t("subjedit.noteText").replace("{date}", fmtBakuDate(q.removals_effective_at, locale));
 
-  /** The DemoPaySheet total / on-screen "Due now" value: the authoritative
-   *  due_now amount, or the plain no-charge sentence when it's 0 (trial /
-   *  weekly / waived — never a bare "0 AZN"). */
+  /** The DemoPaySheet total: the authoritative due_now amount, or the
+   *  price-free no-charge sentence when it's 0 (trial / weekly / waived —
+   *  never a bare "0 AZN"). Web DemoPaymentModal wiring. */
   function dueNowValueText(): string {
     if (quoting) return t("sub.calculating");
     if (!quote) return quoteError ? t(quoteError) : t("sub.calculating");
-    return quote.due_now > 0
-      ? fmtMoney(quote.due_now, quote.currency)
-      : fillRate("subjedit.noChargeNow", quote.new_recurring_total, quote.currency, quote.effective_from);
+    return quote.due_now > 0 ? fmtMoney(quote.due_now, quote.currency) : noChargeSentence(quote);
   }
 
   const noChargeConfirm = toAdd.length > 0 && !!quote && quote.due_now === 0;
@@ -211,12 +243,8 @@ export function ManageSubjectsEditor({
   return (
     <View style={{ gap: spacing.md }}>
       <AppText variant="title">{t("subjedit.title")}</AppText>
-      {posture.demoPay ? (
-        <>
-          <AppText variant="muted">{t("subjedit.demoModeNote")}</AppText>
-          <AppText variant="muted">{t("subjedit.billingExplainer")}</AppText>
-        </>
-      ) : null}
+      <AppText variant="muted">{t("pricing.perSubjectNote")}</AppText>
+      {posture.demoPay ? <AppText variant="muted">{t("subjedit.demoModeNote")}</AppText> : null}
 
       <Card style={{ paddingVertical: spacing.xs }}>
         {subjects.map((s) => {
@@ -241,78 +269,67 @@ export function ManageSubjectsEditor({
           );
         })}
       </Card>
-      <AppText variant="muted">{t("pricing.perSubjectNote")}</AppText>
+      <AppText variant="muted">{t("subjedit.minOne")}</AppText>
 
+      {/* Round 41 — structured change summary (web .subjedit-summary twin):
+          Selected · Added · Removed · Pay now · Next billing · Note. */}
       <Card>
         <KeyRow label={t("subjedit.selectedCount")} value={String(selected.size)} />
+
         {toAdd.length > 0 ? (
-          <KeyRow
-            label={t("subjedit.pendingAdd")}
-            value={toAdd.map((s) => subjectLabel(t, s.code, s.name)).join(", ")}
-          />
+          <SumBlock label={t("subjedit.pendingAdd")}>
+            {toAdd.map((s) => (
+              <SumSubjectLine key={s.id} name={subjectLabel(t, s.code, s.name)} color={tokens.ok} />
+            ))}
+          </SumBlock>
         ) : null}
         {toRemove.length > 0 ? (
-          <KeyRow
-            label={t("subjedit.pendingRemove")}
-            value={toRemove.map((s) => subjectLabel(t, s.code, s.name)).join(", ")}
-          />
+          <SumBlock label={t("subjedit.pendingRemove")}>
+            {toRemove.map((s) => (
+              <SumSubjectLine
+                key={s.id}
+                name={subjectLabel(t, s.code, s.name)}
+                color={tokens.danger}
+              />
+            ))}
+          </SumBlock>
         ) : null}
 
-        {toAdd.length > 0 ? (
-          quoting ? (
-            <KeyRow label={t("subjedit.dueNow")} value={t("sub.calculating")} strong />
-          ) : quote ? (
-            quote.due_now > 0 ? (
-              <>
-                <KeyRow
-                  label={t("subjedit.dueNow")}
-                  value={fmtMoney(quote.due_now, quote.currency)}
-                  strong
-                />
-                <AppText variant="muted" style={{ marginTop: spacing.xs }}>
-                  {fillRate(
-                    "subjedit.thenRate",
-                    quote.new_recurring_total,
-                    quote.currency,
-                    quote.effective_from,
-                  )}
-                </AppText>
-              </>
-            ) : (
-              <AppText variant="muted" style={{ marginTop: spacing.xs }}>
-                {fillRate(
-                  "subjedit.noChargeNow",
-                  quote.new_recurring_total,
-                  quote.currency,
-                  quote.effective_from,
+        {quoting ? (
+          <AppText variant="muted" style={{ marginTop: spacing.sm }}>
+            {t("sub.calculating")}
+          </AppText>
+        ) : quote ? (
+          <>
+            {/* Pay now: the prorated top-up as ONE prominent amount. A
+                waived/trial 0 top-up shows the price-free no-charge line. */}
+            {toAdd.length > 0 ? (
+              <SumBlock label={t("subjedit.dueNow")}>
+                {quote.due_now > 0 ? (
+                  <AppText variant="mono" style={{ fontSize: 20, fontWeight: weight.bold }}>
+                    {fmtMoney(quote.due_now, quote.currency)}
+                  </AppText>
+                ) : (
+                  <AppText variant="muted">{noChargeSentence(quote)}</AppText>
                 )}
-              </AppText>
-            )
-          ) : quoteError ? (
-            <AppText variant="muted" color={tokens.danger}>
-              {t(quoteError)}
-            </AppText>
-          ) : null
-        ) : null}
-
-        {toRemove.length > 0 && quote ? (
-          <AppText variant="muted" style={{ marginTop: spacing.xs }}>
-            {fillRate(
-              "subjedit.removalNotice",
-              quote.new_recurring_total,
-              quote.currency,
-              quote.removals_effective_at,
-            )}
+              </SumBlock>
+            ) : null}
+            {/* Next billing: the ONLY place the new recurring rate appears. */}
+            <SumBlock label={t("subjedit.nextBilling")}>
+              <AppText variant="body">{nextBillingSentence(quote)}</AppText>
+            </SumBlock>
+            {/* Note: price-free removal terms. */}
+            {toRemove.length > 0 ? (
+              <SumBlock label={t("subjedit.noteLabel")}>
+                <AppText variant="muted">{noteSentence(quote)}</AppText>
+              </SumBlock>
+            ) : null}
+          </>
+        ) : quoteError ? (
+          <AppText variant="muted" color={tokens.danger} style={{ marginTop: spacing.sm }}>
+            {t(quoteError)}
           </AppText>
         ) : null}
-
-        {!hasDiff ? (
-          <AppText variant="muted">{t("subjedit.noChanges")}</AppText>
-        ) : (
-          <AppText variant="muted" style={{ marginTop: spacing.xs }}>
-            {t("sub.siblingNote")}
-          </AppText>
-        )}
       </Card>
 
       {error ? (
@@ -359,6 +376,7 @@ export function ManageSubjectsEditor({
         ]}
         totalLabel={t("subjedit.dueNow")}
         totalValue={dueNowValueText()}
+        thenText={!quoting && quote && quote.due_now > 0 ? nextBillingSentence(quote) : null}
         note={t("pay.note")}
         confirmLabel={noChargeConfirm ? t("pay.confirmNoCharge") : t("pay.payNow")}
         error={error}

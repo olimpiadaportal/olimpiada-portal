@@ -1054,6 +1054,17 @@ Owner punch-list across notifications, the test player, profiles/accounts, plus 
 - **RLS/security:** no policy change needed — `child_subscriptions` RLS already scopes parents to their own family, admins read all, and there is no client write path; all admin mutations go through the guarded, self-auditing RPC. Students cannot modify subscriptions.
 - **Mobile impact:** none required — mobile reads the same canonical `child_subscriptions` statuses; no admin subscription screens added to the consumer app; no payment logic added.
 
+### Round 41 (2026-07-25): MANAGE-SUBJECTS SUMMARY REDESIGN (ACTIVE)
+
+**Owner spec:** the mid-cycle subject-change summary (Round 32) reads like a technical status dump — the new total appears in THREE sentences ("Sonra: …", the removal notice, the always-on billing explainer). Target = SaaS-grade structured card: Selected count · Added · Removed · Pay now (single amount) · Next billing (the ONLY place the new rate appears, interval-aware) · Note (price-free removal terms ×3 sentences). Plan: rework web `ManageSubjects` + payment-sheet line + the `subjedit.*` catalog (3 keys retired: thenRate/removalNotice/billingExplainer; noChargeNow goes price-free; +nextBilling/nextBillingLine/noteLabel/noteText ×3), mirror on mobile `ManageSubjectsEditor` (sync-i18n), gates ×2. Behavior/payment flow untouched — display only.
+
+**✅ ROUND 41 COMPLETE (2026-07-25). Gates: NO DB change · web tsc 0 + build ✓ · mobile sync-i18n **1133×3** + i18n guard 0-missing + tsc 0 + jest 121/121. Display-only — quote/apply/payment flows untouched. Nothing committed.**
+
+- **i18n ×3:** retired `subjedit.thenRate` ("Sonra: …"), `subjedit.removalNotice`, `subjedit.billingExplainer` (the three sentences that each repeated the new total); reworded `selectedCount`/`pendingAdd`/`pendingRemove`/`dueNow`; `noChargeNow` now price-free (date only); NEW `nextBilling`, `nextBillingLine` (the ONLY place the new recurring rate appears — interval-aware), `noteLabel`, `noteText` (three price-free removal sentences: active-until date, auto-continue, no refund).
+- **Web `ManageSubjects`:** structured card — Selected count → Added (green bullets) → Removed (red bullets) → Pay now (one prominent amount; $0 ⇒ the price-free no-charge line) → Next billing (single sentence) → Note (removals only). Payment sheet's "then" line reuses the same nextBillingLine sentence. New `.subjedit-sum-*` CSS (uppercase muted section labels, soft dividers, token-driven both themes). Always-on billing explainer paragraph removed (superseded by the structured card — supersedes the R32 sentence requirement per this owner spec).
+- **Mobile `ManageSubjectsEditor`:** identical card structure with tokens/AppText (320pt-safe flexShrink rows); `DemoPaySheet` gained optional `thenText` (other callers unaffected); zero retired-key references (guard-proven).
+- Manual guide: **AH1–AH3**.
+
 ### Round 40 (2026-07-25): OLYMPIAD CATALOG BY SELECTED CHILD (ACTIVE)
 
 **Owner spec:** the selected child must be the SINGLE source of truth for the parent olympiad catalog (both apps have a child selector — web segmented buttons in `OlympiadPurchase`, mobile `ChildChips` — but BOTH only scope the Buy button; the list stays the family-grade union from Round 34). Child dashboards are already grade-scoped server-side (unchanged).

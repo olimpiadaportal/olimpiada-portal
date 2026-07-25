@@ -184,8 +184,8 @@ export function isCancellable(status: string | null | undefined): boolean {
 
 /** Bare numeric amount (no currency) — trims float noise but keeps honest
  *  cents when present. Used to fill {total}-shaped i18n template slots that
- *  carry currency in a separate {currency} placeholder (subjedit.thenRate
- *  and friends). */
+ *  carry currency in a separate {currency} placeholder
+ *  (subjedit.nextBillingLine and friends). */
 export function fmtAmount(amount: number | null | undefined): string {
   const n = typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
   return Number.isInteger(n) ? String(n) : n.toFixed(2);

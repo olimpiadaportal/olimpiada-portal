@@ -1,22 +1,22 @@
-// TEST ENGINE (M3, restyled M3.2) — tests home (web /child/test Round-20/21
+// TEST ENGINE (M3, restyled M3.2; Round 38) — tests home (web /child/test
 // parity): subject cards from the child's ACCESS SET (subscription subjects +
-// free windows) carrying the get_my_round_readiness pre-flight states
-// (attempted / ready / not-ready — fail OPEN when a row is missing, exactly
-// like the web), a prominent CONTINUE card for a live in_progress attempt, and
+// free windows), a prominent CONTINUE card for a live in_progress attempt, and
 // the recent history (daily rounds + practice tests) with per-row status →
 // runner/result. Locked children see the same "ask your parent" hint as the
-// web arena. READY → Start fires start_daily_round_attempt('today') (RATED,
-// timed — web startDailyRound parity); the per-card Practice entry keeps
-// routing into the untimed topic-setup flow.
+// web arena. Card state (Round 38, migration 083): ONLY a GRADED rated daily
+// attempt started today (Baku day) consumes the card — it dims and its
+// practice CTA alerts instead of navigating; a live in_progress attempt
+// resumes; expired/abandoned ones never lock the day, so Start renders and
+// the next start_daily_round_attempt('today') serves a fresh set (the old
+// Round-21 readiness pre-flight RPC was DROPPED server-side).
 import React, { useCallback, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { Alert, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Check,
   ChevronRight,
-  Clock,
   Dumbbell,
   History,
   Play,
@@ -31,10 +31,10 @@ import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { startDailyRoundAttempt } from "./api";
-import { useRecentAttempts, useRoundReadiness, useSubjectAccess } from "./queries";
-import { displayStatus, findLiveAttempt, isLiveAttempt } from "./logic";
+import { useRecentAttempts, useSubjectAccess } from "./queries";
+import { dailyCardState, displayStatus, findLiveAttempt, type DailyCardState } from "./logic";
 import { ArenaButton, Notice, Panel, StatusPill, Eyebrow, tint, useArena } from "./ui";
-import type { AttemptListRow, RoundReadiness } from "./types";
+import type { AttemptListRow } from "./types";
 
 const DATE_TAGS: Record<Locale, string> = {
   az: "az-Latn-AZ",
@@ -59,65 +59,6 @@ function fmtDate(iso: string | null, locale: Locale): string {
 
 const LOCKED_KEYS = new Set(["inactive", "locked", "expired"]);
 
-// Asia/Baku is UTC+4 year-round (no DST) — web /child/test parity for the
-// "already attempted today" detection.
-const BAKU_OFFSET_MS = 4 * 3_600_000;
-const DAY_MS = 86_400_000;
-
-function isTodayBaku(iso: string | null, nowMs: number): boolean {
-  if (!iso) return false;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return false;
-  return (
-    Math.floor((t + BAKU_OFFSET_MS) / DAY_MS) === Math.floor((nowMs + BAKU_OFFSET_MS) / DAY_MS)
-  );
-}
-
-/** Subject-card state matrix (live > attempted > not-ready > ready/fail-open). */
-type CardState =
-  | { type: "live"; attemptId: string }
-  | { type: "attempted"; result: { id: string; score: number; max: number } | null }
-  | { type: "notReady" }
-  | { type: "ready" };
-
-function subjectCardState(
-  subjectId: string,
-  rows: AttemptListRow[],
-  readiness: RoundReadiness | undefined,
-  nowMs: number,
-): CardState {
-  // Latest rated round attempt for this subject inside today's Baku day
-  // (rows arrive newest-first) — the fallback/merge for readiness.attempted.
-  const todayRated =
-    rows.find(
-      (r) =>
-        r.kind === "daily" &&
-        r.is_rated &&
-        r.subject_id === subjectId &&
-        isTodayBaku(r.started_at, nowMs),
-    ) ?? null;
-
-  if (todayRated && isLiveAttempt(todayRated, nowMs)) {
-    return { type: "live", attemptId: todayRated.id };
-  }
-  if (readiness?.attempted === true || todayRated) {
-    return {
-      type: "attempted",
-      result:
-        todayRated && todayRated.status === "graded"
-          ? {
-              id: todayRated.id,
-              score: Math.round(Number(todayRated.score ?? 0)),
-              max: Math.round(Number(todayRated.max_score ?? 0)),
-            }
-          : null,
-    };
-  }
-  // Missing readiness row (no grade / transient error) fails OPEN to Start.
-  if (readiness && !readiness.ready) return { type: "notReady" };
-  return { type: "ready" };
-}
-
 export function TestsHomeScreen() {
   const { t, locale } = useT();
   const { arena } = useArena();
@@ -127,8 +68,6 @@ export function TestsHomeScreen() {
 
   const accessQ = useSubjectAccess();
   const attemptsQ = useRecentAttempts();
-  // Round-21 pre-flight — never gates rendering (fail open while loading).
-  const readinessQ = useRoundReadiness();
 
   // Refresh on RE-focus (returning from a finished/canceled attempt) — the
   // first focus rides on the initial fetch, so skip it.
@@ -141,11 +80,10 @@ export function TestsHomeScreen() {
       }
       void qc.invalidateQueries({ queryKey: ["tests", "attempts"] });
       void qc.invalidateQueries({ queryKey: ["tests", "access"] });
-      void qc.invalidateQueries({ queryKey: ["tests", "readiness"] });
     }, [qc]),
   );
 
-  const { refreshing, onRefresh } = usePullRefresh([accessQ, attemptsQ, readinessQ]);
+  const { refreshing, onRefresh } = usePullRefresh([accessQ, attemptsQ]);
 
   const pad = {
     padding: spacing.lg,
@@ -186,16 +124,6 @@ export function TestsHomeScreen() {
   const live = findLiveAttempt(rows, now);
   const recent = rows.filter((r) => r.id !== live?.id).slice(0, 10);
   const lockedKey = LOCKED_KEYS.has(access.access) ? access.access : "inactive";
-
-  const readinessBySubject = new Map<string, RoundReadiness>();
-  for (const r of readinessQ.data ?? []) readinessBySubject.set(r.subject_id, r);
-  // Settled-but-empty readiness = no student/no grade (RPC contract) — an
-  // honest note; errors/pending stay silent (fail open).
-  const noGrade =
-    readinessQ.data !== undefined &&
-    readinessQ.data.length === 0 &&
-    access.hasAccess &&
-    access.subjects.length > 0;
 
   return (
     <ScrollView
@@ -285,7 +213,6 @@ export function TestsHomeScreen() {
 
       {/* ---- Subjects (today's rounds) ---- */}
       <SectionHeader title={t("test.rounds.today")} color={arena.muted} />
-      {noGrade ? <Notice arena={arena}>{t("test.rounds.noGrade")}</Notice> : null}
       {access.hasAccess && access.subjects.length > 0 ? (
         <View style={{ gap: spacing.md }}>
           {access.subjects.map((s) => (
@@ -294,7 +221,7 @@ export function TestsHomeScreen() {
               arena={arena}
               subjectId={s.id}
               name={subjectLabel(t, s.code, s.name)}
-              state={subjectCardState(s.id, rows, readinessBySubject.get(s.id), now)}
+              state={dailyCardState(s.id, rows, now)}
             />
           ))}
         </View>
@@ -373,11 +300,13 @@ export function TestsHomeScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// One subject card: identity row + readiness state row + the always-active
-// practice entry into the setup flow. READY → Start fires the RATED
-// start_daily_round_attempt('today') RPC (web startDailyRound parity) and
-// lands in the shared runner; the RPC re-enforces everything server-side and
-// its error codes map back to the same trilingual notes the web shows.
+// One subject card (Round 38): identity row + state row + the practice entry.
+// Not done/live → Start fires the RATED start_daily_round_attempt('today')
+// RPC (web startDailyRound parity) and lands in the shared runner; the RPC
+// re-enforces everything server-side and its error codes map back to the same
+// trilingual notes the web shows. DONE (graded today) → the card dims (web
+// .tst-daily.done parity) with the score/result link kept fully readable, and
+// the practice CTA alerts "already completed today" instead of navigating.
 // ---------------------------------------------------------------------------
 function SubjectCard({
   arena,
@@ -388,13 +317,18 @@ function SubjectCard({
   arena: ArenaTokens;
   subjectId: string;
   name: string;
-  state: CardState;
+  state: DailyCardState;
 }) {
   const { t } = useT();
   const router = useRouter();
   const qc = useQueryClient();
   const [starting, setStarting] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+
+  const done = state.type === "done";
+  // Dim + desaturate the done card via the neutral dim token (no new library);
+  // the score link below stays OUTSIDE the dimmed wrappers.
+  const accent = done ? arena.dim : arena.blue;
 
   const openSetup = () =>
     router.push({ pathname: "/(student)/test/[subjectId]", params: { subjectId } });
@@ -418,12 +352,8 @@ function SubjectCard({
       }
       if (res.already) {
         // Race fallback (web ?err=already): the day was consumed elsewhere —
-        // refresh the pre-flight + history so the card flips to attempted.
-        void qc.invalidateQueries({ queryKey: ["tests", "readiness"] });
+        // refresh the history so the card flips to done.
         void qc.invalidateQueries({ queryKey: ["tests", "attempts"] });
-      } else if (res.errorKey === "test.rounds.noRoundYet") {
-        // Pool state changed since render — re-run the pre-flight.
-        void qc.invalidateQueries({ queryKey: ["tests", "readiness"] });
       }
       setCardError(t(res.errorKey));
     } catch {
@@ -434,19 +364,26 @@ function SubjectCard({
 
   return (
     <Panel arena={arena} style={{ gap: spacing.md }}>
-      {/* Identity row */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+      {/* Identity row (dimmed once today's round is submitted) */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing.md,
+          opacity: done ? 0.55 : 1,
+        }}
+      >
         <View
           style={{
             width: 44,
             height: 44,
             borderRadius: radius.md,
-            backgroundColor: tint(arena.blue, 0.14),
+            backgroundColor: tint(accent, 0.14),
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <AppText variant="title" color={arena.blue}>
+          <AppText variant="title" color={accent}>
             {name.trim()[0]?.toUpperCase() ?? "?"}
           </AppText>
         </View>
@@ -460,7 +397,8 @@ function SubjectCard({
         </View>
       </View>
 
-      {/* State row */}
+      {/* State row — Start renders whenever the card is not done/live
+          (non-graded attempts NEVER lock it; server errors surface below). */}
       {state.type === "ready" ? (
         <ArenaButton
           arena={arena}
@@ -492,39 +430,31 @@ function SubjectCard({
             gap: spacing.md,
           }}
         >
-          {state.type === "attempted" ? (
+          <View style={{ opacity: 0.55 }}>
             <StatusPill
               arena={arena}
               tone="ok"
               label={t("test.rounds.attempted")}
               icon={<Check size={13} color={arena.lime} strokeWidth={3} />}
             />
-          ) : (
-            <StatusPill
-              arena={arena}
-              tone="off"
-              label={t("test.rounds.notReady")}
-              icon={<Clock size={13} color={arena.dim} strokeWidth={2.5} />}
-            />
-          )}
-          {state.type === "attempted" && state.result ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("test.result.title")}
-              hitSlop={10}
-              onPress={() =>
-                router.push({
-                  pathname: "/(student)/test/result/[attemptId]",
-                  params: { attemptId: state.result!.id },
-                })
-              }
-              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-            >
-              <AppText variant="mono" color={arena.lime} style={{ fontSize: 16 }}>
-                {state.result.score}/{state.result.max}
-              </AppText>
-            </Pressable>
-          ) : null}
+          </View>
+          {/* Score/result link — FULL opacity (readable on the dimmed card). */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("test.result.title")}
+            hitSlop={10}
+            onPress={() =>
+              router.push({
+                pathname: "/(student)/test/result/[attemptId]",
+                params: { attemptId: state.result.id },
+              })
+            }
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+          >
+            <AppText variant="mono" color={arena.lime} style={{ fontSize: 16 }}>
+              {state.result.score}/{state.result.max}
+            </AppText>
+          </Pressable>
         </View>
       )}
 
@@ -535,11 +465,12 @@ function SubjectCard({
         </AppText>
       ) : null}
 
-      {/* Practice entry — ALWAYS active (untimed, unrated topic setup flow). */}
+      {/* Practice entry — the untimed/unrated topic-setup flow. After today's
+          SUBMITTED round it alerts instead of navigating (web PracticeGate). */}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t("test.rounds.practiceCta")}
-        onPress={openSetup}
+        onPress={done ? () => Alert.alert(t("test.rounds.doneAlert")) : openSetup}
         style={({ pressed }) => ({
           flexDirection: "row",
           alignItems: "center",
@@ -548,15 +479,17 @@ function SubjectCard({
           borderTopColor: arena.line,
           paddingTop: spacing.md,
           minHeight: 44,
-          opacity: pressed ? 0.7 : 1,
+          opacity: pressed ? 0.7 : done ? 0.55 : 1,
         })}
       >
         <Dumbbell size={16} color={arena.muted} strokeWidth={2} />
-        <AppText variant="label" color={arena.ink} style={{ fontSize: 13 }}>
+        <AppText
+          variant="label"
+          color={arena.ink}
+          style={{ flex: 1, fontSize: 13 }}
+          numberOfLines={1}
+        >
           {t("test.rounds.practiceCta")}
-        </AppText>
-        <AppText color={arena.dim} style={{ flex: 1, fontSize: 12 }} numberOfLines={1}>
-          {t("test.rounds.practiceMeta")}
         </AppText>
         <ChevronRight size={16} color={arena.dim} strokeWidth={2} />
       </Pressable>

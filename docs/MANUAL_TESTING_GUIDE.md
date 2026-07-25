@@ -1755,4 +1755,22 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AD3. Round content respects the rules
 - The 25 questions come only from Published, 5-option (A–E), term-tagged questions of the student's subject+grade (or shared), with terms up to the admin-configured current Rüb — and are spread across subtopics where the pool allows.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-#** + what you saw.
+# ROUND 38 — Today's/Yesterday's rounds (per-student sets, submit-only lock)
+
+## AE1. Today's card texts
+- Student → Sınaq Testləri: today's cards no longer show "vaxt limiti yoxdur, xal vermir" under the practice button, and the "Bugünkü raund hələ hazır deyil" pill is gone everywhere. (Yesterday's cards keep their practice note.)
+
+## AE2. Leaving mid-round costs nothing
+- Start today's round, answer a few questions, close the tab WITHOUT submitting. Immediately re-entering resumes the SAME test with the timer still running. After the 25 minutes lapse, the card offers **Start** again and a NEW round begins with a **different** set of questions. Only pressing Submit locks the day.
+
+## AE3. Completed card behavior
+- Submit today's round: the card dims (disabled palette), shows your score, and clicking **Məşq et** on that card pops the alert "Bugünkü raundu artıq tamamladınız." instead of opening topic selection. Start is impossible until tomorrow (server-enforced).
+
+## AE4. Yesterday's rounds are locked practice
+- If you SUBMITTED yesterday: "Dünənin Raundları" replays your EXACT 25 questions in the same order, unlimited times, untimed — and your leaderboard percent does NOT move.
+- If you MISSED yesterday (but classmates played): you still get a 25-question set for practice; pressing "Təkrar həll et" repeatedly serves the SAME set every time.
+
+## AE5. Both apps agree
+- The same card states (start / continue / dimmed-completed + alert) behave identically on web and mobile.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-#** + what you saw.

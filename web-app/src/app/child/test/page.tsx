@@ -5,29 +5,26 @@ import { getT, getLocale } from "@/i18n/server";
 import { getChildSubjectAccess } from "@/lib/childSubjects";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { startDailyRound } from "@/lib/auth/testActions";
+import { PracticeGate } from "@/components/PracticeGate";
 
-// DAILY ROUNDS (migration 056) — test home restructured into three sections:
+// DAILY ROUNDS (Round 38, migration 083) — test home in three sections:
 //   1. Today's Rounds  — one RATED daily round per accessible subject (timed
-//      25q/25min; ONE attempt per day — DB-enforced, the UI only mirrors it);
-//   2. Previous Day's Rounds — unlimited UNTIMED practice replays of
-//      yesterday's stored rounds (never affect points/streak);
+//      25q/25min, PER-STUDENT random set). The day is consumed ONLY by
+//      SUBMIT (DB-enforced): a live in_progress attempt resumes; an expired/
+//      abandoned one costs nothing and the next Start draws a FRESH set.
+//   2. Previous Day's Rounds — unlimited UNTIMED practice on the student's
+//      LOCKED yesterday set (own submitted set → a peer's set → generated);
+//      never affects points/percentage/streak.
 //   3. Recent Rounds — the attempt history (daily + practice, rated badge).
-// The old topic/subtopic setup flow stays as the per-subject PRACTICE entry
-// (start_topic_test_attempt is untimed/unrated since migration 057).
+// The old topic/subtopic setup flow stays as the per-subject PRACTICE entry —
+// but once today's round is SUBMITTED the card dims and the practice CTA
+// shows the "already completed today" alert instead of navigating.
 //
-// "Already attempted today" detection: own kind='daily' is_rated attempts with
-// started_at inside today's Baku-local day (UTC+4, fixed — Azerbaijan has no
-// DST). Any such attempt (graded/expired/canceled OR a lazily-expired
-// in_progress) consumes the day; a live in_progress one resumes. The RPC's
-// unique_violation is additionally mapped to ?err=already as a race fallback.
-//
-// Round 21 pre-flight: get_my_round_readiness() (migration 065) says, per
-// active subject for THIS student's grade, whether today's round exists or the
-// pool can generate one. A not-ready subject shows an honest disabled state
-// instead of a Start button that click-bounces into ?err=nopool. The ?err=
-// notices stay as the race fallback (midnight/term changes between render and
-// click); a missing readiness row (no grade / transient error) fails OPEN to
-// the Start button — startDailyRound remains the real gate.
+// Completed detection: a GRADED own kind='daily' is_rated attempt started
+// inside today's Baku-local day (UTC+4, fixed — Azerbaijan has no DST).
+// Non-graded attempts never lock the card. The RPC's unique_violation is
+// mapped to ?err=already as the race fallback; startDailyRound stays the
+// real gate for access/pool errors (?err= notices).
 
 const BAKU_OFFSET_MS = 4 * 3_600_000; // Asia/Baku is UTC+4 year-round.
 const DAY_MS = 86_400_000;
@@ -40,13 +37,6 @@ type DailyAttempt = {
   max_score: number | null;
   deadline_at: string | null;
   started_at: string;
-};
-
-type RoundReadiness = {
-  subject_id: string;
-  round_exists: boolean;
-  attempted: boolean;
-  ready: boolean;
 };
 
 export default async function TestHomePage({
@@ -70,9 +60,8 @@ export default async function TestHomePage({
   );
 
   // Today's rated attempts (per-subject state) + the recent history (own rows
-  // under RLS; olympiads live on their own page) + the round-readiness
-  // pre-flight (booleans about the caller's own grade only).
-  const [{ data: todayRated }, { data: attempts }, { data: readinessRows }] =
+  // under RLS; olympiads live on their own page).
+  const [{ data: todayRated }, { data: attempts }] =
     await Promise.all([
       supabase
         .from("test_attempts")
@@ -91,18 +80,23 @@ export default async function TestHomePage({
         .in("kind", ["daily", "test"])
         .order("started_at", { ascending: false })
         .limit(10),
-      supabase.rpc("get_my_round_readiness"),
     ]);
 
-  // Latest rated attempt per subject decides the card state.
-  const ratedBySubject = new Map<string, DailyAttempt>();
+  // Card state (Round 38): ONLY a graded attempt consumes the day; a live
+  // in_progress one resumes; anything else (expired/abandoned/canceled)
+  // leaves the Start button available for a fresh set.
+  const gradedBySubject = new Map<string, DailyAttempt>();
+  const liveBySubject = new Map<string, DailyAttempt>();
   for (const a of (todayRated ?? []) as DailyAttempt[]) {
-    if (!ratedBySubject.has(a.subject_id)) ratedBySubject.set(a.subject_id, a);
-  }
-
-  const readinessBySubject = new Map<string, RoundReadiness>();
-  for (const r of (readinessRows ?? []) as RoundReadiness[]) {
-    readinessBySubject.set(r.subject_id, r);
+    if (a.status === "graded") {
+      if (!gradedBySubject.has(a.subject_id)) gradedBySubject.set(a.subject_id, a);
+    } else if (
+      a.status === "in_progress" &&
+      !!a.deadline_at &&
+      new Date(a.deadline_at).getTime() > now
+    ) {
+      if (!liveBySubject.has(a.subject_id)) liveBySubject.set(a.subject_id, a);
+    }
   }
 
   const recent = (attempts ?? []) as any[];
@@ -149,22 +143,11 @@ export default async function TestHomePage({
       ) : (
         <div className="tst-daily-grid">
           {subjects.map((s) => {
-            const a = ratedBySubject.get(s.id) ?? null;
-            // A live rated attempt resumes; ANY other rated attempt today
-            // (graded/expired/canceled/lazily-expired) consumes the day.
-            const live =
-              a?.status === "in_progress" &&
-              !!a.deadline_at &&
-              new Date(a.deadline_at).getTime() > now;
-            const attempted = !!a && !live;
-            // Pre-flight: round can't exist/generate yet → disabled notice
-            // instead of a Start that bounces. Missing row = fail open (the
-            // start action still guards and maps to ?err= codes).
-            const readiness = readinessBySubject.get(s.id);
-            const notReady = !!readiness && !readiness.ready;
+            const done = gradedBySubject.get(s.id) ?? null;
+            const live = done ? null : liveBySubject.get(s.id) ?? null;
             const label = subjectLabel(t, s.code, s.name);
             return (
-              <div className="tst-daily" key={s.id}>
+              <div className={`tst-daily${done ? " done" : ""}`} key={s.id}>
                 <div className="tst-daily-head">
                   <span className="arena-round-icon">
                     {label.trim()[0]?.toUpperCase() ?? "?"}
@@ -177,22 +160,18 @@ export default async function TestHomePage({
                   </div>
                 </div>
                 <div className="tst-daily-actions">
-                  {live ? (
-                    <Link href={`/child/test/run/${a!.id}`} className="arena-btn arena-btn-sm">
-                      {t("test.home.continueCta")}
-                    </Link>
-                  ) : attempted ? (
+                  {done ? (
                     <>
                       <span className="tst-pill off">{t("test.rounds.attempted")}</span>
-                      {a!.status === "graded" && (
-                        <Link href={`/child/test/result/${a!.id}`} className="arena-pts mono">
-                          {Math.round(Number(a!.score ?? 0))}/
-                          {Math.round(Number(a!.max_score ?? 0))}
-                        </Link>
-                      )}
+                      <Link href={`/child/test/result/${done.id}`} className="arena-pts mono">
+                        {Math.round(Number(done.score ?? 0))}/
+                        {Math.round(Number(done.max_score ?? 0))}
+                      </Link>
                     </>
-                  ) : notReady ? (
-                    <span className="tst-pill off">{t("test.rounds.notReady")}</span>
+                  ) : live ? (
+                    <Link href={`/child/test/run/${live.id}`} className="arena-btn arena-btn-sm">
+                      {t("test.home.continueCta")}
+                    </Link>
                   ) : (
                     <form action={startDailyRound}>
                       <input type="hidden" name="subject_id" value={s.id} />
@@ -203,13 +182,16 @@ export default async function TestHomePage({
                     </form>
                   )}
                 </div>
-                {/* PRACTICE entry — the R19 topic/subtopic setup flow
-                    (untimed, unrated since migration 057). */}
+                {/* PRACTICE entry — the R19 topic/subtopic setup flow (untimed,
+                    unrated). After today's SUBMITTED round it alerts instead
+                    of navigating (Round 38). */}
                 <div className="tst-daily-practice">
-                  <Link href={`/child/test/${s.id}`} className="arena-btn-ghost arena-btn-sm">
-                    {t("test.rounds.practiceCta")}
-                  </Link>
-                  <span className="arena-muted">{t("test.rounds.practiceMeta")}</span>
+                  <PracticeGate
+                    href={`/child/test/${s.id}`}
+                    label={t("test.rounds.practiceCta")}
+                    done={!!done}
+                    doneAlert={t("test.rounds.doneAlert")}
+                  />
                 </div>
               </div>
             );

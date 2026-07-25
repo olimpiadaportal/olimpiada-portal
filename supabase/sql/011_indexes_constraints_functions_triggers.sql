@@ -3649,6 +3649,8 @@ begin
 
   -- Daily-round attempts grade against the round's immutable snapshot
   -- (migration 057): bank edits after generation can never change history.
+  -- Round 38: per-student attempts have NO round — they grade from live
+  -- options below, like topic tests (option-id stability is DB-guarded).
   if v_att.daily_round_id is not null then
     select content_snapshot into v_snap
     from public.daily_rounds where id = v_att.daily_round_id;
@@ -3706,10 +3708,19 @@ begin
   end loop;
 
   select count(*) into v_max from public.test_attempt_answers where attempt_id = p_attempt_id;
-  update public.test_attempts
-     set status = 'graded', score = v_score, max_score = v_max,
-         submitted_at = now(), graded_at = now(), updated_at = now()
-   where id = p_attempt_id;
+  begin
+    update public.test_attempts
+       set status = 'graded', score = v_score, max_score = v_max,
+           submitted_at = now(), graded_at = now(), updated_at = now()
+     where id = p_attempt_id;
+  exception when unique_violation then
+    -- Another attempt of the same subject+day was submitted first (second
+    -- device). This one can never grade — surface the friendly signal; the
+    -- losing attempt stays in_progress and is swept by the expiry cron.
+    -- (Any state write here would be undone by this raise — savepoint
+    -- semantics — so none is attempted.)
+    raise exception 'daily: already attempted today' using errcode = 'unique_violation';
+  end;
 
   return public.test_attempt_result(p_attempt_id);
 end;
@@ -3958,88 +3969,33 @@ grant execute on function public.expire_stale_test_attempts() to service_role;
 
 
 -- -----------------------------------------------------------------------------
--- DAILY ROUNDS ENGINE (migration 056). The rated/practice split: a DAILY ROUND
--- is one immutable 25-question snapshot per (subject, grade, Baku-local date)
--- shared by every student; the RATED attempt (one per student per round, timed
--- 25 min) feeds points/streak; previous-day practice replays the stored
--- snapshot untimed and unrated. Table lives in 005; RLS in 010.
+-- DAILY ROUNDS ENGINE (migrations 056/082/083). Round 38 model: a RATED daily
+-- attempt is a PER-STUDENT subtopic-balanced random 25 (timed 25 min) drawn at
+-- start; the day is consumed ONLY by SUBMIT (partial unique index on graded
+-- attempts in 005) — a live attempt resumes, a lapsed one is replaced by a
+-- FRESH set. Yesterday = unlimited UNTIMED practice on the student's LOCKED
+-- set (daily_practice_sets: own -> peer -> legacy round -> generated), never
+-- rated. daily_rounds is LEGACY storage (history + transition fallback).
 -- -----------------------------------------------------------------------------
 
--- Snapshot builder (internal): full content of the drawn questions — all three
--- locales, options WITH correctness, explanations, image refs.
-create or replace function public.build_round_snapshot(p_qids uuid[])
-returns jsonb
-language sql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-  select coalesce(jsonb_agg(q_obj order by ord), '[]'::jsonb)
-  from (
-    select ord, jsonb_build_object(
-      'question_id', q.id,
-      'type', qtp.code,
-      'topic_id', q.topic_id,
-      'subtopic_id', q.subtopic_id,
-      'term', q.term,
-      'translations', (
-        select jsonb_object_agg(qt.locale::text, jsonb_build_object(
-                 'body', qt.body, 'prompt', qt.prompt,
-                 'explanation', qe.explanation_body,
-                 'image', case when ma.id is null then null
-                               else jsonb_build_object('bucket', ma.bucket, 'path', ma.path) end))
-        from public.question_translations qt
-        left join public.question_explanations qe
-          on qe.question_id = qt.question_id and qe.locale = qt.locale
-        left join public.media_assets ma on ma.id = qt.media_asset_id
-        where qt.question_id = q.id
-      ),
-      'options', (
-        select coalesce(jsonb_agg(jsonb_build_object(
-                 'option_id', ao.id, 'order_index', ao.order_index,
-                 'is_correct', ao.is_correct,
-                 'text', (select jsonb_object_agg(aot.locale::text, aot.text)
-                            from public.answer_option_translations aot
-                           where aot.option_id = ao.id))
-                 order by ao.order_index), '[]'::jsonb)
-        from public.answer_options ao where ao.question_id = q.id
-      ))
-      as q_obj
-    from unnest(p_qids) with ordinality u(qid, ord)
-    join public.questions q on q.id = u.qid
-    join public.question_types qtp on qtp.id = q.type_id
-  ) s;
-$$;
-revoke all on function public.build_round_snapshot(uuid[]) from public, anon, authenticated;
-grant execute on function public.build_round_snapshot(uuid[]) to service_role;
-
--- Round generation (internal; race-safe; term-cumulative pool).
-create or replace function public.get_or_create_daily_round(
-  p_subject_id uuid, p_grade_id uuid, p_date date
+-- NOTE: this LANGUAGE SQL body reads questions.olympiad_package_id, a column
+-- added by 015 (numeric run order) — skip body validation; the body is planned
+-- at call time and 013 #67 covers it.
+set check_function_bodies = off;
+create or replace function public.draw_daily_questions(
+  p_subject_id uuid, p_grade_id uuid, p_count int default 25
 )
-returns public.daily_rounds
-language plpgsql
+returns uuid[]
+language sql
+volatile
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  c_count constant int := 25;
-  v_term  smallint := public.current_academic_term();
-  v_qids  uuid[];
-  v_row   public.daily_rounds;
-begin
-  select * into v_row from public.daily_rounds
-   where round_date = p_date and subject_id = p_subject_id and grade_id = p_grade_id;
-  if found then return v_row; end if;
-
   -- Cumulative-term pool: published, general bank, term reviewed and <= current,
   -- valid 5-option questions of this subject, for this grade OR shared
-  -- (grade_id IS NULL — practice-engine parity, Round 21).
-  -- Round 37: SUBTOPIC-BALANCED draw — rank randomly within each subtopic
-  -- bucket, take bucket_rank round-robin (all 1st picks before any 2nd pick),
-  -- random order inside a pass. Falls back to pure random when balance is
-  -- impossible (fewer buckets than needed picks).
-  select coalesce(array_agg(id), '{}') into v_qids from (
+  -- (grade_id IS NULL). SUBTOPIC-BALANCED: rank randomly within each subtopic
+  -- bucket, take bucket_rank round-robin, random inside a pass.
+  select coalesce(array_agg(id), '{}') from (
     select p.id
     from (
       select q.id,
@@ -4052,98 +4008,22 @@ begin
         and (q.grade_id = p_grade_id or q.grade_id is null)
         and q.status = 'published'
         and q.olympiad_package_id is null
-        and q.term is not null and q.term <= v_term
+        and q.term is not null and q.term <= public.current_academic_term()
         and (select count(*) from public.answer_options ao where ao.question_id = q.id) = 5
         and exists (select 1 from public.answer_options ao
                      where ao.question_id = q.id and ao.is_correct)
     ) p
     order by p.bucket_rank, p.tiebreak
-    limit c_count
+    limit greatest(1, least(coalesce(p_count, 25), 100))
   ) picked;
-
-  if coalesce(cardinality(v_qids), 0) < c_count then
-    raise exception 'daily round: not enough eligible questions (subject %, grade %, terms 1..%: have %, need %)',
-      p_subject_id, p_grade_id, v_term, coalesce(cardinality(v_qids), 0), c_count
-      using errcode = 'no_data_found';
-  end if;
-
-  insert into public.daily_rounds
-    (round_date, subject_id, grade_id, term_at_generation, question_ids, content_snapshot)
-  values
-    (p_date, p_subject_id, p_grade_id, v_term, v_qids, public.build_round_snapshot(v_qids))
-  on conflict (round_date, subject_id, grade_id) do nothing;
-
-  select * into v_row from public.daily_rounds
-   where round_date = p_date and subject_id = p_subject_id and grade_id = p_grade_id;
-  return v_row;
-end;
 $$;
-comment on function public.get_or_create_daily_round(uuid, uuid, date) is
-  'Automated lazy daily-round generation (Round 37): first starter triggers a '
-  'race-safe, subtopic-balanced random 25-question draw from the cumulative-term '
-  'published pool (subject + grade/shared + 5-option). Shared immutable snapshot '
-  'per subject+grade+date; admins never prepare rounds.';
-revoke all on function public.get_or_create_daily_round(uuid, uuid, date) from public, anon, authenticated;
-grant execute on function public.get_or_create_daily_round(uuid, uuid, date) to service_role;
+comment on function public.draw_daily_questions(uuid, uuid, int) is
+  'Subtopic-balanced random draw from the cumulative-term published pool '
+  '(Round 38 — per-student rated sets and generated practice fallbacks).';
+reset check_function_bodies;
+revoke all on function public.draw_daily_questions(uuid, uuid, int) from public, anon, authenticated;
+grant execute on function public.draw_daily_questions(uuid, uuid, int) to service_role;
 
-
--- Student-facing pre-flight (Round 21): per active subject for the CALLING
--- student — today's round exists / already played rated / can be started
--- (round exists or the pool can generate one). Lets the Tests page render an
--- honest "not ready yet" state instead of click-bouncing Start into an error
--- redirect. Booleans only; nothing about other grades leaks.
-create or replace function public.get_my_round_readiness()
-returns table (subject_id uuid, round_exists boolean, attempted boolean, ready boolean)
-language plpgsql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_student uuid := public.current_profile_id();
-  v_grade   uuid;
-  v_today   date := (now() at time zone 'Asia/Baku')::date;
-  v_term    smallint := public.current_academic_term();
-begin
-  select st.grade_id into v_grade
-    from public.students st where st.profile_id = v_student;
-  if v_student is null or v_grade is null then
-    return;   -- no student / no grade → empty set; UI shows its no-grade state
-  end if;
-
-  return query
-    select s.id,
-           (dr.id is not null),
-           exists (select 1 from public.test_attempts ta
-                    where ta.student_profile_id = v_student
-                      and ta.daily_round_id = dr.id and ta.is_rated),
-           (dr.id is not null) or (
-             select count(*)
-               from public.questions q
-              where q.subject_id = s.id
-                and (q.grade_id = v_grade or q.grade_id is null)
-                and q.status = 'published'
-                and q.olympiad_package_id is null
-                and q.term is not null and q.term <= v_term
-                and (select count(*) from public.answer_options ao where ao.question_id = q.id) = 5
-                and exists (select 1 from public.answer_options ao
-                             where ao.question_id = q.id and ao.is_correct)
-           ) >= 25
-    from public.subjects s
-    left join public.daily_rounds dr
-           on dr.subject_id = s.id and dr.grade_id = v_grade and dr.round_date = v_today
-    where s.status = 'active';
-end;
-$$;
-comment on function public.get_my_round_readiness() is
-  'Tests-page pre-flight (Round 21): per active subject for the CALLING student — '
-  'today''s round exists / already played rated / can be started (round exists or '
-  'the pool can generate one). Booleans only; nothing about other grades leaks.';
-revoke all on function public.get_my_round_readiness() from public, anon;
-grant execute on function public.get_my_round_readiness() to authenticated, service_role;
-
--- start_daily_round_attempt: today = RATED (one per student per round, timed
--- 25 min); yesterday = unlimited UNTIMED practice on the stored snapshot.
 create or replace function public.start_daily_round_attempt(
   p_subject_id uuid,
   p_day        text default 'today'   -- 'today' (rated) | 'yesterday' (practice)
@@ -4154,15 +4034,18 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
+  c_count    constant int := 25;
   c_duration constant int := 1500;   -- rated rounds: 25 minutes, test-engine parity
   v_student  uuid := public.current_profile_id();
   v_grade    uuid;
   v_date     date;
   v_rated    boolean := (coalesce(p_day, 'today') = 'today');
-  v_round    public.daily_rounds;
+  v_qids     uuid[];
+  v_set      public.daily_practice_sets;
   v_existing record;
   v_attempt  uuid;
   v_deadline timestamptz;
+  v_source   text;
 begin
   if v_student is null then raise exception 'daily: not authenticated'; end if;
   if coalesce(p_day, 'today') not in ('today', 'yesterday') then
@@ -4195,71 +4078,136 @@ begin
   v_date := (now() at time zone 'Asia/Baku')::date - (case when v_rated then 0 else 1 end);
 
   if v_rated then
-    v_round := public.get_or_create_daily_round(p_subject_id, v_grade, v_date);
-  else
-    -- Previous-day practice replays what WAS generated — never retro-generates.
-    select * into v_round from public.daily_rounds
-     where round_date = v_date and subject_id = p_subject_id and grade_id = v_grade;
-    if not found then
-      raise exception 'daily: no round was held yesterday' using errcode = 'no_data_found';
+    -- The day is consumed ONLY by a SUBMITTED (graded) round.
+    if exists (
+      select 1 from public.test_attempts
+      where student_profile_id = v_student and subject_id = p_subject_id
+        and kind = 'daily' and is_rated and status = 'graded'
+        and round_date = v_date
+    ) then
+      raise exception 'daily: already attempted today' using errcode = 'unique_violation';
     end if;
-  end if;
 
-  -- Resume an open attempt on this round of the same rating class.
-  select id, deadline_at, duration_seconds into v_existing
-  from public.test_attempts
-  where student_profile_id = v_student and daily_round_id = v_round.id
-    and is_rated = v_rated and status = 'in_progress'
-  order by started_at desc limit 1;
-  if v_existing.id is not null then
-    if not v_rated or (v_existing.deadline_at is not null and v_existing.deadline_at > now()) then
-      return jsonb_build_object(
-        'attempt_id', v_existing.id, 'resumed', true, 'rated', v_rated,
-        'deadline_at', v_existing.deadline_at,
-        'duration_seconds', v_existing.duration_seconds,
-        'count', cardinality(v_round.question_ids));
+    -- A LIVE attempt (deadline still running) RESUMES — same set, same timer
+    -- (a refresh must never re-draw or reset the clock). A lapsed one is
+    -- expired here and a FRESH set is drawn below (attempt not consumed).
+    select id, deadline_at, duration_seconds, question_ids into v_existing
+    from public.test_attempts
+    where student_profile_id = v_student and subject_id = p_subject_id
+      and kind = 'daily' and is_rated and status = 'in_progress'
+      and round_date = v_date
+    order by started_at desc limit 1;
+    if v_existing.id is not null then
+      if v_existing.deadline_at is not null and v_existing.deadline_at > now() then
+        return jsonb_build_object(
+          'attempt_id', v_existing.id, 'resumed', true, 'rated', true,
+          'deadline_at', v_existing.deadline_at,
+          'duration_seconds', v_existing.duration_seconds,
+          'count', cardinality(v_existing.question_ids));
+      end if;
+      update public.test_attempts
+         set status = 'expired', updated_at = now() where id = v_existing.id;
     end if;
-    update public.test_attempts
-       set status = 'expired', updated_at = now() where id = v_existing.id;
-  end if;
 
-  -- Rated: the day is consumed by ANY prior rated attempt on this round.
-  if v_rated and exists (
-    select 1 from public.test_attempts
-    where student_profile_id = v_student and daily_round_id = v_round.id and is_rated
-  ) then
-    raise exception 'daily: already attempted today' using errcode = 'unique_violation';
-  end if;
-
-  if v_rated then
+    -- Fresh per-student subtopic-balanced draw for THIS attempt.
+    v_qids := public.draw_daily_questions(p_subject_id, v_grade, c_count);
+    if coalesce(cardinality(v_qids), 0) < c_count then
+      raise exception 'daily round: not enough eligible questions (subject %, grade %: have %, need %)',
+        p_subject_id, v_grade, coalesce(cardinality(v_qids), 0), c_count
+        using errcode = 'no_data_found';
+    end if;
     v_deadline := now() + make_interval(secs => c_duration);
+  else
+    -- YESTERDAY: get-or-create the LOCKED practice set for this student.
+    select * into v_set from public.daily_practice_sets
+     where student_profile_id = v_student and subject_id = p_subject_id
+       and for_date = v_date;
+    if not found then
+      -- 1) The student's own graded set, EXACT order.
+      select ta.question_ids, 'own' into v_qids, v_source
+      from public.test_attempts ta
+      where ta.student_profile_id = v_student and ta.subject_id = p_subject_id
+        and ta.kind = 'daily' and ta.is_rated and ta.status = 'graded'
+        and ta.round_date = v_date
+      order by ta.graded_at desc limit 1;
+      -- 2) A peer's graded set (same subject + GRADE + date; earliest submit —
+      --    deterministic; question ids only, no identity attached).
+      if v_qids is null then
+        select ta.question_ids, 'peer' into v_qids, v_source
+        from public.test_attempts ta
+        join public.students st on st.profile_id = ta.student_profile_id
+        where ta.subject_id = p_subject_id and st.grade_id = v_grade
+          and ta.kind = 'daily' and ta.is_rated and ta.status = 'graded'
+          and ta.round_date = v_date
+          and coalesce(cardinality(ta.question_ids), 0) > 0
+        order by ta.submitted_at asc nulls last, ta.id asc limit 1;
+      end if;
+      -- 3) The legacy shared round (transition window after the model change).
+      if v_qids is null then
+        select dr.question_ids, 'round' into v_qids, v_source
+        from public.daily_rounds dr
+        where dr.round_date = v_date and dr.subject_id = p_subject_id
+          and dr.grade_id = v_grade;
+      end if;
+      -- 4) System-generated batch (spec fallback).
+      if v_qids is null then
+        v_qids := public.draw_daily_questions(p_subject_id, v_grade, c_count);
+        v_source := 'generated';
+        if coalesce(cardinality(v_qids), 0) < c_count then
+          raise exception 'daily: no round was held yesterday' using errcode = 'no_data_found';
+        end if;
+      end if;
+      insert into public.daily_practice_sets
+        (student_profile_id, subject_id, for_date, question_ids, source)
+      values (v_student, p_subject_id, v_date, v_qids, v_source)
+      on conflict (student_profile_id, subject_id, for_date) do nothing;
+      select * into v_set from public.daily_practice_sets
+       where student_profile_id = v_student and subject_id = p_subject_id
+         and for_date = v_date;
+    end if;
+    v_qids := v_set.question_ids;
+
+    -- Unlimited retries: resume an open practice attempt on this set first.
+    select id, question_ids into v_existing
+    from public.test_attempts
+    where student_profile_id = v_student and subject_id = p_subject_id
+      and kind = 'daily' and not is_rated and status = 'in_progress'
+      and round_date = v_date
+    order by started_at desc limit 1;
+    if v_existing.id is not null then
+      return jsonb_build_object(
+        'attempt_id', v_existing.id, 'resumed', true, 'rated', false,
+        'deadline_at', null, 'duration_seconds', null,
+        'count', cardinality(v_existing.question_ids));
+    end if;
   end if;
 
   insert into public.test_attempts
     (student_profile_id, subject_id, kind, status, question_ids,
-     deadline_at, duration_seconds, daily_round_id, is_rated)
+     deadline_at, duration_seconds, is_rated, round_date)
   values
-    (v_student, p_subject_id, 'daily', 'in_progress', v_round.question_ids,
-     v_deadline, case when v_rated then c_duration end, v_round.id, v_rated)
+    (v_student, p_subject_id, 'daily', 'in_progress', v_qids,
+     v_deadline, case when v_rated then c_duration end, v_rated, v_date)
   returning id into v_attempt;
 
   insert into public.test_attempt_answers (attempt_id, question_id)
-  select v_attempt, unnest(v_round.question_ids);
+  select v_attempt, unnest(v_qids);
 
   return jsonb_build_object(
     'attempt_id', v_attempt, 'resumed', false, 'rated', v_rated,
     'deadline_at', v_deadline,
     'duration_seconds', case when v_rated then c_duration end,
-    'count', cardinality(v_round.question_ids));
+    'count', cardinality(v_qids));
 exception when unique_violation then
   raise exception 'daily: already attempted today' using errcode = 'unique_violation';
 end;
 $$;
 comment on function public.start_daily_round_attempt(uuid, text) is
-  'Start/resume a daily-round attempt (migration 056). today = RATED (one per '
-  'student per round, timed 25min, feeds points/streak); yesterday = unlimited '
-  'UNTIMED practice on the stored snapshot (never rated). Round is generated '
-  'lazily once per subject+grade+Baku-date from the cumulative-term pool.';
+  'Round 38: today = RATED per-student subtopic-balanced random 25 (timed 25min; '
+  'the day is consumed ONLY by submit — a live attempt resumes, a lapsed one is '
+  'replaced by a FRESH set); yesterday = unlimited UNTIMED practice on the '
+  'student''s LOCKED set (own graded set -> peer set -> legacy round -> '
+  'generated), never rated.';
 revoke all on function public.start_daily_round_attempt(uuid, text) from public, anon;
 grant execute on function public.start_daily_round_attempt(uuid, text) to authenticated, service_role;
 

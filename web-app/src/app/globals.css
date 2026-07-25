@@ -9035,6 +9035,15 @@ ul.clean li {
   padding-top: 12px;
   font-size: 0.82rem;
 }
+/* Round 38: a SUBMITTED today's round dims the whole card (disabled palette);
+   the score link keeps full contrast so the result stays reachable. */
+.arena .tst-daily.done {
+  opacity: 0.55;
+  filter: saturate(0.6);
+}
+.arena .tst-daily.done .arena-pts {
+  opacity: 1;
+}
 /* Yesterday replay cards: visually distinct from today's rated cards. */
 .arena .tst-daily.ghost {
   background: color-mix(in srgb, var(--panel) 55%, transparent);

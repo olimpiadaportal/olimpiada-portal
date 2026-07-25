@@ -148,14 +148,6 @@ export type AttemptListRow = {
   subject_name: string | null;
 };
 
-/** get_my_round_readiness row (Round 21): booleans about the caller's own grade. */
-export type RoundReadiness = {
-  subject_id: string;
-  round_exists: boolean;
-  attempted: boolean;
-  ready: boolean;
-};
-
 export type SetupSubtopic = { id: string; name: string };
 export type SetupTopic = { id: string; name: string; subtopics: SetupSubtopic[] };
 
@@ -180,7 +172,7 @@ export type StartRoundResult =
   | {
       ok: false;
       errorKey: string;
-      /** unique_violation: today's round already consumed — flip to attempted. */
+      /** unique_violation: today's round already SUBMITTED — flip to done. */
       already?: boolean;
     };
 

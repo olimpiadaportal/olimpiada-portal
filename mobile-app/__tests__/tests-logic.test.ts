@@ -2,6 +2,7 @@ import {
   buildAnswerItems,
   classifyAnswer,
   countAnswered,
+  dailyCardState,
   deadlineFromRemaining,
   displayStatus,
   findLiveAttempt,
@@ -10,6 +11,7 @@ import {
   initialFlags,
   isGiveawayNow,
   isLiveAttempt,
+  isTodayBaku,
   isUuid,
   paletteCellState,
   remainingFrom,
@@ -19,7 +21,7 @@ import {
   timerLevel,
   usedMinutes,
 } from "@/features/tests/logic";
-import type { TestQuestion } from "@/features/tests/types";
+import type { AttemptListRow, TestQuestion } from "@/features/tests/types";
 
 const NOW = 1_760_000_000_000;
 
@@ -208,6 +210,96 @@ describe("tests home helpers", () => {
     expect(isGiveawayNow("giveaway", null, NOW)).toBe(true); // server said active
     expect(isGiveawayNow("demo", future, NOW)).toBe(false);
     expect(isGiveawayNow(undefined, null, NOW)).toBe(false);
+  });
+});
+
+describe("daily card state (Round 38 — only GRADED consumes the day)", () => {
+  const future = new Date(NOW + 60_000).toISOString();
+  const past = new Date(NOW - 60_000).toISOString();
+  // Baku-local midnight (fixed UTC+4, no DST) around NOW — boundary-exact.
+  const bakuDayStartUtc =
+    Math.floor((NOW + 4 * 3_600_000) / 86_400_000) * 86_400_000 - 4 * 3_600_000;
+  const todayEarly = new Date(bakuDayStartUtc + 60_000).toISOString();
+  const yesterdayBaku = new Date(bakuDayStartUtc - 60_000).toISOString();
+
+  function row(over: Partial<AttemptListRow> & { id: string }): AttemptListRow {
+    return {
+      kind: "daily",
+      is_rated: true,
+      status: "graded",
+      score: 20,
+      max_score: 25,
+      started_at: todayEarly,
+      submitted_at: null,
+      deadline_at: null,
+      subject_id: "s1",
+      subject_code: null,
+      subject_name: null,
+      ...over,
+    };
+  }
+
+  it("detects the Baku-local day (fixed UTC+4)", () => {
+    expect(isTodayBaku(todayEarly, NOW)).toBe(true);
+    expect(isTodayBaku(yesterdayBaku, NOW)).toBe(false);
+    expect(isTodayBaku(null, NOW)).toBe(false);
+    expect(isTodayBaku("garbage", NOW)).toBe(false);
+  });
+
+  it("a graded rated daily attempt today → done with the rounded score", () => {
+    expect(dailyCardState("s1", [row({ id: "a", score: 19.6 })], NOW)).toEqual({
+      type: "done",
+      result: { id: "a", score: 20, max: 25 },
+    });
+  });
+
+  it("live in_progress (future deadline) resumes — but graded wins over it", () => {
+    const live = row({
+      id: "b",
+      status: "in_progress",
+      deadline_at: future,
+      score: null,
+      max_score: null,
+    });
+    expect(dailyCardState("s1", [live], NOW)).toEqual({ type: "live", attemptId: "b" });
+    expect(dailyCardState("s1", [live, row({ id: "a" })], NOW).type).toBe("done");
+  });
+
+  it("expired/abandoned/canceled attempts NEVER lock the card (fresh Start)", () => {
+    const expired = row({ id: "c", status: "in_progress", deadline_at: past });
+    expect(dailyCardState("s1", [expired], NOW)).toEqual({ type: "ready" });
+    expect(dailyCardState("s1", [row({ id: "d", status: "expired" })], NOW)).toEqual({
+      type: "ready",
+    });
+    expect(dailyCardState("s1", [row({ id: "e", status: "canceled" })], NOW)).toEqual({
+      type: "ready",
+    });
+    // A rated round is always timed — a null-deadline in_progress row never
+    // counts as the live rated attempt (web !!deadline_at parity).
+    expect(
+      dailyCardState("s1", [row({ id: "f", status: "in_progress", deadline_at: null })], NOW),
+    ).toEqual({ type: "ready" });
+  });
+
+  it("ignores other subjects, unrated/practice rows and yesterday's rounds", () => {
+    expect(dailyCardState("s1", [row({ id: "g", subject_id: "s2" })], NOW)).toEqual({
+      type: "ready",
+    });
+    expect(dailyCardState("s1", [row({ id: "h", kind: "test" })], NOW)).toEqual({
+      type: "ready",
+    });
+    expect(dailyCardState("s1", [row({ id: "i", is_rated: false })], NOW)).toEqual({
+      type: "ready",
+    });
+    expect(dailyCardState("s1", [row({ id: "j", started_at: yesterdayBaku })], NOW)).toEqual({
+      type: "ready",
+    });
+  });
+
+  it("rows arrive newest-first: the first graded row wins", () => {
+    const s = dailyCardState("s1", [row({ id: "new" }), row({ id: "old" })], NOW);
+    expect(s.type).toBe("done");
+    if (s.type === "done") expect(s.result.id).toBe("new");
   });
 });
 

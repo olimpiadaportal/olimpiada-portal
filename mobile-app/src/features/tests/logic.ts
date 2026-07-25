@@ -174,6 +174,68 @@ export function paletteCellState(
 
 // ---- tests home helpers ---------------------------------------------------------------
 
+// Asia/Baku is UTC+4 year-round (no DST) — web /child/test parity for the
+// "started inside today's Baku day" detection.
+const BAKU_OFFSET_MS = 4 * 3_600_000;
+const DAY_MS = 86_400_000;
+
+export function isTodayBaku(iso: string | null, nowMs: number): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return false;
+  return (
+    Math.floor((t + BAKU_OFFSET_MS) / DAY_MS) === Math.floor((nowMs + BAKU_OFFSET_MS) / DAY_MS)
+  );
+}
+
+/** Today's-round subject-card state (done > live > ready). */
+export type DailyCardState =
+  | { type: "done"; result: { id: string; score: number; max: number } }
+  | { type: "live"; attemptId: string }
+  | { type: "ready" };
+
+/**
+ * Round 38 (web gradedBySubject/liveBySubject parity): ONLY a GRADED own
+ * rated daily attempt started inside today's Baku day consumes the card; a
+ * live in_progress one (future deadline) resumes — but never when a graded
+ * one exists; anything else (expired/abandoned/canceled) leaves the Start
+ * button available and the next start serves a FRESH set. Rows arrive
+ * newest-first, so the first match per bucket wins.
+ */
+export function dailyCardState(
+  subjectId: string,
+  rows: AttemptListRow[],
+  nowMs: number,
+): DailyCardState {
+  let graded: AttemptListRow | null = null;
+  let live: AttemptListRow | null = null;
+  for (const r of rows) {
+    if (r.kind !== "daily" || !r.is_rated || r.subject_id !== subjectId) continue;
+    if (!isTodayBaku(r.started_at, nowMs)) continue;
+    if (r.status === "graded") {
+      if (!graded) graded = r;
+    } else if (
+      r.status === "in_progress" &&
+      r.deadline_at !== null &&
+      Date.parse(r.deadline_at) > nowMs
+    ) {
+      if (!live) live = r;
+    }
+  }
+  if (graded) {
+    return {
+      type: "done",
+      result: {
+        id: graded.id,
+        score: Math.round(Number(graded.score ?? 0)),
+        max: Math.round(Number(graded.max_score ?? 0)),
+      },
+    };
+  }
+  if (live) return { type: "live", attemptId: live.id };
+  return { type: "ready" };
+}
+
 /**
  * A resumable attempt: in_progress AND either UNTIMED (null deadline —
  * Round-20 practice never expires) or the server deadline is still ahead.

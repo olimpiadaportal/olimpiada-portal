@@ -99,7 +99,9 @@ comment on table public.daily_rounds is
   'Immutable daily rated rounds (migration 056): per subject+grade+Baku-local date, '
   'a fixed 25-question set with a FULL content snapshot (all locales, options with '
   'correctness, explanations, image refs). Generated once, shared by all students, '
-  'reused verbatim by previous-day practice. Never rewritten.';
+  'reused verbatim by previous-day practice. LEGACY since Round 38 (migration '
+  '083): rated rounds are per-student draws; kept for history and as the '
+  'yesterday-practice transition fallback.';
 
 -- test_attempts joins the rated/practice split (migration 056): rated daily-
 -- round attempts link their round; is_rated gates points/streak/boards.
@@ -111,12 +113,45 @@ comment on column public.test_attempts.is_rated is
   'Rated attempts (daily rounds, olympiads) feed points/streak/boards; practice '
   '(topic tests, previous-day replays) never does (migration 056).';
 
--- ONE rated attempt per student per round — regardless of how it ended.
-create unique index if not exists uq_rated_attempt_per_round
-  on public.test_attempts (student_profile_id, daily_round_id)
-  where is_rated and daily_round_id is not null;
+-- Round 38 (migration 083): Baku-local round date + submit-only consumption.
+-- The day is consumed ONLY by a SUBMITTED (graded) rated round; abandoned or
+-- expired attempts never block a fresh start (which draws a fresh per-student
+-- set). The old any-outcome uq_rated_attempt_per_round index is retired.
+alter table public.test_attempts
+  add column if not exists round_date date;
+comment on column public.test_attempts.round_date is
+  'Baku-local date of a daily-round attempt (rated today / practice yesterday). '
+  'Set server-side at start; backs the one-SUBMITTED-round-per-day guard.';
+create unique index if not exists uq_rated_daily_graded_per_day
+  on public.test_attempts (student_profile_id, subject_id, round_date)
+  where kind = 'daily' and is_rated and status = 'graded';
 
 create index if not exists idx_attempts_round on public.test_attempts (daily_round_id);
+
+-- -----------------------------------------------------------------------------
+-- daily_practice_sets (Round 38, migration 083): the LOCKED per-student
+-- practice set for one yesterday (subject+date). Locked once on first open
+-- (own graded set -> peer set -> legacy round -> generated); replayed
+-- verbatim on every retry. RLS in 010 (read-own; definer-only writes).
+-- -----------------------------------------------------------------------------
+create table if not exists public.daily_practice_sets (
+  id                 uuid primary key default gen_random_uuid(),
+  student_profile_id uuid not null references public.students (profile_id) on delete cascade,
+  subject_id         uuid not null references public.subjects (id) on delete cascade,
+  for_date           date not null,
+  question_ids       uuid[] not null,
+  source             text not null check (source in ('own', 'peer', 'round', 'generated')),
+  created_at         timestamptz not null default now(),
+  constraint uq_daily_practice_set unique (student_profile_id, subject_id, for_date)
+);
+comment on table public.daily_practice_sets is
+  'Round 38: the LOCKED per-student practice set for one yesterday (subject+date). '
+  'Created once on first open (own graded set -> peer set -> legacy round -> '
+  'generated) and replayed verbatim on every retry. Written only by '
+  'start_daily_round_attempt (SECURITY DEFINER); students read their own rows.';
+
+create index if not exists idx_daily_practice_sets_lookup
+  on public.daily_practice_sets (subject_id, for_date);
 
 -- -----------------------------------------------------------------------------
 -- progress_snapshots : pre-aggregated progress metrics to avoid expensive

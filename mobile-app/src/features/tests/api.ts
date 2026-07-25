@@ -19,7 +19,6 @@ import type {
   ChildSubject,
   ResultPayload,
   ReviewPayload,
-  RoundReadiness,
   SaveResult,
   SetupSubtopic,
   SetupTopic,
@@ -134,25 +133,6 @@ export async function fetchRecentAttempts(profileId: string): Promise<AttemptLis
 }
 
 // ---------------------------------------------------------------------------
-// get_my_round_readiness — the Round-21 tests-home pre-flight (the redesign's
-// ONE functional addition). Booleans about the calling student's own grade;
-// empty set = no student/no grade. Read-only; a failure must never block the
-// page (callers fail OPEN to today's behavior — web parity).
-// ---------------------------------------------------------------------------
-export async function fetchRoundReadiness(): Promise<RoundReadiness[]> {
-  const { data, error } = await supabase.rpc("get_my_round_readiness");
-  if (error) throw error;
-  return ((data ?? []) as any[])
-    .filter((r) => typeof r?.subject_id === "string")
-    .map((r) => ({
-      subject_id: r.subject_id as string,
-      round_exists: r.round_exists === true,
-      attempted: r.attempted === true,
-      ready: r.ready === true,
-    }));
-}
-
-// ---------------------------------------------------------------------------
 // Setup taxonomy — EXAM-scoped topics only (migration 050: olympiad-scoped
 // topics must never surface in the test picker), grade-filtered when both the
 // child and the topic carry a grade (web setup page parity).
@@ -243,12 +223,16 @@ export async function startTopicTestAttempt(
 // ---------------------------------------------------------------------------
 // start_daily_round_attempt — the web startDailyRound error mapping
 // (testActions.ts), as i18n keys:
-//   day='today'     → RATED round (timed 25min, ONE per subject/day);
-//   day='yesterday' → unlimited UNTIMED practice replay of yesterday's stored
-//                     round (M3.1; never affects points/streak/boards).
-//   unique_violation → day consumed (caller flips the card to attempted);
+//   day='today'     → RATED round (timed, per-student set). Round 38: the day
+//                     is consumed ONLY by SUBMIT (graded) — an expired/
+//                     abandoned attempt costs nothing and the next start
+//                     serves a FRESH set; a live in_progress one resumes;
+//   day='yesterday' → unlimited UNTIMED practice on the student's locked
+//                     per-student set (never affects points/streak/boards).
+//   unique_violation → day already consumed by a SUBMITTED round (caller
+//                      flips the card to done);
 //   no_data_found    → today: pool can't build the round yet;
-//                      yesterday: no round was held yesterday (web ?err=noyest);
+//                      yesterday: no round set exists (web ?err=noyest);
 //   check_violation  → 'grade' in the message = no grade, else no access.
 // Raw Postgres text never reaches the UI.
 // ---------------------------------------------------------------------------

@@ -45,7 +45,8 @@ begin
     'question_types','difficulty_levels','olympiad_types','sources',
     'questions','question_translations','answer_options','answer_option_translations',
     'question_explanations','tests','test_questions','question_imports',
-    'test_attempts','test_attempt_answers','daily_rounds','progress_snapshots',
+    'test_attempts','test_attempt_answers','daily_rounds','daily_practice_sets',
+    'progress_snapshots',
     'leaderboard_periods','leaderboard_entries','leaderboard_snapshots',
     'achievements','student_achievements','question_analytics',
     'subscription_plans','subscriptions','payments','payment_events',
@@ -494,6 +495,13 @@ create policy "answers_write" on public.test_attempt_answers for all to authenti
 drop policy if exists daily_rounds_admin_read on public.daily_rounds;
 create policy daily_rounds_admin_read on public.daily_rounds
   for select to authenticated using (public.is_admin());
+
+-- daily_practice_sets (Round 38): the locked per-student yesterday sets —
+-- students read their own; the definer start fn is the single writer.
+drop policy if exists "daily_practice_sets_select_own" on public.daily_practice_sets;
+create policy "daily_practice_sets_select_own" on public.daily_practice_sets
+  for select to authenticated
+  using (student_profile_id = public.current_profile_id());
 
 -- progress snapshots: own/parent/admin read; writes admin/service only.
 drop policy if exists "snap_select" on public.progress_snapshots;

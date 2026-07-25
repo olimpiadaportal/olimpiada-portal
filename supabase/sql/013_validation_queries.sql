@@ -911,15 +911,18 @@ select '60_analytics_module_scope' as check_name,
                           in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
--- 61) Daily rounds engine (migrations 052/056/057): the daily_rounds table +
---     start_daily_round_attempt exist; ONE rated attempt per student per round
---     is DB-enforced (partial unique index); points fire only for RATED
---     attempts; topic tests are UNTIMED practice (no c_duration constant) and
---     olympiad attempts draw the WHOLE package pool (no 'limit greatest' cap).
+-- 61) Daily rounds engine (migrations 052/056/057/083): per-student rated
+--     rounds — the graded-only consumption index exists, the legacy
+--     any-outcome index is GONE, the locked practice-set table exists,
+--     points fire only for RATED attempts; topic tests stay untimed and
+--     olympiad attempts draw the whole pool.
 select '61_daily_rounds_engine' as check_name,
        case when to_regclass('public.daily_rounds') is not null
+             and to_regclass('public.daily_practice_sets') is not null
              and to_regprocedure('public.start_daily_round_attempt(uuid,text)') is not null
              and exists (select 1 from pg_indexes
+                          where schemaname='public' and indexname='uq_rated_daily_graded_per_day')
+             and not exists (select 1 from pg_indexes
                           where schemaname='public' and indexname='uq_rated_attempt_per_round')
              and position('is_rated' in
                    pg_get_functiondef('public.award_attempt_points(uuid)'::regprocedure)) > 0
@@ -1013,19 +1016,23 @@ select '66_student_city_district' as check_name,
                    pg_get_functiondef('public.lb_rows(text,text,uuid,text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
--- 67) Daily-round pool + counts (migrations 065 + 082): the automated draw
---     accepts shared (grade NULL) questions and is SUBTOPIC-BALANCED; the
---     admin readiness RPC is GONE (Round 37 — rounds need zero admin prep)
---     while the student pre-flight stays; the olympiad pool-count RPC keeps
---     its Round-34 signature/privileges.
+-- 67) Daily-round draw + pool counts (migrations 065/082/083): the per-attempt
+--     draw accepts shared (grade NULL) questions and is SUBTOPIC-BALANCED; the
+--     retired shared-generation/readiness fns are GONE; RLS lets a student read
+--     only their own locked practice sets; the olympiad pool-count RPC keeps
+--     its Round-34 posture.
 select '67_daily_round_pool_counts' as check_name,
        case when position('grade_id is null' in
-                   pg_get_functiondef('public.get_or_create_daily_round(uuid,uuid,date)'::regprocedure)) > 0
+                   pg_get_functiondef('public.draw_daily_questions(uuid,uuid,int)'::regprocedure)) > 0
              and position('bucket_rank' in
-                   pg_get_functiondef('public.get_or_create_daily_round(uuid,uuid,date)'::regprocedure)) > 0
+                   pg_get_functiondef('public.draw_daily_questions(uuid,uuid,int)'::regprocedure)) > 0
+             and to_regprocedure('public.get_or_create_daily_round(uuid,uuid,date)') is null
+             and to_regprocedure('public.build_round_snapshot(uuid[])') is null
+             and to_regprocedure('public.get_my_round_readiness()') is null
              and to_regprocedure('public.daily_round_readiness()') is null
-             and to_regprocedure('public.get_my_round_readiness()') is not null
-             and has_function_privilege('authenticated','public.get_my_round_readiness()','EXECUTE')
+             and exists (select 1 from pg_policies where schemaname='public'
+                          and tablename='daily_practice_sets'
+                          and policyname='daily_practice_sets_select_own')
              and to_regprocedure('public.get_olympiad_pool_counts(uuid[],uuid)') is not null
              and to_regprocedure('public.get_olympiad_pool_counts(uuid[])') is null
              and has_function_privilege('authenticated','public.get_olympiad_pool_counts(uuid[],uuid)','EXECUTE')

@@ -9,6 +9,7 @@ import React, { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/components/Screen";
+import { BackButton } from "@/components/BackButton";
 import { BrandMark } from "@/components/BrandMark";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
@@ -76,10 +77,26 @@ export default function Login() {
   return (
     <Screen scroll>
       <View style={{ gap: spacing.xl, paddingTop: spacing.sm }}>
-        {/* This screen has no native header, so the language chip rides in the
-            content — in flow, not absolute: the form scrolls under a keyboard
-            and a floating chip would sit on top of the fields. */}
-        <LocaleSwitcher align="end" />
+        {/* This screen has no native header, so the back arrow + language chip
+            ride in the content — in flow, not absolute: the form scrolls under
+            a keyboard and a floating chip would sit on top of the fields. The
+            arrow shows only when a screen is actually behind (the onboarding):
+            after the once-per-install welcome, Login IS the stack root, and
+            root screens carry no back per both platforms' guidelines. */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          {router.canGoBack() ? (
+            <BackButton label={t("arena.quizPrev")} onPress={() => router.back()} />
+          ) : (
+            <View />
+          )}
+          <LocaleSwitcher />
+        </View>
         <View style={{ alignItems: "center", gap: spacing.lg }}>
           <BrandMark size={56} />
           <Segmented<Tab>

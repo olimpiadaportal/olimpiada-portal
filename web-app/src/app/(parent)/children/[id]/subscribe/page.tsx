@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
@@ -118,7 +119,14 @@ export default async function SubscribePage({
 
   return (
     <section className="prose" style={{ maxWidth: 600 }}>
-      <h1>{t("sub.title")}</h1>
+      {/* Same head row as the sibling child pages (edit / olympiads): title +
+          the ghost link back to the dashboard. */}
+      <div className="wiz-head">
+        <h1>{t("sub.title")}</h1>
+        <Link className="btn-ghost" href="/dashboard">
+          {t("parent.dash.title")}
+        </Link>
+      </div>
       <p className="muted">
         {(child as any).first_name} {(child as any).last_name}
       </p>

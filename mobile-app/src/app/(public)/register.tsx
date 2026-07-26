@@ -6,8 +6,10 @@
 // success card per plan §3). Card-grouped fields + gradient CTA.
 import React, { useState } from "react";
 import { View } from "react-native";
+import { useRouter } from "expo-router";
 import { MailCheck } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
+import { BackButton } from "@/components/BackButton";
 import { BrandMark } from "@/components/BrandMark";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
@@ -23,7 +25,15 @@ import { useAuthStore } from "@/features/auth/authStore";
 export default function Register() {
   const { t } = useT();
   const { tokens } = useTheme();
+  const router = useRouter();
   const registerParent = useAuthStore((s) => s.registerParent);
+
+  // Register is always pushed (welcome CTA or the Login link), but a cold deep
+  // link can make it the stack root — then Login is the natural place back.
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(public)/login");
+  };
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -56,6 +66,13 @@ export default function Register() {
   if (verifySent) {
     return (
       <Screen>
+        {/* The account now exists pending verification, so back must not
+            re-open the submitted form — it leads to Login, where the user
+            lands after confirming the email. */}
+        <BackButton
+          label={t("arena.quizPrev")}
+          onPress={() => router.replace("/(public)/login")}
+        />
         <View style={{ flex: 1, justifyContent: "center", gap: spacing.xl }}>
           <Card variant="hero" style={{ alignItems: "center", gap: spacing.md }}>
             <View
@@ -88,10 +105,19 @@ export default function Register() {
   return (
     <Screen scroll>
       <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
-        {/* No native header on this screen, so the language chip rides in the
-            content — in flow, not absolute: the form scrolls under a keyboard
-            and a floating chip would sit on top of the fields. */}
-        <LocaleSwitcher align="end" />
+        {/* No native header on this screen, so the back arrow + language chip
+            ride in the content — in flow, not absolute: the form scrolls under
+            a keyboard and a floating chip would sit on top of the fields. */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <BackButton label={t("arena.quizPrev")} onPress={goBack} />
+          <LocaleSwitcher />
+        </View>
         <View style={{ alignItems: "center", gap: spacing.md }}>
           <BrandMark size={56} />
           <AppText variant="title">{t("parent.auth.register")}</AppText>

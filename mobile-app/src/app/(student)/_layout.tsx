@@ -11,6 +11,12 @@ import { useAuthStore } from "@/features/auth/authStore";
 import { useArena } from "@/features/arena/useArena";
 import { useT } from "@/i18n/useT";
 
+// Anchor the stack on the tabs: a cold deep link (push tap, OS link) straight
+// into a secondary screen otherwise mounts it as the stack ROOT — no native
+// back arrow, no tab bar, nowhere to go. With the anchor the tabs always sit
+// beneath, so every secondary screen keeps its top-left back affordance.
+export const unstable_settings = { anchor: "(tabs)" };
+
 export default function StudentLayout() {
   const status = useAuthStore((s) => s.status);
   const role = useAuthStore((s) => s.role);

@@ -1,7 +1,6 @@
 import React from "react";
-import { Pressable } from "react-native";
 import { Redirect, Stack, useRouter, useSegments } from "expo-router";
-import { ArrowLeft } from "lucide-react-native";
+import { BackButton } from "@/components/BackButton";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
@@ -47,14 +46,11 @@ export default function PublicLayout() {
         headerBackVisible: true,
         headerLeft: ({ canGoBack, tintColor }) =>
           !canGoBack && router.canGoBack() ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("arena.quizPrev")}
+            <BackButton
+              label={t("arena.quizPrev")}
               onPress={() => router.back()}
-              hitSlop={12}
-            >
-              <ArrowLeft size={22} color={tintColor ?? tokens.accent} strokeWidth={2} />
-            </Pressable>
+              color={tintColor ?? tokens.accent}
+            />
           ) : null,
       }}
     />

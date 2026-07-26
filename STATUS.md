@@ -1054,6 +1054,23 @@ Owner punch-list across notifications, the test player, profiles/accounts, plus 
 - **RLS/security:** no policy change needed — `child_subscriptions` RLS already scopes parents to their own family, admins read all, and there is no client write path; all admin mutations go through the guarded, self-auditing RPC. Students cannot modify subscriptions.
 - **Mobile impact:** none required — mobile reads the same canonical `child_subscriptions` statuses; no admin subscription screens added to the consumer app; no payment logic added.
 
+### Round 45 (2026-07-25): back-arrow navigation on all secondary screens (ACTIVE)
+
+**Owner prompt:** professional top-left back arrow on all secondary screens/pages, navigating back, native Android/iOS conventions, web-consistent where applicable.
+
+**Audit result:** most of the app already complied — parent/student secondary screens use native Stack headers (platform-correct back chevron/arrow, `headerBackButtonDisplayMode: "minimal"`), public info screens opt into native headers per-screen with a cross-group fallback arrow, and the arena test chain draws its own `BackBar` (runner deliberately exit-confirms instead). The real gaps: Login/Register had NO back affordance, and a cold deep link (push tap / OS link) into a parent/student secondary screen mounted it as the stack ROOT — no back arrow, no tab bar, stranded.
+
+**✅ ROUND 45 COMPLETE (2026-07-25). Gates: NO DB change · mobile tsc 0 · jest 128/128 · expo lint 0 · web tsc 0 + build ✓ · no new i18n keys (reused `arena.quizPrev` / `parent.dash.title`). Nothing committed.**
+
+- **New shared `mobile-app/src/components/BackButton.tsx`:** platform-correct glyph (iOS = HIG chevron, Android = Material arrow — matching what the native headers show elsewhere), 44pt+ hit target, a11y role+label, accent tint with override for header use.
+- **Login:** back arrow in the top-left of the header row (LocaleSwitcher stays right) — rendered ONLY when a screen is actually behind (onboarding); after the once-per-install welcome, Login IS the stack root and roots carry no back per platform guidelines.
+- **Register:** back arrow always (→ back, or Login when deep-linked as root). The verify-email success screen — previously a DEAD END — now carries the arrow too, going to Login (never back into the submitted form).
+- **Deep-link stranding fix:** `unstable_settings = { anchor: "(tabs)" }` on the (parent) and (student) stacks — expo-router now always mounts the tabs beneath a cold-deep-linked secondary screen, so the native back arrow renders and pops to the role home. (Also upgrades the test-setup `goBack` fallback path: `canGoBack` is now true there.)
+- **(public) layout:** the inline cross-group fallback arrow replaced with the shared `BackButton` (gains the platform-correct glyph on iOS).
+- **Web (consistency where applicable):** `children/[id]/subscribe` was the one child detail page missing the house `wiz-head` ghost link back to the dashboard that its siblings (edit / olympiads / add-child) have — added, reusing `parent.dash.title`. Other web pages keep their existing convention (persistent navbar + established back links: news `← back`, test chain, add-child/edit).
+- **Left alone deliberately:** test RUNNER (exit-confirm + `gestureEnabled: false` protects a live attempt — an always-hot back arrow would invite accidental exits), arena `BackBar` styling (in-content affordance, already top-left), tab screens (primary, no back per guidelines), `__DEV__`-only gallery.
+- Manual guide: **AK1–AK2**.
+
 ### Round 44 (2026-07-25): mobile responsiveness sweep — apply the screen-sizing rules codebase-wide (ACTIVE)
 
 **Owner re-sent the responsive-design guide** (Round-34's rules already live in mobile CLAUDE.md §Screen sizing). This round APPLIES them: audit+fix every violation across mobile-app/src (107 tsx files; recon: 79 numeric width/height hits, 60 flex-row files, 11 absolute positions). Fix targets: fixed-pixel layout containers holding content → flex/%/maxWidth; label+value+action rows missing `flex:1/flexShrink:1/minWidth:0` on the growing cell; long/translated text (az/ru run long) without `numberOfLines`+`ellipsizeMode` or a shrink container; content laid out with absolute positioning (overlays/badges exempt); safe-area gaps. Legit fixed art (icons/avatars/chips/spinners) stays. **`react-native-size-matters` NOT adopted** (standing owner rule: flex + token system is the house standard; guide lists it as an option — flagged in the report). Execution: 4 disjoint area agents + verify/gates (owner's change-list workflow). Web untouched (guide is mobile-focused; web is CSS-responsive).

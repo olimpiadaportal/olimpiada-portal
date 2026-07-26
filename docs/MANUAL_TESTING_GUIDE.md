@@ -1837,4 +1837,15 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AJ2. Nothing changed visually on normal screens
 - On your usual Android phone everything should look the SAME as before — this round only makes layouts resilient; spacing, colors and order are untouched. Report anything that looks moved/resized.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-#** + what you saw.
+# ROUND 45 — back-arrow navigation
+
+## AK1. Back arrows on secondary screens (mobile)
+- Register: a back arrow sits top-left (Android: straight arrow; iOS: chevron) and returns to the previous screen. After submitting registration, the "check your inbox" screen's arrow goes to Login (not back into the form).
+- Login: the arrow appears ONLY when you arrived from the onboarding slides; after the first launch, Login is the app's entry screen and correctly shows no arrow.
+- Every pushed screen (notifications, profile, leaderboard, news article, add-child, child edit, subscribe, test setup/result/review, info pages) still shows its top-left back affordance and it navigates back. The test RUNNER intentionally has no arrow — leaving a live attempt goes through its exit confirmation.
+- Deep-link check: tap a push notification while the app is CLOSED — the opened screen must show a back arrow that lands on your home tabs (previously it could open stranded, with no back and no tab bar).
+
+## AK2. Web subscribe page back link
+- Parent → a child's "Fənləri idarə et"/subscribe page now has the same ghost "İdarə paneli" link beside the title as the child edit page, returning to the dashboard.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-#** + what you saw.

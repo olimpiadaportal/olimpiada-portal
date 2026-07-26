@@ -688,15 +688,17 @@ on conflict (key) do nothing;
 -- LEADERBOARD ENGINE (backported from migrations/2026_07_06_039_leaderboard_engine.sql)
 -- Points formula settings (weights come from difficulty_levels.weight).
 -- -----------------------------------------------------------------------------
--- per_correct: base points per correct answer (× difficulty_levels.weight);
--- olympiad_multiplier: olympiad boost. practice_daily_cap_per_subject is
--- RETIRED since migration 057 (rated play is structurally one daily round per
--- subject per day); the setting row is kept for config history only.
+-- per_correct: base points per correct answer (× difficulty_levels.weight).
+-- practice_daily_cap_per_subject is RETIRED since migration 057 (rated play is
+-- structurally one daily round per subject per day); the setting row is kept
+-- for config history only.
+-- olympiad_multiplier was REMOVED in migration 088 (Round 48): purchased
+-- olympiads are practice-only, so an olympiad attempt never reaches the
+-- weighting code and the setting could only ever be dead config.
 insert into public.system_settings (key, value_json)
 values
   ('leaderboard.points.per_correct', '10'::jsonb),
-  ('leaderboard.points.practice_daily_cap_per_subject', '150'::jsonb),
-  ('leaderboard.points.olympiad_multiplier', '1.5'::jsonb)
+  ('leaderboard.points.practice_daily_cap_per_subject', '150'::jsonb)
 on conflict (key) do nothing;
 
 -- Round 36 (migration 081): percentage-leaderboard participation minimums

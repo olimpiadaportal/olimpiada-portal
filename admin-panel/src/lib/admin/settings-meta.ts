@@ -213,11 +213,13 @@ export const SETTING_META: Record<string, SettingMeta> = {
   // server-side in updateSetting via these min/max bounds. Difficulty weights
   // are intentionally NOT here: they live on difficulty_levels.weight.
   // Round 36 (percentage leaderboard): per_correct is a legacy point value with
-  // no ranking effect; olympiad_multiplier weights olympiad questions inside
-  // the bounded percentage; the leaderboard.rank.* minimums gate official ranks
+  // no ranking effect; the leaderboard.rank.* minimums gate official ranks
   // (below them a result is provisional). practice_daily_cap_per_subject has
   // NO entry on purpose — inert since migration 057, its DB seed row is config
   // history only and must not render as a live setting.
+  // Round 48 (migration 088): olympiad_multiplier is GONE. Purchased olympiads
+  // are practice-only, so an olympiad attempt never reaches the weighting code
+  // — the setting was deleted rather than left as an editable no-op.
   "leaderboard.points.per_correct": {
     kind: "number",
     labelKey: "settings.sys.lb_per_correct.label",
@@ -225,14 +227,6 @@ export const SETTING_META: Record<string, SettingMeta> = {
     placeholder: "10",
     min: 1,
     max: 1000,
-  },
-  "leaderboard.points.olympiad_multiplier": {
-    kind: "number",
-    labelKey: "settings.sys.lb_olympiad_multiplier.label",
-    helpKey: "settings.sys.lb_olympiad_multiplier.help",
-    placeholder: "1.5",
-    min: 0.1,
-    max: 10,
   },
   "leaderboard.rank.min_attempts": {
     kind: "number",

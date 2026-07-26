@@ -47,6 +47,8 @@ const ANA_KEYS = [
   "ana.locked", "ana.noActive", "ana.goSubscribe",
   "ana.kpi.last7", "ana.kpi.tests", "ana.kpi.correct", "ana.kpi.wrong",
   "ana.kpi.skipped", "ana.kpi.time", "ana.kpi.best", "ana.kpi.weak", "ana.kpi.last",
+  // Round 47 — why a best/weakest card has no value yet.
+  "ana.topic.needSample", "ana.topic.needTopics", "ana.topic.allEqual",
   "ana.chart.weekly", "ana.chart.weeklySub", "ana.chart.trend", "ana.chart.trendSub30",
   "ana.chart.topics", "ana.chart.mistakes",
   "ana.th.topic", "ana.th.subtopic", "ana.th.questions", "ana.th.accuracy", "ana.th.mistakes",

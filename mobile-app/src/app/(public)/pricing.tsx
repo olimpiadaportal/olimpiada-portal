@@ -46,6 +46,7 @@ import { useContentOverrides, useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
+import { formatLongDate } from "@/lib/formatDate";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import { useAuthStore } from "@/features/auth/authStore";
@@ -97,23 +98,15 @@ function Pill({ text }: { text: string }) {
 
 const PKG_STALE_MS = 5 * 60_000;
 
-const INTL_LOCALE: Record<Locale, string> = { az: "az-AZ", en: "en-GB", ru: "ru-RU" };
-
-/** Sale/event deadlines are DATE-ONLY in the product's home timezone. */
+/** Sale/event deadlines are DATE-ONLY in the product's home timezone.
+ *  Round 46: via the shared Hermes-safe helper — the local Intl call this
+ *  replaced returned the CLDR root pattern ("2026 M08 22") on devices without
+ *  Azerbaijani month data, and did not throw, so its catch never ran.
+ *  An unset/invalid date stays null so the row is hidden, not shown as "—". */
 function pkgDate(iso: string | null, locale: Locale): string | null {
   if (!iso) return null;
-  const ts = Date.parse(iso);
-  if (!Number.isFinite(ts)) return null;
-  try {
-    return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
-      timeZone: "Asia/Baku",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(new Date(ts));
-  } catch {
-    return iso.slice(0, 10);
-  }
+  const out = formatLongDate(iso, locale);
+  return out === "—" ? null : out;
 }
 
 /** Localized pick with az fallback (the RPC already az-falls-back en/ru; the

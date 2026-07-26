@@ -1591,6 +1591,85 @@ $$;
 -- Batch H: ALSO allocates the deferred 8-digit login ID on the FIRST subscription
 -- for a child that still has none, backfills child_credentials, and returns
 -- new_child_unique_id + auth_user_id so the server action sets the synthetic email.
+-- -----------------------------------------------------------------------------
+-- PAYMENTS KILL SWITCH (migration 089, Round 48)
+-- -----------------------------------------------------------------------------
+-- current_payment_mode() is the SQL-side single source of truth for the payment
+-- mode, with the same semantics as get_mobile_config().payment.mode.
+-- assert_payments_enabled() is called at the top of every paid mutation so the
+-- "payments off" kill switch cannot be bypassed by a server action or BFF route
+-- that forgets to check it. SECURITY DEFINER because feature_flags and
+-- system_settings are admin-RLS locked; only the derived mode string is exposed.
+create or replace function public.current_payment_mode()
+returns text
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_flags      jsonb;
+  v_real       boolean := false;
+  v_demo       boolean := false;
+  v_gvw        boolean := false;
+  v_gvw_start  timestamptz;
+  v_gvw_days   int := 30;
+  v_setting    jsonb;
+begin
+  select jsonb_object_agg(key, enabled) into v_flags
+  from public.feature_flags
+  where key in ('payments', 'demo_payments', 'giveaway_period');
+
+  v_real := coalesce((v_flags ->> 'payments')::boolean, false);
+  v_demo := coalesce((v_flags ->> 'demo_payments')::boolean, false);
+  v_gvw  := coalesce((v_flags ->> 'giveaway_period')::boolean, false);
+
+  if v_gvw then
+    select value_json into v_setting from public.system_settings
+     where key = 'giveaway.duration_days';
+    if v_setting is not null and jsonb_typeof(v_setting) = 'number' then
+      v_gvw_days := greatest(1, (v_setting)::text::int);
+    end if;
+    select value_json into v_setting from public.system_settings
+     where key = 'giveaway.started_at';
+    if v_setting is not null and jsonb_typeof(v_setting) = 'string' then
+      v_gvw_start := (v_setting ->> 0)::timestamptz;
+    end if;
+    v_gvw := v_gvw_start is not null
+             and now() < v_gvw_start + make_interval(days => v_gvw_days);
+  end if;
+
+  return case
+    when v_gvw  then 'giveaway'
+    when v_demo then 'demo'
+    when v_real then 'real'
+    else 'off'
+  end;
+end;
+$$;
+comment on function public.current_payment_mode() is
+  'Derived payment mode (real|demo|giveaway|off) from the mutually-exclusive feature flags, with the giveaway window applied.';
+revoke all on function public.current_payment_mode() from public, anon;
+grant execute on function public.current_payment_mode() to authenticated, service_role;
+
+create or replace function public.assert_payments_enabled()
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if public.current_payment_mode() = 'off' then
+    raise exception 'payments: disabled' using errcode = 'check_violation';
+  end if;
+end;
+$$;
+comment on function public.assert_payments_enabled() is
+  'Raises check_violation "payments: disabled" when the payment mode is off.';
+revoke all on function public.assert_payments_enabled() from public, anon, authenticated;
+grant execute on function public.assert_payments_enabled() to service_role;
+
 create or replace function public.create_child_subscription(
   p_student_profile_id uuid,
   p_interval           public.plan_interval,
@@ -1613,6 +1692,10 @@ declare
   v_status  public.subscription_status;
   v_end     timestamptz;
 begin
+  -- Round 48 kill switch (migration 089): no paid write while the
+  -- payment mode is off. Defence in depth -- the web/BFF layer checks
+  -- too, but this is the layer that cannot be forgotten.
+  perform public.assert_payments_enabled();
   select created_by_parent_profile_id, child_unique_id
     into v_owner, v_child
   from public.students where profile_id = p_student_profile_id;
@@ -1722,6 +1805,10 @@ declare
   v_amt      numeric(12,2);
   v_total    numeric(12,2);
 begin
+  -- Round 48 kill switch (migration 089): no paid write while the
+  -- payment mode is off. Defence in depth -- the web/BFF layer checks
+  -- too, but this is the layer that cannot be forgotten.
+  perform public.assert_payments_enabled();
   select id, interval, owner_parent_profile_id
     into v_sub, v_interval, v_owner
   from public.child_subscriptions
@@ -2541,6 +2628,10 @@ declare
   v_ex_status   text;
   v_id          uuid;
 begin
+  -- Round 48 kill switch (migration 089): no paid write while the
+  -- payment mode is off. Defence in depth -- the web/BFF layer checks
+  -- too, but this is the layer that cannot be forgotten.
+  perform public.assert_payments_enabled();
   select created_by_parent_profile_id, grade_id into v_owner, v_child_grade
   from public.students where profile_id = p_student_profile_id;
   if v_owner is null then raise exception 'purchase: child has no owning parent'; end if;
@@ -4254,10 +4345,10 @@ create trigger trg_protect_student_progress
 --
 
 create or replace function public.award_attempt_points(p_attempt_id uuid)
-returns void
-language plpgsql
-security definer
-set search_path = public, pg_temp
+ returns void
+ language plpgsql
+ security definer
+ set search_path = public, pg_temp
 as $$
 declare
   v_student   uuid;
@@ -4269,7 +4360,6 @@ declare
   v_today     date;
   v_mkey      text;
   v_per       numeric := 10;
-  v_mult      numeric := 1.5;
   v_kw        numeric := 1.0;
   v_correct   int := 0;
   v_answered  int := 0;
@@ -4292,9 +4382,21 @@ begin
   if v_student is null or v_status <> 'graded' then
     return;
   end if;
-  -- Migration 057: ONLY rated attempts (daily rounds, olympiads) score.
-  -- Practice (topic tests, previous-day replays) never touches points/streak.
+  -- Migration 057: ONLY rated attempts score. Practice (topic tests,
+  -- previous-day replays) never touches points/streak.
   if not coalesce(v_rated, false) then
+    return;
+  end if;
+
+  -- Round 48 (owner): PURCHASED OLYMPIADS ARE PRACTICE-ONLY. An olympiad
+  -- attempt is still stored, graded and reviewable for history, but it awards
+  -- NO points, contributes NO percentage/ranking weight, updates NO cached
+  -- leaderboard counter, records NO activity day and can never extend a
+  -- streak. Returning HERE -- before the ledger insert -- is what guarantees
+  -- all of that, because every one of those writes is downstream of it.
+  -- Olympiads also never consume the daily rated-round slot: that is keyed on
+  -- kind = 'daily', which this path never reaches.
+  if v_kind = 'olympiad' then
     return;
   end if;
 
@@ -4307,9 +4409,10 @@ begin
 
   v_per  := coalesce((select nullif(value_json #>> '{}', '')::numeric
                         from public.system_settings where key = 'leaderboard.points.per_correct'), 10);
-  v_mult := coalesce((select nullif(value_json #>> '{}', '')::numeric
-                        from public.system_settings where key = 'leaderboard.points.olympiad_multiplier'), 1.5);
-  v_kw   := case when v_kind = 'olympiad' then v_mult else 1.0 end;
+  -- Round 48: the olympiad multiplier is gone. Olympiads return above, so the
+  -- kind weight is always 1.0 and the setting it used to read is deleted in
+  -- PART B (dead config an admin could otherwise set to no effect).
+  v_kw   := 1.0;
 
   -- ONE scan over the stored answer rows (the engine pre-creates one row per
   -- PRESENTED question; unanswered rows were graded is_correct=false):
@@ -4328,27 +4431,22 @@ begin
   left join public.difficulty_levels dl on dl.id = q.difficulty_id
   where a.attempt_id = p_attempt_id;
 
-  -- Percentage snapshot: kind weight in BOTH numerator and denominator - an
-  -- olympiad coefficient raises the attempt's WEIGHT in mixed aggregations but
-  -- can never push the ratio above 1 (spec 17.4).
+  -- Percentage snapshot: kind weight in BOTH numerator and denominator so the
+  -- ratio can never exceed 1 (spec 17.4). With olympiads gone the weight is a
+  -- constant 1.0, but the shape is kept so a future weighted kind slots in.
   v_wnum  := round(v_wnum0 * v_kw, 4);
   v_wden  := round(v_wden0 * v_kw, 4);
   v_valid := v_wden > 0;
   v_snapshot := jsonb_build_object(
     'kind', v_kind,
     'kind_weight', v_kw,
-    'olympiad_multiplier', v_mult,
     'points_per_correct', v_per,
     'difficulty_weights',
       coalesce((select jsonb_object_agg(dl.code, dl.weight) from public.difficulty_levels dl),
                '{}'::jsonb));
 
   -- LEGACY points (unchanged since 057): kept for rewards/reports/history.
-  if v_kind = 'olympiad' then
-    v_awarded := round(v_raw * v_mult, 2);
-  else
-    v_awarded := round(v_raw, 2);
-  end if;
+  v_awarded := round(v_raw, 2);
 
   -- Append-only, once per attempt (replay/regrade-safe).
   insert into public.student_points_ledger
@@ -6249,6 +6347,12 @@ declare
   v_left      int;
   v_prior     jsonb;
 begin
+  -- Round 48 kill switch (migration 089): while payments are off a
+  -- parent may still REMOVE subjects (never trap someone into paying),
+  -- but may not ADD one.
+  if coalesce(array_length(p_add, 1), 0) > 0 then
+    perform public.assert_payments_enabled();
+  end if;
   -- Replay guard: the same batch key returns the original outcome untouched.
   if p_idempotency_key is not null then
     select jsonb_build_object('idempotent', true, 'applied_at', min(created_at))

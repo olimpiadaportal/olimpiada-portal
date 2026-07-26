@@ -138,30 +138,59 @@ usage string set via the expo-local-authentication plugin). Nothing else.
 
 ---
 
-## 4. Commerce posture (store-compliant, §17)
+## 4. Commerce posture
 
-- v1 mobile commerce is **mode-aware via the BFF** and store-compliant. In `real`
-  payment mode the app is **read-only for real-money commerce**: subscription state
-  and olympiad ownership are displayed, purchase actions are hidden behind neutral
-  "managed from the family's web account" wording. No external purchase links or
-  price steering — this keeps us outside IAP-requirement territory in both stores.
-- `demo` / `giveaway` / free-access flows may run end-to-end in the app because no
-  real money moves (server-controlled flags).
-- When a real payment provider lands (backlog A1), IAP integration maps onto the same
-  provider-agnostic tables with server receipt validation (§17 forward design); the
-  BFF purchase endpoints already take an Idempotency-Key header.
+> **Authoritative source: `docs/STORE_PAYMENTS_COMPLIANCE.md`.** The text that used to
+> sit here was wrong on two counts and is corrected below. Do not submit against the
+> old guidance.
+
+- **Purchasing happens on the WEB only** (browser, ABB, AZN). The mobile app is
+  **purchase-silent for BOTH roles** — parent and child share one binary, and Google's
+  consumption-only test is app-wide, so the parent tabs must be purchase-free too.
+- **Payment posture is a BUILD-TIME constant.** Store builds compile with commerce off
+  and the demo/subscribe code dead-stripped. `demo` / `giveaway` flows run in
+  **internal builds only**. (Previously this pack said they "may run end-to-end
+  because no real money moves" — that is Apple 2.3.1(a) hidden/dormant functionality,
+  and a remotely-switchable non-IAP checkout risks **developer-account termination**,
+  not merely rejection.)
+- **Copy names no destination.** "Managed from the family's web account" — the wording
+  this pack previously recommended — names where to transact and, next to a price, is
+  a call to action. Azerbaijan has **no** anti-steering relief (Apple 3.1.1(a) in full;
+  the Epic carve-out is US-storefront-only, the DMA is EEA-only). Use
+  *"Abunəliklər bu tətbiqdə idarə olunmur."*
+- **No AZN price anywhere in the app**, no buy/subscribe/renew CTA, no `olympiq.ai`
+  URL or QR in a purchasing context, no webview checkout, no fake prices/invoices or
+  simulated card sheets, and no external `https` opened from notification content.
+- Conversion and dunning happen **outside** the app — email, website, schools. Both
+  stores permit that without restriction, and the email may carry price and link.
+- **Blocking:** the current binary fails several of these (verified gap analysis,
+  compliance doc §7). Resolve before the first submission.
+- If IAP is ever forced, it maps onto the provider-agnostic **entitlements** table as a
+  new `source`; the BFF purchase endpoints already take an Idempotency-Key header. Do
+  **not** pre-build a dormant IAP path.
 
 Reviewer note (App Review / Play review "notes" field):
 
-> OlympIQ is a parent-managed education app. Parents register with email/password;
-> student profiles are created by the parent and sign in with an 8-digit ID + the
-> parent-set password (demo credentials supplied in the review account fields).
-> Students cannot purchase; subscription management is handled on the family's web
-> account. Push notifications are optional and used for education/account events only.
+> OlympIQ is a parent-managed education app. **This app contains no purchase
+> functionality of any kind.** Accounts and access are provisioned outside the app;
+> nothing can be bought inside it by any user or role. Parents register with
+> email/password; student profiles are created by the parent and sign in with an
+> 8-digit ID + the parent-set password. Students are purchase-incapable at the server
+> level, not merely in the UI. Demo credentials for **both** a parent account and a
+> child account — both with an active entitlement, so the paid experience is fully
+> reachable — are supplied in the review account fields. Push notifications are
+> optional and used for education/account events only.
 
-Review account: create a dedicated parent + one child on the production environment
-at submission time; put both credential sets in the store review fields (never in
-this repo).
+The "no purchase functionality" sentence is deliberate: it pre-empts the standard
+3.1.1 rejection boilerplate ("Your app includes or accesses paid digital content,
+services, or functionality by means other than in-app purchase"). Do not soften it,
+and do not submit a build for which it is untrue.
+
+Review account: create a dedicated parent **and** a child on the production
+environment at submission time, **both carrying an active entitlement** — a reviewer
+who cannot reach the paid experience reads it as a hidden feature under 2.3.1(a),
+which is a common multi-week rejection loop. Put both credential sets in the store
+review fields (never in this repo).
 
 ---
 

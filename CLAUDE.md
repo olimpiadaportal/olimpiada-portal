@@ -57,6 +57,19 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - Before any commit/push, verify the message contains no attribution line. If one is ever found in an unpushed commit, amend it out; if found in the working tree, delete it.
 - Referring to Claude Code as the workflow tool in internal planning docs (e.g. `CODING_AGENT_PROMPTS.md`, developer setup) is fine — the ban is on authorship attribution, not on naming the tool in workflow documentation.
 
+## Store & Payments Compliance (Permanent, Non-Negotiable — added 2026-07-26)
+
+Full sourced analysis: **`docs/STORE_PAYMENTS_COMPLIANCE.md`** (authoritative; supersedes mobile master plan §17). Read it before ANY commerce, pricing, paywall, or store-submission work. Short form:
+
+- **Azerbaijan gets no anti-steering relief.** The *Epic v. Apple* carve-out is **US-storefront-only**, the DMA is **EEA-only**, and Google's alternative-billing programs do not list Azerbaijan. Apple 3.1.1(a) and the Google Play Payments policy apply **in full**. Never reason from a 2024–2026 "you can now link out" headline.
+- **Architecture of record: purchasing happens on the WEB only** (browser, ABB, AZN). The mobile apps are **purchase-silent** and reflect entitlement only. Since parent and child share one binary, the **parent tabs must be purchase-free too** — Google's consumption-only test is app-wide.
+- **Payment posture is a BUILD-TIME constant, never a server flag.** A non-IAP purchase flow sitting in a store binary behind a remote switch is Apple 2.3.1(a) — the penalty is developer-account termination, not rejection. `demo`/`giveaway` commerce ships in internal builds only and is dead-stripped from store builds.
+- **Never in a store build:** an AZN price anywhere in the app; a Subscribe/Abunə ol/Yenilə/Əldə et button; the `olympiq.ai` URL or a QR code in a purchasing context; a webview checkout or card form; fake prices/invoices/simulated cards; an external `https` link opened from notification content or any admin-controlled string; telling a child to ask a parent to **buy** (use access/activation language).
+- **Never cite Guideline 3.1.3(b) Multiplatform Services** as the reason we need no IAP — its proviso *requires* matching in-app purchases. "Only parents buy" is good child-safety design and grants **zero** IAP relief (3.1.3(c) names family sales explicitly).
+- **Entitlement is its own provider-agnostic table** (`source ∈ abb_web | apple_iap | google_play | giveaway | manual | school_license`). An ABB subscription row must NEVER *be* the entitlement — that is what makes a forced-IAP scenario a two-week job instead of a rewrite. Do not pre-build a dormant IAP path.
+- **ABB/web rail:** full HTTP redirect to the hosted payment page (never an embedded iframe — PCI SAQ A); never receive/log/store PAN or CVV; the callback is untrusted client data (verify `P_SIGN`, then re-query status server-side before granting entitlement); idempotency key per charge; flag the first charge as the initial transaction of a recurring series (CBAR enhanced-authentication rules, NOT PSD2) or renewals silently die; e-kassa fiscal receipt per charge including auto-renewals; bill through an Azerbaijani-**resident** entity.
+- **Do not opt into Apple's Kids Category or Google's Designed for Families** — the Apple 1.3 commitment is sticky and would permanently foreclose adding IAP without a parental gate. Comply with 5.1.4(b)/Play Families policy regardless.
+
 ## Secret Handling (Non-Negotiable)
 
 - Never print, echo, save, log, commit, or otherwise expose `OLIMPIADA_DEV_DB_URL`, database passwords, the Supabase service role key, API keys, or any other secret.

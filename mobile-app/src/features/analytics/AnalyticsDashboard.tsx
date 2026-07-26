@@ -14,7 +14,8 @@ import { radius, spacing } from "@/theme/tokens";
 import { formatPercent } from "@/lib/formatPercent";
 import { WeeklyBars, TrendLine } from "./charts";
 import {
-  MIN_TOPIC_SAMPLE,
+  computeTopicStanding,
+  topicStandingHint,
   dayKey,
   fmtDate,
   fmtDayMonth,
@@ -139,19 +140,39 @@ function KpiGrid({ kpis }: { kpis: { label: string; value: string }[] }) {
 
 /* ------------------------------- facts row -------------------------------- */
 
-function FactRow({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" }) {
+function FactRow({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: string;
+  tone?: "ok" | "warn";
+  /** Round 47: why this card has no value yet (never a bare dash). */
+  hint?: string | null;
+}) {
   const { tokens } = useTheme();
   const dot = tone === "ok" ? tokens.ok : tone === "warn" ? tokens.warn : tokens.muted;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} />
-      <View style={{ flex: 1 }}>
+    // alignItems flex-start, not center: with a hint the text column is taller
+    // than the dot and centring would float the dot into the middle of it.
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.sm }}>
+      <View
+        style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot, marginTop: 6 }}
+      />
+      <View style={{ flex: 1, minWidth: 0 }}>
         <AppText variant="label" numberOfLines={1}>
           {value}
         </AppText>
         <AppText variant="muted" style={{ fontSize: 12 }}>
           {label}
         </AppText>
+        {hint ? (
+          <AppText variant="muted" style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
+            {hint}
+          </AppText>
+        ) : null}
       </View>
     </View>
   );
@@ -235,15 +256,13 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
     wrong: num(r?.wrong),
   }));
 
-  const sampled = topics.filter((r) => r.answered >= MIN_TOPIC_SAMPLE);
-  const best = sampled.reduce<(typeof sampled)[number] | null>(
-    (a, b) => (a == null || b.accuracy > a.accuracy ? b : a),
-    null,
-  );
-  const weak = sampled.reduce<(typeof sampled)[number] | null>(
-    (a, b) => (a == null || b.accuracy < a.accuracy ? b : a),
-    null,
-  );
+  // Round 47: ranking is COMPARATIVE — the helper returns a pair only when at
+  // least two topics have a real sample AND their accuracies differ; otherwise
+  // it reports which condition is missing so the card explains itself.
+  const standing = computeTopicStanding(topics);
+  const best = standing.kind === "ready" ? standing.best : null;
+  const weak = standing.kind === "ready" ? standing.weak : null;
+  const standingHint = topicStandingHint(standing, t);
 
   const totalMin = Math.max(0, Math.round(num(data.time_spent_minutes)));
   const hours = Math.floor(totalMin / 60);
@@ -269,8 +288,22 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
       <KpiGrid kpis={kpis} />
 
       <Card style={{ gap: spacing.md }}>
-        <FactRow tone="ok" label={t("ana.kpi.best")} value={best ? best.topic : "—"} />
-        <FactRow tone="warn" label={t("ana.kpi.weak")} value={weak ? weak.topic : "—"} />
+        <FactRow
+          tone="ok"
+          label={
+            best ? `${t("ana.kpi.best")} · ${Math.round(best.accuracy)}%` : t("ana.kpi.best")
+          }
+          value={best ? best.topic : "—"}
+          hint={standingHint}
+        />
+        <FactRow
+          tone="warn"
+          label={
+            weak ? `${t("ana.kpi.weak")} · ${Math.round(weak.accuracy)}%` : t("ana.kpi.weak")
+          }
+          value={weak ? weak.topic : "—"}
+          hint={standingHint}
+        />
         <FactRow
           label={t("ana.kpi.last")}
           value={data.last_activity ? fmtDate(String(data.last_activity)) : "—"}

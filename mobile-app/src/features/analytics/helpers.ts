@@ -61,8 +61,71 @@ export type LbSummary = {
   rank_all_time?: number | null;
 };
 
-/** Best/weakest topic need a minimum ANSWERED sample before they mean anything. */
+// Best / weakest topic ranking (Round 47). Mirrors
+// web-app/src/lib/topicStanding.ts — keep the two in sync.
+//
+// The old code kept topics with >= MIN_TOPIC_SAMPLE answers and reduced to a
+// max and a min. That produced a bare "—" when nothing qualified (indis-
+// tinguishable from a broken feature) and, when exactly ONE topic qualified,
+// showed the SAME topic as both best and weakest. Ranking is comparative: it
+// needs two qualifying topics whose accuracies actually differ.
+
+/** Minimum ANSWERED questions in one topic before its accuracy means anything. */
 export const MIN_TOPIC_SAMPLE = 3;
+
+/** Ranking is comparative: fewer than this many qualifying topics says nothing. */
+export const MIN_TOPICS_TO_COMPARE = 2;
+
+export type TopicRow = { topic: string; answered: number; accuracy: number };
+
+export type TopicStanding =
+  | { kind: "ready"; best: TopicRow; weak: TopicRow }
+  | { kind: "needSample"; have: number; needed: number }
+  | { kind: "needTopics"; qualified: number; needed: number }
+  | { kind: "allEqual"; accuracy: number };
+
+/** Rank topics into best/weakest, or report what is still missing. */
+export function computeTopicStanding(rows: readonly TopicRow[]): TopicStanding {
+  const qualified = rows.filter((r) => r.answered >= MIN_TOPIC_SAMPLE);
+
+  if (qualified.length === 0) {
+    const have = rows.reduce((max, r) => (r.answered > max ? r.answered : max), 0);
+    return { kind: "needSample", have, needed: MIN_TOPIC_SAMPLE };
+  }
+  if (qualified.length < MIN_TOPICS_TO_COMPARE) {
+    return { kind: "needTopics", qualified: qualified.length, needed: MIN_TOPICS_TO_COMPARE };
+  }
+
+  const sorted = [...qualified].sort(
+    (a, b) => b.accuracy - a.accuracy || a.topic.localeCompare(b.topic, "en"),
+  );
+  const best = sorted[0]!;
+  const weak = sorted[sorted.length - 1]!;
+  if (best.accuracy === weak.accuracy) return { kind: "allEqual", accuracy: best.accuracy };
+  return { kind: "ready", best, weak };
+}
+
+/** Hint shown under a card when no ranking exists yet; null once it does. */
+export function topicStandingHint(
+  standing: TopicStanding,
+  t: (k: string) => string,
+): string | null {
+  switch (standing.kind) {
+    case "ready":
+      return null;
+    case "needSample":
+      // Global replace: "{n}" appears TWICE in these strings ("… at least
+      // {n} answers ({a}/{n})") and String.replace with a string pattern only
+      // swaps the first occurrence.
+      return t("ana.topic.needSample")
+        .replace(/\{a\}/g, String(standing.have))
+        .replace(/\{n\}/g, String(standing.needed));
+    case "needTopics":
+      return t("ana.topic.needTopics").replace(/\{n\}/g, String(standing.needed));
+    case "allEqual":
+      return t("ana.topic.allEqual").replace(/\{p\}/g, String(Math.round(standing.accuracy)));
+  }
+}
 
 export const num = (v: unknown): number => {
   const n = Number(v);

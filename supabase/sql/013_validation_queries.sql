@@ -746,8 +746,11 @@ select '50_leaderboard_engine' as check_name,
             then 'PASS' else 'FAIL' end as status;
 
 -- 51) Leaderboard privileges + config — board reads are authenticated-only (not
---     anon); the writer and admin reset are service-role only; the 3 formula
+--     anon); the writer and admin reset are service-role only; the formula
 --     settings are seeded (difficulty weights come from difficulty_levels.weight).
+--     Round 48 (migration 088): the floor dropped 3 -> 2 because
+--     leaderboard.points.olympiad_multiplier was DELETED — purchased olympiads
+--     are practice-only, so the multiplier could only ever be dead config.
 select '51_leaderboard_privileges' as check_name,
        case when has_function_privilege('anon', 'public.get_leaderboard(text,text,uuid,text,int)', 'EXECUTE') = false
              and has_function_privilege('authenticated', 'public.get_leaderboard(text,text,uuid,text,int)', 'EXECUTE') = true
@@ -756,7 +759,9 @@ select '51_leaderboard_privileges' as check_name,
              and has_function_privilege('authenticated', 'public.award_attempt_points(uuid)', 'EXECUTE') = false
              and has_function_privilege('authenticated', 'public.admin_reset_leaderboard(text)', 'EXECUTE') = false
              and has_function_privilege('authenticated', 'public.lb_rows(text,text,uuid,text)', 'EXECUTE') = false
-             and (select count(*) from public.system_settings where key like 'leaderboard.points.%') >= 3
+             and (select count(*) from public.system_settings where key like 'leaderboard.points.%') >= 2
+             and not exists (select 1 from public.system_settings
+                              where key = 'leaderboard.points.olympiad_multiplier')
             then 'PASS' else 'FAIL' end as status;
 
 -- 52) Content lifecycle = 3 statuses (migration 040): questions & news default
@@ -1355,6 +1360,39 @@ select '82_mandatory_term' as check_name,
                           where table_schema='public' and table_name='topics' and column_name='term')
              and exists (select 1 from information_schema.columns
                           where table_schema='public' and table_name='subtopics' and column_name='term')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 83) Round 48 (migration 088): purchased olympiads are PRACTICE-ONLY. The
+--     award function must bail out for kind='olympiad' BEFORE the ledger
+--     insert (everything else - percentage weight, cached counters, activity
+--     day, streak - is downstream of it), no olympiad row may survive in the
+--     points ledger, and the now-dead olympiad multiplier setting must be gone.
+select '83_olympiads_practice_only' as check_name,
+       case when position('v_kind = ''olympiad''' in
+                   pg_get_functiondef('public.award_attempt_points(uuid)'::regprocedure)) > 0
+             and position('olympiad_multiplier' in
+                   pg_get_functiondef('public.award_attempt_points(uuid)'::regprocedure)) = 0
+             and not exists (select 1 from public.student_points_ledger where kind = 'olympiad')
+             and not exists (select 1 from public.system_settings
+                              where key = 'leaderboard.points.olympiad_multiplier')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 84) Round 48 (migration 089): the PAYMENTS KILL SWITCH is enforced in the
+--     database, not only in TypeScript. current_payment_mode() exists and is
+--     not anon-callable, assert_payments_enabled() is service-role only, and
+--     every paid mutation calls it. apply_subject_change guards ADDS only, so a
+--     parent can always stop paying.
+select '84_payments_kill_switch' as check_name,
+       case when has_function_privilege('anon', 'public.current_payment_mode()', 'EXECUTE') = false
+             and has_function_privilege('authenticated', 'public.assert_payments_enabled()', 'EXECUTE') = false
+             and position('assert_payments_enabled' in
+                   pg_get_functiondef('public.create_child_subscription(uuid,plan_interval,uuid[])'::regprocedure)) > 0
+             and position('assert_payments_enabled' in
+                   pg_get_functiondef('public.purchase_olympiad(uuid,uuid)'::regprocedure)) > 0
+             and position('assert_payments_enabled' in
+                   pg_get_functiondef('public.add_subscription_subject(uuid,uuid)'::regprocedure)) > 0
+             and position('array_length(p_add' in
+                   pg_get_functiondef('public.apply_subject_change(uuid,uuid[],uuid[],text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
 -- =============================================================================

@@ -13,8 +13,8 @@ import type { SeasonRow } from "@/lib/admin/leaderboard";
 // Leaderboard management (L2) — Administrator-only.
 //   1) Percentage formula (Round 36): ranking = 100 × weighted correct ÷
 //      weighted total. per_correct stays as a legacy point value (no ranking
-//      effect), olympiad_multiplier acts as a question weight, and the two
-//      leaderboard.rank.* minimums gate official ranks. All edited through the
+//      effect) and the leaderboard.rank.* minimum gates official ranks. All
+//      edited through the
 //      existing typed SettingEditor + updateSetting action (requireAdmin +
 //      range validation + audit inside updateSetting).
 //   2) Named competition seasons: full CRUD via service-role RPCs.
@@ -27,13 +27,15 @@ import type { SeasonRow } from "@/lib/admin/leaderboard";
 // NOTE (Round 36): the practice_daily_cap_per_subject editor was removed —
 // the setting has been inert since migration 057 (the seed row stays in the
 // DB as config history only).
+// NOTE (Round 48, migration 088): the olympiad_multiplier editor was removed
+// and the setting DELETED — purchased olympiads are practice-only, so an
+// olympiad attempt never reaches the weighting code at all.
 // ---------------------------------------------------------------------------
 
 // The formula + participation-minimum keys shown in Section 1 (must exist in
 // SETTING_META).
 const LB_SETTING_KEYS = [
   "leaderboard.points.per_correct",
-  "leaderboard.points.olympiad_multiplier",
   "leaderboard.rank.min_attempts",
 ] as const;
 

@@ -1848,4 +1848,38 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 ## AK2. Web subscribe page back link
 - Parent → a child's "Fənləri idarə et"/subscribe page now has the same ghost "İdarə paneli" link beside the title as the child edit page, returning to the dashboard.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-#** + what you saw.
+# ROUND 46 — date formatting
+
+## AL1. No more "2026 M08 22" anywhere
+- Web AND mobile, in Azerbaijani: open Manage Subjects (Fənləri idarə et) and check the next-payment date and the subject-removal date — both must read like **22 avqust 2026**, never "2026 M08 22".
+- Check the same on: the olympiad cards (parent and child), an olympiad's "Ətraflı" details, the news list and a news article, the public pricing page, the notification inbox date headings, and the recent-rounds list on Sınaq.
+- Switch to Russian — months must be **"22 августа"** (genitive, the form used after a day number), not "август". Then English — **"22 August 2026"**.
+- Dates are in Baku time: a date should not shift by a day just because it is late evening.
+
+# ROUND 48 — olympiads practice-only · payments kill switch · landing + public olympiads
+
+## AM1. Purchased olympiads no longer score
+- As a child with a purchased olympiad: play one and submit it. Your **percentage, rank and streak must not move at all**, and the leaderboard position must be unchanged.
+- Re-enter the same olympiad again — it must let you in **every time**, with no limit, and the result must still be viewable in your history/review.
+- Your daily Sınaq attempt must still be available afterwards: an olympiad never uses up the day's test.
+- Then play a daily round — that one **must** still add to your percentage as before.
+
+## AM2. Best/Weakest topic cards explain themselves
+- Parent → Analytics: instead of a bare "—", each card now says what is missing, e.g. *"Mövzunu qiymətləndirmək üçün ən azı 3 cavab lazımdır (2/3)."*
+- Once a child has answered 3+ questions in **two different** topics with different accuracy, real topic names appear with their percentage (e.g. "Ən güclü mövzu · 80%").
+- The same topic must never show as BOTH best and weakest.
+
+## AM3. Payments kill switch
+- Admin → turn OFF all three payment flags (payments / demo_payments / giveaway_period).
+- As a parent, every purchase path must be blocked with the friendly notice — subscribe, olympiad purchase, and **adding** a subject in Fənləri idarə et.
+- **Removing** a subject must still work (you can always stop paying).
+- Turn demo payments back on — everything works again.
+
+## AM4. Landing page + public olympiads
+- Landing order: hero → buttons → the four info cards → **Ümumi Reytinq Cədvəli** last.
+- Buttons read, in order: **Fənlərə bax → Olimpiadalara bax → Başla**.
+- "Olimpiadalara bax" opens the public olympiads page **without logging in**; only active, on-sale olympiads appear. Each card has **Ətraflı**, which opens a public details page that looks like the parent dashboard's Ətraflı.
+- Signed in as a CHILD, the public olympiad pages must show **no purchase button** at all.
+- Check on a phone: buttons wrap, cards stack, the rating table stays readable.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-# / AL-# / AM-#** + what you saw.

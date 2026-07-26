@@ -27,6 +27,8 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { RichBody } from "@/lib/notifMarkdown";
+import { formatDayMonth } from "@/lib/formatDate";
+import type { Locale } from "@/i18n";
 import type { NotificationItem } from "./useNotifications";
 
 /* ------------------------------ pure helpers ------------------------------ */
@@ -95,8 +97,6 @@ export function relativeTime(
   return `${days} ${labels.day}`;
 }
 
-const INTL_LOCALE: Record<string, string> = { az: "az-AZ", en: "en-GB", ru: "ru-RU" };
-
 export type NotificationSection = {
   key: string;
   title: string;
@@ -111,7 +111,7 @@ export type NotificationSection = {
 export function groupByDay(
   items: NotificationItem[],
   labels: { today: string; yesterday: string },
-  locale: string,
+  locale: Locale,
 ): NotificationSection[] {
   const dayKey = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -124,15 +124,13 @@ export function groupByDay(
   const titleFor = (key: string, d: Date): string => {
     if (key === todayKey) return labels.today;
     if (key === yesterdayKey) return labels.yesterday;
-    try {
-      return new Intl.DateTimeFormat(INTL_LOCALE[locale] ?? locale, {
-        day: "numeric",
-        month: "long",
-        ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" as const } : {}),
-      }).format(d);
-    } catch {
-      return key;
-    }
+    // Round 46: shared Hermes-safe formatter. A local Intl.DateTimeFormat here
+    // silently returned the CLDR root pattern ("2026 M08 22") on devices
+    // without Azerbaijani month data — it does not throw, so the old catch
+    // never ran.
+    return (
+      formatDayMonth(d.toISOString(), locale, d.getFullYear() !== now.getFullYear()) || key
+    );
   };
 
   const sections: NotificationSection[] = [];

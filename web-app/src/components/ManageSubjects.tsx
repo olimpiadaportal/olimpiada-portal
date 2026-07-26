@@ -23,7 +23,7 @@
 // and applies via the re-pricing RPCs — ownership recheck, payment-mode gate
 // ('off'/'giveaway' rejected) and all amounts are server-side; the client
 // never sends prices.
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   quoteSubjectChange,
   updateSubscriptionSubjectsAction,
@@ -32,6 +32,7 @@ import {
 } from "@/lib/auth/subscriptionService";
 import { DemoPaymentModal } from "@/components/DemoPaymentModal";
 import { useLocale, useT } from "@/i18n/I18nProvider";
+import { formatLongDate } from "@/lib/formatDate";
 import { subjectLabel } from "@/lib/subjectLabel";
 
 type Subj = { id: string; code: string | null; name: string; prices: Record<string, number> };
@@ -74,27 +75,13 @@ export function ManageSubjects({
   const intervalLabel = tt(INTERVAL_KEY[interval] ?? "pricing.monthly");
 
   // Round 32: renewal/removal dates come back from quote_subject_change as
-  // timestamptz — format them the same way the public olympiad pages do
-  // (date-only, product's home timezone), locale-aware.
-  const fmtDate = useMemo(() => {
-    // Full BCP-47 tags (the bare "az" tag falls back to "2026 M08 6"-style
-    // output in engines without short-tag az data) — same mapping the other
-    // date surfaces use.
-    const fmt = new Intl.DateTimeFormat(
-      locale === "az" ? "az-Latn-AZ" : locale === "ru" ? "ru-RU" : "en-GB",
-      {
-        timeZone: "Asia/Baku",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      },
-    );
-    return (iso: string | null): string => {
-      if (!iso) return "—";
-      const ts = Date.parse(iso);
-      return Number.isFinite(ts) ? fmt.format(new Date(ts)) : "—";
-    };
-  }, [locale]);
+  // timestamptz. Round 46: every date on this page goes through the shared
+  // Baku formatter — a local Intl.DateTimeFormat here is what produced the
+  // "2026 M08 22" root-locale output when the runtime had no az month data.
+  const fmtDate = useCallback(
+    (iso: string | null) => formatLongDate(iso, locale),
+    [locale],
+  );
 
   const covered = useMemo(() => new Set(coveredIds), [coveredIds]);
   const ending = useMemo(() => new Set(endingIds), [endingIds]);

@@ -23,6 +23,7 @@
 // Now co-located with the page (this page is its only consumer).
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { computeTopicStanding, topicStandingHint } from "@/lib/topicStanding";
 
 export type AnalyticsSubject = {
   /** Subject uuid (RPC filter + URL value). */
@@ -88,8 +89,6 @@ export type DashPayload = {
   }[] | null;
 };
 
-// Best/weakest topic need a minimum sample before they mean anything.
-const MIN_TOPIC_SAMPLE = 3;
 
 const num = (v: unknown): number => {
   const n = Number(v);
@@ -390,18 +389,14 @@ function StatsBody({
         }))
       : [];
 
-  // Best/weakest topic from the RPC's answered-based accuracy, with a
-  // min-sample rule (on ANSWERED, not total questions) so one lucky answer
-  // never becomes "best topic". Falls back to "—".
-  const sampled = topics.filter((r) => r.answered >= MIN_TOPIC_SAMPLE);
-  const best = sampled.reduce<typeof sampled[number] | null>(
-    (a, b) => (a == null || b.accuracy > a.accuracy ? b : a),
-    null,
-  );
-  const weak = sampled.reduce<typeof sampled[number] | null>(
-    (a, b) => (a == null || b.accuracy < a.accuracy ? b : a),
-    null,
-  );
+  // Best/weakest topic from the RPC's answered-based accuracy. Ranking is
+  // COMPARATIVE, so the helper only returns a pair when at least two topics
+  // have a real sample AND their accuracies differ; otherwise it reports which
+  // condition is missing so the card can say so instead of a bare "—".
+  const standing = computeTopicStanding(topics);
+  const best = standing.kind === "ready" ? standing.best : null;
+  const weak = standing.kind === "ready" ? standing.weak : null;
+  const standingHint = topicStandingHint(standing, dict);
 
   const totalMin = Math.max(0, Math.round(num(d.time_spent_minutes)));
   const hours = Math.floor(totalMin / 60);
@@ -450,7 +445,12 @@ function StatsBody({
           </span>
           <span className="ana-fact-txt">
             <span className="ana-fact-val">{best ? best.topic : "—"}</span>
-            <span className="ana-fact-label">{dict["ana.kpi.best"]}</span>
+            <span className="ana-fact-label">
+              {dict["ana.kpi.best"]}
+              {best ? ` · ${Math.round(best.accuracy)}%` : ""}
+            </span>
+            {/* Round 47: never a bare dash — say what is still missing. */}
+            {standingHint && <span className="ana-fact-hint">{standingHint}</span>}
           </span>
         </div>
         <div className="ana-fact">
@@ -459,7 +459,11 @@ function StatsBody({
           </span>
           <span className="ana-fact-txt">
             <span className="ana-fact-val">{weak ? weak.topic : "—"}</span>
-            <span className="ana-fact-label">{dict["ana.kpi.weak"]}</span>
+            <span className="ana-fact-label">
+              {dict["ana.kpi.weak"]}
+              {weak ? ` · ${Math.round(weak.accuracy)}%` : ""}
+            </span>
+            {standingHint && <span className="ana-fact-hint">{standingHint}</span>}
           </span>
         </div>
         <div className="ana-fact">

@@ -119,15 +119,33 @@ export default async function HomePage() {
       <section className="hero">
         <h1>{t("home.heroTitle")}</h1>
         <p className="lead">{t("home.heroLead")}</p>
-        <div className="site-cta" style={{ marginTop: 16 }}>
-          <Link className="btn" href="/register">
-            {t("home.ctaStart")}
-          </Link>
+        {/* Hero actions, in the owner-fixed order: browse subjects → browse
+            olympiads → start (the primary CTA closes the row). "Olimpiadalara
+            bax" points at the PUBLIC olympiad listing — /olympiads is already
+            the parent-only catalog route. */}
+        <div className="hero-cta site-cta" style={{ marginTop: 16 }}>
           <Link className="btn-ghost" href="/subjects">
             {t("home.ctaSubjects")}
           </Link>
+          <Link className="btn-ghost" href="/olympiad-packages">
+            {t("home.ctaOlympiads")}
+          </Link>
+          <Link className="btn" href="/register">
+            {t("home.ctaStart")}
+          </Link>
         </div>
       </section>
+
+      {/* Informational feature cards sit directly under the hero actions and
+          ABOVE the public rating table (owner-fixed section order). */}
+      <div className="grid">
+        {features.map(([titleKey, descKey]) => (
+          <div className="card" key={titleKey}>
+            <strong>{t(titleKey)}</strong>
+            <p className="muted">{t(descKey)}</p>
+          </div>
+        ))}
+      </div>
 
       {/* Public leaderboard — top-10 global all-time percentage, anonymized
           server-side. Shows ~5 rows; rows 6–10 scroll INTERNALLY under the
@@ -186,15 +204,6 @@ export default async function HomePage() {
           </div>
         </section>
       )}
-
-      <div className="grid">
-        {features.map(([titleKey, descKey]) => (
-          <div className="card" key={titleKey}>
-            <strong>{t(titleKey)}</strong>
-            <p className="muted">{t(descKey)}</p>
-          </div>
-        ))}
-      </div>
 
       {/* Stat cards band — illustrative placeholder figures (see STATS above). */}
       <section>

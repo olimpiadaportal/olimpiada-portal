@@ -5067,6 +5067,15 @@ ul.clean li {
   font-size: 0.78rem;
   color: var(--muted);
 }
+/* Round 47: explains WHY a best/weakest card has no value yet, instead of
+   leaving a bare "—" that reads as a broken feature. */
+.ana-fact-hint {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted);
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
 
 /* ---- Chart cards ---- */
 .ana-charts,
@@ -11274,4 +11283,136 @@ body[data-site-typography] .btn-ghost {
 }
 .child-card-head strong {
   overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   PUBLIC OLYMPIADS — landing hero actions, listing extras and the public
+   details page (/olympiad-packages/<code>). Token-driven only, so both themes
+   follow automatically; the card/row system itself is the shared .poly-*
+   scale reused from the parent catalog.
+   ========================================================================== */
+
+/* Three hero buttons must wrap instead of overflowing on small screens
+   (scoped to the hero so the top-nav .site-cta keeps its single-line layout). */
+.hero-cta {
+  flex-wrap: wrap;
+}
+
+/* "On sale" status chip — accent-tinted variant of .poly-chip. */
+.polypub-status {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+/* Card title doubles as the link to the public details page. */
+.polypub-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+.polypub-title-link:hover {
+  color: var(--accent);
+}
+.polypub-title-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ---- Public details page -------------------------------------------------- */
+.polydet {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 6px 0 16px;
+}
+.polydet-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.polydet-back::before {
+  content: "←";
+}
+.polydet-back:hover {
+  color: var(--accent);
+}
+.polydet-card {
+  margin-top: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 22px var(--shadow);
+}
+.polydet-cover {
+  aspect-ratio: 21 / 9;
+}
+.polydet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px 24px;
+  min-width: 0;
+}
+.polydet-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+/* The shared details rows/description already carry their own bottom margin
+   for the modal; inside this flex column the gap does that job. */
+.polydet-body .poly-rows,
+.polydet-body .poly-det-desc {
+  margin: 0;
+}
+.polydet-how-title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.polydet-how-list {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+.polydet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.polydet-note {
+  margin: 0;
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .polydet-cover {
+    aspect-ratio: 16 / 9;
+  }
+  .polydet-body {
+    padding: 16px 16px 20px;
+  }
+  .polydet-title {
+    font-size: 1.3rem;
+  }
+  .polydet-actions .btn {
+    width: 100%;
+    text-align: center;
+  }
 }

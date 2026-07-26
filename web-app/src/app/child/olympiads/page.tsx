@@ -14,6 +14,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { startOlympiad } from "@/lib/auth/childActions";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { formatLongDate } from "@/lib/formatDate";
 import {
   OlympiadPlannedCard,
   type PlannedDict,
@@ -182,13 +183,9 @@ export default async function ChildOlympiadsPage({
     (trs ?? []).find((x: any) => x.locale === locale) ??
     (trs ?? []).find((x: any) => x.locale === "az");
 
-  const fmt = new Intl.DateTimeFormat(locale, {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  // Round 46: the shared Baku formatter (a bare "az" tag here rendered the
+  // CLDR root month placeholder — "2026 M08 22").
+  const fmt = (ts: number) => formatLongDate(ts, locale, true);
   const now = Date.now();
 
   // Build the planned-card view models server-side (client component receives
@@ -225,7 +222,7 @@ export default async function ChildOlympiadsPage({
           title: tr?.title ?? "—",
           desc,
           coverUrl,
-          dateText: hasDate ? fmt.format(new Date(ts)) : t("oly4.dateTbd"),
+          dateText: hasDate ? fmt(ts) : t("oly4.dateTbd"),
           statusKind,
           statusText: t(`oly4.status.${statusKind}`),
           subject,

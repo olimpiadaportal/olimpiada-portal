@@ -16,6 +16,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, useActionState } fro
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Modal } from "@/components/Modal";
+import { OlympiadCover } from "@/components/OlympiadCover";
+import {
+  OlympiadDetailsRows,
+  type OlympiadDetailRow,
+} from "@/components/OlympiadDetails";
 import {
   purchaseOlympiadForChild,
   type PurchaseOlympiadState,
@@ -101,23 +106,6 @@ export type PolyDict = {
   detMinutes: string;
 };
 
-// Inline-SVG medal for the branded gradient placeholder (no external images —
-// strict CSP; mirrors the student-side card placeholder).
-function MedalIcon({ size = 46 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
-      <path d="M17 4h7l-5.5 15h-9L17 4Z" fill="rgba(255,255,255,0.9)" />
-      <path d="M31 4h-7l5.5 15h9L31 4Z" fill="rgba(255,255,255,0.55)" />
-      <circle cx="24" cy="31" r="12" fill="#ffffff" />
-      <circle cx="24" cy="31" r="8.6" fill="none" stroke="#7c3aed" strokeWidth="2" />
-      <path
-        d="M24 26.2l1.7 3.4 3.7.5-2.7 2.6.7 3.7-3.4-1.8-3.4 1.8.7-3.7-2.7-2.6 3.7-.5 1.7-3.4Z"
-        fill="#ff8a00"
-      />
-    </svg>
-  );
-}
-
 function CalendarIcon() {
   return (
     <svg
@@ -177,8 +165,10 @@ function TypeMarquee({ text }: { text: string }) {
   );
 }
 
-// Read-only "Ətraflı" body — every AVAILABLE field with an az label; a row whose
-// value is null/empty is dropped entirely (never renders "null"/"undefined").
+// Read-only "Ətraflı" body — every AVAILABLE field with an az label. The rows
+// themselves render through the SHARED <OlympiadDetailsRows/> (also used by the
+// public details page), which drops any row whose value is null/empty so the UI
+// never renders "null"/"undefined".
 function DetailsDialogBody({
   pkg,
   count,
@@ -191,37 +181,28 @@ function DetailsDialogBody({
   onClose: () => void;
 }) {
   const multiGrade = (pkg.gradeIds?.length ?? 0) > 1;
-  const rows: { label: string; value: string }[] = [];
-  const push = (label: string, value: string | null | undefined) => {
-    const v = (value ?? "").toString().trim();
-    if (v) rows.push({ label, value: v });
-  };
-  push(dict.detType, pkg.typeName);
-  push(dict.detSubject, pkg.subject);
-  push(multiGrade ? dict.detGrades : dict.detGrade, pkg.gradeLabel);
-  push(dict.detQuestions, count > 0 ? String(count) : null);
-  push(dict.detDuration, pkg.durationMinutes ? `${pkg.durationMinutes} ${dict.detMinutes}` : null);
-  push(dict.detEventAt, pkg.dateText);
-  push(dict.detSaleStart, pkg.saleStartText);
-  push(dict.detSaleEnd, pkg.saleEndText);
-  push(dict.detPrice, pkg.priceText);
+  const rows: OlympiadDetailRow[] = [
+    { label: dict.detType, value: pkg.typeName },
+    { label: dict.detSubject, value: pkg.subject },
+    { label: multiGrade ? dict.detGrades : dict.detGrade, value: pkg.gradeLabel },
+    { label: dict.detQuestions, value: count > 0 ? String(count) : null },
+    {
+      label: dict.detDuration,
+      value: pkg.durationMinutes ? `${pkg.durationMinutes} ${dict.detMinutes}` : null,
+    },
+    { label: dict.detEventAt, value: pkg.dateText },
+    { label: dict.detSaleStart, value: pkg.saleStartText },
+    { label: dict.detSaleEnd, value: pkg.saleEndText },
+    { label: dict.detPrice, value: pkg.priceText },
+  ];
 
   return (
     <>
-      <dl className="poly-rows">
-        {rows.map((r) => (
-          <div className="poly-row" key={r.label}>
-            <dt>{r.label}</dt>
-            <dd>{r.value}</dd>
-          </div>
-        ))}
-      </dl>
-      {pkg.desc && (
-        <div className="poly-det-desc">
-          <div className="poly-det-desc-label">{dict.detDescription}</div>
-          <p>{pkg.desc}</p>
-        </div>
-      )}
+      <OlympiadDetailsRows
+        rows={rows}
+        description={pkg.desc}
+        descriptionLabel={dict.detDescription}
+      />
       <div className="poly-actions">
         <button type="button" className="btn" onClick={onClose}>
           {dict.modalClose}
@@ -458,14 +439,7 @@ export function OlympiadPurchase({
             const questionCount = countFor(pkg);
             return (
               <article className="poly-card" key={pkg.id}>
-                {pkg.coverUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img className="poly-cover" src={pkg.coverUrl} alt="" loading="lazy" />
-                ) : (
-                  <div className="poly-cover poly-cover-ph" aria-hidden="true">
-                    <MedalIcon />
-                  </div>
-                )}
+                <OlympiadCover url={pkg.coverUrl} />
                 <div className="poly-body">
                   {/* Round 43: the olympiad type headlines the card as an
                       overflow-aware marquee. */}

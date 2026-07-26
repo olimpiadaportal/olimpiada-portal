@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale } from "@/i18n/server";
 import { getChildSubjectAccess } from "@/lib/childSubjects";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { formatShortDate } from "@/lib/formatDate";
 import { startDailyRound } from "@/lib/auth/testActions";
 import { DailyRoundStart } from "@/components/DailyRoundStart";
 
@@ -97,10 +98,9 @@ export default async function TestHomePage({
 
   const recent = (attempts ?? []) as any[];
 
-  const dateFmt = new Intl.DateTimeFormat(
-    locale === "az" ? "az-Latn-AZ" : locale === "ru" ? "ru-RU" : "en-GB",
-    { day: "numeric", month: "short", year: "numeric" },
-  );
+  // Round 46: the shared Baku formatter. The full BCP-47 tag alone was not
+  // enough — a runtime whose ICU lacks Azerbaijani month data still printed the
+  // CLDR root placeholder ("2026 M08 22"); the helper detects and replaces it.
 
   // Rules-gate strings for the fresh-round Başla button (Round 43). Built here
   // so the client island stays i18n-free; facts reuse the shared test keys.
@@ -275,7 +275,7 @@ export default async function TestHomePage({
                       <span className="tst-rated-chip">{t("test.rounds.ratedChip")}</span>
                     )}
                   </div>
-                  <div className="arena-round-meta">{when ? dateFmt.format(new Date(when)) : ""}</div>
+                  <div className="arena-round-meta">{when ? formatShortDate(when, locale) : ""}</div>
                 </div>
                 {status === "graded" ? (
                   <Link href={`/child/test/result/${r.id}`} className="arena-pts mono">

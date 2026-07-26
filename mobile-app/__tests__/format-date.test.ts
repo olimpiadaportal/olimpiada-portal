@@ -2,7 +2,7 @@
 // az month names and Intl leaks the raw pattern placeholder ("2026 M08 6");
 // formatLongDate must detect that (or an Intl throw) and fall back to manual
 // month names, always computing the DAY in Asia/Baku (fixed UTC+4, no DST).
-import { formatLongDate } from "@/lib/formatDate";
+import { formatDayMonth, formatLongDate, formatShortDate } from "@/lib/formatDate";
 
 // 2026-08-06 14:00 in Baku (UTC+4).
 const ISO = "2026-08-06T10:00:00Z";
@@ -77,5 +77,59 @@ describe("formatLongDate (Hermes fallback — manual month names)", () => {
     expect(formatLongDate(ISO, "az")).toBe("6 avqust 2026");
     expect(formatLongDate(ISO, "en", true)).toBe("6 August 2026 14:00");
     expect(formatLongDate(null, "ru")).toBe("—");
+  });
+});
+
+// Round 46 — the same placeholder trap applied to the news/pricing/inbox
+// surfaces, which built their own Intl formatters with only a try/catch.
+// Hermes does NOT throw on missing month data, so those catches never fired.
+describe("formatShortDate", () => {
+  it("renders a real short month, never the placeholder", () => {
+    expect(formatShortDate(ISO, "az")).not.toMatch(/M\d\d/);
+    expect(formatShortDate(ISO, "en")).toContain("Aug");
+    expect(formatShortDate(ISO, "az")).toContain("2026");
+  });
+
+  it("falls back to manual short months when ICU leaks the placeholder", () => {
+    jest
+      .spyOn(Intl, "DateTimeFormat")
+      .mockImplementation(
+        () => ({ format: () => "2026 M08 6" }) as unknown as Intl.DateTimeFormat,
+      );
+    expect(formatShortDate(MIDNIGHT, "az")).toBe("6 avq 2026");
+    expect(formatShortDate(MIDNIGHT, "ru")).toBe("6 авг. 2026");
+    expect(formatShortDate(MIDNIGHT, "en")).toBe("6 Aug 2026");
+    // Baku-day boundary holds here too.
+    expect(formatShortDate(LATE, "az")).toBe("5 avq 2026");
+  });
+
+  it("returns an empty string for unset/invalid input (news meta parity)", () => {
+    expect(formatShortDate(null, "az")).toBe("");
+    expect(formatShortDate("garbage", "en")).toBe("");
+  });
+});
+
+describe("formatDayMonth", () => {
+  it("omits the year unless asked, and never leaks the placeholder", () => {
+    const withoutYear = formatDayMonth(ISO, "az", false);
+    expect(withoutYear).not.toMatch(/M\d\d/);
+    expect(withoutYear).not.toContain("2026");
+    expect(formatDayMonth(ISO, "az", true)).toContain("2026");
+  });
+
+  it("falls back to manual long months when ICU leaks the placeholder", () => {
+    jest
+      .spyOn(Intl, "DateTimeFormat")
+      .mockImplementation(
+        () => ({ format: () => "2026 M08 6" }) as unknown as Intl.DateTimeFormat,
+      );
+    expect(formatDayMonth(MIDNIGHT, "az", false)).toBe("6 avqust");
+    expect(formatDayMonth(MIDNIGHT, "az", true)).toBe("6 avqust 2026");
+    expect(formatDayMonth(MIDNIGHT, "ru", false)).toBe("6 августа");
+  });
+
+  it("returns an empty string for unset/invalid input", () => {
+    expect(formatDayMonth(null, "az", true)).toBe("");
+    expect(formatDayMonth("garbage", "en", false)).toBe("");
   });
 });

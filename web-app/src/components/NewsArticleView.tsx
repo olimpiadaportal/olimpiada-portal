@@ -2,6 +2,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { getLocale, getT } from "@/i18n/server";
+import type { Locale } from "@/i18n/config";
+import { formatLongDate } from "@/lib/formatDate";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { NewsLikeButton } from "@/components/NewsLikeButton";
@@ -12,19 +14,11 @@ import { ViewBeacon } from "@/components/ViewBeacon";
 // keeps the back link + revalidation surface inside the reader's panel. Views
 // register once per browser session via <ViewBeacon/>; likes for signed-in
 // profiles via the shared like button.
-function formatDate(iso: string | null, locale: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    }).format(d);
-  } catch {
-    return d.toISOString().slice(0, 10);
-  }
+// Round 46: dates go through the shared Baku formatter (a bare "az" tag here
+// printed the CLDR root pattern "2026 M08 22"); an unset published_at renders
+// "" rather than the helper's "—".
+function formatDate(iso: string | null, locale: Locale): string {
+  return iso ? formatLongDate(iso, locale) : "";
 }
 
 export async function NewsArticleView({

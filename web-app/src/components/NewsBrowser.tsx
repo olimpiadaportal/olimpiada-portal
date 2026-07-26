@@ -1,6 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { getLocale, getT } from "@/i18n/server";
+import type { Locale } from "@/i18n/config";
+import { formatShortDate } from "@/lib/formatDate";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,19 +31,12 @@ function excerptFrom(body: string | null | undefined, max = 140): string {
   return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
-function formatDate(iso: string | null, locale: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }).format(d);
-  } catch {
-    return d.toISOString().slice(0, 10);
-  }
+// Round 46: dates go through the shared Baku formatter. A bare "az" tag here
+// resolved to the CLDR root locale on runtimes without Azerbaijani month data
+// and printed the raw pattern ("2026 M08 22"); an unset date renders "" in
+// this card layout rather than the helper's "—".
+function formatDate(iso: string | null, locale: Locale): string {
+  return iso ? formatShortDate(iso, locale) : "";
 }
 
 export async function NewsBrowser({

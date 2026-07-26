@@ -14,6 +14,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { formatLongDate } from "@/lib/formatDate";
 import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import {
   OlympiadPurchase,
@@ -180,13 +181,9 @@ export default async function ParentOlympiadCatalogPage() {
     (trs ?? []).find((x: any) => x.locale === locale) ??
     (trs ?? []).find((x: any) => x.locale === "az");
 
-  const fmt = new Intl.DateTimeFormat(locale, {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  // Round 46: the shared Baku formatter (a bare "az" tag here rendered the
+  // CLDR root month placeholder — "2026 M08 22").
+  const fmt = (ts: number) => formatLongDate(ts, locale, true);
 
   // Serializable view models — the client component receives only translated,
   // display-ready strings (no locale logic in the browser).
@@ -233,14 +230,14 @@ export default async function ParentOlympiadCatalogPage() {
         ? subjectLabel(t, p.subjects?.code, p.subjects.name)
         : null,
       typeName: p.olympiad_types?.name ?? null,
-      dateText: Number.isFinite(ts) ? fmt.format(new Date(ts)) : null,
+      dateText: Number.isFinite(ts) ? fmt(ts) : null,
       gradeIds: gradeSet,
       gradeLabel,
       countByGrade: countsByPkg.get(p.id) ?? {},
       fallbackCount: legacyCounts.get(p.id) ?? 0,
       durationMinutes,
-      saleStartText: Number.isFinite(saleStart) ? fmt.format(new Date(saleStart)) : null,
-      saleEndText: Number.isFinite(saleEnd) ? fmt.format(new Date(saleEnd)) : null,
+      saleStartText: Number.isFinite(saleStart) ? fmt(saleStart) : null,
+      saleEndText: Number.isFinite(saleEnd) ? fmt(saleEnd) : null,
       priceText: price > 0 ? `${price} ${p.currency ?? "AZN"}` : t("poly.free"),
       ownedBy: ownedByPackage.get(p.id) ?? [],
       // M12: the event already happened → archived for purchase display

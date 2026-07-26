@@ -14,6 +14,7 @@ import {
 } from "@/lib/admin/olympiad";
 import { ActionButton } from "@/components/ActionButton";
 import { DateTimeLocalField } from "@/components/DateTimeLocalField";
+import { OlympiadCycleSummary } from "@/components/OlympiadCycleSummary";
 import { localeNames, locales, type Locale } from "@/i18n/config";
 import {
   downloadBulkTemplate,
@@ -22,8 +23,17 @@ import {
   type ClientTypeRule,
   type RowIssue,
 } from "@/lib/bulk-client";
+import {
+  PER_ATTEMPT_DEFAULT,
+  PER_ATTEMPT_MAX,
+  PER_ATTEMPT_MIN,
+  parsePerAttempt,
+  poolMeetsPerAttempt,
+} from "@/lib/admin/olympiad-per-attempt";
 
 type Opt = { value: string; label: string };
+/** A grade option carries its level so the summary can name it per locale. */
+type GradeOpt = Opt & { level: number };
 
 // Safe ascii-ish slug for the template filename (mirrors the server's code
 // slug so "Riyaziyyat" → "riyaziyyat").
@@ -53,6 +63,7 @@ const EMPTY_FILE: FileState = { fileName: "", fileError: "", rowIssues: [], item
 
 export function OlympiadCreateForm({
   dict,
+  locale,
   subjects,
   grades,
   olympiadTypes,
@@ -61,8 +72,9 @@ export function OlympiadCreateForm({
   submitLabel,
 }: {
   dict: Record<string, string>;
+  locale: Locale;
   subjects: Opt[];
-  grades: Opt[];
+  grades: GradeOpt[];
   /** Existing olympiad types for the mandatory type select. */
   olympiadTypes: Opt[];
   typeNames: string[];
@@ -82,6 +94,7 @@ export function OlympiadCreateForm({
     price: "0",
     status: "inactive",
     duration: "25",
+    perAttempt: String(PER_ATTEMPT_DEFAULT),
   });
   const [selectedGrades, setSelectedGrades] = useState<Set<string>>(() => new Set());
   const [tr, setTr] = useState<Record<string, { title: string; desc: string }>>(() => {
@@ -156,7 +169,18 @@ export function OlympiadCreateForm({
   const allReady =
     selectedGrades.size > 0 &&
     Array.from(selectedGrades).every((id) => gradeState(id) === "ready");
-  const canSubmit = !pending && targetsChosen && allReady;
+  // Round 49: creating the package ACTIVE additionally requires every grade's
+  // uploaded pool to be able to fill one attempt (server-enforced; mirrored
+  // here so the admin sees the blocker before submitting).
+  const perAttemptNum = parsePerAttempt(f.perAttempt);
+  const activeReady =
+    f.status !== "active" ||
+    (perAttemptNum !== null &&
+      Array.from(selectedGrades).every((id) =>
+        poolMeetsPerAttempt(files[id]?.itemCount ?? 0, perAttemptNum),
+      ));
+  const canSubmit =
+    !pending && targetsChosen && allReady && perAttemptNum !== null && activeReady;
 
   const codesHint = tt("bulk.codesHint").replace(
     "{types}",
@@ -228,6 +252,24 @@ export function OlympiadCreateForm({
       <label className="field">
         <span className="field-label">{tt("oly2.price")}</span>
         <input name="price_amount" type="number" step="0.01" value={f.price} onChange={(e) => set("price", e.target.value)} />
+      </label>
+      {/* Round 49 — questions served per attempt. NOT the uploaded pool total
+          (each grade's file count is shown in its slot and in the cycle
+          summary below); min/max are UX only, the server action re-validates. */}
+      <label className="field">
+        <span className="field-label">{tt("oly2.perAttempt")} *</span>
+        <input
+          name="questions_per_attempt"
+          type="number"
+          min={PER_ATTEMPT_MIN}
+          max={PER_ATTEMPT_MAX}
+          step={1}
+          required
+          value={f.perAttempt}
+          onChange={(e) => set("perAttempt", e.target.value)}
+        />
+        <span className="hint">{tt("oly2.perAttemptHelp")}</span>
+        <span className="hint">{tt("oly2.perAttemptDistinct")}</span>
       </label>
       <label className="field">
         <span className="field-label">{tt("oly2.duration")} *</span>
@@ -361,6 +403,20 @@ export function OlympiadCreateForm({
             </div>
           );
         })}
+
+        {/* Live cycle summary — recomputed as files land and as the admin
+            changes the per-attempt count above. */}
+        <OlympiadCycleSummary
+          dict={dict}
+          locale={locale}
+          perAttemptRaw={f.perAttempt}
+          grades={orderedSelected.map((g) => ({
+            key: g.value,
+            name: g.label,
+            level: g.level,
+            pool: gradeState(g.value) === "ready" ? files[g.value]?.itemCount ?? 0 : 0,
+          }))}
+        />
 
         <p className="hint">{tt("bulk.fileHint")}</p>
         {/* v3: five A–E options / exactly one correct (was 4 pre-055). */}

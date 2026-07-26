@@ -223,13 +223,17 @@ export async function startTopicTestAttempt(
 // ---------------------------------------------------------------------------
 // start_daily_round_attempt — the web startDailyRound error mapping
 // (testActions.ts), as i18n keys:
-//   day='today'     → RATED round (timed, per-student set). Round 38: the day
-//                     is consumed ONLY by SUBMIT (graded) — an expired/
-//                     abandoned attempt costs nothing and the next start
-//                     serves a FRESH set; a live in_progress one resumes;
+//   day='today'     → RATED round (UNTIMED since Round 42; per-student set).
+//                     Round 43 (migrations 086/087): the day is consumed AT
+//                     CREATION — a partial unique index allows ONE live/graded
+//                     rated round per subject per Baku day; a live in_progress
+//                     attempt TRUE-resumes, and a <25-question pool raises
+//                     BEFORE any row is created, so a failed start never
+//                     consumes the day (a canceled row sits outside the
+//                     index, so it does not lock the day either).
 //   day='yesterday' → unlimited UNTIMED practice on the student's locked
 //                     per-student set (never affects points/streak/boards).
-//   unique_violation → day already consumed by a SUBMITTED round (caller
+//   unique_violation → day already consumed by today's rated round (caller
 //                      flips the card to done);
 //   no_data_found    → today: pool can't build the round yet;
 //                      yesterday: no round set exists (web ?err=noyest);
@@ -317,8 +321,10 @@ async function fetchAttemptMeta(
     meta.subjectName = (subjRow?.name ?? "").trim();
     meta.subjectCode = subjRow?.code ?? null;
 
-    if (!isOlympiad) {
-      // Distinct topic names in question order (web run page parity).
+    if (!isOlympiad && attempt.kind !== "daily") {
+      // Distinct topic names in question order (web run page parity). Daily
+      // rounds SKIP this: the web hides the topic list for a daily draw — 25
+      // subtopic-balanced questions would flood the header with topic names.
       const topicIds = Array.from(
         new Set(
           (attempt.questions ?? [])

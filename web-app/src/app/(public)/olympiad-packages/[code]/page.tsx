@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getT } from "@/i18n/server";
-import { getChild, getParent } from "@/lib/auth/session";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { getChildResolution, getParent, maySeePurchaseUi } from "@/lib/auth/session";
 import { getPublicOlympiad } from "@/lib/olympiadPublic";
 import { OlympiadCover } from "@/components/OlympiadCover";
 import {
   OlympiadDetailsRows,
+  buildPublicOlympiadRows,
   type OlympiadDetailRow,
 } from "@/components/OlympiadDetails";
 
@@ -51,11 +53,16 @@ export default async function PublicOlympiadDetailsPage({
   params: Promise<{ code: string }>;
 }) {
   const { code } = await params;
+  // Round 51 (audit F12): a signed-in CHILD is redirected to their own
+  // olympiads screen — the arena shows the same packages without prices.
+  if ((await getChildResolution()).kind === "yes") redirect("/child/olympiads");
+
   const t = await getT();
-  const [res, parent, child] = await Promise.all([
+  const [res, parent, mayPurchase, { mode }] = await Promise.all([
     getPublicOlympiad(code),
     getParent(),
-    getChild(),
+    maySeePurchaseUi(),
+    getPaymentModeInfo(),
   ]);
 
   if (res.status === "notFound") notFound();
@@ -76,34 +83,18 @@ export default async function PublicOlympiadDetailsPage({
   // Hide-empty rule lives in <OlympiadDetailsRows/>: a null value drops the
   // whole row. Fields the schema does not have (rules, awards, organizer) are
   // simply not listed — nothing is invented here.
-  const rows: OlympiadDetailRow[] = [
-    { label: t("poly.det.subject"), value: o.subject },
-    {
-      label: o.multiGrade ? t("poly.det.grades") : t("poly.det.grade"),
-      value: o.gradeLabel,
-    },
-    {
-      label: t("poly.det.questions"),
-      value: o.questionCount > 0 ? String(o.questionCount) : null,
-    },
-    {
-      label: t("poly.det.duration"),
-      value: o.durationMinutes
-        ? `${o.durationMinutes} ${t("poly.det.minutes")}`
-        : null,
-    },
-    { label: t("poly.det.eventAt"), value: o.eventDetailText },
-    { label: t("poly.det.saleStart"), value: o.saleStartText },
-    { label: t("poly.det.saleEnd"), value: o.saleEndText },
-    { label: t("poly.det.price"), value: o.priceText },
-  ];
+  const rows = buildPublicOlympiadRows(t, o);
 
   // Purchases are parent-only: children get no purchase-adjacent CTA.
-  const cta = child
-    ? null
-    : parent
-      ? { href: "/olympiads", label: t("polyPub.ctaParent") }
-      : { href: "/register", label: t("polyPub.cta") };
+  // Round 50: fails CLOSED — a child OR an unresolved role gets no CTA.
+  // Round 51 (audit F4): payments off → no CTA either (the DB kill switch
+  // would reject the eventual purchase write anyway).
+  const cta =
+    !mayPurchase || mode === "off"
+      ? null
+      : parent
+        ? { href: "/olympiads", label: t("polyPub.ctaParent") }
+        : { href: "/register", label: t("polyPub.cta") };
 
   return (
     <section className="polydet">

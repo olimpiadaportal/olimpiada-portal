@@ -8,6 +8,7 @@
 // original server markup (states, chosen/correct tags, explanation).
 import { useMemo, useState } from "react";
 import { QuestionImage } from "@/components/QuestionImage";
+import { Segmented } from "@/components/Segmented";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
@@ -70,7 +71,13 @@ export function TestReviewList({
 
   return (
     <>
-      <div className="tst-filter" role="tablist" aria-label={tt("test.review.filterAll")}>
+      <Segmented
+        className="tst-filter"
+        role="tablist"
+        aria-label={tt("test.review.filterAll")}
+        track
+        arrowKeys
+      >
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -84,7 +91,7 @@ export function TestReviewList({
             <span className="tst-filter-count mono">{tab.count}</span>
           </button>
         ))}
-      </div>
+      </Segmented>
 
       <div className="tst-review-list">
         {visible.map(({ q, i }) => (

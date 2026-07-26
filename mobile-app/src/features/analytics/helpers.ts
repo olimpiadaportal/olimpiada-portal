@@ -5,8 +5,13 @@
 // accuracy is answered-based and a null renders as 0%, and per_topic rows
 // arrive already filtered to answered>0 server-side.
 
-/** get_child_subject_dashboard → jsonb payload (defensive-optional). */
+/** Analytics type (web ?mode= parity): drives the RPC p_scope. */
+export type AnalyticsMode = "subjects" | "olympiads";
+
+/** get_child_subject_dashboard → jsonb payload (defensive-optional).
+ * p_scope='olympiads' additionally populates per_package (and echoes scope). */
 export type DashPayload = {
+  scope?: string | null;
   totals?: {
     attempts?: number | null;
     questions?: number | null;
@@ -36,6 +41,18 @@ export type DashPayload = {
         topic: string;
         subtopic: string;
         wrong: number;
+        accuracy: number | null;
+      }[]
+    | null;
+  per_package?:
+    | {
+        package_id: string;
+        title: string;
+        attempts: number;
+        answered: number;
+        correct: number;
+        wrong: number;
+        skipped: number;
         accuracy: number | null;
       }[]
     | null;
@@ -157,4 +174,30 @@ export function lbHasActivity(lb: LbSummary | null): boolean {
     !!lb &&
     (num(lb.attempts_all_time) > 0 || num(lb.questions_all_time) > 0 || num(lb.best_streak) > 0)
   );
+}
+
+/** Honest empty-state check per mode (web parity): subjects mode keys off
+ * graded QUESTIONS in the window; olympiads mode counts an attempt with zero
+ * answered questions as activity too. */
+export function dashHasData(d: DashPayload | null, mode: AnalyticsMode): boolean {
+  const totals = d?.totals ?? {};
+  return mode === "olympiads"
+    ? num(totals.attempts) > 0 || num(totals.questions) > 0
+    : num(totals.questions) > 0;
+}
+
+/**
+ * Subjects-mode selection clamp (web page parity): "" = the child has no
+ * unlocked subject (locked panel); "all" only when the child actually has >1
+ * subject; an unknown/forged selection falls back to the single subject or
+ * "all". Pure so jest exercises it directly.
+ */
+export function resolveSubjectSelection(
+  activeIds: readonly string[],
+  requested: string | null,
+): string {
+  if (activeIds.length === 0) return "";
+  if (requested === "all" && activeIds.length > 1) return "all";
+  if (requested && activeIds.includes(requested)) return requested;
+  return activeIds.length === 1 ? activeIds[0] : "all";
 }

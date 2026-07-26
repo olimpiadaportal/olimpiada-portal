@@ -8,11 +8,12 @@ import { formatShortDate } from "@/lib/formatDate";
 import { startDailyRound } from "@/lib/auth/testActions";
 import { DailyRoundStart } from "@/components/DailyRoundStart";
 
-// DAILY ROUNDS (Round 38, migration 083) — test home in three sections:
-//   1. Today's Rounds  — one RATED daily round per accessible subject (timed
-//      25q/25min, PER-STUDENT random set). The day is consumed ONLY by
-//      SUBMIT (DB-enforced): a live in_progress attempt resumes; an expired/
-//      abandoned one costs nothing and the next Start draws a FRESH set.
+// DAILY ROUNDS (Round 42/43, migrations 086/087) — test home in three sections:
+//   1. Today's Rounds  — one RATED daily round per accessible subject (25q,
+//      UNTIMED, PER-STUDENT random set). The day is consumed AT CREATION
+//      (DB unique index): a live in_progress attempt resumes on re-entry; a
+//      completed one blocks with "artıq istifadə etmisiniz"; a <25 pool raises
+//      BEFORE any row is created so it never consumes the day.
 //   2. Previous Day's Rounds — unlimited UNTIMED practice on the student's
 //      LOCKED yesterday set (own submitted set → a peer's set → generated);
 //      never affects points/percentage/streak.

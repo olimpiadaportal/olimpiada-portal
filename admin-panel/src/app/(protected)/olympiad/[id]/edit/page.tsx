@@ -13,6 +13,7 @@ import {
 import { archiveOlympiadPackage } from "@/lib/admin/olympiad";
 import { SubmitButton } from "@/components/ActionButton";
 import { olympiadLocalDict, olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
+import { PER_ATTEMPT_DEFAULT } from "@/lib/admin/olympiad-per-attempt";
 import {
   olympiadLifecycleState,
   lifecyclePillClass,
@@ -33,9 +34,11 @@ const FORM_KEYS = [
 // (button + modal) was removed from this edit page and the DB RPC rejects
 // imports into a package that already has questions.
 // Round 21 item 2: AFTER creation the pool is managed question by question
-// below (add/edit/archive/delete via OlympiadQuestionManager). Attempts
-// include ALL of a package's published questions (questions_per_attempt is
-// legacy/display-only); the count shown is the real pool row count.
+// below (add/edit/archive/delete via OlympiadQuestionManager); the count shown
+// is the real pool row count.
+// Round 49: an attempt serves exactly questions_per_attempt questions, drawn
+// per student on a non-repeating cycle over that grade's pool — so the pool
+// total and the per-attempt count are two different numbers on this page.
 export default async function EditOlympiadPage({
   params,
 }: {
@@ -50,7 +53,7 @@ export default async function EditOlympiadPage({
 
   const { data: pkg } = await supabase
     .from("olympiad_packages")
-    .select("id, subject_id, grade_id, olympiad_type_id, price_amount, status, event_starts_at, sale_starts_at, sale_ends_at, duration_minutes, cover_media_id")
+    .select("id, subject_id, grade_id, olympiad_type_id, price_amount, status, event_starts_at, sale_starts_at, sale_ends_at, duration_minutes, questions_per_attempt, cover_media_id")
     .eq("id", id)
     .maybeSingle();
   if (!pkg) notFound();
@@ -267,9 +270,12 @@ export default async function EditOlympiadPage({
       <section className="card">
         <OlympiadForm
           dict={formDict}
+          locale={locale}
           id={(pkg as any).id}
           subjects={((subjects ?? []) as any[]).map((s) => ({ value: s.id, label: s.name }))}
           olympiadTypes={((otypes ?? []) as any[]).map((o) => ({ value: o.id, label: o.name }))}
+          // Reuses the per-grade published counts the page already computes.
+          gradePools={gradesWithCounts}
           defaults={{
             subject_id: (pkg as any).subject_id,
             olympiad_type_id: (pkg as any).olympiad_type_id ?? "",
@@ -279,6 +285,9 @@ export default async function EditOlympiadPage({
             saleStart: (pkg as any).sale_starts_at ?? "",
             saleEnd: (pkg as any).sale_ends_at ?? "",
             duration: String((pkg as any).duration_minutes ?? 25),
+            perAttempt: String(
+              (pkg as any).questions_per_attempt ?? PER_ATTEMPT_DEFAULT,
+            ),
             tr,
           }}
           submitLabel={t("manage.save")}

@@ -37,7 +37,7 @@ create table if not exists public.olympiad_packages (
   cover_media_id       uuid references public.media_assets (id) on delete set null,
   price_amount         numeric(10,2) not null default 0,
   currency             text not null default 'AZN',
-  questions_per_attempt integer not null default 25 check (questions_per_attempt > 0), -- display-legacy since migration 057 (attempts draw the WHOLE pool)
+  questions_per_attempt integer not null default 25 check (questions_per_attempt >= 1 and questions_per_attempt <= 500), -- LIVE again (Round 51, migration 090): questions served per attempt, drawn via the per-student rotation below
   duration_minutes     int not null default 25 check (duration_minutes between 5 and 240), -- attempt time limit (migration 047; drives deadline_at)
   event_starts_at      timestamptz,                          -- planned event date shown to students (Round 8; NULL = undated). Exposed as event_at by get_public_olympiad_packages (migration 070).
   sale_starts_at       timestamptz,                          -- public sales window opens (migration 070; NULL = immediately once active)
@@ -77,7 +77,7 @@ comment on column public.olympiad_packages.sale_ends_at is
   'Public sales window closes (UTC). NULL = open-ended. After it passes the package is hidden from public listing/purchase but stays admin-visible and PURCHASERS KEEP lifetime access + attempts + history (there is no entitlement expiry).';
 
 comment on table public.olympiad_packages is
-  'Olympiad-Preparation add-on listing (Admin-only). Parent buys; child gets LIFETIME access. Each attempt draws ALL of the package''s published questions in random order (migration 057; questions_per_attempt is display-legacy). Archive only — never delete purchased packages.';
+  'Olympiad-Preparation add-on listing (Admin-only). Parent buys; child gets LIFETIME access. Each attempt serves questions_per_attempt questions from the entitled grade''s published pool via a PER-STUDENT non-repeating rotation (Round 51, migration 090; the whole pool when it is smaller). Archive only — never delete purchased packages.';
 comment on column public.olympiad_packages.event_starts_at is
   'Planned event date/time shown on the student "Olimpiadalar" tab (NULL = undated/planned).';
 
@@ -96,9 +96,9 @@ create table if not exists public.olympiad_package_translations (
 );
 
 -- -----------------------------------------------------------------------------
--- olympiad_package_questions : the curated question pool for a package. Since
--- migration 057 the attempt engine draws the WHOLE published pool server-side
--- (random order; questions_per_attempt is display-legacy).
+-- olympiad_package_questions : the curated question pool for a package. The
+-- attempt engine draws questions_per_attempt of the entitled grade's published
+-- pool per attempt through the per-student rotation (Round 51, migration 090).
 -- Mirrors test_questions. Pool membership is SENSITIVE (not exposed to students).
 -- -----------------------------------------------------------------------------
 create table if not exists public.olympiad_package_questions (
@@ -243,6 +243,56 @@ update public.olympiad_purchases pu
         having count(*) = 1) g
  where pu.grade_id is null
    and g.olympiad_package_id = pu.olympiad_package_id;
+
+-- -----------------------------------------------------------------------------
+-- olympiad_question_rotations : PER (student, package, grade) rotation state
+-- (Round 51, migration 090). seen_question_ids = the ids consumed SO FAR in
+-- cycle_no; when the cycle is exhausted start_olympiad_attempt (011) starts a
+-- fresh cycle over the full pool by REWRITING the array — one row is both the
+-- state and the SELECT ... FOR UPDATE lock key that serialises concurrent
+-- starts. grade_id NULL = legacy grade-less package (whole-pool path);
+-- NULLS NOT DISTINCT keeps that case to exactly one row per student+package.
+-- Written ONLY by start_olympiad_attempt (SECURITY DEFINER); students may read
+-- their own row (RLS in 010).
+-- -----------------------------------------------------------------------------
+create table if not exists public.olympiad_question_rotations (
+  id                  uuid primary key default gen_random_uuid(),
+  student_profile_id  uuid not null references public.students (profile_id) on delete cascade,
+  olympiad_package_id uuid not null references public.olympiad_packages (id) on delete cascade,
+  grade_id            uuid references public.grades (id) on delete cascade,
+  cycle_no            int not null default 1 check (cycle_no > 0),
+  seen_question_ids   uuid[] not null default '{}',
+  attempts_drawn      int not null default 0 check (attempts_drawn >= 0),
+  last_drawn_at       timestamptz,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+comment on table public.olympiad_question_rotations is
+  'Round 51: per-student, per-package, per-GRADE olympiad question rotation. '
+  'seen_question_ids = the ids already served inside cycle_no; when the cycle '
+  'is exhausted start_olympiad_attempt increments cycle_no and starts a fresh '
+  'cycle over the full pool. Written ONLY by start_olympiad_attempt (SECURITY '
+  'DEFINER) under a row lock; students may read their own row.';
+
+comment on column public.olympiad_question_rotations.grade_id is
+  'Entitled grade pool this rotation belongs to. NULL = legacy grade-less '
+  'package (whole-pool path). NULLS NOT DISTINCT on the unique index keeps the '
+  'NULL case single-rowed.';
+
+-- The lock key. NULLS NOT DISTINCT (PG 15+) lets the legacy grade-less row
+-- participate in the unique-violation insert-race retry.
+create unique index if not exists uq_olympiad_rotation_student_pkg_grade
+  on public.olympiad_question_rotations (student_profile_id, olympiad_package_id, grade_id)
+  nulls not distinct;
+
+create index if not exists idx_olympiad_rotation_package
+  on public.olympiad_question_rotations (olympiad_package_id);
+
+drop trigger if exists trg_set_updated_at on public.olympiad_question_rotations;
+create trigger trg_set_updated_at
+  before update on public.olympiad_question_rotations
+  for each row execute function public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
 -- 2) Legacy-column sync: olympiad_packages.grade_id mirrors the grade set —
@@ -551,11 +601,40 @@ grant insert, update, delete on public.olympiad_package_grades to authenticated;
 grant all on public.olympiad_package_grades to service_role;
 
 -- -----------------------------------------------------------------------------
+-- RLS + grants for olympiad_question_rotations (Round 51, migration 090).
+-- ONE select policy (own row / admin); NO insert/update/delete policy — the
+-- SECURITY DEFINER start_olympiad_attempt is the single writer. Belt and
+-- braces on top of RLS: explicit revokes so a student can never wipe their own
+-- rotation row to farm repeats, even if a policy is added carelessly later.
+-- -----------------------------------------------------------------------------
+alter table public.olympiad_question_rotations enable row level security;
+
+drop policy if exists "olympiad_rotations_select_own" on public.olympiad_question_rotations;
+create policy "olympiad_rotations_select_own" on public.olympiad_question_rotations
+  for select to authenticated
+  using (student_profile_id = public.current_profile_id() or public.is_admin());
+
+revoke insert, update, delete, truncate
+  on public.olympiad_question_rotations from anon, authenticated;
+revoke select on public.olympiad_question_rotations from anon;
+grant  select on public.olympiad_question_rotations to authenticated;
+grant  all    on public.olympiad_question_rotations to service_role;
+
+-- Round 51 (migration 090): arm the activation pool guard. The guard function
+-- pair lives in 011 (functions run before tables in the canonical order);
+-- the trigger can only be created HERE, once olympiad_packages exists.
+drop trigger if exists trg_olympiad_activation_pool_guard on public.olympiad_packages;
+create trigger trg_olympiad_activation_pool_guard
+  before insert or update on public.olympiad_packages
+  for each row execute function public.olympiad_activation_pool_guard();
+
+-- -----------------------------------------------------------------------------
 -- get_olympiad_pool_counts (Round 21) : the REAL published-question count per
--- package. Cards used to show olympiad_packages.questions_per_attempt
--- (display-legacy, default 25, never written by the admin form) — a 50-question
--- package still said "25". SECURITY DEFINER so parents/children get correct
--- counts regardless of row-level visibility; returns counts only.
+-- package — the headline number every card shows. questions_per_attempt is a
+-- SEPARATE number (LIVE again since Round 51: what one attempt serves) and is
+-- displayed as its own labelled row, never in place of the pool count.
+-- SECURITY DEFINER so parents/children get correct counts regardless of
+-- row-level visibility; returns counts only.
 -- -----------------------------------------------------------------------------
 drop function if exists public.get_olympiad_pool_counts(uuid[]);
 drop function if exists public.get_olympiad_pool_counts(uuid[], uuid);
@@ -675,8 +754,8 @@ as $$
     where pg.olympiad_package_id = p.id
   ) gl on true
   left join lateral (
-    -- get_olympiad_pool_counts parity: REAL published pool size, never the
-    -- display-legacy questions_per_attempt.
+    -- get_olympiad_pool_counts parity: REAL published pool size — the headline
+    -- count (questions_per_attempt is its own separate per-attempt figure).
     select count(*)::int as n
     from public.questions q
     where q.olympiad_package_id = p.id

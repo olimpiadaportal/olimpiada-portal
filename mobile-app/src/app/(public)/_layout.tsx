@@ -47,7 +47,7 @@ export default function PublicLayout() {
         headerLeft: ({ canGoBack, tintColor }) =>
           !canGoBack && router.canGoBack() ? (
             <BackButton
-              label={t("arena.quizPrev")}
+              label={t("nav.back")}
               onPress={() => router.back()}
               color={tintColor ?? tokens.accent}
             />

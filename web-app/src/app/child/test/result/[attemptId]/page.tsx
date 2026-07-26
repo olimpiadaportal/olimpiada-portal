@@ -105,6 +105,13 @@ export default async function TestResultPage({
           )}
           {a.subjects?.name ? subjectLabel(t, a.subjects?.code, a.subjects.name) : ""}
         </p>
+        {/* Round 51 (audit): olympiad results are practice-only — say so where
+            the score is shown, or the child reasonably assumes it counted. */}
+        {isOlympiad && (
+          <p className="arena-muted" style={{ margin: "6px 0 0" }}>
+            {t("oly5.practiceOnly")}
+          </p>
+        )}
       </section>
 
       <div className="arena-result" style={{ maxWidth: 640 }}>

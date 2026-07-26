@@ -136,7 +136,12 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
   const max = Math.round(Number(result.max ?? 0));
   const pct = max > 0 ? Math.round((score / max) * 100) : 0;
 
-  const durationMin = Math.round(Number(row!.duration_seconds ?? 1500) / 60);
+  // Time context (web result-page parity): UNTIMED attempts (duration_seconds
+  // null — daily rounds/practice since Round 42) have no limit to clamp
+  // against or display; only a real duration clamps and shows "/ N min".
+  const durationMin = row!.duration_seconds
+    ? Math.round(Number(row!.duration_seconds) / 60)
+    : null;
   const endIso = row!.submitted_at ?? result.submitted_at;
   const usedMin = usedMinutes(row!.started_at, endIso, durationMin);
 
@@ -181,6 +186,14 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
               : subj;
           })()}
         </AppText>
+        {/* Round 51 audit (web parity): olympiad results are practice-only —
+            say so where the score is shown, or the child reasonably assumes
+            it counted toward the rating. */}
+        {isOlympiad ? (
+          <AppText color={arena.muted} style={{ fontSize: 13, lineHeight: 19 }}>
+            {t("oly5.practiceOnly")}
+          </AppText>
+        ) : null}
       </View>
 
       {/* ---- Score hero: animated ring (score/max) with % inside ---- */}
@@ -202,10 +215,13 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
         {usedMin !== null ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
             <Clock size={14} color={arena.muted} strokeWidth={2} />
-            {/* Long az/ru label wraps within the row instead of overflowing. */}
+            {/* Long az/ru label wraps within the row instead of overflowing.
+                The "/ N min" limit suffix exists only for TIMED attempts. */}
             <AppText color={arena.muted} style={{ fontSize: 13, flexShrink: 1 }}>
-              {t("test.result.timeSpent")}: {usedMin} {t("test.result.minutes")} / {durationMin}{" "}
-              {t("test.result.minutes")}
+              {t("test.result.timeSpent")}: {usedMin} {t("test.result.minutes")}
+              {durationMin !== null
+                ? ` / ${durationMin} ${t("test.result.minutes")}`
+                : ""}
             </AppText>
           </View>
         ) : null}

@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActionButton } from "@/components/ActionButton";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { useAdminNotifications } from "@/lib/admin/useAdminNotifications";
 import {
   PAGE_LIMIT,
@@ -57,19 +58,9 @@ export function AlertsList({
     return strings[key] ?? s("alerts.type.default");
   };
 
-  const fmt = (iso: string): string => {
-    const d = new Date(iso);
-    if (!Number.isFinite(d.getTime())) return "";
-    try {
-      return new Intl.DateTimeFormat(locale, {
-        timeZone: "Asia/Baku",
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(d);
-    } catch {
-      return d.toLocaleString();
-    }
-  };
+  // Shared hardened helper (root-locale "M08" guard, Asia/Baku, "" on bad
+  // input) — lib/admin/datetime.ts.
+  const fmt = (iso: string): string => formatBakuDateTime(iso, locale);
 
   const openItem = (n: NotificationItem) => {
     void markRead(n.id);

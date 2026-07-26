@@ -116,6 +116,8 @@ export function AddChildWizard({
   dict,
   paymentMode,
   freeAccessActive = false,
+  initialSubjectIds = [],
+  initialInterval = "month",
 }: {
   cities: City[];
   cityDistricts: CityDistrict[];
@@ -127,6 +129,16 @@ export function AddChildWizard({
   paymentMode: string;
   /** H8: server-resolved active free-access window for this parent. */
   freeAccessActive?: boolean;
+  /**
+   * Optional PRESELECTION handed off from the public /services configurator
+   * (`?subjects=…&interval=…`). Already validated server-side against this
+   * same `subjects` catalog — unknown/archived ids were dropped there. Purely
+   * a UX convenience: the parent can still change everything, and
+   * subscribeChild re-validates and re-prices authoritatively.
+   */
+  initialSubjectIds?: string[];
+  /** Preselected billing interval ("week" | "month" | "year"). */
+  initialInterval?: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const locale = useLocale();
@@ -179,11 +191,12 @@ export function AddChildWizard({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarDone, setAvatarDone] = useState(false);
 
-  // Step 2 — subjects.
-  const [sel, setSel] = useState<Set<string>>(new Set());
+  // Step 2 — subjects. Seeded from the (server-validated) /services hand-off
+  // when present, otherwise empty.
+  const [sel, setSel] = useState<Set<string>>(() => new Set(initialSubjectIds));
 
-  // Step 3 — plan + live quote.
-  const [interval, setIntervalState] = useState("month");
+  // Step 3 — plan + live quote. Seeded from the hand-off interval.
+  const [interval, setIntervalState] = useState(initialInterval);
   const [quote, setQuote] = useState<QuoteResult | null>(null);
 
   // Step 4 — demo payment + the result.

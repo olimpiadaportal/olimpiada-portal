@@ -135,6 +135,12 @@ export async function purchaseOlympiadForChildCore(params: {
       if (hint === "package_not_for_grade") {
         return { ok: false, errorKey: "poly.err.notForGrade" };
       }
+      // Round 51 (audit F6): the DB payment kill switch (migration 089/091,
+      // assert_payments_enabled) — surface the friendly payments-off notice,
+      // not the generic failure.
+      if (hint === "payments_disabled") {
+        return { ok: false, errorKey: "gate.paymentsOff" };
+      }
       return fail;
     }
   }

@@ -15,6 +15,7 @@ import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { formatLongDate } from "@/lib/formatDate";
+import { formatAzn } from "@/lib/pricingConfigurator";
 import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import {
   OlympiadPurchase,
@@ -63,7 +64,7 @@ export default async function ParentOlympiadCatalogPage() {
     supabase
       .from("olympiad_packages")
       .select(
-        "id, price_amount, currency, duration_minutes, event_starts_at, sale_starts_at, sale_ends_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+        "id, price_amount, currency, duration_minutes, questions_per_attempt, event_starts_at, sale_starts_at, sale_ends_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
       )
       .eq("status", "active")
       .order("created_at"),
@@ -235,10 +236,18 @@ export default async function ParentOlympiadCatalogPage() {
       gradeLabel,
       countByGrade: countsByPkg.get(p.id) ?? {},
       fallbackCount: legacyCounts.get(p.id) ?? 0,
+      questionsPerAttempt: Number(p.questions_per_attempt ?? 0) || 0,
       durationMinutes,
       saleStartText: Number.isFinite(saleStart) ? fmt(saleStart) : null,
       saleEndText: Number.isFinite(saleEnd) ? fmt(saleEnd) : null,
-      priceText: price > 0 ? `${price} ${p.currency ?? "AZN"}` : t("poly.free"),
+      // Round 51 (audit): ONE money format everywhere — this page printed
+      // "25 AZN" while the public surfaces print "25,00 AZN" (formatAzn).
+      priceText:
+        price > 0
+          ? (p.currency ?? "AZN") === "AZN"
+            ? formatAzn(price, locale)
+            : `${price} ${p.currency}`
+          : t("poly.free"),
       ownedBy: ownedByPackage.get(p.id) ?? [],
       // M12: the event already happened → archived for purchase display
       // (no buy CTA; purchasers keep their access as before).
@@ -274,6 +283,7 @@ export default async function ParentOlympiadCatalogPage() {
     detGrade: t("poly.det.grade"),
     detGrades: t("poly.det.grades"),
     detQuestions: t("poly.det.questions"),
+    detPerAttempt: t("poly.det.perAttempt"),
     detDuration: t("poly.det.duration"),
     detEventAt: t("poly.det.eventAt"),
     detSaleStart: t("poly.det.saleStart"),

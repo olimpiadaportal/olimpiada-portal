@@ -7,6 +7,7 @@
 // observer updates are suppressed briefly after a click so the smooth scroll
 // doesn't fight the explicit selection. All labels arrive pre-translated.
 import { useEffect, useRef, useState } from "react";
+import { Segmented } from "@/components/Segmented";
 
 export type BillingTab = { id: string; label: string };
 
@@ -52,7 +53,7 @@ export function BillingTabs({
   };
 
   return (
-    <div className="billing-tabs" role="tablist" aria-label={ariaLabel}>
+    <Segmented className="billing-tabs" role="tablist" aria-label={ariaLabel} arrowKeys>
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -65,6 +66,6 @@ export function BillingTabs({
           {tab.label}
         </button>
       ))}
-    </div>
+    </Segmented>
   );
 }

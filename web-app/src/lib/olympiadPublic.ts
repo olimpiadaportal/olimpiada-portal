@@ -32,6 +32,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { formatLongDate } from "@/lib/formatDate";
 import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { formatAzn } from "@/lib/pricingConfigurator";
 
 /** get_public_olympiad_packages() row (migration 070 + 079 grade_levels). */
 type PubPkgRow = {
@@ -76,6 +77,11 @@ export type PublicOlympiad = {
   multiGrade: boolean;
   /** REAL published pool size (get_public_olympiad_packages parity). */
   questionCount: number;
+  /**
+   * Round 51: questions served per attempt (rotation model). 0 = not set.
+   * Shown as its own labelled row, NEVER in place of the pool count.
+   */
+  questionsPerAttempt: number;
   /** Attempt time limit in minutes; null = not set. */
   durationMinutes: number | null;
   /** Event date, long form without time — card meta. */
@@ -101,6 +107,7 @@ type PkgExtra = {
   durationMinutes: number | null;
   saleStartsAt: string | null;
   coverUrl: string | null;
+  questionsPerAttempt: number;
 };
 
 /**
@@ -135,7 +142,7 @@ const loadPublicOlympiads = cache(
       const { data: extraRows } = await supabase
         .from("olympiad_packages")
         .select(
-          "id, duration_minutes, sale_starts_at, media_assets:cover_media_id(bucket, path)",
+          "id, duration_minutes, sale_starts_at, questions_per_attempt, media_assets:cover_media_id(bucket, path)",
         )
         .eq("status", "active")
         .in(
@@ -153,11 +160,14 @@ const loadPublicOlympiads = cache(
               .publicUrl ?? null;
         }
         const minutes = Number(e.duration_minutes);
+        const perAttempt = Number(e.questions_per_attempt);
         extras.set(id, {
           durationMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : null,
           saleStartsAt:
             typeof e.sale_starts_at === "string" ? e.sale_starts_at : null,
           coverUrl,
+          questionsPerAttempt:
+            Number.isFinite(perAttempt) && perAttempt > 0 ? perAttempt : 0,
         });
       }
 
@@ -213,12 +223,22 @@ const loadPublicOlympiads = cache(
           gradeLabel: gradeLabel && gradeLabel !== "—" ? gradeLabel : null,
           multiGrade,
           questionCount: Number(r.question_count ?? 0) || 0,
+          questionsPerAttempt: extra?.questionsPerAttempt ?? 0,
           durationMinutes: extra?.durationMinutes ?? null,
           eventText: dateText(r.event_at),
           eventDetailText: dateText(r.event_at, true),
           saleStartText: dateText(extra?.saleStartsAt ?? null),
           saleEndText: dateText(r.sale_ends_at),
-          priceText: price > 0 ? `${price} ${r.currency ?? "AZN"}` : t("poly.free"),
+          // Round 49: one money formatter across the public surfaces. This
+          // used to print "25 AZN" while the pricing configurator on the SAME
+          // /services page printed "9,00 AZN" — two formats side by side.
+          // Non-AZN currencies (none today) keep the raw suffix.
+          priceText:
+            price > 0
+              ? (r.currency ?? "AZN") === "AZN"
+                ? formatAzn(price, locale)
+                : `${price} ${r.currency}`
+              : t("poly.free"),
         };
       });
     } catch {

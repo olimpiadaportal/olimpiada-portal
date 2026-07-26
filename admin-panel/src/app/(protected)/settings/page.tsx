@@ -6,6 +6,7 @@ import { SettingToggle } from "@/components/SettingToggle";
 import { SettingCard } from "@/components/SettingCard";
 import { SettingsTabs } from "@/components/SettingsTabs";
 import { FLAG_META, SETTING_META, LOCALE_OPTIONS } from "@/lib/admin/settings-meta";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { getT, getLocale } from "@/i18n/server";
 import { localStrings } from "./labels";
 
@@ -325,12 +326,8 @@ export default async function SettingsPage() {
       ? new Date(startedAt!.getTime() + durationDays * 86_400_000)
       : null;
   const giveawayExpired = endsAt !== null && endsAt.getTime() <= Date.now();
-  // Owner-facing times are always shown in Azerbaijan time (Asia/Baku).
-  const bakuFmt = new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Baku",
-  });
+  // Owner-facing times are always shown in Azerbaijan time (Asia/Baku) via the
+  // shared hardened helper (root-locale "M08" guard) — lib/admin/datetime.ts.
 
   const featuresTab = (
     <div className="settings-panel-stack">
@@ -360,12 +357,12 @@ export default async function SettingsPage() {
               </span>
               <span className="pm-window-line">
                 {t("settings.giveaway.startedAt")}{" "}
-                <strong>{bakuFmt.format(startedAt!)}</strong>
+                <strong>{formatBakuDateTime(startedAt, locale)}</strong>
               </span>
               {endsAt !== null && (
                 <span className="pm-window-line">
                   {t("settings.giveaway.endsAt")}{" "}
-                  <strong>{bakuFmt.format(endsAt)}</strong>
+                  <strong>{formatBakuDateTime(endsAt, locale)}</strong>
                 </span>
               )}
               <span className="pm-window-tz">{t("settings.giveaway.tz")}</span>

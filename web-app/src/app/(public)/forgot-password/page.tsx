@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getT } from "@/i18n/server";
+import { BackLink } from "@/components/BackLink";
 import { ForgotPasswordForm } from "@/components/ForgotPasswordForm";
 
 export default async function ForgotPasswordPage({
@@ -21,6 +22,7 @@ export default async function ForgotPasswordPage({
 
   return (
     <section className="prose" style={{ maxWidth: 440 }}>
+      <BackLink label={t("nav.back")} fallbackHref="/login" />
       <h1>{t("forgot.title")}</h1>
       {sent ? (
         <p>{t("forgot.sent")}</p>

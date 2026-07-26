@@ -5,6 +5,7 @@ import { getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
 import { getChildSubjectAccess } from "@/lib/childSubjects";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { BackLink } from "@/components/BackLink";
 import { TestSetup, type SetupTopic } from "@/components/TestSetup";
 
 // Strings resolved server-side into an explicit-KEYS dict for the client
@@ -94,6 +95,9 @@ export default async function TestSetupPage({
   return (
     <>
       <section style={{ marginBottom: 22 }}>
+        {/* Round 51 (audit 4.3): mobile's TestSetupScreen has a BackBar; this
+            page had no way back to the test home except browser chrome. */}
+        <BackLink label={t("nav.back")} fallbackHref="/child/test" />
         <p className="arena-eyebrow">{t("test.setup.eyebrow")}</p>
         <h1>{subjectLabel(t, subject.code, subject.name)}</h1>
       </section>

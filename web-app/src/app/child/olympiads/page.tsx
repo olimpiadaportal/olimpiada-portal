@@ -68,7 +68,7 @@ export default async function ChildOlympiadsPage({
       supabase
         .from("olympiad_purchases")
         .select(
-          "olympiad_package_id, status, grade_id, olympiad_packages(olympiad_package_translations(locale, title))",
+          "olympiad_package_id, status, grade_id, olympiad_packages(questions_per_attempt, olympiad_package_translations(locale, title))",
         )
         .eq("student_profile_id", child.profileId)
         .eq("status", "active"),
@@ -208,7 +208,6 @@ export default async function ChildOlympiadsPage({
       const ts = p.event_starts_at ? Date.parse(p.event_starts_at) : NaN;
       const hasDate = Number.isFinite(ts);
       const statusKind: StatusKind = !hasDate ? "planned" : ts > now ? "upcoming" : "held";
-      const price = Number(p.price_amount ?? 0);
       // No long-description column on the package itself — prefer the localized
       // translation description, else compose a short line from type/subject +
       // the questions-per-attempt info.
@@ -228,8 +227,8 @@ export default async function ChildOlympiadsPage({
           subject,
           typeName,
           questionsText,
-          priceText:
-            price > 0 ? `${price} ${p.currency ?? "AZN"}` : t("oly4.free"),
+          // Round 51 (audit F10): NO price on the child surface — the details
+          // modal used to show "Qiymət: N AZN" to the student.
         },
       };
     });
@@ -248,7 +247,6 @@ export default async function ChildOlympiadsPage({
     type: t("oly4.type"),
     date: t("oly4.date"),
     qcount: t("oly4.qcount"),
-    price: t("oly4.price"),
   };
 
   const ownedTitle = (p: any): string => {
@@ -263,7 +261,7 @@ export default async function ChildOlympiadsPage({
   // purchase-only in every payment mode (free windows cover subjects, not
   // olympiads; start_olympiad_attempt enforces the same server-side).
   // Round 21: each row shows the package's REAL published pool count.
-  type Playable = { id: string; title: string; questions: number };
+  type Playable = { id: string; title: string; questions: number; perAttempt: number };
   const playable: Playable[] = owned.map((p) => ({
     id: p.olympiad_package_id,
     title: ownedTitle(p),
@@ -271,6 +269,9 @@ export default async function ChildOlympiadsPage({
       ownedCounts.get(p.olympiad_package_id) ??
       poolCounts.get(p.olympiad_package_id) ??
       0,
+    // Round 51 rotation: what one Start actually serves. Shown only when it is
+    // a real subset of the pool (equal/greater = the attempt IS the pool).
+    perAttempt: Number(p.olympiad_packages?.questions_per_attempt ?? 0) || 0,
   }));
 
   return (
@@ -335,6 +336,13 @@ export default async function ChildOlympiadsPage({
 
       <section className="oly4-section">
         <h2 className="oly4-h">{t("oly4.mineTitle")}</h2>
+        {/* Round 51 (audit): say plainly that olympiad play is practice-only —
+            daily rounds carry an explicit rules gate, olympiads said nothing. */}
+        {playable.length > 0 && (
+          <p className="arena-muted" style={{ marginBottom: 12 }}>
+            {t("oly5.practiceOnly")}
+          </p>
+        )}
         {playable.length === 0 ? (
           <div className="arena-panel arena-muted">{t("oly3.childNone")}</div>
         ) : (
@@ -346,6 +354,9 @@ export default async function ChildOlympiadsPage({
                   <div className="arena-round-title">{p.title}</div>
                   <div className="arena-round-meta">
                     {p.questions} {t("arena.questionsShort")}
+                    {p.perAttempt > 0 && p.perAttempt < p.questions
+                      ? ` · ${t("oly5.perAttemptShort").replace("{n}", String(p.perAttempt))}`
+                      : ""}
                   </div>
                 </div>
                 <form action={startOlympiad}>

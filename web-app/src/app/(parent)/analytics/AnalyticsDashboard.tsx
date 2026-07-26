@@ -24,6 +24,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { computeTopicStanding, topicStandingHint } from "@/lib/topicStanding";
+import { Segmented } from "@/components/Segmented";
 
 export type AnalyticsSubject = {
   /** Subject uuid (RPC filter + URL value). */
@@ -752,7 +753,7 @@ export function AnalyticsDashboard({
         {/* Analytics type: Subjects vs Olympiads (drives the RPC p_scope). */}
         <div className="ana-ctl">
           <span className="ana-ctl-label">{dict["ana.mode.label"]}</span>
-          <div className="ana-seg" role="group" aria-label={dict["ana.mode.label"]}>
+          <Segmented className="ana-seg" role="group" aria-label={dict["ana.mode.label"]}>
             <button
               type="button"
               className={mode === "subjects" ? "ana-seg-btn active" : "ana-seg-btn"}
@@ -769,12 +770,12 @@ export function AnalyticsDashboard({
             >
               {dict["ana.mode.olympiads"]}
             </button>
-          </div>
+          </Segmented>
         </div>
         {kids.length > 1 && (
           <div className="ana-ctl">
             <span className="ana-ctl-label">{dict["ana.childLabel"]}</span>
-            <div className="ana-seg" role="group" aria-label={dict["ana.childLabel"]}>
+            <Segmented className="ana-seg" role="group" aria-label={dict["ana.childLabel"]}>
               {kids.map((k) => (
                 <button
                   key={k.id}
@@ -786,7 +787,7 @@ export function AnalyticsDashboard({
                   {k.name}
                 </button>
               ))}
-            </div>
+            </Segmented>
           </div>
         )}
         {/* Subject tabs are a SUBJECTS-mode concept — olympiad packages aren't
@@ -794,7 +795,13 @@ export function AnalyticsDashboard({
         {mode === "subjects" && (
           <div className="ana-ctl">
             <span className="ana-ctl-label">{dict["ana.subjectLabel"]}</span>
-            <div className="ana-tabs" role="tablist" aria-label={dict["ana.subjectLabel"]}>
+            <Segmented
+              className="ana-tabs"
+              role="tablist"
+              aria-label={dict["ana.subjectLabel"]}
+              track
+              arrowKeys
+            >
               {kid.activeSubjects.length > 1 && (
                 <button
                   type="button"
@@ -831,7 +838,7 @@ export function AnalyticsDashboard({
                   </button>
                 );
               })}
-            </div>
+            </Segmented>
           </div>
         )}
       </div>

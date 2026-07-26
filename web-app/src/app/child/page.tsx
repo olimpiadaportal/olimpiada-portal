@@ -46,11 +46,14 @@ export default async function ChildDashboard() {
         .in("status", ["trialing", "active"]),
       // Graded attempts → real mini-stats + per-subject strength (no
       // fabrication; all 0 / empty until the child actually finishes rounds).
+      // Round 51: olympiad attempts are PRACTICE-ONLY (Round 48) — they must
+      // not inflate points/accuracy/rounds/strength here.
       supabase
         .from("test_attempts")
         .select("id, kind, score, max_score, subject_id, subjects(code, name)")
         .eq("student_profile_id", child.profileId)
         .eq("status", "graded")
+        .neq("kind", "olympiad")
         .order("submitted_at", { ascending: false })
         .limit(200),
       // L-quick: leaderboard feature gate + GLOBAL rank (this-month for the

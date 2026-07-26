@@ -450,7 +450,9 @@ begin
                 'olympiad_module','leaderboard','notifications',
                 'notifications_push','launch_promo');
   v_flags    := coalesce(v_flags, '{}'::jsonb);
-  v_real     := coalesce((v_flags->>'payments')::boolean, true);
+  -- Round 51 (migration 091): missing flag row = OFF for the money gate too
+  -- (fail closed; matches current_payment_mode and the web resolver).
+  v_real     := coalesce((v_flags->>'payments')::boolean, false);
   v_demo     := coalesce((v_flags->>'demo_payments')::boolean, false);
   v_gvw_flag := coalesce((v_flags->>'giveaway_period')::boolean, false);
 
@@ -1611,44 +1613,61 @@ declare
   v_flags      jsonb;
   v_real       boolean := false;
   v_demo       boolean := false;
-  v_gvw        boolean := false;
+  v_gvw_flag   boolean := false;
+  v_gvw_days   int := 0;
   v_gvw_start  timestamptz;
-  v_gvw_days   int := 30;
+  v_gvw_active boolean := false;
   v_setting    jsonb;
 begin
   select jsonb_object_agg(key, enabled) into v_flags
   from public.feature_flags
   where key in ('payments', 'demo_payments', 'giveaway_period');
+  v_flags := coalesce(v_flags, '{}'::jsonb);
 
-  v_real := coalesce((v_flags ->> 'payments')::boolean, false);
-  v_demo := coalesce((v_flags ->> 'demo_payments')::boolean, false);
-  v_gvw  := coalesce((v_flags ->> 'giveaway_period')::boolean, false);
+  -- Missing row → OFF for every flag (fail closed; F1).
+  v_real     := coalesce((v_flags ->> 'payments')::boolean, false);
+  v_demo     := coalesce((v_flags ->> 'demo_payments')::boolean, false);
+  v_gvw_flag := coalesce((v_flags ->> 'giveaway_period')::boolean, false);
 
-  if v_gvw then
-    select value_json into v_setting from public.system_settings
-     where key = 'giveaway.duration_days';
-    if v_setting is not null and jsonb_typeof(v_setting) = 'number' then
-      v_gvw_days := greatest(1, (v_setting)::text::int);
-    end if;
-    select value_json into v_setting from public.system_settings
-     where key = 'giveaway.started_at';
-    if v_setting is not null and jsonb_typeof(v_setting) = 'string' then
-      v_gvw_start := (v_setting ->> 0)::timestamptz;
-    end if;
-    v_gvw := v_gvw_start is not null
-             and now() < v_gvw_start + make_interval(days => v_gvw_days);
+  -- Giveaway window — the EXACT parsing rules of get_mobile_config (F2):
+  -- duration must be an explicit positive number (no invented 30-day default),
+  -- started_at must be a non-empty string that parses, and a bad value NEVER
+  -- raises out of a money gate — it just means "no active window".
+  select value_json into v_setting from public.system_settings
+   where key = 'giveaway.duration_days';
+  if v_setting is not null and jsonb_typeof(v_setting) = 'number' then
+    v_gvw_days := greatest(0, floor((v_setting)::text::numeric)::int);
+  end if;
+  select value_json into v_setting from public.system_settings
+   where key = 'giveaway.started_at';
+  if v_setting is not null and jsonb_typeof(v_setting) = 'string'
+     and length(trim(v_setting->>0)) > 0 then
+    begin
+      v_gvw_start := (trim(v_setting->>0))::timestamptz;
+    exception when others then
+      v_gvw_start := null;
+    end;
+  end if;
+  if v_gvw_flag and v_gvw_start is not null and v_gvw_days > 0 then
+    v_gvw_active := now() < v_gvw_start + make_interval(days => v_gvw_days);
   end if;
 
   return case
-    when v_gvw  then 'giveaway'
-    when v_demo then 'demo'
-    when v_real then 'real'
+    when v_gvw_active then 'giveaway'
+    when v_demo       then 'demo'
+    when v_real       then 'real'
     else 'off'
   end;
 end;
 $$;
+
 comment on function public.current_payment_mode() is
-  'Derived payment mode (real|demo|giveaway|off) from the mutually-exclusive feature flags, with the giveaway window applied.';
+  'Round 51: resolves payments/demo_payments/giveaway_period into '
+  'off|real|demo|giveaway with EXACTLY get_mobile_config''s parsing rules — '
+  'a 013 check asserts the two can never drift. Missing flag rows mean OFF '
+  '(fail closed); a malformed giveaway window means "no window", never an '
+  'exception out of a money gate.';
+
 revoke all on function public.current_payment_mode() from public, anon;
 grant execute on function public.current_payment_mode() to authenticated, service_role;
 
@@ -1661,12 +1680,20 @@ set search_path = public, pg_temp
 as $$
 begin
   if public.current_payment_mode() = 'off' then
-    raise exception 'payments: disabled' using errcode = 'check_violation';
+    -- hint = the stable key the web/BFF mappers translate to the trilingual
+    -- gate.paymentsOff notice (they key off hints, never raw message text).
+    raise exception 'payments: disabled'
+      using errcode = 'check_violation', hint = 'payments_disabled';
   end if;
 end;
 $$;
+
 comment on function public.assert_payments_enabled() is
-  'Raises check_violation "payments: disabled" when the payment mode is off.';
+  'Round 48/51: hard server-side payment kill switch. Raises check_violation '
+  'with hint payments_disabled while current_payment_mode() = off; called '
+  'first inside every paid RPC (create_child_subscription, purchase_olympiad, '
+  'add_subscription_subject, apply_subject_change adds).';
+
 revoke all on function public.assert_payments_enabled() from public, anon, authenticated;
 grant execute on function public.assert_payments_enabled() to service_role;
 
@@ -2704,16 +2731,18 @@ comment on function public.purchase_olympiad(uuid, uuid) is
 -- Migration 047: olympiad attempts run on the TIMED test engine (jsonb return,
 -- TRUE resume, deadline from olympiad_packages.duration_minutes, pre-inserted
 -- answer rows). Drop first — the return type changed from uuid to jsonb.
--- Migration 057: attempts draw ALL of the package's published questions (owner
--- item 1 — no questions_per_attempt cap) and are marked RATED.
+-- Round 51 (migrations 090/092): questions_per_attempt is LIVE — each attempt
+-- serves that many via the PER-STUDENT rotation over the entitled grade's
+-- pool, and attempts are PRACTICE-ONLY (is_rated = false; Round 48 already
+-- kept them out of points/percentage/streak in award_attempt_points).
 drop function if exists public.start_olympiad_attempt(uuid);
 
-create or replace function public.start_olympiad_attempt(p_package_id uuid)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
+CREATE OR REPLACE FUNCTION public.start_olympiad_attempt(p_package_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
 declare
   v_student    uuid := public.current_profile_id();
   v_pkg        record;
@@ -2726,6 +2755,19 @@ declare
   v_buy_grade  uuid;
   v_cur_grade  uuid;
   v_pool_grade uuid;
+  -- Round 49: rotation state. Declared `record`, NOT the table's composite
+  -- type: canonical run order creates this function (011) BEFORE the rotation
+  -- table (015), and a declared composite type must exist at compile time.
+  v_rot        record;
+  v_tries      int := 0;
+  v_pool       uuid[];
+  v_seen       uuid[];
+  v_pick1      uuid[] := '{}';
+  v_pick2      uuid[] := '{}';
+  v_n          int;
+  v_k          int;
+  v_cycle      int;
+  v_reset      boolean := false;
 begin
   if v_student is null then raise exception 'olympiad: not authenticated'; end if;
 
@@ -2738,7 +2780,9 @@ begin
     raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
   end if;
 
-  select id, subject_id, coalesce(duration_minutes, 25) as dur_min
+  -- Round 49: questions_per_attempt is LIVE again (dead config since 057).
+  select id, subject_id, coalesce(duration_minutes, 25) as dur_min,
+         greatest(least(coalesce(questions_per_attempt, 25), 500), 1) as n_per
     into v_pkg
   from public.olympiad_packages where id = p_package_id;
   if v_pkg.id is null then
@@ -2767,7 +2811,37 @@ begin
     end if;
   end if;
 
+  -- Round 49 — ROTATION LOCK. Get-or-create this student's rotation row for
+  -- (package, entitled grade) and hold a row lock for the rest of the call.
+  -- Everything below (resume check, unseen read, draw, attempt creation,
+  -- consumption write) therefore runs SERIALLY per student+package+grade, so
+  -- two tabs cannot consume overlapping question sets. The loop is the standard
+  -- upsert race handler: the loser of an insert race retries once and locks the
+  -- winner's row. It is bounded, so it can never spin.
+  loop
+    v_tries := v_tries + 1;
+    if v_tries > 3 then
+      raise exception 'olympiad: rotation lock contention' using errcode = 'lock_not_available';
+    end if;
+    select * into v_rot
+    from public.olympiad_question_rotations
+    where student_profile_id  = v_student
+      and olympiad_package_id = p_package_id
+      and grade_id is not distinct from v_pool_grade
+    for update;
+    exit when found;
+    begin
+      insert into public.olympiad_question_rotations
+        (student_profile_id, olympiad_package_id, grade_id)
+      values (v_student, p_package_id, v_pool_grade);
+    exception when unique_violation then
+      null;   -- a concurrent starter created it; loop and lock THAT row
+    end;
+  end loop;
+
   -- TRUE resume: one open olympiad attempt at a time (test-engine parity).
+  -- Runs under the rotation lock, so the losing tab of a race lands here and
+  -- replays the winner's identical question list instead of drawing again.
   select id, deadline_at, duration_seconds into v_existing
   from public.test_attempts
   where student_profile_id = v_student and kind = 'olympiad' and status = 'in_progress'
@@ -2787,17 +2861,68 @@ begin
      where id = v_existing.id;
   end if;
 
-  -- ALL published questions of the ENTITLED GRADE's pool, random order
-  -- (migration 057: no cap; Round 34: never another grade's questions).
-  select coalesce(array_agg(id), '{}') into v_qids from (
-    select q.id
-    from public.questions q
-    where q.olympiad_package_id = p_package_id
-      and q.status = 'published'
-      and (v_pool_grade is null or q.grade_id = v_pool_grade)
-      and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct)
-    order by random()
-  ) picked;
+  -- CANDIDATE POOL: all published questions of the ENTITLED GRADE's pool
+  -- (Round 34: never another grade's questions). Round 49: this is no longer
+  -- the served set — the rotation below picks questions_per_attempt of it.
+  select coalesce(array_agg(q.id), '{}') into v_pool
+  from public.questions q
+  where q.olympiad_package_id = p_package_id
+    and q.status = 'published'
+    and (v_pool_grade is null or q.grade_id = v_pool_grade)
+    and exists (select 1 from public.answer_options ao where ao.question_id = q.id and ao.is_correct);
+
+  if cardinality(v_pool) = 0 then
+    raise exception 'olympiad: no questions in package pool' using errcode = 'no_data_found';
+  end if;
+
+  -- Never ask for more than exists: a pool smaller than the configured count
+  -- serves the WHOLE pool. This is also what makes the algorithm terminating —
+  -- v_n <= |pool| guarantees the top-up below always finds enough candidates.
+  v_n := least(v_pkg.n_per, cardinality(v_pool));
+
+  -- Prune consumed ids that have LEFT the pool (archived or unpublished since).
+  -- Without this the stored set could exceed the pool and the cycle would never
+  -- appear exhausted.
+  select coalesce(array_agg(s), '{}') into v_seen
+  from unnest(v_rot.seen_question_ids) s
+  where s = any(v_pool);
+
+  -- Up to v_n UNSEEN questions from the student's CURRENT cycle.
+  select coalesce(array_agg(t.id), '{}') into v_pick1
+  from (select p as id
+        from unnest(v_pool) p
+        where not (p = any(v_seen))
+        order by random()
+        limit v_n) t;
+  v_k := coalesce(cardinality(v_pick1), 0);
+
+  if v_k >= v_n then
+    v_seen  := v_seen || v_pick1;
+    v_cycle := v_rot.cycle_no;
+  else
+    -- CYCLE BOUNDARY — atomic because it happens inside the same row lock and
+    -- the same statement/transaction as the attempt insert. The current cycle
+    -- is exhausted: serve what is left of it, then top up from a FRESH cycle
+    -- over the full pool, EXCLUDING what this attempt already holds so nothing
+    -- repeats inside the attempt (520 pool / 50 per attempt -> 20 + 30).
+    v_reset := true;
+    select coalesce(array_agg(t.id), '{}') into v_pick2
+    from (select p as id
+          from unnest(v_pool) p
+          where not (p = any(v_pick1))
+          order by random()
+          limit (v_n - v_k)) t;
+    -- The carry-over questions count as consumed in the NEW cycle as well.
+    -- Otherwise they would be eligible again on the very NEXT attempt, i.e. the
+    -- same question in two consecutive sittings.
+    v_seen  := v_pick1 || v_pick2;
+    v_cycle := v_rot.cycle_no + 1;
+  end if;
+
+  -- Shuffle the union so a boundary attempt does not present the old cycle's
+  -- leftovers as a leading block.
+  select coalesce(array_agg(t.id), '{}') into v_qids
+  from (select x as id from unnest(v_pick1 || v_pick2) x order by random()) t;
 
   if cardinality(v_qids) = 0 then
     raise exception 'olympiad: no questions in package pool' using errcode = 'no_data_found';
@@ -2810,30 +2935,180 @@ begin
      question_ids, deadline_at, duration_seconds, is_rated)
   values
     (v_student, v_pkg.subject_id, 'olympiad', 'in_progress',
-     v_qids, v_deadline, v_duration, true)
+     v_qids, v_deadline, v_duration, false)
   returning id into v_attempt;
 
   insert into public.test_attempt_answers (attempt_id, question_id)
   select v_attempt, unnest(v_qids);
 
+  -- Mark consumption LAST, still under the row lock: if anything above raised,
+  -- the whole call rolls back and nothing was consumed.
+  update public.olympiad_question_rotations
+     set seen_question_ids = v_seen,
+         cycle_no          = v_cycle,
+         attempts_drawn    = attempts_drawn + 1,
+         last_drawn_at     = now()
+   where id = v_rot.id;
+
   return jsonb_build_object(
     'attempt_id', v_attempt, 'resumed', false,
     'deadline_at', v_deadline, 'duration_seconds', v_duration,
-    'count', cardinality(v_qids));
+    'count', cardinality(v_qids),
+    'cycle', v_cycle, 'cycle_reset', v_reset,
+    'pool_size', cardinality(v_pool));
 end;
-$$;
+$function$;
 
 comment on function public.start_olympiad_attempt(uuid) is
-  'Child starts/resumes a TIMED, RATED olympiad attempt on a PURCHASED package. '
-  'Round 34: draws ALL published questions of the ENTITLED grade''s pool only '
-  '(purchase snapshot → current grade → single target; hint '
-  'package_not_for_grade when uncovered). Deadline from duration_minutes.';
+  'Round 49/51: purchase-gated olympiad start. Serves exactly '
+  'questions_per_attempt questions from the ENTITLED GRADE''s published pool '
+  '(the whole pool when it is smaller), never repeating a question inside an '
+  'attempt and never repeating across attempts until that student''s cycle for '
+  '(package, grade) is exhausted -- then the cycle resets and a fresh one '
+  'starts from the full pool. Rotation is per student, held under a '
+  'SELECT ... FOR UPDATE row lock, so concurrent tabs resume one attempt '
+  'instead of consuming twice. Attempts are PRACTICE-ONLY (Round 48) and are '
+  'created with is_rated = false (Round 51).';
 
 
 revoke all on function public.purchase_olympiad(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.purchase_olympiad(uuid, uuid) to service_role;
 revoke all on function public.start_olympiad_attempt(uuid) from public, anon;
 grant execute on function public.start_olympiad_attempt(uuid) to authenticated, service_role;
+
+
+-- -----------------------------------------------------------------------------
+-- Round 51 (migration 090): activation validation for questions_per_attempt.
+-- A package cannot be ACTIVATED (or have per-attempt raised while active)
+-- unless EVERY target grade's published pool can fill one attempt. Message is
+-- the owner's Azerbaijani sentence; HINT carries the stable machine key
+-- (olympiad_pool_below_per_attempt) and DETAIL a JSON payload so admin-panel
+-- renders the en/ru variants itself. The trigger is SECURITY DEFINER so the
+-- pool count is the TRUE count (questions is RLS-protected).
+-- -----------------------------------------------------------------------------
+create or replace function public.assert_olympiad_pool_meets_per_attempt(
+  p_package_id  uuid,
+  p_per_attempt int,
+  p_grade_id    uuid default null       -- null = validate EVERY target grade
+)
+returns void
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_need  int := greatest(coalesce(p_per_attempt, 1), 1);
+  v_pool  int;
+  v_sfx   text;
+  r       record;
+begin
+  -- Legacy grade-less package (no target-grade rows): the WHOLE published pool
+  -- has to fill an attempt, because that is exactly what such a package serves.
+  if not exists (select 1 from public.olympiad_package_grades g
+                  where g.olympiad_package_id = p_package_id) then
+    select count(*)::int into v_pool
+    from public.questions q
+    where q.olympiad_package_id = p_package_id
+      and q.status = 'published';
+    if v_pool < v_need then
+      raise exception
+        'Paketə % sual yüklənib. Paket üzrə sual sayı % olduğu üçün ən azı % sual tələb olunur.',
+        v_pool, v_need, v_need
+        using errcode = 'check_violation',
+              hint    = 'olympiad_pool_below_per_attempt',
+              detail  = jsonb_build_object('grade_level', null, 'grade_id', null,
+                                           'pool', v_pool, 'required', v_need)::text;
+    end if;
+    return;
+  end if;
+
+  for r in
+    select g.grade_id                    as grade_id,
+           gr.level::int                 as level,
+           (select count(*)::int
+              from public.questions q
+             where q.olympiad_package_id = p_package_id
+               and q.status = 'published'
+               and q.grade_id = g.grade_id) as pool
+    from public.olympiad_package_grades g
+    join public.grades gr on gr.id = g.grade_id
+    where g.olympiad_package_id = p_package_id
+      and (p_grade_id is null or g.grade_id = p_grade_id)
+    order by gr.level
+  loop
+    if r.pool < v_need then
+      -- Azerbaijani ordinal suffix by vowel harmony of the spoken numeral:
+      -- üç/dörd -> cü, altı -> cı, doqquz/on -> cu, everything else -> ci.
+      -- grades.level is constrained to 1..11, so this covers the whole domain.
+      v_sfx := case r.level
+                 when 3  then 'cü'
+                 when 4  then 'cü'
+                 when 6  then 'cı'
+                 when 9  then 'cu'
+                 when 10 then 'cu'
+                 else 'ci'
+               end;
+      raise exception
+        '%-% sinif üçün % sual yüklənib. Paket üzrə sual sayı % olduğu üçün ən azı % sual tələb olunur.',
+        r.level, v_sfx, r.pool, v_need, v_need
+        using errcode = 'check_violation',
+              hint    = 'olympiad_pool_below_per_attempt',
+              detail  = jsonb_build_object('grade_level', r.level, 'grade_id', r.grade_id,
+                                           'pool', r.pool, 'required', v_need)::text;
+    end if;
+  end loop;
+end;
+$$;
+
+comment on function public.assert_olympiad_pool_meets_per_attempt(uuid, int, uuid) is
+  'Round 49: raises check_violation (hint olympiad_pool_below_per_attempt, '
+  'DETAIL = JSON {grade_level, grade_id, pool, required}) when a target grade''s '
+  'published pool cannot fill one attempt of p_per_attempt questions. '
+  'service-internal: reached only through olympiad_activation_pool_guard().';
+
+revoke all on function public.assert_olympiad_pool_meets_per_attempt(uuid, int, uuid)
+  from public, anon, authenticated;
+grant execute on function public.assert_olympiad_pool_meets_per_attempt(uuid, int, uuid)
+  to service_role;
+
+-- Guard fires on the ACTIVATION itself, never on unrelated edits.
+-- SECURITY DEFINER so the pool count is the TRUE count: questions is an
+-- RLS-protected table and the guard must never pass because rows were hidden
+-- from the caller (same reasoning as get_olympiad_pool_counts). Running as the
+-- owner is also what lets it call the service-role-only validator above.
+create or replace function public.olympiad_activation_pool_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if new.status is distinct from 'active'::public.catalog_status then
+    return new;
+  end if;
+
+  -- An ALREADY-active package must stay editable: changing the price, banner,
+  -- sale window or event date is not an activation and must not be blocked by a
+  -- pool that predates this rule. Only a transition INTO active, or a raise of
+  -- questions_per_attempt while active, is re-validated.
+  if tg_op = 'UPDATE'
+     and old.status = new.status
+     and old.questions_per_attempt = new.questions_per_attempt then
+    return new;
+  end if;
+
+  perform public.assert_olympiad_pool_meets_per_attempt(new.id, new.questions_per_attempt);
+  return new;
+end;
+$$;
+
+comment on function public.olympiad_activation_pool_guard() is
+  'Round 49: blocks activating (or raising questions_per_attempt on) an '
+  'olympiad package whose target-grade pool cannot fill one attempt. Unrelated '
+  'edits to an already-active package pass through untouched.';
+
+-- The trigger itself is ARMED IN 015 (after olympiad_packages exists —
+-- canonical run order: 011 functions first, 015 tables later).
 
 -- ---------------------------------------------------------------------------
 -- bulk_insert_olympiad_package_questions (Batch D; v2 migration 059): import

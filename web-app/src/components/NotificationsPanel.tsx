@@ -8,10 +8,11 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useNotifications } from "@/lib/notifications/useNotifications";
 import { NotificationDetailModal } from "@/components/NotificationDetailModal";
+import { Segmented } from "@/components/Segmented";
 import {
   categoryLabelKey,
   iconForType,
-  isSafeRelativeUrl,
+  isAllowedNotificationUrl,
   relativeTime,
   type NotificationItem,
 } from "@/lib/notifications/types";
@@ -63,7 +64,9 @@ export function NotificationsPanel({
 
   const activate = (n: NotificationItem) => {
     markRead(n.id);
-    if (isSafeRelativeUrl(n.action_url)) router.push(n.action_url);
+    // Round 51 (audit F17): allowlisted routes only — mobile already refuses
+    // off-list targets; the web app followed ANY same-origin path.
+    if (isAllowedNotificationUrl(n.action_url)) router.push(n.action_url);
     else setDetail(n); // no usable deep link → show the detail modal
   };
 
@@ -79,7 +82,13 @@ export function NotificationsPanel({
       </div>
 
       {categories.length > 0 && (
-        <div className="ntf-filters" role="tablist" aria-label={s("notif.title")}>
+        <Segmented
+          className="ntf-filters"
+          role="tablist"
+          aria-label={s("notif.title")}
+          track
+          arrowKeys
+        >
           <button
             type="button"
             className={`ntf-chip${filter === null ? " active" : ""}`}
@@ -99,7 +108,7 @@ export function NotificationsPanel({
               {catLabel(cat)}
             </button>
           ))}
-        </div>
+        </Segmented>
       )}
 
       {shown.length === 0 ? (

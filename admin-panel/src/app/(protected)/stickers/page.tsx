@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/admin/guards";
+import { formatBakuDate } from "@/lib/admin/datetime";
 import { getT, getLocale } from "@/i18n/server";
 import { listStickerThemes } from "@/lib/admin/stickers";
 import { StickerThemeForm } from "@/components/StickerThemeForm";
@@ -17,8 +18,6 @@ export default async function StickersPage() {
   const locale = await getLocale();
   const lt = localStrings(locale);
   const { rows, loadError } = await listStickerThemes();
-
-  const dateFmt = new Intl.DateTimeFormat(locale, { dateStyle: "medium" });
 
   return (
     <div className="page">
@@ -96,7 +95,7 @@ export default async function StickersPage() {
                     </span>
                   </td>
                   <td className="nowrap">
-                    {dateFmt.format(new Date(theme.createdAt))}
+                    {formatBakuDate(theme.createdAt, locale)}
                   </td>
                   <td className="row-actions nowrap">
                     <Link href={`/stickers/${theme.id}`}>

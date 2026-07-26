@@ -10,10 +10,12 @@ import { supabase } from "@/lib/supabase";
 /**
  * REAL published-question count per olympiad package via
  * get_olympiad_pool_counts (SECURITY DEFINER, counts only) — ONE RPC per load.
- * Attempts include ALL of a package's questions, so this is the number every
- * card shows; a package absent from the result has an empty pool → 0. The
- * display-legacy olympiad_packages.questions_per_attempt is never read here.
- * The server caps the id list at 100; the slice keeps us inside it.
+ * The pool count stays the headline number every card shows. Since the
+ * Round-51 rotation, attempts no longer include the whole pool: the server
+ * serves each attempt a questions_per_attempt-sized selection, so that column
+ * is LIVE again server-side — but clients keep displaying the pool count,
+ * never the per-attempt size. A package absent from the result has an empty
+ * pool → 0. The server caps the id list at 100; the slice keeps us inside it.
  */
 export async function fetchOlympiadPoolCounts(
   packageIds: string[],
@@ -38,7 +40,9 @@ export async function fetchOlympiadPoolCounts(
 export type OwnedOlympiad = {
   packageId: string;
   title: string;
-  /** REAL pool size (get_olympiad_pool_counts) — never questions_per_attempt. */
+  /** REAL pool size (get_olympiad_pool_counts) — the displayed count. Round 51:
+   * each attempt serves a rotating questions_per_attempt subset server-side,
+   * but cards keep showing the full pool number. */
   questions: number;
 };
 

@@ -1,8 +1,14 @@
-// Parent analytics dashboard body (mobile port of the web AnalyticsDashboard,
-// v1 scope: the ALL-SUBJECTS view — subject = null on the RPC). Renders the six
-// KPI tiles (skipped is its OWN tile — Round-18: wrong is never recomputed as
-// questions-correct), best/weak/last facts, the two charts, per-topic strength
-// bars and the mistakes list. Pure presentational: the screen owns the queries.
+// Parent analytics dashboard body (mobile port of the web AnalyticsDashboard).
+// Round 51 audit: full web parity — an analytics-type switch (Fənlər |
+// Olimpiadalar → the RPC p_scope) plus per-subject chips in subjects mode.
+// Renders the six KPI tiles (skipped is its OWN tile — Round-18: wrong is
+// never recomputed as questions-correct), best/weak/last facts, the two
+// charts, per-topic strength bars and the mistakes list; the olympiads scope
+// reuses the same layout, relabels the attempts KPI and appends the
+// per-package results (the web hides only the subject tabs there — packages
+// aren't subject-gated). Pure presentational: the screen owns the queries.
+// PURCHASE-SILENT: unlike the web, locked subjects never render here — no
+// subscribe hints/CTAs exist anywhere in the store binary (compliance doc).
 import React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { AppText } from "@/components/AppText";
@@ -21,6 +27,7 @@ import {
   fmtDayMonth,
   lbHasActivity,
   num,
+  type AnalyticsMode,
   type DashPayload,
   type LbSummary,
 } from "./helpers";
@@ -76,6 +83,74 @@ export function ChildChips({
                 <Avatar name={c.name} seed={c.id} size={30} />
                 <AppText variant="label" color={active ? "#ffffff" : tokens.chipText}>
                   {c.name}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+/* ------------------------------ subject chips ------------------------------ */
+
+/**
+ * Subjects-mode filter (web subject tabs, purchase-silent variant): only the
+ * child's UNLOCKED subjects render — never locked tabs or subscribe hints.
+ * `allId` ("all") appears only when the child has more than one subject.
+ */
+export function SubjectChips({
+  subjects,
+  selectedId,
+  onSelect,
+  label,
+  allLabel,
+}: {
+  subjects: { id: string; label: string }[];
+  /** "all" | subject uuid (already clamped by the screen). */
+  selectedId: string;
+  onSelect: (id: string) => void;
+  label: string;
+  /** Rendered as the leading chip only when subjects.length > 1. */
+  allLabel: string;
+}) {
+  const { tokens } = useTheme();
+  if (subjects.length === 0) return null;
+  const chips: { id: string; label: string }[] = [
+    ...(subjects.length > 1 ? [{ id: "all", label: allLabel }] : []),
+    ...subjects,
+  ];
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <AppText variant="eyebrow">{label}</AppText>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          {chips.map((c) => {
+            const active = c.id === selectedId;
+            return (
+              <Pressable
+                key={c.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={c.label}
+                onPress={() => onSelect(c.id)}
+                android_ripple={{ color: tokens.pillBg }}
+                style={({ pressed }) => ({
+                  paddingVertical: spacing.sm,
+                  paddingHorizontal: spacing.lg,
+                  minHeight: 40,
+                  justifyContent: "center",
+                  borderRadius: 999,
+                  backgroundColor: active ? tokens.accent : tokens.chipBg,
+                  borderWidth: 1,
+                  borderColor: active ? tokens.accent : tokens.border,
+                  opacity: pressed ? 0.85 : 1,
+                  overflow: "hidden",
+                })}
+              >
+                <AppText variant="label" color={active ? "#ffffff" : tokens.chipText}>
+                  {c.label}
                 </AppText>
               </Pressable>
             );
@@ -225,9 +300,70 @@ function TopicBar({
   );
 }
 
+/* ---------------------------- package results ----------------------------- */
+
+/** Olympiads scope only: one purchased package's attempts/answers/accuracy
+ * (the web per-package TABLE re-flowed as stacked rows — 320pt-safe). */
+function PackageRow({
+  title,
+  meta,
+  accuracy,
+}: {
+  title: string;
+  meta: string;
+  accuracy: number;
+}) {
+  const { tokens } = useTheme();
+  const pct = Math.min(100, Math.max(0, accuracy));
+  return (
+    <View style={{ gap: spacing.xs }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+        <AppText variant="label" style={{ flex: 1, minWidth: 0 }} numberOfLines={2}>
+          {title}
+        </AppText>
+        <AppText
+          variant="mono"
+          style={{ fontSize: 13, fontWeight: "700", minWidth: 44, textAlign: "right" }}
+        >
+          {`${Math.round(pct)}%`}
+        </AppText>
+      </View>
+      <AppText variant="muted" style={{ fontSize: 11 }}>
+        {meta}
+      </AppText>
+      <View
+        style={{
+          height: 8,
+          borderRadius: 4,
+          backgroundColor: tokens.chipBg,
+          overflow: "hidden",
+        }}
+      >
+        <View
+          style={{
+            width: `${pct}%`,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: tokens.accent,
+          }}
+        />
+      </View>
+    </View>
+  );
+}
+
 /* ------------------------------ dashboard body ---------------------------- */
 
-export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
+export function DashboardBody({
+  data,
+  t,
+  mode = "subjects",
+}: {
+  data: DashPayload;
+  t: T;
+  /** Drives the olympiad relabels + per-package section (web StatsBody mode). */
+  mode?: AnalyticsMode;
+}) {
   const { tokens } = useTheme();
   const totals = data.totals ?? {};
 
@@ -256,6 +392,20 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
     wrong: num(r?.wrong),
   }));
 
+  // Olympiads scope only: per-package rows (title = package translation).
+  const packages =
+    mode === "olympiads"
+      ? (data.per_package ?? []).map((p) => ({
+          id: String(p?.package_id ?? p?.title ?? ""),
+          title: String(p?.title ?? "—"),
+          attempts: num(p?.attempts),
+          correct: num(p?.correct),
+          wrong: num(p?.wrong),
+          skipped: num(p?.skipped),
+          accuracy: num(p?.accuracy),
+        }))
+      : [];
+
   // Round 47: ranking is COMPARATIVE — the helper returns a pair only when at
   // least two topics have a real sample AND their accuracies differ; otherwise
   // it reports which condition is missing so the card explains itself.
@@ -272,7 +422,11 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
 
   const kpis = [
     { label: t("ana.kpi.last7"), value: String(weeklyCount) },
-    { label: t("ana.kpi.tests"), value: String(num(totals.attempts)) },
+    {
+      // Olympiad mode relabels the completed-tests tile (web StatsBody parity).
+      label: mode === "olympiads" ? t("ana.olymp.kpi.attempts") : t("ana.kpi.tests"),
+      value: String(num(totals.attempts)),
+    },
     { label: t("ana.kpi.correct"), value: String(num(totals.correct)) },
     { label: t("ana.kpi.wrong"), value: String(num(totals.wrong)) },
     { label: t("ana.kpi.skipped"), value: String(num(totals.skipped)) },
@@ -381,6 +535,29 @@ export function DashboardBody({ data, t }: { data: DashPayload; t: T }) {
           ))
         )}
       </Card>
+
+      {/* Olympiads only: per-package results (web ana-table → stacked rows). */}
+      {mode === "olympiads" && packages.length > 0 ? (
+        <Card style={{ gap: spacing.md }}>
+          <SectionHeader title={t("ana.olymp.perPackage")} />
+          <AppText variant="muted" style={{ fontSize: 12 }}>
+            {t("ana.olymp.perPackageSub")}
+          </AppText>
+          {packages.map((p) => (
+            <PackageRow
+              key={p.id}
+              title={p.title}
+              meta={[
+                `${t("ana.th.attempts")}: ${p.attempts}`,
+                `${t("ana.kpi.correct")}: ${p.correct}`,
+                `${t("ana.kpi.wrong")}: ${p.wrong}`,
+                `${t("ana.kpi.skipped")}: ${p.skipped}`,
+              ].join(" · ")}
+              accuracy={p.accuracy}
+            />
+          ))}
+        </Card>
+      ) : null}
     </View>
   );
 }

@@ -39,7 +39,49 @@ export function Modal({
     panelRef.current?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Round 50: FOCUS TRAP. `aria-modal` tells a screen reader the rest of the
+      // page is inert, but it does not stop the browser tabbing into it — a
+      // keyboard user could Tab straight out of an open dialog and interact with
+      // the page behind the overlay. Cycle focus within the panel instead.
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      // Queried on each Tab, not cached: modal bodies are dynamic (a pending
+      // button becomes disabled, rows appear) and a stale list would trap focus
+      // on an element that no longer accepts it.
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+      if (focusable.length === 0) {
+        // Nothing tabbable inside — keep focus on the panel itself.
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (active && !panel.contains(active)) {
+        // Focus escaped (e.g. it was on the page before the dialog mounted).
+        e.preventDefault();
+        first.focus();
+      }
     }
     document.addEventListener("keydown", onKeyDown);
 

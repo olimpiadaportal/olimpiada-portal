@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/admin/guards";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { listMobileVersions } from "@/lib/admin/mobileApp";
 import { SettingCard } from "@/components/SettingCard";
 import {
@@ -15,12 +16,8 @@ export default async function MobileAppPage() {
   const locale = await getLocale();
   const rows = await listMobileVersions();
 
-  // Owner-facing times are always shown in Azerbaijan time (Asia/Baku).
-  const bakuFmt = new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Baku",
-  });
+  // Owner-facing times are always shown in Azerbaijan time (Asia/Baku) via the
+  // shared hardened helper (root-locale "M08" guard) — lib/admin/datetime.ts.
 
   const labels: MobileVersionLabels = {
     min: t("mobileapp.min"),
@@ -87,7 +84,7 @@ export default async function MobileAppPage() {
                     message_en: row.message_en,
                     message_ru: row.message_ru,
                   }}
-                  updatedAt={bakuFmt.format(new Date(row.updated_at))}
+                  updatedAt={formatBakuDateTime(row.updated_at, locale)}
                   labels={labels}
                 />
               ) : (

@@ -123,7 +123,15 @@ export async function subscribeChildCore(params: {
   });
   // R7 security: never surface raw Postgres error text (schema/constraint
   // details) to the client — generic message only.
-  if (error) return { ok: false, errorKey: "sub.err.failed" };
+  // Round 51 (audit F6): except the DB payment kill switch, which maps to the
+  // friendly payments-off notice.
+  if (error) {
+    const hint = (error as { hint?: string | null }).hint ?? "";
+    if (hint === "payments_disabled") {
+      return { ok: false, errorKey: "gate.paymentsOff" };
+    }
+    return { ok: false, errorKey: "sub.err.failed" };
+  }
 
   // Batch H: the RPC allocated the deferred 8-digit ID (first plan for this child).
   // Set the canonical synthetic auth email so the child can log in with the ID.
@@ -484,6 +492,12 @@ export async function updateSubscriptionSubjectsCore(params: {
     // tries to prevent this, this is the authoritative backstop).
     if (code === PG_CHECK_VIOLATION && hint === "last_subject") {
       return { ok: false, errorKey: "subjedit.minOne" };
+    }
+    // Round 51 (audit F6): the DB payment kill switch blocked the ADD side
+    // (assert_payments_enabled, migrations 089/091) — friendly notice, not
+    // the generic "add failed".
+    if (code === PG_CHECK_VIOLATION && hint === "payments_disabled") {
+      return { ok: false, errorKey: "gate.paymentsOff" };
     }
     // no_data_found = no live subscription (race: canceled between our SELECT
     // above and this call).

@@ -1882,4 +1882,72 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 - Signed in as a CHILD, the public olympiad pages must show **no purchase button** at all.
 - Check on a phone: buttons wrap, cards stack, the rating table stays readable.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-# / AL-# / AM-#** + what you saw.
+# ROUND 49 — landing cleanup · Ətraflı modal · pricing configurator
+
+## AN1. Landing page no longer lists olympiads
+- Open the landing page signed out. The "active olympiad packages" band must be **gone**. The only way in is the hero button **Olimpiadalara bax**.
+- That button still opens the public olympiads listing, and the listing itself is unchanged.
+
+## AN2. "Ətraflı" opens a modal
+- On the public olympiads listing (and on /services at the bottom), click **Ətraflı** on any card — it must open a **modal on the same page**, not navigate away. Closing it returns you exactly where you were.
+- The modal content must look the same as the parent dashboard's Ətraflı (same rows, same hidden-when-empty behaviour).
+- Clicking the olympiad **title** (not the button) still opens the full details page — that is intentional, for shareable links.
+
+## AN3. Services pricing configurator
+- Open /services signed out. The three static Weekly/Monthly/Yearly cards are replaced by a picker: available subjects on the left, your selection + period + total on the right (stacked on a phone).
+- Add subjects one by one — the total updates immediately. Add the same subject twice: it must not duplicate. Remove one — total drops.
+- Switch Həftəlik / Aylıq / İllik — the total recalculates each time.
+- With nothing selected you should see: *"Qiyməti hesablamaq üçün ən azı bir fənn seçin."*
+- Amounts read like **27,00 AZN** (comma, two decimals) — never with a "≈" sign.
+- Press **Davam et** signed out → you land on registration with your choice preserved. As a parent → the add-child flow opens with those subjects pre-ticked. **The price is still recalculated at checkout — the page says so.**
+- Signed in as a CHILD: there must be **no purchase button at all** on /services.
+- The Olympiads section must still be there, **below** the configurator.
+
+# ROUND 50 — sliding segments · active nav · fail-closed child gate
+
+## AO1. Sliding segmented controls (web)
+- On /services, click between **Həftəlik / Aylıq / İllik** — the white pill must SLIDE, not jump. Same on: subscription tabs, analytics (mode / child / subject), login Parent|Student tabs, olympiad child chooser, language and theme segments in the profile drawer, test-review filters, notification filters, news sort, leaderboard tabs.
+- Narrow the browser until a control wraps to two lines: the pill must still sit on the correct option (it snaps between lines rather than sliding diagonally — that's intended).
+- Turn on the OS "reduce motion" setting: the pill must still land on the right option, just without travelling.
+
+## AO2. Active navigation item (web)
+- Click each item in the top navigation — the current one must stay visibly marked (purple text + underline).
+- Open a news article: the **News** nav item must stay marked. On the home page, only Home is marked.
+
+## AO3. Sliding segmented control (mobile)
+- Same check on the phone: pricing period switcher, subscription Plans/Billing/Invoices, login Parent|Student, and the AZ|EN|RU + Light|Dark switches in the account sheet. The chip must slide and resize between options of different widths (switch to Russian — labels get longer, the chip must resize to match).
+- Tapping **Light/Dark** changes the theme mid-slide: the chip must not blink back to the wrong position.
+- Turn on Android "Remove animations" (or iOS Reduce Motion): the chip must jump instead of sliding, always to the correct option.
+
+## AO4. Children never see purchase UI (regression check)
+- Sign in as a CHILD and open /services, the public olympiads page, an olympiad details page, and /register with a shared link like `?subjects=…&interval=year`. **None** may show a price basket, a buy button or a "Continue" CTA.
+- Sign in as a parent and as a signed-out visitor: both must still see their normal CTAs.
+
+# ROUND 51 — olympiad rotation · payments-off behavior · sync fixes
+
+## AP1. Olympiad question rotation (the big one)
+- Admin → Olympiad packages → **Yeni paket**: right after **Qiymət (AZN)** there must be a required **Sual sayı** field with the helper *"Şagird hər girişdə bu sayda sual görəcək."* After choosing grades + uploading files, a live summary shows per grade: uploaded pool, estimated full cycle (e.g. *500 → 10 giriş* for count 50), and the note that the cycle is per-student.
+- Try to ACTIVATE a package where a selected grade's pool is smaller than Sual sayı → it must refuse with *"6-cı sinif üçün 35 sual yüklənib. Paket üzrə sual sayı 50 olduğu üçün ən azı 50 sual tələb olunur."* (switch the admin to EN/RU — the message must be translated, never the az sentence).
+- As a student with a purchased package (e.g. 50-question pool, count 25): Start → the attempt has exactly 25 questions. Finish, start again → **25 different questions** (none repeat). Start a third time → the pool is exhausted, the cycle resets, questions may repeat from now on.
+- Mid-attempt, refresh the page / re-enter: the SAME questions in the same list (nothing consumed twice). Old results under İrəliləyiş stay intact after a cycle reset.
+- Existing packages: their behavior must be UNCHANGED today (each was backfilled to serve its whole pool until you edit Sual sayı yourself).
+
+## AP2. Olympiads are visibly practice-only
+- Run an olympiad attempt (web + mobile): the runner must NOT show "Reytinqə təsir edir"; the olympiad list and the result screen must show *"Olimpiada cəhdləri məşq xarakterlidir — xala, faizə və reytinqə təsir etmir."*
+- The student home's points/accuracy/rounds and subject-strength bars must NOT move after an olympiad attempt (web + mobile).
+- Details views (public, parent, child, mobile): pool count stays the headline; a **"Hər girişdə sual sayı"** row appears only when it's smaller than the pool.
+
+## AP3. Payments off = kill switch UX (flip the `payments`/`demo_payments` flags OFF in admin)
+- Web /subscription: a notice appears; plan cards show NO "Abunəliyə başla"/"Fənn əlavə et"; **"Fənləri idarə et" still works** and lets you REMOVE a subject (adds are disabled with a tooltip). Mobile subscription tab: same — notice + removal-only editor + cancel.
+- Web /services: configurator shows prices but NO "Davam et" (payments-off note instead). Public olympiad cards/details: no CTA. Mobile pricing screen: no AZN amounts, no register CTA, one payments-off notice; olympiad band stays browsable without prices.
+- Flip the flags back ON afterwards and confirm CTAs return.
+
+## AP4. Sync fixes quick pass
+- Web login/register/forgot/reset/verify + child test setup: a **← Geri** control top-left; it goes back (or to a sensible page on a cold link).
+- Notification detail modal (web + mobile): the timestamp is a real Baku date (*"26 iyul 2026, 14:30"*), never "M08" or a device-local time.
+- Mobile parent Analytics: the **Fənlər | Olimpiadalar** switch + subject chips exist and match the web dashboard's numbers for the same child.
+- Mobile student leaderboard, District scope: you can now pick ANY rayon of your city (like web); the "ən azı N raund" provisional note shows whenever your own result is provisional.
+- Mobile untimed results (daily rounds/practice): time reads "Sərf olunan vaxt: X dəq" with NO "/ 25 dəq" limit suffix.
+- /services with a signed-in CHILD: the page redirects to the student panel; the public header/footer show no "Xidmətlər" link while signed in as a child.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-# / AL-# / AM-# / AN-# / AO-# / AP-#** + what you saw.

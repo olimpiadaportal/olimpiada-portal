@@ -10,6 +10,9 @@ export function isSafeRelativeUrl(url: string): boolean {
   if (url.startsWith("//") || url.startsWith("/\\")) return false;
   if (url.includes("\\")) return false;
   if (url.includes("://")) return false;
+  // "@" can smuggle a userinfo-style authority past naive URL handling — the
+  // web safeNext rule set rejects it outright, so the mobile port does too.
+  if (url.includes("@")) return false;
   if (/[\u0000-\u001f\u007f ]/.test(url)) return false;
   return true;
 }
@@ -102,6 +105,15 @@ const RULES: RouteRule[] = [
   // valid and open the SAME screen with the SAME student block (no commerce
   // for children). Old links/pushes keep working via the /pricing rule above.
   { prefix: "/services", audience: "public", target: "/(public)/pricing", blockedRoles: ["student"] },
+  // Web /olympiad-packages catalog (and /olympiad-packages/<code> detail):
+  // the mobile twin is the pricing screen's public packages band, with the
+  // same student commerce block as /pricing and /services.
+  {
+    prefix: "/olympiad-packages",
+    audience: "public",
+    target: "/(public)/pricing",
+    blockedRoles: ["student"],
+  },
   { prefix: "/about", audience: "public", target: "/(public)/about" },
   { prefix: "/subjects", audience: "public", target: "/(public)/subjects" },
   { prefix: "/faq", audience: "public", target: "/(public)/faq" },

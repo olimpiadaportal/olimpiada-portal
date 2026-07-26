@@ -5,6 +5,7 @@ import type { Locale } from "@/i18n/config";
 import { formatShortDate } from "@/lib/formatDate";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import { Segmented } from "@/components/Segmented";
 
 // Shared news list (R10, F10): one implementation serving the PUBLIC /news page
 // and the in-panel routes (/dashboard/news for parents, /child/news for
@@ -131,7 +132,7 @@ export async function NewsBrowser({
   return (
     <>
       <div className="news-toolbar">
-        <div className="news-sort">
+        <Segmented className="news-sort" track>
           {SORTS.map((s) => (
             <Link
               key={s.key}
@@ -142,7 +143,7 @@ export async function NewsBrowser({
               {s.label}
             </Link>
           ))}
-        </div>
+        </Segmented>
       </div>
 
       {items.length === 0 ? (

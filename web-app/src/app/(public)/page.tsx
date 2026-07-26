@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { getT, getLocale } from "@/i18n/server";
 import { createClient } from "@/lib/supabase/server";
+import { getChild, getParent } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { formatPercent } from "@/lib/formatPercent";
 import AboutUs from "@/components/AboutUs";
-import { PublicOlympiadPackages } from "@/components/PublicOlympiadPackages";
 
 // get_public_leaderboard row (migration 058; Round 36: value = UNROUNDED
 // weighted percentage, provisional students already excluded, competition
@@ -76,6 +76,10 @@ function StatIcon({ kind }: { kind: "test" | "medal" | "users" | "up" }) {
 export default async function HomePage() {
   const t = await getT();
   const locale = await getLocale();
+  // Round 51: hero CTAs are session-aware (request-cached — the public layout
+  // already resolved both roles, so this costs nothing extra).
+  const [parentSession, childSession] = await Promise.all([getParent(), getChild()]);
+  const panelHref = childSession ? "/child" : parentSession ? "/dashboard" : null;
   const features = [
     ["home.f1Title", "home.f1Desc"],
     ["home.f2Title", "home.f2Desc"],
@@ -127,12 +131,24 @@ export default async function HomePage() {
           <Link className="btn-ghost" href="/subjects">
             {t("home.ctaSubjects")}
           </Link>
-          <Link className="btn-ghost" href="/olympiad-packages">
-            {t("home.ctaOlympiads")}
-          </Link>
-          <Link className="btn" href="/register">
-            {t("home.ctaStart")}
-          </Link>
+          {/* Round 51: a signed-in CHILD gets no link to the priced public
+              listing (the arena has its own price-free olympiad screen). */}
+          {!childSession && (
+            <Link className="btn-ghost" href="/olympiad-packages">
+              {t("home.ctaOlympiads")}
+            </Link>
+          )}
+          {/* Signed-in visitors don't need "Start now → /register" — send them
+              to their own panel instead (audit leftover from Round 49). */}
+          {panelHref ? (
+            <Link className="btn" href={panelHref}>
+              {t("nav.myPanel")}
+            </Link>
+          ) : (
+            <Link className="btn" href="/register">
+              {t("home.ctaStart")}
+            </Link>
+          )}
         </div>
       </section>
 
@@ -219,13 +235,11 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Active olympiad packages (public listing) — the shared band the
-          /services page renders below its plans. The landing has no pricing
-          section of its own, so it sits directly below the offer/stats band.
-          Capped to 6 rows here; a full page shows a "see all" link to the
-          unlimited /olympiad-packages page (see the component's heuristic
-          comment). */}
-      <PublicOlympiadPackages limit={6} />
+      {/* Round 49 (owner): the active-olympiad-packages band was REMOVED from
+          the landing page. It still renders on /services (below the pricing
+          configurator) and on the full /olympiad-packages listing — the
+          landing keeps only the "Olimpiadalara bax" hero button as the route
+          into it. Do not re-add the band here. */}
 
       {/* usp-values-scope: CSS scope for the redesigned "What sets us apart"
           (about.values) card grid. The section markup lives in

@@ -183,17 +183,33 @@ export function isCancellable(status: string | null | undefined): boolean {
 
 // ---- formatting ----------------------------------------------------------------
 
-/** Bare numeric amount (no currency) — trims float noise but keeps honest
- *  cents when present. Used to fill {total}-shaped i18n template slots that
- *  carry currency in a separate {currency} placeholder
- *  (subjedit.nextBillingLine and friends). */
-export function fmtAmount(amount: number | null | undefined): string {
+/** Web pricingConfigurator DECIMAL_SEPARATOR twin: az/ru write decimals with
+ *  a comma, en with a dot. */
+const DECIMAL_SEPARATOR: Record<Locale, string> = {
+  az: ",",
+  en: ".",
+  ru: ",",
+};
+
+/** Bare numeric amount (no currency) — web formatAzn parity: ALWAYS exactly
+ *  two decimals, with the locale's decimal separator (comma for az/ru, dot
+ *  for en). Used to fill {total}-shaped i18n template slots that carry
+ *  currency in a separate {currency} placeholder (subjedit.nextBillingLine
+ *  and friends). */
+export function fmtAmount(amount: number | null | undefined, locale: Locale = "az"): string {
   const n = typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  const separator = DECIMAL_SEPARATOR[locale] ?? DECIMAL_SEPARATOR.az;
+  return n.toFixed(2).replace(".", separator);
 }
 
-export function fmtMoney(amount: number | null | undefined, currency?: string | null): string {
-  return `${fmtAmount(amount)} ${currency && currency.length > 0 ? currency : "AZN"}`;
+/** "27,00 AZN" (az/ru) / "27.00 AZN" (en) — web formatAzn's shape with the
+ *  server-provided currency code (AZN fallback). */
+export function fmtMoney(
+  amount: number | null | undefined,
+  currency?: string | null,
+  locale: Locale = "az",
+): string {
+  return `${fmtAmount(amount, locale)} ${currency && currency.length > 0 ? currency : "AZN"}`;
 }
 
 /** Locale long date (+ optional time) in the product's home timezone

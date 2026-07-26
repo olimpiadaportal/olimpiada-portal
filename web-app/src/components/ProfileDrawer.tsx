@@ -29,6 +29,7 @@ import {
   LanguageSegmented,
 } from "@/components/LanguageDropdown";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Segmented } from "@/components/Segmented";
 import { useTFirst } from "@/i18n/I18nProvider";
 import { parentLogout } from "@/lib/auth/parentService";
 import type { Locale } from "@/i18n/config";
@@ -57,8 +58,9 @@ export function ParentNavLinks({
     it.exact
       ? pathname === it.href
       : pathname === it.href || pathname.startsWith(`${it.href}/`);
+  // <Segmented> only adds the sliding highlight pill — same markup contract.
   return (
-    <nav className="pnav-links">
+    <Segmented as="nav" className="pnav-links">
       {items.map((it) => (
         <Link
           key={it.href}
@@ -76,7 +78,7 @@ export function ParentNavLinks({
           )}
         </Link>
       ))}
-    </nav>
+    </Segmented>
   );
 }
 

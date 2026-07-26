@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/admin/guards";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { createClient } from "@/lib/supabase/server";
 import { getT, getLocale, type T } from "@/i18n/server";
 
@@ -9,21 +10,9 @@ function severityPill(s: string): string {
   return "pill-ok";
 }
 
-// Render an audit timestamp in the Asia/Baku timezone (UTC+4, no DST).
-// The DB stores created_at as timestamptz (UTC); the previous code used
-// toLocaleString() with the SERVER's timezone, so times were wrong. We pin the
-// zone to Asia/Baku and localize with the admin's active locale.
-function formatBakuTime(iso: string, locale: string): string {
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      timeZone: "Asia/Baku",
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
+// Audit timestamps render via the shared hardened helper: Asia/Baku wall clock
+// (the DB stores created_at as UTC timestamptz) with the root-locale "M08"
+// guard — see lib/admin/datetime.ts.
 
 // ---------------------------------------------------------------------------
 // Round 10 (F6): human-readable action/entity mapping layer.
@@ -494,7 +483,7 @@ export default async function AuditPage({
     actorById = new Map((actors ?? []).map((a: any) => [a.id, a]));
   }
 
-  const fmt = (iso: string): string => formatBakuTime(iso, locale);
+  const fmt = (iso: string): string => formatBakuDateTime(iso, locale);
 
   const actorLabel = (id: string | null): string => {
     if (!id) return t("audit.systemActor");

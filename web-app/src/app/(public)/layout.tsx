@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { getLocale, getT } from "@/i18n/server";
-import { getChild, getParent } from "@/lib/auth/session";
+import { getChild, getParent, maySeePurchaseUi } from "@/lib/auth/session";
 import { getLocaleSettings, getPublicSiteSettings } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageDropdown } from "@/components/LanguageDropdown";
 import { GiveawayBanner } from "@/components/GiveawayBanner";
+import { PublicNavLinks } from "@/components/PublicNavLinks";
 
 // Giveaway promo strings surfaced to logged-OUT visitors on the public site
 // (item 1b — lure new customers). Same keys as the in-app banner.
@@ -108,8 +109,26 @@ export default async function PublicLayout({
   // the session survives untouched). Resolve the session here and offer the
   // way BACK to their panel instead. Cheap: getParent/getChild are request-
   // cached and the middleware already refreshed the cookie.
-  const [parentSession, childSession] = await Promise.all([getParent(), getChild()]);
+  const [parentSession, childSession, mayPurchase] = await Promise.all([
+    getParent(),
+    getChild(),
+    maySeePurchaseUi(),
+  ]);
   const panelHref = childSession ? "/child" : parentSession ? "/dashboard" : null;
+  // Round 51 (audit F11): a signed-in CHILD (or an unresolved role — fail
+  // CLOSED) gets no pricing/register links in the chrome. A child tapping a
+  // news notification lands on a public page; "Xidmətlər" one click from a
+  // priced basket violates "children never see purchase UI". /services and
+  // /olympiad-packages* additionally redirect children server-side.
+  const nav = mayPurchase ? NAV : NAV.filter(([href]) => href !== "/services");
+  const footerCols = mayPurchase
+    ? FOOTER_COLS
+    : FOOTER_COLS.map((col) => ({
+        ...col,
+        links: col.links.filter(
+          ([href]) => href !== "/services" && href !== "/register",
+        ),
+      }));
   // Social links (admin Settings → social.*): only non-empty ones render.
   const { social } = await getPublicSiteSettings();
   const socialLinks = (
@@ -135,13 +154,10 @@ export default async function PublicLayout({
         <Link className="site-brand" href="/">
           {t("app.brand")}
         </Link>
-        <nav className="site-links">
-          {NAV.map(([href, key]) => (
-            <Link key={href} href={href}>
-              {t(key)}
-            </Link>
-          ))}
-        </nav>
+        {/* Client island: only the link row needs the pathname, so the rest of
+            this header stays server-rendered. It marks the current section
+            (aria-current="page" + a sliding accent underline). */}
+        <PublicNavLinks items={nav.map(([href, key]) => ({ href, label: t(key) }))} />
         <div className="site-cta">
           {panelHref ? (
             <Link className="btn" href={panelHref}>
@@ -179,7 +195,7 @@ export default async function PublicLayout({
             </Link>
             <p className="site-foot-tagline">{t("footer.tagline")}</p>
           </div>
-          {FOOTER_COLS.map((col) => (
+          {footerCols.map((col) => (
             <div className="site-foot-col" key={col.head}>
               <p className="site-foot-h">{t(col.head)}</p>
               {col.links.map(([href, key]) => (

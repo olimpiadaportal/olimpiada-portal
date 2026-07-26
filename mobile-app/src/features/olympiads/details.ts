@@ -51,6 +51,16 @@ export function buildOlympiadDetailRows(
     gradeValue,
   );
   push("questions", t("poly.det.questions"), count > 0 ? String(count) : null);
+  // Round 51 rotation: what one attempt actually serves. Shown only when it is
+  // a real SUBSET of this caller's pool — equal/greater means an attempt serves
+  // the whole pool and the questions row above already says it.
+  push(
+    "perAttempt",
+    t("poly.det.perAttempt"),
+    pkg.questions_per_attempt > 0 && pkg.questions_per_attempt < count
+      ? String(pkg.questions_per_attempt)
+      : null,
+  );
   push(
     "duration",
     t("poly.det.duration"),

@@ -13,7 +13,7 @@ import { useNotifications } from "@/lib/notifications/useNotifications";
 import { NotificationDetailModal } from "@/components/NotificationDetailModal";
 import {
   iconForType,
-  isSafeRelativeUrl,
+  isAllowedNotificationUrl,
   relativeTime,
   type NotificationItem,
 } from "@/lib/notifications/types";
@@ -67,7 +67,9 @@ export function NotificationBell({
   const activate = (n: NotificationItem, closeAfter: boolean) => {
     markRead(n.id);
     if (closeAfter) setOpen(false);
-    if (isSafeRelativeUrl(n.action_url)) router.push(n.action_url);
+    // Round 51 (audit F17): allowlisted routes only — mobile already refuses
+    // off-list targets; the web app followed ANY same-origin path.
+    if (isAllowedNotificationUrl(n.action_url)) router.push(n.action_url);
     else setDetail(n); // no usable deep link → show the detail modal (never a dead click)
   };
 

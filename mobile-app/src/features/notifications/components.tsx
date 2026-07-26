@@ -27,7 +27,8 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { RichBody } from "@/lib/notifMarkdown";
-import { formatDayMonth } from "@/lib/formatDate";
+import { bakuDayKey, formatDayMonth, formatLongDate } from "@/lib/formatDate";
+import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
 import type { NotificationItem } from "./useNotifications";
 
@@ -113,33 +114,31 @@ export function groupByDay(
   labels: { today: string; yesterday: string },
   locale: Locale,
 ): NotificationSection[] {
-  const dayKey = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-      d.getDate(),
-    ).padStart(2, "0")}`;
-  const now = new Date();
-  const todayKey = dayKey(now);
-  const yesterdayKey = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  // Buckets AND titles use the ASIA/BAKU day (bakuDayKey — fixed UTC+4, so
+  // "yesterday" is exactly now − 24h). Bucketing by the DEVICE-local day
+  // while the section title formats in Asia/Baku split and mislabeled
+  // sections for any device outside UTC+4; the year comparison follows the
+  // same Baku calendar.
+  const todayKey = bakuDayKey(new Date().toISOString());
+  const yesterdayKey = bakuDayKey(new Date(Date.now() - 86_400_000).toISOString());
+  const currentYear = todayKey.slice(0, 4);
 
-  const titleFor = (key: string, d: Date): string => {
+  const titleFor = (key: string, iso: string): string => {
     if (key === todayKey) return labels.today;
     if (key === yesterdayKey) return labels.yesterday;
     // Round 46: shared Hermes-safe formatter. A local Intl.DateTimeFormat here
     // silently returned the CLDR root pattern ("2026 M08 22") on devices
     // without Azerbaijani month data — it does not throw, so the old catch
     // never ran.
-    return (
-      formatDayMonth(d.toISOString(), locale, d.getFullYear() !== now.getFullYear()) || key
-    );
+    return formatDayMonth(iso, locale, key.slice(0, 4) !== currentYear) || key;
   };
 
   const sections: NotificationSection[] = [];
   let current: NotificationSection | null = null;
   for (const n of items) {
-    const d = new Date(n.created_at);
-    const key = Number.isFinite(d.getTime()) ? dayKey(d) : "unknown";
+    const key = bakuDayKey(n.created_at) || "unknown";
     if (!current || current.key !== key) {
-      current = { key, title: titleFor(key, d), data: [] };
+      current = { key, title: titleFor(key, n.created_at), data: [] };
       sections.push(current);
     }
     current.data.push(n);
@@ -199,6 +198,11 @@ export function CategoryChips({
     ...categories.map((c) => ({ value: c as string | null, label: labelFor(c) })),
   ];
   return (
+    // NOT the shared <Segmented> on purpose: with every category present this
+    // row holds six az/ru labels — far wider than a 320pt screen — so the
+    // single-row sliding track cannot fit and the chips stay horizontally
+    // scrollable. The web segmented control's SEMANTICS are adopted instead:
+    // a "tablist" container with "tab" children + selected state.
     // flexGrow:0 kills the ScrollView's implicit flexGrow:1 (it would split the
     // screen's free height with the list and stretch every chip to fill it);
     // alignItems:"center" keeps chips at their natural 44px control height.
@@ -208,13 +212,16 @@ export function CategoryChips({
       style={{ flexGrow: 0 }}
       contentContainerStyle={{ alignItems: "center" }}
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+      <View
+        accessibilityRole="tablist"
+        style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
+      >
         {chips.map((c) => {
           const on = c.value === active;
           return (
             <Pressable
               key={c.value ?? "__all__"}
-              accessibilityRole="button"
+              accessibilityRole="tab"
               accessibilityState={{ selected: on }}
               accessibilityLabel={c.label}
               onPress={() => onChange(c.value)}
@@ -346,12 +353,16 @@ export function NotificationDetailSheet({
 }) {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
+  // Only the locale — the label function stays the injected `t` prop.
+  const { locale } = useT();
   if (!item) return null;
 
   const catKey = item.category ? categoryLabelKey(item.category) : undefined;
   const typeLabel = catKey ? t(catKey) : item.category ?? t("notif.detailsTitle");
-  const d = new Date(item.created_at);
-  const when = Number.isFinite(d.getTime()) ? d.toLocaleString() : "";
+  // Hermes-safe, Asia/Baku, app-locale — a raw toLocaleString() here rendered
+  // device-locale/device-timezone output (and the "M08" root pattern on az).
+  const longWhen = formatLongDate(item.created_at, locale, true);
+  const when = longWhen === "—" ? "" : longWhen;
   const pairs = scalarPairs(item.data_json);
   const Icon = typeIcon(item.type);
 

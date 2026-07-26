@@ -56,8 +56,13 @@ export default async function NewOlympiadPage() {
             ...mergeLocalDict(fullDict, locale),
             ...olympiadLocalDict(locale),
           }}
+          locale={locale}
           subjects={((subjects ?? []) as any[]).map((s) => ({ value: s.id, label: s.name }))}
-          grades={((grades ?? []) as any[]).map((g) => ({ value: g.id, label: g.name }))}
+          grades={((grades ?? []) as any[]).map((g) => ({
+            value: String(g.id),
+            label: String(g.name),
+            level: Number(g.level),
+          }))}
           olympiadTypes={((otypes ?? []) as any[]).map((o) => ({ value: o.id, label: o.name }))}
           typeNames={activeTypeNames}
           typeRules={activeTypeRules}

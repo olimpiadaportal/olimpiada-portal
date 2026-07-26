@@ -28,4 +28,11 @@ describe("formatPercent (Round 36 display rule 17.10)", () => {
     expect(formatPercent(Number.NaN, "en")).toBe("0.00%");
     expect(formatPercent(Number.POSITIVE_INFINITY, "en")).toBe("0.00%");
   });
+
+  it("an unknown locale falls back to the en format instead of throwing", () => {
+    // Round 51 audit: bare tags hit the CLDR root-locale trap; unknown inputs
+    // must resolve through the en-GB fallback, never crash the render.
+    expect(formatPercent(87.3456, "xx")).toBe("87.35%");
+    expect(formatPercent(87.3456, "")).toBe("87.35%");
+  });
 });

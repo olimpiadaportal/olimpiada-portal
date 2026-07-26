@@ -8,6 +8,7 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect";
+import { Segmented } from "@/components/Segmented";
 
 // Parent-panel leaderboard — the SAME board the student arena shows (percent |
 // streak, month | all_time, global/subject/grade/city/district/school scopes),
@@ -432,7 +433,7 @@ export default async function ParentLeaderboardPage({
       <h1 style={{ marginBottom: 18 }}>{t("lb.title")}</h1>
 
       {/* Board switch: Percent | Streak */}
-      <nav className="plb-chips" aria-label={t("lb.title")}>
+      <Segmented as="nav" className="plb-chips" aria-label={t("lb.title")} track>
         <Link
           className={`plb-chip${board === "percent" ? " active" : ""}`}
           href={href({ ...cur, board: "percent" })}
@@ -447,12 +448,12 @@ export default async function ParentLeaderboardPage({
         >
           {"\u{1F525}"} {t("lb.board.streak")}
         </Link>
-      </nav>
+      </Segmented>
 
       {board === "percent" && (
         <>
           {/* Scope tabs — catalog-driven (parents see every scope). */}
-          <div className="plb-chips" role="group" aria-label={t("lb.scope.global")}>
+          <Segmented className="plb-chips" role="group" aria-label={t("lb.scope.global")} track>
             {scopeTabs.map((s) => (
               <Link
                 key={s}
@@ -462,7 +463,7 @@ export default async function ParentLeaderboardPage({
                 {t(`lb.scope.${s}`)}
               </Link>
             ))}
-          </div>
+          </Segmented>
 
           {/* Per-scope pickers — every option navigates through a server-built
               whitelisted href (the reused LeaderboardSubjectSelect only
@@ -482,7 +483,7 @@ export default async function ParentLeaderboardPage({
           )}
 
           {scope === "grade" && grades.length > 0 && (
-            <div className="plb-chips" role="group" aria-label={t("lb.colGrade")}>
+            <Segmented className="plb-chips" role="group" aria-label={t("lb.colGrade")} track>
               {grades.map((g) => (
                 <Link
                   key={g.id}
@@ -492,7 +493,7 @@ export default async function ParentLeaderboardPage({
                   {formatGradeLabel(g.level, locale, g.name)}
                 </Link>
               ))}
-            </div>
+            </Segmented>
           )}
 
           {(scope === "city" || scope === "district" || scope === "school") &&
@@ -535,7 +536,7 @@ export default async function ParentLeaderboardPage({
             )}
 
           {/* Period toggle: This month | All time */}
-          <div className="plb-chips" role="group" aria-label={t("lb.period.month")}>
+          <Segmented className="plb-chips" role="group" aria-label={t("lb.period.month")} track>
             <Link
               className={`plb-chip${periodUrl === "month" ? " active" : ""}`}
               href={href({ ...cur, period: "month" })}
@@ -548,7 +549,7 @@ export default async function ParentLeaderboardPage({
             >
               {t("lb.period.all")}
             </Link>
-          </div>
+          </Segmented>
         </>
       )}
 

@@ -2,7 +2,8 @@
 // az month names and Intl leaks the raw pattern placeholder ("2026 M08 6");
 // formatLongDate must detect that (or an Intl throw) and fall back to manual
 // month names, always computing the DAY in Asia/Baku (fixed UTC+4, no DST).
-import { formatDayMonth, formatLongDate, formatShortDate } from "@/lib/formatDate";
+import { bakuDayKey, formatDayMonth, formatLongDate, formatShortDate } from "@/lib/formatDate";
+import type { Locale } from "@/i18n";
 
 // 2026-08-06 14:00 in Baku (UTC+4).
 const ISO = "2026-08-06T10:00:00Z";
@@ -50,6 +51,26 @@ describe("formatLongDate (Intl path — full ICU in jest/Node)", () => {
     expect(formatLongDate(undefined, "en")).toBe("—");
     expect(formatLongDate("", "ru")).toBe("—");
     expect(formatLongDate("garbage", "az")).toBe("—");
+  });
+
+  // Round 47 — formatLongDate now routes through the shared intlFormat()
+  // helper (same options, same placeholder rejection): the EXACT az/en/ru
+  // output for valid inputs must not have moved.
+  it("keeps the exact pre-refactor output for valid az/en/ru inputs", () => {
+    expect(formatLongDate(ISO, "az")).toBe("6 avqust 2026");
+    expect(formatLongDate(ISO, "en")).toBe("6 August 2026");
+    expect(formatLongDate(ISO, "ru")).toBe("6 августа 2026 г.");
+    expect(formatLongDate(ISO, "az", true)).toBe("6 avqust 2026/14:00");
+    expect(formatLongDate(ISO, "en", true)).toBe("6 August 2026 at 14:00");
+    expect(formatLongDate(ISO, "ru", true)).toBe("6 августа 2026 г. в 14:00");
+  });
+
+  it("maps an unknown runtime locale to the EN tag, never a bare code", () => {
+    // A bare unknown tag would resolve to the CLDR root locale (the exact
+    // documented "M08" trigger); tagFor now falls back to the en tag instead.
+    const out = formatLongDate(ISO, "xx" as Locale);
+    expect(out).toBe("6 August 2026");
+    expect(out).not.toMatch(/M\d\d/);
   });
 });
 
@@ -131,5 +152,28 @@ describe("formatDayMonth", () => {
   it("returns an empty string for unset/invalid input", () => {
     expect(formatDayMonth(null, "az", true)).toBe("");
     expect(formatDayMonth("garbage", "en", false)).toBe("");
+  });
+});
+
+// Round 47 — the notification inbox buckets its day sections (and compares
+// years) with this key so the grouping day ALWAYS matches the Asia/Baku day
+// the section title renders in, independent of the device timezone.
+describe("bakuDayKey", () => {
+  it("keys by the Baku (UTC+4) day, not the UTC/device day", () => {
+    expect(bakuDayKey(ISO)).toBe("2026-08-06");
+    // 21:00Z on Aug 5 = 01:00 Baku on Aug 6 — the boundary case.
+    expect(bakuDayKey(MIDNIGHT)).toBe("2026-08-06");
+    // 19:30Z = 23:30 Baku — still Aug 5, same UTC day as MIDNIGHT.
+    expect(bakuDayKey(LATE)).toBe("2026-08-05");
+  });
+
+  it("zero-pads to a stable sortable YYYY-MM-DD shape", () => {
+    expect(bakuDayKey("2026-01-02T00:00:00Z")).toBe("2026-01-02");
+  });
+
+  it("returns an empty string for unset/invalid input", () => {
+    expect(bakuDayKey(null)).toBe("");
+    expect(bakuDayKey(undefined)).toBe("");
+    expect(bakuDayKey("garbage")).toBe("");
   });
 });

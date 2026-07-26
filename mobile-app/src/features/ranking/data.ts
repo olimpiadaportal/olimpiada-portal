@@ -21,10 +21,12 @@ export type StreakStatus = {
   hours_until_loss: number | null;
 };
 
-/** The child's own scope ids (grade/city/district/school tabs exist only when
- * set). districtId = the child's OWN rayon, resolved the same way the board
- * derives it (migration 058): the SCHOOL's city_district_id first, falling
- * back to the stored students.city_district_id. */
+/** The child's own scope ids (grade/city/school tabs exist only when set).
+ * districtId = the child's OWN rayon, resolved the same way the board derives
+ * it (migration 058): the SCHOOL's city_district_id first, falling back to the
+ * stored students.city_district_id. Round 51 audit: it is the district
+ * picker's DEFAULT selection only — the child may browse ANY active rayon of
+ * their city (fetchCityDistrictsOfCity), exactly like the web board. */
 export type ScopeIds = {
   gradeId: string | null;
   cityId: string | null;
@@ -54,6 +56,23 @@ export async function fetchScopeIds(profileId: string): Promise<ScopeIds> {
     districtId: school?.city_district_id ?? s.city_district_id ?? null,
     schoolId: s.school_id ?? null,
   };
+}
+
+export type CityDistrict = { id: string; name: string };
+
+/** ACTIVE rayons of ONE city (public-read catalog, migration 053) — the
+ * district scope's picker options. Web child/leaderboard parity: the district
+ * tab is offered whenever the child's CITY has active rayons and the child may
+ * pick ANY of them (their own rayon is only the default selection). */
+export async function fetchCityDistrictsOfCity(cityId: string): Promise<CityDistrict[]> {
+  const { data, error } = await supabase
+    .from("city_districts")
+    .select("id, name")
+    .eq("city_id", cityId)
+    .eq("status", "active")
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as CityDistrict[]).filter((d) => !!d.id);
 }
 
 export type LbArgs = {

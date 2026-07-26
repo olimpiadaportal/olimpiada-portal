@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { PublicOlympiadDetailsButton } from "@/components/PublicOlympiadDetailsButton";
+import { buildPublicOlympiadRows } from "@/components/OlympiadDetails";
 import { getT } from "@/i18n/server";
-import { getChild, getParent } from "@/lib/auth/session";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
+import { getParent, maySeePurchaseUi } from "@/lib/auth/session";
 import { getPublicOlympiads } from "@/lib/olympiadPublic";
 import { OlympiadCover } from "@/components/OlympiadCover";
 
@@ -54,34 +57,36 @@ function CalendarIcon() {
   );
 }
 
-export async function PublicOlympiadPackages({
-  limit,
-}: { limit?: number } = {}) {
+// Round 49: the `limit` prop and its "see all" affordance were REMOVED. Change
+// A deleted the landing-page band, which was the only caller that ever passed a
+// limit, leaving `showSeeAll` permanently false — dead code plus three comments
+// asserting the opposite. Both remaining callers (/services and the full
+// /olympiad-packages listing) render the complete feed. The listing route is
+// still reachable: the landing hero's "Olimpiadalara bax" button links to it.
+export async function PublicOlympiadPackages() {
   const t = await getT();
 
   // getParent/getChild are request-cached (the public layout already resolved
   // them), so the role check costs nothing extra here.
-  const [result, parent, child] = await Promise.all([
-    getPublicOlympiads(limit),
+  const [result, parent, mayPurchase, { mode }] = await Promise.all([
+    getPublicOlympiads(),
     getParent(),
-    getChild(),
+    maySeePurchaseUi(),
+    getPaymentModeInfo(),
   ]);
   const rows = result.status === "ok" ? result.items : [];
 
-  // Heuristic: the feed has no total-count return, so a capped call (landing
-  // uses limit=6) that comes back FULL (rows.length === limit) is treated as
-  // "there may be more" and gets a "see all" link to the unlimited
-  // /olympiad-packages page. A false positive (exactly `limit` packages exist
-  // and no more) just links to a page showing the same rows again — harmless.
-  const showSeeAll = typeof limit === "number" && rows.length === limit;
-
   // Never a BUY button on a public surface: purchases are parent-only and
   // happen inside the parent panel.
-  const cta = child
-    ? null
-    : parent
-      ? { href: "/olympiads", label: t("polyPub.ctaParent") }
-      : { href: "/register", label: t("polyPub.cta") };
+  // Round 50: fails CLOSED — a child OR an unresolved role gets no CTA.
+  // Round 51 (audit F4): the payment kill switch also drops the CTA — the DB
+  // rejects the eventual purchase write in mode 'off'.
+  const cta =
+    !mayPurchase || mode === "off"
+      ? null
+      : parent
+        ? { href: "/olympiads", label: t("polyPub.ctaParent") }
+        : { href: "/register", label: t("polyPub.cta") };
 
   return (
     <section className="polypub" aria-labelledby="polypub-title">
@@ -146,11 +151,20 @@ export async function PublicOlympiadPackages({
                   <div className="poly-foot">
                     <span className="poly-price">{o.priceText}</span>
                     <div className="poly-foot-actions">
-                      {/* Same "Ətraflı" pattern as the parent catalog card —
-                          here it navigates to the public details page. */}
-                      <Link className="poly-details-btn" href={href}>
-                        {t("poly.details")}
-                      </Link>
+                      {/* Round 49 (owner): Ətraflı opens a MODAL here, exactly
+                          like the parent catalog — it must not navigate away
+                          from the listing. The standalone details page still
+                          exists for direct links / SEO (the title links to it). */}
+                      <PublicOlympiadDetailsButton
+                        title={o.title}
+                        rows={buildPublicOlympiadRows(t, o)}
+                        description={o.description}
+                        labels={{
+                          open: t("poly.details"),
+                          close: t("drawer.close"),
+                          description: t("poly.det.description"),
+                        }}
+                      />
                       {cta && (
                         <Link className="btn polypub-cta" href={cta.href}>
                           {cta.label}
@@ -165,13 +179,6 @@ export async function PublicOlympiadPackages({
         </div>
       )}
 
-      {showSeeAll && (
-        <div className="polypub-more">
-          <Link className="btn-ghost" href="/olympiad-packages">
-            {t("polyPub.seeAll")}
-          </Link>
-        </div>
-      )}
     </section>
   );
 }

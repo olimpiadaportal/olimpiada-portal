@@ -3,9 +3,10 @@
 //   * board switch Percent | Streak (streak is GLOBAL-only + all-time),
 //   * scope chips offered ONLY for ids the child actually has (global always;
 //     subject whenever the platform has an active subject; grade/city/school
-//     when the students row carries the id; DISTRICT when the child's own
-//     rayon resolves via school → schools.city_district_id, falling back to
-//     students.city_district_id),
+//     when the students row carries the id; DISTRICT whenever the child's
+//     CITY has active rayons — a picker over ALL of them, defaulting to the
+//     child's own rayon (school → schools.city_district_id, falling back to
+//     students.city_district_id), web parity since the Round-51 audit),
 //   * period toggle This month | All time (percent only),
 //   * subject scope = single-select over ALL active subjects with a clamped
 //     default (forged/missing selection falls back to the FIRST subject —
@@ -32,6 +33,7 @@ import { useArena } from "@/features/arena/useArena";
 import { ArenaChip, ArenaEyebrow, ArenaPanel, ArenaScroll } from "@/features/arena/ui";
 import { BoardRowList, MONO, lbFormatValue } from "./BoardList";
 import {
+  fetchCityDistrictsOfCity,
   fetchLeaderboard,
   fetchMyRank,
   fetchScopeIds,
@@ -41,6 +43,7 @@ import {
   type PeriodUrl,
   type Scope,
 } from "./data";
+import { myRankFallbackKey, resolveDistrictId, showProvisionalLegend } from "./logic";
 
 export function RankingScreen() {
   const { arena, theme } = useArena();
@@ -67,6 +70,7 @@ export function RankingScreen() {
   const [scopeSel, setScopeSel] = useState<Scope>("global");
   const [periodUrl, setPeriodUrl] = useState<PeriodUrl>("month");
   const [subjectSel, setSubjectSel] = useState<string | null>(null);
+  const [districtSel, setDistrictSel] = useState<string | null>(null);
 
   const activeSubjects = useMemo(
     () =>
@@ -80,26 +84,38 @@ export function RankingScreen() {
   const districtId = scopeIdsQ.data?.districtId ?? null;
   const schoolId = scopeIdsQ.data?.schoolId ?? null;
 
+  // ALL active rayons of the child's CITY (web parity, Round-51 audit): the
+  // district board is browsable across the whole city, not just own rayon.
+  const districtsQ = useQuery({
+    queryKey: ["student", "lb-city-districts", cityId ?? "-"],
+    queryFn: () => fetchCityDistrictsOfCity(cityId as string),
+    enabled: leaderboardOn && !!cityId,
+    staleTime: 5 * 60_000,
+  });
+  const cityDistricts = districtsQ.data ?? [];
+
   // Scope tabs — ONLY the scopes this child actually has (web whitelist).
-  // The district chip is the child's OWN rayon and hides when none resolves.
+  // The district chip exists whenever the child's city has active rayons.
   const scopeTabs = useMemo(() => {
     const tabs: { key: Scope; id: string | null }[] = [{ key: "global", id: null }];
     if (activeSubjects.length > 0) tabs.push({ key: "subject", id: null });
     if (gradeId) tabs.push({ key: "grade", id: gradeId });
     if (cityId) tabs.push({ key: "city", id: cityId });
-    if (districtId) tabs.push({ key: "district", id: districtId });
+    if (cityDistricts.length > 0) tabs.push({ key: "district", id: null });
     if (schoolId) tabs.push({ key: "school", id: schoolId });
     return tabs;
-  }, [activeSubjects.length, gradeId, cityId, districtId, schoolId]);
+  }, [activeSubjects.length, gradeId, cityId, cityDistricts.length, schoolId]);
 
   // Whitelist clamping happens at RENDER time (no state writes in effects —
   // loop-safe): an unavailable selection falls back to global; the STREAK
-  // board is GLOBAL-only + all-time; the subject id clamps to the catalog.
+  // board is GLOBAL-only + all-time; the subject id clamps to the catalog and
+  // the district to the city's rayon list (own rayon as the default).
   const requestedScope: Scope =
     scopeTabs.find((s) => s.key === scopeSel)?.key ?? "global";
   const scope: Scope = board === "streak" ? "global" : requestedScope;
   const subjectId =
     activeSubjects.find((s) => s.id === subjectSel)?.id ?? activeSubjects[0]?.id ?? null;
+  const selectedDistrictId = resolveDistrictId(cityDistricts, districtSel, districtId);
   const scopeId: string | null =
     scope === "global"
       ? null
@@ -110,7 +126,7 @@ export function RankingScreen() {
           : scope === "city"
             ? cityId
             : scope === "district"
-              ? districtId
+              ? selectedDistrictId
               : schoolId;
   const period: LbArgs["period"] =
     board === "streak" ? "all_time" : periodUrl === "all" ? "all_time" : "month";
@@ -134,11 +150,12 @@ export function RankingScreen() {
     enabled: leaderboardOn && !!profileId && board === "streak",
   });
 
-  // All three are enabled-gated, so their own isRefetching flags stay false
-  // until the scope ids land — the hook's boolean does not.
+  // All enabled-gated, so their own isRefetching flags stay false until the
+  // scope ids land — the hook's boolean does not.
   const { refreshing, onRefresh } = usePullRefresh([
     listQ,
     meQ,
+    cityId ? districtsQ : null,
     board === "streak" ? streakQ : null,
   ]);
 
@@ -231,6 +248,18 @@ export function RankingScreen() {
                 />
               ) : null}
 
+              {/* District picker — ALL active rayons of the child's city
+                  (web district-chips parity), own rayon preselected. */}
+              {scope === "district" && cityDistricts.length > 0 ? (
+                <SelectField
+                  label={t("lb.colDistrict")}
+                  value={selectedDistrictId ?? ""}
+                  options={cityDistricts.map((d) => ({ id: d.id, label: d.name }))}
+                  onChange={(id) => setDistrictSel(id)}
+                  placeholder={t("lb.colDistrict")}
+                />
+              ) : null}
+
               {/* Period toggle: This month | All time */}
               <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <ArenaChip
@@ -316,32 +345,34 @@ export function RankingScreen() {
           ) : rows.length === 0 ? (
             <EmptyState title={t(emptyKey)} />
           ) : (
-            <>
-              <ArenaPanel style={{ padding: spacing.sm, gap: 0 }}>
-                <BoardRowList
-                  rows={rows}
-                  board={board}
-                  t={t}
-                  locale={locale}
-                  selfSeed={profileId}
-                  colors={{
-                    ink: arena.ink,
-                    muted: arena.muted,
-                    dim: arena.dim,
-                    line: arena.line,
-                    selfBg: arena.panel2,
-                    highlight: arena.lime,
-                  }}
-                />
-              </ArenaPanel>
-              {/* Provisional legend — thresholds come from the my-rank payload. */}
-              {board === "percent" && me && rows.some((r) => r.is_provisional) ? (
-                <AppText color={arena.dim} style={{ fontSize: 12 }}>
-                  {t("lb.provisionalHint").replace("{n}", String(me.min_attempts))}
-                </AppText>
-              ) : null}
-            </>
+            <ArenaPanel style={{ padding: spacing.sm, gap: 0 }}>
+              <BoardRowList
+                rows={rows}
+                board={board}
+                t={t}
+                locale={locale}
+                selfSeed={profileId}
+                colors={{
+                  ink: arena.ink,
+                  muted: arena.muted,
+                  dim: arena.dim,
+                  line: arena.line,
+                  selfBg: arena.panel2,
+                  highlight: arena.lime,
+                }}
+              />
+            </ArenaPanel>
           )}
+
+          {/* Provisional legend (web showProvHint parity): percent board with
+              ANY provisional context visible — a listed provisional row OR the
+              viewer themselves — even when the list is empty. The threshold
+              comes from the my-rank payload. */}
+          {!loading && !listQ.isError && showProvisionalLegend(board, rows, me) ? (
+            <AppText color={arena.dim} style={{ fontSize: 12 }}>
+              {t("lb.provisionalHint").replace("{n}", String(me!.min_attempts))}
+            </AppText>
+          ) : null}
         </ArenaScroll>
       </View>
 
@@ -393,7 +424,10 @@ export function RankingScreen() {
                   .replace("{n}", String(me.min_attempts))}
               </AppText>
             ) : (
-              <AppText color={arena.muted}>{t("lb.myRank.none")}</AppText>
+              // No rank, not provisional: under a non-global percent filter the
+              // honest message is "not on the board under this filter" (web
+              // parity, Round-51 audit) — generic "not ranked" only on global.
+              <AppText color={arena.muted}>{t(myRankFallbackKey(board, scope))}</AppText>
             )}
           </View>
           <AppText

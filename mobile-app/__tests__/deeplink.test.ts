@@ -24,6 +24,14 @@ describe("isSafeRelativeUrl (web parity)", () => {
     expect(isSafeRelativeUrl("")).toBe(false);
     expect(isSafeRelativeUrl(`/${"a".repeat(600)}`)).toBe(false);
   });
+
+  it("rejects '@' anywhere in the path (web safeNext rule set)", () => {
+    expect(isSafeRelativeUrl("/@evil.example")).toBe(false);
+    expect(isSafeRelativeUrl("/news/@handle")).toBe(false);
+    expect(isSafeRelativeUrl("/login?next=user@host")).toBe(false);
+    // ...and it never routes either.
+    expect(resolveDeepLink("/news/@handle", "parent")).toBeNull();
+  });
 });
 
 describe("resolveDeepLink allowlist", () => {
@@ -129,6 +137,27 @@ describe("resolveDeepLink allowlist", () => {
       target: "/(public)/pricing",
     });
     expect(resolveDeepLink("/pricing", "student")).toEqual({ kind: "mismatch" });
+  });
+
+  it("routes the web /olympiad-packages catalog to the pricing screen", () => {
+    expect(resolveDeepLink("/olympiad-packages", null)).toEqual({
+      kind: "open",
+      target: "/(public)/pricing",
+    });
+    expect(resolveDeepLink("/olympiad-packages", "parent")).toEqual({
+      kind: "open",
+      target: "/(public)/pricing",
+    });
+    // A package-detail sub-path (/olympiad-packages/<code>) rides the same rule.
+    expect(resolveDeepLink("/olympiad-packages/mm-2026-05", "parent")).toEqual({
+      kind: "open",
+      target: "/(public)/pricing",
+    });
+    // Children never see commerce — same student block as /pricing and /services.
+    expect(resolveDeepLink("/olympiad-packages", "student")).toEqual({ kind: "mismatch" });
+    expect(resolveDeepLink("/olympiad-packages/mm-2026-05", "student")).toEqual({
+      kind: "mismatch",
+    });
   });
 
   it("routes role links for the matching role", () => {

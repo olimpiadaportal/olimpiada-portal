@@ -6,6 +6,7 @@ import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { CancelSubscription } from "@/components/CancelSubscription";
 import { BillingTabs } from "@/components/BillingTabs";
+import { Segmented } from "@/components/Segmented";
 import { InvoicesSection, type InvoiceRow } from "@/components/InvoicesSection";
 import { getPerSubjectPrices } from "@/lib/pricing";
 import { subjectLabel } from "@/lib/subjectLabel";
@@ -357,7 +358,7 @@ export default async function ParentSubscription({
       {/* Task 5 — child selector tabs (only with 2+ children). URL-driven
           <Link>s (?child=…) so a refresh/deep link keeps the right child. */}
       {cards.length > 1 && (
-        <nav className="bkids-tabs" aria-label={t("billing.selectChild")}>
+        <Segmented as="nav" className="bkids-tabs" aria-label={t("billing.selectChild")} track>
           {cards.map((c) => {
             const active = selectedCard?.studentProfileId === c.studentProfileId;
             return (
@@ -378,7 +379,7 @@ export default async function ParentSubscription({
               </Link>
             );
           })}
-        </nav>
+        </Segmented>
       )}
 
       <BillingTabs tabs={tabs} ariaLabel={t("billing.tabsAria")} />
@@ -386,6 +387,14 @@ export default async function ParentSubscription({
       {/* Round 11 — slim free-notice bar during an active giveaway window. */}
       {giveaway && (
         <p className="subjedit-free-bar">{t("billing.giveawayNote")}</p>
+      )}
+
+      {/* Round 51 (audit F4): payments OFF — say it once up front. The plan
+          cards below drop their start/add CTAs (the DB kill switch rejects
+          those writes anyway); managing existing subjects stays available
+          because REMOVALS are deliberately still legal. */}
+      {mode === "off" && (
+        <div className="price-callout">{t("gate.paymentsOff")}</div>
       )}
 
       {/* ---------------------------------------------------------- PLANS */}
@@ -484,15 +493,17 @@ export default async function ParentSubscription({
                           </span>
                         ) : hasPlan ? (
                           isCurrent ? (
+                            // Manage stays available in EVERY mode — removals
+                            // are legal while payments are off (audit F4/F7).
                             <Link className="plan-cta primary" href={subscribeHref}>
                               {t("subscription.manageSubjects")}
                             </Link>
-                          ) : (
+                          ) : mode === "off" ? null : (
                             <Link className="plan-cta" href={subscribeHref}>
                               {t("billing.addSubjects")}
                             </Link>
                           )
-                        ) : (
+                        ) : mode === "off" ? null : (
                           <Link
                             className={`plan-cta${isPopular ? " primary" : ""}`}
                             href={subscribeHref}

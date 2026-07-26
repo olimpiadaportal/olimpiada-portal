@@ -14,6 +14,7 @@ import { useEffect, useState, useTransition, useActionState } from "react";
 import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
 import { formatPercent } from "@/lib/formatPercent";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 import {
   createSeason,
   updateSeason,
@@ -158,17 +159,8 @@ export function SeasonManager({
     if (successNotice) setNotice(successNotice);
   };
 
-  const fmt = (iso: string): string => {
-    try {
-      return new Intl.DateTimeFormat(locale, {
-        timeZone: "Asia/Baku",
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(iso));
-    } catch {
-      return iso;
-    }
-  };
+  // Shared hardened helper (root-locale "M08" guard) — lib/admin/datetime.ts.
+  const fmt = (iso: string): string => formatBakuDateTime(iso, locale);
 
   const editing = modal?.kind === "edit" ? modal.season : undefined;
   const confirming =

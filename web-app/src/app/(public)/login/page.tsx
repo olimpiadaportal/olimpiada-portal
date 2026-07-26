@@ -1,5 +1,6 @@
 import { getT } from "@/i18n/server";
 import { ArenaLogin } from "@/components/ArenaLogin";
+import { BackLink } from "@/components/BackLink";
 
 const KEYS = [
   "child.id", "child.password", "child.login", "child.loggingIn",
@@ -47,6 +48,9 @@ export default async function LoginPage({
           margin: "8px auto 0",
         }}
       >
+        {/* Round 51 (audit 4.1): mobile auth screens got a Round-45 back
+            arrow; the web pages had no back affordance at all. */}
+        <BackLink label={t("nav.back")} />
         <p className="arena-eyebrow">{t("arena.brand")}</p>
         <h1 style={{ marginBottom: 20 }}>{t("login.title")}</h1>
         <ArenaLogin dict={dict} defaultTab={defaultTab} />

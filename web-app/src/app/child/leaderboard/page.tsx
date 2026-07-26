@@ -8,6 +8,7 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect";
+import { Segmented } from "@/components/Segmented";
 
 // L1 — REAL leaderboard consuming the live DB engine through the child's own
 // authenticated client (SECURITY DEFINER RPCs; NOT service role). Everything
@@ -388,7 +389,7 @@ export default async function ChildLeaderboardPage({
       <h1 style={{ marginBottom: 18 }}>{t("lb.title")}</h1>
 
       {/* Board tabs: Percent | Streak */}
-      <nav className="lb-boards" aria-label={t("lb.title")}>
+      <Segmented as="nav" className="lb-boards" aria-label={t("lb.title")} track>
         <Link
           className={`lb-board${board === "percent" ? " active" : ""}`}
           href={href({ ...cur, board: "percent" })}
@@ -403,12 +404,12 @@ export default async function ChildLeaderboardPage({
         >
           {"\u{1F525}"} {t("lb.board.streak")}
         </Link>
-      </nav>
+      </Segmented>
 
       {board === "percent" && (
         <>
           {/* Scope tabs — only the scopes this child actually has. */}
-          <div className="arena-chips" role="group" aria-label={t("lb.scope.global")}>
+          <Segmented className="arena-chips" role="group" aria-label={t("lb.scope.global")} track>
             {scopeTabs.map((s) => (
               <Link
                 key={s.key}
@@ -418,7 +419,7 @@ export default async function ChildLeaderboardPage({
                 {t(`lb.scope.${s.key}`)}
               </Link>
             ))}
-          </div>
+          </Segmented>
 
           {/* Subject picker — ALL active subjects, single-select dropdown.
               Navigation goes through server-built whitelisted hrefs; the
@@ -439,7 +440,7 @@ export default async function ChildLeaderboardPage({
               child's CITY; server-built whitelisted hrefs, first district
               auto-selected when ?district= is absent. */}
           {scope === "district" && cityDistricts.length > 0 && (
-            <div className="arena-chips" role="group" aria-label={t("lb.colDistrict")}>
+            <Segmented className="arena-chips" role="group" aria-label={t("lb.colDistrict")} track>
               {cityDistricts.map((d) => (
                 <Link
                   key={d.id}
@@ -449,11 +450,11 @@ export default async function ChildLeaderboardPage({
                   {d.name}
                 </Link>
               ))}
-            </div>
+            </Segmented>
           )}
 
           {/* Period toggle: This month | All time */}
-          <div className="arena-chips" role="group" aria-label={t("lb.period.month")}>
+          <Segmented className="arena-chips" role="group" aria-label={t("lb.period.month")} track>
             <Link
               className={`arena-chip${periodUrl === "month" ? " active" : ""}`}
               href={href({ ...cur, period: "month" })}
@@ -466,7 +467,7 @@ export default async function ChildLeaderboardPage({
             >
               {t("lb.period.all")}
             </Link>
-          </div>
+          </Segmented>
         </>
       )}
 

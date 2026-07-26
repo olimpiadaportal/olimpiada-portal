@@ -27,8 +27,25 @@ const STRINGS: Record<Locale, Dict> = {
     "oly2.gradeMissing": "Fayl seçilməyib",
     "oly2.err.gradeFiles": "Bu siniflərin sual hovuzu hazır deyil: {grades}. Hər seçilmiş sinif üçün düzgün JSON faylı yükləyin.",
     "oly2.err.gradeImport": "{grade}: sualların idxalı alınmadı.",
-    "oly2.err.activeNeedsPools": "Paketi aktiv etmək üçün hər seçilmiş sinifdə ən azı 1 dərc edilmiş sual olmalıdır: {grades}.",
-    "oly2.perGradeNote": "Hər cəhdə şagirdin ÖZ sinfinin bütün dərc edilmiş sualları daxil olur — siniflərin hovuzları qarışmır.",
+    "oly2.perGradeNote": "Hər cəhdə şagirdin ÖZ sinfinin hovuzundan paket üzrə təyin edilmiş sayda sual seçilir — siniflərin hovuzları qarışmır.",
+    // ---- Round 49: configurable per-attempt count + per-student rotation ----
+    "oly2.perAttempt": "Sual sayı",
+    "oly2.perAttemptHelp": "Şagird hər girişdə bu sayda sual görəcək.",
+    "oly2.perAttemptDistinct":
+      "Diqqət: bu, yüklənmiş sualların ümumi sayı DEYİL. Hovuzda daha çox sual ola bilər — hər cəhdə onlardan yalnız bu qədəri seçilir.",
+    "oly2.err.perAttempt": "Sual sayı 1 ilə 500 arasında tam ədəd olmalıdır.",
+    "oly2.err.poolBelowPerAttempt":
+      "{grade} üçün {pool} sual yüklənib. Paket üzrə sual sayı {count} olduğu üçün ən azı {count} sual tələb olunur.",
+    "oly2.err.poolBelowPerAttemptNoGrade":
+      "Paketə {pool} sual yüklənib. Paket üzrə sual sayı {count} olduğu üçün ən azı {count} sual tələb olunur.",
+    "oly2.cycleTitle": "Sual dövrəsi (hər sinif üzrə)",
+    "oly2.cycleRow": "{grade}: hovuzda {pool} sual · tam dövrə ≈ {n} cəhd",
+    "oly2.cycleShortRow":
+      "{grade}: hovuzda cəmi {pool} sual var — paketi aktiv etmək üçün ən azı {count} sual lazımdır.",
+    "oly2.cyclePerStudent":
+      "Dövrə HƏR ŞAGİRD üçün ayrıca izlənir: şagird hovuz bitənə qədər eyni sualı təkrar görmür; hovuz bitəndə yalnız həmin şagirdin dövrəsi sıfırlanır və yenidən başlayır.",
+    "oly2.cycleEmpty": "Sinif seçin və sual faylını yükləyin — dövrə burada hesablanacaq.",
+    "oly2.cycleAwaiting": "{grade}: sual faylı hələ yüklənməyib.",
     "oly2.addGrade": "Sinif əlavə et",
     "oly2.addGradeHint": "Yeni sinif yalnız sual faylı ilə birlikdə əlavə olunur — boş hovuzlu sinif yaranmır.",
     "oly2.addGradeBtn": "Sinfi və sualları əlavə et",
@@ -44,9 +61,10 @@ const STRINGS: Record<Locale, Dict> = {
     // importing into a package that already has questions.
     "oly2.err.creationOnly":
       "Hər sinfin sual hovuzu bir dəfə — paket yaradılarkən və ya sinif paketə əlavə olunarkən — yüklənir. Sonradan ayrı-ayrı sualları aşağıdakı redaktorla idarə edin.",
-    // Attempts include ALL uploaded questions (no fixed per-attempt count).
+    // Round 49: an attempt serves exactly `questions_per_attempt` questions,
+    // rotated per student (no repeat until that student's cycle ends).
     "oly2.allQuestionsNote":
-      "Hər cəhdə paketin bütün dərc edilmiş sualları daxil olur — sabit sual sayı yoxdur.",
+      "Hər cəhdə paket üzrə təyin edilmiş sayda sual daxil olur. Suallar hər şagird üçün ayrıca dövrə ilə seçilir: hovuz bitənə qədər təkrarlanmır, hovuz bitəndə həmin şagirdin dövrəsi sıfırlanır.",
     // ---- Sale window (sale_starts_at / sale_ends_at) ----
     "oly2.saleStart": "Satışın başlanğıcı (istəyə bağlı)",
     "oly2.saleEnd": "Satışın sonu (istəyə bağlı)",
@@ -92,8 +110,25 @@ const STRINGS: Record<Locale, Dict> = {
     "oly2.gradeMissing": "No file selected",
     "oly2.err.gradeFiles": "These grades have no valid question pool yet: {grades}. Upload a valid JSON file for every selected grade.",
     "oly2.err.gradeImport": "{grade}: importing the questions failed.",
-    "oly2.err.activeNeedsPools": "To activate the package every selected grade needs at least 1 published question: {grades}.",
-    "oly2.perGradeNote": "An attempt contains ALL published questions of the student's OWN grade — grade pools never mix.",
+    "oly2.perGradeNote": "Each attempt draws the configured number of questions from the pool of the student's OWN grade — grade pools never mix.",
+    // ---- Round 49: configurable per-attempt count + per-student rotation ----
+    "oly2.perAttempt": "Questions per attempt",
+    "oly2.perAttemptHelp": "The student sees this many questions on every entry.",
+    "oly2.perAttemptDistinct":
+      "Note: this is NOT the total number of uploaded questions. The pool can be much larger — only this many are drawn for each attempt.",
+    "oly2.err.perAttempt": "Questions per attempt must be a whole number between 1 and 500.",
+    "oly2.err.poolBelowPerAttempt":
+      "{grade} has {pool} questions uploaded. The package serves {count} questions per attempt, so at least {count} questions are required.",
+    "oly2.err.poolBelowPerAttemptNoGrade":
+      "The package has {pool} questions uploaded. It serves {count} questions per attempt, so at least {count} questions are required.",
+    "oly2.cycleTitle": "Question cycle (per grade)",
+    "oly2.cycleRow": "{grade}: {pool} questions in the pool · a full cycle ≈ {n} attempts",
+    "oly2.cycleShortRow":
+      "{grade}: only {pool} questions in the pool — at least {count} are needed to activate the package.",
+    "oly2.cyclePerStudent":
+      "The cycle is tracked separately for EACH student: a student never sees the same question twice until that pool is used up, and only that student's cycle then resets and starts over.",
+    "oly2.cycleEmpty": "Pick a grade and upload its question file — the cycle is calculated here.",
+    "oly2.cycleAwaiting": "{grade}: no question file uploaded yet.",
     "oly2.addGrade": "Add a grade",
     "oly2.addGradeHint": "A new grade is only added together with its question file — no grade ever starts with an empty pool.",
     "oly2.addGradeBtn": "Add grade with questions",
@@ -108,7 +143,7 @@ const STRINGS: Record<Locale, Dict> = {
     "oly2.err.creationOnly":
       "Each grade's question pool is uploaded ONCE — when the package is created or when the grade is added to it. After that, manage individual questions with the editor below.",
     "oly2.allQuestionsNote":
-      "Every attempt includes ALL of the package's published questions — there is no fixed per-attempt count.",
+      "Every attempt serves the number of questions configured on the package. Questions are drawn on a per-student cycle: no repeats until the pool is used up, then that student's cycle resets.",
     "oly2.saleStart": "Sale start (optional)",
     "oly2.saleEnd": "Sale end (optional)",
     "oly2.saleHint":
@@ -152,8 +187,25 @@ const STRINGS: Record<Locale, Dict> = {
     "oly2.gradeMissing": "Файл не выбран",
     "oly2.err.gradeFiles": "У этих классов ещё нет корректного пула вопросов: {grades}. Загрузите корректный JSON-файл для каждого выбранного класса.",
     "oly2.err.gradeImport": "{grade}: импорт вопросов не удался.",
-    "oly2.err.activeNeedsPools": "Чтобы активировать пакет, каждому выбранному классу нужен хотя бы 1 опубликованный вопрос: {grades}.",
-    "oly2.perGradeNote": "Попытка содержит ВСЕ опубликованные вопросы класса самого ученика — пулы классов не смешиваются.",
+    "oly2.perGradeNote": "В каждой попытке из пула СВОЕГО класса ученика берётся заданное для пакета количество вопросов — пулы классов не смешиваются.",
+    // ---- Round 49: настраиваемое число вопросов + ротация по ученику ----
+    "oly2.perAttempt": "Вопросов за попытку",
+    "oly2.perAttemptHelp": "Ученик будет видеть столько вопросов при каждом входе.",
+    "oly2.perAttemptDistinct":
+      "Обратите внимание: это НЕ общее количество загруженных вопросов. В пуле их может быть намного больше — в каждой попытке берётся только столько.",
+    "oly2.err.perAttempt": "Количество вопросов должно быть целым числом от 1 до 500.",
+    "oly2.err.poolBelowPerAttempt":
+      "Для {grade} загружено {pool} вопросов. В пакете за попытку выдаётся {count} вопросов, поэтому нужно минимум {count} вопросов.",
+    "oly2.err.poolBelowPerAttemptNoGrade":
+      "В пакет загружено {pool} вопросов. За попытку выдаётся {count} вопросов, поэтому нужно минимум {count} вопросов.",
+    "oly2.cycleTitle": "Цикл вопросов (по классам)",
+    "oly2.cycleRow": "{grade}: в пуле {pool} вопросов · полный цикл ≈ {n} попыток",
+    "oly2.cycleShortRow":
+      "{grade}: в пуле всего {pool} вопросов — для активации пакета нужно минимум {count}.",
+    "oly2.cyclePerStudent":
+      "Цикл отслеживается ОТДЕЛЬНО для КАЖДОГО ученика: ученик не увидит один и тот же вопрос повторно, пока пул не закончится; после этого сбрасывается и начинается заново только его цикл.",
+    "oly2.cycleEmpty": "Выберите класс и загрузите файл вопросов — цикл будет рассчитан здесь.",
+    "oly2.cycleAwaiting": "{grade}: файл вопросов ещё не загружен.",
     "oly2.addGrade": "Добавить класс",
     "oly2.addGradeHint": "Новый класс добавляется только вместе с файлом вопросов — класс с пустым пулом не возникает.",
     "oly2.addGradeBtn": "Добавить класс с вопросами",
@@ -168,7 +220,7 @@ const STRINGS: Record<Locale, Dict> = {
     "oly2.err.creationOnly":
       "Пул вопросов класса загружается ОДИН раз — при создании пакета или при добавлении класса. Дальше отдельные вопросы редактируются в редакторе ниже.",
     "oly2.allQuestionsNote":
-      "Каждая попытка включает все опубликованные вопросы пакета — фиксированного количества вопросов нет.",
+      "Каждая попытка содержит столько вопросов, сколько задано в пакете. Вопросы выдаются по циклу для каждого ученика: повторов нет, пока пул не закончится, затем цикл этого ученика сбрасывается.",
     "oly2.saleStart": "Начало продаж (необязательно)",
     "oly2.saleEnd": "Окончание продаж (необязательно)",
     "oly2.saleHint":

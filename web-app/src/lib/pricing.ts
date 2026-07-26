@@ -15,8 +15,17 @@ import "server-only";
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { getAdminClient } from "@/lib/supabase/admin";
+import {
+  PLAN_INTERVALS,
+  isPlanInterval,
+  type ConfiguratorSubject,
+  type PlanInterval,
+} from "@/lib/pricingConfigurator";
 
-export type PlanInterval = "week" | "month" | "year";
+// PlanInterval is DEFINED in lib/pricingConfigurator (a pure, client-safe
+// module) and re-exported here so the historical `@/lib/pricing` import path
+// keeps working — one definition, two entry points.
+export type { PlanInterval };
 export type PerSubjectPrices = Record<PlanInterval, number>;
 
 // Display-only fallback when the DB is unreachable — matches the canonical
@@ -56,3 +65,85 @@ const fetchPerSubjectPrices = unstable_cache(
 
 /** Per-request memoized on top of the 60s data cache. */
 export const getPerSubjectPrices = cache(fetchPerSubjectPrices);
+
+// ---- Public subject CATALOG with per-interval prices (services configurator) --
+//
+// The /services configurator needs more than the representative figure above:
+// it needs WHICH subjects are sold and what each costs per interval, so the
+// visitor can build a basket. Same table, same `status = 'active'` filter, so
+// the configurator and checkout can never price from different data.
+//
+// Service-role client for the same reason getPerSubjectPrices uses it: the page
+// renders for anonymous visitors, this module is server-only, the query takes
+// NO client input, and unstable_cache cannot wrap the cookie-bound SSR client.
+// Only active pricing rows for active subjects are read — exactly the rows the
+// public pricing-page RLS policy already exposes. Archived subjects and
+// archived prices never enter the catalog, which is also what makes
+// `parseSelectionParams` able to drop archived ids by simple catalog lookup.
+//
+// DISPLAY ONLY: checkout re-prices server-side and applies the sibling
+// discount there; nothing here is an authorization to charge.
+
+export type PublicSubjectCatalog =
+  | { ok: true; subjects: ConfiguratorSubject[] }
+  /** The catalog could not be read — the page shows its error state. */
+  | { ok: false; subjects: [] };
+
+const fetchPublicSubjectPricing = unstable_cache(
+  async (): Promise<PublicSubjectCatalog> => {
+    try {
+      const admin = getAdminClient();
+      const { data, error } = await admin
+        .from("subjects_pricing")
+        .select("subject_id, interval, price_amount, subjects(id, code, name, status)")
+        .eq("status", "active");
+      if (error || !data) return { ok: false, subjects: [] };
+
+      const byId = new Map<string, ConfiguratorSubject>();
+      // `as any[]`: postgrest-js types an embedded 1:1 relation as an array;
+      // the rest of the codebase reads these joins the same way.
+      for (const row of data as any[]) {
+        const subject = row.subjects as
+          | { id: string; code: string | null; name: string; status: string }
+          | null;
+        // An archived subject keeps its pricing rows; it must not be sellable.
+        if (!subject || subject.status !== "active") continue;
+        const interval: unknown = row.interval;
+        if (!isPlanInterval(interval)) continue;
+        const price = Number(row.price_amount);
+        if (!Number.isFinite(price) || price < 0) continue;
+
+        const subjectId = String(row.subject_id);
+        let entry = byId.get(subjectId);
+        if (!entry) {
+          entry = {
+            id: subjectId,
+            code: subject.code ?? null,
+            name: subject.name ?? "—",
+            prices: {},
+          };
+          byId.set(subjectId, entry);
+        }
+        entry.prices[interval] = price;
+      }
+
+      // Only offer subjects sellable on at least one interval, in a stable
+      // order (the DB returns rows unordered).
+      const subjects = Array.from(byId.values())
+        .filter((s) => PLAN_INTERVALS.some((iv) => s.prices[iv] !== undefined))
+        .sort((a, b) => a.name.localeCompare(b.name, "az"));
+      return { ok: true, subjects };
+    } catch {
+      return { ok: false, subjects: [] };
+    }
+  },
+  ["public-subject-pricing"],
+  { revalidate: 60 },
+);
+
+/**
+ * Active subjects + their per-interval list prices, for the public services
+ * configurator and for validating hand-off query params on arrival.
+ * Per-request memoized on top of the 60s data cache.
+ */
+export const getPublicSubjectPricing = cache(fetchPublicSubjectPricing);

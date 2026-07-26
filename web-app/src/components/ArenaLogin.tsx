@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { childLoginAction, type ChildLoginState } from "@/lib/auth/childActions";
 import { parentLogin, type AuthFormState } from "@/lib/auth/parentService";
 import { PasswordInput } from "@/components/PasswordInput";
+import { Segmented } from "@/components/Segmented";
 
 type Tab = "student" | "parent";
 
@@ -31,7 +32,7 @@ export function ArenaLogin({
 
   return (
     <div className="arena-auth-card">
-      <div className="arena-tabs" role="tablist">
+      <Segmented className="arena-tabs" role="tablist" arrowKeys>
         <button
           type="button"
           role="tab"
@@ -50,7 +51,7 @@ export function ArenaLogin({
         >
           {tt("auth.tab.parent")}
         </button>
-      </div>
+      </Segmented>
 
       {tab === "student" ? (
         <form action={childAction} className="arena-form">

@@ -214,6 +214,9 @@ async function fetchMyAttempts(profileId: string): Promise<ArenaAttempt[]> {
     .select("id, kind, score, max_score, subject_id, subjects(code, name)")
     .eq("student_profile_id", profileId)
     .eq("status", "graded")
+    // Round 51 audit: olympiads are practice-only — they must not inflate the
+    // home points/accuracy/rounds/subject-strength stats (web parity).
+    .neq("kind", "olympiad")
     .order("submitted_at", { ascending: false })
     .limit(200);
   if (error) throw error;

@@ -64,7 +64,12 @@ export function ManageSubjects({
   endingIds?: string[];
   /** The live subscription's billing interval ("week" | "month" | "year"). */
   interval: string;
-  /** Server-resolved payment mode; the page renders this editor only for "real" | "demo". */
+  /**
+   * Server-resolved payment mode. "real" | "demo" → full editor. "off" →
+   * REMOVAL-ONLY (Round 51, audit F7): the DB kill switch blocks ADDS but
+   * deliberately keeps removals legal — a parent must always be able to stop
+   * paying, so the editor stays mounted with the add side disabled.
+   */
   paymentMode: string;
   dict: Record<string, string>;
 }) {
@@ -158,6 +163,10 @@ export function ManageSubjects({
   const formRef = useRef<HTMLFormElement>(null);
   const [payOpen, setPayOpen] = useState(false);
 
+  // Payments off → adds are refused server-side (assert_payments_enabled);
+  // mirror that here by making unchecked subjects unselectable.
+  const addsDisabled = paymentMode === "off";
+
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -165,6 +174,7 @@ export function ManageSubjects({
         if (next.size <= 1) return prev; // ≥1 subject must remain (server enforces too)
         next.delete(id);
       } else {
+        if (addsDisabled) return prev; // removal-only mode
         next.add(id);
       }
       return next;
@@ -214,8 +224,14 @@ export function ManageSubjects({
                       type="checkbox"
                       checked={isChecked}
                       onChange={() => toggle(s.id)}
-                      disabled={saving || isLastOne}
-                      title={isLastOne ? tt("subjedit.minOne") : undefined}
+                      disabled={saving || isLastOne || (addsDisabled && !isChecked)}
+                      title={
+                        isLastOne
+                          ? tt("subjedit.minOne")
+                          : addsDisabled && !isChecked
+                            ? tt("gate.paymentsOff")
+                            : undefined
+                      }
                     />
                     <span className="subjedit-name">{subjectLabel(t, s.code, s.name)}</span>
                     {isActive && (

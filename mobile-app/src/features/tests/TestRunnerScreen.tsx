@@ -246,8 +246,13 @@ export function TestRunnerScreen({
   const attempt = q.data?.attempt ?? null;
   // is_rated lives on the attempt ROW (own row under RLS), not in the RPC
   // payload — web run-page parity. Badge only; null (still loading) hides it.
+  // Round 51 audit: olympiad attempts are practice-only (Round 48) but legacy
+  // rows still carry is_rated=true — gate the rated badge on kind so an
+  // olympiad run always shows the practice badge, never "Reytinqə təsir edir".
   const rowQ = useAttemptRow(attemptId);
-  const rated = rowQ.data ? rowQ.data.is_rated === true : null;
+  const rated = rowQ.data
+    ? rowQ.data.is_rated === true && rowQ.data.kind !== "olympiad"
+    : null;
 
   // Closed attempts never open the player (web run-page guards).
   const isGraded = attempt?.status === "graded";
@@ -600,7 +605,19 @@ function RunnerActive({
   const level = timerLevel(remaining);
   const isLast = idx === total - 1;
   const flagged = q ? flags.has(q.question_id) : false;
-  const runTitle = isOlympiad ? t("test.run.olympiad") : t("test.run.title");
+  // Daily rounds title the top bar "Günün raundu — <subject>" (web run-page
+  // parity); olympiads keep the olympiad label, practice the generic title.
+  const isDaily = attempt.kind === "daily";
+  const dailySubject = meta.subjectName
+    ? subjectLabel(t, meta.subjectCode, meta.subjectName)
+    : "";
+  const runTitle = isOlympiad
+    ? t("test.run.olympiad")
+    : isDaily
+      ? dailySubject
+        ? `${t("test.run.daily")} — ${dailySubject}`
+        : t("test.run.daily")
+      : t("test.run.title");
 
   return (
     // No pull-to-refresh here on purpose: a running attempt is a timed,

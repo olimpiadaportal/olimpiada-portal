@@ -119,7 +119,10 @@ export default async function TestRunPage({
       .eq("id", attemptId)
       .maybeSingle(),
   ]);
-  const rated = !!(attRow as { is_rated?: boolean } | null)?.is_rated;
+  // Round 51: olympiad attempts are PRACTICE-ONLY (Round 48 / migration 088) —
+  // legacy rows may still carry is_rated=true, so the kind gate keeps the
+  // "counts for the rating" badge off them no matter what the flag says.
+  const rated = !isOlympiad && !!(attRow as { is_rated?: boolean } | null)?.is_rated;
   const subjRow = subjectRow as { code?: string | null; name?: string } | null;
   subjectName = subjRow?.name
     ? subjectLabel(t, subjRow.code, subjRow.name).trim()

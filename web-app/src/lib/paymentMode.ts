@@ -47,14 +47,16 @@ const TRIO = ["payments", "demo_payments", "giveaway_period"] as const;
  * Resolve the payment mode + giveaway window in two queries, memoized per
  * request (React cache). Precedence: giveaway (active window) > demo > real.
  *
- * Safe fallbacks mirror lib/flags.ts semantics: if the service-role client is
- * unavailable or a lookup fails, `payments` degrades to AVAILABLE (mode 'real',
- * the pre-Round-11 behavior) while the NEW modes degrade to OFF — a config
- * hiccup must never accidentally open a free-access window.
+ * Round 51 (sync audit F1/F3): this is a MONEY gate, so every failure path is
+ * fail-CLOSED now — mode 'off'. The old fallback was 'real' (pre-Round-11
+ * parity), which showed the full paid UI on an infra hiccup while the DB kill
+ * switch (assert_payments_enabled, migration 089) refused every write: buy
+ * buttons that always error. 'off' keeps the two layers agreeing. The same
+ * applies to a MISSING `payments` flag row — off, exactly like the DB guard.
  */
 export const getPaymentModeInfo = cache(async (): Promise<PaymentModeInfo> => {
   const fallback: PaymentModeInfo = {
-    mode: "real",
+    mode: "off",
     giveaway: { active: false, startedAt: null, endsAt: null, durationDays: 0 },
   };
   if (!isServiceRoleConfigured) return fallback;
@@ -78,9 +80,9 @@ export const getPaymentModeInfo = cache(async (): Promise<PaymentModeInfo> => {
     for (const row of flags as { key: string; enabled: boolean | null }[]) {
       enabled.set(row.key, row.enabled === true);
     }
-    // Missing-row semantics: `payments` missing → available (legacy parity);
-    // the new flags missing → off.
-    const real = enabled.has("payments") ? enabled.get("payments")! : true;
+    // Missing-row semantics: EVERY flag missing → off (fail closed; matches
+    // current_payment_mode() in the DB — migration 091 aligned all resolvers).
+    const real = enabled.get("payments") ?? false;
     const demo = enabled.get("demo_payments") ?? false;
     const giveawayFlag = enabled.get("giveaway_period") ?? false;
 

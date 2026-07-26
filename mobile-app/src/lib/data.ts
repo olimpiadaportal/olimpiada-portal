@@ -225,6 +225,8 @@ export type OlympiadPackageRow = {
   id: string;
   price_amount: number;
   currency: string;
+  /** Round 51: questions served per attempt (rotation model); 0 = not set.
+   *  Shown as its own detail row, NEVER in place of the real pool count. */
   questions_per_attempt: number;
   duration_minutes: number;
   event_starts_at: string | null;
@@ -265,7 +267,26 @@ export async function fetchOlympiadCatalog(
     p_student: studentId ?? null,
   });
   if (error) throw error;
-  return ((data ?? []) as any[]).map((p: any) => {
+  const raw = (data ?? []) as any[];
+  // Round 51: the catalog RPC predates the rotation model and does not return
+  // questions_per_attempt. Read the column directly for the returned ids (RLS
+  // already shows the caller these exact rows) and stitch it in; a failed read
+  // degrades to 0, which simply hides the "per attempt" detail row.
+  const perAttemptById = new Map<string, number>();
+  if (raw.length > 0) {
+    const { data: extra } = await supabase
+      .from("olympiad_packages")
+      .select("id, questions_per_attempt")
+      .in(
+        "id",
+        raw.map((p: any) => p.id).filter(Boolean),
+      );
+    for (const e of (extra ?? []) as any[]) {
+      const n = Number(e.questions_per_attempt ?? 0);
+      if (e.id && Number.isFinite(n) && n > 0) perAttemptById.set(String(e.id), n);
+    }
+  }
+  return raw.map((p: any) => {
     const grades = Array.isArray(p.grades)
       ? (p.grades as any[])
           .map((g) => ({
@@ -282,7 +303,7 @@ export async function fetchOlympiadCatalog(
       id: p.id,
       price_amount: p.price_amount,
       currency: p.currency ?? "AZN",
-      questions_per_attempt: 0, // display-legacy; cards use real pool counts
+      questions_per_attempt: perAttemptById.get(String(p.id)) ?? 0,
       duration_minutes: p.duration_minutes,
       event_starts_at: p.event_at ?? null,
       sale_starts_at: p.sale_starts_at ?? null,
@@ -419,15 +440,22 @@ export async function fetchChildLeaderboardSummary(studentProfileId: string) {
   return data as Record<string, unknown> | null;
 }
 
+/** Analytics scope (web ?mode= parity): 'tests' = subject analytics with
+ * olympiad attempts EXCLUDED; 'olympiads' = olympiad attempts only (ignores
+ * the subject filter — packages aren't subject-gated) + per_package rows. */
+export type DashboardScope = "tests" | "olympiads";
+
 export async function fetchChildDashboard(
   studentProfileId: string,
   subjectId: string | null,
   days = 30,
+  scope: DashboardScope = "tests",
 ) {
   const { data, error } = await supabase.rpc("get_child_subject_dashboard", {
     p_student_profile_id: studentProfileId,
-    p_subject_id: subjectId,
+    p_subject_id: scope === "olympiads" ? null : subjectId,
     p_days: days,
+    p_scope: scope,
   });
   if (error) throw error;
   return data as Record<string, any>;

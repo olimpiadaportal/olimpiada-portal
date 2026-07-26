@@ -126,12 +126,44 @@ export function isSafeRelativeUrl(url: unknown): url is string {
   if (url[1] === "/" || url[1] === "\\") return false; // no //host or /\host
   if (url.includes("\\")) return false; // no backslashes
   if (url.includes("://")) return false; // no embedded scheme
+  // Round 51 (audit F15): no userinfo tricks either — safeNext() rejected `@`
+  // but this predicate didn't; they now enforce the same rule set (mobile's
+  // port mirrors this byte-for-byte).
+  if (url.includes("@")) return false;
   // Reject control characters, spaces and DEL (whitespace/encoding tricks).
   for (let i = 0; i < url.length; i++) {
     const c = url.charCodeAt(i);
     if (c < 0x21 || c === 0x7f) return false;
   }
   return true;
+}
+
+/**
+ * Round 51 (audit F17): notification deep links get a ROUTE ALLOWLIST on top
+ * of the shape check, exactly like mobile's deeplink router and the admin
+ * panel's isAllowedAdminActionUrl. `action_url` is admin-authored display
+ * data, never authorization — without this, a broadcast to all_children could
+ * steer a signed-in child onto a pricing surface. Pricing/auth routes
+ * (/services, /register, /login, /olympiad-packages) are deliberately absent.
+ */
+const NOTIFICATION_URL_PREFIXES = [
+  "/child", // student panel (results, olympiads, leaderboard, …)
+  "/dashboard",
+  "/children", // parent per-child pages
+  "/subscription",
+  "/analytics",
+  "/leaderboard",
+  "/olympiads", // parent catalog (parent-only route group guards it)
+  "/news",
+  "/notifications",
+] as const;
+
+export function isAllowedNotificationUrl(url: unknown): url is string {
+  if (!isSafeRelativeUrl(url)) return false;
+  const path = url.split(/[?#]/, 1)[0]!;
+  return NOTIFICATION_URL_PREFIXES.some(
+    (p) => path === p || path.startsWith(`${p}/`),
+  );
 }
 
 /** Compact, locale-agnostic relative time using short unit strings. */

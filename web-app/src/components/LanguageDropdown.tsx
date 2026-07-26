@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { localeNames, locales, type Locale } from "@/i18n/config";
+import { Segmented } from "@/components/Segmented";
 
 /**
  * Language dropdown for the app navbars.
@@ -122,7 +123,7 @@ export function LanguageSegmented({
   }
 
   return (
-    <div className="seg-group seg-lang" role="group">
+    <Segmented className="seg-group seg-lang" role="group" track>
       {options.map((l) => (
         <button
           key={l}
@@ -136,6 +137,6 @@ export function LanguageSegmented({
           {l.toUpperCase()}
         </button>
       ))}
-    </div>
+    </Segmented>
   );
 }

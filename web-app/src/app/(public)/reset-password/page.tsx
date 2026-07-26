@@ -1,4 +1,5 @@
 import { getT } from "@/i18n/server";
+import { BackLink } from "@/components/BackLink";
 import { ResetPasswordForm } from "@/components/ResetPasswordForm";
 
 export default async function ResetPasswordPage() {
@@ -18,6 +19,7 @@ export default async function ResetPasswordPage() {
 
   return (
     <section className="prose" style={{ maxWidth: 440 }}>
+      <BackLink label={t("nav.back")} fallbackHref="/login" />
       <h1>{t("reset.title")}</h1>
       <p className="muted">{t("reset.hint")}</p>
       <ResetPasswordForm dict={dict} />

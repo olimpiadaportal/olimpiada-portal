@@ -91,7 +91,7 @@ export default function Login() {
           }}
         >
           {router.canGoBack() ? (
-            <BackButton label={t("arena.quizPrev")} onPress={() => router.back()} />
+            <BackButton label={t("nav.back")} onPress={() => router.back()} />
           ) : (
             <View />
           )}

@@ -21,6 +21,7 @@
 // hydration (a layout cannot read a deeper segment's attempt kind).
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Segmented } from "@/components/Segmented";
 import {
   createContext,
   useContext,
@@ -80,7 +81,7 @@ export function ChildNavLinks({
       : pathname === it.href || pathname.startsWith(`${it.href}/`);
   };
   return (
-    <nav className="pnav-links">
+    <Segmented as="nav" className="pnav-links">
       {items.map((it) => (
         <Link
           key={it.href}
@@ -98,6 +99,6 @@ export function ChildNavLinks({
           )}
         </Link>
       ))}
-    </nav>
+    </Segmented>
   );
 }

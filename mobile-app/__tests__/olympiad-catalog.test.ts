@@ -3,20 +3,42 @@
 // then returns only that child's grade packages with per-child counts); no id
 // must send an explicit null (family union for parents, own grade for
 // students). Stub the Supabase client so the payload itself is asserted
-// (jest hoists the mock above the import).
+// (jest hoists the mock above the import). Round 51: the fetcher additionally
+// stitches questions_per_attempt in via a direct table read (the catalog RPC
+// predates the rotation model), so the stub carries a chainable `from` too.
 import { fetchOlympiadCatalog } from "@/lib/data";
 import { supabase } from "@/lib/supabase";
 
 jest.mock("@/lib/supabase", () => ({
-  supabase: { rpc: jest.fn(async () => ({ data: [], error: null })) },
+  supabase: {
+    rpc: jest.fn(async () => ({ data: [], error: null })),
+    from: jest.fn(() => ({
+      select: jest.fn(() => ({
+        in: jest.fn(async () => ({ data: [], error: null })),
+      })),
+    })),
+  },
 }));
 
 const rpc = supabase.rpc as unknown as jest.Mock;
+const from = supabase.from as unknown as jest.Mock;
+
+/** One-shot stub of the questions_per_attempt follow-up read. */
+function stubPerAttempt(rows: { id: string; questions_per_attempt: number }[]) {
+  from.mockReturnValueOnce({
+    select: jest.fn(() => ({
+      in: jest.fn(async () => ({ data: rows, error: null })),
+    })),
+  });
+}
 
 const CHILD = "11111111-2222-3333-4444-555555555555";
 
 describe("fetchOlympiadCatalog — p_student scoping", () => {
-  beforeEach(() => rpc.mockClear());
+  beforeEach(() => {
+    rpc.mockClear();
+    from.mockClear();
+  });
 
   it("sends the child's profile id when one is given (child-scoped catalog)", async () => {
     await fetchOlympiadCatalog("az", CHILD);
@@ -46,9 +68,13 @@ describe("fetchOlympiadCatalog — p_student scoping", () => {
       ],
       error: null,
     });
+    // Round 51: the rotation size arrives from the direct table read and must
+    // NEVER replace the real pool count on the row.
+    stubPerAttempt([{ id: "pkg-1", questions_per_attempt: 25 }]);
     const rows = await fetchOlympiadCatalog("az", CHILD);
     expect(rows).toHaveLength(1);
     expect(rows[0].my_question_count).toBe(40);
+    expect(rows[0].questions_per_attempt).toBe(25);
     expect(rows[0].typeName).toBe("Beynəlxalq");
   });
 
@@ -69,6 +95,8 @@ describe("fetchOlympiadCatalog — p_student scoping", () => {
     });
     const rows = await fetchOlympiadCatalog("az");
     expect(rows[0].typeName).toBeNull();
+    // No stitched row → per-attempt count degrades to 0 (detail row hidden).
+    expect(rows[0].questions_per_attempt).toBe(0);
   });
 
   it("throws when the RPC errors (foreign/unlinked id is server-rejected)", async () => {

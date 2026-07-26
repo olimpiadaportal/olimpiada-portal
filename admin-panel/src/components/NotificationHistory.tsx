@@ -4,6 +4,7 @@
 // a status pill, delivered/total progress and a detail modal (shared Modal).
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 
 export type HistoryRow = {
   id: string;
@@ -65,18 +66,9 @@ export function NotificationHistory({
 }) {
   const [detail, setDetail] = useState<HistoryRow | null>(null);
 
-  const fmt = (iso: string | null): string => {
-    if (!iso) return "—";
-    try {
-      return new Intl.DateTimeFormat(locale, {
-        timeZone: "Asia/Baku",
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(iso));
-    } catch {
-      return iso;
-    }
-  };
+  // Shared hardened helper (root-locale "M08" guard) — lib/admin/datetime.ts.
+  const fmt = (iso: string | null): string =>
+    iso ? formatBakuDateTime(iso, locale) : "—";
 
   const audienceLabel = (a: string): string => strings.audience[a] ?? a;
   const statusLabel = (s: string): string => strings.status[s] ?? s;

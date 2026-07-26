@@ -134,9 +134,10 @@ export async function startTopicTest(
 }
 
 // ---------------------------------------------------------------------------
-// startDailyRound — daily-round form action (migration 056).
-// day='today'  → RATED round (timed 25min, ONE per student/subject/day — the
-//                uniqueness is DB-enforced; the UI only reflects it);
+// startDailyRound — daily-round form action (migration 056; Round 42/43
+// semantics via 086/087).
+// day='today'  → RATED round (UNTIMED, ONE per student/subject/day — consumed
+//                AT CREATION via a DB unique index; the UI only reflects it);
 // day='yesterday' → unlimited UNTIMED practice replay of yesterday's stored
 //                round (never affects points/streak).
 // Success = redirect to the shared player. Errors land back on the test home

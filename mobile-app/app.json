@@ -27,7 +27,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "allowBackup": false,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -60,6 +64,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "786a0358-d1db-437e-9fa3-b466b490a8ae"
+      }
+    },
+    "owner": "olimpiadaplatforms-team"
   }
 }

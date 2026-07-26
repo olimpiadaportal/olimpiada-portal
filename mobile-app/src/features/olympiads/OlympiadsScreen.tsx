@@ -8,8 +8,12 @@
 //      start_olympiad_attempt → the SHARED runner (/(student)/test/run/[id]).
 // A still-running attempt (server deadline in the future) surfaces as a
 // CONTINUE card on top, exactly like the web page. Question counts everywhere
-// are the REAL pool counts (get_olympiad_pool_counts — Round 21); the
-// display-legacy questions_per_attempt is dead.
+// are the REAL pool counts (get_olympiad_pool_counts — Round 21), which stay
+// the headline numbers; questions_per_attempt is LIVE again server-side since
+// the Round-51 rotation (each attempt serves a questions_per_attempt-sized
+// selection from the pool) but is never displayed here. Olympiad attempts are
+// PRACTICE-ONLY (Round 48): they never touch points/percentage/ranking, and
+// the owned list says so (oly5.practiceOnly, web parity).
 import React, { useCallback, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { Image } from "expo-image";
@@ -392,6 +396,14 @@ export function OlympiadsScreen() {
 
             {/* ---- owned ("Olimpiadalarım"): the playable list ---- */}
             <ArenaSectionH title={t("oly4.mineTitle")} />
+            {/* Round 51 audit (web parity): olympiad attempts are practice-only
+                — say so above the playable list so the child never assumes a
+                run counts toward the rating. */}
+            {(ownedQ.data ?? []).length > 0 ? (
+              <AppText color={arena.muted} style={{ fontSize: 13, lineHeight: 19 }}>
+                {t("oly5.practiceOnly")}
+              </AppText>
+            ) : null}
             {(ownedQ.data ?? []).length === 0 ? (
               <EmptyState
                 title={t("oly3.childNone")}

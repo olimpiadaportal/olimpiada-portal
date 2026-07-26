@@ -4,7 +4,13 @@ import { useActionState, useState } from "react";
 import { saveOlympiadPackage, type OlympiadState } from "@/lib/admin/olympiad";
 import { ActionButton } from "@/components/ActionButton";
 import { DateTimeLocalField } from "@/components/DateTimeLocalField";
+import { OlympiadCycleSummary } from "@/components/OlympiadCycleSummary";
 import { localeNames, locales, type Locale } from "@/i18n/config";
+import {
+  PER_ATTEMPT_MAX,
+  PER_ATTEMPT_MIN,
+  PER_ATTEMPT_DEFAULT,
+} from "@/lib/admin/olympiad-per-attempt";
 
 type Opt = { value: string; label: string };
 type Defaults = {
@@ -16,6 +22,7 @@ type Defaults = {
   saleStart?: string; // sale_starts_at ISO timestamptz ("" = unset)
   saleEnd?: string; // sale_ends_at ISO timestamptz ("" = unset)
   duration?: string; // attempt time limit in minutes (migration 047)
+  perAttempt?: string; // questions_per_attempt (Round 49)
   tr: Record<string, { title: string; desc: string }>;
 };
 
@@ -24,15 +31,20 @@ type Defaults = {
 // its question file, and removed through the guarded RPC).
 export function OlympiadForm({
   dict,
+  locale,
   subjects,
   olympiadTypes,
+  gradePools = [],
   defaults,
   id,
   submitLabel,
 }: {
   dict: Record<string, string>;
+  locale: Locale;
   subjects: Opt[];
   olympiadTypes: Opt[];
+  /** Target grades with their REAL published pool size (edit page). */
+  gradePools?: { id: string; name: string; level: number; questions: number }[];
   defaults?: Defaults;
   id?: string;
   submitLabel: string;
@@ -49,6 +61,7 @@ export function OlympiadForm({
     price: defaults?.price ?? "0",
     status: defaults?.status ?? "inactive",
     duration: defaults?.duration ?? "25",
+    perAttempt: defaults?.perAttempt ?? String(PER_ATTEMPT_DEFAULT),
   });
   const [tr, setTr] = useState<Record<string, { title: string; desc: string }>>(() => {
     const o: Record<string, { title: string; desc: string }> = {};
@@ -100,6 +113,36 @@ export function OlympiadForm({
         <span className="field-label">{tt("oly2.price")}</span>
         <input name="price_amount" type="number" step="0.01" value={f.price} onChange={(e) => set("price", e.target.value)} />
       </label>
+      {/* Round 49 — questions served per attempt. NOT the uploaded pool total:
+          the pool (shown in the cycle summary below and in Grades & Pools) can
+          be far larger; this is how many of them ONE sitting draws. min/max are
+          UX only — the server action re-validates. */}
+      <label className="field">
+        <span className="field-label">{tt("oly2.perAttempt")} *</span>
+        <input
+          name="questions_per_attempt"
+          type="number"
+          min={PER_ATTEMPT_MIN}
+          max={PER_ATTEMPT_MAX}
+          step={1}
+          required
+          value={f.perAttempt}
+          onChange={(e) => set("perAttempt", e.target.value)}
+        />
+        <span className="hint">{tt("oly2.perAttemptHelp")}</span>
+        <span className="hint">{tt("oly2.perAttemptDistinct")}</span>
+      </label>
+      <OlympiadCycleSummary
+        dict={dict}
+        locale={locale}
+        perAttemptRaw={f.perAttempt}
+        grades={gradePools.map((g) => ({
+          key: g.id,
+          name: g.name,
+          level: g.level,
+          pool: g.questions,
+        }))}
+      />
       <label className="field">
         <span className="field-label">{tt("oly2.duration")} *</span>
         <input

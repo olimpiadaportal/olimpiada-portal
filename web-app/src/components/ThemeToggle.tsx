@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { type Locale } from "@/i18n/config";
 import { useT, useTFirst } from "@/i18n/I18nProvider";
+import { Segmented } from "@/components/Segmented";
 
 // M21: no direct `messages` import here — all translation goes through the
 // override-aware I18nProvider (the old trFirst export moved to useTFirst).
@@ -128,10 +129,11 @@ export function ThemeToggle({
     const darkLabel =
       labels?.dark ?? tf(["drawer2.themeDark", "theme.dark"], "Dark");
     return (
-      <div
+      <Segmented
         className="seg-group seg-theme"
         role="group"
         aria-label={t("theme.toggle")}
+        track
       >
         <button
           type="button"
@@ -153,7 +155,7 @@ export function ThemeToggle({
           <span>{darkLabel}</span>
           <CheckIcon />
         </button>
-      </div>
+      </Segmented>
     );
   }
 

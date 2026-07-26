@@ -117,6 +117,7 @@ export function ManageSubjectsEditor({
   endingIds = [],
   interval,
   posture,
+  addsDisabled = false,
   onSaved,
 }: {
   studentId: string;
@@ -131,6 +132,12 @@ export function ManageSubjectsEditor({
   /** The live subscription's billing interval. */
   interval: string | null;
   posture: CommercePosture;
+  /** Removal-only mode (payments off): the server deliberately keeps
+   *  REMOVALS legal when payments are off — a parent must always be able to
+   *  stop paying — and blocks only ADDS. Add-side rows (unchecked subjects
+   *  outside the live coverage) become non-selectable and price-free;
+   *  unchecking currently-active subjects keeps working. */
+  addsDisabled?: boolean;
   onSaved: () => void;
 }) {
   const { tokens } = useTheme();
@@ -180,7 +187,7 @@ export function ManageSubjectsEditor({
   const nextBillingSentence = (q: SubjectChangeQuote) =>
     t("subjedit.nextBillingLine")
       .replace("{date}", fmtBakuDate(q.effective_from, locale))
-      .replace("{total}", fmtAmount(q.new_recurring_total))
+      .replace("{total}", fmtAmount(q.new_recurring_total, locale))
       .replace("{currency}", q.currency)
       .replace("{interval}", bareInterval);
   const noChargeSentence = (q: SubjectChangeQuote) =>
@@ -194,12 +201,18 @@ export function ManageSubjectsEditor({
   function dueNowValueText(): string {
     if (quoting) return t("sub.calculating");
     if (!quote) return quoteError ? t(quoteError) : t("sub.calculating");
-    return quote.due_now > 0 ? fmtMoney(quote.due_now, quote.currency) : noChargeSentence(quote);
+    return quote.due_now > 0
+      ? fmtMoney(quote.due_now, quote.currency, locale)
+      : noChargeSentence(quote);
   }
 
   const noChargeConfirm = toAdd.length > 0 && !!quote && quote.due_now === 0;
 
   const toggle = (id: string) => {
+    // Removal-only mode: checking a subject outside the live coverage would
+    // be an ADD (the server rejects it while payments are off) — ignore it.
+    // Ending rows count too: re-ticking a scheduled removal is add-shaped.
+    if (addsDisabled && !selected.has(id) && !covered.has(id)) return;
     setError(null);
     setSaved(false);
     setToggled((p) => {
@@ -249,11 +262,15 @@ export function ManageSubjectsEditor({
       <Card style={{ paddingVertical: spacing.xs }}>
         {subjects.map((s) => {
           const isChecked = selected.has(s.id);
+          // Checking this row would ADD a subject (it is outside the live
+          // coverage) — in removal-only mode that side is disabled and shows
+          // no price line.
+          const wouldAdd = !isChecked && !covered.has(s.id);
           return (
             <SubjectCheckRow
               key={s.id}
               name={subjectLabel(t, s.code, s.name)}
-              priceText={fmtMoney(s.prices[iv] ?? 0, "AZN")}
+              priceText={addsDisabled && wouldAdd ? "" : fmtMoney(s.prices[iv] ?? 0, "AZN", locale)}
               checked={isChecked}
               onToggle={() => toggle(s.id)}
               chip={
@@ -264,7 +281,7 @@ export function ManageSubjectsEditor({
                     : undefined
               }
               chipTone={covered.has(s.id) ? "active" : "ending"}
-              disabled={pending}
+              disabled={pending || (addsDisabled && wouldAdd)}
             />
           );
         })}
@@ -307,7 +324,7 @@ export function ManageSubjectsEditor({
               <SumBlock label={t("subjedit.dueNow")}>
                 {quote.due_now > 0 ? (
                   <AppText variant="mono" style={{ fontSize: 20, fontWeight: weight.bold }}>
-                    {fmtMoney(quote.due_now, quote.currency)}
+                    {fmtMoney(quote.due_now, quote.currency, locale)}
                   </AppText>
                 ) : (
                   <AppText variant="muted">{noChargeSentence(quote)}</AppText>

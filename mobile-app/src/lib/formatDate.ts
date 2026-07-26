@@ -75,10 +75,23 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 /** The placeholder ICU leaks when the resolved locale has no month data. */
 const ICU_MONTH_PLACEHOLDER = /M\d\d/;
 
+/** Full BCP-47 tag. An unknown runtime locale falls to the EN tag — never to
+ *  the bare code itself: handing Intl a bare "az" is precisely what resolves
+ *  to the CLDR root locale and its "M08" pattern (web formatDate tagFor twin). */
+function tagFor(locale: Locale): string {
+  return INTL_TAGS[locale] ?? INTL_TAGS.en;
+}
+
 /** Baku-shifted parts, read via UTC getters (fixed +4, no DST). */
 function bakuParts(ts: number) {
   const d = new Date(ts + BAKU_OFFSET_MS);
-  return { day: d.getUTCDate(), month: d.getUTCMonth(), year: d.getUTCFullYear() };
+  return {
+    day: d.getUTCDate(),
+    month: d.getUTCMonth(),
+    year: d.getUTCFullYear(),
+    hour: d.getUTCHours(),
+    minute: d.getUTCMinutes(),
+  };
 }
 
 /** Intl attempt that REJECTS root-locale output instead of trusting it. */
@@ -88,7 +101,7 @@ function intlFormat(
   options: Intl.DateTimeFormatOptions,
 ): string | null {
   try {
-    const out = new Intl.DateTimeFormat(INTL_TAGS[locale] ?? locale, {
+    const out = new Intl.DateTimeFormat(tagFor(locale), {
       timeZone: "Asia/Baku",
       ...options,
     }).format(new Date(ts));
@@ -111,25 +124,18 @@ export function formatLongDate(
   const ts = Date.parse(iso);
   if (!Number.isFinite(ts)) return "—";
 
-  try {
-    const out = new Intl.DateTimeFormat(INTL_TAGS[locale] ?? locale, {
-      timeZone: "Asia/Baku",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      ...(withTime ? { hour: "2-digit" as const, minute: "2-digit" as const } : {}),
-    }).format(new Date(ts));
-    // "M08"-style output = ICU month data missing (Hermes az) → fall back.
-    if (out && !/M\d\d/.test(out)) return out;
-  } catch {
-    // Missing locale/timezone data → manual fallback below.
-  }
+  const viaIntl = intlFormat(ts, locale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    ...(withTime ? { hour: "2-digit" as const, minute: "2-digit" as const } : {}),
+  });
+  if (viaIntl) return viaIntl;
 
   // Manual fallback: shift into Baku (fixed UTC+4) and read UTC fields.
-  const d = new Date(ts + BAKU_OFFSET_MS);
-  const month = (MONTHS[locale] ?? MONTHS.en)[d.getUTCMonth()];
-  const date = `${d.getUTCDate()} ${month} ${d.getUTCFullYear()}`;
-  return withTime ? `${date} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}` : date;
+  const p = bakuParts(ts);
+  const date = `${p.day} ${(MONTHS[locale] ?? MONTHS.en)[p.month]} ${p.year}`;
+  return withTime ? `${date} ${pad2(p.hour)}:${pad2(p.minute)}` : date;
 }
 
 /**
@@ -179,4 +185,18 @@ export function formatDayMonth(
   const p = bakuParts(ts);
   const base = `${p.day} ${(MONTHS[locale] ?? MONTHS.en)[p.month]}`;
   return withYear ? `${base} ${p.year}` : base;
+}
+
+/**
+ * Stable "YYYY-MM-DD" bucket key for the ASIA/BAKU day of a timestamp — the
+ * notification inbox groups (and compares years) by the product's home day,
+ * never the device day: a device outside UTC+4 would otherwise bucket by one
+ * day and title the section in another. Null/invalid → "".
+ */
+export function bakuDayKey(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return "";
+  const p = bakuParts(ts);
+  return `${p.year}-${pad2(p.month + 1)}-${pad2(p.day)}`;
 }

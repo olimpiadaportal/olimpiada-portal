@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { getParentFreeAccess } from "@/lib/freeAccess";
+import { parseSelectionParams } from "@/lib/pricingConfigurator";
 import { AddChildWizard } from "@/components/AddChildWizard";
 
 // All i18n keys the (client) wizard needs, resolved server-side into a dict.
@@ -56,10 +57,15 @@ const KEYS = [
   "addchild.avatar.photoSelected", "addchild.avatar.requirements",
 ];
 
-export default async function NewChildPage() {
+export default async function NewChildPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ subjects?: string | string[]; interval?: string | string[] }>;
+}) {
   await requireParent();
   const t = await getT();
   const supabase = await createClient();
+  const search = await searchParams;
 
   // R11: the payment mode decides which wizard steps exist (server-resolved;
   // the wizard client only receives the string, never the flags themselves).
@@ -97,7 +103,7 @@ export default async function NewChildPage() {
     supabase.from("grades").select("id, level, name").order("level", { ascending: true }),
     supabase
       .from("subjects_pricing")
-      .select("subject_id, interval, price_amount, subjects(code, name)")
+      .select("subject_id, interval, price_amount, subjects(code, name, status)")
       .eq("status", "active"),
   ]);
 
@@ -122,7 +128,13 @@ export default async function NewChildPage() {
   // (subj.<code>) in the wizard; `name` stays the DB fallback.
   const map = new Map<
     string,
-    { id: string; code: string | null; name: string; prices: Record<string, number> }
+    {
+      id: string;
+      code: string | null;
+      name: string;
+      prices: Record<string, number>;
+      active: boolean;
+    }
   >();
   for (const row of (pricing ?? []) as any[]) {
     const sid = row.subject_id;
@@ -132,11 +144,32 @@ export default async function NewChildPage() {
         code: row.subjects?.code ?? null,
         name: row.subjects?.name ?? "—",
         prices: {},
+        active: row.subjects?.status === "active",
       });
     }
     map.get(sid)!.prices[row.interval] = Number(row.price_amount);
   }
-  const subjects = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  // Round 50: an ARCHIVED subject keeps its pricing rows, and `.eq("status",
+  // "active")` above filters the PRICING row, not the subject — so an archived
+  // subject with a live price used to stay tickable here while /services
+  // correctly dropped it. Filter it out so the two catalogs agree (this is also
+  // what the hand-off comment below has always claimed).
+  // Sorting matches lib/pricing.ts's "az" collation so the wizard lists
+  // subjects in the same order the configurator did.
+  const subjects = Array.from(map.values())
+    .filter((sub) => sub.active)
+    .map(({ active: _active, ...rest }) => rest)
+    .sort((a, b) => a.name.localeCompare(b.name, "az"));
+
+  // Hand-off from the public /services configurator:
+  // `?subjects=<uuid,…>&interval=<week|month|year>`. This is UNTRUSTED input —
+  // validated here against the catalog the wizard actually offers (UUID shape,
+  // de-duplicated, capped at 20, unknown/archived/unpriced ids dropped
+  // silently, unknown interval falls back to monthly). It only PRESELECTS the
+  // wizard; subscribeChild re-validates every id, re-checks ownership and
+  // re-prices server-side, so a forged link can never buy anything.
+  const { subjectIds: initialSubjectIds, interval: initialInterval } =
+    parseSelectionParams(search, subjects);
 
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
@@ -161,6 +194,8 @@ export default async function NewChildPage() {
         dict={dict}
         paymentMode={paymentMode}
         freeAccessActive={freeAccessActive}
+        initialSubjectIds={initialSubjectIds}
+        initialInterval={initialInterval}
       />
     </section>
   );

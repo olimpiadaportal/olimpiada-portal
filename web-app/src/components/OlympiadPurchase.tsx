@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Modal } from "@/components/Modal";
 import { OlympiadCover } from "@/components/OlympiadCover";
+import { Segmented } from "@/components/Segmented";
 import {
   OlympiadDetailsRows,
   type OlympiadDetailRow,
@@ -50,6 +51,8 @@ export type PolyPackage = {
   countByGrade: Record<string, number>;
   /** Whole-pool count — used when the selected grade has no entry (legacy). */
   fallbackCount: number;
+  /** Round 51: questions served per attempt (rotation). 0 = not set. */
+  questionsPerAttempt: number;
   /** Attempt time limit in minutes (null = not set → row hidden). */
   durationMinutes: number | null;
   /** Localized sale-window start / end (null = not set → row hidden). */
@@ -97,6 +100,7 @@ export type PolyDict = {
   detGrade: string;
   detGrades: string;
   detQuestions: string;
+  detPerAttempt: string;
   detDuration: string;
   detEventAt: string;
   detSaleStart: string;
@@ -186,6 +190,15 @@ function DetailsDialogBody({
     { label: dict.detSubject, value: pkg.subject },
     { label: multiGrade ? dict.detGrades : dict.detGrade, value: pkg.gradeLabel },
     { label: dict.detQuestions, value: count > 0 ? String(count) : null },
+    {
+      // Round 51 rotation: shown only when it is a real subset of the selected
+      // child's pool — equal/greater means an attempt serves the whole pool.
+      label: dict.detPerAttempt,
+      value:
+        pkg.questionsPerAttempt > 0 && pkg.questionsPerAttempt < count
+          ? String(pkg.questionsPerAttempt)
+          : null,
+    },
     {
       label: dict.detDuration,
       value: pkg.durationMinutes ? `${pkg.durationMinutes} ${dict.detMinutes}` : null,
@@ -413,7 +426,7 @@ export function OlympiadPurchase({
       {/* Child selector */}
       <div className="poly-picker">
         <span className="field-label">{dict.chooseChild}</span>
-        <div className="poly-seg" role="group" aria-label={dict.chooseChild}>
+        <Segmented className="poly-seg" role="group" aria-label={dict.chooseChild}>
           {childrenList.map((c) => (
             <button
               key={c.id}
@@ -425,7 +438,7 @@ export function OlympiadPurchase({
               {c.name}
             </button>
           ))}
-        </div>
+        </Segmented>
       </div>
 
       {visiblePackages.length === 0 ? (

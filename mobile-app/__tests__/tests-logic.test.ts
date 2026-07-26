@@ -334,4 +334,16 @@ describe("misc", () => {
     expect(usedMinutes(start, null, 25)).toBeNull();
     expect(usedMinutes(new Date(NOW + 1000).toISOString(), start, 25)).toBeNull();
   });
+
+  it("UNTIMED attempts (null duration, Round 42) never clamp — no invented 25-minute limit", () => {
+    const start = new Date(NOW).toISOString();
+    // Raw elapsed minutes pass through unclamped …
+    expect(usedMinutes(start, new Date(NOW + 90 * 60_000).toISOString(), null)).toBe(90);
+    expect(usedMinutes(start, new Date(NOW + 12 * 60_000).toISOString(), null)).toBe(12);
+    // … the 1-minute floor still applies …
+    expect(usedMinutes(start, new Date(NOW + 1_000).toISOString(), null)).toBe(1);
+    // … and bad timestamps still yield null.
+    expect(usedMinutes(null, start, null)).toBeNull();
+    expect(usedMinutes(new Date(NOW + 1000).toISOString(), start, null)).toBeNull();
+  });
 });

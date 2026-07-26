@@ -1,15 +1,16 @@
-// TEST ENGINE (M3, restyled M3.2; Round 38) — tests home (web /child/test
+// TEST ENGINE (M3, restyled M3.2; Round 43) — tests home (web /child/test
 // parity): subject cards from the child's ACCESS SET (subscription subjects +
 // free windows), a prominent CONTINUE card for a live in_progress attempt, and
 // the recent history (daily rounds + practice tests) with per-row status →
 // runner/result. Locked children see the same "ask your parent" hint as the
-// web arena. Card state (Round 42 — daily rounds are UNTIMED server-side):
-// ONLY a GRADED rated daily attempt started today (Baku day) consumes the
-// card — it dims and its practice CTA alerts instead of navigating; ANY open
-// in_progress attempt resumes (no deadline exists anymore); expired/
-// abandoned legacy rows never lock the day, so Start renders and
-// the next start_daily_round_attempt('today') serves a fresh set (the old
-// Round-21 readiness pre-flight RPC was DROPPED server-side).
+// web arena. Card state (Round 42/43 — daily rounds are UNTIMED and the day
+// is consumed AT CREATION, migrations 086/087: a partial unique index allows
+// ONE live/graded rated round per subject per Baku day): a GRADED rated daily
+// attempt started today dims the card to done; ANY open in_progress attempt
+// TRUE-resumes via Continue (no deadline exists anymore); canceled/legacy-
+// expired rows sit outside the unique index, so Start renders again and
+// start_daily_round_attempt('today') serves a fresh set (the old Round-21
+// readiness pre-flight RPC was DROPPED server-side).
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -308,7 +309,10 @@ function SubjectCard({
   const router = useRouter();
   const qc = useQueryClient();
   const [starting, setStarting] = useState(false);
-  const [cardError, setCardError] = useState<string | null>(null);
+  // The mapped i18n KEY (translated at render — never raw Postgres text). A
+  // key, not a string, so the render can pick the web tone per note: usedToday
+  // and noRoundYet are informational notices, everything else is a real error.
+  const [cardErrorKey, setCardErrorKey] = useState<string | null>(null);
   // Round 43: the fresh Başla opens this rules/consent gate before the RPC.
   const [gateOpen, setGateOpen] = useState(false);
 
@@ -320,7 +324,7 @@ function SubjectCard({
   const startRound = async () => {
     if (starting) return;
     setStarting(true);
-    setCardError(null);
+    setCardErrorKey(null);
     try {
       const res = await startDailyRoundAttempt(subjectId);
       if (res.ok) {
@@ -339,12 +343,12 @@ function SubjectCard({
         // Server one-per-day unique index tripped: refresh so the card flips to
         // done and mirror the block with the "used today" note (web ?err=already).
         void qc.invalidateQueries({ queryKey: ["tests", "attempts"] });
-        setCardError(t("test.rounds.usedToday"));
+        setCardErrorKey("test.rounds.usedToday");
       } else {
-        setCardError(t(res.errorKey));
+        setCardErrorKey(res.errorKey);
       }
     } catch {
-      setCardError(t("test.err.generic"));
+      setCardErrorKey("test.err.generic");
     }
     setStarting(false);
     setGateOpen(false);
@@ -379,8 +383,9 @@ function SubjectCard({
           <AppText variant="label" color={arena.ink} style={{ fontSize: 16 }}>
             {name}
           </AppText>
-          <AppText color={arena.dim} style={{ fontSize: 12 }}>
-            {t("test.rounds.timedBadge")}
+          {/* Web today-card meta parity: "<no-limit badge> · rated". */}
+          <AppText color={arena.dim} style={{ fontSize: 12 }} numberOfLines={2}>
+            {t("test.rounds.timedBadge")} · {t("test.rounds.rated")}
           </AppText>
         </View>
       </View>
@@ -445,16 +450,23 @@ function SubjectCard({
         </View>
       )}
 
-      {/* Start-round error (mapped i18n key, never raw Postgres text). */}
-      {cardError ? (
-        <AppText color={arena.red} style={{ fontSize: 13 }}>
-          {cardError}
-        </AppText>
+      {/* Start-round note (mapped i18n key, never raw Postgres text). Web tone
+          parity: "used today" / "no round yet" are informational .tst-notice
+          strips, not errors — only real failures stay red. */}
+      {cardErrorKey ? (
+        cardErrorKey === "test.rounds.usedToday" ||
+        cardErrorKey === "test.rounds.noRoundYet" ? (
+          <Notice arena={arena}>{t(cardErrorKey)}</Notice>
+        ) : (
+          <AppText color={arena.red} style={{ fontSize: 13 }}>
+            {t(cardErrorKey)}
+          </AppText>
+        )
       ) : null}
 
       {/* DONE: the day is used up — the "come back tomorrow" note (web
-          .tst-daily-used). Only when no transient error is already showing it. */}
-      {done && !cardError ? (
+          .tst-daily-used). Only when no transient note is already showing it. */}
+      {done && !cardErrorKey ? (
         <AppText color={arena.muted} style={{ fontSize: 13, lineHeight: 19 }}>
           {t("test.rounds.usedToday")}
         </AppText>
@@ -826,8 +838,11 @@ function AttemptRow({
     >
       <View style={{ flex: 1, gap: 2 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+          {/* Web history-row parity: "<subject> · <kind>" (the list carries
+              daily + practice tests only; olympiads live on their own tab). */}
           <AppText variant="label" color={arena.ink} numberOfLines={1} style={{ flexShrink: 1 }}>
-            {subjectLabel(t, row.subject_code, row.subject_name)}
+            {subjectLabel(t, row.subject_code, row.subject_name)} ·{" "}
+            {t(row.kind === "daily" ? "kind.daily" : "kind.practice")}
           </AppText>
           {row.is_rated ? (
             <View

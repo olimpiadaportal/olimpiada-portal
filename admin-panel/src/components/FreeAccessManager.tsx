@@ -22,6 +22,7 @@ import {
   type IntervalStatus,
 } from "@/lib/admin/freeAccess";
 import { ActionButton } from "@/components/ActionButton";
+import { formatBakuDateTime } from "@/lib/admin/datetime";
 
 // Convert a naive <input type="datetime-local"> value ("2026-07-05T14:30") to a
 // UTC ISO string, interpreting it in the admin's OWN browser timezone. "" stays "".
@@ -387,17 +388,8 @@ export function IntervalsTable({
   strings: FreeAccessStrings;
 }) {
   // Render windows in Asia/Baku (UTC+4, no DST) — consistent with the audit log.
-  const fmt = (iso: string): string => {
-    try {
-      return new Intl.DateTimeFormat(locale, {
-        timeZone: "Asia/Baku",
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(iso));
-    } catch {
-      return iso;
-    }
-  };
+  // Shared hardened helper (root-locale "M08" guard) — lib/admin/datetime.ts.
+  const fmt = (iso: string): string => formatBakuDateTime(iso, locale);
 
   if (intervals.length === 0) {
     return <p className="muted">{strings.none}</p>;

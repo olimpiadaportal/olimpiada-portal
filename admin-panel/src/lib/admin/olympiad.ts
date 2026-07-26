@@ -24,7 +24,13 @@ import {
 import { getT, getLocale, type T } from "@/i18n/server";
 import { parseIsoTimestamp } from "@/lib/admin/datetime";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
-import { localeNames } from "@/i18n/config";
+import {
+  fillTemplate,
+  gradeLabel,
+  gradePoolShortfalls,
+  parsePerAttempt,
+} from "@/lib/admin/olympiad-per-attempt";
+import { localeNames, type Locale } from "@/i18n/config";
 import { localStrings as poolStrings } from "@/app/(protected)/olympiad/labels";
 
 export type OlympiadState = { error?: string } | null;
@@ -89,6 +95,8 @@ type PackageFields = {
   saleStartAt: string | null;
   saleEndAt: string | null;
   durationMinutes: number;
+  /** Round 49: how many questions ONE attempt serves (per-student rotation). */
+  questionsPerAttempt: number;
 };
 
 /** Sentinel the type <select> uses for "Other (enter a new type)". */
@@ -150,6 +158,10 @@ function parsePackageFields(
   ) {
     return { error: t("oly2.err.duration") };
   }
+  // Round 49: questions served per attempt. Whole number, 1..500 — mirrors the
+  // DB CHECK. The client `min`/`max` attributes are UX only; THIS is the gate.
+  const questionsPerAttempt = parsePerAttempt(s(fd, "questions_per_attempt"));
+  if (questionsPerAttempt === null) return { error: lt("oly2.err.perAttempt") };
   const statusRaw = s(fd, "status");
   const status = ["active", "inactive", "archived"].includes(statusRaw) ? statusRaw : "inactive";
   const titleAz = s(fd, "title_az");
@@ -192,6 +204,7 @@ function parsePackageFields(
     saleStartAt,
     saleEndAt,
     durationMinutes: durationNum,
+    questionsPerAttempt,
   };
 }
 
@@ -262,19 +275,103 @@ async function packageGradeRows(
     .sort((a, b) => a.level - b.level);
 }
 
-// Grades whose pool has ZERO published questions (blocks status='active').
-async function gradesMissingPools(
+// Published pool size of ONE grade of a package (exact head count — never a
+// row fetch, so a 2000-question pool is still counted correctly).
+async function publishedPoolCount(
   supabase: Db,
   pkgId: string,
-  gradeRows: { id: string; name: string }[],
-): Promise<string[]> {
-  const { data } = await supabase
+  gradeId: string | null,
+): Promise<number> {
+  let qb = supabase
     .from("questions")
-    .select("grade_id")
+    .select("id", { count: "exact", head: true })
     .eq("olympiad_package_id", pkgId)
     .eq("status", "published");
-  const filled = new Set(((data ?? []) as any[]).map((q) => String(q.grade_id)));
-  return gradeRows.filter((g) => !filled.has(g.id)).map((g) => g.name);
+  if (gradeId) qb = qb.eq("grade_id", gradeId);
+  const { count } = await qb;
+  return count ?? 0;
+}
+
+// Round 49 ACTIVATION GATE. A package may only go ACTIVE when every grade it
+// targets has a published pool that can actually fill one attempt — i.e.
+// pool >= questions_per_attempt. Returns the trilingual blocking message
+// (naming each short grade, its pool and the required count), or null when
+// activation is allowed. Legacy grade-less packages are checked against the
+// whole published pool.
+async function activationPoolBlock(
+  supabase: Db,
+  pkgId: string,
+  perAttempt: number,
+  locale: Locale,
+  lt: (key: string) => string,
+): Promise<string | null> {
+  const gradeRows = await packageGradeRows(supabase, pkgId);
+  const fill = (key: string, vars: Record<string, string | number>) =>
+    fillTemplate(lt(key), vars);
+
+  if (gradeRows.length === 0) {
+    const pool = await publishedPoolCount(supabase, pkgId, null);
+    if (pool >= perAttempt) return null;
+    return fill("oly2.err.poolBelowPerAttemptNoGrade", {
+      pool,
+      count: perAttempt,
+    });
+  }
+
+  const withPools = await Promise.all(
+    gradeRows.map(async (g) => ({
+      ...g,
+      pool: await publishedPoolCount(supabase, pkgId, g.id),
+    })),
+  );
+  const short = gradePoolShortfalls(withPools, perAttempt);
+  if (short.length === 0) return null;
+  return short
+    .map((g) =>
+      fill("oly2.err.poolBelowPerAttempt", {
+        grade: gradeLabel(locale, g.level, g.name),
+        pool: g.pool,
+        count: perAttempt,
+      }),
+    )
+    .join(" ");
+}
+
+// The DB enforces the same rule in a BEFORE INSERT/UPDATE trigger on
+// olympiad_packages and raises an Azerbaijani sentence with
+// hint='olympiad_pool_below_per_attempt' plus a DETAIL JSON payload. The raw
+// sentence must never reach an en/ru admin, so it is re-rendered from the
+// payload here (and the raw message is never surfaced).
+function mapPoolGuardError(
+  error: { hint?: string | null; details?: string | null } | null,
+  perAttempt: number,
+  locale: Locale,
+  lt: (key: string) => string,
+): string | null {
+  if (!error || error.hint !== "olympiad_pool_below_per_attempt") return null;
+  let pool = 0;
+  let required = perAttempt;
+  let level = 0;
+  try {
+    const raw = typeof error.details === "string" ? error.details.slice(0, 2000) : "";
+    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    if (Number.isFinite(Number(parsed.pool))) pool = Number(parsed.pool);
+    if (Number.isFinite(Number(parsed.required))) required = Number(parsed.required);
+    if (Number.isFinite(Number(parsed.grade_level))) level = Number(parsed.grade_level);
+  } catch {
+    // Malformed/absent DETAIL — fall back to the values we already know.
+  }
+  if (level > 0) {
+    return fillTemplate(lt("oly2.err.poolBelowPerAttempt"), {
+      grade: gradeLabel(locale, level),
+      pool,
+      count: required,
+    });
+  }
+  return fillTemplate(lt("oly2.err.poolBelowPerAttemptNoGrade"), {
+    pool,
+    count: required,
+  });
 }
 
 // Insert with the auto-generated `code`; retry on a unique-violation by
@@ -344,7 +441,8 @@ export async function saveOlympiadPackage(
 ): Promise<OlympiadState> {
   const ctx = await requireAdmin();
   const t = await getT();
-  const lt = olympiadLocalStrings(await getLocale());
+  const locale = await getLocale();
+  const lt = olympiadLocalStrings(locale);
   const id = s(fd, "__id");
   // EDIT mode: grades are managed by the dedicated add/remove actions on the
   // edit page (a grade is only ever added TOGETHER with its question file),
@@ -357,16 +455,45 @@ export async function saveOlympiadPackage(
   const typeRes = await resolveOlympiadTypeId(supabase, fields, t);
   if ("error" in typeRes) return { error: typeRes.error };
 
-  // Activation gate: an ACTIVE package must have a non-empty published pool
-  // for EVERY target grade — a student must never buy into an empty pool.
-  if (id && fields.status === "active") {
-    const gradeRows = await packageGradeRows(supabase, id);
-    const missing = await gradesMissingPools(supabase, id, gradeRows);
-    if (missing.length > 0) {
-      return {
-        error: lt("oly2.err.activeNeedsPools").replace("{grades}", missing.join(", ")),
-      };
-    }
+  // Round 49 activation gate: an ACTIVE package must be able to FILL an
+  // attempt for EVERY target grade — pool >= questions_per_attempt (a student
+  // must never buy into a pool that cannot serve one sitting). This is where
+  // the status transition happens; the DB trigger is the second, authoritative
+  // line of defence and applies exactly the same rule.
+  //
+  // Scope mirrors that trigger on purpose: only an ACTIVATION or a change to
+  // the per-attempt count is gated. An unrelated edit (price, banner, sale
+  // window) on an ALREADY-active package must not be blocked by a pool that
+  // predates this rule — otherwise such a package could never be edited again.
+  let prev: { status: string; questions_per_attempt: number } | null = null;
+  if (id) {
+    const { data } = await supabase
+      .from("olympiad_packages")
+      .select("status, questions_per_attempt")
+      .eq("id", id)
+      .maybeSingle();
+    prev = data
+      ? {
+          status: String((data as any).status),
+          questions_per_attempt: Number((data as any).questions_per_attempt ?? 0),
+        }
+      : null;
+  }
+  const gatesActivation =
+    fields.status === "active" &&
+    (!prev ||
+      prev.status !== "active" ||
+      prev.questions_per_attempt !== fields.questionsPerAttempt);
+  if (gatesActivation) {
+    const blocked = id
+      ? await activationPoolBlock(supabase, id, fields.questionsPerAttempt, locale, lt)
+      : // A package created through this metadata-only path has NO pool yet,
+        // so it can never start out active.
+        fillTemplate(lt("oly2.err.poolBelowPerAttemptNoGrade"), {
+          pool: 0,
+          count: fields.questionsPerAttempt,
+        });
+    if (blocked) return { error: blocked };
   }
 
   // `code` is auto-generated from the Azerbaijani title (no longer a UI input).
@@ -381,6 +508,7 @@ export async function saveOlympiadPackage(
     sale_starts_at: fields.saleStartAt,
     sale_ends_at: fields.saleEndAt,
     duration_minutes: fields.durationMinutes,
+    questions_per_attempt: fields.questionsPerAttempt,
   };
   let pkgId = id;
   if (!pkgId) {
@@ -398,8 +526,11 @@ export async function saveOlympiadPackage(
   } else {
     const { error } = await supabase.from("olympiad_packages").update(row).eq("id", pkgId);
     if (error) {
+      // The DB pool guard raises an AZ sentence — re-render it in the admin's
+      // locale from its DETAIL payload instead of leaking the raw message.
+      const guarded = mapPoolGuardError(error, fields.questionsPerAttempt, locale, lt);
       console.error("[admin] olympiad package update failed", error.message);
-      return { error: t("err.server") };
+      return { error: guarded ?? t("err.server") };
     }
   }
 
@@ -412,7 +543,11 @@ export async function saveOlympiadPackage(
     action: id ? "admin.olympiad.update" : "admin.olympiad.create",
     targetTable: "olympiad_packages",
     targetId: pkgId,
-    metadata: { status: fields.status, price: fields.price },
+    metadata: {
+      status: fields.status,
+      price: fields.price,
+      questions_per_attempt: fields.questionsPerAttempt,
+    },
   });
 
   revalidatePath("/olympiad");
@@ -687,7 +822,8 @@ export async function createOlympiadPackageWithQuestions(
 ): Promise<OlympiadCreateState> {
   const ctx = await requireAdmin();
   const t = await getT();
-  const lt = olympiadLocalStrings(await getLocale());
+  const locale = await getLocale();
+  const lt = olympiadLocalStrings(locale);
 
   const fields = parsePackageFields(fd, t, lt);
   if ("error" in fields) return { error: fields.error };
@@ -749,18 +885,46 @@ export async function createOlympiadPackageWithQuestions(
     };
   }
 
+  // Round 49 activation gate, applied BEFORE anything is written: a package
+  // may only be created ACTIVE when every grade's uploaded pool can fill one
+  // attempt (pool >= questions_per_attempt).
+  if (fields.status === "active") {
+    const short = gradePoolShortfalls(
+      perGrade.map(({ grade, rows }) => ({ ...grade, pool: rows.validItems.length })),
+      fields.questionsPerAttempt,
+    );
+    if (short.length > 0) {
+      return {
+        error: short
+          .map((g) =>
+            fillTemplate(lt("oly2.err.poolBelowPerAttempt"), {
+              grade: gradeLabel(locale, g.level, g.name),
+              pool: g.pool,
+              count: fields.questionsPerAttempt,
+            }),
+          )
+          .join(" "),
+      };
+    }
+  }
+
   // Create the package — grade_id is trigger-derived from the target rows.
+  // The row is always INSERTED non-active: the pool is imported further below,
+  // and the DB activation guard (rightly) refuses an active package with an
+  // empty pool. A requested 'active' status is applied at the very end, once
+  // every grade's pool exists.
   const pkgId = await insertPackageRow(
     supabase,
     {
       subject_id: fields.subjectId,
       olympiad_type_id: typeRes.typeId,
       price_amount: fields.price,
-      status: fields.status,
+      status: fields.status === "active" ? "inactive" : fields.status,
       event_starts_at: fields.eventAt,
       sale_starts_at: fields.saleStartAt,
       sale_ends_at: fields.saleEndAt,
       duration_minutes: fields.durationMinutes,
+      questions_per_attempt: fields.questionsPerAttempt,
     },
     fields.titleAz,
     ctx.profileId,
@@ -818,16 +982,45 @@ export async function createOlympiadPackageWithQuestions(
     }
   }
 
+  // Every pool is in place now — apply the requested ACTIVE status. Re-checked
+  // against the REAL published counts (not the file counts) so activation can
+  // never outrun what actually landed in the pool.
+  let effectiveStatus = fields.status;
+  if (fields.status === "active") {
+    let failure = await activationPoolBlock(
+      supabase,
+      pkgId,
+      fields.questionsPerAttempt,
+      locale,
+      lt,
+    );
+    if (!failure) {
+      const { error: actErr } = await supabase
+        .from("olympiad_packages")
+        .update({ status: "active" })
+        .eq("id", pkgId);
+      failure = actErr?.message ?? null;
+    }
+    if (failure) {
+      // The package exists with a complete pool — keep it (never discard an
+      // imported pool over a status flip) and leave it inactive; the admin
+      // activates it from the edit page after fixing the pool.
+      console.error("[admin] olympiad activation after create failed", failure);
+      effectiveStatus = "inactive";
+    }
+  }
+
   await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.olympiad.create",
     targetTable: "olympiad_packages",
     targetId: pkgId,
     metadata: {
-      status: fields.status,
+      status: effectiveStatus,
       price: fields.price,
       grades: grades.map((g) => g.level),
       questions: combined.successful,
+      questions_per_attempt: fields.questionsPerAttempt,
     },
   });
 
@@ -853,7 +1046,8 @@ export async function addOlympiadPackageGrade(
 ): Promise<OlympiadGradeState> {
   const ctx = await requireAdmin();
   const t = await getT();
-  const lt = olympiadLocalStrings(await getLocale());
+  const locale = await getLocale();
+  const lt = olympiadLocalStrings(locale);
   const pkgId = s(fd, "__id");
   const gradeId = s(fd, "grade_id");
   if (!UUID_RE.test(pkgId) || !UUID_RE.test(gradeId)) return { error: t("err.server") };
@@ -861,7 +1055,7 @@ export async function addOlympiadPackageGrade(
   const supabase = await createClient();
   const { data: pkg } = await supabase
     .from("olympiad_packages")
-    .select("id")
+    .select("id, status, questions_per_attempt")
     .eq("id", pkgId)
     .maybeSingle();
   if (!pkg) return { error: t("err.server") };
@@ -888,6 +1082,23 @@ export async function addOlympiadPackageGrade(
     return {
       error: lt("oly2.err.gradeFiles").replace("{grades}", String(grade.name)),
       result: { total: rows.total, successful: 0, failed: rows.total, errors: rows.errors },
+    };
+  }
+  // Round 49: a LIVE package must be able to fill an attempt for every grade it
+  // targets, so a grade added to an ACTIVE package needs a pool of at least
+  // questions_per_attempt. (An inactive package is gated at activation time.)
+  const perAttempt = Number((pkg as any).questions_per_attempt ?? 0);
+  if (
+    String((pkg as any).status) === "active" &&
+    perAttempt > 0 &&
+    rows.validItems.length < perAttempt
+  ) {
+    return {
+      error: fillTemplate(lt("oly2.err.poolBelowPerAttempt"), {
+        grade: gradeLabel(locale, Number(grade.level), String(grade.name)),
+        pool: rows.validItems.length,
+        count: perAttempt,
+      }),
     };
   }
 

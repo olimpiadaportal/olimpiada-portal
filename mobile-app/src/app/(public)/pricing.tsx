@@ -22,6 +22,7 @@ import {
   Check,
   CircleHelp,
   Clock3,
+  Cpu,
   FlaskConical,
   Languages,
   Trophy,
@@ -65,8 +66,23 @@ function formatAmount(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-/** Best-effort subject glyph from the localized subject name (display only). */
-function subjectIcon(name: string): LucideIcon {
+/** Subject glyph keyed by the canonical machine `code` (the same value the
+ *  subjectLabel `subj.<code>` keys switch on); the old name regex survives
+ *  only as a last-resort fallback for unknown codes. Display only. */
+function subjectIcon(code: string | null | undefined, name: string): LucideIcon {
+  switch (code) {
+    case "math":
+      return Calculator;
+    case "science":
+      return FlaskConical;
+    case "logic":
+      return Brain;
+    case "english":
+    case "az_language":
+      return Languages;
+    case "informatics":
+      return Cpu;
+  }
   const n = name.toLowerCase();
   if (/riyaz|math|мат/.test(n)) return Calculator;
   if (/elm|science|təbiət|наук|естеств/.test(n)) return FlaskConical;
@@ -150,7 +166,7 @@ function MetaChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
-function PublicPackagesSection() {
+function PublicPackagesSection({ paymentsOff }: { paymentsOff: boolean }) {
   const { t, locale } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
@@ -284,34 +300,39 @@ function PublicPackagesSection() {
                     </View>
                   ) : null}
                 </View>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: spacing.md,
-                  }}
-                >
-                  {/* The amount never truncates — the CTA shrinks instead. */}
-                  <AppText
-                    variant="mono"
-                    color={tokens.accent}
-                    style={{ fontSize: 18, fontWeight: "700", flexShrink: 0 }}
+                {/* Payments off (admin kill-switch / unloaded config): the
+                    package stays browsable, but the price chip and the CTA
+                    are money UI and disappear together. */}
+                {!paymentsOff ? (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: spacing.md,
+                    }}
                   >
-                    {priceText}
-                  </AppText>
-                  {showCta ? (
-                    <Button
-                      title={ctaLabel}
-                      style={{
-                        minHeight: 44,
-                        paddingVertical: spacing.sm,
-                        flexShrink: 1,
-                      }}
-                      onPress={onCta}
-                    />
-                  ) : null}
-                </View>
+                    {/* The amount never truncates — the CTA shrinks instead. */}
+                    <AppText
+                      variant="mono"
+                      color={tokens.accent}
+                      style={{ fontSize: 18, fontWeight: "700", flexShrink: 0 }}
+                    >
+                      {priceText}
+                    </AppText>
+                    {showCta ? (
+                      <Button
+                        title={ctaLabel}
+                        style={{
+                          minHeight: 44,
+                          paddingVertical: spacing.sm,
+                          flexShrink: 1,
+                        }}
+                        onPress={onCta}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
               </Card>
             );
           })}
@@ -330,6 +351,11 @@ export default function Pricing() {
 
   const config = useMobileConfig();
   const promoOn = config.data?.flags.launchPromo === true;
+  // Payment-mode gate (web /services + parent-tab GateNotice parity): "off"
+  // hides every money surface on this screen. Money UI fails CLOSED — a
+  // failed/unloaded config (undefined mode) gates exactly like the admin
+  // kill-switch.
+  const paymentsOff = (config.data?.payment.mode ?? "off") === "off";
 
   const q = useQuery({
     queryKey: ["subjects-pricing"],
@@ -342,6 +368,10 @@ export default function Pricing() {
   // reads — a pull that skipped one would show a half-updated price page.
   const overridesQ = useContentOverrides(locale);
   const { refreshing, onRefresh } = usePullRefresh([q, config, overridesQ]);
+
+  // One boot state for prices + config: while it lasts the skeleton renders
+  // and the gate notice stays back (no flash before the mode is known).
+  const booting = (q.isPending || config.isPending) && isSupabaseConfigured;
 
   const interval = PLANS.find((p) => p.key === plan)?.interval ?? "month";
   const rows: SubjectPricingRow[] = (q.data ?? [])
@@ -360,7 +390,9 @@ export default function Pricing() {
     >
       {popular ? <Pill text={t("pricing2.popular")} /> : null}
       <AppText variant="title">{t(`pricing2.${plan}.name`)}</AppText>
-      {minAmount !== null ? (
+      {/* Money UI (price line, per-subject prices, register CTA) hides as one
+          block while payments are off; the plan description stays browsable. */}
+      {minAmount !== null && !paymentsOff ? (
         <View style={{ gap: 2 }}>
           <AppText variant="display" color={tokens.accent}>
             {t(`pricing2.${plan}.price`).replace("{price}", formatAmount(minAmount))}
@@ -382,7 +414,7 @@ export default function Pricing() {
         ))}
       </View>
 
-      {rows.length > 0 ? (
+      {rows.length > 0 && !paymentsOff ? (
         <View
           style={{
             borderTopWidth: 1,
@@ -392,7 +424,7 @@ export default function Pricing() {
           }}
         >
           {rows.map((r) => {
-            const Icon = subjectIcon(r.subject?.name ?? "");
+            const Icon = subjectIcon(r.subject?.code, r.subject?.name ?? "");
             return (
               <View
                 key={r.subject_id}
@@ -419,11 +451,13 @@ export default function Pricing() {
         </View>
       ) : null}
 
-      <Button
-        title={t(`pricing2.${plan}.cta`)}
-        variant="gradient"
-        onPress={() => router.push("/(public)/register")}
-      />
+      {!paymentsOff ? (
+        <Button
+          title={t(`pricing2.${plan}.cta`)}
+          variant="gradient"
+          onPress={() => router.push("/(public)/register")}
+        />
+      ) : null}
     </Card>
   );
 
@@ -460,7 +494,16 @@ export default function Pricing() {
           <AppText variant="muted">{t("pricing2.sub")}</AppText>
         </View>
 
-        {promoOn ? (
+        {/* The one gate notice for the whole screen when payments are off. */}
+        {paymentsOff && !booting ? (
+          <Card>
+            <AppText variant="muted">{t("gate.paymentsOff")}</AppText>
+          </Card>
+        ) : null}
+
+        {/* The trial line is a billing promise — it hides with the rest of
+            the money UI while payments are off. */}
+        {promoOn && !paymentsOff ? (
           <Card style={{ borderColor: tokens.accent }}>
             <AppText>{t("pricing.trialLine")}</AppText>
           </Card>
@@ -477,7 +520,7 @@ export default function Pricing() {
           />
         </View>
 
-        {q.isPending && isSupabaseConfigured ? (
+        {booting ? (
           <Card style={{ gap: spacing.md }}>
             <Skeleton height={22} width="40%" />
             <Skeleton height={28} width="55%" />
@@ -505,10 +548,13 @@ export default function Pricing() {
           planCard
         )}
 
-        <Card style={{ gap: spacing.sm }}>
-          <AppText variant="label">{t("pricing2.sibling.title")}</AppText>
-          <AppText variant="muted">{t("pricing2.sibling.body")}</AppText>
-        </Card>
+        {/* Sibling discount = pricing copy → gated with the rest of it. */}
+        {!paymentsOff ? (
+          <Card style={{ gap: spacing.sm }}>
+            <AppText variant="label">{t("pricing2.sibling.title")}</AppText>
+            <AppText variant="muted">{t("pricing2.sibling.body")}</AppText>
+          </Card>
+        ) : null}
 
         {/* Subjects catalog cross-link (info surface, web /subjects parity). */}
         <Card style={{ paddingVertical: spacing.sm }}>
@@ -526,7 +572,7 @@ export default function Pricing() {
 
         {/* Active olympiad packages — the shared public band, below the
             subscription plans (web /services parity). */}
-        <PublicPackagesSection />
+        <PublicPackagesSection paymentsOff={paymentsOff} />
       </ScrollView>
     </View>
   );

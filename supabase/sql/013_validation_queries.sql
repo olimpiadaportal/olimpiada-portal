@@ -1395,6 +1395,45 @@ select '84_payments_kill_switch' as check_name,
                    pg_get_functiondef('public.apply_subject_change(uuid,uuid[],uuid[],text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
+-- 85) Round 51 (migrations 090/092): olympiad question ROTATION. The rotation
+--     table + its NULLS NOT DISTINCT lock-key index exist, the activation
+--     pool guard is armed on olympiad_packages, start_olympiad_attempt draws
+--     under a row lock (for update) with the live per-attempt count
+--     (v_pkg.n_per) and creates PRACTICE attempts (is_rated = false — no
+--     legacy rated olympiad row may survive), and questions_per_attempt is
+--     bounded 1..500.
+select '85_olympiad_question_rotation' as check_name,
+       case when to_regclass('public.olympiad_question_rotations') is not null
+             and exists (select 1 from pg_indexes where schemaname='public'
+                          and indexname='uq_olympiad_rotation_student_pkg_grade')
+             and exists (select 1 from pg_trigger
+                          where tgname='trg_olympiad_activation_pool_guard'
+                            and tgrelid='public.olympiad_packages'::regclass)
+             and position('for update' in
+                   pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) > 0
+             and position('v_pkg.n_per' in
+                   pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) > 0
+             and position('v_duration, false' in
+                   pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)) > 0
+             and not exists (select 1 from public.test_attempts
+                              where kind = 'olympiad' and is_rated = true)
+             and exists (select 1 from pg_constraint
+                          where conrelid='public.olympiad_packages'::regclass
+                            and conname='olympiad_packages_questions_per_attempt_check'
+                            and pg_get_constraintdef(oid) like '%500%')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 86) Round 51 (migration 091): payment-mode PARITY. The two SQL resolvers
+--     (current_payment_mode and get_mobile_config) must agree on the mode for
+--     the CURRENT flag state, and the kill switch must raise with the stable
+--     hint the app error mappers translate (payments_disabled).
+select '86_payment_mode_parity' as check_name,
+       case when public.current_payment_mode()
+                 = (public.get_mobile_config()->'payment'->>'mode')
+             and position('payments_disabled' in
+                   pg_get_functiondef('public.assert_payments_enabled()'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

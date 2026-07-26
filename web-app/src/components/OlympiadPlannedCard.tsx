@@ -9,6 +9,10 @@
 import { useState } from "react";
 import { Modal } from "@/components/Modal";
 
+// Round 51 (audit F10): NO price fields here. This card renders inside the
+// CHILD arena, and "children never see purchase UI" includes an AZN amount in
+// the details modal — mobile's student screen already shows no price. The
+// parent catalog (OlympiadPurchase) is where prices live.
 export type PlannedOlympiad = {
   id: string;
   title: string;
@@ -20,7 +24,6 @@ export type PlannedOlympiad = {
   subject: string | null;
   typeName: string | null;
   questionsText: string;
-  priceText: string;
 };
 
 export type PlannedDict = {
@@ -31,7 +34,6 @@ export type PlannedDict = {
   type: string;
   date: string;
   qcount: string;
-  price: string;
 };
 
 // Inline-SVG medal for the branded gradient placeholder (no external images —
@@ -84,7 +86,6 @@ export function OlympiadPlannedCard({
   if (item.typeName) rows.push({ label: dict.type, value: item.typeName });
   rows.push({ label: dict.date, value: item.dateText });
   rows.push({ label: dict.qcount, value: item.questionsText });
-  rows.push({ label: dict.price, value: item.priceText });
 
   return (
     <article className="oly4-card">

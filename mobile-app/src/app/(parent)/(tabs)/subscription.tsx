@@ -142,7 +142,7 @@ export default function ParentSubscription() {
           <KeyRow
             icon={<Wallet size={16} color={tokens.muted} strokeWidth={2} />}
             label={t("billing.totalLabel")}
-            value={fmtMoney(liveSub.total_amount ?? 0, liveSub.currency)}
+            value={fmtMoney(liveSub.total_amount ?? 0, liveSub.currency, locale)}
           />
           <KeyRow
             icon={<FileText size={16} color={tokens.muted} strokeWidth={2} />}
@@ -159,6 +159,41 @@ export default function ParentSubscription() {
       )}
     </View>
   ) : null;
+
+  // Manage-subjects editor + cancel flow for the live plan. addsDisabled runs
+  // the editor in REMOVAL-ONLY mode: the server deliberately keeps removals
+  // (and cancellation) legal while payments are off — a parent must always be
+  // able to stop paying — and blocks only adds.
+  const manageBlock = (addsDisabled: boolean) =>
+    selected && liveSub ? (
+      <>
+        <ManageSubjectsEditor
+          studentId={selected.profile_id}
+          subjects={subjects.data ?? []}
+          coveredIds={liveSub.subjects
+            .filter((s) => !s.remove_at)
+            .map((s) => s.subject_id)}
+          endingIds={liveSub.subjects
+            .filter((s) => s.remove_at)
+            .map((s) => s.subject_id)}
+          interval={liveSub.billing_interval}
+          posture={posture}
+          addsDisabled={addsDisabled}
+          onSaved={invalidate}
+        />
+        <Button
+          title={t("subscription.cancelBtn")}
+          variant="danger"
+          onPress={() =>
+            setCancelTarget({
+              subId: liveSub.id,
+              studentId: selected.profile_id,
+              name: childDisplayName(selected),
+            })
+          }
+        />
+      </>
+    ) : null;
 
   return (
     <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
@@ -212,38 +247,19 @@ export default function ParentSubscription() {
               )}
 
               {posture.paymentsOff ? (
-                <GateNotice title={t("billing.plansTitle")} body={t("gate.paymentsOff")} />
+                // Payments off ≠ frozen plan: new subscriptions/adds are
+                // gated, but a live plan keeps its editor in removal-only
+                // mode (plus the cancel flow) right under the notice.
+                <>
+                  <GateNotice title={t("billing.plansTitle")} body={t("gate.paymentsOff")} />
+                  {manageBlock(true)}
+                </>
               ) : posture.webOnly ? (
                 <Card>
                   <AppText variant="muted">{t("mob.pay.webOnly")}</AppText>
                 </Card>
               ) : liveSub ? (
-                <>
-                  <ManageSubjectsEditor
-                    studentId={selected.profile_id}
-                    subjects={subjects.data ?? []}
-                    coveredIds={liveSub.subjects
-                      .filter((s) => !s.remove_at)
-                      .map((s) => s.subject_id)}
-                    endingIds={liveSub.subjects
-                      .filter((s) => s.remove_at)
-                      .map((s) => s.subject_id)}
-                    interval={liveSub.billing_interval}
-                    posture={posture}
-                    onSaved={invalidate}
-                  />
-                  <Button
-                    title={t("subscription.cancelBtn")}
-                    variant="danger"
-                    onPress={() =>
-                      setCancelTarget({
-                        subId: liveSub.id,
-                        studentId: selected.profile_id,
-                        name: childDisplayName(selected),
-                      })
-                    }
-                  />
-                </>
+                manageBlock(false)
               ) : posture.freeFlow ? null : (
                 // demo mode, no live plan → start one on the subscribe screen.
                 <Button

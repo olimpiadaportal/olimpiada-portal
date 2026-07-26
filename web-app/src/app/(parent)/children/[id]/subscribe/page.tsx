@@ -33,6 +33,8 @@ const KEYS = [
   "subjedit.noChargeNow", "pay.confirmNoCharge",
   // H8 — free-window login-ID activation callout:
   "freeact.note", "freeact.cta", "freeact.activating", "freeact.done",
+  // Round 51 (audit F7) — removal-only editor tooltip while payments are off:
+  "gate.paymentsOff",
 ];
 
 export default async function SubscribePage({
@@ -131,8 +133,24 @@ export default async function SubscribePage({
         {(child as any).first_name} {(child as any).last_name}
       </p>
       {mode === "off" ? (
-        // Payments off → no new plans and no billing edits.
-        <div className="price-callout">{t("gate.paymentsOff")}</div>
+        // Payments off → no NEW plans and no ADDS — but a live subscription
+        // stays manageable in REMOVAL-ONLY mode (Round 51, audit F7): the DB
+        // kill switch deliberately keeps removals legal so a parent is never
+        // trapped paying for a subject they want to drop.
+        <>
+          <div className="price-callout">{t("gate.paymentsOff")}</div>
+          {sub?.id && (
+            <ManageSubjects
+              studentId={id}
+              subjects={subjects}
+              coveredIds={coveredIds}
+              endingIds={endingIds}
+              interval={(sub as any).interval ?? "month"}
+              paymentMode={mode}
+              dict={dict}
+            />
+          )}
+        </>
       ) : mode === "giveaway" || freeIntervalActive ? (
         // Free giveaway window OR an active free-access interval → paid writes are
         // blocked server-side; show the friendly "everything is free right now"

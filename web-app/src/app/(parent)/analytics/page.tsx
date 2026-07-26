@@ -426,7 +426,16 @@ export default async function ParentAnalytics({
                 <span className="ana-kpi-label">{t("plb.bestStreak")}</span>
               </div>
             </div>
-          ) : (
+          ) : null}
+          {/* Round 51 (audit): when a rank is provisional, explain WHY —
+              mobile's analytics panel already renders this threshold hint. */}
+          {lbHasActivity &&
+            (lbSummary!.provisional_month || lbSummary!.provisional_all_time) && (
+              <p className="muted" style={{ marginTop: 8 }}>
+                {t("lb.provisionalHint")}
+              </p>
+            )}
+          {!lbHasActivity && (
             <div className="ana-locked-panel">
               <p>{t("plb.emptyTitle")}</p>
               <p className="ana-locked-sub">{t("plb.emptySub")}</p>

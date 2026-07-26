@@ -1,8 +1,12 @@
-// Parent Analytics tab — mobile v1 of the web /analytics page: child selector
-// chips + the ALL-SUBJECTS dashboard (get_child_subject_dashboard with
-// subject=null, 30 days) + the flag-gated leaderboard/improvement panel for
-// the same selected child. Per-subject tabs arrive with a later stage.
-import React, { useState } from "react";
+// Parent Analytics tab — full web /analytics parity (Round 51 audit): child
+// selector chips, the analytics-type switch (Fənlər | Olimpiadalar → the RPC
+// p_scope), per-subject chips in subjects mode (the child's UNLOCKED subjects;
+// an active giveaway unlocks every priced subject, server parity), the
+// get_child_subject_dashboard body for the selection, and the flag-gated
+// leaderboard/improvement panel for the same selected child (web shows it in
+// BOTH modes). PURCHASE-SILENT: locked subjects and subscribe hints/CTAs never
+// render here — that web affordance is a store-compliance violation on mobile.
+import React, { useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -10,23 +14,36 @@ import { ChartColumn } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
+import { Segmented } from "@/components/Segmented";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { subjectLabel } from "@/lib/subjectLabel";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import {
   fetchChildDashboard,
   fetchChildLeaderboardSummary,
+  fetchChildSubscriptions,
   fetchChildren,
+  fetchSubjectsPricing,
+  type DashboardScope,
 } from "@/lib/data";
+import { groupPricing } from "@/features/parent/commerce";
 import {
   ChildChips,
   DashboardBody,
   LeaderboardPanel,
+  SubjectChips,
 } from "@/features/analytics/AnalyticsDashboard";
-import { num, type DashPayload, type LbSummary } from "@/features/analytics/helpers";
+import {
+  dashHasData,
+  resolveSubjectSelection,
+  type AnalyticsMode,
+  type DashPayload,
+  type LbSummary,
+} from "@/features/analytics/helpers";
 
 function LoadingSkeleton() {
   return (
@@ -50,12 +67,19 @@ function LoadingSkeleton() {
   );
 }
 
+/** Subscription statuses whose covered subjects count as UNLOCKED for the
+ * subject chips (web tab parity: trialing/active/past_due — not canceled). */
+const LIVE_TAB_STATUSES = new Set(["trialing", "active", "past_due"]);
+
 export default function ParentAnalytics() {
   const { t, locale } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
   const config = useMobileConfig();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<AnalyticsMode>("subjects");
+  // Requested subject ("all" | uuid); clamped at render (loop-safe, no effects).
+  const [subjectSel, setSubjectSel] = useState<string | null>(null);
 
   const childrenQ = useQuery({ queryKey: ["children"], queryFn: fetchChildren });
   const kids = (childrenQ.data ?? []).map((c) => ({
@@ -64,10 +88,60 @@ export default function ParentAnalytics() {
   }));
   const childId = selectedId && kids.some((k) => k.id === selectedId) ? selectedId : kids[0]?.id ?? null;
 
-  const dashQ = useQuery({
-    queryKey: ["child-dashboard", childId],
+  // Active giveaway → every priced subject counts as unlocked (server-resolved
+  // payment mode; web page parity). Outside it, unlocked subjects come from
+  // the child's LIVE subscription rows.
+  const giveawayActive = config.data?.payment.mode === "giveaway";
+  const subsQ = useQuery({
+    queryKey: ["parent", "subscriptions"],
+    queryFn: fetchChildSubscriptions,
     enabled: !!childId,
-    queryFn: () => fetchChildDashboard(childId!, null, 30),
+  });
+  const pricedQ = useQuery({
+    queryKey: ["parent", "subjects-pricing"],
+    queryFn: async () => groupPricing(await fetchSubjectsPricing()),
+    enabled: giveawayActive,
+  });
+
+  // The selected child's UNLOCKED subjects (id + locale-aware label), stable
+  // label order — this is the whole chip universe (no locked chips on mobile).
+  const activeSubjects = useMemo(() => {
+    const map = new Map<string, { id: string; code: string | null; name: string }>();
+    for (const sub of subsQ.data ?? []) {
+      if (sub.student_profile_id !== childId) continue;
+      if (!LIVE_TAB_STATUSES.has(sub.status)) continue;
+      for (const s of sub.subjects) {
+        map.set(s.subject_id, { id: s.subject_id, code: s.code, name: s.name });
+      }
+    }
+    if (giveawayActive) {
+      for (const s of pricedQ.data ?? []) {
+        if (!map.has(s.id)) map.set(s.id, { id: s.id, code: s.code, name: s.name });
+      }
+    }
+    return Array.from(map.values())
+      .map((s) => ({ id: s.id, label: subjectLabel(t, s.code, s.name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [subsQ.data, pricedQ.data, childId, giveawayActive, t]);
+
+  // "" = no unlocked subject; "all" only with >1 subject (web clamp parity).
+  const selectedSubject = resolveSubjectSelection(
+    activeSubjects.map((s) => s.id),
+    subjectSel,
+  );
+
+  const scope: DashboardScope = mode === "olympiads" ? "olympiads" : "tests";
+  const subjectParam =
+    mode === "olympiads" || selectedSubject === "all" || selectedSubject === ""
+      ? null
+      : selectedSubject;
+  // Subjects mode needs an unlocked subject; olympiads mode ignores subjects
+  // entirely (packages aren't subject-gated — web wantDash parity).
+  const wantDash = !!childId && (mode === "olympiads" || selectedSubject !== "");
+  const dashQ = useQuery({
+    queryKey: ["child-dashboard", childId, mode, subjectParam ?? "all"],
+    enabled: wantDash,
+    queryFn: () => fetchChildDashboard(childId!, subjectParam, 30, scope),
   });
 
   const leaderboardOn = config.data?.flags.leaderboard === true;
@@ -77,7 +151,17 @@ export default function ParentAnalytics() {
     queryFn: () => fetchChildLeaderboardSummary(childId!),
   });
 
-  const { refreshing, onRefresh } = usePullRefresh([childrenQ, dashQ, lbQ, config]);
+  const { refreshing, onRefresh } = usePullRefresh([
+    childrenQ,
+    childId ? subsQ : null,
+    giveawayActive ? pricedQ : null,
+    dashQ,
+    lbQ,
+    config,
+  ]);
+
+  const subjectsSettling =
+    mode === "subjects" && (subsQ.isPending || (giveawayActive && pricedQ.isPending));
 
   let body: React.ReactNode;
   if (childrenQ.isPending) {
@@ -100,6 +184,24 @@ export default function ParentAnalytics() {
         />
       </Card>
     );
+  } else if (subjectsSettling) {
+    body = <LoadingSkeleton />;
+  } else if (mode === "subjects" && subsQ.isError) {
+    body = (
+      <ErrorRetry
+        message={t("mob.boot.error")}
+        retryLabel={t("mob.retry")}
+        onRetry={() => void subsQ.refetch()}
+      />
+    );
+  } else if (mode === "subjects" && selectedSubject === "") {
+    // No unlocked subject for this child. The web adds a subscribe CTA here —
+    // deliberately NOT ported (purchase-silent store binary).
+    body = (
+      <Card>
+        <AppText variant="muted">{t("ana.noActive")}</AppText>
+      </Card>
+    );
   } else if (dashQ.isPending) {
     body = <LoadingSkeleton />;
   } else if (dashQ.isError) {
@@ -112,10 +214,11 @@ export default function ParentAnalytics() {
     );
   } else {
     const data = (dashQ.data ?? {}) as DashPayload;
-    // Honest empty state: no graded practice in the window for this child.
-    const hasData = num(data.totals?.questions) > 0;
-    body = hasData ? (
-      <DashboardBody data={data} t={t} />
+    // Honest empty state per mode: no graded activity in the window.
+    body = dashHasData(data, mode) ? (
+      <DashboardBody data={data} t={t} mode={mode} />
+    ) : mode === "olympiads" ? (
+      <EmptyState title={t("ana.olymp.empty.title")} body={t("ana.olymp.empty.sub")} />
     ) : (
       <EmptyState title={t("ana.empty.title")} body={t("ana.empty.sub")} />
     );
@@ -135,6 +238,34 @@ export default function ParentAnalytics() {
             selectedId={childId}
             onSelect={setSelectedId}
             label={t("ana.childLabel")}
+          />
+        ) : null}
+
+        {/* Analytics type: Subjects vs Olympiads (drives the RPC p_scope). */}
+        {childId ? (
+          <View style={{ gap: spacing.sm }}>
+            <AppText variant="eyebrow">{t("ana.mode.label")}</AppText>
+            <Segmented
+              options={[
+                { value: "subjects", label: t("ana.mode.subjects") },
+                { value: "olympiads", label: t("ana.mode.olympiads") },
+              ]}
+              value={mode}
+              onChange={setMode}
+            />
+          </View>
+        ) : null}
+
+        {/* Subject chips are a SUBJECTS-mode concept — olympiad packages
+            aren't subject-gated, so the whole control hides in olympiad mode
+            (web parity). */}
+        {childId && mode === "subjects" && activeSubjects.length > 0 ? (
+          <SubjectChips
+            subjects={activeSubjects}
+            selectedId={selectedSubject}
+            onSelect={setSubjectSel}
+            label={t("ana.subjectLabel")}
+            allLabel={t("ana.subject.all")}
           />
         ) : null}
 

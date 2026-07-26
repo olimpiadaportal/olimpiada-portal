@@ -115,7 +115,7 @@ export default function Register() {
             justifyContent: "space-between",
           }}
         >
-          <BackButton label={t("arena.quizPrev")} onPress={goBack} />
+          <BackButton label={t("nav.back")} onPress={goBack} />
           <LocaleSwitcher />
         </View>
         <View style={{ alignItems: "center", gap: spacing.md }}>

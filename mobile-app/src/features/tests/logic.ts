@@ -300,16 +300,20 @@ export function setupSelectionValid(
 // ---- result time context ---------------------------------------------------------------
 
 /**
- * Minutes actually used, clamped to [1, duration] (web result page parity).
- * Returns null when either timestamp is missing/invalid.
+ * Minutes actually used (web result page parity): floored to 1, clamped to the
+ * attempt duration when one EXISTS. UNTIMED attempts (duration_seconds null —
+ * daily rounds/practice since Round 42) pass durationMin=null and get the raw
+ * elapsed minutes, never a fabricated limit. Returns null when either
+ * timestamp is missing/invalid.
  */
 export function usedMinutes(
   startedAt: string | null,
   endedAt: string | null,
-  durationMin: number,
+  durationMin: number | null,
 ): number | null {
   if (!startedAt || !endedAt) return null;
   const ms = Date.parse(endedAt) - Date.parse(startedAt);
   if (!Number.isFinite(ms) || ms < 0) return null;
-  return Math.min(Math.max(1, Math.round(ms / 60_000)), durationMin);
+  const raw = Math.max(1, Math.round(ms / 60_000));
+  return durationMin !== null ? Math.min(raw, durationMin) : raw;
 }

@@ -6532,6 +6532,454 @@ ul.clean li {
   }
 }
 
+/* ============================================================
+   PUBLIC PRICING CONFIGURATOR (pcfg-*) — /services
+   Replaces the three static plan cards with an interactive
+   "pick subjects → pick interval → live total" panel. Keeps the
+   pricing page's visual language (rounded cards, subtle borders,
+   purple/accent highlights) and is fully token-driven, so light
+   and dark both work with no per-theme overrides.
+   Layout: two columns desktop → narrower two columns tablet →
+   stacked full-width mobile.
+   ============================================================ */
+
+.pcfg {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+  gap: 20px;
+  align-items: start;
+}
+
+.pcfg-col {
+  min-width: 0;
+  padding: 26px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+/* The summary side is the "featured" surface (same treatment as
+   .plan-card.featured so the page reads as one family). */
+.pcfg-summary {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 5%, var(--surface)),
+    var(--surface) 45%
+  );
+  box-shadow: 0 10px 28px -20px var(--shadow), 0 1px 2px var(--shadow);
+}
+
+.pcfg-col-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.pcfg-col-hint {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* --- Subject rows (both columns) --- */
+.pcfg-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.pcfg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--chip-bg) 45%, transparent);
+}
+.pcfg-row.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.pcfg-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pcfg-row-name {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pcfg-row-price {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Add button — accent pill, 40px tall for comfortable tapping. */
+.pcfg-add {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--pill-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    filter 0.15s ease;
+}
+.pcfg-add:hover {
+  border-color: var(--accent);
+  filter: brightness(1.05);
+}
+.pcfg-add-glyph {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Remove button — quiet until hovered, then danger. */
+.pcfg-remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.pcfg-remove:hover {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+
+.pcfg-add:focus-visible,
+.pcfg-remove:focus-visible,
+.pcfg-cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- Empty / notice states --- */
+.pcfg-empty {
+  margin: 16px 0 0;
+  padding: 18px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.pcfg-empty-strong {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+}
+.pcfg-notice {
+  padding: 26px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 1px 2px var(--shadow);
+  text-align: center;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.pcfg-notice-error {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  color: var(--danger);
+}
+
+/* --- Billing-interval segmented control (real radios) --- */
+.pcfg-fieldset {
+  margin: 20px 0 0;
+  padding: 0;
+  border: 0;
+}
+.pcfg-legend {
+  padding: 0;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.pcfg-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--lang-track);
+}
+.pcfg-seg-item {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.pcfg-seg-item input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.pcfg-seg-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pcfg-seg-item.is-on {
+  background: var(--lang-active-bg);
+  color: var(--accent);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.pcfg-seg-item input:focus-visible ~ span {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+
+/* --- Price breakdown --- */
+.pcfg-breakdown {
+  margin: 20px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 9px;
+}
+.pcfg-brk-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.pcfg-brk-val {
+  font-weight: 700;
+  color: var(--text);
+  text-align: right;
+}
+.pcfg-brk-total {
+  margin-top: 5px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.pcfg-brk-total .pcfg-brk-val {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.pcfg-brk-per {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* --- CTA (renders as <a> when actionable, <button disabled> when not) --- */
+.pcfg-cta {
+  display: block;
+  width: 100%;
+  margin: 20px 0 0;
+  padding: 13px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 1px 2px var(--shadow);
+  transition: filter 0.15s ease;
+}
+.pcfg-cta:hover {
+  filter: brightness(1.08);
+  color: #fff;
+}
+.pcfg-cta:disabled {
+  border-color: var(--border);
+  background: var(--chip-bg);
+  color: var(--muted);
+  box-shadow: none;
+  cursor: not-allowed;
+  filter: none;
+}
+.pcfg-cta-note {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.pcfg-disclaimer {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* --- Hand-off recap (register page) --- */
+.pcfg-recap {
+  margin: 18px 0 22px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+.pcfg-recap-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.pcfg-recap-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.pcfg-recap-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text);
+}
+.pcfg-recap-price {
+  flex: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.pcfg-recap-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.pcfg-recap-total strong {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+}
+.pcfg-recap-note {
+  margin: 9px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* --- Responsive: tablet narrows the columns, mobile stacks them --- */
+@media (max-width: 940px) {
+  .pcfg {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+    gap: 16px;
+  }
+  .pcfg-col {
+    padding: 22px 18px;
+  }
+  .pcfg-brk-total .pcfg-brk-val {
+    font-size: 23px;
+  }
+}
+@media (max-width: 780px) {
+  .pcfg {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .pcfg-col {
+    padding: 20px 16px;
+  }
+  .pcfg-row {
+    padding: 10px 10px 10px 12px;
+  }
+  .pcfg-add {
+    padding: 0 13px;
+  }
+  .pcfg-brk-total .pcfg-brk-val {
+    font-size: 24px;
+  }
+  .pcfg-notice {
+    padding: 22px 18px;
+  }
+}
+/* Very small phones: let a long subject name take the full row width and
+   drop the control underneath instead of squeezing both. */
+@media (max-width: 380px) {
+  .pcfg-row {
+    flex-wrap: wrap;
+  }
+  .pcfg-add {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 
 /* ============ ROUND 8 MERGE: profiles.css ============ */
 /* =============================================================================
@@ -11340,6 +11788,28 @@ body[data-site-typography] .btn-ghost {
 .polydet-back:hover {
   color: var(--accent);
 }
+
+/* Round 51 — shared history-back button (auth pages, test setup). Same look
+   as .polydet-back but a <button> (it calls router.back()), with the arrow as
+   an inline SVG instead of a ::before glyph. Token-driven → works in every
+   theme, including inside .arena. */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.back-link:hover {
+  color: var(--accent);
+}
 .polydet-card {
   margin-top: 14px;
   background: var(--surface);
@@ -11415,4 +11885,365 @@ body[data-site-typography] .btn-ghost {
     width: 100%;
     text-align: center;
   }
+}
+
+
+/* =============================================================================
+   SLIDING SEGMENTED CONTROLS  (owner: "the Weekly / Monthly / Yearly switcher
+   jumps between states — it must SLIDE", applied to every segmented / tab /
+   period switcher in the product)
+   ----------------------------------------------------------------------------
+   ONE mechanism for all of them: the moving highlight is a single `::before`
+   pseudo-element on the CONTAINER. It is painted BEHIND the labels
+   (z-index 0 vs 1) and is `pointer-events: none`, so it can never swallow a
+   click. Its geometry comes from four custom properties:
+
+       --seg-x  --seg-y  --seg-w  --seg-h
+
+   fed by <Segmented> (src/components/Segmented.tsx), which MEASURES the
+   active option and writes the four values. Handles unequal label widths
+   across az/en/ru and controls that wrap onto two lines on a phone (it moves
+   on both axes, jumping instead of sliding when the line changes, so the pill
+   is never stranded). Round 51: the pricing configurator's interval switcher
+   used to be a parallel CSS-only `:has()` path (its file was owned by a
+   concurrent change at the time) — on an engine without `:has()` the pill
+   parked on "Weekly" while the real selection had NO visual state. It now
+   renders through <Segmented> like everything else.
+
+   Look knobs each control sets: --seg-fill, --seg-radius, --seg-border,
+   --seg-shadow, --seg-dur, --seg-ease, --seg-text-delay.
+
+   Progressive enhancement: the server paints `data-seg="idle"` (pill has zero
+   width, control looks exactly as before). Only a real measurement flips it to
+   `data-seg="on"`, where the CSS hands the active highlight over to the pill.
+   `data-seg="off"` (nothing selected / control not laid out) keeps the plain
+   look. With JS disabled no attribute is ever written and nothing changes.
+   ========================================================================== */
+
+[data-seg] {
+  position: relative;
+  --seg-dur: 0.32s;
+  --seg-ease: cubic-bezier(0.32, 0.72, 0.28, 1);
+}
+/* .billing-tabs is position: sticky — the generic rule must never un-stick it. */
+.billing-tabs[data-seg] {
+  position: sticky;
+}
+
+[data-seg]::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  box-sizing: border-box; /* the global `*` reset does not reach pseudo-elements */
+  pointer-events: none;
+  left: 0;
+  top: 0;
+  width: var(--seg-w, 0px);
+  height: var(--seg-h, 0px);
+  transform: translate3d(var(--seg-x, 0px), var(--seg-y, 0px), 0);
+  border: var(--seg-border, 0 solid transparent);
+  border-radius: var(--seg-radius, 999px);
+  background: var(--seg-fill, transparent);
+  box-shadow: var(--seg-shadow, none);
+}
+/* Only a measured control animates; the very first placement is instantaneous
+   (Segmented pins --seg-dur to 0s for that one commit). */
+[data-seg="on"]::before {
+  transition:
+    transform var(--seg-dur) var(--seg-ease),
+    width var(--seg-dur) var(--seg-ease),
+    height var(--seg-dur) var(--seg-ease),
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+[data-seg="off"]::before {
+  opacity: 0;
+}
+
+/* Labels ride above the pill. */
+[data-seg] > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* The selected option hands its own highlight to the pill. */
+[data-seg="on"] > .active,
+[data-seg="on"] > .is-on,
+[data-seg="on"] > [aria-selected="true"],
+[data-seg="on"] > [aria-current]:not([aria-current="false"]),
+[data-seg="on"] > .active:hover,
+[data-seg="on"] > [aria-selected="true"]:hover,
+[data-seg="on"] > [aria-current]:not([aria-current="false"]):hover {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* Text recolouring is timed against the travel: the option being LEFT reverts
+   immediately (stays readable), the option being ENTERED only takes the
+   high-contrast colour as the pill arrives under it — so an inverted label
+   (white on accent) is never shown over an empty background mid-flight. */
+[data-seg="on"] > * {
+  transition-property: color, background-color, border-color;
+  transition-duration: 0.16s;
+  transition-timing-function: ease;
+  transition-delay: 0s;
+}
+/* Only `color` waits for the pill; background/border still react instantly. */
+[data-seg="on"] > .active,
+[data-seg="on"] > .is-on,
+[data-seg="on"] > [aria-selected="true"],
+[data-seg="on"] > [aria-current]:not([aria-current="false"]) {
+  transition-delay: var(--seg-text-delay, 0.18s), 0s, 0s;
+}
+
+/* Keyboard: a clearly visible ring on every segmented option (kept for the
+   controls that did not already define one). */
+[data-seg] > *:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* OS "reduce motion": the pill still lands in the right place, it just does
+   not travel. */
+@media (prefers-reduced-motion: reduce) {
+  [data-seg]::before,
+  [data-seg] > * {
+    transition: none !important;
+  }
+}
+
+/* ---- Shared rail skin (.seg-track) ---------------------------------------
+   Controls that were rows of independent pills get a rail so the travelling
+   fill is not occluded by an option own background. Controls that already
+   own a rail (.pcfg-seg, .ana-seg, .poly-seg, .billing-tabs, .arena-tabs)
+   never use this. Applied at every data-seg state so hydration cannot shift
+   the layout.
+
+   NOTE: `display` is deliberately NOT set here — the controls are already
+   flex/inline-flex, and `.drawer2-lang .seg-lang` toggles display to swap the
+   language segments for a dropdown on phones. */
+.seg-track[data-seg] {
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--seg-track-radius, 999px);
+}
+.seg-track[data-seg="on"] > *,
+.seg-track[data-seg="on"] > *:hover {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+/* Locked/disabled options keep their "unavailable" fill (analytics subjects). */
+.seg-track[data-seg="on"] > :disabled,
+.seg-track[data-seg="on"] > [aria-disabled="true"] {
+  background-color: var(--chip-bg);
+}
+/* Arena (student) surfaces use the arena token set for the rail. */
+.arena .seg-track[data-seg] {
+  background: var(--bg2);
+  border-color: var(--line);
+}
+.arena .seg-track[data-seg="on"] > :disabled,
+.arena .seg-track[data-seg="on"] > [aria-disabled="true"] {
+  background-color: var(--panel);
+}
+
+/* ---- Underline variant (public top nav) ---------------------------------- */
+[data-seg][data-seg-variant="underline"]::before {
+  height: var(--seg-line, 2px);
+  border-radius: 999px;
+  transform: translate3d(
+    var(--seg-x, 0px),
+    calc(var(--seg-y, 0px) + var(--seg-h, 0px) - var(--seg-line, 2px)),
+    0
+  );
+}
+
+/* ==========================================================================
+   Per-control tuning — each control tells the shared pill what it looks like.
+   ========================================================================== */
+
+/* Pricing configurator: Weekly | Monthly | Yearly (measured like every other
+   control since Round 51 — the old CSS-only `:has()` maths left non-:has()
+   engines with the pill parked on segment 1 and no visual selection). */
+.pcfg-seg[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: var(--lang-active-bg);
+  --seg-shadow: 0 1px 2px var(--shadow);
+}
+
+/* Subscription centre: sticky section tabs. */
+.billing-tabs[data-seg] {
+  --seg-radius: 11px;
+  --seg-fill: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* Analytics: mode + child segmented groups. */
+.ana-seg[data-seg] {
+  --seg-radius: 10px;
+  --seg-fill: var(--surface);
+  --seg-shadow: 0 1px 2px var(--shadow);
+}
+/* Analytics: subject tablist (accent fill, inverted label). */
+.ana-tabs[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: var(--accent);
+}
+
+/* Student login: Student | Parent. */
+.arena-tabs[data-seg] {
+  --seg-radius: 7px;
+  --seg-fill: var(--lime);
+}
+
+/* Olympiad purchase: child chooser. */
+.poly-seg[data-seg] {
+  --seg-radius: 12px;
+  --seg-fill: var(--surface);
+  --seg-border: 1px solid var(--border);
+  --seg-shadow: 0 2px 8px var(--shadow);
+}
+
+/* Profile drawer: language (AZ/EN/RU) + appearance (Light/Dark). */
+.seg-group[data-seg] {
+  --seg-radius: 14px;
+  --seg-track-radius: 18px;
+  --seg-fill: var(--surface);
+  --seg-border: 1px solid var(--accent);
+  --seg-shadow: 0 1px 2px var(--shadow);
+  width: 100%;
+  flex-wrap: nowrap;
+}
+.seg-group[data-seg] > .seg-btn {
+  flex: 1 1 0;
+}
+
+/* News sort chips (latest / oldest / most viewed / most liked). */
+.news-sort[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: var(--accent);
+}
+/* Hover must not paint an accent outline over the rail. */
+.news-sort[data-seg] > .news-sort-btn:hover,
+.ntf-filters[data-seg] > .ntf-chip:hover,
+.plb-chips[data-seg] > .plb-chip:hover,
+.bkids-tabs[data-seg] > .bkids-tab:hover,
+.ana-tabs[data-seg] > .ana-tab:hover:not(:disabled):not(.active),
+.seg-group[data-seg] > .seg-btn:hover {
+  border-color: transparent;
+}
+.arena .lb-boards[data-seg] > .lb-board:hover,
+.arena .tst-filter[data-seg] > .tst-filter-tab:hover {
+  border-color: transparent;
+}
+
+/* Notification centre: category filters. */
+.ntf-filters[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: var(--accent);
+}
+
+/* Parent leaderboard: board / scope / grade / period chip rows. */
+.plb-chips[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: var(--accent);
+}
+
+/* Subscription centre: child selector tabs. */
+.bkids-tabs[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --seg-border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  gap: 6px;
+}
+
+/* Student leaderboard: board tabs + scope / district / period chips. */
+.arena .lb-boards[data-seg] {
+  --seg-radius: 10px;
+  --seg-track-radius: 14px;
+  --seg-fill: var(--lime);
+}
+.arena .arena-chips[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: color-mix(in srgb, var(--lime) 16%, transparent);
+  --seg-border: 1px solid var(--lime);
+}
+/* Chips read as an outline state, so the label keeps the accent colour and
+   does not need the arrival delay. */
+.arena .arena-chips[data-seg="on"] > .active {
+  transition-delay: 0s;
+}
+
+/* Student review: All / Correct / Wrong / Skipped. */
+.arena .tst-filter[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: var(--lime);
+}
+
+/* Parent / student top nav: the active section pill now glides between tabs. */
+.pnav-links[data-seg] {
+  --seg-radius: 8px;
+  --seg-fill: var(--pill-bg);
+  --seg-text-delay: 0s;
+}
+
+/* ---- Student arena layer --------------------------------------------------
+   The `.arena` scope re-skins several of these controls with `.arena X.active`
+   rules (specificity 0,3,0), which out-rank the generic hand-over above — so
+   repeat the hand-over and the fills at arena specificity. */
+.arena [data-seg="on"] > .active,
+.arena [data-seg="on"] > .is-on,
+.arena [data-seg="on"] > [aria-selected="true"],
+.arena [data-seg="on"] > [aria-current]:not([aria-current="false"]),
+.arena [data-seg="on"] > .active:hover,
+.arena .seg-track[data-seg="on"] > *,
+.arena .seg-track[data-seg="on"] > *:hover {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.arena [data-seg] > *:focus-visible {
+  outline-color: var(--lime);
+}
+.arena .pnav-links[data-seg] {
+  --seg-fill: var(--panel);
+}
+.arena .seg-group[data-seg] {
+  --seg-fill: color-mix(in srgb, var(--lime) 12%, var(--panel2));
+  --seg-border: 1px solid var(--lime);
+  --seg-shadow: none;
+}
+
+/* ---- Public marketing top nav: active section + sliding underline --------- */
+.site-links[data-seg] {
+  align-items: center;
+  --seg-line: 2px;
+  --seg-fill: var(--accent);
+  --seg-text-delay: 0s;
+}
+.site-links a {
+  padding: 3px 2px 6px;
+}
+.site-links a.active {
+  color: var(--accent);
+}
+/* Fallback for the frame before the underline is measured (and for no-JS): the
+   active link is still unmistakably marked. */
+.site-links a.active::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.site-links[data-seg="on"] a.active::after {
+  display: none;
 }

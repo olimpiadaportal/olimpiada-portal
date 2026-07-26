@@ -7,6 +7,8 @@
 // data_json primitives. Built on the shared Modal primitive so it inherits the
 // role="dialog", Escape/overlay close, focus handling and body scroll lock.
 import { Modal } from "@/components/Modal";
+import { useLocale } from "@/i18n/I18nProvider";
+import { formatLongDate } from "@/lib/formatDate";
 import { renderNotificationMarkdown } from "@/lib/notifications/markdown";
 import {
   categoryLabelKey,
@@ -57,14 +59,16 @@ export function NotificationDetailModal({
   onClose: () => void;
 }) {
   const s = (k: string) => strings[k] ?? k;
+  const locale = useLocale();
   if (!item) return null;
 
   const catKey = item.category ? categoryLabelKey(item.category) : undefined;
   const typeLabel = catKey ? s(catKey) : s("notif.detailsTitle");
-  const when = (() => {
-    const d = new Date(item.created_at);
-    return Number.isFinite(d.getTime()) ? d.toLocaleString() : "";
-  })();
+  // Round 51 (audit 1.1): this was a raw d.toLocaleString() — device locale,
+  // device timezone, and the exact bare-tag path that renders "M08" months.
+  // The shared Baku formatter is the only date renderer in the app.
+  const long = formatLongDate(item.created_at, locale, true);
+  const when = long === "—" ? "" : long;
   const pairs = scalarPairs(item.data_json);
 
   return (

@@ -121,7 +121,11 @@
    inline CSS variable so one class serves every composition. */
 .autoGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--sk-min, 220px), 1fr));
+  /* min(..., 100%) floor, mirroring the real grids in globals.css: auto-fill
+     never shrinks a track below its stated minimum, so a --sk-min of 280/300px
+     inside a ~264px content box on a 320px phone overflowed the page while the
+     skeleton was on screen. No-op at every width at or above --sk-min. */
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--sk-min, 220px), 100%), 1fr));
   gap: var(--sk-gap, 18px);
   align-items: stretch;
 }

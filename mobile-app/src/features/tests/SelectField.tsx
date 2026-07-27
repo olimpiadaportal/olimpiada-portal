@@ -63,10 +63,15 @@ export function SelectField({
           minHeight: 48,
         })}
       >
+        {/* Topic/subtopic names are unbounded DB text: two lines instead of
+            one (the trigger's minHeight 48 + paddingVertical absorb it). Still
+            clamped on purpose — the full name is in the option list one tap
+            away, and an unbounded form control breaks the setup-form rhythm. */}
         <AppText
           color={selected ? arena.ink : arena.dim}
-          style={{ flex: 1 }}
-          numberOfLines={1}
+          style={{ flex: 1, minWidth: 0 }}
+          numberOfLines={2}
+          ellipsizeMode="tail"
         >
           {selected?.name ?? placeholder}
         </AppText>

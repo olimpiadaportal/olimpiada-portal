@@ -62,6 +62,11 @@ export function SelectField({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
+        // A Pressable is `accessible` by default, so its label REPLACES the
+        // child Text — without this the selected school/city is inaudible and
+        // the trigger just announces "Məktəb, düymə". The visual clamp below is
+        // acceptable precisely because the full label is announced here.
+        accessibilityValue={{ text: selected ? selected.label : placeholder }}
         accessibilityState={{ disabled }}
         onPress={disabled ? undefined : () => setOpen(true)}
         style={{
@@ -78,10 +83,17 @@ export function SelectField({
           opacity: disabled ? 0.55 : 1,
         }}
       >
+        {/* School/city labels are unbounded, so the trigger grows to two lines
+            (minHeight 48 + paddingVertical absorb it) instead of clipping at
+            one. It stays clamped — a form control that grows to five lines
+            wrecks the field rhythm, and the untruncated label is one tap away
+            in the option sheet below. `minWidth: 0` so it can actually shrink
+            beside the fixed 16pt chevron. */}
         <AppText
           color={selected ? tokens.text : tokens.muted}
-          style={{ fontSize: fontSize.md, flexShrink: 1 }}
-          numberOfLines={1}
+          style={{ fontSize: fontSize.md, flexShrink: 1, minWidth: 0 }}
+          numberOfLines={2}
+          ellipsizeMode="tail"
         >
           {selected ? selected.label : placeholder}
         </AppText>

@@ -167,6 +167,13 @@ h1 {
 
 .muted {
   color: var(--muted);
+  /* Several .muted paragraphs interpolate unbounded DB text (e.g. the child's
+     full name on /children/<id>/edit and .../subscribe). `break-word` — NOT
+     `anywhere` — is deliberate for such a widely reused utility: it breaks an
+     over-long word at paint time but leaves the element's min-content
+     contribution alone, so no flex/grid track anywhere in the app changes size.
+     Desktop layout is untouched. */
+  overflow-wrap: break-word;
 }
 
 .ok {
@@ -1396,6 +1403,13 @@ ul.clean li {
   padding: 14px;
   border-top: 1px solid var(--line);
   vertical-align: middle;
+  /* Şəhər / Rayon / Məktəb carry unbounded DB text. `anywhere` (not
+     `break-word`) is required here because it ALSO shrinks the cell's
+     min-content contribution — in an auto-layout table that min-content is what
+     sizes the column, so one long school name would otherwise widen the whole
+     table past 100% and hide itself behind .lb-scroll's sideways scroll.
+     overflow-wrap inherits, so .arena-part-name / .lb-part-ctx are covered. */
+  overflow-wrap: anywhere;
 }
 .arena-table tr.me td {
   background: rgba(196, 255, 0, 0.07);
@@ -3169,10 +3183,16 @@ ul.clean li {
 .children-head h2 {
   margin: 0;
 }
-/* Responsive card grid for the children. */
+/* Responsive card grid for the children.
+   `min(280px, 100%)` instead of a bare 280px: auto-fill never shrinks a track
+   below its stated minimum, so inside .parent-home's 264px content box at a
+   320px viewport the single track was 280px wide and pushed a real horizontal
+   scrollbar onto the page (nothing sets overflow-x:hidden on html/body). The
+   min() clamps the floor to the container once it is narrower than 280px and is
+   a no-op at every width at or above it — desktop is byte-identical. */
 .children-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 18px;
 }
 
@@ -3899,7 +3919,9 @@ ul.clean li {
    and dark automatically. Leaves the legacy .news-item rules untouched. */
 .news-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  /* min() floor — see .children-grid. .site-main leaves 280px at a 320px
+     viewport, so a bare 300px track overflowed the page by 20px. */
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 20px;
   margin-top: 24px;
 }
@@ -5140,6 +5162,10 @@ ul.clean li {
   border-bottom: 1px solid var(--border);
   color: var(--text);
   vertical-align: middle;
+  /* First column holds unbounded topic / subtopic / olympiad-package names.
+     .ana-tablewrap has overflow-x:auto so the PAGE was safe, but a long name
+     widened the auto-layout table and hid itself behind that inner scroll. */
+  overflow-wrap: anywhere;
 }
 .ana-table tbody tr:last-child td {
   border-bottom: 0;
@@ -5153,6 +5179,11 @@ ul.clean li {
   font-variant-numeric: tabular-nums;
   font-size: 0.86rem;
   color: var(--text);
+  /* Opt back out of the `anywhere` inherited from .ana-table td — a tabular
+     number must never break across lines. Explicit declarations on the child
+     always beat an inherited value, so no specificity bump is needed. */
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 .ana-num.strong {
   font-weight: 700;
@@ -9646,7 +9677,9 @@ ul.clean li {
    (.tst-daily.ghost — dashed border, dimmed, no lime hover). */
 .arena .tst-daily-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* min() floor — see .children-grid. .arena-main leaves 268px at a 320px
+     viewport, so a bare 280px track overflowed the page by 12px. */
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 14px;
   margin-bottom: 8px;
 }
@@ -10498,11 +10531,28 @@ ul.clean li {
   border-top: 1px solid var(--line, var(--border, #e5e7eb));
   vertical-align: middle;
   color: var(--ink, var(--text, #1f2430));
+  /* See .arena-table td — unbounded city/district/school text must wrap and
+     shrink the column's min-content instead of stretching the table. Inherited
+     by .plb-part-name / .arena-part-name / .lb-part-ctx. */
+  overflow-wrap: anywhere;
 }
 .lb-table th.num,
 .lb-table td.num {
   text-align: right;
   font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+/* Numeric columns opt back OUT of the wrap above: `98.75%` / `12 gün` must
+   never break mid-value. They are a handful of characters wide, so pinning them
+   to one line costs the layout nothing and keeps the board scannable. */
+.lb-table th.num,
+.lb-table td.num,
+.lb-table td.lb-rank,
+.lb-table td.arena-rank-cell,
+.arena-table th.num,
+.arena-table td.num,
+.arena-table td.arena-rank-cell {
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 /* Plain numeric rank cell (NO medals — ranks are 1..50 numbers). */
 .lb-table td.lb-rank {
@@ -11462,6 +11512,11 @@ body[data-site-typography] .btn-ghost {
 .plb-kid-body {
   min-width: 0;
   flex: 1;
+  /* .plb-kid-name (child full name) and .plb-kid-meta ("sinif · MƏKTƏB") are
+     both unbounded DB text. min-width:0 already lets this flex item shrink;
+     without a wrap rule the long school token then paints straight out through
+     the card's right border. Inherited by both children. */
+  overflow-wrap: anywhere;
 }
 .plb-kid-name {
   font-weight: 700;

@@ -237,9 +237,10 @@ function FactRow({
         style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot, marginTop: 6 }}
       />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <AppText variant="label" numberOfLines={1}>
-          {value}
-        </AppText>
+        {/* The value here is the best/weakest TOPIC NAME — unbounded DB text
+            with nowhere else to read it, so it wraps. The row is already
+            alignItems flex-start, so the dot stays put as the column grows. */}
+        <AppText variant="label">{value}</AppText>
         <AppText variant="muted" style={{ fontSize: 12 }}>
           {label}
         </AppText>
@@ -268,8 +269,12 @@ function TopicBar({
   const pct = Math.min(100, Math.max(0, accuracy));
   return (
     <View style={{ gap: spacing.xs }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-        <AppText variant="label" style={{ flex: 1 }} numberOfLines={1}>
+      {/* flex-start so the count/percentage stay level with the FIRST line of a
+          wrapped topic name rather than floating in its middle. */}
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.sm }}>
+        {/* Unbounded DB topic name, and it is the only label this bar has —
+            it wraps and the row grows; the bar below is a separate row. */}
+        <AppText variant="label" style={{ flex: 1, minWidth: 0 }}>
           {topic}
         </AppText>
         <AppText variant="muted" style={{ fontSize: 12 }}>
@@ -504,16 +509,18 @@ export function DashboardBody({
         {mistakes.length === 0 ? (
           <AppText variant="muted">{t("ana.empty.mistakes")}</AppText>
         ) : (
+          // alignItems flex-start: the wrong-count chip stays level with the
+          // topic line when a long topic/subtopic name wraps.
           mistakes.map((row, i) => (
             <View
               key={`${row.topic}|${row.subtopic}|${i}`}
-              style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
+              style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.sm }}
             >
-              <View style={{ flex: 1 }}>
-                <AppText variant="label" numberOfLines={1}>
-                  {row.topic}
-                </AppText>
-                <AppText variant="muted" style={{ fontSize: 12 }} numberOfLines={1}>
+              {/* Topic + subtopic are unbounded DB names and this list is the
+                  only place they appear, so neither is clamped. */}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="label">{row.topic}</AppText>
+                <AppText variant="muted" style={{ fontSize: 12 }}>
                   {row.subtopic}
                 </AppText>
               </View>

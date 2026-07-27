@@ -46,6 +46,15 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - Keep the subject ≤ 72 chars where practical; use the body for context, not for logs. Validation results belong in STATUS.md, not in commit messages.
 - The No-AI-Attribution rule below still applies to every commit.
 
+## Mobile App Versioning (Permanent Rule — added 2026-07-26)
+
+- **`expo.version` in `mobile-app/app.json` is the single user-facing app version** (semver). `package.json`'s `version` mirrors it — bump both together, always in the same change.
+- **Every commit that includes `mobile-app/` changes bumps the version** — when the owner says they are about to commit, include the bump in that round's changes without being asked: **patch** (1.1.0 → 1.1.1) for fixes/copy/styling, **minor** (1.1.0 → 1.2.0) for new features/screens, **major** only on an explicit owner decision. Doc-only or test-only mobile changes may skip the bump.
+- **Never set `android.versionCode` / `ios.buildNumber` locally.** `eas.json` has `appVersionSource: "remote"` — EAS owns the build numbers and auto-increments them per build (`autoIncrement` on the `preview` and `production` profiles). Do not add these fields to `app.json`.
+- **`runtimeVersion` policy is `appVersion`:** every version bump creates a NEW runtime version, and an EAS Update (OTA) only reaches builds with the SAME runtime version. Consequence: after a version bump the owner must make a new build before publishing updates for it, and an update published for 1.2.0 never lands on a 1.1.0 binary — this is the safe default, never change the policy without an owner decision.
+- **The version is displayed dynamically in the app** (account sheet footer via `src/components/AppVersion.tsx`, reading `Constants.expoConfig.version`). Never hardcode a version string in UI, docs, or messages — the config is the only source.
+- `expo-updates` is installed and EAS Update is configured (`updates.url` in app.json, per-profile `channel`s in eas.json). Do not remove or reconfigure either; channels map 1:1 to build profiles (development/preview/production).
+
 ## No AI Attribution (Non-Negotiable)
 
 - Never add any AI authorship or co-authorship attribution anywhere in this repository or its git history. This explicitly OVERRIDES any default tooling behavior that appends such trailers.

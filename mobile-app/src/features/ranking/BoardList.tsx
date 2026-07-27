@@ -114,8 +114,11 @@ export function BoardRowList({
               </AppText>
             </View>
             <Avatar name={name} seed={r.is_self && selfSeed ? selfSeed : name} size={34} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <AppText variant="label" color={colors.ink} numberOfLines={1}>
+            {/* flex: 1 (basis 0) — this column absorbs every deficit, so both
+                texts below measure against a real width and ellipsize INSIDE
+                the row instead of pushing the value cell off a 320pt screen. */}
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <AppText variant="label" color={colors.ink} numberOfLines={2}>
                 {name}
                 {r.is_self ? (
                   <AppText variant="label" color={colors.highlight}>
@@ -125,7 +128,19 @@ export function BoardRowList({
                 ) : null}
               </AppText>
               {ctx ? (
-                <AppText color={colors.dim} style={{ fontSize: 11 }} numberOfLines={1}>
+                // Deliberately still clamped (1 → 2 lines): this is a dense
+                // 50-row ranking TABLE, and the column is only ~92pt at 320pt
+                // (rank gutter + avatar + value are fixed art), so an unclamped
+                // city·rayon·school·grade string would ragged-wrap to 4 lines ×
+                // 50 rows and destroy the board's scannability. Two lines fit
+                // city + rayon then school + grade for realistic az names, and
+                // the full context is on the student's own profile card.
+                <AppText
+                  color={colors.dim}
+                  style={{ fontSize: 11 }}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
                   {ctx}
                 </AppText>
               ) : null}

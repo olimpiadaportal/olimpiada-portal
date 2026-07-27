@@ -21,6 +21,7 @@ import {
   UserRound,
 } from "lucide-react-native";
 import { AppText } from "./AppText";
+import { AppVersion } from "./AppVersion";
 import { ListRow } from "./ListRow";
 import { Segmented } from "./Segmented";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -253,6 +254,8 @@ export function AccountSheet({
             }}
           />
         </View>
+        {/* Version footer (owner rule): dynamic, from the build's own config. */}
+        <AppVersion />
         </ScrollView>
       </View>
     </Modal>

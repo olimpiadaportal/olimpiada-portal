@@ -1950,4 +1950,16 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 - Mobile untimed results (daily rounds/practice): time reads "Sərf olunan vaxt: X dəq" with NO "/ 25 dəq" limit suffix.
 - /services with a signed-in CHILD: the page redirects to the student panel; the public header/footer show no "Xidmətlər" link while signed in as a child.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-# / AL-# / AM-# / AN-# / AO-# / AP-#** + what you saw.
+## AQ1. App version is visible and dynamic (mobile)
+- Open the account sheet (avatar/menu) as a parent AND as a student → scroll to the bottom: **"OlympIQ · Versiya 1.1.0"**.
+- It must match `expo.version` in `mobile-app/app.json`. In an EAS build it shows the built version; in Expo Go it shows whatever the running bundle carries. There is no hardcoded copy of the number anywhere.
+
+## AQ2. Long school names wrap instead of breaking the layout
+Set one child's school to a deliberately long name in the admin panel (or Add-Child), e.g.
+`Bakı şəhəri Nəsimi rayonu 158 nömrəli tam orta ümumtəhsil məktəbi adına lisey` — then check:
+- **Mobile, Child menu → Profile → Məktəb məlumatları:** the school name wraps onto as many lines as it needs, is **fully readable** (no "…"), the card just gets taller, and the page does **not** scroll sideways. Repeat on the smallest phone you have (or Android's *Display size → Large* + *Font size → Largest*).
+- **Web, child profile → same card:** identical — wraps, nothing cut off, no horizontal scrollbar. Narrow the browser to ~320px wide: the label/value stack vertically instead of squeezing the value into a sliver.
+- Also glance at: the **leaderboard** rows (school/rayon columns), the **parent dashboard** child cards, and **Add-Child → review** — same long name, same expectation on both platforms.
+- Short names must look **exactly** as they did before on both platforms — this fix must be invisible when the value is short.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-# / AL-# / AM-# / AN-# / AO-# / AP-# / AQ-#** + what you saw.

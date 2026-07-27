@@ -100,7 +100,10 @@ function AvatarEditor({ child }: { child: ChildRow }) {
     <Card style={{ gap: spacing.md }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
         <ChildAvatar row={child} name={name} seed={child.profile_id} size={64} />
-        <AppText variant="title" numberOfLines={1} style={{ flex: 1 }}>
+        {/* Identity header beside a 64pt avatar: two lines, so a long az
+            double-barrelled name is readable without unbalancing the avatar
+            (the editable first/last name fields below carry the full value). */}
+        <AppText variant="title" numberOfLines={2} style={{ flex: 1, minWidth: 0 }}>
           {name}
         </AppText>
       </View>

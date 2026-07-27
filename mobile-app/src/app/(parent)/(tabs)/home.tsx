@@ -100,29 +100,45 @@ function ChildCard({
 
   return (
     <Card style={{ gap: spacing.md }}>
-      {/* Identity row: avatar + name/place + access pill. */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-        <ChildAvatar row={child} name={name} seed={child.profile_id} size={48} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <AppText variant="title" numberOfLines={1} style={{ fontSize: 18 }}>
+      {/* Identity block: avatar + name + access pill on one row, and the
+          "grade • SCHOOL" line on its own FULL-WIDTH line beneath it.
+          Why not inside the name column: the Pill's label is translated (ru
+          "Бесплатный доступ" ≈ 136pt with its padding) and never shrinks while
+          free space is positive, so the flex:1 column is left 46–79pt on a
+          320pt phone — an unbounded school name there ragged-wraps into 6–11
+          lines beside a vertically-centred 48pt avatar. On its own line the
+          same text has the card's full 254pt (≈2 lines) and stays uncut. */}
+      <View style={{ gap: spacing.sm }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+          <ChildAvatar row={child} name={name} seed={child.profile_id} size={48} />
+          {/* A name is bounded in practice, so it keeps a ceiling (2 lines)
+              rather than unbalancing the 48pt avatar. */}
+          <AppText
+            variant="title"
+            numberOfLines={2}
+            style={{ flex: 1, minWidth: 0, fontSize: 18 }}
+          >
             {name}
           </AppText>
-          {placeLine ? (
-            <AppText variant="muted" numberOfLines={1} style={{ fontSize: 12 }}>
-              {placeLine}
-            </AppText>
-          ) : null}
+          {giveawayActive ? (
+            <Pill label={t("access.giveaway")} tone="accent" />
+          ) : freeAccessActive ? (
+            <Pill label={t("access.freeAccess")} tone="accent" />
+          ) : (
+            <Pill
+              label={t(accessStatusKey(child.access_status))}
+              tone={accessTone(child.access_status)}
+            />
+          )}
         </View>
-        {giveawayActive ? (
-          <Pill label={t("access.giveaway")} tone="accent" />
-        ) : freeAccessActive ? (
-          <Pill label={t("access.freeAccess")} tone="accent" />
-        ) : (
-          <Pill
-            label={t(accessStatusKey(child.access_status))}
-            tone={accessTone(child.access_status)}
-          />
-        )}
+        {placeLine ? (
+          // NOT clamped: it carries the SCHOOL name (unbounded DB/admin text)
+          // and this card is a parent's main view of it, so it wraps over as
+          // many lines as it needs and the card grows.
+          <AppText variant="muted" style={{ fontSize: 12 }}>
+            {placeLine}
+          </AppText>
+        ) : null}
       </View>
 
       {/* Login ID chip (mono) — or the pending pill. */}

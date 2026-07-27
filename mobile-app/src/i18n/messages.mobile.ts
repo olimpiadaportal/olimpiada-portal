@@ -77,6 +77,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.lock.unlock": "Kilidi aç",
     "mob.plb.viewFull": "Tam reytinqə bax",
     "mob.contact.openMaps": "Xəritədə aç",
+    "mob.app.version": "Versiya {v}",
     // Round 51: web replaced its static Weekly/Monthly/Yearly plan cards with
     // the interactive configurator and DELETED the pricing2.* keys. Mobile's
     // pricing screen still renders the three static cards, so these 24 keys
@@ -180,6 +181,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.lock.unlock": "Unlock",
     "mob.plb.viewFull": "View full leaderboard",
     "mob.contact.openMaps": "Open in maps",
+    "mob.app.version": "Version {v}",
     "pricing2.weekly.name": "Weekly",
     "pricing2.weekly.price": "≈ {price} AZN",
     "pricing2.weekly.per": "per week / subject",
@@ -277,6 +279,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.lock.unlock": "Разблокировать",
     "mob.plb.viewFull": "Открыть полный рейтинг",
     "mob.contact.openMaps": "Открыть на карте",
+    "mob.app.version": "Версия {v}",
     "pricing2.weekly.name": "Недельный",
     "pricing2.weekly.price": "≈ {price} AZN",
     "pricing2.weekly.per": "в неделю / за предмет",

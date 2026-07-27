@@ -38,12 +38,16 @@ export function IdentityCard({ profile, t }: { profile: OwnProfile; t: T }) {
     <Card style={{ gap: spacing.lg }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
         <Avatar name={name} seed={profileId} url={profile.avatarUrl} size={64} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <AppText variant="title" numberOfLines={1}>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <AppText variant="title" numberOfLines={2}>
             {name}
           </AppText>
           {profile.email ? (
-            <AppText variant="muted" numberOfLines={1}>
+            // Two lines, and elided in the MIDDLE: an address's domain is the
+            // disambiguating half, so a tail ellipsis would hide exactly the
+            // part that identifies the account. The full value is on the
+            // wrapped email row below.
+            <AppText variant="muted" numberOfLines={2} ellipsizeMode="middle">
               {profile.email}
             </AppText>
           ) : null}
@@ -54,10 +58,14 @@ export function IdentityCard({ profile, t }: { profile: OwnProfile; t: T }) {
       <AvatarSection hasAvatar={profile.avatarUrl !== null} t={t} />
 
       <View>
+        {/* Email wraps (an address has no length ceiling and these two rows are
+            the only place the app renders it); the phone stays on the inline
+            trailing cell — E.164 is bounded and reads better right-aligned. */}
         <InfoRow
           icon={<Mail size={18} color={tokens.muted} strokeWidth={2} />}
           label={t("prof2.email")}
           value={profile.email || "—"}
+          wrap
         />
         <InfoRow
           icon={<Phone size={18} color={tokens.muted} strokeWidth={2} />}
@@ -73,12 +81,15 @@ function InfoRow({
   icon,
   label,
   value,
+  wrap = false,
 }: {
   icon?: React.ReactNode;
   label: string;
   value: string;
+  /** Stack the value under the label and let it wrap — for unbounded values. */
+  wrap?: boolean;
 }) {
-  return <ListRow icon={icon} title={label} value={value} chevron={false} />;
+  return <ListRow icon={icon} title={label} value={value} valueWrap={wrap} chevron={false} />;
 }
 
 /* ------------------------------- phone number ------------------------------ */

@@ -427,25 +427,46 @@ export default function ParentLeaderboard() {
             />
           ) : null}
           {selectedChild ? (
-            <Card style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+            <Card
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.md,
+                // `wrap` + the status text's flexBasis "100%" below. Without it
+                // the identity column (flex: 1 → flexBasis 0) laid out at ~0pt
+                // in the not-in-filter branch: Yoga distributes NEGATIVE free
+                // space by (flexShrink × flexBasis), and a 37–40 char status
+                // string measures ~230pt against a 254pt card, so the column's
+                // basis-0 shrink weight left it with nothing to grow into.
+                flexWrap: "wrap",
+              }}
+            >
               <Avatar
                 name={childDisplayName(selectedChild)}
                 seed={selectedChild.profile_id}
                 size={40}
               />
-              <View style={{ flex: 1, gap: 2 }}>
-                <AppText variant="label" numberOfLines={1}>
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <AppText variant="label" numberOfLines={2}>
                   {childDisplayName(selectedChild)}
                 </AppText>
-                <AppText variant="muted" style={{ fontSize: 12 }} numberOfLines={1}>
+                {/* grade · SCHOOL — unbounded DB text on a single summary card
+                    (not a list row), so it wraps fully and the card grows. */}
+                <AppText variant="muted" style={{ fontSize: 12 }}>
                   {childMeta || "—"}
                 </AppText>
               </View>
               {!scopeUsable ||
               (!posQ.isPending && (!pos || (pos.rank === null && !pos.is_provisional))) ? (
+                // flexBasis "100%" makes this a full-width flex item, so with
+                // the row's `flexWrap` it ALWAYS drops onto its own line under
+                // the identity block instead of competing with it for width.
+                // At 320pt it then has the card's full 254pt (one line for both
+                // az and ru) and the identity column keeps ~202pt to wrap the
+                // school name into. Relative, so it holds at every width.
                 <AppText
                   variant="muted"
-                  style={{ flexShrink: 1, textAlign: "right", fontSize: 12 }}
+                  style={{ flexBasis: "100%", flexShrink: 1, textAlign: "right", fontSize: 12 }}
                 >
                   {t("plb.pos.notInFilter")}
                 </AppText>

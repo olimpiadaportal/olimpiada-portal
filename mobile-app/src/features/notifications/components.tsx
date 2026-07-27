@@ -310,10 +310,14 @@ export function NotificationRow({
       >
         <Icon size={18} color={unread ? tokens.accent : tokens.muted} strokeWidth={2} />
       </View>
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        {/* Inbox PREVIEW row: 1 → 2 lines so an admin-authored title is mostly
+            readable, but still clamped on purpose — the detail sheet renders
+            the title and body in full. */}
         <AppText
           variant="label"
-          numberOfLines={1}
+          numberOfLines={2}
+          ellipsizeMode="tail"
           style={{ fontWeight: unread ? "700" : "600" }}
         >
           {item.title}

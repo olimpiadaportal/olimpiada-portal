@@ -100,8 +100,12 @@ export function StudentIdentityCard({ profile, t }: { profile: StudentProfile; t
           fallbackUrl={profile.avatarUrl}
           size={64}
         />
-        <View style={{ flex: 1, gap: 2 }}>
-          <AppText variant="title" numberOfLines={1}>
+        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          {/* 174pt beside the 64pt avatar at 320pt ≈ 11 chars at variant
+              "title", so one line clipped az double-barrelled names. Two lines
+              fit without unbalancing the avatar; the full value is also in the
+              account-info row below. */}
+          <AppText variant="title" numberOfLines={2}>
             {profile.name || "—"}
           </AppText>
           <AppText variant="muted" numberOfLines={1}>
@@ -164,11 +168,13 @@ export function StudentNameSection({ profile, t }: { profile: StudentProfile; t:
         <View
           style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
         >
-          <View style={{ gap: 2, flexShrink: 1 }}>
+          <View style={{ gap: 2, flexShrink: 1, minWidth: 0 }}>
             <AppText variant="muted" style={{ fontSize: 12 }}>
               {t("prof2.name")}
             </AppText>
-            <AppText variant="label" numberOfLines={1}>
+            {/* Beside the Edit button: two lines so a long name is readable in
+                full here even though the identity card above clamps it. */}
+            <AppText variant="label" numberOfLines={2}>
               {profile.name || "—"}
             </AppText>
           </View>
@@ -357,20 +363,30 @@ export function SchoolInfoCard({ profile, t }: { profile: StudentProfile; t: T }
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("prof2.schoolInfoHint")}
       </AppText>
+      {/*
+        All three values are unbounded: `school` is a DB/admin-authored school
+        name (or the free-text `school_name` fallback), `city` a rayon name (or
+        the free-text `city`), and `gradeInfo` falls back to the raw DB grade
+        name / free-text `classGrade`. So every row stacks its value under the
+        label and wraps — one card, one alignment.
+      */}
       <ListRow
         icon={<GraduationCap size={18} color={tokens.muted} strokeWidth={2} />}
         title={t("prof2.grade")}
         value={gradeInfo}
+        valueWrap
       />
       <ListRow
         icon={<MapPin size={18} color={tokens.muted} strokeWidth={2} />}
         title={t("prof2.city")}
         value={profile.city ?? "—"}
+        valueWrap
       />
       <ListRow
         icon={<School size={18} color={tokens.muted} strokeWidth={2} />}
         title={t("prof2.school")}
         value={profile.school ?? "—"}
+        valueWrap
       />
     </Card>
   );

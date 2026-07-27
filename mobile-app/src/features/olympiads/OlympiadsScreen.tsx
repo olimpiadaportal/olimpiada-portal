@@ -243,11 +243,20 @@ export function OlympiadsScreen() {
                   gap: spacing.md,
                 }}
               >
-                <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                   <AppText variant="label" color={arena.ink}>
                     {t("oly5.continueTitle")}
                   </AppText>
-                  <AppText color={arena.muted} style={{ fontSize: 13 }} numberOfLines={1}>
+                  {/* Carries the package title (unbounded): two lines, not one.
+                      Still clamped — the row's trailing Continue button is the
+                      point of the card and an unbounded subtitle would tower
+                      over it; the full title is on the owned row below. */}
+                  <AppText
+                    color={arena.muted}
+                    style={{ fontSize: 13 }}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
                     {liveTitle && liveTitle !== "—"
                       ? `${liveTitle} · ${t("test.home.continueSub")}`
                       : t("test.home.continueSub")}
@@ -430,8 +439,13 @@ export function OlympiadsScreen() {
                     >
                       <Medal size={20} color={arena.gold} strokeWidth={2} />
                     </View>
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <AppText variant="label" color={arena.ink} numberOfLines={1}>
+                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                      {/* "Olimpiadalarım" is the only place a student reads an
+                          OWNED package's title (the detail sheet is for planned
+                          listings), so the unbounded title is not clamped — it
+                          wraps and the row grows; the flex:1 column keeps the
+                          trailing Start/Continue button at its natural width. */}
+                      <AppText variant="label" color={arena.ink}>
                         {o.title}
                       </AppText>
                       <AppText color={arena.dim} style={{ fontSize: 12 }}>
@@ -484,9 +498,15 @@ export function OlympiadsScreen() {
               </View>
             ) : null}
             {/* Round 43: every AVAILABLE field with its poly.det.* label; a
-                null/empty value is dropped (never renders "null"). */}
+                null/empty value is dropped (never renders "null").
+                Round 52: `valueWrap` on EVERY row, not just the unbounded ones
+                (type = admin free text, subject/grade fall back to raw DB
+                names) — this is a definition list, and stacking three rows
+                while the numeric/date rows stay right-aligned reads as broken.
+                With it no value can be clipped at any width; the sheet
+                scrolls. */}
             {buildOlympiadDetailRows(detail, catalogCountOf(detail), locale, t).map((r) => (
-              <ListRow key={r.key} title={r.label} value={r.value} />
+              <ListRow key={r.key} title={r.label} value={r.value} valueWrap />
             ))}
             {detail.description ? (
               <View style={{ gap: spacing.xs }}>

@@ -142,10 +142,14 @@ describe("runner state helpers", () => {
     ]);
   });
 
-  it("caps the payload at 30 items (web/DB cap)", () => {
+  // Round 52: the builder used to `.slice(0, 30)`, so a 50-question olympiad
+  // submitted 30 answers and graded the rest as unanswered. Bounding the wire
+  // payload is chunkAnswerItems' job now — see tests-submit-payload.test.ts.
+  it("NEVER truncates: every id handed in comes back as an item", () => {
     const many = Array.from({ length: 40 }, (_, i) => `q${i}`);
     const items = buildAnswerItems(many, {}, new Set(), new Map());
-    expect(items).toHaveLength(30);
+    expect(items).toHaveLength(40);
+    expect(items[39].question_id).toBe("q39");
   });
 
   it("computes palette cell states", () => {

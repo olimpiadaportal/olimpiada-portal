@@ -1434,6 +1434,21 @@ select '86_payment_mode_parity' as check_name,
                    pg_get_functiondef('public.assert_payments_enabled()'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
+-- 87) Round 52 (migration 093): the server-side answer PAYLOAD CAP clears the
+--     500-question questions_per_attempt ceiling in BOTH writer RPCs, and the
+--     old 100 cap — which silently discarded every answer past item 100 with a
+--     200 OK — is gone from both.
+select '87_answer_payload_cap' as check_name,
+       case when position('v_n > 1000;' in
+                 pg_get_functiondef('public.submit_test_attempt(uuid,jsonb)'::regprocedure)) > 0
+             and position('v_n > 1000;' in
+                 pg_get_functiondef('public.save_test_answers(uuid,jsonb)'::regprocedure)) > 0
+             and position('v_n > 100;' in
+                 pg_get_functiondef('public.submit_test_attempt(uuid,jsonb)'::regprocedure)) = 0
+             and position('v_n > 100;' in
+                 pg_get_functiondef('public.save_test_answers(uuid,jsonb)'::regprocedure)) = 0
+            then 'PASS' else 'FAIL' end as status;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

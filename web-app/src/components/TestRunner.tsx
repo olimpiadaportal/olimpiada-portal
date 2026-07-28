@@ -20,12 +20,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
 import { QuestionImage } from "@/components/QuestionImage";
-import {
-  cancelTest,
-  saveTestAnswers,
-  submitTest,
-  type AnswerItem,
-} from "@/lib/auth/testActions";
+import { cancelTest, saveTestAnswers, submitTest } from "@/lib/auth/testActions";
+import type { AnswerItem } from "@/lib/testAnswers";
 
 export type TestOption = { option_id: string; text: string };
 export type TestQuestion = {
@@ -166,6 +162,9 @@ export function TestRunner({
   const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
   const leavingRef = useRef(false);
   const aliveRef = useRef(true); // false once the leave-guard effect is torn down
+  // Mirror of `canceling` for the identity-stable dialog close handlers.
+  const cancelingRef = useRef(false);
+  cancelingRef.current = canceling;
 
   const answeredCount = useMemo(
     () => questions.filter((q) => answers[q.question_id]).length,
@@ -184,20 +183,23 @@ export function TestRunner({
     lastSwitchRef.current = now;
   }
 
+  // Builds the payload for the given questions. It NEVER truncates: the old
+  // `.slice(0, 30)` here silently dropped every answer past the 30th, so a
+  // 50-question olympiad submitted 30 answers and graded the other 20 as
+  // unanswered ("my answers were cleared"). Oversized payloads are chunked
+  // server-side instead — see `@/lib/testAnswers`.
   const buildItems = useCallback((qids: string[]): AnswerItem[] => {
-    return qids
-      .map((qid) => {
-        const sel = answersRef.current[qid];
-        const item: AnswerItem = {
-          question_id: qid,
-          selected_option_ids: sel ? [sel] : [],
-          is_marked: flagsRef.current.has(qid),
-        };
-        const ms = spentRef.current.get(qid);
-        if (ms && ms > 0) item.time_spent_ms = Math.round(ms);
-        return item;
-      })
-      .slice(0, 30);
+    return qids.map((qid) => {
+      const sel = answersRef.current[qid];
+      const item: AnswerItem = {
+        question_id: qid,
+        selected_option_ids: sel ? [sel] : [],
+        is_marked: flagsRef.current.has(qid),
+      };
+      const ms = spentRef.current.get(qid);
+      if (ms && ms > 0) item.time_spent_ms = Math.round(ms);
+      return item;
+    });
   }, []);
 
   // ---- submit (manual confirm + timer-zero / deadline-signal auto path) ----
@@ -205,7 +207,12 @@ export function TestRunner({
     if (submittingRef.current || finishedRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);
-    setSubmitOpen(false);
+    // The confirm dialog STAYS OPEN for the whole request (mobile parity): its
+    // confirm button is disabled and shows the pending label, and a failure is
+    // reported inside the dialog. Closing it first put the error at the top of
+    // a long page, far from the button that was clicked — which reads as
+    // "nothing happened" and invites the second click the owner reported.
+    setFatal(null);
     try {
       const items = buildItems(questions.map((q) => q.question_id));
       const res = await submitTest(attemptId, items);
@@ -230,12 +237,24 @@ export function TestRunner({
     if (savingRef.current || submittingRef.current || finishedRef.current) return;
     const qids = Array.from(dirtyRef.current);
     if (qids.length === 0) return;
+    const items = buildItems(qids);
     savingRef.current = true;
     setSaveState("saving");
+    // Clear ONLY the ids that are actually in this payload, and clear them
+    // BEFORE awaiting: anything the child changes while the request is in
+    // flight re-dirties itself through select()/toggleFlag() and is picked up
+    // by the next flush. On ANY failure the whole payload goes back into the
+    // dirty set, so an answer is never marked clean without being persisted
+    // (the old code deleted every id it had collected, including ones the
+    // truncated payload never sent — those were then lost for good).
+    const sent = items.map((it) => it.question_id);
+    const redirty = () => {
+      for (const qid of sent) dirtyRef.current.add(qid);
+    };
+    for (const qid of sent) dirtyRef.current.delete(qid);
     try {
-      const res = await saveTestAnswers(attemptId, buildItems(qids));
+      const res = await saveTestAnswers(attemptId, items);
       if (res.ok) {
-        for (const q of qids) dirtyRef.current.delete(q);
         if (timed && typeof res.remaining === "number") {
           deadlineRef.current = Date.now() + res.remaining * 1000;
         }
@@ -245,15 +264,18 @@ export function TestRunner({
         // ran out → auto-submit (60s grace server-side). Untimed: the attempt
         // was closed elsewhere — submit is idempotent (a graded attempt just
         // redirects to its result), so take the same path minus the time-up
-        // notice.
+        // notice. The payload stays dirty: doSubmit re-sends every answer.
+        redirty();
         if (timed) setTimeUp(true);
         savingRef.current = false;
         void doSubmitRef.current();
         return;
       } else {
+        redirty();
         setSaveState("error");
       }
     } catch {
+      redirty();
       setSaveState("error");
     }
     savingRef.current = false;
@@ -406,8 +428,9 @@ export function TestRunner({
   }
 
   async function doCancel() {
-    if (canceling || finishedRef.current) return;
+    if (canceling || submittingRef.current || finishedRef.current) return;
     setCanceling(true);
+    setFatal(null);
     try {
       const res = await cancelTest(attemptId);
       if (res.ok) {
@@ -419,9 +442,31 @@ export function TestRunner({
     } catch {
       setFatal(tt("test.err.generic"));
     }
+    // Dialog stays open on failure so the reason appears where the click was.
     setCanceling(false);
-    setCancelOpen(false);
   }
+
+  // Stable close handlers: inert while the action they belong to is in flight,
+  // so neither Escape nor an overlay click can pull the dialog out from under a
+  // request that is still deciding the attempt's fate.
+  const closeSubmit = useCallback(() => {
+    if (submittingRef.current) return;
+    setFatal(null);
+    setSubmitOpen(false);
+  }, []);
+  const closeCancel = useCallback(() => {
+    if (cancelingRef.current) return;
+    setFatal(null);
+    setCancelOpen(false);
+  }, []);
+  const openSubmit = useCallback(() => {
+    setFatal(null);
+    setSubmitOpen(true);
+  }, []);
+  const openCancel = useCallback(() => {
+    setFatal(null);
+    setCancelOpen(true);
+  }, []);
 
   const q = questions[idx];
   const timerCls =
@@ -497,7 +542,9 @@ export function TestRunner({
 
       {resumed && <div className="tst-notice">{tt("test.run.resumed")}</div>}
       {timeUp && <div className="tst-notice warn">{tt("test.run.timeUp")}</div>}
-      {fatal && <p className="arena-error">{fatal}</p>}
+      {/* Only when no dialog is carrying the same message — a failed submit or
+          cancel reports itself inside the dialog the child is looking at. */}
+      {fatal && !submitOpen && !cancelOpen && <p className="arena-error">{fatal}</p>}
 
       <div className="tst-run-grid">
         {/* ---- Question card ---- */}
@@ -570,7 +617,7 @@ export function TestRunner({
                 type="button"
                 className="arena-btn"
                 disabled={submitting}
-                onClick={() => setSubmitOpen(true)}
+                onClick={openSubmit}
               >
                 {submitting ? tt("test.run.submitting") : tt("test.run.submit")}
               </button>
@@ -625,7 +672,7 @@ export function TestRunner({
               type="button"
               className="arena-btn"
               disabled={submitting}
-              onClick={() => setSubmitOpen(true)}
+              onClick={openSubmit}
             >
               {submitting ? tt("test.run.submitting") : tt("test.run.submit")}
             </button>
@@ -633,7 +680,7 @@ export function TestRunner({
               type="button"
               className="arena-btn-ghost tst-cancel"
               disabled={canceling || submitting}
-              onClick={() => setCancelOpen(true)}
+              onClick={openCancel}
             >
               {tt("test.run.cancel")}
             </button>
@@ -641,21 +688,29 @@ export function TestRunner({
         </aside>
       </div>
 
-      {/* ---- Submit confirm ---- */}
+      {/* ---- Submit confirm ----
+           Open for the WHOLE request: the confirm button is the pending/inert
+           one, and a failure is shown in the dialog body so the retry sits
+           where the click happened. */}
       <Modal
         isOpen={submitOpen}
-        onClose={() => setSubmitOpen(false)}
+        onClose={closeSubmit}
         title={tt("test.run.submitTitle")}
         closeLabel={tt("test.run.back")}
       >
         <p className="modal-message">
           {tt("test.run.submitMsg").replace("{n}", String(unanswered))}
         </p>
+        {!submitting && fatal && (
+          <p className="arena-error" aria-live="polite">
+            {fatal}
+          </p>
+        )}
         <div className="modal-actions">
           <button
             type="button"
             className="btn-ghost"
-            onClick={() => setSubmitOpen(false)}
+            onClick={closeSubmit}
             disabled={submitting}
           >
             {tt("test.run.back")}
@@ -669,16 +724,21 @@ export function TestRunner({
       {/* ---- Cancel confirm (counts for nothing) ---- */}
       <Modal
         isOpen={cancelOpen}
-        onClose={() => setCancelOpen(false)}
+        onClose={closeCancel}
         title={tt("test.run.cancelTitle")}
         closeLabel={tt("test.run.keepGoing")}
       >
         <p className="modal-message">{tt("test.run.cancelMsg")}</p>
+        {!canceling && fatal && (
+          <p className="arena-error" aria-live="polite">
+            {fatal}
+          </p>
+        )}
         <div className="modal-actions">
           <button
             type="button"
             className="btn-ghost"
-            onClick={() => setCancelOpen(false)}
+            onClick={closeCancel}
             disabled={canceling}
           >
             {tt("test.run.keepGoing")}

@@ -3967,7 +3967,7 @@ begin
   for v_item in select * from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb))
   loop
     v_n := v_n + 1;
-    exit when v_n > 100;  -- payload cap
+    exit when v_n > 1000;  -- payload cap (Round 51: 2x the 500-question ceiling)
     v_qid := nullif(v_item->>'question_id', '')::uuid;
     if v_qid is null or v_qid = any (v_seen) then continue; end if;
     v_seen := v_seen || v_qid;
@@ -4052,7 +4052,7 @@ begin
     for v_item in select * from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb))
     loop
       v_n := v_n + 1;
-      exit when v_n > 100;
+      exit when v_n > 1000;  -- payload cap (Round 51: 2x the 500-question ceiling)
       v_qid := nullif(v_item->>'question_id', '')::uuid;
       if v_qid is null or v_qid = any (v_seen) then continue; end if;
       v_seen := v_seen || v_qid;

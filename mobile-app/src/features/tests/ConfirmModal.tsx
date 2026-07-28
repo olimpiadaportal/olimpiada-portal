@@ -7,11 +7,20 @@ import { AppText } from "@/components/AppText";
 import { radius, shadow, spacing, type ArenaTokens } from "@/theme/tokens";
 import { ArenaButton, tint } from "./ui";
 
+/** Stable no-op so a pending dialog's close handler never changes identity. */
+function noop() {}
+
 export function ConfirmModal({
   arena,
   visible,
   title,
   message,
+  /**
+   * Failure of the primary action, shown inside the dialog so the retry sits
+   * where the user is looking (a message rendered behind the dialog, or far up
+   * a long scroll, reads as "nothing happened" and invites a second tap).
+   */
+  errorText = null,
   /** Right-hand emphasized action. */
   primaryLabel,
   onPrimary,
@@ -32,6 +41,7 @@ export function ConfirmModal({
   visible: boolean;
   title: string;
   message: string;
+  errorText?: string | null;
   primaryLabel: string;
   onPrimary: () => void;
   primaryKind?: "primary" | "danger" | "ghost";
@@ -47,7 +57,10 @@ export function ConfirmModal({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={dismiss}
+      // While the primary action is in flight the dialog is modal in the strict
+      // sense: Android's hardware back cannot close it out from under a request
+      // that is still deciding the attempt's fate.
+      onRequestClose={primaryPending ? noop : dismiss}
     >
       <Pressable
         accessibilityLabel={secondaryLabel}
@@ -80,6 +93,15 @@ export function ConfirmModal({
           <AppText color={arena.muted} style={{ fontSize: 15, lineHeight: 21 }}>
             {message}
           </AppText>
+          {errorText ? (
+            <AppText
+              accessibilityLiveRegion="polite"
+              color={arena.red}
+              style={{ fontSize: 14, lineHeight: 20 }}
+            >
+              {errorText}
+            </AppText>
+          ) : null}
           <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>
             <ArenaButton
               arena={arena}

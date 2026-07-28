@@ -50,6 +50,16 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
   const rowQ = useAttemptRow(attemptId);
   const row = rowQ.data ?? null;
 
+  // The RUNNER writes this exact cache entry (same key) with status
+  // 'in_progress' when it opens an attempt, and the entry outlives the
+  // navigation here. Acting on that copy sent a just-submitted attempt STRAIGHT
+  // BACK into the player — the whole "answers cleared, tap Finish a second
+  // time" report. Web has no such hazard: its result page is a server component
+  // that re-reads the row from Postgres per request. So: every decision that
+  // can navigate away, or that probes the idempotent submit RPC, waits for a
+  // row read AFTER this screen mounted.
+  const rowFresh = rowQ.isFetchedAfterMount;
+
   const isOlympiad = row?.kind === "olympiad";
   const homeTab = isOlympiad ? OLYMPIADS_TAB : TESTS_TAB;
   const kindOk =
@@ -58,8 +68,11 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
   // Live = timed-future OR untimed practice (Round-20 null deadline): both
   // belong in the player — probing the idempotent submit here must never
   // finalize a running attempt.
-  const live = row !== null && isLiveAttempt(row, Date.now());
-  const closed = row !== null && row.status !== "graded" && row.status !== "in_progress";
+  const live = rowFresh && row !== null && isLiveAttempt(row, Date.now());
+  const closed =
+    rowFresh && row !== null && row.status !== "graded" && row.status !== "in_progress";
+  /** Verified settled: safe to read/finalize the result. */
+  const settled = rowFresh && kindOk && !live && !closed;
 
   // A live attempt belongs in the player, not here.
   useEffect(() => {
@@ -71,14 +84,11 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
     }
   }, [kindOk, live, attemptId, router]);
 
-  const resultQ = useTestResult(attemptId, kindOk && !live && !closed);
+  const resultQ = useTestResult(attemptId, settled);
 
   // Mirrors the result query's own gate: it probes the idempotent submit RPC,
   // so it must never be re-run for an attempt that is not settled.
-  const { refreshing, onRefresh } = usePullRefresh([
-    rowQ,
-    kindOk && !live && !closed ? resultQ : null,
-  ]);
+  const { refreshing, onRefresh } = usePullRefresh([rowQ, settled ? resultQ : null]);
 
   const pad = {
     paddingTop: insets.top + spacing.md,
@@ -88,7 +98,9 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
     gap: spacing.lg,
   } as const;
 
-  if (rowQ.isPending || live || (resultQ.isPending && kindOk && !closed)) {
+  // `!rowFresh` keeps the skeleton up until the post-mount read lands, rather
+  // than rendering (or redirecting on) a cached pre-submit row.
+  if (!rowFresh || rowQ.isPending || live || (settled && resultQ.isPending)) {
     return (
       <View style={[pad, { flex: 1, backgroundColor: arena.bg }]}>
         <Skeleton height={16} width="30%" />
@@ -100,7 +112,7 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
     );
   }
 
-  if (rowQ.isError || (kindOk && !closed && resultQ.isError)) {
+  if (rowQ.isError || (settled && resultQ.isError)) {
     return (
       <View style={{ flex: 1, backgroundColor: arena.bg, justifyContent: "center" }}>
         <ErrorRetry

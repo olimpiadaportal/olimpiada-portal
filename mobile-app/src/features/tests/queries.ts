@@ -85,6 +85,21 @@ export function useSetupTopics(subjectId: string) {
  * The runner's rehydration payload. gcTime 0 → dropped the moment the runner
  * unmounts, so reopening the route ALWAYS refetches fresh server state
  * (TRUE resume: saved answers/flags + a fresh remaining_seconds).
+ *
+ * What the RUNNER then displays is this payload merged with the in-memory
+ * draft (logic.ts hydrateAnswers/hydrateFlags): only still-unsaved local edits
+ * override it, and a settled draft value only fills a question the payload has
+ * no selection for. So a fresh server answer — the same attempt continued in
+ * the web app — is what the child sees, while nothing typed on this device is
+ * ever rolled back by a remount.
+ *
+ * `refetchOnMount: "always"` closes the one hole gcTime 0 leaves open: the
+ * sweep is a setTimeout(0) macrotask that `addObserver` cancels, so a remount
+ * inside the same scheduler flush finds the OLD entry still there — and
+ * staleTime Infinity would then pin the runner to a pre-submit snapshot
+ * forever. Refetching on mount makes that case self-heal instead. staleTime
+ * Infinity still holds for the mounted lifetime: a running attempt is never
+ * background-refetched out from under the child.
  */
 export function useTestAttempt(attemptId: string, locale: Locale, enabled: boolean) {
   return useQuery({
@@ -93,12 +108,20 @@ export function useTestAttempt(attemptId: string, locale: Locale, enabled: boole
     enabled,
     staleTime: Infinity, // never background-refetch under a running attempt
     gcTime: 0,
+    refetchOnMount: "always",
     retry: 1,
     meta: { noPersist: true },
   });
 }
 
-/** Own attempt row for result/review guards (kind, status, time context). */
+/**
+ * Own attempt row for result/review guards (kind, status, time context).
+ *
+ * staleTime 0 = every mount re-reads it. Consumers that can NAVIGATE on this
+ * row (the result screen's "still live → back to the player" bounce) must gate
+ * on `isFetchedAfterMount`, because the runner warms this same key with
+ * `in_progress` and that copy survives the navigation to the result screen.
+ */
 export function useAttemptRow(attemptId: string, enabled = true) {
   const profileId = useAuthStore((s) => s.profileId);
   return useQuery({

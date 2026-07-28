@@ -17,16 +17,23 @@ import { createClient } from "@/lib/supabase/server";
 import { requireChild } from "@/lib/auth/session";
 import { getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
+import {
+  RPC_ANSWER_CHUNK,
+  chunkAnswers,
+  sanitizeAnswers,
+  type AnswerItem,
+} from "@/lib/testAnswers";
 
 const PG_CHECK_VIOLATION = "23514";
 const PG_NO_DATA_FOUND = "P0002";
 const PG_UNIQUE_VIOLATION = "23505";
 
-// Caps mirror the DB-side limits (037): topics ≤50, subtopics ≤100; the
-// answers payload can never legitimately exceed the 25-question draw.
+// Caps mirror the DB-side limits (037): topics ≤50, subtopics ≤100. The answers
+// cap + chunking rules live in `@/lib/testAnswers` because the CLIENT player
+// needs the same numbers — see the header there for why the old hardcoded 30
+// silently dropped answers on large olympiad attempts.
 const MAX_TOPICS = 50;
 const MAX_SUBTOPICS = 100;
-const MAX_ANSWERS = 30;
 
 /** Parse a JSON array of UUIDs from a form field. null = invalid input. */
 function parseUuidArray(raw: unknown, cap: number): string[] | null {
@@ -43,38 +50,6 @@ function parseUuidArray(raw: unknown, cap: number): string[] | null {
   for (const v of parsed) {
     if (typeof v !== "string" || !isUuid(v)) return null;
     out.push(v);
-  }
-  return out;
-}
-
-export type AnswerItem = {
-  question_id: string;
-  selected_option_ids: string[];
-  is_marked?: boolean;
-  time_spent_ms?: number;
-};
-
-/** Validate + normalize a client answers array. null = invalid. */
-function sanitizeAnswers(raw: unknown): AnswerItem[] | null {
-  if (!Array.isArray(raw) || raw.length > MAX_ANSWERS) return null;
-  const out: AnswerItem[] = [];
-  for (const item of raw) {
-    if (typeof item !== "object" || item === null) return null;
-    const it = item as Record<string, unknown>;
-    const qid = String(it.question_id ?? "");
-    if (!isUuid(qid)) return null;
-    const selRaw = it.selected_option_ids;
-    if (!Array.isArray(selRaw) || selRaw.length > 8) return null;
-    const sel: string[] = [];
-    for (const o of selRaw) {
-      if (typeof o !== "string" || !isUuid(o)) return null;
-      sel.push(o);
-    }
-    const a: AnswerItem = { question_id: qid, selected_option_ids: sel };
-    if (typeof it.is_marked === "boolean") a.is_marked = it.is_marked;
-    const ts = Number(it.time_spent_ms);
-    if (Number.isFinite(ts) && ts >= 0) a.time_spent_ms = Math.min(Math.round(ts), 86_400_000);
-    out.push(a);
   }
   return out;
 }
@@ -203,18 +178,25 @@ export async function saveTestAnswers(
   if (clean.length === 0) return { ok: true, remaining: null };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("save_test_answers", {
-    p_attempt_id: attemptId,
-    p_answers: clean,
-  });
-  if (error) {
-    if (error.code === PG_CHECK_VIOLATION) {
-      // Deadline passed / no longer in progress → the client must submit.
-      return { ok: false, deadline: true, error: t("test.run.timeUp") };
+  // The RPC merges at most RPC_ANSWER_CHUNK items per call, so a longer payload
+  // is sent in batches — every answer is persisted, none is truncated. The
+  // remaining_seconds of the LAST successful batch is the freshest server clock.
+  let last: unknown = null;
+  for (const batch of chunkAnswers(clean)) {
+    const { data, error } = await supabase.rpc("save_test_answers", {
+      p_attempt_id: attemptId,
+      p_answers: batch,
+    });
+    if (error) {
+      if (error.code === PG_CHECK_VIOLATION) {
+        // Deadline passed / no longer in progress → the client must submit.
+        return { ok: false, deadline: true, error: t("test.run.timeUp") };
+      }
+      return { ok: false, deadline: false, error: t("test.run.saveError") };
     }
-    return { ok: false, deadline: false, error: t("test.run.saveError") };
+    last = data;
   }
-  const d = data as { remaining_seconds?: number | null } | null;
+  const d = last as { remaining_seconds?: number | null } | null;
   const remaining =
     typeof d?.remaining_seconds === "number" && Number.isFinite(d.remaining_seconds)
       ? Math.max(0, Math.floor(d.remaining_seconds))
@@ -240,6 +222,35 @@ export async function submitTest(
   if (clean === null) return { ok: false, error: t("test.err.generic") };
 
   const supabase = await createClient();
+
+  // submit_test_attempt grades FROM THE STORED ROWS after merging the payload
+  // under its own bound, counting from the FRONT of the array. So for a payload
+  // larger than that bound the OVERFLOW (everything past the first chunk) is
+  // persisted first through save_test_answers, and the grading pass then sees
+  // every answer.
+  //
+  // A failed overflow batch is NOT swallowed — that is how answers used to
+  // disappear with an ok:true and a result page showing them unanswered:
+  //   * check_violation = the server closed the save window (deadline passed /
+  //     attempt no longer in progress). save has NO grace, submit has 60s, so
+  //     this is the designed hand-off: continue to the submit below, which
+  //     carries the full payload. Returning an error here would strand the
+  //     child on a timed attempt they can then never submit at all.
+  //   * anything else (network, server error) is transient: return the failure
+  //     so the player keeps every answer dirty and the child retries, instead
+  //     of grading a partial answer sheet as final.
+  if (clean.length > RPC_ANSWER_CHUNK) {
+    for (const batch of chunkAnswers(clean).slice(1)) {
+      const { error: saveError } = await supabase.rpc("save_test_answers", {
+        p_attempt_id: attemptId,
+        p_answers: batch,
+      });
+      if (!saveError) continue;
+      if (saveError.code === PG_CHECK_VIOLATION) break;
+      return { ok: false, error: t("test.err.generic") };
+    }
+  }
+
   const { error } = await supabase.rpc("submit_test_attempt", {
     p_attempt_id: attemptId,
     p_answers: clean,

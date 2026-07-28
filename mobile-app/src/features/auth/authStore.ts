@@ -8,6 +8,7 @@ import { queryClient } from "@/lib/queryClient";
 import { bffChildLogin, bffRegisterParent, type SessionTokens } from "@/lib/api";
 import { clearPendingLink } from "@/lib/deeplink";
 import { deregisterPushToken } from "@/features/push/registration";
+import { clearAllDrafts } from "@/features/tests/draft";
 
 export type SessionRole = "parent" | "student" | "unknown";
 export type AuthStatus = "restoring" | "signedOut" | "signedIn";
@@ -150,6 +151,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     clearPendingLink();
     queryClient.clear();
+    // In-flight test answers are per-account working state: on a shared device
+    // the next child must never inherit them (they live outside React Query,
+    // so queryClient.clear() does not reach them).
+    clearAllDrafts();
     set({ status: "signedOut", role: null, userId: null, profileId: null });
   },
 }));

@@ -25,6 +25,7 @@ import {
   View,
 } from "react-native";
 import { useNavigation, useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Bookmark,
@@ -40,24 +41,32 @@ import { AppText } from "@/components/AppText";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { useAuthStore } from "@/features/auth/authStore";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { publicStorageUrl } from "@/lib/data";
 import { cancelTestAttempt, saveTestAnswers, submitTestAttempt } from "./api";
-import { useAttemptRow, useTestAttempt } from "./queries";
+import { TQK, useAttemptRow, useTestAttempt } from "./queries";
+import { clearDraft, ensureDraft, type AttemptDraft } from "./draft";
 import {
   AUTOSAVE_MS,
   LETTERS,
+  MAX_ANSWERS,
   buildAnswerItems,
+  chunkAnswerItems,
   countAnswered,
   deadlineFromRemaining,
   fmtClock,
+  hydrateAnswers,
+  hydrateFlags,
   initialAnswers,
   initialFlags,
   remainingFrom,
+  settledQids,
+  submitPlan,
   timerLevel,
   type AnswersMap,
 } from "./logic";
-import type { AttemptMeta, TestAttemptData } from "./types";
+import type { AttemptMeta, AttemptRowMeta, TestAttemptData } from "./types";
 import { ConfirmModal } from "./ConfirmModal";
 import { QuestionImage } from "./QuestionImage";
 import { ArenaButton, Notice, Panel, tint, useArena } from "./ui";
@@ -286,7 +295,10 @@ export function TestRunnerScreen({
     );
   }
 
-  if (q.isError || !attempt) {
+  // A FAILED background refetch must not tear the player down while a usable
+  // payload is still in hand (the child would lose the screen mid-attempt); the
+  // error state is only reachable when there is nothing to play.
+  if (!attempt) {
     return (
       <View style={{ flex: 1, backgroundColor: arena.bg, justifyContent: "center" }}>
         <ErrorRetry
@@ -331,6 +343,9 @@ export function TestRunnerScreen({
 // ---------------------------------------------------------------------------
 // The live player — mounted only for an in_progress attempt with data present
 // (state initializers can trust props, mirroring the web server→client split).
+// The child's working answers live in the module-level DRAFT (draft.ts), not in
+// this component's state alone: a remount then RESUMES them instead of
+// re-seeding from the pre-answer payload the runner was opened with.
 // ---------------------------------------------------------------------------
 function RunnerActive({
   attemptId,
@@ -353,6 +368,8 @@ function RunnerActive({
   const { t } = useT();
   const router = useRouter();
   const navigation = useNavigation();
+  const queryClient = useQueryClient();
+  const profileId = useAuthStore((s) => s.profileId);
 
   const isOlympiad = attempt.kind === "olympiad";
   const homeTab = isOlympiad ? OLYMPIADS_TAB : TESTS_TAB;
@@ -364,25 +381,53 @@ function RunnerActive({
   const untimed = attempt.deadline_at === null;
 
   // ---- answers / flags (rehydrated from saved rows — TRUE resume) ----
-  const [answers, setAnswers] = useState<AnswersMap>(() => initialAnswers(questions));
-  const [flags, setFlags] = useState<Set<string>>(() => initialFlags(questions));
+  // The working copy lives in a module-level DRAFT (draft.ts) that OUTLIVES
+  // this component, so a remount resumes the child's selections instead of
+  // resetting them to the pre-answer payload the runner was opened with.
+  // Resolved in a state initializer, never in the render body: `ensureDraft`
+  // mutates the module map, and a render React discards must not be able to
+  // evict/replace another attempt's draft as a side effect.
+  const [draft] = useState<AttemptDraft>(() =>
+    ensureDraft(attemptId, () => ({
+      answers: initialAnswers(questions),
+      flags: initialFlags(questions),
+      dirty: new Set<string>(),
+      spentMs: new Map<string, number>(),
+    })),
+  );
+
+  const [answers, setAnswers] = useState<AnswersMap>(() =>
+    hydrateAnswers(questions, draft.answers, draft.dirty),
+  );
+  const [flags, setFlags] = useState<Set<string>>(() =>
+    hydrateFlags(questions, draft.flags, draft.dirty),
+  );
   const [idx, setIdx] = useState(0);
+  // Keep the draft pointing at the rendered values so every read path —
+  // autosave, submit, a later remount — sees exactly what the child sees.
+  // select()/toggleFlag() already write the draft synchronously (an autosave
+  // starting in the same tick must carry the new selection); this EFFECT only
+  // has to catch the hydration result. It is deliberately not a render-body
+  // assignment: a render carrying a stale `answers` would then write that stale
+  // value back into the draft and silently revert a selection.
+  useEffect(() => {
+    draft.answers = answers;
+    draft.flags = flags;
+  }, [draft, answers, flags]);
 
   // ---- countdown: anchor from the server snapshot; resynced on every save ----
   const [remaining, setRemaining] = useState<number | null>(null);
   const deadlineRef = useRef<number | null>(null);
 
   // ---- lifecycle guards / autosave bookkeeping (refs: no re-renders) ----
-  const answersRef = useRef(answers);
-  answersRef.current = answers;
-  const flagsRef = useRef(flags);
-  flagsRef.current = flags;
-  const dirtyRef = useRef<Set<string>>(new Set());
   const savingRef = useRef(false);
+  /** The save currently in flight — awaited by doSubmit, never raced. */
+  const savePromiseRef = useRef<Promise<void> | null>(null);
+  /** A save requested while another was in flight; run as soon as it ends. */
+  const pendingFlushRef = useRef<{ resync: boolean } | null>(null);
   const finishedRef = useRef(false);
   const submittingRef = useRef(false);
   const leavingRef = useRef(false);
-  const spentRef = useRef<Map<string, number>>(new Map());
   const lastSwitchRef = useRef<number>(Date.now());
   const idxRef = useRef(idx);
   idxRef.current = idx;
@@ -408,17 +453,46 @@ function RunnerActive({
     const now = Date.now();
     const q = questions[idxRef.current];
     if (q) {
-      const cur = spentRef.current.get(q.question_id) ?? 0;
-      spentRef.current.set(q.question_id, cur + (now - lastSwitchRef.current));
-      dirtyRef.current.add(q.question_id);
+      const cur = draft.spentMs.get(q.question_id) ?? 0;
+      draft.spentMs.set(q.question_id, cur + (now - lastSwitchRef.current));
+      draft.dirty.add(q.question_id);
     }
     lastSwitchRef.current = now;
   }
 
   const buildItems = useCallback(
-    (qids: string[]) =>
-      buildAnswerItems(qids, answersRef.current, flagsRef.current, spentRef.current),
-    [],
+    (qids: string[]) => buildAnswerItems(qids, draft.answers, draft.flags, draft.spentMs),
+    [draft],
+  );
+
+  /**
+   * Publish the attempt's SETTLED status before navigating away.
+   *
+   * The result screen guards itself with "an in_progress attempt belongs back
+   * in the player" and reads it from this very cache entry — which the runner
+   * itself warmed with `in_progress` at mount. Leaving the pre-submit copy in
+   * place bounced the child straight back into a freshly mounted (and therefore
+   * blank-looking) player with the attempt already graded server-side: the
+   * reported "answers cleared, nothing submitted, tap Finish again".
+   */
+  const publishStatus = useCallback(
+    (status: "graded" | "canceled") => {
+      queryClient.setQueryData(
+        TQK.attemptRow(attemptId, profileId ?? "-"),
+        (prev: AttemptRowMeta | null | undefined) =>
+          prev
+            ? {
+                ...prev,
+                status,
+                submitted_at:
+                  status === "graded"
+                    ? (prev.submitted_at ?? new Date().toISOString())
+                    : prev.submitted_at,
+              }
+            : prev,
+      );
+    },
+    [attemptId, profileId, queryClient],
   );
 
   // ---- submit (manual confirm + timer-zero / deadline-signal auto path) ----
@@ -426,23 +500,66 @@ function RunnerActive({
     if (submittingRef.current || finishedRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);
-    setSubmitOpen(false);
+    setFatal(null);
     try {
-      const items = buildItems(questions.map((q) => q.question_id));
-      await submitTestAttempt(attemptId, items);
+      // Never race an autosave that is already in flight. `save_test_answers`
+      // re-reads the status at the top of its OWN transaction, so a save that
+      // started before this submit can pass the in_progress check, block on the
+      // row lock the submit holds, and then write its older snapshot over the
+      // just-graded selections — the score would be right while the stored
+      // answer sheet (the only thing get_test_review reads) shows an answer the
+      // child did not finish with. submittingRef is already set, so no NEW save
+      // can start behind this await.
+      if (savePromiseRef.current) {
+        try {
+          await savePromiseRef.current;
+        } catch {
+          // A failed save changes nothing: the submit below carries every
+          // answer of the attempt anyway.
+        }
+      }
+      // EVERY question of the attempt goes out in ONE submit call — the server
+      // applies its own bound to the array (100 before migration 093, 1000
+      // after) and always merges from the FRONT, so the payload must never be
+      // a tail slice. Anything beyond that bound is persisted first with
+      // save_test_answers (submit grades from the STORED rows, so pre-saved
+      // batches count in full); for a normal ≤100-question attempt this loop
+      // is empty and the submit is a single round-trip.
+      const { preSave, submit } = submitPlan(
+        buildItems(questions.map((qq) => qq.question_id)),
+        MAX_ANSWERS,
+      );
+      for (const batch of preSave) {
+        const res = await saveTestAnswers(attemptId, batch);
+        // ok:false = the server closed the save window (deadline passed / the
+        // attempt is no longer in progress). Every further save would be
+        // refused identically, so stop spending round-trips inside the
+        // submit's 60s grace and go straight to it. A REAL failure (network,
+        // server error) throws instead and is caught below with the whole
+        // draft intact, so the same tap retries everything.
+        if (!res.ok) break;
+      }
+      await submitTestAttempt(attemptId, submit);
+      // Server confirmed. Only now is it safe to drop the draft and stop
+      // guarding the route.
       finishedRef.current = true;
+      draft.dirty.clear();
+      clearDraft(attemptId);
+      publishStatus("graded");
       router.replace({
         pathname: "/(student)/test/result/[attemptId]",
         params: { attemptId },
       });
       return;
     } catch {
+      // Nothing is reset: answers, flags and the dirty set are untouched, so
+      // the same tap retries with the full payload.
       setFatal(t("test.err.generic"));
     }
     submittingRef.current = false;
     setSubmitting(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attemptId, questions, buildItems, router]);
+  }, [attemptId, questions, buildItems, draft, publishStatus, router]);
   const doSubmitRef = useRef(doSubmit);
   doSubmitRef.current = doSubmit;
 
@@ -450,37 +567,90 @@ function RunnerActive({
   // fresh remaining_seconds — e.g. returning from background) ----
   const flush = useCallback(
     async (opts?: { resync?: boolean }) => {
-      if (savingRef.current || submittingRef.current || finishedRef.current) return;
-      const qids = Array.from(dirtyRef.current);
+      if (submittingRef.current || finishedRef.current) return;
+      if (savingRef.current) {
+        // QUEUE, never drop. The app-backgrounding handler calls this exactly
+        // when a save is most likely to be outstanding; returning silently
+        // there left everything dirtied since that save started in memory
+        // only — and Android may kill a backgrounded process at any moment.
+        // The in-flight save re-runs it the moment it finishes.
+        pendingFlushRef.current = {
+          resync: (pendingFlushRef.current?.resync ?? false) || opts?.resync === true,
+        };
+        return;
+      }
+      const qids = Array.from(draft.dirty);
       if (qids.length === 0 && !opts?.resync) return;
       savingRef.current = true;
       if (qids.length > 0) setSaveState("saving");
       try {
-        const res = await saveTestAnswers(attemptId, buildItems(qids));
-        if (res.ok) {
-          for (const q of qids) dirtyRef.current.delete(q);
-          if (typeof res.remaining === "number") {
-            // Deadline resync: the SERVER remaining is the truth.
-            deadlineRef.current = deadlineFromRemaining(Date.now(), res.remaining);
-            setRemaining(remainingFrom(deadlineRef.current, Date.now()));
+        // Chunked, never truncated: a batch that does not fit one call is sent
+        // in the next one instead of being dropped. An empty payload still
+        // pings the server when this is a resync (fresh remaining_seconds).
+        const batches = chunkAnswerItems(buildItems(qids), MAX_ANSWERS);
+        if (batches.length === 0) batches.push([]);
+        let remaining: number | null = null;
+        let failed = false;
+        for (const batch of batches) {
+          const res = await saveTestAnswers(attemptId, batch);
+          if (!res.ok) {
+            if (res.deadline) {
+              // Server says time is over → auto-submit (60s grace server-side).
+              setTimeUp(true);
+              savingRef.current = false;
+              void doSubmitRef.current();
+              return;
+            }
+            failed = true;
+            break;
           }
-          if (qids.length > 0) setSaveState("saved");
-        } else if (res.deadline) {
-          // Server says time is over → auto-submit (60s grace server-side).
-          setTimeUp(true);
-          savingRef.current = false;
-          void doSubmitRef.current();
-          return;
+          // ONLY what this accepted batch actually carried, and only where the
+          // child has not changed it since — everything else stays dirty and
+          // is retried on the next autosave.
+          for (const id of settledQids(batch, draft.answers, draft.flags)) {
+            draft.dirty.delete(id);
+          }
+          if (typeof res.remaining === "number") remaining = res.remaining;
         }
+        if (remaining !== null) {
+          // Deadline resync: the SERVER remaining is the truth.
+          deadlineRef.current = deadlineFromRemaining(Date.now(), remaining);
+          setRemaining(remainingFrom(deadlineRef.current, Date.now()));
+        }
+        if (qids.length > 0) setSaveState(failed ? "error" : "saved");
       } catch {
         setSaveState("error");
       }
       savingRef.current = false;
+      // Someone asked for a save while this one was in flight (a navigation, a
+      // flag toggle, the app going to background): run it now, so no request
+      // to persist is ever silently dropped.
+      const queued = pendingFlushRef.current;
+      if (queued) {
+        pendingFlushRef.current = null;
+        await flushRef.current(queued);
+      }
     },
-    [attemptId, buildItems],
+    [attemptId, buildItems, draft],
   );
-  const flushRef = useRef(flush);
-  flushRef.current = flush;
+
+  /**
+   * The autosave entry point everything else calls. It publishes the in-flight
+   * promise so doSubmit can WAIT for a save instead of racing it (a late save
+   * would otherwise overwrite the graded answer rows).
+   */
+  const runFlush = useCallback(
+    (opts?: { resync?: boolean }) => {
+      const p = flush(opts).finally(() => {
+        if (savePromiseRef.current === p) savePromiseRef.current = null;
+      });
+      savePromiseRef.current = p;
+      return p;
+    },
+    [flush],
+  );
+  const flushRef = useRef(runFlush);
+  flushRef.current = runFlush;
 
   // ---- mount: clock + autosave interval + foreground resync ----
   useEffect(() => {
@@ -565,31 +735,40 @@ function RunnerActive({
     void flushRef.current();
   }
 
+  // The draft is written BEFORE the state update so an autosave/submit that
+  // starts in the same tick already carries the new selection.
   function select(qid: string, oid: string) {
-    setAnswers((p) => ({ ...p, [qid]: p[qid] === oid ? null : oid }));
-    dirtyRef.current.add(qid);
+    const next: AnswersMap = {
+      ...draft.answers,
+      [qid]: draft.answers[qid] === oid ? null : oid,
+    };
+    draft.answers = next;
+    draft.dirty.add(qid);
+    setAnswers(next);
     setSaveState("idle");
   }
 
   function toggleFlag(qid: string) {
-    setFlags((p) => {
-      const n = new Set(p);
-      if (n.has(qid)) n.delete(qid);
-      else n.add(qid);
-      return n;
-    });
-    dirtyRef.current.add(qid);
+    const next = new Set(draft.flags);
+    if (next.has(qid)) next.delete(qid);
+    else next.add(qid);
+    draft.flags = next;
+    draft.dirty.add(qid);
+    setFlags(next);
     // Persist flags promptly (spec: save on flag change).
     setTimeout(() => void flushRef.current(), 0);
   }
 
   async function doCancel() {
-    if (canceling || finishedRef.current) return;
+    if (canceling || submittingRef.current || finishedRef.current) return;
     setCanceling(true);
+    setFatal(null);
     try {
       const res = await cancelTestAttempt(attemptId);
       if (res.ok) {
         finishedRef.current = true;
+        clearDraft(attemptId);
+        publishStatus("canceled");
         router.replace(homeTab);
         return;
       }
@@ -597,8 +776,10 @@ function RunnerActive({
     } catch {
       setFatal(t("test.err.generic"));
     }
+    // The dialog STAYS OPEN on failure, exactly like the submit one: closing it
+    // would hide the reason behind an inline message far up the scroll and read
+    // as "nothing happened".
     setCanceling(false);
-    setCancelOpen(false);
   }
 
   const q = questions[idx];
@@ -748,7 +929,9 @@ function RunnerActive({
           {t("test.run.timeUp")}
         </Notice>
       ) : null}
-      {fatal ? (
+      {/* Only when no dialog is carrying the same message (a failure is
+          reported inside the dialog the child is looking at). */}
+      {fatal && !submitOpen && !cancelOpen ? (
         <AppText color={arena.red} style={{ fontSize: 13 }}>
           {fatal}
         </AppText>
@@ -908,7 +1091,10 @@ function RunnerActive({
             title={t("test.run.submit")}
             pending={submitting}
             pendingTitle={t("test.run.submitting")}
-            onPress={() => setSubmitOpen(true)}
+            onPress={() => {
+              setFatal(null);
+              setSubmitOpen(true);
+            }}
             style={{ flex: 1 }}
           />
         )}
@@ -1017,7 +1203,10 @@ function RunnerActive({
           icon={<Check size={16} color="#ffffff" strokeWidth={2.5} />}
           pending={submitting}
           pendingTitle={t("test.run.submitting")}
-          onPress={() => setSubmitOpen(true)}
+          onPress={() => {
+            setFatal(null);
+            setSubmitOpen(true);
+          }}
         />
         <ArenaButton
           arena={arena}
@@ -1026,38 +1215,58 @@ function RunnerActive({
           disabled={canceling || submitting}
           onPress={() => {
             if (canceling || submitting) return;
+            setFatal(null);
             setCancelOpen(true);
           }}
         />
       </View>
 
-      {/* ---- Submit confirm (shows the unanswered count) ---- */}
+      {/* ---- Submit confirm (shows the unanswered count) ----
+           The dialog STAYS OPEN for the whole request: its primary is the
+           pending/inert button while the RPC is in flight (so a second tap can
+           never start a second submit), and a failure is reported right where
+           the child tapped instead of in a message scrolled far off-screen —
+           tapping again simply retries with every answer still in hand. */}
       <ConfirmModal
         arena={arena}
         visible={submitOpen}
         title={t("test.run.submitTitle")}
         message={t("test.run.submitMsg").replace("{n}", String(unanswered))}
+        errorText={submitting ? null : fatal}
         primaryLabel={t("test.run.submitConfirm")}
         primaryPending={submitting}
         primaryPendingLabel={t("test.run.submitting")}
         onPrimary={() => void doSubmit()}
         secondaryLabel={t("test.run.back")}
-        onSecondary={() => setSubmitOpen(false)}
+        onSecondary={() => {
+          if (submitting) return;
+          setFatal(null);
+          setSubmitOpen(false);
+        }}
       />
 
-      {/* ---- Cancel confirm (counts for nothing) ---- */}
+      {/* ---- Cancel confirm (counts for nothing) ----
+           Same contract as the submit dialog: it stays open for the whole
+           request and reports a failure in place. `fatal` is cleared whenever
+           either dialog opens, so one action's error can never surface inside
+           the other's dialog. */}
       <ConfirmModal
         arena={arena}
         visible={cancelOpen}
         title={t("test.run.cancelTitle")}
         message={t("test.run.cancelMsg")}
+        errorText={canceling ? null : fatal}
         primaryLabel={t("test.run.cancelConfirm")}
         primaryKind="danger"
         primaryPending={canceling}
         primaryPendingLabel={t("test.run.canceling")}
         onPrimary={() => void doCancel()}
         secondaryLabel={t("test.run.keepGoing")}
-        onSecondary={() => setCancelOpen(false)}
+        onSecondary={() => {
+          if (canceling) return;
+          setFatal(null);
+          setCancelOpen(false);
+        }}
       />
 
       {/* ---- Leave confirm (hardware back / any navigation away) ---- */}

@@ -11,8 +11,29 @@ import type {
 } from "./types";
 
 export const AUTOSAVE_MS = 30_000;
-/** Payload cap mirrored from the web action / DB-side limit (037). */
-export const MAX_ANSWERS = 30;
+/**
+ * Items carried by ONE save/submit RPC call.
+ *
+ * This is a TRANSPORT batch size, NOT a limit on how many answers a submit may
+ * carry: a payload bigger than this is CHUNKED across calls (chunkAnswerItems)
+ * and never truncated. The old value (30) silently dropped everything past the
+ * 30th question, so a 50-question olympiad submitted 30 answers and graded the
+ * other 20 as unanswered — the "my answers were cleared" half of the Round-52
+ * bug report.
+ *
+ * 100 was the per-call cap the server's `save_test_answers` /
+ * `submit_test_attempt` loops enforced before migration 093 raised it to 1000.
+ * Keeping the client at the LOWER of the two is deliberate: chunking is correct
+ * against either server version, so the app can ship ahead of (or behind) the
+ * migration without ever silently dropping an answer.
+ */
+export const MAX_ANSWERS = 100;
+/**
+ * Largest attempt the platform can create (Round 51 `questions_per_attempt`
+ * ceiling). Documentation + test anchor only — the client never truncates to
+ * it; the question list always comes from the server's own attempt payload.
+ */
+export const MAX_ATTEMPT_QUESTIONS = 500;
 /** Option letters (web parity; ≤8 options rendered). */
 export const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
@@ -126,30 +147,153 @@ export function initialFlags(questions: TestQuestion[]): Set<string> {
   return new Set(questions.filter((q) => q.is_marked).map((q) => q.question_id));
 }
 
+/**
+ * Server payload + the in-memory DRAFT (draft.ts) for the same attempt.
+ *
+ * The server rows are the BASE. The draft is layered on top under two narrow
+ * rules, so a remount resumes the child's work without the memory-only copy
+ * becoming a permanent shadow of the attempt:
+ *
+ *  - a still-DIRTY id (changed locally, not yet accepted by the server) always
+ *    wins — including a deliberate deselection, which must not be undone by
+ *    the stored row it has not overwritten yet;
+ *  - a SETTLED draft value only fills a hole: it is used when the payload
+ *    carries no selection for that question, which is exactly the stale/
+ *    pre-answer snapshot case a remount can hit. A payload that DOES carry a
+ *    selection is newer (the same attempt continued in the web app, or our own
+ *    saves read back) and wins.
+ *
+ * Draft entries for questions outside this payload are ignored — the payload
+ * defines the attempt.
+ */
+export function hydrateAnswers(
+  questions: TestQuestion[],
+  draft: AnswersMap | null | undefined,
+  dirty?: ReadonlySet<string> | null,
+): AnswersMap {
+  const merged = initialAnswers(questions);
+  if (!draft) return merged;
+  for (const q of questions) {
+    const id = q.question_id;
+    if (!Object.prototype.hasOwnProperty.call(draft, id)) continue;
+    const local = draft[id] ?? null;
+    if (dirty?.has(id) || (merged[id] ?? null) === null) merged[id] = local;
+  }
+  return merged;
+}
+
+/**
+ * Bookmark flags, same two rules as hydrateAnswers: an unsaved local toggle
+ * wins outright, and a settled local bookmark is never LOST to the payload
+ * (flags are additive, so filling in can only ever restore one).
+ */
+export function hydrateFlags(
+  questions: TestQuestion[],
+  draft: ReadonlySet<string> | null | undefined,
+  dirty?: ReadonlySet<string> | null,
+): Set<string> {
+  const merged = initialFlags(questions);
+  if (!draft) return merged;
+  for (const q of questions) {
+    const id = q.question_id;
+    if (draft.has(id)) merged.add(id);
+    else if (dirty?.has(id)) merged.delete(id);
+  }
+  return merged;
+}
+
 export function countAnswered(questions: TestQuestion[], answers: AnswersMap): number {
   return questions.filter((q) => answers[q.question_id]).length;
 }
 
-/** Autosave/submit payload for the given question ids (web buildItems parity). */
+/**
+ * Autosave/submit payload for the given question ids.
+ *
+ * NEVER truncates: every id handed in comes back as an item. Bounding the wire
+ * payload is chunkAnswerItems' job, and it chunks instead of dropping — a
+ * builder that silently returned a prefix is what made a 50-question olympiad
+ * submit only its first 30 answers.
+ */
 export function buildAnswerItems(
   qids: string[],
   answers: AnswersMap,
-  flags: Set<string>,
-  spentMs: Map<string, number>,
+  flags: ReadonlySet<string>,
+  spentMs: ReadonlyMap<string, number>,
 ): AnswerItem[] {
-  return qids
-    .map((qid) => {
-      const sel = answers[qid];
-      const item: AnswerItem = {
-        question_id: qid,
-        selected_option_ids: sel ? [sel] : [],
-        is_marked: flags.has(qid),
-      };
-      const ms = spentMs.get(qid);
-      if (ms && ms > 0) item.time_spent_ms = Math.min(Math.round(ms), 86_400_000);
-      return item;
-    })
-    .slice(0, MAX_ANSWERS);
+  return qids.map((qid) => {
+    const sel = answers[qid];
+    const item: AnswerItem = {
+      question_id: qid,
+      selected_option_ids: sel ? [sel] : [],
+      is_marked: flags.has(qid),
+    };
+    const ms = spentMs.get(qid);
+    if (ms && ms > 0) item.time_spent_ms = Math.min(Math.round(ms), 86_400_000);
+    return item;
+  });
+}
+
+/**
+ * Split a payload into wire-sized batches (MAX_ANSWERS items each) so a large
+ * attempt is delivered in full across several bounded calls. An empty payload
+ * yields NO batches — the caller decides whether an empty ping is meaningful
+ * (the autosave resync sends one; a submit does not).
+ */
+export function chunkAnswerItems(
+  items: AnswerItem[],
+  size: number = MAX_ANSWERS,
+): AnswerItem[][] {
+  const step = Math.max(1, Math.floor(size));
+  const out: AnswerItem[][] = [];
+  for (let i = 0; i < items.length; i += step) out.push(items.slice(i, i + step));
+  return out;
+}
+
+/**
+ * The wire plan for a SUBMIT.
+ *
+ * `submit` is ALWAYS the complete payload. `submit_test_attempt` walks the
+ * array from the FRONT under its own bound (100 before migration 093, 1000
+ * after) and then grades from the STORED rows, so the one thing the client must
+ * never do is hand it a tail slice — that is how a 150-question olympiad graded
+ * questions 1..100 as unanswered while faithfully submitting 101..150.
+ *
+ * `preSave` is only what that bound might not reach: every chunk AFTER the
+ * first. Persisting those through `save_test_answers` makes them count even
+ * when the submit merge stops early. For a normal ≤MAX_ANSWERS attempt (every
+ * daily round, every topic test, most olympiads) it is empty and the submit is
+ * a single round-trip.
+ */
+export function submitPlan(
+  items: AnswerItem[],
+  size: number = MAX_ANSWERS,
+): { preSave: AnswerItem[][]; submit: AnswerItem[] } {
+  return { preSave: chunkAnswerItems(items, size).slice(1), submit: items };
+}
+
+/**
+ * Which question ids may leave the dirty set after the server ACCEPTED `sent`.
+ *
+ * Two rules, both bug fixes:
+ *  - only ids that were actually in the accepted payload (a batch that never
+ *    left the device must stay dirty and be retried — marking clean more than
+ *    was sent lost those answers permanently);
+ *  - only ids whose local value still matches what was sent, so a selection
+ *    made WHILE the request was in flight stays dirty and is saved next round.
+ */
+export function settledQids(
+  sent: AnswerItem[],
+  answers: AnswersMap,
+  flags: ReadonlySet<string>,
+): string[] {
+  const out: string[] = [];
+  for (const item of sent) {
+    const sentSelection = item.selected_option_ids[0] ?? null;
+    if (sentSelection !== (answers[item.question_id] ?? null)) continue;
+    if ((item.is_marked === true) !== flags.has(item.question_id)) continue;
+    out.push(item.question_id);
+  }
+  return out;
 }
 
 export type PaletteCellState = {

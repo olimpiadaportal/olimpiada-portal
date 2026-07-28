@@ -1950,8 +1950,12 @@ If anything doesn't match, tell me the **XX-#** or **YY-#** + what you saw.
 - Mobile untimed results (daily rounds/practice): time reads "Sərf olunan vaxt: X dəq" with NO "/ 25 dəq" limit suffix.
 - /services with a signed-in CHILD: the page redirects to the student panel; the public header/footer show no "Xidmətlər" link while signed in as a child.
 
+---
+
+# Round 52 (2026-07-27) — app versioning + long-text overflow (mobile + web).
+
 ## AQ1. App version is visible and dynamic (mobile)
-- Open the account sheet (avatar/menu) as a parent AND as a student → scroll to the bottom: **"OlympIQ · Versiya 1.1.0"**.
+- Open the account sheet (avatar/menu) as a parent AND as a student → scroll to the bottom: **"OlympIQ · Versiya 1.1.1"**.
 - It must match `expo.version` in `mobile-app/app.json`. In an EAS build it shows the built version; in Expo Go it shows whatever the running bundle carries. There is no hardcoded copy of the number anywhere.
 
 ## AQ2. Long school names wrap instead of breaking the layout
@@ -1962,4 +1966,56 @@ Set one child's school to a deliberately long name in the admin panel (or Add-Ch
 - Also glance at: the **leaderboard** rows (school/rayon columns), the **parent dashboard** child cards, and **Add-Child → review** — same long name, same expectation on both platforms.
 - Short names must look **exactly** as they did before on both platforms — this fix must be invisible when the value is short.
 
-If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-# / AL-# / AM-# / AN-# / AO-# / AP-# / AQ-#** + what you saw.
+## AQ3. "Bitir" (Finish Test) — one tap, and no answer is ever lost
+This is the reported bug: the first Finish tap cleared the answers and did nothing, the
+second one submitted. Run every step on a **physical Android phone**, then repeat 1–3 on web.
+
+1. **Practice test (≤25 questions).** Answer all of them, tap **Bitir** → confirm ONCE.
+   Expected: the button/dialog goes to the pending state, then the RESULT screen opens
+   directly. Every answer is counted (no question shows as skipped that you answered), and
+   you never had to tap a second time. Open **İcmal/Review**: each question shows the option
+   you actually chose.
+2. **Olympiad with more than 30 questions per attempt** (admin → package → *Sual sayı* > 30;
+   a 50+ package is ideal). Answer them ALL — especially questions **31 and beyond** — and
+   submit once. Expected: the score counts questions 31..N; none of them appears as
+   unanswered. This is the exact case that used to drop every answer past the 30th.
+3. **Offline retry (the "tap twice" trigger).** Answer a few questions, turn on **airplane
+   mode**, tap Bitir → confirm. Expected: the dialog STAYS OPEN and shows an error inside it
+   (nothing silently closes). Turn airplane mode back off and tap confirm again: it submits,
+   and **every answer you gave is still there** on the result/review — nothing was cleared by
+   the failed attempt.
+4. **Leave and come back.** Mid-attempt, answer a few, press Android back → **Leave**. Reopen
+   the attempt from the tests list. Expected: your selections and bookmarks are still there.
+   Then submit: they are all counted.
+5. **Timed olympiad reaching 0:00.** Start a timed olympiad, answer some questions, and let
+   the clock run out without touching anything. Expected: it auto-submits by itself and lands
+   on the result screen with those answers counted (not an error, not a stuck screen).
+6. **Backgrounding.** Answer a question, immediately switch to another app for ~10 seconds,
+   come back, then submit. Expected: the answer is still selected and is counted.
+
+---
+
+# Round 53 (2026-07-28) — one tap finishes a test, and no answer is ever dropped.
+
+## AR1. "Finish Test" works on the FIRST tap (the reported bug)
+Do this for **a practice/topic test, a daily round, AND a purchased olympiad** — the bug hit all three:
+- Answer several questions, tap **Testi bitir** → confirm once.
+- Expected: it goes **straight to the result screen**, first tap. You must NEVER be thrown back into the player, never see your selections emptied, and never need a second tap.
+- The result must show the score for the answers you actually gave.
+- Press the confirm button rapidly twice: only ONE submission happens (the button shows its pending state and ignores the second press).
+
+## AR2. Big olympiad — every answer counts
+- Use an olympiad package whose **Sual sayı** is above 30 (the dev packages at 50 are ideal; set one higher if you want a stronger test).
+- Answer **more than 30** questions — deliberately answer some near the very end of the paper (questions 31+).
+- Submit, then open **Nəticələr / review**: the late answers must be scored exactly like the early ones. Previously everything past #30 was silently discarded and marked wrong.
+
+## AR3. Answers survive interruptions
+- Mid-test: switch apps / lock the phone / return. Selections intact.
+- Mid-test with airplane mode ON, tap Finish: you get an error, and **every selection is still there** — turn the network back on and submit again successfully, without re-answering anything.
+
+## AR4. Nothing else regressed in the player
+- Timer still counts down on timed attempts; untimed practice shows no limit.
+- Leaving mid-test still asks to confirm; "Ləğv et" still cancels; a timed attempt still auto-submits at 0:00.
+- Resuming an in-progress attempt (leave and re-enter) still restores your answers.
+
+If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-# / AL-# / AM-# / AN-# / AO-# / AP-# / AQ-# / AR-#** + what you saw.

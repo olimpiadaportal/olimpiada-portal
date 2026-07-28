@@ -6,6 +6,20 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — CURRICULUM REPLACEMENT (Round A) — PAUSED 2026-07-28, RESUME HERE
+
+The owner paused this to do landing-page work first. **Nothing destructive has been run.** Resume at "the one open question" below.
+
+**Decisions already made — do NOT re-ask:**
+- **HARD-DELETE** the old topics/subtopics/questions (owner chose this over archiving, knowing it empties **11 purchased lifetime olympiad packages** and wipes the leaderboard/percentage/streak data derived from **298 answered questions** — all demo accounts). Requires dropping/bypassing `trg_question_delete_guard` and rewriting the two root-`CLAUDE.md` rules that currently forbid exactly this ("a question that any attempt ever answered can NEVER be hard-deleted"; "never delete purchased olympiad package records"). **Take a DB backup first anyway.**
+- **Sequencing = data first, then UI.** Round A: retire old + import new + schema verification. Round B: admin "Curriculum Structure" tree page (spec §1). Round C: bulk import + GPT prompt + question edit page + UI polish (spec §4–7, §10, §12).
+
+**Extraction DONE and verified → `supabase/seed/curriculum_2026.json`** — 1077 rows, grades 1–11, terms 1–4, 260 topics, zero unattributed. Source: `docs/investor/Kurikulum_movzu_alt_movzu_rub_bolgusu_1-11.docx`. **Parse anchor that actually works:** subject = the paragraph IMMEDIATELY PRECEDING each `№|Rüb|Mövzu|Alt mövzu` table; grade = the nearest preceding `N-ci sinif` paragraph. A hardcoded subject list silently mis-attributes every science row — the first attempt did exactly that.
+
+**THE ONE OPEN QUESTION — subject mapping (blocks the import).** The document names science differently per grade: `Həyat bilgisi` (1–4), `Təbiət` (5–6), `Biologiya`/`Fizika`/`Kimya` (7–11). DB subjects: `math`, `elm`, `english`, `az_language` (=Məntiq), `fizika`, `informatics`. Riyaziyyat/İnformatika/İngilis dili/Məntiq/Fizika map 1:1; **293 rows over 64 topics do not**: Həyat bilgisi 86, Biologiya 84, Kimya 77, Təbiət 46. Options offered: (1) fold all four into `elm`; (2) add `biologiya`+`kimya` as subjects and fold Həyat bilgisi+Təbiət into `elm`; (3) fold Fizika into `elm` too and archive standalone `fizika`. **This is a commercial decision — subscriptions are sold PER SUBJECT at 3/9/90 AZN, so it sets what a family can buy.**
+
+**Already built — do NOT rebuild:** spec §11 (schema) is DONE — questions carry `subject_id/grade_id/topic_id/subtopic_id/term` with 13 indexes; §9 (Term column + badges in the admin question list) is DONE; §8 (`term <= current` filtering in SQL) is DONE. §4 (no Term selector in bulk import) appears already satisfied — verify.
+
 ## PINNED — Domain go-live checklist (owner, 2026-07-27; do ALL of these the day the website domain is live)
 
 When the real domain (planned: `olympiq.ai`) replaces the `*.vercel.app` URL:

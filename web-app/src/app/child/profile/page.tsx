@@ -6,6 +6,7 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { StickerThemePicker, type StickerThemeCard } from "@/components/StickerThemePicker";
 import { PalettePicker } from "@/components/PalettePicker";
 import { ChildProfile } from "@/components/ChildProfile";
+import { CmsProse } from "@/components/CmsProse";
 
 // Student profile page — Round 8 redesign. Same account-settings design
 // language as the parent /profile page but student-only: identity header
@@ -198,7 +199,7 @@ export default async function ChildProfilePage() {
         {/* Character-sticker theme gallery. */}
         <section className="prof2-card" aria-label={t("stk.sectionTitle")}>
           <h2 className="prof2-sec-title">{t("stk.sectionTitle")}</h2>
-          <p className="prof2-sec-hint">{t("stk.sectionDesc")}</p>
+          <CmsProse className="prof2-sec-hint" text={t("stk.sectionDesc")} />
           <StickerThemePicker
             themes={stickerThemes}
             selectedId={selectedThemeId}

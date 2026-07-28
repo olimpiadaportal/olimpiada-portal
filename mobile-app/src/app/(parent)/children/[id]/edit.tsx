@@ -22,6 +22,7 @@ import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
+import { useFieldChain } from "@/lib/useFieldChain";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchChildren, type ChildRow } from "@/lib/data";
 import { resolveChildAvatarSource } from "@/lib/childAvatar";
@@ -258,12 +259,19 @@ function EditForm({
     });
   }
 
+  // The names are a run of their own: four required selects follow, and the
+  // only other input on this screen (the password reset) belongs to a DIFFERENT
+  // form with a different submit — so this run ends by dismissing, never by
+  // jumping across the Save button.
+  const nameChain = useFieldChain(2);
+
   return (
     <View style={{ gap: spacing.lg }}>
       <AvatarEditor child={child} />
       <AppText variant="muted">{t("childedit.intro")}</AppText>
 
       <TextField
+        {...nameChain.field(0)}
         label={`${t("parent.child.first")} *`}
         value={firstName}
         onChangeText={setFirstName}
@@ -271,6 +279,7 @@ function EditForm({
         error={fieldErrors.first}
       />
       <TextField
+        {...nameChain.field(1)}
         label={`${t("parent.child.last")} *`}
         value={lastName}
         onChangeText={setLastName}
@@ -392,10 +401,14 @@ function PasswordReset({ childId }: { childId: string }) {
       <AppText variant="title" style={{ fontSize: 16 }}>
         {t("child.resetPw")}
       </AppText>
+      {/* A run of one, in its own card with its own submit: the return key
+          only closes the keyboard — a password reset is never fired by it. */}
       <PasswordField
         label={t("parent.child.password")}
         value={pw}
         onChangeText={setPw}
+        returnKeyType="done"
+        submitBehavior="blurAndSubmit"
         showLabel={t("mob.pw.show")}
         hideLabel={t("mob.pw.hide")}
         error={error}

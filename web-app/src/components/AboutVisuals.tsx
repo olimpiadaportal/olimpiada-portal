@@ -232,3 +232,17 @@ export function TrustIcon() {
     </svg>
   );
 }
+
+/* Organisation chart — one unit branching into two. Deliberately NOT another
+   people mark: AudienceIcon already owns "two people", and an org chart reads
+   as "the organisation/team behind the product" at 22px. */
+export function TeamIcon() {
+  return (
+    <svg {...ico}>
+      <rect x="8.5" y="2.5" width="7" height="5" rx="1.6" />
+      <rect x="2" y="16.5" width="7" height="5" rx="1.6" />
+      <rect x="15" y="16.5" width="7" height="5" rx="1.6" />
+      <path d="M12 7.5v5.5M5.5 16.5V13h13v3.5" />
+    </svg>
+  );
+}

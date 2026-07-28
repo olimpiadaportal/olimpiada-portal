@@ -32,7 +32,21 @@ export function responsiveFontSize(px: number): string {
  * Inline style applying a field's admin-chosen size (server or client
  * components): `<h1 style={cmsFontSizeStyle("home.heroTitle")}>` — inherits
  * (renders exactly as today) whenever no size is configured for the key.
+ *
+ * `fallback` is the size the CALLER would otherwise have set. Passing it as the
+ * `var()` fallback settles the precedence question once, in one direction, for
+ * every consumer: the ADMIN's size always wins, and the caller's own size
+ * applies until the admin configures one. Omit it to fall back to inheritance.
  */
-export function cmsFontSizeStyle(key: string): CSSProperties {
-  return { fontSize: `var(${cmsFontSizeVar(key)})` };
+export function cmsFontSizeStyle(
+  key: string,
+  fallback?: string | number,
+): CSSProperties {
+  const size =
+    fallback === undefined || fallback === ""
+      ? `var(${cmsFontSizeVar(key)})`
+      : `var(${cmsFontSizeVar(key)}, ${
+          typeof fallback === "number" ? `${fallback}px` : fallback
+        })`;
+  return { fontSize: size };
 }

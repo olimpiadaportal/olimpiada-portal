@@ -222,7 +222,7 @@ export default function AddChildScreen() {
   const configLoading = config.isPending || freeAccess.isPending;
 
   return (
-    <ScreenScroll keyboard>
+    <ScreenScroll>
       {configLoading ? (
         <View style={{ gap: spacing.md }}>
           <Skeleton height={28} width="60%" />

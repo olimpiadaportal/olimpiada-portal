@@ -13,6 +13,7 @@ import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { PhoneField } from "@/components/PhoneField";
 import { ProfileNameEditor } from "@/components/ProfileNameEditor";
 import { parentLogout } from "@/lib/auth/parentService";
+import { CmsProse } from "@/components/CmsProse";
 import {
   updateOwnPassword,
   updateOwnName,
@@ -111,7 +112,7 @@ export function ParentProfile({
       {/* 3 — Security: change password (same updateOwnPassword action). */}
       <section className="prof2-card" aria-label={t("prof2.security")}>
         <h2 className="prof2-sec-title">{t("prof2.security")}</h2>
-        <p className="prof2-sec-hint">{t("prof2.securityHint")}</p>
+        <CmsProse className="prof2-sec-hint" text={t("prof2.securityHint")} />
         {!showPw ? (
           <button
             type="button"
@@ -164,7 +165,7 @@ export function ParentProfile({
       {/* 4 — Danger zone: visually separated destructive action. */}
       <section className="prof2-card prof2-danger" aria-label={t("prof2.danger")}>
         <h2 className="prof2-sec-title prof2-danger-title">{t("prof2.danger")}</h2>
-        <p className="prof2-sec-hint">{t("prof2.dangerHint")}</p>
+        <CmsProse className="prof2-sec-hint" text={t("prof2.dangerHint")} />
         <DeleteAccountButton
           label={t("profile.deleteAccount")}
           confirmText={dict["account.deleteConfirm"] ?? t("profile.deleteAccount")}

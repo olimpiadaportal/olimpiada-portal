@@ -7,8 +7,12 @@
 // the same artwork (features/public/AboutArt) but changes how they are paced:
 // the hero lead clamps to three lines behind a read-more that also reveals the
 // three intro paragraphs the web renders under the hero, the five story blocks
-// become one swipeable rail with StepDots, and the value grid becomes compact
-// icon rows. Type runs one tier below the web's desktop sizes throughout.
+// become one swipeable rail with StepDots, the value grid becomes compact icon
+// rows and the web's two-column Team/legal section stacks into a single card.
+// Type runs one tier below the web's desktop sizes throughout.
+//
+// Every prose string here goes through <CmsProse>, so an admin's blank lines
+// render as separate paragraphs instead of collapsing into one block.
 import React, { useCallback, useEffect, useState } from "react";
 import {
   FlatList,
@@ -26,6 +30,7 @@ import {
   ChevronDown,
   ChevronUp,
   Layers,
+  Network,
   ShieldCheck,
   Target,
   Users,
@@ -33,6 +38,7 @@ import {
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
+import { CmsProse } from "@/components/CmsProse";
 import { StepDots } from "@/components/StepDots";
 import {
   AboutHeroArt,
@@ -44,7 +50,7 @@ import {
   type AboutArtComponent,
 } from "@/features/public/AboutArt";
 import { useTheme } from "@/theme/ThemeProvider";
-import { lineHeight, radius, spacing, tint } from "@/theme/tokens";
+import { fontSize, lineHeight, radius, spacing, tint } from "@/theme/tokens";
 import { useContentOverrides } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
@@ -177,24 +183,31 @@ export default function About() {
           />
 
           <Pill text={t("about2.hero.eyebrow")} bg={tokens.pillBg} color={tokens.pillText} />
-          <AppText variant="heading" style={{ lineHeight: lineHeight.heading }}>
+          {/* Every section title on this screen carries the header role, so
+              TalkBack/VoiceOver heading navigation sees the real outline
+              instead of one arbitrary stop. */}
+          <AppText
+            variant="heading"
+            accessibilityRole="header"
+            style={{ lineHeight: lineHeight.heading }}
+          >
             {t("about2.hero.title")}
           </AppText>
 
           <AboutHeroArt height={148} />
 
-          <AppText
-            variant="muted"
+          <CmsProse
+            text={t("about2.hero.lead")}
             style={{ lineHeight: lineHeight.body }}
             numberOfLines={heroOpen ? undefined : 3}
-          >
-            {t("about2.hero.lead")}
-          </AppText>
+          />
           {heroOpen
             ? HERO_PROSE.map((p) => (
-                <AppText key={p} variant="muted" style={{ lineHeight: lineHeight.body }}>
-                  {t(`about2.hero.${p}`)}
-                </AppText>
+                <CmsProse
+                  key={p}
+                  text={t(`about2.hero.${p}`)}
+                  style={{ lineHeight: lineHeight.body }}
+                />
               ))
             : null}
 
@@ -304,10 +317,14 @@ export default function About() {
                         bg={alt ? tint(tokens.accent2, 0.13) : tokens.pillBg}
                         color={alt ? tokens.accent2 : tokens.pillText}
                       />
-                      <AppText variant="subtitle">{t(`about2.${item.key}.title`)}</AppText>
-                      <AppText variant="muted" style={{ lineHeight: lineHeight.compact }}>
-                        {t(`about2.${item.key}.body`)}
+                      <AppText variant="subtitle" accessibilityRole="header">
+                        {t(`about2.${item.key}.title`)}
                       </AppText>
+                      <CmsProse
+                        text={t(`about2.${item.key}.body`)}
+                        gap={spacing.sm}
+                        style={{ lineHeight: lineHeight.compact }}
+                      />
                     </Card>
                   );
                 }}
@@ -321,15 +338,18 @@ export default function About() {
             instead of the desktop 2×2 grid (14px copy in a half-width column
             is unreadable on a phone). */}
         <View style={{ gap: spacing.xs, alignItems: "center", marginTop: spacing.sm }}>
-          <AppText variant="title" style={{ textAlign: "center" }}>
+          <AppText
+            variant="title"
+            accessibilityRole="header"
+            style={{ textAlign: "center" }}
+          >
             {t("about2.values.title")}
           </AppText>
-          <AppText
-            variant="muted"
+          <CmsProse
+            text={t("about2.values.sub")}
+            containerStyle={{ alignSelf: "stretch" }}
             style={{ textAlign: "center", lineHeight: lineHeight.body }}
-          >
-            {t("about2.values.sub")}
-          </AppText>
+          />
         </View>
 
         <Card style={{ paddingVertical: spacing.xs }}>
@@ -363,16 +383,80 @@ export default function About() {
                   >
                     <Icon size={18} color={accent} strokeWidth={2} />
                   </View>
-                  <AppText variant="label" style={{ flex: 1 }}>
+                  <AppText variant="label" accessibilityRole="header" style={{ flex: 1 }}>
                     {t(`about2.${key}.title`)}
                   </AppText>
                 </View>
-                <AppText variant="muted" style={{ lineHeight: lineHeight.compact }}>
-                  {t(`about2.${key}.body`)}
-                </AppText>
+                <CmsProse
+                  text={t(`about2.${key}.body`)}
+                  gap={spacing.sm}
+                  style={{ lineHeight: lineHeight.compact }}
+                />
               </View>
             );
           })}
+        </Card>
+
+        {/* Team — the web's two-column section (icon + heading + description |
+            legal metadata card). A phone has one column, so the metadata
+            becomes a tinted block at the foot of the same card; the icon chip
+            matches the value rows above it, so this reads as a continuation of
+            the section rather than a new design. */}
+        <Card style={{ gap: spacing.md }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: radius.sm,
+                backgroundColor: tokens.pillBg,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Network size={18} color={tokens.accent} strokeWidth={2} />
+            </View>
+            {/* "subtitle" is the card-heading tier (18/24/700): the 22px
+                section tier would crowd the chip beside it at 320pt, and ru
+                ("Наша команда") is the longest of the three. */}
+            <AppText variant="subtitle" accessibilityRole="header" style={{ flex: 1 }}>
+              {t("about2.team.title")}
+            </AppText>
+          </View>
+
+          <CmsProse text={t("about2.team.sub")} style={{ lineHeight: lineHeight.body }} />
+          <CmsProse text={t("about2.team.body")} style={{ lineHeight: lineHeight.body }} />
+
+          {/* Legal address: the value carries full text contrast (it is data,
+              not commentary) and its three lines come from the shared CMS
+              paragraph renderer — never from a hardcoded line break. */}
+          <View
+            style={{
+              gap: spacing.xs,
+              padding: spacing.md,
+              borderRadius: radius.md,
+              backgroundColor: tokens.chipBg,
+              borderWidth: 1,
+              borderColor: tokens.border,
+            }}
+          >
+            {/* Accent pill, like the web's `h3.about2-tag` — muted grey on
+                chipBg is 2.86:1 in the LIGHT theme (below AA), while pillText
+                on chipBg is 5.11:1 light / 8.26:1 dark. */}
+            <AppText
+              variant="eyebrow"
+              color={tokens.pillText}
+              accessibilityRole="header"
+            >
+              {t("about2.team.addrLabel")}
+            </AppText>
+            <CmsProse
+              text={t("about2.team.addrValue")}
+              variant="body"
+              gap={spacing.sm}
+              style={{ fontSize: fontSize.sm, lineHeight: lineHeight.compact }}
+            />
+          </View>
         </Card>
       </ScrollView>
     </View>

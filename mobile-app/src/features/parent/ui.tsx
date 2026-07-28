@@ -6,9 +6,7 @@
 // AccountSheet pattern, grab handle included).
 import React from "react";
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -20,6 +18,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
 import { ChildAvatar } from "@/components/ChildAvatar";
+import { scrollPaddingBottom } from "@/components/keyboardLayout";
+import { KeyboardFocusProvider, useKeyboardAwareScroll } from "@/lib/useKeyboardAware";
 import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, shadow, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
@@ -30,61 +30,65 @@ function tint(hex: string, alpha: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(hex) ? `${hex}${alpha}` : hex;
 }
 
-/** Scroll body for screens that live under a navigator header. */
+/**
+ * Scroll body for screens that live under a navigator header.
+ *
+ * Keyboard-aware like the other two scroll bodies (`Screen scroll`,
+ * `ArenaScroll`) — see `@/lib/useKeyboardAware`. The old `keyboard` prop is
+ * gone: it wrapped the list in a `KeyboardAvoidingView` whose `behavior` was
+ * `undefined` on Android (a documented no-op) and which under-shifted by the
+ * navigator header height on iOS. The container now measures its own overlap
+ * with the keyboard in window coordinates instead, so no screen has to opt in
+ * and no per-screen offset constant exists to get wrong.
+ */
 export function ScreenScroll({
   children,
   refreshing = false,
   onRefresh,
-  keyboard = false,
   topInset = false,
 }: {
   children: React.ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
-  /** Wrap in KeyboardAvoidingView (form screens). */
-  keyboard?: boolean;
   /** Add the safe-area top padding (screens without a navigator header). */
   topInset?: boolean;
 }) {
   const { tokens } = useTheme();
   const { t } = useT();
   const insets = useSafeAreaInsets();
-  const scroll = (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: tokens.bg }}
-      contentContainerStyle={{
-        padding: spacing.lg,
-        paddingTop: topInset ? insets.top + spacing.sm : spacing.lg,
-        paddingBottom: insets.bottom + spacing.xxl,
-        gap: spacing.lg,
-      }}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={tokens.accent}
-            colors={[tokens.accent]}
-            // Android draws the spinner from the scroll view's own top edge;
-            // on a headerless screen that puts it under the status bar.
-            progressViewOffset={topInset ? insets.top : 0}
-            accessibilityLabel={t("mob.refreshing")}
-          />
-        ) : undefined
-      }
-    >
-      {children}
-    </ScrollView>
-  );
-  if (!keyboard) return scroll;
+  const { keyboardInset, scrollProps, focusApi } = useKeyboardAwareScroll();
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: tokens.bg }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      {scroll}
-    </KeyboardAvoidingView>
+    <KeyboardFocusProvider value={focusApi}>
+      <ScrollView
+        {...scrollProps}
+        style={{ flex: 1, backgroundColor: tokens.bg }}
+        contentContainerStyle={{
+          padding: spacing.lg,
+          paddingTop: topInset ? insets.top + spacing.sm : spacing.lg,
+          // Grow the CONTENT by the live keyboard overlap so the last field's
+          // action button can still be scrolled above the keyboard. Back to
+          // exactly `insets.bottom + spacing.xxl` the moment it closes.
+          paddingBottom: scrollPaddingBottom(insets.bottom + spacing.xxl, keyboardInset),
+          gap: spacing.lg,
+        }}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={tokens.accent}
+              colors={[tokens.accent]}
+              // Android draws the spinner from the scroll view's own top edge;
+              // on a headerless screen that puts it under the status bar.
+              progressViewOffset={topInset ? insets.top : 0}
+              accessibilityLabel={t("mob.refreshing")}
+            />
+          ) : undefined
+        }
+      >
+        {children}
+      </ScrollView>
+    </KeyboardFocusProvider>
   );
 }
 

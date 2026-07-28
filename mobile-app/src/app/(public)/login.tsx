@@ -20,6 +20,7 @@ import { ChildIdField, PasswordField, TextField } from "@/components/TextField";
 import { spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
+import { useFieldChain } from "@/lib/useFieldChain";
 import { useAuthStore } from "@/features/auth/authStore";
 import { bffUrl, isBffConfigured } from "@/lib/env";
 
@@ -74,6 +75,22 @@ export default function Login() {
     if (res.error) setError(res.error);
   }
 
+  // Two independent runs — the Segmented control swaps the whole field set, so
+  // a single chain would keep stale slots. "Done" on the last field calls the
+  // SAME function the button calls (never a second submit path), and only when
+  // the button itself would be pressable: `pending` mirrors Button's own
+  // disabled-while-pending guard.
+  const parentChain = useFieldChain(2, {
+    onLast: () => {
+      if (!pending) void submitParent();
+    },
+  });
+  const childChain = useFieldChain(2, {
+    onLast: () => {
+      if (!pending) void submitChild();
+    },
+  });
+
   return (
     <Screen scroll>
       <View style={{ gap: spacing.xl, paddingTop: spacing.sm }}>
@@ -116,6 +133,7 @@ export default function Login() {
           <View style={{ gap: spacing.lg }}>
             <Card style={{ gap: spacing.lg }}>
               <TextField
+                {...parentChain.field(0)}
                 label={t("parent.auth.email")}
                 placeholder={t("parent.auth.emailPh")}
                 value={email}
@@ -128,6 +146,7 @@ export default function Login() {
                 textContentType="emailAddress"
               />
               <PasswordField
+                {...parentChain.field(1)}
                 label={t("parent.auth.password")}
                 placeholder={t("parent.auth.passwordPh")}
                 value={parentPw}
@@ -165,13 +184,20 @@ export default function Login() {
         ) : (
           <Card style={{ gap: spacing.lg }}>
             <AppText variant="muted">{t("child.loginNote")}</AppText>
+            {/* The OTP-shaped field: a number pad has no return key on iOS, so
+                the 8th digit landing is what advances to the password — the
+                same auto-advance every one-time-code entry uses. Android may
+                still show an action key, so the chain's "next" stays wired. */}
             <ChildIdField
+              {...childChain.field(0)}
               label={t("mob.childId")}
               placeholder={t("mob.childIdPh")}
               value={childId}
               onChangeDigits={setChildId}
+              onComplete={() => childChain.focus(1)}
             />
             <PasswordField
+              {...childChain.field(1)}
               label={t("mob.parentPassword")}
               value={childPw}
               onChangeText={setChildPw}

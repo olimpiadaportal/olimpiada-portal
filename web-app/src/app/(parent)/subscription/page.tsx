@@ -12,6 +12,7 @@ import { getPerSubjectPrices } from "@/lib/pricing";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { ChildAvatar } from "@/components/ChildAvatar";
+import { CmsProse } from "@/components/CmsProse";
 
 // R8 billing — one-page SaaS subscription center with internal tabs
 // [Plans | Billing | Invoices] that smooth-scroll to same-page sections.
@@ -352,7 +353,7 @@ export default async function ParentSubscription({
     <section className="billing-page">
       <header className="billing-head">
         <h1>{t("subscription.title")}</h1>
-        <p>{t("subscription.subtitle")}</p>
+        <CmsProse text={t("subscription.subtitle")} />
       </header>
 
       {/* Task 5 — child selector tabs (only with 2+ children). URL-driven

@@ -20,6 +20,7 @@ import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { radius, spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
+import { useFieldChain } from "@/lib/useFieldChain";
 import { useAuthStore } from "@/features/auth/authStore";
 
 export default function Register() {
@@ -62,6 +63,17 @@ export default function Register() {
     if (res.verifyEmail) setVerifySent(true);
     // Tokens case: the (public) layout redirects into the parent tabs.
   }
+
+  // ONE contiguous run: first → last → e-mail → phone (the composite's national
+  // number, the country trigger is a Pressable and never joins a chain) →
+  // password. "Done" calls the SAME submit the button calls, and only when the
+  // button would be pressable (Button blocks itself while pending).
+  const chain = useFieldChain(5, {
+    onLast: () => {
+      if (!pending) void submit();
+    },
+  });
+  const phoneField = chain.field(3);
 
   if (verifySent) {
     return (
@@ -127,6 +139,7 @@ export default function Register() {
         </View>
         <Card style={{ gap: spacing.lg }}>
           <TextField
+            {...chain.field(0)}
             label={t("parent.auth.firstName")}
             placeholder={t("parent.auth.firstNamePh")}
             value={firstName}
@@ -135,6 +148,7 @@ export default function Register() {
             textContentType="givenName"
           />
           <TextField
+            {...chain.field(1)}
             label={t("parent.auth.lastName")}
             placeholder={t("parent.auth.lastNamePh")}
             value={lastName}
@@ -143,6 +157,7 @@ export default function Register() {
             textContentType="familyName"
           />
           <TextField
+            {...chain.field(2)}
             label={t("parent.auth.email")}
             placeholder={t("parent.auth.emailPh")}
             value={email}
@@ -159,8 +174,14 @@ export default function Register() {
             searchPlaceholder={t("parent.auth.phoneSearch")}
             closeLabel={t("drawer.close")}
             onChangeE164={setPhone}
+            // The composite exposes only its national-number input to a chain.
+            inputRef={phoneField.ref}
+            returnKeyType={phoneField.returnKeyType}
+            submitBehavior={phoneField.submitBehavior}
+            onSubmitEditing={phoneField.onSubmitEditing}
           />
           <PasswordField
+            {...chain.field(4)}
             label={t("parent.auth.password")}
             placeholder={t("parent.auth.passwordPh")}
             value={password}

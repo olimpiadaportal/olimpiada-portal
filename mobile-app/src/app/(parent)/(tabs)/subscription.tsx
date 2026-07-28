@@ -19,6 +19,7 @@ import {
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { CmsProse } from "@/components/CmsProse";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Segmented } from "@/components/Segmented";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
@@ -197,7 +198,7 @@ export default function ParentSubscription() {
 
   return (
     <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
-      <AppText variant="muted">{t("subscription.subtitle")}</AppText>
+      <CmsProse text={t("subscription.subtitle")} />
 
       {list.length === 0 ? (
         <EmptyState

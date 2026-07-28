@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
+import { CmsProse } from "@/components/CmsProse";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useContentOverrides } from "@/lib/configQueries";
@@ -107,9 +108,7 @@ export default function Faq() {
                     paddingBottom: spacing.lg,
                   }}
                 >
-                  <AppText variant="muted" style={{ lineHeight: 21 }}>
-                    {item.a}
-                  </AppText>
+                  <CmsProse text={item.a} style={{ lineHeight: 21 }} />
                 </View>
               ) : null}
             </Card>

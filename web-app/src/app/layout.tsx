@@ -9,6 +9,7 @@ import {
 import { getSiteTypography, googleFontHref, fontStackFor } from "@/lib/siteTypography";
 import { cmsFontSizeVar, responsiveFontSize } from "@/lib/cmsTypography";
 import { I18nProvider } from "@/i18n/I18nProvider";
+import { KeyboardInset } from "@/components/KeyboardInset";
 import { MaintenanceSplash } from "@/components/MaintenanceSplash";
 import { messages } from "@/i18n/messages";
 import { defaultLocale } from "@/i18n/config";
@@ -120,6 +121,11 @@ export default async function RootLayout({
       >
         <I18nProvider locale={locale} dict={clientDict}>
           <div className="app-shell">
+            {/* Publishes --kb-inset (on-screen-keyboard height) on <html> via
+                window.visualViewport. Renders nothing; every consumer of the
+                variable is inside a `pointer: coarse` media query, so desktop
+                is untouched. */}
+            <KeyboardInset />
             {/* Theme + language controls live in each shell's own nav
                 (e.g. the public navbar's .navbar-controls), so the root
                 topbar no longer renders them — avoids duplicate controls. */}

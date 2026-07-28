@@ -6,6 +6,7 @@ import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { CmsProse } from "@/components/CmsProse";
 import {
   AnalyticsDashboard,
   type AnalyticsChild,
@@ -333,7 +334,7 @@ export default async function ParentAnalytics({
     <section className="ana-page">
       <header className="ana-head">
         <h1>{t("analytics.title")}</h1>
-        <p className="muted">{t("analytics.subtitle")}</p>
+        <CmsProse className="muted" text={t("analytics.subtitle")} />
       </header>
 
       <div className="analytics-grid">

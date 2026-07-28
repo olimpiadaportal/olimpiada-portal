@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
 import { ChildAvatarUploader } from "@/components/ChildAvatarUploader";
 import { ProfileNameEditor } from "@/components/ProfileNameEditor";
+import { CmsProse } from "@/components/CmsProse";
 import {
   childChangeOwnPassword,
   childUpdateOwnName,
@@ -93,7 +94,7 @@ export function ChildProfile({
       {/* Security: change password (same childChangeOwnPassword action). */}
       <section className="prof2-card" aria-label={tt("prof2.security")}>
         <h2 className="prof2-sec-title">{tt("prof2.security")}</h2>
-        <p className="prof2-sec-hint">{tt("prof2.securityHint")}</p>
+        <CmsProse className="prof2-sec-hint" text={tt("prof2.securityHint")} />
         {!open ? (
           <button
             type="button"

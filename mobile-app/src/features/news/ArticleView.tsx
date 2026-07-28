@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { AppText } from "@/components/AppText";
+import { CmsProse } from "@/components/CmsProse";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
@@ -116,12 +117,6 @@ export function ArticleView({
   const likes = article.like_count ?? 0;
   const liked = likedIds.has(article.id);
 
-  // Blank lines separate paragraphs; single newlines stay inside a paragraph.
-  const paragraphs = article.body
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
   return (
     <ScrollView
       contentContainerStyle={container}
@@ -172,13 +167,15 @@ export function ArticleView({
         />
       ) : null}
 
-      <View style={{ gap: spacing.md }}>
-        {paragraphs.map((p, i) => (
-          <AppText key={i} style={{ lineHeight: 24 }}>
-            {p}
-          </AppText>
-        ))}
-      </View>
+      {/* Blank lines separate paragraphs; single newlines stay inside one.
+          The shared renderer also normalises the \r\n an admin <form> posts,
+          which the old local split silently merged into a single block. */}
+      <CmsProse
+        text={article.body}
+        variant="body"
+        gap={spacing.md}
+        style={{ lineHeight: 24 }}
+      />
     </ScrollView>
   );
 }

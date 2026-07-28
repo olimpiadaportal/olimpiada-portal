@@ -128,6 +128,9 @@ export function SelectField({
             <FlatList
               data={options}
               keyExtractor={(o) => o.id}
+              // Matches the other two SelectFields: an option is picked in ONE
+              // tap even if a keyboard happens to be up over the modal.
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
                 const active = item.id === value;
                 return (

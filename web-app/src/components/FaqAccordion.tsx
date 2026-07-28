@@ -2,6 +2,11 @@
 // Server-rendered: strings are translated upstream and passed in.
 // Each question shows a right-aligned down-chevron (.faq-chevron, L1 class) that
 // rotates when the <details> is open (handled in globals.css via [open]).
+//
+// Answers go through <CmsProse>: faq.a1..a10 are `multiline: true` registry
+// entries, so an admin can type blank lines in the Website-Content editor and
+// must get real paragraphs (the mobile FAQ screen already does).
+import { CmsProse } from "@/components/CmsProse";
 
 export type FaqItem = { q: string; a: string };
 
@@ -40,7 +45,7 @@ export default function FaqAccordion({ items }: { items: FaqItem[] }) {
               />
             </svg>
           </summary>
-          <div className="faq-a">{item.a}</div>
+          <CmsProse className="faq-a" text={item.a} />
         </details>
       ))}
     </div>

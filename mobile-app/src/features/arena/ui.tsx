@@ -16,6 +16,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
+import { scrollPaddingBottom } from "@/components/keyboardLayout";
+import { KeyboardFocusProvider, useKeyboardAwareScroll } from "@/lib/useKeyboardAware";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useArena } from "./useArena";
@@ -30,7 +32,16 @@ function arenaShadowColor(theme: "light" | "dark"): string {
   return theme === "dark" ? "rgba(0, 0, 0, 0.5)" : "rgba(22, 32, 58, 0.14)";
 }
 
-/** Scroll body under the tabs header (web .arena-main), arena background. */
+/**
+ * Scroll body under the tabs header (web .arena-main), arena background.
+ *
+ * Keyboard-aware exactly like `Screen scroll` / `ScreenScroll`
+ * (`@/lib/useKeyboardAware`): this body hosts the student profile's name and
+ * password forms, which previously had NO avoidance at all and whose Save
+ * button needed two taps while the keyboard was up (no
+ * `keyboardShouldPersistTaps` — the first tap was swallowed dismissing it).
+ * Both come from the shared contract now.
+ */
 export function ArenaScroll({
   children,
   refreshing = false,
@@ -43,28 +54,34 @@ export function ArenaScroll({
   const { arena } = useArena();
   const { t } = useT();
   const insets = useSafeAreaInsets();
+  const { keyboardInset, scrollProps, focusApi } = useKeyboardAwareScroll();
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: arena.bg }}
-      contentContainerStyle={{
-        padding: spacing.lg,
-        paddingBottom: insets.bottom + spacing.xxl,
-        gap: spacing.lg,
-      }}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={arena.lime}
-            colors={[arena.lime]}
-            accessibilityLabel={t("mob.refreshing")}
-          />
-        ) : undefined
-      }
-    >
-      {children}
-    </ScrollView>
+    <KeyboardFocusProvider value={focusApi}>
+      <ScrollView
+        {...scrollProps}
+        style={{ flex: 1, backgroundColor: arena.bg }}
+        contentContainerStyle={{
+          padding: spacing.lg,
+          // Live keyboard overlap on top of the resting padding; exactly
+          // `insets.bottom + spacing.xxl` again once the keyboard closes.
+          paddingBottom: scrollPaddingBottom(insets.bottom + spacing.xxl, keyboardInset),
+          gap: spacing.lg,
+        }}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={arena.lime}
+              colors={[arena.lime]}
+              accessibilityLabel={t("mob.refreshing")}
+            />
+          ) : undefined
+        }
+      >
+        {children}
+      </ScrollView>
+    </KeyboardFocusProvider>
   );
 }
 

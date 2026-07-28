@@ -85,11 +85,46 @@ export function Modal({
     }
     document.addEventListener("keydown", onKeyDown);
 
+    // MOBILE KEYBOARD, touch devices only. On a coarse pointer the modal's
+    // scroll container is `.modal-overlay` (see globals.css), NOT the document
+    // — the body is scroll-locked below. The browser's native "scroll the
+    // focused field into view" therefore does not reach a field inside the
+    // panel, so a low field (e.g. the CVC in DemoPaymentModal) stays under the
+    // keyboard. Centring it inside the overlay also keeps its inline validation
+    // message and the .modal-actions row clear of the keyboard.
+    // Desktop matches `pointer: fine`, so this listener is never attached there
+    // and desktop focus behaviour is exactly as before. Layout only — no
+    // validation/submission behaviour is touched.
+    const coarse =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse)").matches;
+    let scrollTimer = 0;
+    function onFocusIn(e: FocusEvent) {
+      const el = e.target;
+      if (!(el instanceof HTMLElement)) return;
+      if (!panelRef.current?.contains(el)) return;
+      const typeable =
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLSelectElement ||
+        (el instanceof HTMLInputElement &&
+          !["hidden", "checkbox", "radio", "button", "submit", "reset"].includes(el.type));
+      if (!typeable) return;
+      // Wait for the keyboard animation so --kb-inset (and therefore the
+      // overlay's usable height) is already up to date when we scroll.
+      window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+      }, 280);
+    }
+    if (coarse) document.addEventListener("focusin", onFocusIn);
+
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
       document.removeEventListener("keydown", onKeyDown);
+      if (coarse) document.removeEventListener("focusin", onFocusIn);
+      window.clearTimeout(scrollTimer);
       document.body.style.overflow = prevOverflow;
       restoreFocusRef.current?.focus?.();
     };

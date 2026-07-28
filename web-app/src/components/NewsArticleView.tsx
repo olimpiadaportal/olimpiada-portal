@@ -8,6 +8,7 @@ import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { NewsLikeButton } from "@/components/NewsLikeButton";
 import { ViewBeacon } from "@/components/ViewBeacon";
+import { CmsProse } from "@/components/CmsProse";
 
 // Shared news article view (R10, F10): serves the public /news/[slug] page AND
 // the in-panel routes (/dashboard/news/[slug], /child/news/[slug]) — `basePath`
@@ -88,12 +89,6 @@ export async function NewsArticleView({
     trs[0];
 
   const publishedAt = formatDate((n as any).published_at ?? null, locale);
-  // Split the body into paragraphs on blank lines; keep single newlines intact
-  // within a paragraph. Good typography comes from .news-detail-body.
-  const paragraphs = (tr?.body ?? "")
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .filter(Boolean);
 
   return (
     <article className="prose">
@@ -146,17 +141,12 @@ export async function NewsArticleView({
           </div>
         )}
 
-        <div className="news-detail-body">
-          {paragraphs.length > 0 ? (
-            paragraphs.map((p, i) => (
-              <p key={i} style={{ whiteSpace: "pre-wrap" }}>
-                {p}
-              </p>
-            ))
-          ) : (
-            <p style={{ whiteSpace: "pre-wrap" }}>{tr?.body ?? ""}</p>
-          )}
-        </div>
+        {/* Body paragraphs come from the ONE shared renderer, so an article
+            breaks identically here and in the mobile app. The local splitter
+            this replaces used /\n{2,}/ on a body the admin <form> POST had
+            already CRLF-normalised, so "\r\n\r\n" never matched and the whole
+            article collapsed into a single pre-wrap block. */}
+        <CmsProse className="news-detail-body" text={tr?.body ?? ""} />
       </div>
     </article>
   );

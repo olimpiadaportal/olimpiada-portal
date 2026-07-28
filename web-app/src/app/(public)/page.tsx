@@ -6,6 +6,7 @@ import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { formatPercent } from "@/lib/formatPercent";
 import AboutUs from "@/components/AboutUs";
+import { CmsProse } from "@/components/CmsProse";
 
 // get_public_leaderboard row (migration 058; Round 36: value = UNROUNDED
 // weighted percentage, provisional students already excluded, competition
@@ -122,7 +123,7 @@ export default async function HomePage() {
     <>
       <section className="hero">
         <h1>{t("home.heroTitle")}</h1>
-        <p className="lead">{t("home.heroLead")}</p>
+        <CmsProse className="lead" text={t("home.heroLead")} />
         {/* Hero actions, in the owner-fixed order: browse subjects → browse
             olympiads → start (the primary CTA closes the row). "Olimpiadalara
             bax" points at the PUBLIC olympiad listing — /olympiads is already

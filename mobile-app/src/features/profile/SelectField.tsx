@@ -3,7 +3,7 @@
 // display-only, exactly like the web selects. Optional section headers mirror
 // the web optgroups (private/public schools).
 import React, { useState } from "react";
-import { FlatList, Modal, Pressable, View } from "react-native";
+import { FlatList, Keyboard, Modal, Pressable, View } from "react-native";
 import { AppText } from "@/components/AppText";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
@@ -48,7 +48,18 @@ export function SelectField({
         // trigger just announces "Məktəb, düymə" (matches tests/SelectField).
         accessibilityValue={{ text: selected ? selected.label : placeholder }}
         accessibilityState={{ disabled }}
-        onPress={disabled ? undefined : () => setOpen(true)}
+        onPress={
+          disabled
+            ? undefined
+            : () => {
+                // Opened from the edit-child form right below the name fields:
+                // a Modal is its own window and does not inherit the screen's
+                // keyboard handling, so an open keyboard would cover the
+                // option sheet (LocaleSwitcher precedent).
+                Keyboard.dismiss();
+                setOpen(true);
+              }
+        }
         style={{
           backgroundColor: tokens.surface,
           borderWidth: 1.5,
@@ -119,6 +130,9 @@ export function SelectField({
           <FlatList
             data={options}
             keyExtractor={(o) => o.id}
+            // One tap picks an option even if a keyboard is still up (Android
+            // keeps it over a Modal); without this the first tap is swallowed.
+            keyboardShouldPersistTaps="handled"
             renderItem={({ item, index }) => {
               const showSection =
                 !!item.section && (index === 0 || options[index - 1]?.section !== item.section);

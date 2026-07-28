@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageDropdown } from "@/components/LanguageDropdown";
 import { GiveawayBanner } from "@/components/GiveawayBanner";
 import { PublicNavLinks } from "@/components/PublicNavLinks";
+import { CmsProse } from "@/components/CmsProse";
 
 // Giveaway promo strings surfaced to logged-OUT visitors on the public site
 // (item 1b — lure new customers). Same keys as the in-app banner.
@@ -193,7 +194,7 @@ export default async function PublicLayout({
             <Link className="site-foot-brand" href="/">
               {t("app.brand")}
             </Link>
-            <p className="site-foot-tagline">{t("footer.tagline")}</p>
+            <CmsProse className="site-foot-tagline" text={t("footer.tagline")} />
           </div>
           {footerCols.map((col) => (
             <div className="site-foot-col" key={col.head}>

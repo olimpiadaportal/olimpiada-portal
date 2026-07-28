@@ -15,6 +15,7 @@ import { PasswordField, TextField } from "@/components/TextField";
 import { spacing } from "@/theme/tokens";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import type { AddChildFields } from "@/lib/api";
+import { useFieldChain } from "@/lib/useFieldChain";
 import { useT } from "@/i18n/useT";
 import {
   useCities,
@@ -182,9 +183,15 @@ export function ChildInfoForm({
 
   const err = (k: keyof ChildInfo) => (errors[k] ? t(errors[k] as string) : null);
 
+  // Run 1 of 2: the names. It ENDS at lastName — four required selects follow,
+  // and a chain that jumped straight to the password would silently skip them.
+  // No `onLast`, so the return key there just closes the keyboard.
+  const nameChain = useFieldChain(2);
+
   return (
     <View style={{ gap: spacing.lg }}>
       <TextField
+        {...nameChain.field(0)}
         label={`${t("parent.child.first")} *`}
         value={value.firstName}
         onChangeText={(v) => onChange({ firstName: v })}
@@ -195,6 +202,7 @@ export function ChildInfoForm({
         error={err("firstName")}
       />
       <TextField
+        {...nameChain.field(1)}
         label={`${t("parent.child.last")} *`}
         value={value.lastName}
         onChangeText={(v) => onChange({ lastName: v })}
@@ -253,11 +261,16 @@ export function ChildInfoForm({
         closeLabel={t("dpay.cancel")}
       />
       <View style={{ gap: spacing.xs }}>
+        {/* Run 2 of 2: a run of one. It only DISMISSES — the avatar picker and
+            the review summary sit between this field and the wizard's CTA, so
+            submitting from the keyboard would skip the review step. */}
         <PasswordField
           label={`${t("parent.child.password")} *`}
           value={value.password}
           onChangeText={(v) => onChange({ password: v })}
           editable={!disabled}
+          returnKeyType="done"
+          submitBehavior="blurAndSubmit"
           showLabel={t("mob.pw.show")}
           hideLabel={t("mob.pw.hide")}
           error={err("password")}

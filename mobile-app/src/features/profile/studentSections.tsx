@@ -32,6 +32,7 @@ import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ChildAvatar } from "@/components/ChildAvatar";
+import { CmsProse } from "@/components/CmsProse";
 import { ListRow } from "@/components/ListRow";
 import { PasswordField, TextField } from "@/components/TextField";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -44,6 +45,7 @@ import {
 } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { bffUpdateStudentName } from "@/lib/api";
+import { useFieldChain } from "@/lib/useFieldChain";
 import { supabase } from "@/lib/supabase";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { groupChildId } from "@/features/parent/commerce";
@@ -130,6 +132,8 @@ export function StudentNameSection({ profile, t }: { profile: StudentProfile; t:
   const { tokens } = useTheme();
   const profileId = useAuthStore((s) => s.profileId);
   const queryClient = useQueryClient();
+  // First → last name. No `onLast`: Save stays the only way to submit.
+  const chain = useFieldChain(2);
   const [open, setOpen] = useState(false);
   const [first, setFirst] = useState(profile.firstName);
   const [last, setLast] = useState(profile.lastName);
@@ -194,6 +198,7 @@ export function StudentNameSection({ profile, t }: { profile: StudentProfile; t:
       ) : (
         <View style={{ gap: spacing.md }}>
           <TextField
+            {...chain.field(0)}
             label={t("profile.firstNameLabel")}
             value={first}
             onChangeText={setFirst}
@@ -201,6 +206,7 @@ export function StudentNameSection({ profile, t }: { profile: StudentProfile; t:
             autoCapitalize="words"
           />
           <TextField
+            {...chain.field(1)}
             label={t("profile.lastNameLabel")}
             value={last}
             onChangeText={setLast}
@@ -246,6 +252,9 @@ export function StudentNameSection({ profile, t }: { profile: StudentProfile; t:
 
 export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T }) {
   const { tokens } = useTheme();
+  // New password → confirm. No `onLast`: a child changing their own password
+  // does it by pressing Save, never by hitting the return key.
+  const chain = useFieldChain(2);
   const [open, setOpen] = useState(false);
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -288,14 +297,13 @@ export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T
         icon={<KeyRound size={18} color={tokens.accent} strokeWidth={2} />}
         title={t("prof2.security")}
       />
-      <AppText variant="muted" style={{ fontSize: 12 }}>
-        {t("prof2.securityHint")}
-      </AppText>
+      <CmsProse text={t("prof2.securityHint")} gap={spacing.sm} style={{ fontSize: 12 }} />
       {!open ? (
         <Button title={t("profile.changePassword")} variant="ghost" onPress={() => setOpen(true)} />
       ) : (
         <View style={{ gap: spacing.md }}>
           <PasswordField
+            {...chain.field(0)}
             label={t("profile.newPassword")}
             value={pw}
             onChangeText={setPw}
@@ -303,6 +311,7 @@ export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T
             hideLabel={t("mob.pw.hide")}
           />
           <PasswordField
+            {...chain.field(1)}
             label={t("mob.prof.confirmPassword")}
             value={confirm}
             onChangeText={setConfirm}
@@ -489,9 +498,7 @@ export function StickerThemeSection({ t }: { t: T }) {
         icon={<Sticker size={18} color={tokens.accent} strokeWidth={2} />}
         title={t("stk.sectionTitle")}
       />
-      <AppText variant="muted" style={{ fontSize: 12 }}>
-        {t("stk.sectionDesc")}
-      </AppText>
+      <CmsProse text={t("stk.sectionDesc")} gap={spacing.sm} style={{ fontSize: 12 }} />
       {themesQ.isPending || selectionQ.isPending ? null : themes.length === 0 ? (
         <AppText variant="muted">{t("stk.empty")}</AppText>
       ) : (

@@ -404,6 +404,47 @@ button:hover {
 .prose p {
   margin: 10px 0;
 }
+
+/* Admin-authored CMS prose (<CmsProse>): blank lines become paragraphs, single
+   newlines become <br>. Vertical rhythm copies the existing .about2-prose idiom
+   (grid + 14px gap) instead of inventing margins, so a container that already
+   sets its own gap does not double-space. Colour/size stay inherited from the
+   caller's class, which is what keeps light, dark and the .arena scope correct. */
+.cms-prose {
+  display: grid;
+  gap: 14px;
+}
+.cms-prose > p {
+  margin: 0;
+}
+
+/* A <CmsProse> block STANDS IN for the <p> its call site used to render, so it
+   has to keep that <p>'s block spacing — everything else (colour, size,
+   max-width, padding) already travels on the caller's own class, which lands on
+   the wrapper. Only contexts whose spacing came from a `p` selector (or the UA
+   default) need a line here; `.faq-a`, `.site-foot-tagline`, `.prof2-sec-hint`
+   and `.billing-head p` already carry their own and need nothing. The child
+   combinator keeps these off nested prose (e.g. the news body inside .prose). */
+.prose > .cms-prose {
+  margin: 10px 0; /* mirrors .prose p */
+}
+.hero > .cms-prose {
+  margin: 1em 0; /* mirrors the UA <p> default the hero lead had */
+}
+.ana-head > .cms-prose {
+  margin: 6px 0 0; /* mirrors .ana-head p */
+}
+.ana-head .cms-prose > p {
+  margin: 0; /* .ana-head p would otherwise re-add it to EVERY paragraph */
+}
+/* News articles keep their own 1.1em paragraph rhythm rather than the 14px
+   default, so an already-published article renders exactly as it does today. */
+.news-detail-body.cms-prose {
+  gap: 1.1em;
+}
+.news-detail-body.cms-prose > p {
+  margin: 0;
+}
 ul.clean {
   padding-left: 18px;
 }
@@ -3488,6 +3529,10 @@ ul.clean li {
   width: 100%;
   max-width: 460px;
   max-height: calc(100vh - 40px);
+  /* Mobile-only correction (identical to `vh` on desktop): `vh` is the LARGE
+     viewport, so inside this fixed overlay the card could grow taller than the
+     visible area and clip. The `vh` line above is the no-`dvh` fallback. */
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
   background: var(--surface);
   color: var(--text);
@@ -4753,6 +4798,85 @@ ul.clean li {
   color: var(--muted);
 }
 
+/* The CMS prose wrapper is an extra element inside the copy blocks; keep the
+   block's own paragraph spacing on the wrapper so a multi-paragraph admin edit
+   does not stack .about2-copy p's margin on top of .cms-prose's gap. */
+.about2-copy .cms-prose {
+  margin: 12px 0 0;
+}
+.about2-copy .cms-prose > p {
+  margin: 0;
+}
+
+/* ---------------------- Team & legal info ---------------------- */
+/* Continuation of the value grid: left card = icon + heading + description,
+   right card = legal metadata. Both carry .about2-vcard, so padding, radius,
+   border, shadow, hover lift and the 640px padding step are inherited — the
+   only new geometry is the two-column track. Tokens used here are limited to
+   the seven the `.arena .about2` scope remaps plus --muted/--shadow, so the
+   student /child/help/about rendering stays correct in every palette. */
+
+.about2-team {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr; /* same ratio as .about2-hero */
+  gap: 20px; /* same gap as .about2-vgrid */
+  /* No `align-items: start`: .about2-vgrid uses the default stretch, so its
+     tiles render as equal-height rows. A short metadata card next to a taller
+     copy card immediately below four equal-height tiles reads as a different
+     component; stretching keeps the "continuation" reading. Both cards are
+     flex columns, so the address block still sits at the top of its card. */
+}
+
+.about2-tcard,
+.about2-tmeta {
+  min-width: 0;
+}
+
+/* Section heading lives in the left card, at the story-block h2 scale, so the
+   page keeps h1 → h2 → h3 with no skipped level. */
+.about2-tcard h2 {
+  margin: 4px 0 0;
+  font-size: clamp(21px, 3vw, 27px);
+  line-height: 1.25;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+/* Scoped to .about2-tcard (0,2,1) so it beats `.about2-vcard p` (0,1,1) by
+   SPECIFICITY, not by declaration order — the two rules are 70 lines apart in a
+   12k-line file and a future reorder must not silently undo them. */
+.about2-tcard .about2-tsub p {
+  font-size: 15.5px;
+  line-height: 1.7;
+}
+
+/* Reuse the story-block pill as the metadata label; only the properties that
+   .about2-vcard h3 would otherwise win are re-stated. */
+.about2-tmeta h3.about2-tag {
+  align-self: flex-start;
+  margin: 0;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* <address> is italic by UA default — reset it. The value keeps --text (not the
+   --muted used for descriptive copy) so the legally meaningful lines stay at
+   full contrast in light mode. */
+.about2-taddr {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  font-style: normal;
+}
+.about2-tmeta .about2-taddr p {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
 /* -------------------------- Responsive -------------------------- */
 
 @media (max-width: 900px) {
@@ -4785,6 +4909,10 @@ ul.clean li {
     width: 100%;
     margin: 0 auto;
   }
+  /* .about2-team does NOT collapse here: it is a continuation of
+     .about2-vgrid, which stays 2-up until 640px. Collapsing at 900px left the
+     whole 641–900px tablet band showing 2-up values above a full-width stacked
+     team pair. Its collapse lives in the 640px block below, next to the grid's. */
 }
 
 @media (max-width: 640px) {
@@ -4804,6 +4932,17 @@ ul.clean li {
   .about2-vgrid {
     grid-template-columns: 1fr;
     gap: 14px;
+  }
+  .about2-team {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  /* 320px floor: the RU line 1 ("Азербайджанская Республика,") is ~220px at
+     15px Arial and would wrap to a 4th line inside the .arena shell, which
+     leaves the least width. 14px keeps the 3-line postal shape in all three
+     locales; there is no overflow at either size (overflow-wrap handles it). */
+  .about2-tmeta .about2-taddr p {
+    font-size: 14px;
   }
   .about2-vcard {
     padding: 22px 20px;
@@ -6162,6 +6301,8 @@ ul.clean li {
   flex-direction: column;
   width: min(540px, 100%);
   max-height: min(86vh, 720px);
+  /* Mobile-only correction; identical to `vh` on desktop (see .modal-panel). */
+  max-height: min(86dvh, 720px);
   background: var(--panel, var(--surface, #ffffff));
   border: 1px solid var(--line, var(--border, #e5e0d8));
   border-radius: 22px;
@@ -6277,6 +6418,7 @@ ul.clean li {
   }
   .oly4-modal {
     max-height: 92vh;
+    max-height: 92dvh;
   }
   .oly4-modal-cover {
     height: 136px;
@@ -7267,6 +7409,17 @@ ul.clean li {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
+/* TOUCH DEVICES ONLY. iOS Safari auto-ZOOMS the page whenever a focused input
+   computes below 16px: the visual viewport collapses, the page pans sideways
+   and the .prof2-form-actions row (Save/Cancel) is pushed off screen — and the
+   zoom is not undone on blur. That reads exactly like "the keyboard covers my
+   field" and it hit the parent-name, parent-password and child-password forms.
+   16px is the iOS threshold; `.prof2-input` is the only sub-16px input class in
+   the app (every other input uses `font: inherit`). Desktop keeps 14.5px.
+   Do not lower the 14.5px above without re-checking this rule. */
+@media (pointer: coarse) {
+  .prof2-input { font-size: 16px; }
+}
 .prof2-form-actions {
   display: flex;
   align-items: center;
@@ -7569,6 +7722,10 @@ ul.clean li {
   width: 100%;
   max-width: 520px;
   max-height: min(84vh, 720px);
+  /* `dvh` = the viewport minus the browser's dynamic toolbars. Identical to
+     `vh` on desktop (no dynamic UI), so this is a mobile-only correction; the
+     `vh` line above stays as the fallback for browsers without `dvh`. */
+  max-height: min(84dvh, 720px);
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -7632,6 +7789,38 @@ ul.clean li {
   .modal-panel { max-width: 100%; }
   .modal-actions { flex-direction: column-reverse; }
   .modal-actions > * { width: 100%; }
+}
+/* TOUCH DEVICES ONLY — on-screen-keyboard fix for modals that contain a form
+   (today: DemoPaymentModal's card fields + its Pay button).
+   Why it was broken: Modal.tsx locks `body { overflow: hidden }` while open, so
+   the document can no longer scroll, and `.modal-overlay` is `position: fixed`
+   — which on iOS is laid out against the LAYOUT viewport and therefore keeps
+   its full height BEHIND the keyboard. The only scroll container was
+   `.modal-body`, which has no scroll extent while the panel still fits inside
+   its max-height. Net result: the lower fields and the action row sat under the
+   keyboard with nothing left to scroll.
+   Fix: shrink the overlay to the space ABOVE the keyboard (--kb-inset, published
+   by <KeyboardInset /> from window.visualViewport; 0px whenever the keyboard is
+   closed, so there is never leftover empty space) and make the OVERLAY the one
+   scroll container, with the panel free to grow taller than it.
+   A desktop browser never matches `pointer: coarse`, so desktop is unchanged. */
+@media (pointer: coarse) {
+  .modal-overlay {
+    bottom: var(--kb-inset, 0px);
+    /* NOT `center`: a panel taller than the viewport must overflow downward
+       only, otherwise its top (title + first field) is scrolled out of reach. */
+    align-items: start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .modal-panel {
+    /* One scroll container (the overlay), never two nested ones. */
+    max-height: none;
+    /* Auto margins still centre the panel whenever it fits, and collapse to 0
+       (i.e. top-aligned) once it overflows. */
+    margin-block: auto;
+  }
 }
 /* End R9 T5 modal */
 

@@ -2,7 +2,7 @@
 // a field-shaped trigger opens a full-screen modal list (PhoneField country
 // sheet pattern) with optional group headers (private/public schools).
 import React from "react";
-import { FlatList, Modal, Pressable, View } from "react-native";
+import { FlatList, Keyboard, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { AppText } from "@/components/AppText";
@@ -68,7 +68,19 @@ export function SelectField({
         // acceptable precisely because the full label is announced here.
         accessibilityValue={{ text: selected ? selected.label : placeholder }}
         accessibilityState={{ disabled }}
-        onPress={disabled ? undefined : () => setOpen(true)}
+        onPress={
+          disabled
+            ? undefined
+            : () => {
+                // These triggers sit directly under the name fields, and a
+                // Modal is its own window that inherits neither the activity's
+                // soft-input mode nor the screen's keyboard-aware container —
+                // a keyboard left up would cover the option list
+                // (LocaleSwitcher precedent).
+                Keyboard.dismiss();
+                setOpen(true);
+              }
+        }
         style={{
           flexDirection: "row",
           alignItems: "center",

@@ -14,6 +14,7 @@ import { ChartColumn } from "lucide-react-native";
 import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
+import { CmsProse } from "@/components/CmsProse";
 import { Segmented } from "@/components/Segmented";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -229,7 +230,7 @@ export default function ParentAnalytics() {
       <View style={{ gap: spacing.lg }}>
         <View style={{ gap: spacing.xs }}>
           <AppText variant="heading">{t("analytics.title")}</AppText>
-          <AppText variant="muted">{t("analytics.subtitle")}</AppText>
+          <CmsProse text={t("analytics.subtitle")} />
         </View>
 
         {childId ? (

@@ -320,6 +320,25 @@ export function AboutSkeleton() {
           ))}
         </SkeletonColumns>
       </div>
+
+      {/* team & legal — mirrors .about2-team's 1.1fr / 0.9fr card pair, so the
+          placeholder is the same height as the resolved page and the content
+          below the fold does not jump when it swaps in. */}
+      <SkeletonColumns cols={2} gap={20}>
+        <SkeletonCard r={16} pad={22}>
+          <div className={s.stack} style={{ gap: 10 }}>
+            <Skeleton w={44} h={44} r={14} />
+            <Skeleton w="70%" h={22} />
+            <SkeletonText lines={3} size={13} lastWidth="65%" />
+          </div>
+        </SkeletonCard>
+        <SkeletonCard r={16} pad={22}>
+          <div className={s.stack} style={{ gap: 10 }}>
+            <SkeletonPill w={110} h={22} />
+            <SkeletonText lines={3} size={13} lastWidth="55%" />
+          </div>
+        </SkeletonCard>
+      </SkeletonColumns>
     </>
   );
 }

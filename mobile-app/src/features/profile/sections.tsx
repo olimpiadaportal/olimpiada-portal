@@ -15,6 +15,7 @@ import { AppText } from "@/components/AppText";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { CmsProse } from "@/components/CmsProse";
 import { ListRow } from "@/components/ListRow";
 import { E164_RE, PhoneField } from "@/components/PhoneField";
 import { PasswordField } from "@/components/TextField";
@@ -22,6 +23,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { supabase } from "@/lib/supabase";
 import { bffDeleteAccount, bffUpdateParentPhone } from "@/lib/api";
+import { useFieldChain } from "@/lib/useFieldChain";
 import { useAuthStore } from "@/features/auth/authStore";
 import { AvatarSection } from "./AvatarPicker";
 import { type OwnProfile } from "./useOwnProfile";
@@ -170,13 +172,16 @@ export function PhoneSection({
       ) : (
         <View style={{ gap: spacing.md }}>
           {/* Same country-code field registration uses; it renders the error
-              inline, so the section does not repeat it. */}
+              inline, so the section does not repeat it. A run of one: the
+              return key closes the keyboard, Save stays the only submit. */}
           <PhoneField
             label={t("parent.auth.phone")}
             searchPlaceholder={t("parent.auth.phoneSearch")}
             closeLabel={t("drawer.close")}
             error={error}
             onChangeE164={setPhone}
+            returnKeyType="done"
+            submitBehavior="blurAndSubmit"
           />
           <View style={{ flexDirection: "row", gap: spacing.md }}>
             <Button
@@ -207,6 +212,9 @@ export function PhoneSection({
 
 export function PasswordSection({ t }: { t: T }) {
   const { tokens } = useTheme();
+  // New password → confirm. No `onLast`: changing an account password stays a
+  // deliberate press of Save, so the return key on "confirm" only dismisses.
+  const chain = useFieldChain(2);
   const [open, setOpen] = useState(false);
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -249,6 +257,7 @@ export function PasswordSection({ t }: { t: T }) {
       ) : (
         <View style={{ gap: spacing.md }}>
           <PasswordField
+            {...chain.field(0)}
             label={t("profile.newPassword")}
             value={pw}
             onChangeText={setPw}
@@ -257,6 +266,7 @@ export function PasswordSection({ t }: { t: T }) {
             isParentCredential
           />
           <PasswordField
+            {...chain.field(1)}
             label={t("mob.prof.confirmPassword")}
             value={confirm}
             onChangeText={setConfirm}
@@ -362,9 +372,7 @@ export function DangerZone({ t, onDeleted }: { t: T; onDeleted: () => void }) {
           {t("prof2.danger")}
         </AppText>
       </View>
-      <AppText variant="muted" style={{ fontSize: 12 }}>
-        {t("prof2.dangerHint")}
-      </AppText>
+      <CmsProse text={t("prof2.dangerHint")} gap={spacing.sm} style={{ fontSize: 12 }} />
       <Button title={t("profile.deleteAccount")} variant="danger" onPress={() => setStep(1)} />
 
       <Modal visible={step > 0} transparent animationType="slide" onRequestClose={close}>

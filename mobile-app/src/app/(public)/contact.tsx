@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Mail, MapPin, MessageCircle, Phone } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Card } from "@/components/Card";
+import { CmsProse } from "@/components/CmsProse";
 import { ListRow } from "@/components/ListRow";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { ContactMap, buildDirectionsUrl, resolveMapQuery } from "@/features/public/ContactMap";
@@ -124,7 +125,7 @@ export default function Contact() {
       >
         <View style={{ gap: spacing.sm }}>
           <AppText variant="heading">{t("contact.title")}</AppText>
-          <AppText variant="muted">{t("contact.lead")}</AppText>
+          <CmsProse text={t("contact.lead")} />
         </View>
 
         {config.isPending ? (

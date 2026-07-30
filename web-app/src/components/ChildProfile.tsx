@@ -25,6 +25,7 @@ export function ChildProfile({
   uniqueId,
   initial,
   avatarUrl,
+  hasPhoto,
   dict,
 }: {
   name: string;
@@ -32,7 +33,11 @@ export function ChildProfile({
   lastName: string;
   uniqueId: string;
   initial: string;
+  /** What to render in the bubble: signed photo URL, preset PNG, or null. */
   avatarUrl: string | null;
+  /** Whether a real PHOTO exists to remove — a preset is not removable here
+   *  (only a parent sets presets), so this is NOT `avatarUrl !== null`. */
+  hasPhoto: boolean;
   dict: Record<string, string>;
 }) {
   const tt = (k: string) => dict[k] ?? k;
@@ -64,7 +69,7 @@ export function ChildProfile({
           </span>
           <span className="prof2-hint">{tt("prof2.idHint")}</span>
         </div>
-        <ChildAvatarUploader hasAvatar={avatarUrl !== null} dict={dict} />
+        <ChildAvatarUploader hasAvatar={hasPhoto} dict={dict} />
       </section>
 
       {/* Account information: editable name (first + last). */}

@@ -2,7 +2,7 @@
   "expo": {
     "name": "OlympIQ",
     "slug": "olympiq",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "olympiq",
@@ -16,7 +16,9 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false
-        }
+        },
+        "NSPhotoLibraryUsageDescription": "OlympIQ needs access to your photos so you can choose a profile picture for your account or for your child's profile.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

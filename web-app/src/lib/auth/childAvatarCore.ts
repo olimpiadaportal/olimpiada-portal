@@ -1,25 +1,44 @@
-// SERVER-ONLY child-avatar CORES (parent-managed avatars) — shared by the web
-// server action (lib/auth/childAvatarActions, parent cookie client) and the
-// mobile BFF endpoint (/api/mobile/v1/children/[id]/avatar, bearer client).
+// SERVER-ONLY child-avatar CORES — ONE model for every child photo, whoever
+// sets it. Callers:
+//   PARENT-managed  → lib/auth/childAvatarActions (parent cookie client) and
+//                     /api/mobile/v1/children/[id]/avatar (parent bearer client)
+//   CHILD self-service → lib/auth/childProfileActions (child cookie client) and
+//                     /api/mobile/v1/profile/avatar (student bearer client)
 //
 // Contract (students table + PRIVATE `child-avatars` bucket):
 //   photo  → upload `students/<student_profile_id>/<uuid>.<ext>` with the
-//            PARENT'S OWN client (storage RLS: creator/linked parent write),
-//            then students {avatar_kind:'photo', avatar_media_path, key:null}
+//            REQUESTER'S OWN client (storage RLS: creator/linked parent, or the
+//            student themself, may write), then students
+//            {avatar_kind:'photo', avatar_media_path, key:null}
 //   preset → students {avatar_kind:'preset', avatar_key:'boy'|'girl',
-//            avatar_media_path:null}
+//            avatar_media_path:null}   (parent-only — a child sets no preset)
 //   remove → students {avatar_kind:'preset', avatar_key:null,
 //            avatar_media_path:null} (the initials-bubble default)
-// Replaced/removed photo objects are deleted best-effort with the parent's own
-// client. The students-row write uses the service-role client AFTER the
-// ownership re-verification (parentCore pattern). R7 security: uploads are
-// typed from magic bytes (imageSniff), never the client-declared mime; SVG/GIF
-// are rejected (png/jpeg/webp only). Errors are i18n KEYS, never localized text.
+//
+// Replaced/removed photo objects are DELETED best-effort with the requester's
+// own client — never unlink-only, so a withdrawn photo really stops existing,
+// and a failed delete never fails the user-facing action (it is logged).
+// The students-row write uses the service-role client AFTER authorization
+// (parentCore pattern). R7 security: uploads are typed from magic bytes
+// (imageSniff), never the client-declared mime; SVG/GIF are rejected
+// (png/jpeg/webp only). Errors are i18n KEYS, never localized text.
+//
+// The two authorization models differ only in WHO the caller proved to be:
+// the parent variants re-verify parentOwnsChild(); the `…Own…` variants are
+// called with the AUTHENTICATED CHILD'S OWN profile id (requireChild /
+// resolveBearerStudent), which is the authorization. Everything after that —
+// bucket, path, byte sniffing, row write, object deletion — is shared code, so
+// the two paths cannot drift apart again. NOTHING here writes the public
+// `profile-avatars` bucket or a media_assets row for a child.
 import "server-only";
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdminClient } from "@/lib/supabase/admin";
-import { sniffImageMime, EXT_BY_SNIFFED } from "@/lib/imageSniff";
+import {
+  sniffImageMime,
+  EXT_BY_SNIFFED,
+  type SniffedImageMime,
+} from "@/lib/imageSniff";
 import { isUuid } from "@/lib/uuid";
 import {
   CHILD_AVATAR_BUCKET,
@@ -80,14 +99,25 @@ async function currentMediaPath(studentProfileId: string): Promise<string | null
   return (data?.avatar_media_path as string | null) ?? null;
 }
 
-/** Best-effort delete of a replaced/removed photo object (parent's own client —
- *  storage RLS allows the linked family; never fails the operation). */
+/** Best-effort delete of a replaced/removed photo object (the REQUESTER'S own
+ *  client — storage RLS allows the linked family and the student themself).
+ *  Never fails the user-facing operation: a delete that does not happen is
+ *  LOGGED server-side (code only, never the raw message, never the path's
+ *  owner) so a silently-retained photo is visible in the logs instead of
+ *  invisible everywhere. */
 async function removeObject(client: SupabaseClient, path: string | null): Promise<void> {
   if (!path) return;
-  await client.storage
-    .from(CHILD_AVATAR_BUCKET)
-    .remove([path])
-    .catch(() => {});
+  try {
+    const { error } = await client.storage.from(CHILD_AVATAR_BUCKET).remove([path]);
+    if (error) {
+      console.error(
+        "childAvatarCore: avatar object delete failed",
+        (error as { name?: string }).name ?? "unknown_error",
+      );
+    }
+  } catch {
+    console.error("childAvatarCore: avatar object delete threw");
+  }
 }
 
 /** Authoritative students-row write (service-role AFTER authorization). */
@@ -111,6 +141,97 @@ function refresh(revalidate: string[] | undefined): void {
   for (const route of revalidate ?? []) revalidatePath(route);
 }
 
+type CoreError = Extract<ChildAvatarCoreResult, { ok: false }>;
+type PreparedPhoto = { ok: true; bytes: Uint8Array; sniffed: SniffedImageMime };
+
+/**
+ * Shape + byte checks for an incoming photo, identical on both authorization
+ * paths (and deliberately run BEFORE the ownership lookup, so a malformed
+ * upload costs no database round-trip and reports the same error it always did).
+ */
+async function preparePhoto(
+  studentProfileId: string,
+  file: unknown,
+): Promise<PreparedPhoto | CoreError> {
+  if (!isUuid(studentProfileId)) return { ok: false, errorKey: "childedit.err.generic" };
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, errorKey: "profile.err.uploadFailed" };
+  }
+  if (file.size > MAX_CHILD_AVATAR_BYTES) {
+    return { ok: false, errorKey: "profile.err.fileTooLarge" };
+  }
+  // Type from BYTES, never the attacker-controlled file.type. This bucket
+  // accepts png/jpeg/webp only (no gif, never svg).
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sniffed = sniffImageMime(bytes);
+  if (!sniffed || sniffed === "image/gif") {
+    return { ok: false, errorKey: "profile.err.fileType" };
+  }
+  return { ok: true, bytes, sniffed };
+}
+
+/** Upload → students-row write → delete the replaced object. AUTHORIZATION
+ *  ALREADY DONE by the caller (parentOwnsChild, or "this IS the student"). */
+async function commitPhoto(
+  userClient: SupabaseClient,
+  studentProfileId: string,
+  prepared: PreparedPhoto,
+  revalidate: string[] | undefined,
+): Promise<ChildAvatarCoreResult> {
+  const oldPath = await currentMediaPath(studentProfileId);
+
+  const ext = EXT_BY_SNIFFED[prepared.sniffed];
+  const path = `students/${studentProfileId}/${crypto.randomUUID()}.${ext}`;
+  const { error: uploadError } = await userClient.storage
+    .from(CHILD_AVATAR_BUCKET)
+    .upload(path, prepared.bytes, {
+      contentType: prepared.sniffed,
+      upsert: false,
+    });
+  if (uploadError) return { ok: false, errorKey: "profile.err.uploadFailed" };
+
+  const wrote = await writeAvatarRow(studentProfileId, {
+    avatar_kind: "photo",
+    avatar_key: null,
+    avatar_media_path: path,
+  });
+  if (!wrote) {
+    // Roll the orphaned object back (best-effort) — the row still points at
+    // the previous avatar.
+    await removeObject(userClient, path);
+    return { ok: false, errorKey: "profile.err.updateFailed" };
+  }
+
+  if (oldPath && oldPath !== path) await removeObject(userClient, oldPath);
+  refresh(revalidate);
+  return {
+    ok: true,
+    state: { avatar_kind: "photo", avatar_key: null, has_photo: true },
+  };
+}
+
+/** Back to the initials bubble + delete the object. AUTHORIZATION ALREADY DONE. */
+async function commitRemove(
+  userClient: SupabaseClient,
+  studentProfileId: string,
+  revalidate: string[] | undefined,
+): Promise<ChildAvatarCoreResult> {
+  const oldPath = await currentMediaPath(studentProfileId);
+  const wrote = await writeAvatarRow(studentProfileId, {
+    avatar_kind: "preset",
+    avatar_key: null,
+    avatar_media_path: null,
+  });
+  if (!wrote) return { ok: false, errorKey: "profile.err.updateFailed" };
+
+  await removeObject(userClient, oldPath);
+  refresh(revalidate);
+  return {
+    ok: true,
+    state: { avatar_kind: "preset", avatar_key: null, has_photo: false },
+  };
+}
+
 /**
  * Set/replace the child's PHOTO avatar. `userClient` must be the requesting
  * PARENT'S own client (cookie session on the web, bearer on the BFF) so the
@@ -127,52 +248,60 @@ export async function setChildAvatarPhotoCore(
   },
 ): Promise<ChildAvatarCoreResult> {
   const { parentProfileId, studentProfileId, file } = params;
-  if (!isUuid(studentProfileId)) return { ok: false, errorKey: "childedit.err.generic" };
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, errorKey: "profile.err.uploadFailed" };
-  }
-  if (file.size > MAX_CHILD_AVATAR_BYTES) {
-    return { ok: false, errorKey: "profile.err.fileTooLarge" };
-  }
-  // Type from BYTES, never the attacker-controlled file.type. This bucket
-  // accepts png/jpeg/webp only (no gif, never svg).
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const sniffed = sniffImageMime(bytes);
-  if (!sniffed || sniffed === "image/gif") {
-    return { ok: false, errorKey: "profile.err.fileType" };
-  }
+  const prepared = await preparePhoto(studentProfileId, file);
+  if (!prepared.ok) return prepared;
 
   if (!(await parentOwnsChild(parentProfileId, studentProfileId))) {
     return { ok: false, errorKey: "childedit.err.notYourChild" };
   }
 
-  const oldPath = await currentMediaPath(studentProfileId);
+  return commitPhoto(userClient, studentProfileId, prepared, params.revalidate);
+}
 
-  const ext = EXT_BY_SNIFFED[sniffed];
-  const path = `students/${studentProfileId}/${crypto.randomUUID()}.${ext}`;
-  const { error: uploadError } = await userClient.storage
-    .from(CHILD_AVATAR_BUCKET)
-    .upload(path, bytes, { contentType: sniffed, upsert: false });
-  if (uploadError) return { ok: false, errorKey: "profile.err.uploadFailed" };
+/**
+ * CHILD SELF-SERVICE: the signed-in student sets/replaces THEIR OWN photo.
+ *
+ * `studentProfileId` must be the profile id the caller ALREADY authenticated
+ * (requireChild() on the web, resolveBearerStudent()/role==="student" on the
+ * BFF) — being that student IS the authorization, so there is no ownership
+ * lookup and no client-supplied id to re-verify. `userClient` is the CHILD'S
+ * own client, so the private-bucket storage RLS (student-self write branch)
+ * governs the upload; the service role is never the uploader.
+ *
+ * Identical storage/row/delete behaviour to the parent path by construction —
+ * private bucket, no media_assets row, real deletion of the replaced object.
+ */
+export async function setOwnChildAvatarPhotoCore(
+  userClient: SupabaseClient,
+  params: {
+    studentProfileId: string;
+    file: unknown;
+    revalidate?: string[];
+  },
+): Promise<ChildAvatarCoreResult> {
+  const prepared = await preparePhoto(params.studentProfileId, params.file);
+  if (!prepared.ok) return prepared;
+  return commitPhoto(
+    userClient,
+    params.studentProfileId,
+    prepared,
+    params.revalidate,
+  );
+}
 
-  const wrote = await writeAvatarRow(studentProfileId, {
-    avatar_kind: "photo",
-    avatar_key: null,
-    avatar_media_path: path,
-  });
-  if (!wrote) {
-    // Roll the orphaned object back (best-effort) — the row still points at
-    // the previous avatar.
-    await removeObject(userClient, path);
-    return { ok: false, errorKey: "profile.err.updateFailed" };
+/**
+ * CHILD SELF-SERVICE: the signed-in student removes THEIR OWN avatar. Same
+ * authorization contract as setOwnChildAvatarPhotoCore. The Storage object is
+ * really deleted (best-effort) — withdrawal has to mean withdrawal.
+ */
+export async function removeOwnChildAvatarCore(
+  userClient: SupabaseClient,
+  params: { studentProfileId: string; revalidate?: string[] },
+): Promise<ChildAvatarCoreResult> {
+  if (!isUuid(params.studentProfileId)) {
+    return { ok: false, errorKey: "childedit.err.generic" };
   }
-
-  if (oldPath && oldPath !== path) await removeObject(userClient, oldPath);
-  refresh(params.revalidate);
-  return {
-    ok: true,
-    state: { avatar_kind: "photo", avatar_key: null, has_photo: true },
-  };
+  return commitRemove(userClient, params.studentProfileId, params.revalidate);
 }
 
 /**
@@ -232,18 +361,5 @@ export async function removeChildAvatarCore(
     return { ok: false, errorKey: "childedit.err.notYourChild" };
   }
 
-  const oldPath = await currentMediaPath(studentProfileId);
-  const wrote = await writeAvatarRow(studentProfileId, {
-    avatar_kind: "preset",
-    avatar_key: null,
-    avatar_media_path: null,
-  });
-  if (!wrote) return { ok: false, errorKey: "profile.err.updateFailed" };
-
-  await removeObject(userClient, oldPath);
-  refresh(params.revalidate);
-  return {
-    ok: true,
-    state: { avatar_kind: "preset", avatar_key: null, has_photo: false },
-  };
+  return commitRemove(userClient, studentProfileId, params.revalidate);
 }

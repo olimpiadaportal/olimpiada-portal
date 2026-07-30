@@ -7,8 +7,27 @@ import { supabaseUrl, supabaseAnonKey, isSupabaseConfigured } from "@/lib/env";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
+/**
+ * Header carrying the request path into the server components. A React Server
+ * Component cannot read the URL, and the root layout needs the path for exactly
+ * one decision: keeping the public privacy policy readable while maintenance
+ * mode is on (that URL is registered with Apple and Google, and both re-fetch it
+ * after submission). `set` — never `append` — so a client-supplied value of the
+ * same name is always overwritten and can never be trusted as input.
+ */
+export const PATHNAME_HEADER = "x-pathname";
+
 export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  // Re-read `request.headers` on every call: `request.cookies.set()` below
+  // rewrites the incoming `cookie` header, and a snapshot taken once at the top
+  // would forward the PRE-refresh cookies to the server components.
+  const forwardedHeaders = () => {
+    const headers = new Headers(request.headers);
+    headers.set(PATHNAME_HEADER, request.nextUrl.pathname);
+    return headers;
+  };
+
+  let response = NextResponse.next({ request: { headers: forwardedHeaders() } });
 
   // Before env is configured, do nothing (skeleton still runs).
   if (!isSupabaseConfigured) return response;
@@ -25,7 +44,7 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value),
         );
-        response = NextResponse.next({ request });
+        response = NextResponse.next({ request: { headers: forwardedHeaders() } });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options),
         );

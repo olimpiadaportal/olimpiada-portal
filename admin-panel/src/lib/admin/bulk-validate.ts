@@ -10,7 +10,22 @@
 //   * "olympiad" : topic/subtopic/term stay OPTIONAL (package-scoped taxonomy).
 // meta.type is OPTIONAL in both — it defaults to single_choice (5 options,
 // exactly 1 correct), matching the RPCs' default.
+//
+// Round 52 (§6) — CURRICULUM MATCHING, additive. The 2026 curriculum is a fixed
+// tree (260 topics / 1077 subtopics, one term per topic), so a name the file
+// invents is a MISTAKE, not a new topic. When the caller passes a curriculum
+// index for the batch's (subject, grade), a row whose meta.topic /
+// meta.subtopic is not in it is rejected here with the owner's exact wording —
+// "Topic not found" / "Subtopic not found" — and a meta.term that is present
+// but outside 1..4 reports "Invalid term value" (distinct from the
+// still-existing "term is required" for an absent one). The v3 RPC would
+// otherwise silently CREATE the misspelled topic, quietly corrupting the tree.
+// The schema rules above are untouched; the curriculum argument is optional so
+// every existing caller keeps its exact behaviour.
 import { type T } from "@/i18n/server";
+// Relative on purpose: this module is unit-tested and the vitest config has no
+// "@/" alias (the type-only i18n import above is erased before resolution).
+import { foldName } from "./curriculum-shared";
 
 // Length caps for bulk-import free text (mirror the manual form + the DB).
 export const BULK_BODY_MAX = 8000; // body / prompt / explanation
@@ -55,6 +70,89 @@ function parseTerm(v: unknown): number | null {
   return null;
 }
 
+// "meta.term was left out entirely" vs "meta.term is there but wrong" — the
+// two get DIFFERENT messages (term required / Invalid term value).
+function termAbsent(v: unknown): boolean {
+  return v == null || (typeof v === "string" && v.trim() === "");
+}
+
+// ---------------------------------------------------------------------------
+// Curriculum index (Round 52 §6)
+// ---------------------------------------------------------------------------
+// Names are compared case- and whitespace-insensitively so "  toplama " matches
+// "Toplama"; anything beyond that (a different word, a misspelling, an invented
+// topic) is a real mismatch and is reported.
+//
+// The fold is curriculum-shared's foldName — the SAME rule the Curriculum
+// Structure page uses for its duplicate check, so a name that page refuses to
+// create twice is a name this importer resolves to one topic. It is Azerbaijani
+// locale casing on purpose (İ→i, I→ı); the invariant fold turns "İ" into
+// "i"+U+0307 and would never match its own lowercase form.
+export function normCurriculumName(v: string): string {
+  return foldName(v);
+}
+
+export type CurriculumTopicInput = {
+  name: string;
+  term: number | null;
+  subtopics: string[];
+};
+
+// Both maps keep the CANONICAL spelling as the value: matching is lenient, but
+// what we hand to the RPC must be the DB's exact string — bulk_insert_questions
+// looks topics up with `name = ...` and would CREATE "toplama" as a second
+// topic next to "Toplama". Leniency without canonicalization would therefore
+// fork the tree, which is the very thing this check exists to prevent.
+export type CurriculumEntry = {
+  name: string;
+  term: number | null;
+  // normCurriculumName(subtopic) → canonical subtopic name
+  subtopics: Map<string, string>;
+};
+// key = normCurriculumName(topic name)
+export type CurriculumIndex = Map<string, CurriculumEntry>;
+
+// Builds the lookup for ONE (subject, grade) pair. Duplicate topic names merge
+// their subtopic sets rather than overwriting — a legacy DB could still hold a
+// same-named pair and dropping one would produce a false "Subtopic not found".
+export function buildCurriculumIndex(
+  topics: CurriculumTopicInput[],
+): CurriculumIndex {
+  const index: CurriculumIndex = new Map();
+  for (const tp of topics) {
+    const key = normCurriculumName(tp.name);
+    if (!key) continue;
+    const existing = index.get(key);
+    const target: CurriculumEntry = existing ?? {
+      name: tp.name,
+      term: tp.term,
+      subtopics: new Map<string, string>(),
+    };
+    if (existing && existing.term == null) target.term = tp.term;
+    for (const st of tp.subtopics) {
+      const stKey = normCurriculumName(st);
+      if (stKey && !target.subtopics.has(stKey)) target.subtopics.set(stKey, st);
+    }
+    index.set(key, target);
+  }
+  return index;
+}
+
+// The DB's exact spelling for a pair the validator already accepted. Returns
+// null when either name is unknown, so a caller can never "canonicalize" its
+// way past a failed check.
+export function canonicalCurriculumNames(
+  curriculum: CurriculumIndex,
+  topic: string,
+  subtopic: string,
+): { topic: string; subtopic: string } | null {
+  const entry = curriculum.get(normCurriculumName(topic));
+  if (!entry) return null;
+  const canonicalSubtopic = entry.subtopics.get(normCurriculumName(subtopic));
+  if (canonicalSubtopic == null) return null;
+  return { topic: entry.name, subtopic: canonicalSubtopic };
+}
+
 // Strict per-row schema validation. Returns a LOCALIZED message for the FIRST
 // problem found, or null when the row is structurally valid. Rows that fail here
 // are never sent to the RPC. Subject is NOT validated here (the general import
@@ -65,6 +163,9 @@ export function validateBulkItem(
   activeByNorm: Map<string, ActiveTypeRule>,
   defaultType: ActiveTypeRule | null,
   mode: BulkMode,
+  // Round 52 §6 — optional curriculum for the batch's (subject, grade). When
+  // supplied, GENERAL rows must name a topic/subtopic that exists in it.
+  curriculum?: CurriculumIndex | null,
 ): string | null {
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     return t("bulk.err.notObject");
@@ -106,8 +207,27 @@ export function validateBulkItem(
     if (typeof meta.subtopic !== "string" || meta.subtopic.trim() === "") {
       return t("bulk.err.subtopicRequired");
     }
-    if (parseTerm(meta.term) == null) {
-      return t("bulk.err.termRequired");
+    if (termAbsent(meta.term)) return t("bulk.err.termRequired");
+    const term = parseTerm(meta.term);
+    // Present but not 1..4 (0, 5, "one", true, …) — the owner's third message.
+    if (term == null) return t("bulk.err.invalidTerm");
+
+    // Curriculum matching (Round 52 §6): the tree is fixed, so an unknown name
+    // is a mistake to fix, never a topic to create.
+    if (curriculum) {
+      const entry = curriculum.get(normCurriculumName(meta.topic));
+      if (!entry) return t("bulk.err.topicNotFound");
+      if (!entry.subtopics.has(normCurriculumName(meta.subtopic))) {
+        return t("bulk.err.subtopicNotFound");
+      }
+      // NOTE for callers: a row accepted here may still spell the names
+      // differently from the DB. Pass it through canonicalCurriculumNames()
+      // before the RPC — see bulkImportQuestions.
+      // One term per topic — a row claiming a different one would be rejected
+      // by the DB anyway (bulk_insert_questions raises "term % conflicts").
+      if (entry.term != null && entry.term !== term) {
+        return t("bulk.err.termConflict");
+      }
     }
   }
 
@@ -183,6 +303,14 @@ export function mapRpcRowError(raw: unknown, t: T): string {
   if (low.includes("term (1..4)")) return t("bulk.err.termRequired");
   if (low.includes("subtopic is required")) return t("bulk.err.subtopicRequired");
   if (low.includes("topic is required")) return t("bulk.err.topicRequired");
+  // Forward-compatible with a curriculum-strict RPC (the current v3 still
+  // auto-creates a missing topic; the app layer above is what stops it today).
+  if (low.includes("unknown subtopic") || low.includes("subtopic not found")) {
+    return t("bulk.err.subtopicNotFound");
+  }
+  if (low.includes("unknown topic") || low.includes("topic not found")) {
+    return t("bulk.err.topicNotFound");
+  }
   if (low.includes("media_asset_id")) return t("bulk.err.badMedia");
   return t("bulk.err.generic");
 }

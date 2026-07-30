@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
@@ -140,6 +141,17 @@ export default async function ParentProfilePage() {
         dict={profileDict}
       />
       {notifBlock}
+      {/* Data & privacy. Sits with the account controls on purpose: the Danger
+          Zone above it is where a parent deletes the whole family's data, and
+          the policy is the document that says what that actually erases and
+          what survives. Read-only card — it adds no action. */}
+      <section className="prof2-card" aria-label={t("nav.privacy")}>
+        <h2 className="prof2-sec-title">{t("nav.privacy")}</h2>
+        <p className="prof2-sec-hint">{t("privacy.profileHint")}</p>
+        <Link className="btn-ghost" href="/help/privacy">
+          {t("privacy.title")}
+        </Link>
+      </section>
     </div>
   );
 }

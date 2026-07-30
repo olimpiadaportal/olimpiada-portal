@@ -47,10 +47,10 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.fiveRule":
       "Hər sualda düz 5 cavab variantı (A–E) və düz 1 düzgün cavab olmalıdır.",
     "bulk.generalMeta":
-      "Hər sətirdə meta.topic və meta.subtopic mütləqdir; meta.type istəyə bağlıdır (standart: single_choice). Rüb yuxarıdakı seçimdən götürülür.",
+      "Hər sətirdə meta.topic, meta.subtopic və meta.term (1–4) mütləqdir; meta.type istəyə bağlıdır (standart: single_choice).",
     "bulk.chooseTerm": "Rüb seçin — bütün suallara tətbiq olunacaq.",
     "bulk.termNote":
-      "Seçilmiş rüb faylın BÜTÜN suallarına tətbiq olunur (fayldakı meta.term dəyərlərini əvəz edir).",
+      "Rüb kurikulumda mövzuya bağlıdır: meta.term həmin mövzunun rübü ilə eyni olmalıdır, əks halda sətir idxal edilmir.",
     "bulk.mediaHint":
       "İstəyə bağlı meta.media_asset_id — əvvəlcədən yüklənmiş sual şəklinin (question-media) UUID-si; şəkil əsas dilin mətninə bağlanır.",
     "bulk.err.topicRequired": "meta.topic tələb olunur",
@@ -108,10 +108,10 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.fiveRule":
       "Each question needs exactly 5 answer options (A–E) with exactly 1 correct.",
     "bulk.generalMeta":
-      "Every row requires meta.topic and meta.subtopic; meta.type is optional (defaults to single_choice). The term comes from the selector above.",
+      "Every row requires meta.topic, meta.subtopic and meta.term (1–4); meta.type is optional (defaults to single_choice).",
     "bulk.chooseTerm": "Pick the term — it applies to every question.",
     "bulk.termNote":
-      "The selected term is applied to ALL questions in the file (it supersedes any meta.term values inside).",
+      "In the curriculum the term belongs to the topic: meta.term must equal that topic's term, otherwise the row is rejected.",
     "bulk.mediaHint":
       "Optional meta.media_asset_id — the UUID of a pre-uploaded question image (question-media); it is attached to the primary language.",
     "bulk.err.topicRequired": "meta.topic is required",
@@ -168,10 +168,10 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.fiveRule":
       "У каждого вопроса должно быть ровно 5 вариантов ответа (A–E) и ровно 1 правильный.",
     "bulk.generalMeta":
-      "В каждой строке обязательны meta.topic и meta.subtopic; meta.type необязателен (по умолчанию single_choice). Четверть берётся из селектора выше.",
+      "В каждой строке обязательны meta.topic, meta.subtopic и meta.term (1–4); meta.type необязателен (по умолчанию single_choice).",
     "bulk.chooseTerm": "Выберите четверть — она применится ко всем вопросам.",
     "bulk.termNote":
-      "Выбранная четверть применяется ко ВСЕМ вопросам файла (заменяет значения meta.term внутри).",
+      "В учебной программе четверть привязана к теме: meta.term должен совпадать с четвертью этой темы, иначе строка не импортируется.",
     "bulk.mediaHint":
       "Необязательный meta.media_asset_id — UUID заранее загруженного изображения вопроса (question-media); привязывается к основному языку.",
     "bulk.err.topicRequired": "требуется meta.topic",

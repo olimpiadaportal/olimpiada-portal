@@ -231,6 +231,33 @@ export default function Login() {
             {t("nav.register")}
           </AppText>
         </Pressable>
+
+        {/* Privacy policy — the ONLY other link this screen carries, and it is
+            here for a compliance reason rather than a product one. Apple
+            5.1.4(b) expects the children's privacy policy to be reachable in
+            the app, and a store reviewer checks that BEFORE creating an
+            account: everything else in OlympIQ is behind a login, the account
+            sheet does not exist while signed out, and this is the signed-out
+            stack's root. Styled as a legal footnote (muted, below the register
+            CTA) so it stays subordinate to the auth flow the owner's
+            "minimal auth surfaces" rule protects. Opens IN-APP. */}
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={t("nav.privacy")}
+          onPress={() => router.push("/(public)/privacy")}
+          hitSlop={8}
+          style={{
+            alignItems: "center",
+            minHeight: 44,
+            justifyContent: "center",
+            // Pulls back half of the column's xl gap so the two links read as
+            // one footer cluster rather than two unrelated CTAs. Both keep
+            // their full 44pt target — only the space between them shrinks.
+            marginTop: -spacing.md,
+          }}
+        >
+          <AppText variant="muted">{t("nav.privacy")}</AppText>
+        </Pressable>
       </View>
     </Screen>
   );

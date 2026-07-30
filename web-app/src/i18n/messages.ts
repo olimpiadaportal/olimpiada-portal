@@ -334,6 +334,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "billing.plansTitle": "Planlar və fənlər",
     "billing.billingTitle": "Ödəniş məlumatları",
     "billing.invoicesTitle": "Fakturalar",
+    "billing.invoicesEmpty": "Hələ faktura yoxdur. İlk ödənişiniz baş tutandan sonra fakturalar burada görünəcək.",
     "billing.current": "Cari plan",
     "billing.popular": "Ən populyar",
     "billing.addSubjects": "Fənn əlavə et",
@@ -436,7 +437,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "prof2.security": "Təhlükəsizlik",
     "prof2.securityHint": "Hesabınızın təhlükəsizliyi üçün şifrənizi vaxtaşırı yeniləyin.",
     "prof2.danger": "Təhlükəli zona",
-    "prof2.dangerHint": "Hesabınızı silsəniz, bütün məlumatlarınız birdəfəlik silinəcək. Bu əməliyyatı geri qaytarmaq mümkün deyil.",
+    "prof2.dangerHint": "Hesabınızı silsəniz, valideyn profiliniz, bütün uşaq profilləriniz və onların təlim məlumatları silinəcək. Bu əməliyyatı geri qaytarmaq mümkün deyil. Mühasibat və təhlükəsizlik məqsədi ilə az sayda qeyd adsızlaşdırılmış formada saxlanılır — ətraflı Məxfilik Siyasətində.",
     "prof2.session": "Sessiya",
     "prof2.sessionHint": "Bu cihazda hesabınızdan çıxın.",
     "prof2.idHint": "Bu ID ilə hesabına daxil olursan.",
@@ -580,7 +581,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "reset.newPassword": "Yeni şifrə",
     "reset.submit": "Şifrəni yenilə",
     "account.delete": "Hesabı sil",
-    "account.deleteConfirm": "Hesabınız və bütün uşaq hesablarınız həmişəlik silinəcək. Davam edilsin?",
+    "account.deleteConfirm": "Hesabınız, bütün uşaq hesablarınız və onların təlim məlumatları həmişəlik silinəcək. Az sayda qeyd adsızlaşdırılmış formada saxlanılır (Məxfilik Siyasətinə baxın). Davam edilsin?",
     "child.resetPw": "Şifrəni sıfırla",
     "child.newPassword": "Yeni şifrə",
     "child.resetPwSubmit": "Yenilə",
@@ -981,6 +982,356 @@ export const messages: Record<Locale, Record<string, string>> = {
     "footer.product": "Xidmət",
     "footer.company": "Şirkət",
     "footer.legal": "Hüquqi",
+
+    // ---- Privacy policy (privacy.*) ----
+    // Rendered by <PrivacyPolicy/> at /privacy, /help/privacy and
+    // /child/help/privacy. The DOCUMENT OF RECORD is docs/PRIVACY_POLICY.md
+    // (the copy the owner submits to App Store Connect and Google Play): edit
+    // both together, and always edit az + en + ru in the SAME change — the
+    // three languages are one legal document and a one-language edit produces a
+    // policy that says different things to different regulators.
+    // FORMAT: a `*List`/bullet string is ONE ITEM PER LINE; a `*Table` string
+    // is "cell | cell | cell" rows whose FIRST line is the header. Both are
+    // parsed by src/lib/policyContent.ts and rendered as text nodes only.
+    // src/lib/__tests__/policyContent.test.ts fails the build if a key is
+    // missing from a language or a table loses a column/row somewhere.
+    // Values the code cannot know (dates, hosting region, retention periods)
+    // are NOT in here — they live in src/lib/privacyPolicy.ts so the owner
+    // answers each one once instead of three times.
+    // PAYLOAD: src/app/layout.tsx strips the `privacy.` prefix out of the
+    // client dictionary (it is 30–44 KB and that dict lands in every page's
+    // HTML). Read these keys with the SERVER getT() only; a client component
+    // that needs one must receive it as a prop.
+    "nav.privacy": "Məxfilik siyasəti",
+    "privacy.title": "Məxfilik Siyasəti",
+    "privacy.eyebrow": "Hüquqi sənəd",
+    "privacy.lead":
+      "Bu siyasət OlympIQ veb saytına və OlympIQ mobil tətbiqinə (iOS və Android) aiddir.\n\n" +
+      "OlympIQ 1–11-ci sinif şagirdləri üçün təhsil məhsuludur. Uşaqların məlumatları ilə işlədiyimiz üçün qısa və dürüst olmağa çalışırıq.",
+    "privacy.effective": "Qüvvəyə minmə tarixi",
+    "privacy.updated": "Son yenilənmə",
+    "privacy.tbd": "dəqiqləşdirilir",
+    "privacy.toc": "Bölmələr",
+    "privacy.draft.title": "Bu sənəd hazırlıq mərhələsindədir",
+    "privacy.draft.body":
+      "Mətn məhsulun real işinə əsasən yazılıb, lakin hələ hüquqşünas yoxlamasından keçməyib və qüvvəyə minmə tarixi təyin edilməyib. Bəzi məlumatlar — əlaqə ünvanları, saxlanma müddətləri, serverlərin yerləşdiyi region və məlumatların rəsmi operatorunun hüquqi statusu — hələ dəqiqləşdirilir.",
+
+    "privacy.s1.title": "Bir baxışda",
+    "privacy.s1.doTitle": "Nə edirik",
+    "privacy.s1.do":
+      "Yalnız hesabın işləməsi üçün lazım olan məlumatı toplayırıq: valideynin əlaqə məlumatları, uşağın adı, məktəbi, sinfi və məşq nəticələri.\n" +
+      "Uşağın hesabını valideyn yaradır və idarə edir. Uşaq özü qeydiyyatdan keçə bilmir.\n" +
+      "Valideyn istənilən vaxt tətbiqin içindən bütün ailə hesabını silə bilər.",
+    "privacy.s1.dontTitle": "Nə etmirik",
+    "privacy.s1.dont":
+      "Reklam yoxdur. Tətbiqdə heç bir reklam şəbəkəsi və ya reklam SDK-sı yoxdur.\n" +
+      "İzləmə yoxdur. Nə mobil tətbiqdə, nə də veb saytda analitika, atribusiya və ya çökmə hesabatı toplayan üçüncü tərəf aləti quraşdırılmayıb. Reklam identifikatoru (IDFA, Android Advertising ID) heç vaxt oxunmur.\n" +
+      "Məlumatları satmırıq, icarəyə vermirik, mübadilə etmirik və marketinq məqsədi ilə heç kimə ötürmürük.\n" +
+      "Məkanınızı, kameranızı, kontaktlarınızı və mikrofonunuzu istəmirik.\n" +
+      "Uşaq davranışına görə reklam profili qurmuruq.\n" +
+      "Kart məlumatlarınızı görmürük. Mobil tətbiqdə alış prosesi yoxdur — alış yalnız veb saytda həyata keçirilir.",
+
+    "privacy.s2.title": "Biz kimik və bizimlə necə əlaqə saxlamaq olar",
+    "privacy.s2.product": "Məhsul",
+    "privacy.s2.productValue":
+      "OlympIQ — 1–11-ci siniflər üçün olimpiada və imtahan hazırlığı platforması",
+    "privacy.s2.operator": "Layihəni həyata keçirən",
+    "privacy.s2.operatorValue": "Kamil Piriyev (VÖEN: 6300091352) və tərəfdaşları",
+    "privacy.s2.address": "Hüquqi ünvan",
+    "privacy.s2.addressValue": "Azərbaycan Respublikası, Lerik rayonu, Peştətük kəndi",
+    "privacy.s2.email": "Dəstək e-poçtu",
+    "privacy.s2.phone": "Telefon",
+    "privacy.s2.website": "Veb sayt",
+    "privacy.s2.requests": "Məxfilik sorğuları üçün ünvan",
+    "privacy.s2.note":
+      "Məlumatlarınızla bağlı hər hansı sual, şikayət və ya silinmə tələbi üçün yuxarıdakı e-poçt ünvanına yazın.",
+
+    "privacy.s3.title": "Ailə hesabı modeli",
+    "privacy.s3.intro":
+      "OlympIQ-də hesab modeli adi tətbiqlərdən fərqlidir və bu, məhz uşaq təhlükəsizliyi üçün belə qurulub.",
+    "privacy.s3.points":
+      "Yalnız valideyn qeydiyyatdan keçir — e-poçt və parol ilə.\n" +
+      "Uşaq heç vaxt özü qeydiyyatdan keçə bilmir. Nə vebdə, nə də mobil tətbiqdə uşaq üçün qeydiyyat yolu yoxdur. Bu, dizayn qərarıdır və serverdə tətbiq olunur.\n" +
+      "Uşağın profilini valideyn yaradır və uşaq haqqındakı bütün məlumatı (ad, soyad, şəhər, rayon, məktəb, sinif) valideyn özü daxil edir.\n" +
+      "Uşağın e-poçt ünvanı yoxdur. Sistem daxilində uşağın giriş qeydi üçün poçt qəbul etməyən texniki bir ünvan istifadə olunur; uşaq onu görmür və ondan istifadə etmir.\n" +
+      "Uşaq 8 rəqəmli nömrə ilə daxil olur. Bu nömrəni server verir, parolu isə valideyn təyin edir.\n" +
+      "Uşaq heç nə ala bilmir. Bu, serverdə tətbiq olunur, sadəcə interfeysdə gizlədilmir.\n" +
+      "Uşaq heç nə silə bilmir. Hesabın sahibi valideyndir; silmə səlahiyyəti də ondadır.",
+    "privacy.s3.result":
+      "Nəticə: uşaq haqqındakı məlumatın hansı həcmdə mövcud olacağına valideyn qərar verir və istənilən vaxt onu tamamilə silə bilər.",
+
+    "privacy.s4.title": "Hansı məlumatları toplayırıq",
+    "privacy.s4.parentTitle": "Valideyn hesabı",
+    "privacy.s4.parentTable":
+      "Məlumat | Məcburidir? | Niyə toplayırıq\n" +
+      "Ad (görünən ad) | Bəli | Hesabı tanımaq və tətbiqdə sizə müraciət etmək üçün\n" +
+      "E-poçt ünvanı | Bəli | Giriş açarı; parolun bərpası; hesabla bağlı bildirişlər\n" +
+      "Telefon nömrəsi (beynəlxalq formatda) | Bəli | Hesabla bağlı əlaqə və hesabın bərpası üçün. SMS göndərmirik — SMS funksiyası məhsulda ümumiyyətlə mövcud deyil\n" +
+      "Parol | Bəli | Giriş üçün. Parolu biz saxlamırıq: o, yalnız autentifikasiya xidmətimizdə şifrələnmiş (hash) formada saxlanılır və heç kim onu geri oxuya bilmir\n" +
+      "İnterfeys dili (az / en / ru) | Xeyr | Tətbiqi sizin dilinizdə göstərmək üçün\n" +
+      "Profil şəkli (avatar) | Xeyr | Yalnız görünüş üçün. Bu fayl açıq saxlanc bölməsinə yüklənir — «Avatar şəkilləri» hissəsinə baxın\n" +
+      "Bildiriş tənzimləmələri | Xeyr | Hansı kanaldan bildiriş almaq istədiyinizi yadda saxlamaq üçün\n" +
+      "Bəyəndiyiniz xəbərlər | Xeyr | Xəbər məqaləsinə qoyduğunuz bəyənmə qeyd olunur",
+    "privacy.s4.parentNote":
+      "Valideyn tətbiq daxilində adını, telefonunu, parolunu və avatarını dəyişə bilər. E-poçt ünvanını tətbiq daxilində dəyişmək mümkün deyil — bunun üçün bizimlə əlaqə saxlayın.",
+    "privacy.s4.childTitle": "Uşaq (şagird) profili — məlumatı valideyn daxil edir",
+    "privacy.s4.childTable":
+      "Məlumat | Məcburidir? | Niyə toplayırıq\n" +
+      "Ad və soyad | Bəli | Tətbiqdə uşağa müraciət etmək üçün; reytinq cədvəlində «Ad S.» formatında göstərilir\n" +
+      "Şəhər və rayon | Bəli | Regional reytinq cədvəlləri üçün\n" +
+      "Məktəbin adı | Bəli | Məktəb üzrə reytinq cədvəli üçün\n" +
+      "Sinif | Bəli | Uşağa öz sinfinə uyğun sualların verilməsi üçün\n" +
+      "8 rəqəmli giriş nömrəsi | Server verir | Uşağın giriş açarı. Bu nömrənin son 4 rəqəmi ictimai reytinq cədvəlində göstərilir\n" +
+      "Parol | Bəli (valideyn təyin edir) | Giriş üçün. Parol yalnız autentifikasiya xidmətimizdə şifrələnmiş formada saxlanılır\n" +
+      "Avatar | Xeyr | Hazır şəkillərdən biri, yaxud yüklənmiş foto. Foto həmişə qapalı saxlancda saxlanılır — «Avatar şəkilləri» hissəsinə baxın\n" +
+      "Rəng və stiker seçimi | Xeyr | Uşağın seçdiyi görünüş\n" +
+      "Məşq məlumatları | Avtomatik | Cavablandırılmış suallar, seçilmiş variantlar, düzgün və səhv cavablar, sualda keçirilən vaxt, bal, faiz, seriya, aktiv günlər, reytinq mövqeyi, nailiyyətlər\n" +
+      "Artıq görülmüş olimpiada sualları | Avtomatik | Uşağa eyni sualın təkrar düşməməsi üçün\n" +
+      "Bildiriş tənzimləmələri və bəyənilən xəbərlər | Xeyr | Valideyn hesabındakı ilə eyni məqsəd",
+    "privacy.s4.childNoDob":
+      "Doğum tarixini və ya doğum ilini toplamırıq. Uşağın yaşını soruşmuruq — sinif məlumatı kifayətdir.",
+    "privacy.s4.childEditable":
+      "Uşaq özü yalnız aşağıdakıları dəyişə bilər: öz adı və soyadı (bu, reytinq cədvəlindəki adını da dəyişir), parolu, avatarı və rəng seçimi. Məktəb, şəhər, rayon və sinif uşaq üçün yalnız oxunaqlıdır — onları yalnız valideyn dəyişə bilər.",
+    "privacy.s4.techTitle": "Texniki və cihaz məlumatları",
+    "privacy.s4.techTable":
+      "Məlumat | Nə vaxt | Niyə\n" +
+      "Push bildiriş nişanı (token), cihazın modeli, əməliyyat sisteminin versiyası və tətbiqin versiyası | Yalnız push bildirişləri aktivdirsə və siz icazə vermisinizsə | Bildirişi düzgün cihaza çatdırmaq üçün. Heç bir reklam və ya avadanlıq identifikatoru oxunmur. Hesabdan çıxarkən nişan serverdən silinir\n" +
+      "Uşağın giriş cəhdlərinin qeydi: 8 rəqəmli nömrə, IP ünvanının şifrələnmiş izi (SHA-256), nəticə və vaxt | Hər giriş cəhdində | Parolun zorla tapılması cəhdlərinin qarşısını almaq üçün. Xam IP ünvanı saxlanılmır\n" +
+      "Server jurnalları — o cümlədən IP ünvanı və brauzerin identifikasiya sətri | Hər sorğuda | Hostinq təchizatçılarımızın standart texniki jurnalları; təhlükəsizlik və nasazlıqların aradan qaldırılması üçün\n" +
+      "Giriş qeydləri (autentifikasiya xidmətində) | Hər girişdə | Autentifikasiya xidmətimiz öz təhlükəsizlik jurnalını aparır",
+    "privacy.s4.logRetention": "Server jurnallarının saxlanma müddəti",
+    "privacy.s4.deviceTitle": "Cihazın qorunan yaddaşında saxlanan məlumatlar (mobil tətbiq)",
+    "privacy.s4.deviceIntro":
+      "Mobil tətbiq cihazın öz qorunan yaddaşında (iOS Keychain / Android Keystore) yalnız bunları saxlayır:",
+    "privacy.s4.deviceList":
+      "giriş sessiyanız;\n" +
+      "barmaq izi və ya üz ilə kilidin açıq və ya bağlı olması (sadəcə «1» və ya «0»);\n" +
+      "tanışlıq ekranının göstərilib-göstərilmədiyi;\n" +
+      "push nişanının nüsxəsi;\n" +
+      "seçdiyiniz dil və mövzu (açıq və ya tünd).",
+    "privacy.s4.deviceNote":
+      "Bu siyahıdakı seçimlər (kilid, tanışlıq ekranı, dil və mövzu) cihazdan kənara ümumiyyətlə çıxmır. Giriş sessiyası hər sorğuda autentifikasiya xidmətimizə göndərilir — onun funksiyası elə budur; push nişanı isə push aktiv olduqda serverimizdə saxlanılır (yuxarıdakı texniki məlumatlar cədvəlinə baxın). Bunlardan başqa heç nə göndərilmir.",
+    "privacy.s4.cookiesTitle": "Kuki (cookie) — veb sayt",
+    "privacy.s4.cookiesIntro": "Veb saytda yalnız işləmək üçün zəruri kukilər istifadə olunur:",
+    "privacy.s4.cookiesList":
+      "Giriş sessiyası kukiləri — saytda olduğunuz müddətdə daxil olmuş qalmağınız üçün.\n" +
+      "«locale» kukisi — seçdiyiniz interfeys dilini yadda saxlamaq üçün (1 il).\n" +
+      "Açıq və tünd mövzu seçimi brauzerin öz yaddaşında (localStorage) saxlanılır.\n" +
+      "Eyni xəbərin baxış sayının təkrar hesablanmaması üçün brauzerin sessiya yaddaşında qısamüddətli nişan qoyulur; brauzerin tabı bağlananda silinir.",
+    "privacy.s4.cookiesNote": "Reklam kukisi, analitika kukisi və izləmə pikseli yoxdur.",
+
+    "privacy.s5.title": "Uşaqların məlumatları",
+    "privacy.s5.callout":
+      "Bu bölmə OlympIQ-in uşaq məxfiliyi siyasətidir. Uşaqlar üçün nəzərdə tutulmuş məhsul olduğumuza görə onu ayrıca yazırıq ki, valideyn hər şeyi bir yerdə görsün.",
+    "privacy.s5.storedTitle": "Uşaq haqqında nə saxlanılır",
+    "privacy.s5.stored":
+      "Yuxarıdakı «Uşaq profili» cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri (cavablar, ballar, faizlər, seriyalar, aktiv günlər, reytinq mövqeyi).",
+    "privacy.s5.notCollected":
+      "Uşaq haqqında toplamadığımız məlumatlar: doğum tarixi, e-poçt, telefon nömrəsi, ev ünvanı, məkan, sağlamlıq məlumatı, maliyyə məlumatı, kontaktlar, brauzer tarixçəsi, reklam identifikatorları və avadanlıq identifikatorları.",
+    "privacy.s5.neverTitle": "Uşaq məlumatı ilə nə etmirik",
+    "privacy.s5.never":
+      "Uşağa reklam göstərmirik və reklam üçün profil qurmuruq.\n" +
+      "Uşağın davranışını başqa tətbiq və saytlarda izləmirik.\n" +
+      "Uşaq məlumatını satmırıq, icarəyə vermirik və marketinq üçün heç kimə vermirik.\n" +
+      "Uşağın yazdığı heç bir mətni dərc etmirik — yeganə istisna onun öz adı və soyadıdır: şagird bunları özü dəyişə bilir və reytinq cədvəlində «Ad S.» formatında məhz bu ad görünür. Bundan başqa uşağın digər istifadəçilərə göstərə biləcəyi sərbəst mətn yoxdur.\n" +
+      "Tətbiqdə çat, mesajlaşma, şərh və forum yoxdur. Uşaq başqa istifadəçi ilə ünsiyyət qura bilmir.\n" +
+      "Uşağı heç nə almağa təşviq etmirik. Şagird sessiyasında qiymət, ödəniş üsulu və alış düyməsi göstərilmir.",
+    "privacy.s5.lbTitle": "Reytinq cədvəllərində nə görünür",
+    "privacy.s5.lbIntro":
+      "Bu, valideynin bilməli olduğu ən vacib məqamlardan biridir. İki fərqli reytinq cədvəli var.",
+    "privacy.s5.lb1Title": "1) Tətbiq daxilindəki reytinq — yalnız hesabı olan istifadəçilər görür",
+    "privacy.s5.lb1Intro":
+      "Sistemə daxil olmuş istənilən valideyn və istənilən şagird reytinqdə olan hər uşaq haqqında bunları görür:",
+    "privacy.s5.lb1Table":
+      "Göstərilir | Nümunə\n" +
+      "Ad və soyadın ilk hərfi | Aysel M.\n" +
+      "Şəhər | Bakı\n" +
+      "Rayon | Nəsimi\n" +
+      "Məktəbin adı | 142 nömrəli tam orta məktəb\n" +
+      "Sinif | 7\n" +
+      "Nəticə göstəriciləri | faiz, cavablandırılmış sual sayı, düzgün cavab sayı, cəhd sayı",
+    "privacy.s5.lb1Note":
+      "Uşağın tam soyadı, avatarı, 8 rəqəmli nömrəsi və valideyninin əlaqə məlumatları göstərilmir.",
+    "privacy.s5.lb2Title": "2) Saytın ana səhifəsindəki ictimai ilk 10 — hesabı olmayan hər kəs görür",
+    "privacy.s5.lb2Body":
+      "Burada uşağın adı göstərilmir; onun əvəzinə «Şagird 4821» formatında təxəllüs göstərilir. Bu dörd rəqəm uşağın 8 rəqəmli giriş nömrəsinin son dörd rəqəmidir. Bununla yanaşı, bu ictimai cədvəldə şəhər, rayon, məktəbin adı və sinif də göstərilir.",
+    "privacy.s5.lbWarn":
+      "Valideyn üçün dürüst xəbərdarlıq: kiçik bir rayon məktəbində «məktəb + sinif + rayon» kombinasiyası uşağı tanımaq üçün kifayət edə bilər, ad göstərilməsə belə. Bunu gizlətmirik.",
+    "privacy.s5.lbNoMedals":
+      "Reytinq cədvəllərində medal, mükafat və pul yoxdur — yalnız rəqəmli yerlər.",
+    "privacy.s5.avatarTitle": "Avatar şəkilləri — vacib fərq",
+    "privacy.s5.avatarTable":
+      "Hansı yol | Fayl harada saxlanılır | Kim görə bilər\n" +
+      "Valideyn uşaq üçün foto yükləyir (Uşaq əlavə et / Uşağı redaktə et) | Qapalı saxlanc bölməsi | Yalnız ailə üzvləri, qısamüddətli imzalanmış keçid vasitəsilə\n" +
+      "Şagird öz profilindən özü foto yükləyir | Qapalı saxlanc bölməsi | Yalnız ailə üzvləri, qısamüddətli imzalanmış keçid vasitəsilə\n" +
+      "Valideyn öz avatarını yükləyir | Açıq saxlanc bölməsi | Faylın birbaşa linkini bilən hər kəs",
+    "privacy.s5.avatarWarn":
+      "Uşağın fotosu heç vaxt açıq saxlanc bölməsinə düşmür: fotonu valideyn yükləsə də, şagird özü yükləsə də, fayl qapalı saxlanca yazılır və yalnız ailə üzvlərinə verilən qısamüddətli imzalanmış keçidlə açılır. Açıq saxlanc yalnız valideynin öz avatarına aiddir — onu faylın birbaşa linkini bilən hər kəs aça bilər. Hazır avatarlar defolt seçimdir və heç bir foto yükləmək tələb olunmur — uşağınızın fotosunun yüklənməsini istəmirsinizsə, hazır avatarlardan istifadə edin.",
+    "privacy.s5.avatarUnlink":
+      "Avatarın silinməsi yola görə fərqli işləyir. Uşağın fotosu — istər valideyn yükləsin, istər şagird özü — dəyişdirildikdə və ya silindikdə qapalı saxlancdan tamamilə silinir. Valideynin öz avatarı isə yalnız profildən ayrılır: şəkil artıq profildə görünmür, lakin fayl açıq saxlancda qalır.",
+    "privacy.s5.removeTitle": "Valideyn uşağın məlumatını necə silir",
+    "privacy.s5.removeList":
+      "Tam ailə hesabını silmək: valideyn profili → «Təhlükəli zona» → «Hesabı sil» → iki mərhələli təsdiq. Bu, valideyn hesabını və onun yaratdığı bütün uşaq profillərini silir. Həm veb saytda, həm də mobil tətbiqdə mövcuddur.\n" +
+      "Yalnız bir uşağı silmək: hazırda yalnız veb saytda, valideyn panelindən. Mobil tətbiqdə ayrıca uşaq silmək imkanı yoxdur.\n" +
+      "Şagird heç nə silə bilmir.",
+    "privacy.s5.removeNote":
+      "Silinmə dərhal baş verir — gözləmə müddəti, geri qaytarma və ya arxivə salma yoxdur. Nəyin silindiyi və nəyin qaldığı «Məlumatların saxlanması və silinməsi» bölməsində ətraflı yazılıb.",
+
+    "privacy.s6.title": "Məlumatları nə üçün istifadə edirik",
+    "privacy.s6.useTitle": "İstifadə edirik",
+    "privacy.s6.use":
+      "Hesabı yaratmaq, girişi təmin etmək və hesabın təhlükəsizliyini qorumaq.\n" +
+      "Uşağın sinfinə və məktəb rübünə uyğun sualları seçmək.\n" +
+      "Cavabları qiymətləndirmək, bal, faiz, seriya və irəliləyiş statistikasını hesablamaq.\n" +
+      "Valideynə uşağın irəliləyişi haqqında hesabat göstərmək.\n" +
+      "Reytinq cədvəllərini formalaşdırmaq.\n" +
+      "Bildiriş göndərmək (yeni raund, nəticə, seriya, xəbər, hesabla bağlı məlumat).\n" +
+      "Sui-istifadənin, avtomatlaşdırılmış hücumların və parol seçmə cəhdlərinin qarşısını almaq.\n" +
+      "Sizə dəstək göstərmək və sorğularınıza cavab vermək.\n" +
+      "Ailənin hansı fənlərə və olimpiada paketlərinə çıxışının olduğunu müəyyən etmək.\n" +
+      "Qanunla tələb olunan hallarda hüquqi öhdəliklərimizi yerinə yetirmək.",
+    "privacy.s6.notTitle": "İstifadə etmirik",
+    "privacy.s6.not":
+      "Reklam göstərmək və ya reklam profili qurmaq üçün.\n" +
+      "Sizi və ya uşağınızı başqa tətbiq və saytlarda izləmək üçün.\n" +
+      "Məlumatı satmaq, icarəyə vermək və ya reklam brokerlərinə vermək üçün.\n" +
+      "Kredit, sığorta, işə qəbul və bu kimi qərarlar üçün.\n" +
+      "Uşağa qarşı hüquqi nəticə doğuran avtomatik qərarlar qəbul etmək üçün.\n" +
+      "Üçüncü tərəflərin reklam və ya profilləşdirmə sistemlərini öyrətmək üçün.",
+
+    "privacy.s7.title": "Məlumatı kimlərlə bölüşürük",
+    "privacy.s7.staffTitle": "OlympIQ daxilində kimin çıxışı var",
+    "privacy.s7.staff":
+      "Dürüst olmaq üçün bunu da yazırıq: OlympIQ-in səlahiyyətli administratorları və kontent menecerləri daxili idarəetmə panelində hesab və təlim məlumatlarına baxa bilər — xidmətin işləməsi, kontentin idarə olunması və dəstək sorğularına cavab vermək üçün. Çıxış rola görə məhdudlaşdırılıb: verilənlər bazasında sətir səviyyəsində təhlükəsizlik (RLS) tətbiq olunur və hər daxili rol yalnız öz işi üçün lazım olan icazələrə malikdir. Administratorların hesablar və kontent üzərində əməliyyatları audit jurnalına yazılır.",
+    "privacy.s7.intro":
+      "Məlumatlarınızı satmırıq. Aşağıdakı xidmət təminatçıları xidmətin işləməsi üçün lazımdır və hər biri yalnız öz funksiyası üçün lazım olanı alır:",
+    "privacy.s7.table":
+      "Xidmət təminatçısı | Rolu | Nə alır | Status\n" +
+      "Supabase | Verilənlər bazası, autentifikasiya, fayl saxlancı | Bütün məhsul məlumatları, şifrələnmiş kanal üzərindən | Aktiv\n" +
+      "Vercel | Veb saytın hostinqi | Standart server sorğu jurnalları (IP, brauzerin identifikasiya sətri) | Aktiv\n" +
+      "Expo / EAS | Mobil tətbiqin yenilənməsi və push bildirişlərinin ötürülməsi | Tətbiq açılanda yeniləmə yoxlaması: tətbiqin versiyası, platforma, quraşdırmaya aid anonim identifikator və IP ünvanınız; push aktiv olduqda — push nişanı | Yeniləmə yoxlaması aktiv\n" +
+      "Apple (APNs) | iOS-da push çatdırılması | Yalnız push aktiv olduqda — standart push ötürülməsi | Push aktivləşənə qədər heç nə almır\n" +
+      "Google (FCM) | Android-də push çatdırılması | Yalnız push aktiv olduqda — standart push ötürülməsi | Push aktivləşənə qədər heç nə almır\n" +
+      "Google Fonts | Veb saytın bəzi səhifələrində şrift | Brauzerinizin IP ünvanı və identifikasiya sətri | Aktiv (yalnız veb; mobil tətbiqdə yoxdur)\n" +
+      "Google Maps | «Əlaqə» səhifəsindəki xəritə | Həmin səhifəni açdığınız anda IP ünvanı və identifikasiya sətri. Hesab məlumatı ötürülmür | Aktiv\n" +
+      "Ödəniş təminatçısı | Gələcəkdə vebdə ödəniş | — | «Ödənişlər» bölməsinə baxın",
+    "privacy.s7.pushOff":
+      "Hazırda push bildirişləri işləmir: funksiya server tərəfdə söndürülüb, buna görə cihaz nişanı ümumiyyətlə yaradılmır və Expo, Apple və Google bu funksiya üzrə heç nə almır.",
+    "privacy.s7.pushOn":
+      "Push bildirişləri aktivdir: icazə verdiyiniz cihazlar üçün nişan yaradılır və bildirişlər Expo vasitəsilə Apple və Google şəbəkələri üzərindən çatdırılır.",
+    "privacy.s7.otherIntro": "Bundan əlavə, məlumatı yalnız aşağıdakı hallarda paylaşa bilərik:",
+    "privacy.s7.other":
+      "qanunun tələb etdiyi hallarda (məhkəmə qərarı, səlahiyyətli dövlət orqanının qanuni sorğusu);\n" +
+      "həyat və sağlamlıq üçün təcili təhlükənin qarşısını almaq üçün;\n" +
+      "öz hüquqlarımızı müdafiə etmək və sui-istifadəni araşdırmaq üçün.",
+    "privacy.s7.regionLabel": "Serverlərin yerləşdiyi region",
+
+    "privacy.s8.title": "Ödənişlər",
+    "privacy.s8.list":
+      "Mobil tətbiqdə alışı tamamlamaq mümkün deyil: kart formu, kart məlumatlarının daxil edilməsi və ödəniş addımı tətbiqdə mövcud deyil.\n" +
+      "Ödənişlər yalnız veb saytda, brauzerdə və Azərbaycan manatı ilə həyata keçirilir.\n" +
+      "Ödəniş bankın öz səhifəsinə tam yönləndirmə ilə aparılacaq. Kart nömrəsi, CVV və digər kart məlumatları heç vaxt OlympIQ serverlərinə düşməyəcək və bizdə saxlanılmayacaq.\n" +
+      "Verilənlər bazasında ödənişlə bağlı yalnız məbləğ, valyuta, status və təminatçının əməliyyat nömrəsi qeyd olunacaq.",
+    "privacy.s8.statusOff":
+      "Hazırkı vəziyyət: platformada ödənişlər söndürülüb və hələ heç bir ödəniş təminatçısı inteqrasiya olunmayıb. Ödənişlər söndürülü olduğu müddətdə mobil tətbiqin heç bir yerində qiymət göstərilmir.",
+    "privacy.s8.statusOn":
+      "Hazırkı vəziyyət: ödənişlər aktivdir və yalnız veb saytda, bankın öz ödəniş səhifəsi vasitəsilə həyata keçirilir. Mobil tətbiq valideynə və ya hesabı olmayan ziyarətçiyə abunə qiymətlərini yalnız məlumat üçün göstərə bilər; şagird sessiyasında qiymət heç vaxt göstərilmir və tətbiqin özündə alış tamamlana bilmir.",
+
+    "privacy.s9.title": "Məlumatların saxlanması və silinməsi",
+    "privacy.s9.activeTitle": "Hesab aktiv olduğu müddətdə",
+    "privacy.s9.activeBody":
+      "Hesab məlumatları və məşq nəticələri hesab açıq qaldığı müddətdə saxlanılır — çünki bunlar məhsulun özüdür: irəliləyiş qrafikləri, seriyalar və reytinq məhz bu məlumatlar üzərində qurulur.",
+    "privacy.s9.notifRetention":
+      "Oxunmuş bildirişlər avtomatik olaraq silinir — hazırda 180 gündən sonra; hər istifadəçinin bildiriş qutusu isə hazırda 500 elementlə məhdudlaşdırılır. Bu iki rəqəm platforma tənzimləməsidir və dəyişdirilə bilər.",
+    "privacy.s9.otherRetention":
+      "Məşq nəticələri, audit jurnalı və giriş cəhdləri üçün saxlanma müddəti",
+    "privacy.s9.howTitle": "Hesabı necə silmək olar",
+    "privacy.s9.howBody":
+      "Mobil tətbiqdə və ya veb saytda: valideyn kimi daxil olun, yuxarıdakı avatara toxunun, «Profil» səhifəsini açın, ən aşağıda «Təhlükəli zona» hissəsinə enin və «Hesabı sil» düyməsini seçin. İki mərhələli təsdiq tələb olunur.",
+    "privacy.s9.howNote":
+      "Bu əməliyyat dərhal icra olunur və geri qaytarıla bilmir. Texniki nasazlıq səbəbindən proses yarımçıq qalarsa, yuxarıdakı ünvana yazın — silinməni əl ilə tamamlayacağıq.",
+    "privacy.s9.erasedTitle": "Silinmə zamanı nə silinir",
+    "privacy.s9.erasedIntro": "Valideyn hesabı silindikdə aşağıdakıların hamısı silinir:",
+    "privacy.s9.erased":
+      "valideyn profili və giriş qeydi;\n" +
+      "onun yaratdığı bütün uşaq profilləri və onların giriş qeydləri;\n" +
+      "8 rəqəmli nömrələr və onların qeydiyyatı;\n" +
+      "bütün cəhdlər, cavablar, ballar, faizlər, seriyalar, aktiv günlər və nailiyyətlər;\n" +
+      "reytinq yazıları və artıq görülmüş olimpiada suallarının qeydi;\n" +
+      "abunəliklər, çıxış hüquqları, endirim və promokod qeydləri;\n" +
+      "bildirişlər, bildiriş tənzimləmələri və push nişanları;\n" +
+      "bəyəndiyiniz xəbərlərin qeydi.",
+    "privacy.s9.survivesTitle": "Silinmədən sonra nə qalır",
+    "privacy.s9.survivesIntro": "Aşağıdakılar qəsdən saxlanılır və ya texniki səbəbdən qalır:",
+    "privacy.s9.survivesTable":
+      "Nə qalır | Niyə | Şəxsi məlumat qalırmı?\n" +
+      "Ödəniş və alış qeydləri | Mühasibat və vergi öhdəlikləri | Adsızlaşdırılır: şəxsə keçid silinir, yalnız məbləğ, valyuta, status və tarix qalır\n" +
+      "Hesabla bağlı əməliyyatların audit yazıları (qeydiyyat, uşaq profilinin yaradılması, parol sıfırlamaları, abunəlik və alış hadisələri, həmçinin silinmənin özü) | Təhlükəsizlik jurnalı | Şəxsə keçid silinir. Bu yazılarda ad, IP ünvanı və brauzerin identifikasiya sətri saxlanılmır\n" +
+      "Dondurulmuş reytinq arxivləri (mövsüm və ay yekunları) | Keçmiş nəticələrin tarixçəsi | Mövsüm arxivində «Ad S.» formatında ad və daxili identifikator qala bilər\n" +
+      "Yüklənmiş avatar faylları və onların qeydləri | Texniki səbəb | Bəli — hesabın silinməsi verilənlər bazasındakı qeydləri silir, faylların özünü isə silmir; bu, həm açıq, həm də qapalı saxlanc bölməsinə aiddir\n" +
+      "Uşağın giriş cəhdlərinin jurnalı (8 rəqəmli nömrə, IP-nin şifrələnmiş izi, vaxt) | Təhlükəsizlik | Bəli, qalır\n" +
+      "Bankdan gələn ödəniş bildirişlərinin ilkin qeydləri (yalnız ödəniş təminatçısı qoşulduqdan sonra — hazırda qoşulmayıb) | Maliyyə uzlaşdırması | Bankın göndərdiyi şəkildə, təminatçının əməliyyat nömrəsi ilə saxlanılır. Bankın öz bildirişinə daxil etdiyi məlumatlar — məsələn ödəyicinin adı və ya kartın maskalanmış nömrəsi — orada ola bilər",
+    "privacy.s9.backupNote":
+      "Ehtiyat nüsxələr (backup) fəlakətdən bərpa üçün saxlanılır və silinmiş məlumat bir müddət orada qala bilər.",
+    "privacy.s9.backupLabel": "Ehtiyat nüsxələrin saxlanma müddəti",
+    "privacy.s9.copyTitle": "Məlumatlarınızın nüsxəsini almaq",
+    "privacy.s9.copyBody":
+      "Hazırda tətbiqdə «məlumatları yüklə» düyməsi yoxdur. Ailənizin məlumatlarının nüsxəsini istəyirsinizsə, yuxarıdakı e-poçt ünvanına yazın — sorğunuza cavab verəcəyik.",
+
+    "privacy.s10.title": "Təhlükəsizlik",
+    "privacy.s10.intro": "Aşağıdakılar həqiqətən tətbiq olunur:",
+    "privacy.s10.list":
+      "Bütün trafik şifrələnir (HTTPS/TLS). Veb saytda HSTS aktivdir; iOS tətbiqində şifrələnməmiş bağlantılar tamamilə qadağandır.\n" +
+      "Parolları biz saxlamırıq. Həm valideyn, həm də uşaq parolları yalnız autentifikasiya xidmətimizdə şifrələnmiş (hash) formada saxlanılır. Bizim verilənlər bazamızda parol sütunu yoxdur.\n" +
+      "Verilənlər bazasında sətir səviyyəsində təhlükəsizlik (RLS) tətbiq olunub: şagird yalnız öz qeydini, valideyn isə yalnız öz uşaqlarının qeydlərini görə bilir.\n" +
+      "Mobil tətbiqdə heç bir imtiyazlı açar yoxdur. İmtiyazlı əməliyyatlar yalnız serverdə icra olunur.\n" +
+      "Sessiya açarları cihazın öz qorunan yaddaşında saxlanılır (iOS Keychain / Android Keystore) — adi fayl və ya açıq yaddaşda deyil.\n" +
+      "Uşağın girişi bloklanır: 15 dəqiqə ərzində 8 uğursuz cəhddən sonra həmin nömrə müvəqqəti kilidlənir. IP ünvanı xam şəkildə deyil, şifrələnmiş iz kimi yazılır.\n" +
+      "Valideyn üçün giriş, qeydiyyat və parol bərpası səhifələri sorğu tezliyinə görə məhdudlaşdırılır.\n" +
+      "Yüklənən şəkillər faylın adına deyil, faylın həqiqi məzmununa görə yoxlanılır. İcazə verilən formatlar: PNG, JPEG və WebP; GIF yalnız valideynin öz avatarı üçün qəbul edilir, uşağın fotosu üçün isə — fotonu kim yükləməsindən asılı olmayaraq — qəbul edilmir. Maksimum ölçü 2 MB. SVG tamamilə qadağandır.\n" +
+      "Barmaq izi və üz ilə kilid: cihazınız bizə yalnız «təsdiqləndi» və ya «təsdiqlənmədi» cavabını qaytarır. Biometrik məlumat heç vaxt cihazdan çıxmır və bizə ötürülmür — biz yalnız kilidin açıq və ya bağlı olduğunu yadda saxlayırıq.\n" +
+      "Administrator əməliyyatları jurnala yazılır.",
+    "privacy.s10.caveat":
+      "Bununla belə, dürüst olmaq lazımdır: internetdə heç bir sistem 100% təhlükəsiz deyil. Biz ağlabatan texniki və təşkilati tədbirləri görürük, lakin mütləq təhlükəsizliyə zəmanət verə bilmərik. Parolunuzu heç kimlə paylaşmayın.",
+
+    "privacy.s11.title": "Sizin hüquqlarınız və onlardan necə istifadə etmək olar",
+    "privacy.s11.table":
+      "Nə etmək istəyirsiniz | Necə\n" +
+      "Valideynin adını, telefonunu, parolunu və ya avatarını dəyişmək | Tətbiqdə: profil səhifəsi\n" +
+      "Valideynin e-poçtunu dəyişmək | Tətbiqdə mümkün deyil — bizə yazın\n" +
+      "Uşağın adını, soyadını, şəhərini, rayonunu, məktəbini və ya sinfini dəyişmək | Tətbiqdə: valideyn, sonra «Uşağı redaktə et»\n" +
+      "Uşağın parolunu sıfırlamaq | Tətbiqdə: valideyn, sonra «Uşağı redaktə et»\n" +
+      "Uşağın avatarını dəyişmək və ya silmək | Tətbiqdə: valideyn və ya şagird profili\n" +
+      "Bildirişləri söndürmək | Tətbiqdəki bildiriş tənzimləmələri; həmçinin cihazın sistem parametrləri\n" +
+      "Bir uşağı silmək | Veb saytda: valideyn paneli\n" +
+      "Bütün ailə hesabını silmək | Tətbiqdə və veb saytda: profil, sonra «Təhlükəli zona»\n" +
+      "Məlumatların nüsxəsini almaq | Bizə yazın\n" +
+      "Şikayət etmək və ya sual vermək | Bizə yazın",
+    "privacy.s11.note":
+      "Yaşadığınız ölkənin qanunvericiliyindən asılı olaraq əlavə hüquqlarınız ola bilər.",
+
+    "privacy.s12.title": "Cihaz icazələri",
+    "privacy.s12.table":
+      "İcazə | Nə vaxt istənilir | Nə üçün\n" +
+      "Foto kitabxanası | Yalnız siz «avatarı dəyiş» düyməsinə basdıqda | Profil şəkli seçmək üçün. Hazır avatarlar defolt seçimdir — foto yükləmək məcburi deyil\n" +
+      "Bildirişlər | Yalnız sistemə daxil olduqdan sonra və yalnız funksiya aktiv olduqda | Yeni raund, nəticə, seriya və hesabla bağlı bildirişlər üçün. Reklam üçün heç vaxt. İmtina etsəniz, bir daha soruşulmur\n" +
+      "Barmaq izi / Face ID | Yalnız siz tətbiq kilidini özünüz aktivləşdirdikdə | Tətbiqi parol yazmadan açmaq üçün. Kilidi həm açmaq, həm də bağlamaq üçün təsdiq tələb olunur",
+    "privacy.s12.never":
+      "Sizdən heç vaxt istəmirik: kamera, məkan, kontaktlar, mikrofon, təqvim, sağlamlıq məlumatı, Bluetooth və izləmə icazəsi (App Tracking Transparency). Tətbiq kameranı heç vaxt açmır və şəkil çəkmək imkanı ümumiyyətlə yoxdur. Android üçün dürüst qeyd: istifadə etdiyimiz foto seçimi komponenti öz manifestində kamera və yaddaş icazələrini elan edir, buna görə telefonun «Tətbiq haqqında» siyahısında onları görə bilərsiniz — tətbiq bu icazələrdən istifadə etmir və sizə kamera sorğusu göstərmir.",
+
+    "privacy.s13.title": "Bu siyasətdə dəyişikliklər",
+    "privacy.s13.body":
+      "Siyasəti yeniləyə bilərik. Yenilədikdə yuxarıdakı «Son yenilənmə» tarixini dəyişəcəyik. Əhəmiyyətli dəyişiklik olarsa, tətbiq daxilində və ya e-poçt vasitəsilə xəbərdarlıq edəcəyik. Dəyişiklik qüvvəyə mindikdən sonra xidmətdən istifadəni davam etdirməyiniz yenilənmiş siyasəti qəbul etdiyiniz anlamına gəlir.",
+    "privacy.s13.contact": "Suallarınız üçün",
+
+    // Consent line under the parent registration form. Rendered as
+    // "{Pre} {Link}{Post}" so each language keeps its own word order.
+    "privacy.consentPre": "Hesab yaratmaqla",
+    "privacy.consentLink": "Məxfilik Siyasəti",
+    "privacy.consentPost": " ilə tanış olduğunuzu təsdiqləyirsiniz.",
+    // Shown on the parent profile page, next to the account-deletion controls.
+    "privacy.profileHint":
+      "Hansı məlumatları topladığımızı, kimin nəyi görə bildiyini və hesabı sildikdə nə baş verdiyini burada oxuya bilərsiniz.",
 
     // — Round3 E — Profile, info carousel, news panel, profile nav —
     "nav.profile": "Profil",
@@ -1624,6 +1975,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "billing.plansTitle": "Plans & subjects",
     "billing.billingTitle": "Billing details",
     "billing.invoicesTitle": "Invoices",
+    "billing.invoicesEmpty": "No invoices yet. They will appear here once your first payment goes through.",
     "billing.current": "Current plan",
     "billing.popular": "Most popular",
     "billing.addSubjects": "Add subjects",
@@ -1726,7 +2078,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "prof2.security": "Security",
     "prof2.securityHint": "Update your password from time to time to keep your account secure.",
     "prof2.danger": "Danger zone",
-    "prof2.dangerHint": "Deleting your account permanently removes all of your data. This action cannot be undone.",
+    "prof2.dangerHint": "Deleting your account removes your parent profile, every child profile you created and all of their learning data. This action cannot be undone. A small number of records are kept in anonymised form for accounting and security — see the Privacy Policy.",
     "prof2.session": "Session",
     "prof2.sessionHint": "Sign out of your account on this device.",
     "prof2.idHint": "You use this ID to log in.",
@@ -1867,7 +2219,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "reset.newPassword": "New password",
     "reset.submit": "Update password",
     "account.delete": "Delete account",
-    "account.deleteConfirm": "Your account and all your children's accounts will be permanently deleted. Continue?",
+    "account.deleteConfirm": "Your account, all your children's accounts and their learning data will be permanently deleted. A small number of records are kept in anonymised form (see the Privacy Policy). Continue?",
     "child.resetPw": "Reset password",
     "child.newPassword": "New password",
     "child.resetPwSubmit": "Update",
@@ -2268,6 +2620,340 @@ export const messages: Record<Locale, Record<string, string>> = {
     "footer.product": "Services",
     "footer.company": "Company",
     "footer.legal": "Legal",
+
+    // ---- Privacy policy (privacy.*) — see the az block for the format rules ----
+    "nav.privacy": "Privacy policy",
+    "privacy.title": "Privacy Policy",
+    "privacy.eyebrow": "Legal document",
+    "privacy.lead":
+      "This policy covers the OlympIQ website and the OlympIQ mobile app for iOS and Android.\n\n" +
+      "OlympIQ is an education product for school students in grades 1–11. Because we handle children's data, we try to be short and honest.",
+    "privacy.effective": "Effective date",
+    "privacy.updated": "Last updated",
+    "privacy.tbd": "to be confirmed",
+    "privacy.toc": "Sections",
+    "privacy.draft.title": "This document is still a draft",
+    "privacy.draft.body":
+      "The text was written from how the product actually works, but it has not yet been reviewed by a lawyer and no effective date has been set. A few details — contact addresses, retention periods, the region the servers are in, and the legal status of the data controller — are still being confirmed.",
+
+    "privacy.s1.title": "The short version",
+    "privacy.s1.doTitle": "What we do",
+    "privacy.s1.do":
+      "We collect only what an account needs to work: the parent's contact details, the child's name, school, grade, and their practice results.\n" +
+      "A parent creates and controls the child's profile. A child can never register on their own.\n" +
+      "A parent can delete the entire family account from inside the app at any time.",
+    "privacy.s1.dontTitle": "What we never do",
+    "privacy.s1.dont":
+      "No advertising. There is no ad network and no ad SDK anywhere in the app.\n" +
+      "No tracking. Neither the mobile app nor the website contains any third-party analytics, attribution or crash-reporting tool. We never read an advertising identifier (no IDFA, no Android Advertising ID).\n" +
+      "We do not sell, rent or trade your data, and we never hand it to anyone for marketing.\n" +
+      "We never ask for your location, camera, contacts or microphone.\n" +
+      "We do not build advertising profiles from a child's behaviour.\n" +
+      "We never see your card details. There is no checkout in the mobile app — purchases happen only on the website.",
+
+    "privacy.s2.title": "Who we are and how to reach us",
+    "privacy.s2.product": "Product",
+    "privacy.s2.productValue":
+      "OlympIQ — an olympiad and exam preparation platform for grades 1–11",
+    "privacy.s2.operator": "Operated by",
+    "privacy.s2.operatorValue":
+      "Kamil Piriyev (Tax Identification Number / VÖEN: 6300091352) and his partners",
+    "privacy.s2.address": "Legal address",
+    "privacy.s2.addressValue": "Peshtatuk village, Lerik District, Republic of Azerbaijan",
+    "privacy.s2.email": "Support email",
+    "privacy.s2.phone": "Phone",
+    "privacy.s2.website": "Website",
+    "privacy.s2.requests": "Privacy and data requests",
+    "privacy.s2.note":
+      "For any question, complaint or deletion request about your data, write to the address above.",
+
+    "privacy.s3.title": "The family account model",
+    "privacy.s3.intro":
+      "OlympIQ's account model is unusual, and it is built that way specifically for child safety.",
+    "privacy.s3.points":
+      "Only a parent can register, using an email address and a password.\n" +
+      "A child can never register. There is no sign-up path for a child on the website or in the mobile app. This is a design decision and it is enforced on the server.\n" +
+      "A parent creates the child's profile and enters every piece of information about the child themselves: first name, last name, city, district, school and grade.\n" +
+      "A child has no email address. Internally, the child's login record uses a technical, non-deliverable address that never receives mail; the child never sees or uses it.\n" +
+      "A child signs in with an 8-digit number issued by our server, plus a password the parent chose.\n" +
+      "A child can never buy anything. This is enforced on the server, not merely hidden in the interface.\n" +
+      "A child can never delete anything. The parent is the account holder for the whole family, and holds the deletion power.",
+    "privacy.s3.result":
+      "The result: the parent decides how much data about the child exists, and can remove all of it at any time.",
+
+    "privacy.s4.title": "What we collect",
+    "privacy.s4.parentTitle": "Parent account",
+    "privacy.s4.parentTable":
+      "Data | Required? | Why we collect it\n" +
+      "Name (display name) | Yes | To identify the account and address you in the app\n" +
+      "Email address | Yes | Your login credential; password reset; account notices\n" +
+      "Phone number (international format) | Yes | Account contact and recovery. We do not send SMS — SMS is not implemented in the product at all\n" +
+      "Password | Yes | To sign in. We do not store your password: it is held only by our authentication service in hashed form, which nobody can read back\n" +
+      "Interface language (az / en / ru) | No | To show the app in your language\n" +
+      "Profile picture (avatar) | No | Cosmetic only. This file goes to a publicly-readable storage area — see «Avatar photos»\n" +
+      "Notification preferences | No | To remember which channels you want to hear from\n" +
+      "News articles you liked | No | A record of the like you placed on an article",
+    "privacy.s4.parentNote":
+      "A parent can change their name, phone, password and avatar in the app. The email address cannot be changed in the app — contact us instead.",
+    "privacy.s4.childTitle": "Child (student) profile — entered by the parent",
+    "privacy.s4.childTable":
+      "Data | Required? | Why we collect it\n" +
+      "First name and last name | Yes | To address the child in the app; shown on leaderboards as «Firstname L.»\n" +
+      "City and district (rayon) | Yes | For regional leaderboards\n" +
+      "School name | Yes | For the school leaderboard\n" +
+      "Grade | Yes | So the child is served questions that match their grade\n" +
+      "8-digit login ID | Issued by our server | The child's login credential. The last 4 digits of this number are shown on the public leaderboard\n" +
+      "Password | Yes (set by the parent) | To sign in. Held only by our authentication service, in hashed form\n" +
+      "Avatar | No | Either a preset image or an uploaded photo. A photo is always kept in private storage — see «Avatar photos»\n" +
+      "Colour and sticker choice | No | The child's chosen look\n" +
+      "Learning data | Automatic | Questions answered, options selected, right and wrong answers, time spent per question, points, percentages, streaks, active days, leaderboard position, achievements\n" +
+      "Which olympiad questions the child has already seen | Automatic | So the same question is not served twice\n" +
+      "Notification preferences and liked news | No | Same purpose as on the parent account",
+    "privacy.s4.childNoDob":
+      "We do not collect a date of birth or a year of birth. We never ask a child's age — the grade is enough.",
+    "privacy.s4.childEditable":
+      "A child can change only the following about themselves: their own first and last name (which also changes the name shown on the leaderboard), their password, their avatar and their colour choice. School, city, district and grade are read-only to the child — only the parent can change them.",
+    "privacy.s4.techTitle": "Technical and device data",
+    "privacy.s4.techTable":
+      "Data | When | Why\n" +
+      "Push notification token, device model name, OS version and app version | Only if push notifications are switched on and you granted permission | To deliver a notification to the right device. No advertising identifier and no hardware identifier is ever read. The token is deleted from our server when you sign out\n" +
+      "Child sign-in attempt log: the 8-digit number, a SHA-256 hash of the IP address, the outcome and the time | On every sign-in attempt | To stop password-guessing attacks. The raw IP address is never stored\n" +
+      "Server logs — including IP address and browser user agent | On every request | Standard technical logs kept by our hosting providers, for security and troubleshooting\n" +
+      "Sign-in records held by the authentication service | On every sign-in | Our authentication service keeps its own security log",
+    "privacy.s4.logRetention": "Server log retention",
+    "privacy.s4.deviceTitle": "Kept in your device's protected storage (mobile app)",
+    "privacy.s4.deviceIntro":
+      "The mobile app stores only the following in the device's own protected storage (iOS Keychain / Android Keystore):",
+    "privacy.s4.deviceList":
+      "your sign-in session;\n" +
+      "whether the biometric app lock is on or off (literally just «1» or «0»);\n" +
+      "whether the welcome screens have been shown;\n" +
+      "a copy of the push token;\n" +
+      "your chosen language and light or dark theme.",
+    "privacy.s4.deviceNote":
+      "The preferences in this list (the lock, the welcome screens, your language and theme) never leave the device at all. Your sign-in session is sent to our authentication service on every request — that is what it is for — and the push token is stored on our server while push is enabled (see the technical data table above). Nothing else is transmitted.",
+    "privacy.s4.cookiesTitle": "Cookies — website",
+    "privacy.s4.cookiesIntro": "The website uses strictly necessary cookies only:",
+    "privacy.s4.cookiesList":
+      "Session cookies — to keep you signed in while you are on the site.\n" +
+      "A «locale» cookie — to remember your chosen interface language (1 year).\n" +
+      "The light or dark theme choice is stored in your browser's own local storage.\n" +
+      "A short-lived marker in your browser's session storage, so the same news article is not counted twice in its view count. It is cleared when the browser tab closes.",
+    "privacy.s4.cookiesNote":
+      "There are no advertising cookies, no analytics cookies and no tracking pixels.",
+
+    "privacy.s5.title": "Children's data",
+    "privacy.s5.callout":
+      "This section is OlympIQ's children's privacy policy. Because our product is directed at minors, we set it out separately so a parent can see everything in one place.",
+    "privacy.s5.storedTitle": "What is stored about a child",
+    "privacy.s5.stored":
+      "Everything in the «Child profile» table above: first name, last name, city, district, school, grade, the 8-digit login number, the chosen avatar and look, and practice results (answers, points, percentages, streaks, active days, leaderboard placement).",
+    "privacy.s5.notCollected":
+      "What we never collect about a child: date of birth, email address, phone number, home address, location, health data, financial data, contacts, browsing history, advertising identifiers or hardware identifiers.",
+    "privacy.s5.neverTitle": "What we never do with a child's data",
+    "privacy.s5.never":
+      "We do not show advertising to a child and we do not build advertising profiles.\n" +
+      "We do not track a child's behaviour across other apps or websites.\n" +
+      "We do not sell, rent or share children's data for marketing.\n" +
+      "We do not publish anything a child writes, with one exception: their own first and last name. A student can change these themselves, and it is that name which appears on leaderboards as «Firstname L.». There is no other free text a child can show to other users.\n" +
+      "There is no chat, no messaging, no comments and no forum in the app. A child cannot communicate with another user.\n" +
+      "We never encourage a child to buy anything. No price, no payment option and no purchase button is displayed in a student session.",
+    "privacy.s5.lbTitle": "What appears on leaderboards, and to whom",
+    "privacy.s5.lbIntro":
+      "This is one of the most important things for a parent to understand. There are two different leaderboards.",
+    "privacy.s5.lb1Title": "1) The in-app leaderboard — visible to signed-in users only",
+    "privacy.s5.lb1Intro":
+      "Any signed-in parent and any signed-in student sees the following about every ranked child:",
+    "privacy.s5.lb1Table":
+      "Shown | Example\n" +
+      "First name and the initial of the surname | Aysel M.\n" +
+      "City | Baku\n" +
+      "District (rayon) | Nasimi\n" +
+      "School name | School No. 142\n" +
+      "Grade | 7\n" +
+      "Performance figures | percentage, questions answered, correct answers, number of attempts",
+    "privacy.s5.lb1Note":
+      "The child's full surname, avatar, 8-digit number and the parent's contact details are not shown.",
+    "privacy.s5.lb2Title":
+      "2) The public top-10 on the website's home page — visible to anyone, with no account",
+    "privacy.s5.lb2Body":
+      "Here the child's name is not shown; instead a pseudonym such as «Şagird 4821» is displayed. Those four digits are the last four digits of the child's 8-digit login number. Alongside the pseudonym, this public table also shows the city, district, school name and grade.",
+    "privacy.s5.lbWarn":
+      "An honest warning for parents: in a small district school, the combination of school, grade and district may be enough to recognise a child even without a name. We are not hiding this.",
+    "privacy.s5.lbNoMedals":
+      "Leaderboards carry no medals, no prizes and no money — only numeric ranks.",
+    "privacy.s5.avatarTitle": "Avatar photos — an important difference",
+    "privacy.s5.avatarTable":
+      "Which path | Where the file is stored | Who can see it\n" +
+      "A parent uploads a photo for a child (Add child / Edit child) | Private storage area | Only family members, through a short-lived signed link\n" +
+      "A student uploads a photo from their own profile | Private storage area | Only family members, through a short-lived signed link\n" +
+      "A parent uploads their own avatar | Public storage area | Anyone who has the file's direct link",
+    "privacy.s5.avatarWarn":
+      "A child's photo never goes to a publicly-readable storage area: whether a parent uploaded it or the student uploaded it themselves, the file is written to the private area and opens only through a short-lived signed link issued to family members. The public storage area applies to one thing only — a parent's own avatar, which anyone holding the file's direct link can open. Preset avatars are the default and no photo is ever required — if you do not want your child's photo uploaded, use a preset avatar.",
+    "privacy.s5.avatarUnlink":
+      "Removing an avatar behaves differently depending on the path. A child's photo — uploaded by a parent or by the student themselves — is erased from the private storage area when it is replaced or removed. A parent's own avatar is only unlinked: the picture stops appearing on the profile, but the file remains in the public storage area.",
+    "privacy.s5.removeTitle": "How a parent removes a child's data",
+    "privacy.s5.removeList":
+      "Delete the whole family account: parent profile → «Danger Zone» → «Delete account» → a two-step confirmation. This deletes the parent account and every child profile the parent created. Available both on the website and in the mobile app.\n" +
+      "Delete a single child: currently on the website only, from the parent dashboard. The mobile app has no delete-a-child option.\n" +
+      "A student can delete nothing.",
+    "privacy.s5.removeNote":
+      "Deletion is immediate — there is no waiting period, no undo and no archive state. What is erased and what survives is set out in detail in «Retention and deletion».",
+
+    "privacy.s6.title": "How we use the data",
+    "privacy.s6.useTitle": "We use it to",
+    "privacy.s6.use":
+      "Create the account, sign you in and keep the account secure.\n" +
+      "Select questions that match the child's grade and the current school term.\n" +
+      "Score answers and calculate points, percentages, streaks and progress statistics.\n" +
+      "Show the parent a report of the child's progress.\n" +
+      "Build the leaderboards.\n" +
+      "Send notifications (a new round, a result, a streak, news, account notices).\n" +
+      "Prevent abuse, automated attacks and password-guessing.\n" +
+      "Provide support and answer your requests.\n" +
+      "Determine which subjects and olympiad packages the family has access to.\n" +
+      "Meet our legal obligations where the law requires it.",
+    "privacy.s6.notTitle": "We do not use it to",
+    "privacy.s6.not":
+      "Show advertising or build advertising profiles.\n" +
+      "Track you or your child across other apps and websites.\n" +
+      "Sell, rent or hand data to advertising brokers.\n" +
+      "Make credit, insurance, employment or similar decisions.\n" +
+      "Make automated decisions about a child with legal effect.\n" +
+      "Train third-party advertising or profiling systems.",
+
+    "privacy.s7.title": "Who we share data with",
+    "privacy.s7.staffTitle": "Access inside OlympIQ",
+    "privacy.s7.staff":
+      "To be straightforward about this: authorised OlympIQ administrators and content managers can access account and learning data through an internal admin panel, in order to run the service, manage content and answer support requests. Access is limited by role: the database enforces row-level security and each internal role holds only the permissions its job requires. Administrator actions on accounts and content are written to an audit log.",
+    "privacy.s7.intro":
+      "We do not sell your data. The following service providers are needed to run the service, and each one receives only what its function requires:",
+    "privacy.s7.table":
+      "Service provider | Role | What it receives | Status\n" +
+      "Supabase | Database, authentication, file storage | All product data, over an encrypted connection | Active\n" +
+      "Vercel | Website hosting | Standard server request logs (IP, user agent) | Active\n" +
+      "Expo / EAS | Mobile app updates and push notification relay | An update check at launch: the app version, the platform, an anonymous per-installation identifier and your IP address; the push token when push is enabled | Update check active\n" +
+      "Apple (APNs) | iOS push delivery | Only once push is on — standard push transport | Receives nothing until push is enabled\n" +
+      "Google (FCM) | Android push delivery | Only once push is on — standard push transport | Receives nothing until push is enabled\n" +
+      "Google Fonts | A font on some website pages | Your browser's IP address and user agent | Active (website only; not in the mobile app)\n" +
+      "Google Maps | The map on the «Contact» screen | Your IP address and user agent at the moment that screen is opened. No account data is passed | Active\n" +
+      "Payment provider | Future web payments | — | See the «Payments» section",
+    "privacy.s7.pushOff":
+      "Push notifications are not operational today: the feature is switched off server-side, so no device token is ever created and Expo, Apple and Google receive nothing at all for it.",
+    "privacy.s7.pushOn":
+      "Push notifications are live: a token is created for the devices you allowed, and notifications are delivered through Expo over the Apple and Google networks.",
+    "privacy.s7.otherIntro": "Beyond this, we may share data only:",
+    "privacy.s7.other":
+      "where the law requires it (a court order, a lawful request from a competent authority);\n" +
+      "to prevent an urgent threat to life or health;\n" +
+      "to defend our rights and investigate abuse.",
+    "privacy.s7.regionLabel": "Where the servers are located",
+
+    "privacy.s8.title": "Payments",
+    "privacy.s8.list":
+      "A purchase can never be completed in the mobile app: there is no card form, no card entry and no payment step in the app at all.\n" +
+      "Payments happen only on the website, in a browser, in Azerbaijani manat.\n" +
+      "Payment will use a full redirect to the bank's own hosted page. Card numbers, CVV codes and other card details will never reach OlympIQ servers and will never be stored by us.\n" +
+      "Our database will record only the amount, the currency, the status and the provider's transaction reference.",
+    "privacy.s8.statusOff":
+      "Current status: payments are switched off on the platform and no payment provider has been integrated yet. While payments are off, no price is displayed anywhere in the mobile app.",
+    "privacy.s8.statusOn":
+      "Current status: payments are live and happen only on the website, through the bank's own hosted payment page. The mobile app may show subscription prices for information to a parent or a signed-out visitor; a student session never shows a price, and no purchase can be completed inside the app.",
+
+    "privacy.s9.title": "Retention and deletion",
+    "privacy.s9.activeTitle": "While the account is open",
+    "privacy.s9.activeBody":
+      "Account details and practice results are kept for as long as the account exists — because they are the product: progress charts, streaks and ranking are all built on them.",
+    "privacy.s9.notifRetention":
+      "Read notifications are deleted automatically — currently after 180 days — and each user's inbox is currently capped at 500 items. Both figures are platform settings and can be changed.",
+    "privacy.s9.otherRetention":
+      "Retention for learning data, audit entries and sign-in attempt logs",
+    "privacy.s9.howTitle": "How to delete the account",
+    "privacy.s9.howBody":
+      "In the mobile app or on the website: sign in as a parent, tap the avatar at the top, open «Profile», scroll to «Danger Zone» and choose «Delete account». A two-step confirmation is required.",
+    "privacy.s9.howNote":
+      "This runs immediately and cannot be undone. In the rare case that a technical fault interrupts it, write to the address above and we will complete the deletion manually.",
+    "privacy.s9.erasedTitle": "What is erased",
+    "privacy.s9.erasedIntro":
+      "When a parent account is deleted, all of the following go with it:",
+    "privacy.s9.erased":
+      "the parent profile and login record;\n" +
+      "every child profile the parent created and their login records;\n" +
+      "the 8-digit numbers and their allocation records;\n" +
+      "all attempts, answers, points, percentages, streaks, active days and achievements;\n" +
+      "leaderboard entries and the record of olympiad questions already seen;\n" +
+      "subscriptions, access entitlements, discount and coupon records;\n" +
+      "notifications, notification preferences and push tokens;\n" +
+      "the record of news articles that were liked.",
+    "privacy.s9.survivesTitle": "What survives deletion",
+    "privacy.s9.survivesIntro":
+      "The following are kept on purpose, or remain for technical reasons:",
+    "privacy.s9.survivesTable":
+      "What survives | Why | Does personal data remain?\n" +
+      "Payment and purchase records | Accounting and tax obligations | Anonymised: the link to the person is removed, only amount, currency, status and date remain\n" +
+      "Audit entries for account actions (registration, creating a child profile, password resets, subscription and purchase events, and the deletion itself) | Security log | The link to the person is removed. These entries store no name, no IP address and no browser user agent\n" +
+      "Frozen leaderboard archives (season and monthly finals) | A historical record of past results | A season archive may retain the «Firstname L.» label and an internal identifier\n" +
+      "Uploaded avatar files and their metadata | Technical reason | Yes — deleting the account removes the database records but not the files themselves, in both the public and the private storage areas\n" +
+      "The child sign-in attempt log (8-digit number, hashed IP, timestamp) | Security | Yes, it is retained\n" +
+      "Raw payment notifications received from the bank (only once a payment provider is connected — none is today) | Financial reconciliation | Stored as the bank sends them, keyed by the provider's transaction reference. They may contain whatever the bank includes, such as a payer name or a masked card number",
+    "privacy.s9.backupNote":
+      "Backups are kept for disaster recovery, and deleted data may remain in them for a period.",
+    "privacy.s9.backupLabel": "Backup retention",
+    "privacy.s9.copyTitle": "Getting a copy of your data",
+    "privacy.s9.copyBody":
+      "There is no «download my data» button in the app today. If you want a copy of your family's data, write to the email address above and we will respond to your request.",
+
+    "privacy.s10.title": "Security",
+    "privacy.s10.intro": "The following are genuinely in place:",
+    "privacy.s10.list":
+      "All traffic is encrypted (HTTPS/TLS). The website enforces HSTS; the iOS app forbids unencrypted connections entirely.\n" +
+      "We do not store passwords. Both parent and child passwords are held only by our authentication service, in hashed form. Our database has no password column.\n" +
+      "Row-level security is enabled across the database: a student can read only their own record, and a parent only the records of their own children.\n" +
+      "The mobile app holds no privileged key. Privileged operations run only on the server.\n" +
+      "Session tokens live in the device's own protected storage (iOS Keychain / Android Keystore) — never in an ordinary file or plain storage.\n" +
+      "Child sign-in lockout: after 8 failed attempts within 15 minutes, that number is temporarily locked. The IP address is recorded as a hash, never in raw form.\n" +
+      "Parent sign-in, registration and password-reset pages are rate limited.\n" +
+      "Uploaded images are validated from the file's actual bytes, not from its name. Permitted formats: PNG, JPEG and WebP; GIF is additionally accepted for a parent's own avatar, but never for a child's photo, whoever uploads it. Maximum size 2 MB. SVG is banned entirely.\n" +
+      "Biometric app lock: your device returns only a «verified» or «not verified» answer to us. Biometric data never leaves your device and is never transmitted to us — we store only whether the lock is on or off.\n" +
+      "Administrator actions are written to an audit log.",
+    "privacy.s10.caveat":
+      "That said, we should be honest: no system on the internet is 100% secure. We take reasonable technical and organisational measures, but we cannot guarantee absolute security. Never share your password with anyone.",
+
+    "privacy.s11.title": "Your rights and how to exercise them",
+    "privacy.s11.table":
+      "What you want to do | How\n" +
+      "Change the parent name, phone, password or avatar | In the app: profile page\n" +
+      "Change the parent email address | Not possible in the app — write to us\n" +
+      "Change a child's name, city, district, school or grade | In the app: parent, then «Edit child»\n" +
+      "Reset a child's password | In the app: parent, then «Edit child»\n" +
+      "Change or remove a child's avatar | In the app: parent or student profile\n" +
+      "Turn notifications off | Notification preferences in the app, and your device's system settings\n" +
+      "Delete one child | On the website: parent dashboard\n" +
+      "Delete the whole family account | In the app and on the website: profile, then «Danger Zone»\n" +
+      "Get a copy of your data | Write to us\n" +
+      "Complain or ask a question | Write to us",
+    "privacy.s11.note":
+      "Depending on where you live, you may have additional legal rights.",
+
+    "privacy.s12.title": "Device permissions",
+    "privacy.s12.table":
+      "Permission | When it is asked for | What it is for\n" +
+      "Photo library | Only when you tap «change avatar» | To choose a profile picture. Preset avatars are the default — uploading a photo is never required\n" +
+      "Notifications | Only after signing in, and only when the feature is enabled | For new rounds, results, streaks and account notices. Never for advertising. If you decline, you are never asked again\n" +
+      "Fingerprint / Face ID | Only when you turn on the optional app lock yourself | To open the app without typing a password. Turning the lock both on and off requires a successful check",
+    "privacy.s12.never":
+      "We never ask you for: camera, location, contacts, microphone, calendar, health, Bluetooth, or tracking permission (App Tracking Transparency). The app never opens the camera and has no way to take a photo at all. An honest note for Android: the photo-picker component we use declares camera and storage permissions in its own manifest, so you may see them listed in the phone's App info screen — the app never uses them and never shows you a camera prompt.",
+
+    "privacy.s13.title": "Changes to this policy",
+    "privacy.s13.body":
+      "We may update this policy. When we do, we will change the «Last updated» date above. If the change is significant, we will tell you in the app or by email. Continuing to use the service after a change takes effect means you accept the updated policy.",
+    "privacy.s13.contact": "Questions",
+
+    "privacy.consentPre": "By creating an account you confirm that you have read our",
+    "privacy.consentLink": "Privacy Policy",
+    "privacy.consentPost": ".",
+    "privacy.profileHint":
+      "Read what we collect, who can see what, and exactly what happens when you delete the account.",
 
     // — Round3 E — Profile, info carousel, news panel, profile nav —
     "nav.profile": "Profile",
@@ -2911,6 +3597,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "billing.plansTitle": "Планы и предметы",
     "billing.billingTitle": "Платёжные данные",
     "billing.invoicesTitle": "Счета",
+    "billing.invoicesEmpty": "Счетов пока нет. Они появятся здесь после первого платежа.",
     "billing.current": "Текущий план",
     "billing.popular": "Самый популярный",
     "billing.addSubjects": "Добавить предметы",
@@ -3013,7 +3700,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "prof2.security": "Безопасность",
     "prof2.securityHint": "Время от времени меняйте пароль, чтобы ваш аккаунт оставался в безопасности.",
     "prof2.danger": "Опасная зона",
-    "prof2.dangerHint": "При удалении аккаунта все ваши данные будут удалены безвозвратно. Это действие нельзя отменить.",
+    "prof2.dangerHint": "При удалении аккаунта будут удалены ваш профиль родителя, все созданные вами профили детей и все их учебные данные. Это действие нельзя отменить. Небольшое количество записей сохраняется в обезличенном виде для бухгалтерии и безопасности — подробнее в Политике конфиденциальности.",
     "prof2.session": "Сеанс",
     "prof2.sessionHint": "Выйти из аккаунта на этом устройстве.",
     "prof2.idHint": "Этот ID нужен для входа в аккаунт.",
@@ -3154,7 +3841,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "reset.newPassword": "Новый пароль",
     "reset.submit": "Обновить пароль",
     "account.delete": "Удалить аккаунт",
-    "account.deleteConfirm": "Ваш аккаунт и все аккаунты детей будут удалены навсегда. Продолжить?",
+    "account.deleteConfirm": "Ваш аккаунт, все аккаунты детей и их учебные данные будут удалены навсегда. Небольшое количество записей сохраняется в обезличенном виде (см. Политику конфиденциальности). Продолжить?",
     "child.resetPw": "Сбросить пароль",
     "child.newPassword": "Новый пароль",
     "child.resetPwSubmit": "Обновить",
@@ -3555,6 +4242,341 @@ export const messages: Record<Locale, Record<string, string>> = {
     "footer.product": "Сервис",
     "footer.company": "Компания",
     "footer.legal": "Правовая информация",
+
+    // ---- Privacy policy (privacy.*) — формат описан в блоке az ----
+    "nav.privacy": "Политика конфиденциальности",
+    "privacy.title": "Политика конфиденциальности",
+    "privacy.eyebrow": "Правовой документ",
+    "privacy.lead":
+      "Эта политика распространяется на сайт OlympIQ и на мобильное приложение OlympIQ для iOS и Android.\n\n" +
+      "OlympIQ — образовательный продукт для школьников 1–11 классов. Поскольку мы работаем с данными детей, мы стараемся говорить коротко и честно.",
+    "privacy.effective": "Дата вступления в силу",
+    "privacy.updated": "Последнее обновление",
+    "privacy.tbd": "уточняется",
+    "privacy.toc": "Разделы",
+    "privacy.draft.title": "Документ находится в подготовке",
+    "privacy.draft.body":
+      "Текст написан на основе того, как продукт работает на самом деле, но он ещё не проверен юристом, и дата вступления в силу не назначена. Часть сведений — контактные адреса, сроки хранения, регион расположения серверов и правовой статус оператора персональных данных — пока уточняется.",
+
+    "privacy.s1.title": "Коротко и по существу",
+    "privacy.s1.doTitle": "Что мы делаем",
+    "privacy.s1.do":
+      "Мы собираем только то, без чего аккаунт не работает: контактные данные родителя, имя ребёнка, школу, класс и результаты его занятий.\n" +
+      "Профиль ребёнка создаёт и контролирует родитель. Ребёнок не может зарегистрироваться сам.\n" +
+      "Родитель в любой момент может удалить весь семейный аккаунт прямо из приложения.",
+    "privacy.s1.dontTitle": "Чего мы не делаем никогда",
+    "privacy.s1.dont":
+      "Никакой рекламы. В приложении нет ни рекламной сети, ни рекламного SDK.\n" +
+      "Никакой слежки. Ни в мобильном приложении, ни на сайте нет сторонних инструментов аналитики, атрибуции или сбора отчётов о сбоях. Рекламный идентификатор (IDFA, Android Advertising ID) не считывается никогда.\n" +
+      "Мы не продаём, не сдаём в аренду и не обмениваем ваши данные и не передаём их никому в маркетинговых целях.\n" +
+      "Мы не запрашиваем геолокацию, камеру, контакты и микрофон.\n" +
+      "Мы не строим рекламные профили на основе поведения ребёнка.\n" +
+      "Мы не видим данные вашей карты. В мобильном приложении нет оформления покупки — покупки совершаются только на сайте.",
+
+    "privacy.s2.title": "Кто мы и как с нами связаться",
+    "privacy.s2.product": "Продукт",
+    "privacy.s2.productValue":
+      "OlympIQ — платформа подготовки к олимпиадам и экзаменам для 1–11 классов",
+    "privacy.s2.operator": "Проект реализует",
+    "privacy.s2.operatorValue": "Камиль Пириев (ИНН / VÖEN: 6300091352) и его партнёры",
+    "privacy.s2.address": "Юридический адрес",
+    "privacy.s2.addressValue": "Азербайджанская Республика, Лерикский район, село Пештатюк",
+    "privacy.s2.email": "Эл. почта поддержки",
+    "privacy.s2.phone": "Телефон",
+    "privacy.s2.website": "Сайт",
+    "privacy.s2.requests": "Адрес для запросов о персональных данных",
+    "privacy.s2.note":
+      "По любому вопросу, жалобе или запросу на удаление данных пишите на адрес выше.",
+
+    "privacy.s3.title": "Модель семейного аккаунта",
+    "privacy.s3.intro":
+      "Модель аккаунта в OlympIQ устроена необычно, и сделано это именно ради безопасности детей.",
+    "privacy.s3.points":
+      "Зарегистрироваться может только родитель — по электронной почте и паролю.\n" +
+      "Ребёнок не может зарегистрироваться сам. Ни на сайте, ни в приложении для ребёнка нет пути регистрации. Это осознанное решение, и оно контролируется на сервере.\n" +
+      "Профиль ребёнка создаёт родитель и сам вводит все данные о нём: имя, фамилию, город, район, школу и класс.\n" +
+      "У ребёнка нет адреса электронной почты. Внутри системы для входа ребёнка используется технический адрес, который не принимает почту; ребёнок его не видит и не использует.\n" +
+      "Ребёнок входит по 8-значному номеру, который выдаёт наш сервер, и паролю, который задаёт родитель.\n" +
+      "Ребёнок не может ничего купить. Это обеспечивается на сервере, а не просто скрыто в интерфейсе.\n" +
+      "Ребёнок не может ничего удалить. Владельцем аккаунта всей семьи является родитель, и право удаления принадлежит ему.",
+    "privacy.s3.result":
+      "Итог: родитель решает, какие данные о ребёнке вообще существуют, и может удалить их полностью в любой момент.",
+
+    "privacy.s4.title": "Какие данные мы собираем",
+    "privacy.s4.parentTitle": "Аккаунт родителя",
+    "privacy.s4.parentTable":
+      "Данные | Обязательно? | Зачем\n" +
+      "Имя (отображаемое) | Да | Чтобы опознать аккаунт и обращаться к вам в приложении\n" +
+      "Адрес электронной почты | Да | Логин для входа; восстановление пароля; уведомления об аккаунте\n" +
+      "Номер телефона (в международном формате) | Да | Связь по вопросам аккаунта и его восстановление. Мы не отправляем SMS — функции SMS в продукте нет вообще\n" +
+      "Пароль | Да | Для входа. Мы не храним ваш пароль: он хранится только в нашем сервисе аутентификации в виде хеша, который невозможно прочитать обратно\n" +
+      "Язык интерфейса (az / en / ru) | Нет | Чтобы показывать приложение на вашем языке\n" +
+      "Фото профиля (аватар) | Нет | Только для внешнего вида. Этот файл попадает в общедоступное хранилище — см. «Фотографии-аватары»\n" +
+      "Настройки уведомлений | Нет | Чтобы запомнить, по каким каналам вы хотите получать уведомления\n" +
+      "Понравившиеся новости | Нет | Запись о вашем лайке под статьёй",
+    "privacy.s4.parentNote":
+      "Родитель может изменить в приложении имя, телефон, пароль и аватар. Адрес электронной почты в приложении изменить нельзя — для этого напишите нам.",
+    "privacy.s4.childTitle": "Профиль ребёнка (ученика) — данные вводит родитель",
+    "privacy.s4.childTable":
+      "Данные | Обязательно? | Зачем\n" +
+      "Имя и фамилия | Да | Чтобы обращаться к ребёнку в приложении; в таблице лидеров отображается как «Имя Ф.»\n" +
+      "Город и район | Да | Для региональных таблиц лидеров\n" +
+      "Название школы | Да | Для школьной таблицы лидеров\n" +
+      "Класс | Да | Чтобы ребёнку выдавались вопросы для его класса\n" +
+      "8-значный номер для входа | Выдаёт сервер | Логин ребёнка. Последние 4 цифры этого номера показываются в публичной таблице лидеров\n" +
+      "Пароль | Да (задаёт родитель) | Для входа. Хранится только в сервисе аутентификации в виде хеша\n" +
+      "Аватар | Нет | Готовое изображение или загруженное фото. Фото всегда хранится в закрытом хранилище — см. «Фотографии-аватары»\n" +
+      "Выбор цвета и стикеров | Нет | Оформление, выбранное ребёнком\n" +
+      "Учебные данные | Автоматически | Отвеченные вопросы, выбранные варианты, верные и неверные ответы, время на вопрос, баллы, проценты, серии, активные дни, место в рейтинге, достижения\n" +
+      "Уже показанные олимпиадные вопросы | Автоматически | Чтобы один и тот же вопрос не повторялся\n" +
+      "Настройки уведомлений и понравившиеся новости | Нет | То же, что и в аккаунте родителя",
+    "privacy.s4.childNoDob":
+      "Мы не собираем дату рождения и год рождения. Возраст ребёнка мы не спрашиваем — достаточно класса.",
+    "privacy.s4.childEditable":
+      "Сам ребёнок может изменить только следующее: своё имя и фамилию (это меняет и подпись в таблице лидеров), пароль, аватар и выбор цвета. Школа, город, район и класс доступны ребёнку только для чтения — изменить их может только родитель.",
+    "privacy.s4.techTitle": "Технические данные и данные устройства",
+    "privacy.s4.techTable":
+      "Данные | Когда | Зачем\n" +
+      "Токен push-уведомлений, название модели устройства, версия ОС и версия приложения | Только если push-уведомления включены и вы дали разрешение | Чтобы доставить уведомление на нужное устройство. Никакие рекламные и аппаратные идентификаторы не считываются. При выходе из аккаунта токен удаляется с сервера\n" +
+      "Журнал попыток входа ребёнка: 8-значный номер, хеш IP-адреса (SHA-256), результат и время | При каждой попытке входа | Чтобы предотвратить подбор пароля. Сам IP-адрес не сохраняется\n" +
+      "Журналы сервера — включая IP-адрес и строку браузера | При каждом запросе | Стандартные технические журналы наших хостинг-провайдеров, для безопасности и устранения неполадок\n" +
+      "Записи о входах в сервисе аутентификации | При каждом входе | Наш сервис аутентификации ведёт собственный журнал безопасности",
+    "privacy.s4.logRetention": "Срок хранения журналов сервера",
+    "privacy.s4.deviceTitle":
+      "Что хранится в защищённом хранилище устройства (мобильное приложение)",
+    "privacy.s4.deviceIntro":
+      "Мобильное приложение хранит в защищённом хранилище устройства (iOS Keychain / Android Keystore) только:",
+    "privacy.s4.deviceList":
+      "вашу сессию входа;\n" +
+      "включена ли блокировка по отпечатку или лицу (буквально «1» или «0»);\n" +
+      "показывался ли приветственный экран;\n" +
+      "копию push-токена;\n" +
+      "выбранный язык и тему (светлая или тёмная).",
+    "privacy.s4.deviceNote":
+      "Настройки из этого списка (блокировка, приветственный экран, язык и тема) устройство не покидают вообще. Сессия входа передаётся нашему сервису аутентификации при каждом запросе — в этом её назначение, — а push-токен, пока push включён, хранится на нашем сервере (см. таблицу технических данных выше). Больше ничего не передаётся.",
+    "privacy.s4.cookiesTitle": "Файлы cookie — сайт",
+    "privacy.s4.cookiesIntro":
+      "На сайте используются только строго необходимые файлы cookie:",
+    "privacy.s4.cookiesList":
+      "Cookie сессии — чтобы вы оставались в аккаунте, пока находитесь на сайте.\n" +
+      "Cookie «locale» — чтобы запомнить выбранный язык интерфейса (1 год).\n" +
+      "Выбор светлой или тёмной темы хранится в локальном хранилище самого браузера.\n" +
+      "Кратковременная отметка в сессионном хранилище браузера — чтобы просмотр одной и той же новости не засчитывался дважды. Она удаляется при закрытии вкладки.",
+    "privacy.s4.cookiesNote":
+      "Рекламных cookie, аналитических cookie и трекинговых пикселей нет.",
+
+    "privacy.s5.title": "Данные детей",
+    "privacy.s5.callout":
+      "Этот раздел является политикой конфиденциальности OlympIQ в отношении детей. Поскольку наш продукт предназначен для несовершеннолетних, мы выносим его отдельно, чтобы родитель видел всё в одном месте.",
+    "privacy.s5.storedTitle": "Что хранится о ребёнке",
+    "privacy.s5.stored":
+      "Всё, что указано в таблице «Профиль ребёнка» выше: имя, фамилия, город, район, школа, класс, 8-значный номер для входа, выбранный аватар и оформление, а также результаты занятий (ответы, баллы, проценты, серии, активные дни, место в рейтинге).",
+    "privacy.s5.notCollected":
+      "Что мы о ребёнке не собираем: дату рождения, адрес электронной почты, номер телефона, домашний адрес, геолокацию, данные о здоровье, финансовые данные, контакты, историю браузера, рекламные и аппаратные идентификаторы.",
+    "privacy.s5.neverTitle": "Чего мы никогда не делаем с данными ребёнка",
+    "privacy.s5.never":
+      "Мы не показываем ребёнку рекламу и не строим рекламные профили.\n" +
+      "Мы не отслеживаем поведение ребёнка в других приложениях и на других сайтах.\n" +
+      "Мы не продаём, не сдаём в аренду и не передаём данные детей в маркетинговых целях.\n" +
+      "Мы не публикуем ничего из написанного ребёнком, за одним исключением — это его собственные имя и фамилия. Ученик может изменить их сам, и именно это имя отображается в таблице лидеров как «Имя Ф.». Никакого другого свободного текста ребёнок другим пользователям показать не может.\n" +
+      "В приложении нет чата, сообщений, комментариев и форума. Ребёнок не может общаться с другими пользователями.\n" +
+      "Мы никогда не побуждаем ребёнка что-либо покупать. В сессии ученика не отображаются ни цены, ни способы оплаты, ни кнопки покупки.",
+    "privacy.s5.lbTitle": "Что видно в таблицах лидеров и кому",
+    "privacy.s5.lbIntro":
+      "Это один из важнейших моментов, который родителю нужно понимать. Таблиц лидеров две, и они разные.",
+    "privacy.s5.lb1Title":
+      "1) Таблица лидеров внутри приложения — видна только пользователям с аккаунтом",
+    "privacy.s5.lb1Intro":
+      "Любой вошедший в систему родитель и любой вошедший ученик видит о каждом ребёнке в рейтинге следующее:",
+    "privacy.s5.lb1Table":
+      "Отображается | Пример\n" +
+      "Имя и первая буква фамилии | Айсель М.\n" +
+      "Город | Баку\n" +
+      "Район | Насими\n" +
+      "Название школы | Средняя школа № 142\n" +
+      "Класс | 7\n" +
+      "Показатели результата | процент, количество отвеченных вопросов, количество верных ответов, количество попыток",
+    "privacy.s5.lb1Note":
+      "Полная фамилия, аватар, 8-значный номер ребёнка и контактные данные родителя не отображаются.",
+    "privacy.s5.lb2Title":
+      "2) Публичная десятка на главной странице сайта — видна всем, даже без аккаунта",
+    "privacy.s5.lb2Body":
+      "Здесь имя ребёнка не показывается; вместо него отображается псевдоним вида «Şagird 4821». Эти четыре цифры — последние четыре цифры 8-значного номера ребёнка для входа. Кроме псевдонима, эта публичная таблица показывает также город, район, название школы и класс.",
+    "privacy.s5.lbWarn":
+      "Честное предупреждение для родителей: в небольшой районной школе сочетание школы, класса и района может оказаться достаточным, чтобы узнать ребёнка, даже без имени. Мы это не скрываем.",
+    "privacy.s5.lbNoMedals":
+      "В таблицах лидеров нет медалей, призов и денег — только числовые места.",
+    "privacy.s5.avatarTitle": "Фотографии-аватары — важное различие",
+    "privacy.s5.avatarTable":
+      "Способ | Где хранится файл | Кто может увидеть\n" +
+      "Родитель загружает фото для ребёнка (Добавить ребёнка / Изменить ребёнка) | Закрытое хранилище | Только члены семьи, по короткоживущей подписанной ссылке\n" +
+      "Ученик сам загружает фото из своего профиля | Закрытое хранилище | Только члены семьи, по короткоживущей подписанной ссылке\n" +
+      "Родитель загружает свой аватар | Открытое хранилище | Любой, у кого есть прямая ссылка на файл",
+    "privacy.s5.avatarWarn":
+      "Фотография ребёнка никогда не попадает в открытое хранилище: загрузил ли её родитель или ученик сделал это сам, файл записывается в закрытое хранилище и открывается только по короткоживущей подписанной ссылке, которая выдаётся членам семьи. Открытое хранилище касается лишь одного — собственного аватара родителя: его может открыть любой, у кого есть прямая ссылка на файл. Готовые аватары стоят по умолчанию, и загружать фото не требуется никогда — если вы не хотите, чтобы фотография вашего ребёнка была загружена, используйте готовый аватар.",
+    "privacy.s5.avatarUnlink":
+      "Удаление аватара работает по-разному в зависимости от пути. Фотография ребёнка — загруженная родителем или самим учеником — при замене или удалении полностью стирается из закрытого хранилища. Собственный аватар родителя только отвязывается: изображение перестаёт отображаться в профиле, но сам файл остаётся в открытом хранилище.",
+    "privacy.s5.removeTitle": "Как родитель удаляет данные ребёнка",
+    "privacy.s5.removeList":
+      "Удалить весь семейный аккаунт: профиль родителя → «Опасная зона» → «Удалить аккаунт» → двухшаговое подтверждение. Это удаляет аккаунт родителя и все созданные им профили детей. Доступно и на сайте, и в мобильном приложении.\n" +
+      "Удалить одного ребёнка: сейчас только на сайте, из панели родителя. В мобильном приложении отдельного удаления ребёнка нет.\n" +
+      "Ученик не может удалить ничего.",
+    "privacy.s5.removeNote":
+      "Удаление происходит немедленно — периода ожидания, отмены и архива не предусмотрено. Что именно удаляется и что остаётся, подробно описано в разделе «Хранение и удаление данных».",
+
+    "privacy.s6.title": "Как мы используем данные",
+    "privacy.s6.useTitle": "Мы используем их, чтобы",
+    "privacy.s6.use":
+      "Создать аккаунт, обеспечить вход и защитить аккаунт.\n" +
+      "Подобрать вопросы, соответствующие классу ребёнка и текущей школьной четверти.\n" +
+      "Проверить ответы и рассчитать баллы, проценты, серии и статистику прогресса.\n" +
+      "Показать родителю отчёт о прогрессе ребёнка.\n" +
+      "Сформировать таблицы лидеров.\n" +
+      "Отправлять уведомления (новый раунд, результат, серия, новости, сообщения об аккаунте).\n" +
+      "Предотвращать злоупотребления, автоматизированные атаки и подбор паролей.\n" +
+      "Оказывать поддержку и отвечать на ваши обращения.\n" +
+      "Определять, к каким предметам и олимпиадным пакетам у семьи есть доступ.\n" +
+      "Выполнять требования закона, когда это обязательно.",
+    "privacy.s6.notTitle": "Мы не используем их, чтобы",
+    "privacy.s6.not":
+      "Показывать рекламу или строить рекламные профили.\n" +
+      "Отслеживать вас или вашего ребёнка в других приложениях и на других сайтах.\n" +
+      "Продавать данные или передавать их рекламным брокерам.\n" +
+      "Принимать решения о кредитах, страховании, трудоустройстве и тому подобном.\n" +
+      "Принимать автоматические решения в отношении ребёнка, имеющие юридические последствия.\n" +
+      "Обучать сторонние рекламные системы или системы профилирования.",
+
+    "privacy.s7.title": "Кому мы передаём данные",
+    "privacy.s7.staffTitle": "Доступ внутри OlympIQ",
+    "privacy.s7.staff":
+      "Скажем об этом прямо: уполномоченные администраторы и контент-менеджеры OlympIQ могут просматривать данные аккаунтов и учебные данные во внутренней панели управления — чтобы обслуживать сервис, работать с контентом и отвечать на обращения в поддержку. Доступ ограничен ролью: в базе данных действует защита на уровне строк (RLS), и каждая внутренняя роль имеет только те права, которые нужны для её работы. Действия администраторов с аккаунтами и контентом записываются в журнал аудита.",
+    "privacy.s7.intro":
+      "Мы не продаём ваши данные. Перечисленные ниже поставщики услуг необходимы для работы сервиса, и каждый из них получает только то, что нужно для его функции:",
+    "privacy.s7.table":
+      "Поставщик услуг | Роль | Что получает | Статус\n" +
+      "Supabase | База данных, аутентификация, хранение файлов | Все данные продукта, по зашифрованному соединению | Активен\n" +
+      "Vercel | Хостинг сайта | Стандартные журналы запросов сервера (IP, строка браузера) | Активен\n" +
+      "Expo / EAS | Обновления мобильного приложения и передача push-уведомлений | Проверка обновлений при запуске: версия приложения, платформа, анонимный идентификатор установки и ваш IP-адрес; push-токен, когда push включён | Проверка обновлений активна\n" +
+      "Apple (APNs) | Доставка push на iOS | Только после включения push — стандартная передача уведомлений | До включения push не получает ничего\n" +
+      "Google (FCM) | Доставка push на Android | Только после включения push — стандартная передача уведомлений | До включения push не получает ничего\n" +
+      "Google Fonts | Шрифт на некоторых страницах сайта | IP-адрес и строку браузера | Активен (только сайт; в мобильном приложении отсутствует)\n" +
+      "Google Maps | Карта на странице «Контакты» | IP-адрес и строку браузера в момент открытия этой страницы. Данные аккаунта не передаются | Активен\n" +
+      "Платёжный провайдер | Будущая оплата на сайте | — | См. раздел «Платежи»",
+    "privacy.s7.pushOff":
+      "Сейчас push-уведомления не работают: функция отключена на сервере, поэтому токен устройства вообще не создаётся, и Expo, Apple и Google по этой функции не получают ничего.",
+    "privacy.s7.pushOn":
+      "Push-уведомления работают: для разрешённых вами устройств создаётся токен, а уведомления доставляются через Expo по сетям Apple и Google.",
+    "privacy.s7.otherIntro": "Кроме этого, мы можем передать данные только:",
+    "privacy.s7.other":
+      "когда этого требует закон (решение суда, законный запрос уполномоченного органа);\n" +
+      "чтобы предотвратить непосредственную угрозу жизни или здоровью;\n" +
+      "чтобы защитить свои права и расследовать злоупотребления.",
+    "privacy.s7.regionLabel": "Где расположены серверы",
+
+    "privacy.s8.title": "Платежи",
+    "privacy.s8.list":
+      "Завершить покупку в мобильном приложении невозможно: в нём нет ни формы карты, ни ввода данных карты, ни шага оплаты.\n" +
+      "Оплата возможна только на сайте, в браузере, в азербайджанских манатах.\n" +
+      "Оплата будет проходить полным перенаправлением на собственную страницу банка. Номер карты, код CVV и другие данные карты никогда не попадут на серверы OlympIQ и у нас храниться не будут.\n" +
+      "В нашей базе будут фиксироваться только сумма, валюта, статус и номер операции у провайдера.",
+    "privacy.s8.statusOff":
+      "Текущее состояние: платежи на платформе отключены, и ни один платёжный провайдер пока не подключён. Пока платежи отключены, цены не показываются ни в одном разделе мобильного приложения.",
+    "privacy.s8.statusOn":
+      "Текущее состояние: платежи работают и проходят только на сайте, через собственную платёжную страницу банка. Мобильное приложение может показывать цены подписки для информации родителю или посетителю без аккаунта; в сессии ученика цены не показываются никогда, и завершить покупку внутри приложения нельзя.",
+
+    "privacy.s9.title": "Хранение и удаление данных",
+    "privacy.s9.activeTitle": "Пока аккаунт активен",
+    "privacy.s9.activeBody":
+      "Данные аккаунта и результаты занятий хранятся, пока существует аккаунт, — потому что они и есть сам продукт: графики прогресса, серии и рейтинг построены именно на них.",
+    "privacy.s9.notifRetention":
+      "Прочитанные уведомления удаляются автоматически — в настоящее время через 180 дней, — а папка уведомлений каждого пользователя сейчас ограничена 500 записями. Оба значения являются настройками платформы и могут быть изменены.",
+    "privacy.s9.otherRetention":
+      "Срок хранения учебных данных, журналов аудита и журналов попыток входа",
+    "privacy.s9.howTitle": "Как удалить аккаунт",
+    "privacy.s9.howBody":
+      "В мобильном приложении или на сайте: войдите как родитель, нажмите на аватар вверху, откройте «Профиль», прокрутите до раздела «Опасная зона» и выберите «Удалить аккаунт». Потребуется двухшаговое подтверждение.",
+    "privacy.s9.howNote":
+      "Операция выполняется немедленно и не может быть отменена. Если из-за технического сбоя удаление не завершится, напишите на указанный выше адрес — мы завершим его вручную.",
+    "privacy.s9.erasedTitle": "Что удаляется",
+    "privacy.s9.erasedIntro": "При удалении аккаунта родителя удаляется всё перечисленное:",
+    "privacy.s9.erased":
+      "профиль родителя и его учётная запись для входа;\n" +
+      "все профили детей, созданные родителем, и их учётные записи;\n" +
+      "8-значные номера и записи об их выдаче;\n" +
+      "все попытки, ответы, баллы, проценты, серии, активные дни и достижения;\n" +
+      "записи в таблицах лидеров и данные о том, какие олимпиадные вопросы уже показывались;\n" +
+      "подписки, права доступа, записи о скидках и промокодах;\n" +
+      "уведомления, настройки уведомлений и push-токены;\n" +
+      "записи о понравившихся новостях.",
+    "privacy.s9.survivesTitle": "Что остаётся после удаления",
+    "privacy.s9.survivesIntro":
+      "Следующее сохраняется намеренно или остаётся по техническим причинам:",
+    "privacy.s9.survivesTable":
+      "Что остаётся | Зачем | Остаются ли персональные данные?\n" +
+      "Записи о платежах и покупках | Бухгалтерские и налоговые обязательства | Обезличиваются: связь с человеком удаляется, остаются только сумма, валюта, статус и дата\n" +
+      "Записи аудита о действиях с аккаунтом (регистрация, создание профиля ребёнка, сброс паролей, события подписок и покупок, а также само удаление) | Журнал безопасности | Связь с человеком удаляется. В этих записях не хранятся ни имя, ни IP-адрес, ни строка браузера\n" +
+      "Замороженные архивы рейтингов (итоги сезона и месяца) | Историческая запись прошлых результатов | В архиве сезона может остаться подпись «Имя Ф.» и внутренний идентификатор\n" +
+      "Загруженные файлы аватаров и записи о них | Техническая причина | Да — удаление аккаунта стирает записи в базе данных, но не сами файлы; это касается и открытого, и закрытого хранилища\n" +
+      "Журнал попыток входа ребёнка (8-значный номер, хеш IP, время) | Безопасность | Да, остаётся\n" +
+      "Исходные уведомления об оплате, полученные от банка (только после подключения платёжного провайдера — сейчас он не подключён) | Финансовая сверка | Хранятся в том виде, в каком их присылает банк, с привязкой к номеру операции провайдера. В них может быть то, что включает сам банк, — например имя плательщика или маскированный номер карты",
+    "privacy.s9.backupNote":
+      "Резервные копии хранятся для восстановления после сбоев, и удалённые данные какое-то время могут в них оставаться.",
+    "privacy.s9.backupLabel": "Срок хранения резервных копий",
+    "privacy.s9.copyTitle": "Как получить копию своих данных",
+    "privacy.s9.copyBody":
+      "Кнопки «скачать мои данные» в приложении сейчас нет. Если вам нужна копия данных вашей семьи, напишите на указанный выше адрес — мы ответим на ваш запрос.",
+
+    "privacy.s10.title": "Безопасность",
+    "privacy.s10.intro": "Ниже перечислено то, что действительно реализовано:",
+    "privacy.s10.list":
+      "Весь трафик шифруется (HTTPS/TLS). На сайте включён HSTS; в приложении для iOS незашифрованные соединения запрещены полностью.\n" +
+      "Мы не храним пароли. Пароли и родителей, и детей хранятся только в нашем сервисе аутентификации в виде хеша. В нашей базе данных нет колонки для пароля.\n" +
+      "В базе данных включена защита на уровне строк (RLS): ученик видит только свою запись, а родитель — только записи своих детей.\n" +
+      "В мобильном приложении нет ни одного привилегированного ключа. Привилегированные операции выполняются только на сервере.\n" +
+      "Токены сессии хранятся в защищённом хранилище самого устройства (iOS Keychain / Android Keystore), а не в обычном файле или открытом хранилище.\n" +
+      "Блокировка входа ребёнка: после 8 неудачных попыток за 15 минут номер временно блокируется. IP-адрес записывается в виде хеша, а не в исходном виде.\n" +
+      "Страницы входа, регистрации и восстановления пароля родителя ограничены по частоте запросов.\n" +
+      "Загружаемые изображения проверяются по фактическому содержимому файла, а не по его имени. Допустимые форматы: PNG, JPEG и WebP; GIF дополнительно принимается для собственного аватара родителя, но никогда — для фотографии ребёнка, кто бы её ни загружал. Максимальный размер — 2 МБ. Формат SVG запрещён полностью.\n" +
+      "Блокировка по отпечатку или лицу: ваше устройство сообщает нам только «подтверждено» или «не подтверждено». Биометрические данные никогда не покидают устройство и нам не передаются — мы храним только то, включена блокировка или нет.\n" +
+      "Действия администраторов записываются в журнал аудита.",
+    "privacy.s10.caveat":
+      "При этом будем честны: ни одна система в интернете не защищена на 100%. Мы принимаем разумные технические и организационные меры, но не можем гарантировать абсолютную безопасность. Никому не сообщайте свой пароль.",
+
+    "privacy.s11.title": "Ваши права и как ими воспользоваться",
+    "privacy.s11.table":
+      "Что вы хотите сделать | Как\n" +
+      "Изменить имя, телефон, пароль или аватар родителя | В приложении: страница профиля\n" +
+      "Изменить адрес электронной почты родителя | В приложении невозможно — напишите нам\n" +
+      "Изменить имя, город, район, школу или класс ребёнка | В приложении: родитель, затем «Изменить данные ребёнка»\n" +
+      "Сбросить пароль ребёнка | В приложении: родитель, затем «Изменить данные ребёнка»\n" +
+      "Изменить или удалить аватар ребёнка | В приложении: профиль родителя или ученика\n" +
+      "Отключить уведомления | Настройки уведомлений в приложении, а также системные настройки устройства\n" +
+      "Удалить одного ребёнка | На сайте: панель родителя\n" +
+      "Удалить весь семейный аккаунт | В приложении и на сайте: профиль, затем «Опасная зона»\n" +
+      "Получить копию своих данных | Напишите нам\n" +
+      "Пожаловаться или задать вопрос | Напишите нам",
+    "privacy.s11.note":
+      "В зависимости от страны проживания у вас могут быть дополнительные права.",
+
+    "privacy.s12.title": "Разрешения устройства",
+    "privacy.s12.table":
+      "Разрешение | Когда запрашивается | Для чего\n" +
+      "Медиатека (фото) | Только когда вы нажимаете «изменить аватар» | Чтобы выбрать фото профиля. Готовые аватары стоят по умолчанию — загружать фото не обязательно\n" +
+      "Уведомления | Только после входа в аккаунт и только если функция включена | Для новых раундов, результатов, серий и сообщений об аккаунте. Никогда для рекламы. Если вы откажете, повторно запрос не появится\n" +
+      "Отпечаток пальца / Face ID | Только если вы сами включите блокировку приложения | Чтобы открывать приложение без ввода пароля. Для включения и выключения блокировки требуется успешная проверка",
+    "privacy.s12.never":
+      "Мы никогда не запрашиваем у вас: камеру, геолокацию, контакты, микрофон, календарь, данные о здоровье, Bluetooth и разрешение на отслеживание (App Tracking Transparency). Приложение никогда не открывает камеру, и сделать фото в нём невозможно. Честное примечание для Android: используемый нами компонент выбора фото объявляет разрешения на камеру и хранилище в собственном манифесте, поэтому вы можете увидеть их в списке на экране «О приложении» — приложение ими не пользуется и запрос камеры вам не показывает.",
+
+    "privacy.s13.title": "Изменения в этой политике",
+    "privacy.s13.body":
+      "Мы можем обновлять эту политику. При обновлении мы изменим дату «Последнее обновление» вверху. Если изменение существенное, мы сообщим об этом в приложении или по электронной почте. Продолжая пользоваться сервисом после вступления изменений в силу, вы принимаете обновлённую политику.",
+    "privacy.s13.contact": "Вопросы",
+
+    "privacy.consentPre": "Создавая аккаунт, вы подтверждаете, что ознакомились с",
+    "privacy.consentLink": "Политикой конфиденциальности",
+    "privacy.consentPost": ".",
+    "privacy.profileHint":
+      "Здесь можно прочитать, какие данные мы собираем, кто и что видит и что именно происходит при удалении аккаунта.",
 
     // — Round3 E — Profile, info carousel, news panel, profile nav —
     "nav.profile": "Профиль",

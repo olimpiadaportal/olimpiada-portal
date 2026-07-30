@@ -176,6 +176,11 @@ export default async function ParentLayout({
             <Link href="/help/about">{t("nav.about")}</Link>
             <Link href="/help/faq">{t("help.faqTitle")}</Link>
             <Link href="/help/contact">{t("help.contactTitle")}</Link>
+            {/* Reachable from every parent screen: the account holder is the
+                only person who can delete the family's data, so the document
+                explaining what that does must not live only on the public
+                marketing site. */}
+            <Link href="/help/privacy">{t("nav.privacy")}</Link>
           </div>
         </div>
         <div className="site-foot-bottom">

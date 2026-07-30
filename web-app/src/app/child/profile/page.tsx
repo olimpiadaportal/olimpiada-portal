@@ -47,29 +47,22 @@ export default async function ChildProfilePage() {
   const cityInfo = (s.district?.name ?? s.city ?? "").trim() || "—";
   const schoolInfo = (s.school?.name ?? s.school_name ?? "").trim() || "—";
 
-  // Avatar URL (degrades to initials when none / on any read failure).
-  // Priority: the PARENT-SET avatar (photo → signed URL via the student's own
-  // session; preset → bundled PNG) wins over the legacy self-uploaded profile
-  // avatar (public bucket).
-  let avatarUrl: string | null = await resolveChildAvatarUrl(
+  // Avatar URL (degrades to initials when none / on any read failure). ONE
+  // source — the students row — for both the parent-set and the child's own
+  // photo: photo → short-lived signed URL created with the student's own
+  // session (private `child-avatars` bucket), preset → bundled PNG. The legacy
+  // public-bucket fallback is gone with the bucket change.
+  const avatarUrl: string | null = await resolveChildAvatarUrl(
     supabase,
     student as any,
   );
-  if (!avatarUrl) {
-    try {
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("avatar_media_id, media_assets:avatar_media_id(bucket, path)")
-        .eq("id", child.profileId)
-        .maybeSingle();
-      const m = (prof as any)?.media_assets;
-      if (m?.bucket && m?.path) {
-        avatarUrl = supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
-      }
-    } catch {
-      avatarUrl = null;
-    }
-  }
+
+  // "Remove photo" must mean "there is a PHOTO to remove". Deriving it from
+  // `avatarUrl !== null` also fired for a parent-set PRESET, where the remove
+  // action had nothing to delete — the button did nothing.
+  const hasPhoto =
+    (student as any)?.avatar_kind === "photo" &&
+    !!(student as any)?.avatar_media_path;
 
   // Translated strings handed to the client profile component (no client i18n).
   const profileDict: Record<string, string> = {};
@@ -173,6 +166,7 @@ export default async function ChildProfilePage() {
           uniqueId={childId}
           initial={childInitial}
           avatarUrl={avatarUrl}
+          hasPhoto={hasPhoto}
           dict={profileDict}
         />
 

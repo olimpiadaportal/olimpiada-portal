@@ -11,7 +11,8 @@ export type FilterOption = { value: string; label: string };
 // truth — every change router.replace()s a new URL and the server re-renders).
 // `review` is the Round-21 review-chip filter ("optionE" | "needsTerm" | "");
 // it has no control here but is carried through so changing a filter never
-// silently drops an active chip.
+// silently drops an active chip. Same for `sort` (Round 52) — the Rüb column
+// header owns it, but every filter link must preserve it.
 export type FilterCurrent = {
   q: string;
   subject: string;
@@ -20,6 +21,10 @@ export type FilterCurrent = {
   grade: string;
   status: string;
   review: string;
+  // Round 52 §9 — Rüb filter: "1".."4" or "none" (legacy NULL term).
+  term: string;
+  // Round 52 §9 — "term_asc" | "term_desc" | "" (newest first).
+  sort: string;
   size: string;
 };
 
@@ -29,12 +34,15 @@ export function QuestionFilters({
   taxonomy,
   grades,
   statuses,
+  terms,
   current,
   dict,
 }: {
   taxonomy: Taxonomy;
   grades: FilterOption[];
   statuses: FilterOption[];
+  // Rüb options: 1..4 plus "none" (legacy questions with no term).
+  terms: FilterOption[];
   current: FilterCurrent;
   dict: Record<string, string>;
 }) {
@@ -67,6 +75,8 @@ export function QuestionFilters({
     if (merged.grade) p.set("grade", merged.grade);
     if (merged.status) p.set("status", merged.status);
     if (merged.review) p.set("review", merged.review);
+    if (merged.term) p.set("term", merged.term);
+    if (merged.sort) p.set("sort", merged.sort);
     if (merged.size && merged.size !== "25") p.set("size", merged.size);
     const qs = p.toString();
     return qs ? `/questions?${qs}` : "/questions";
@@ -97,7 +107,8 @@ export function QuestionFilters({
       current.subtopic ||
       current.grade ||
       current.status ||
-      current.review,
+      current.review ||
+      current.term,
   );
 
   return (
@@ -165,6 +176,26 @@ export function QuestionFilters({
           </option>
         ))}
       </select>
+      {/* Rüb (term). Selecting a real term drops the "needs term" review chip —
+          the two are mutually exclusive and would always return nothing. */}
+      <select
+        aria-label={tt("qfield.term")}
+        value={current.term}
+        onChange={(e) =>
+          apply({
+            term: e.target.value,
+            review: current.review === "needsTerm" ? "" : current.review,
+          })
+        }
+      >
+        <option value="">{tt("qfilter.allTerms")}</option>
+        {terms.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+
       <select
         aria-label={tt("qfield.status")}
         value={current.status}
@@ -189,6 +220,7 @@ export function QuestionFilters({
             grade: "",
             status: "",
             review: "",
+            term: "",
           })}
         >
           {tt("qfilter.clear")}

@@ -28,8 +28,13 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "nav.grades", href: "/manage/grades", adminOnly: true },
       { label: "nav.subjects", href: "/manage/subjects", adminOnly: true },
-      { label: "nav.topics", href: "/manage/topics", adminOnly: true },
-      { label: "nav.subtopics", href: "/manage/subtopics", adminOnly: true },
+      // Round 52: the separate Topics / Subtopics registry pages were REPLACED
+      // by ONE Curriculum Structure tree (Subject › Topic › Subtopic). Both
+      // resources were removed from lib/admin/resources.ts in the same change,
+      // so /manage/topics and /manage/subtopics now 404 by design. The label is
+      // resolved with a local trilingual fallback in the layout until
+      // messages.ts gains the key.
+      { label: "nav.curriculum", href: "/curriculum", adminOnly: true },
       // Round 21: the separate Cities / Districts / Schools pages merged into
       // ONE hierarchical Locations screen. The label is resolved with a local
       // trilingual fallback in the layout until messages.ts gains the key.

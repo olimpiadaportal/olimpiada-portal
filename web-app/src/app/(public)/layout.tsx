@@ -45,6 +45,10 @@ const FOOTER_COLS: { head: string; links: [string, string][] }[] = [
   {
     head: "footer.legal",
     links: [
+      // The privacy policy heads the Legal column: it is the URL App Store
+      // Connect and Google Play link to, and a public site handling children's
+      // data must reach it from every page.
+      ["/privacy", "nav.privacy"],
       ["/faq", "nav.faq"],
       ["/login", "nav.login"],
     ],

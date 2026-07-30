@@ -85,6 +85,11 @@ export function DemoPaySheet({
           </AppText>
         </View>
         {/* Number, never truncated: scales down on 320pt instead of wrapping. */}
+        {/* Round 55 (store compliance): the simulated card number, expiry and
+            CVC are GONE. A card-entry surface for digital goods inside the
+            binary is Guideline 3.1.1(a)/2.3.1 exposure, and a plausible-looking
+            test PAN reads as a real payment sheet to a reviewer. The masked
+            placeholder below is deliberately not a valid card shape. */}
         <AppText
           variant="mono"
           color="#ffffff"
@@ -92,16 +97,8 @@ export function DemoPaySheet({
           adjustsFontSizeToFit
           style={{ fontSize: 20, letterSpacing: 2 }}
         >
-          4242 4242 4242 4242
+          •••• •••• •••• ••••
         </AppText>
-        <View style={{ flexDirection: "row", gap: spacing.xl }}>
-          <AppText variant="muted" color="rgba(255,255,255,0.85)">
-            {t("pay.expiry")} 12/29
-          </AppText>
-          <AppText variant="muted" color="rgba(255,255,255,0.85)">
-            {t("pay.cvc")} •••
-          </AppText>
-        </View>
       </LinearGradient>
 
       <View>

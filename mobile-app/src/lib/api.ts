@@ -347,6 +347,9 @@ export const bffCancelSubscription = (
     "cancel.err",
   );
 
+/** Remove the signed-in user's own avatar. For a STUDENT this deletes the
+ *  private storage object as well — a child's photo must be withdrawable, not
+ *  merely unlinked. */
 export const bffRemoveAvatar = () =>
   bffAuthedPost<Record<string, any>>(
     "/api/mobile/v1/profile/avatar",
@@ -460,13 +463,25 @@ export function bffSetChildAvatar(
     : bffAuthedPost<ChildAvatarState>(path, input, fallback);
 }
 
-/** Avatar upload: multipart with the sniffed-on-server file. */
+/**
+ * Own-avatar upload: multipart with the sniffed-on-server file.
+ *
+ * ONE endpoint, TWO destinations — the BFF branches on the bearer's role:
+ *   parent  → the public `profile-avatars` bucket, answers `{url}`,
+ *   student → their students row + the PRIVATE `child-avatars` bucket, answers
+ *             the ChildAvatarState (a child photo must never leave the server
+ *             as a public URL).
+ * Callers therefore treat the payload as opaque and re-read the profile query;
+ * the union exists so nothing can casually `.url` a student's response.
+ */
+export type OwnAvatarUploadResult = { url: string } | ChildAvatarState | null;
+
 export function bffUploadAvatar(file: {
   uri: string;
   name: string;
   type: string;
-}): Promise<BffResult<{ url: string }>> {
-  return bffMultipartPost<{ url: string }>(
+}): Promise<BffResult<OwnAvatarUploadResult>> {
+  return bffMultipartPost<OwnAvatarUploadResult>(
     "/api/mobile/v1/profile/avatar",
     file,
     "prof2.err.generic",

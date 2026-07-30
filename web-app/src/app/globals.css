@@ -3329,6 +3329,7 @@ ul.clean li {
    from the .arena scope itself; --shadow stays inherited from the root
    [data-theme] tokens (soft purple in light, deep in dark). */
 .arena .help-page,
+.arena .pp,
 .arena .about2 {
   --surface: var(--panel, #141d33);
   --border: var(--line, #26314f);
@@ -12490,4 +12491,480 @@ body[data-site-typography] .btn-ghost {
 }
 .site-links[data-seg="on"] a.active::after {
   display: none;
+}
+
+/* ==========================================================================
+   PRIVACY POLICY (namespace: pp-) — long-form legal document
+   --------------------------------------------------------------------------
+   Rendered by <PrivacyPolicy/> at /privacy (public), /help/privacy (parent)
+   and /child/help/privacy (student). Visual language deliberately copies the
+   About page: the same gradient hero recipe, the same 14-22px radii, the same
+   soft `0 Npx Mpx var(--shadow)` elevation and the same accent pill. Only the
+   shared tokens are used (--surface/--border/--text/--muted/--accent/
+   --accent-2/--chip-bg/--pill-bg/--shadow/--ok/--warn/--danger), so light,
+   dark and the `.arena .pp` remap all work with no extra rules.
+
+   Reading measure: prose and list items cap at 76ch (the .about2-prose idiom)
+   while TABLES take the full column — a 4-column table needs the width.
+
+   Tables collapse to stacked cards at 700px instead of scrolling sideways: a
+   legal document read on a 320px phone must not hide a cell behind an inner
+   scrollbar. The `display: block` that does the stacking drops the native
+   table semantics, so <PrivacyPolicy/> restates them with explicit ARIA roles
+   — that pairing is the whole reason those roles exist there.
+   ========================================================================== */
+
+.pp {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 8px 0 24px;
+}
+
+/* ------------------------------ Hero ------------------------------ */
+
+.pp-hero {
+  padding: 40px 36px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(640px 320px at 92% -10%, color-mix(in srgb, var(--accent-2) 13%, transparent), transparent 62%),
+    radial-gradient(720px 380px at -8% 110%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 62%),
+    var(--surface);
+  box-shadow: 0 10px 28px var(--shadow);
+  overflow: hidden;
+}
+
+.pp-eyebrow {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pp-hero h1 {
+  margin: 16px 0 0;
+  font-size: clamp(26px, 4.2vw, 38px);
+  line-height: 1.16;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.pp-lead {
+  margin: 14px 0 0;
+}
+.pp-lead p {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+/* ------------------- Label/value rows (dl) ------------------- */
+/* Used for the hero dates, the "who we are" block and every value that lives
+   in src/lib/privacyPolicy.ts (hosting region, retention periods). */
+
+.pp-kv,
+.pp-dates {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.pp-dates {
+  margin-top: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.pp-kv-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 32%) 1fr;
+  align-items: baseline;
+  gap: 4px 18px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+}
+.pp-kv-row dt {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.pp-kv-row dd {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+  /* Emails, phone numbers and long addresses must wrap rather than widen the
+     grid track and push the page into a horizontal scroll at 320px. */
+  overflow-wrap: anywhere;
+}
+.pp-kv-row dd a {
+  color: var(--accent);
+}
+
+/* A value the owner has not supplied yet. Deliberately looks unfinished
+   (dashed border, warn colour) so an unanswered question is impossible to miss
+   on a page review — see src/lib/privacyPolicy.ts. */
+.pp-tbd {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--warn) 55%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  color: var(--warn);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+/* ------------------------- Draft notice ------------------------- */
+
+.pp-draft {
+  padding: 18px 22px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+  box-shadow: 0 4px 14px var(--shadow);
+}
+.pp-draft-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--warn);
+}
+.pp-draft p {
+  margin: 0;
+  max-width: 76ch;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+/* --------------------- Table of contents --------------------- */
+
+.pp-toc {
+  padding: 22px 24px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 4px 14px var(--shadow);
+}
+.pp-toc-title {
+  margin: 0 0 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pp-toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: pptoc;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px 22px;
+}
+.pp-toc-list li {
+  counter-increment: pptoc;
+  min-width: 0;
+}
+.pp-toc-list a {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: break-word;
+}
+.pp-toc-list a::before {
+  content: counter(pptoc) ".";
+  flex: 0 0 auto;
+  min-width: 1.5em;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.pp-toc-list a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* ---------------------------- Sections ---------------------------- */
+
+.pp-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Breathing room above the heading when a table-of-contents link jumps to it
+     — the section title should not sit flush against the viewport edge. */
+  scroll-margin-top: 24px;
+}
+.pp-sec > h2 {
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: clamp(21px, 3vw, 27px);
+  line-height: 1.25;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+.pp-sec h3 {
+  margin: 12px 0 0;
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+.pp-subhead {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.pp-sec p {
+  margin: 0;
+  max-width: 76ch;
+  font-size: 15.5px;
+  line-height: 1.75;
+  color: var(--muted);
+  overflow-wrap: break-word;
+}
+.pp-sec .cms-prose {
+  gap: 12px;
+}
+
+/* Statements the reader must not skim past (the "we do not collect a date of
+   birth" line, the deletion warning, the payment status). Specificity 0,2,1
+   beats `.pp-sec p` (0,1,1) by weight rather than by source order. */
+.pp-sec .pp-strong > p {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Quoted aside (the children's-policy preamble). */
+.pp-sec .pp-callout {
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  background: var(--chip-bg);
+}
+.pp-sec .pp-callout > p {
+  color: var(--text);
+}
+
+/* The honest warnings — a public leaderboard that can re-identify a child, a
+   public storage bucket, "no system is 100% secure". Warn-toned on purpose. */
+.pp-sec .pp-warn {
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  border-left: 4px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+}
+.pp-sec .pp-warn > p {
+  color: var(--text);
+}
+
+/* ------------------------------ Lists ------------------------------ */
+/* Markers are CSS glyphs (never emoji) so they render identically in every
+   locale and inherit the theme's semantic colours. */
+
+.pp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.pp-list li {
+  position: relative;
+  padding-left: 26px;
+  max-width: 76ch;
+  font-size: 15.5px;
+  line-height: 1.7;
+  color: var(--muted);
+  overflow-wrap: break-word;
+}
+.pp-list li::before {
+  position: absolute;
+  left: 0;
+  top: 0;
+  line-height: 1.7;
+  font-weight: 700;
+}
+.pp-list-dot li::before {
+  content: "\2022";
+  color: var(--accent);
+}
+.pp-list-yes li::before {
+  content: "\2713";
+  color: var(--ok);
+}
+.pp-list-no li::before {
+  content: "\2715";
+  color: var(--danger);
+}
+.pp-list-num {
+  counter-reset: pplist;
+}
+.pp-list-num li {
+  counter-increment: pplist;
+}
+.pp-list-num li::before {
+  content: counter(pplist) ".";
+  font-size: 13.5px;
+  color: var(--accent);
+}
+
+/* ------------------------------ Tables ------------------------------ */
+
+.pp-tablewrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.pp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+.pp-table th,
+.pp-table td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.pp-table thead th {
+  background: var(--chip-bg);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pp-table tbody th {
+  width: 28%;
+  min-width: 170px;
+  font-weight: 700;
+  color: var(--text);
+}
+.pp-table tbody td {
+  color: var(--muted);
+}
+.pp-table tbody tr:last-child th,
+.pp-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---------------------------- Responsive ---------------------------- */
+
+@media (max-width: 700px) {
+  /* Stacked cards. `thead` is hidden from sight but each cell relabels itself
+     from data-h, so no column meaning is lost on a phone. */
+  .pp-tablewrap {
+    overflow-x: visible;
+  }
+  .pp-table,
+  .pp-table tbody,
+  .pp-table tr,
+  .pp-table th,
+  .pp-table td {
+    display: block;
+    width: auto;
+  }
+  .pp-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .pp-table tbody tr {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pp-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .pp-table tbody th,
+  .pp-table tbody td {
+    min-width: 0;
+    padding: 0 0 10px;
+    border-bottom: 0;
+  }
+  .pp-table tbody th {
+    font-size: 15px;
+  }
+  .pp-table tbody tr > *:last-child {
+    padding-bottom: 0;
+  }
+  .pp-table tbody td::before {
+    content: attr(data-h);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+}
+
+@media (max-width: 640px) {
+  .pp {
+    gap: 28px;
+  }
+  .pp-hero {
+    padding: 28px 20px;
+  }
+  .pp-lead p {
+    font-size: 15.5px;
+  }
+  .pp-dates {
+    grid-template-columns: 1fr;
+  }
+  .pp-toc {
+    padding: 18px 16px;
+  }
+  .pp-toc-list {
+    grid-template-columns: 1fr;
+  }
+  /* 320px floor: a 32% label track leaves ~90px for a value such as an email
+     address, which would then force the page into a horizontal scroll. */
+  .pp-kv-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 12px 14px;
+  }
+  .pp-draft,
+  .pp-sec .pp-callout,
+  .pp-sec .pp-warn {
+    padding: 14px 16px;
+  }
+  .pp-sec p,
+  .pp-list li {
+    font-size: 15px;
+  }
 }

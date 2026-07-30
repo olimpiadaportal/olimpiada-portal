@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import { getLocale, getT } from "@/i18n/server";
+import { PATHNAME_HEADER } from "@/lib/supabase/middleware";
 import {
   getPublicSiteSettings,
   getContentOverrides,
@@ -42,6 +44,18 @@ export default async function RootLayout({
     const v = tri[locale];
     if (v && v.trim()) clientDict[key] = v;
   }
+  // The privacy-policy BODY is ~30 KB of text in az and ~44 KB in ru. This dict
+  // is serialized into the HTML of EVERY page, so shipping it everywhere to
+  // render it on three would be a site-wide payload regression. Every consumer
+  // of `privacy.*` is a SERVER component reading getT() (the /privacy pages,
+  // the registration consent line, the parent profile card), so dropping the
+  // prefix costs nothing. `nav.privacy` — the one string a CLIENT component
+  // needs, for the student drawer's link — does NOT carry the prefix and stays.
+  // If a client component ever needs policy copy, pass it as a prop rather than
+  // putting the document back into every page.
+  for (const key of Object.keys(clientDict)) {
+    if (key.startsWith("privacy.")) delete clientDict[key];
+  }
 
   // Maintenance mode (admin Settings → platform.maintenance_mode): the whole
   // web-app (public + parent + student) shows the maintenance notice. The
@@ -49,9 +63,23 @@ export default async function RootLayout({
   // Item 12: the flag now lives in a 4s server cache (flags.ts) and the splash
   // is a client component polling /api/maintenance-status every 4s, so both
   // entering (on navigation/SSR) and exiting propagate within ~0–5s.
+  //
+  // ONE EXEMPTION: the public /privacy page. Its URL is what goes into the App
+  // Store Connect "Privacy Policy URL" field and the Google Play Data safety
+  // form, and BOTH stores re-fetch that URL asynchronously after submission —
+  // not only during review. A maintenance window must therefore never turn the
+  // store-facing policy URL into a page with no policy on it. The exemption is
+  // deliberately narrow: only the public path, so the in-app /help/privacy
+  // shells stay gated with the rest of the product. The pathname arrives as the
+  // middleware-set x-pathname header (an RSC cannot read the URL); middleware
+  // `set`s it on every matched request, so a client-supplied value is always
+  // overwritten and this can never be spoofed into bypassing the gate.
+  const pathname = (await headers()).get(PATHNAME_HEADER) ?? "";
+  const isPublicPolicy = pathname === "/privacy" || pathname.startsWith("/privacy/");
+
   const site = await getPublicSiteSettings();
   let maintenance: React.ReactNode = null;
-  if (site.maintenanceMode) {
+  if (site.maintenanceMode && !isPublicPolicy) {
     const t = await getT();
     const msg =
       site.maintenanceMessage[locale] ?? site.maintenanceMessage.az ?? "";

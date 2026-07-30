@@ -6,6 +6,12 @@
 // Photos are NEVER public URLs — the viewer's own session signs a short-lived
 // URL (RLS: creator/linked parent + the student itself; leaderboards never
 // show photos).
+//
+// These three columns are the ONLY child-avatar model: a photo the PARENT
+// uploaded and a photo the STUDENT uploaded for themselves are the same row,
+// the same private bucket and the same signed read. There is no second
+// (public) child avatar path any more — a photograph of a minor must never be
+// world-readable, and removing one must actually delete the object.
 
 export const CHILD_AVATAR_BUCKET = "child-avatars";
 export const MAX_CHILD_AVATAR_BYTES = 2 * 1024 * 1024; // 2 MB (bucket cap)
@@ -54,8 +60,22 @@ export function resolveChildAvatarSource(
   return { type: "default" };
 }
 
-/** Photo-upload whitelist (server byte-sniff parity: png/jpeg/webp — NO gif,
- *  unlike the self-profile avatar; the server is the authority either way). */
+/**
+ * Does this student have a PHOTO the owner of the screen may remove?
+ *
+ * "Remove photo" must key off the photo itself, never off "some avatar URL
+ * resolved": a preset is a bundled PNG with no object behind it, so offering
+ * Remove for one is a button that deletes nothing. Kept here (pure) so the web
+ * child-profile page and this app answer the question identically.
+ */
+export function hasRemovableChildPhoto(row: ChildAvatarFields | null | undefined): boolean {
+  return resolveChildAvatarSource(row).type === "photo";
+}
+
+/** Photo-upload whitelist (server byte-sniff parity: png/jpeg/webp — NO gif;
+ *  the PRIVATE child-avatars bucket rejects gif and the server sniff is the
+ *  authority either way). Applies to BOTH child-photo paths — the parent
+ *  uploading for a child and the student uploading for themselves. */
 export const CHILD_AVATAR_ALLOWED_MIME = new Set([
   "image/png",
   "image/jpeg",

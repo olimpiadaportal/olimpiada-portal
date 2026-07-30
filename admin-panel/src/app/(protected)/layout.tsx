@@ -11,6 +11,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { localStrings as locationStrings } from "./locations/labels";
 import { localStrings as pricingStrings } from "./pricing/labels";
 import { localStrings as alertsStrings } from "./alerts/labels";
+import { localStrings as curriculumStrings } from "./curriculum/labels";
 
 const BELL_STRING_KEYS = [
   "alerts.bell",
@@ -34,17 +35,23 @@ export default async function ProtectedLayout({
   // Nav labels not yet in the shared dictionary fall back to the local
   // trilingual module strings (t() returns the key itself when missing) —
   // currently nav.locations (Round 21 merged Cities/Districts/Schools),
-  // nav.pricing (subscription pricing) and nav.alerts (received alerts page).
-  const ltLocations = locationStrings(locale);
-  const ltPricing = pricingStrings(locale);
+  // nav.pricing (subscription pricing), nav.alerts (received alerts page) and
+  // nav.curriculum (Round 52 merged Topics/Subtopics tree).
   const ltAlerts = alertsStrings(locale);
+  const localFallbacks = [
+    locationStrings(locale),
+    pricingStrings(locale),
+    ltAlerts,
+    curriculumStrings(locale),
+  ];
   const navLabel = (key: string) => {
     const v = t(key);
     if (v !== key) return v;
-    const l = ltLocations(key);
-    if (l !== key) return l;
-    const p = ltPricing(key);
-    return p !== key ? p : ltAlerts(key);
+    for (const lookup of localFallbacks) {
+      const local = lookup(key);
+      if (local !== key) return local;
+    }
+    return key;
   };
 
   // Admin notification bell — reads ONLY the acting admin's own rows (RLS

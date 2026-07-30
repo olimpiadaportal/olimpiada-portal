@@ -17,12 +17,15 @@ import {
   verifyStorageObject,
 } from "@/lib/admin/media-verify";
 import {
+  buildCurriculumIndex,
+  canonicalCurriculumNames,
   validateBulkItem,
   normTypeName,
   mapRpcRowError,
   overrideItemMeta,
   pickDefaultType,
   type ActiveTypeRule,
+  type CurriculumIndex,
 } from "@/lib/admin/bulk-validate";
 
 // `ok` is set only on the modal ("stay") path: the create-question modal needs
@@ -590,6 +593,54 @@ export type BulkImportState =
   | null;
 
 
+// Round 52 (§6) — the EXAM curriculum for one (subject, grade): topic names +
+// their term + their subtopic names, ready for the bulk validator. A topic with
+// a NULL grade_id is shared across grades and is included. NOT exported (this
+// is a "use server" module — every export becomes a callable server action).
+// Returns null when the tree is empty for that pair, which makes the caller
+// skip curriculum matching instead of rejecting every row.
+async function loadCurriculumIndex(
+  subjectId: string,
+  gradeId: string,
+): Promise<CurriculumIndex | null> {
+  if (!UUID_RE.test(subjectId) || !UUID_RE.test(gradeId)) return null;
+  const supabase = await createClient();
+  const { data: topicRows } = await supabase
+    .from("topics")
+    .select("id, name, term")
+    .eq("subject_id", subjectId)
+    .eq("scope", "exam")
+    .or(`grade_id.eq.${gradeId},grade_id.is.null`);
+  const topics = ((topicRows ?? []) as any[]).map((r) => ({
+    id: String(r.id),
+    name: String(r.name ?? ""),
+    term: r.term == null ? null : Number(r.term),
+  }));
+  if (topics.length === 0) return null;
+
+  const { data: subRows } = await supabase
+    .from("subtopics")
+    .select("topic_id, name")
+    .in(
+      "topic_id",
+      topics.map((tp) => tp.id),
+    );
+  const byTopic = new Map<string, string[]>();
+  for (const r of (subRows ?? []) as any[]) {
+    const key = String(r.topic_id);
+    const list = byTopic.get(key) ?? [];
+    list.push(String(r.name ?? ""));
+    byTopic.set(key, list);
+  }
+  return buildCurriculumIndex(
+    topics.map((tp) => ({
+      name: tp.name,
+      term: tp.term,
+      subtopics: byTopic.get(tp.id) ?? [],
+    })),
+  );
+}
+
 export async function bulkImportQuestions(
   _prev: BulkImportState,
   formData: FormData,
@@ -609,13 +660,11 @@ export async function bulkImportQuestions(
   if (!UUID_RE.test(gradeId)) {
     return { ok: false, error: t("qerr.gradeRequired") };
   }
-  // Round 39: the batch-level Rüb is mandatory and is applied to EVERY row
-  // below (superseding any per-row meta.term — same contract as subject/grade).
-  const termRaw = s(formData, "term");
-  if (!/^[1-4]$/.test(termRaw)) {
-    return { ok: false, error: t("qerr.termRequired") };
-  }
-  const term = Number(termRaw);
+  // Round 52 (§4/§6): the batch-level Rüb selector is GONE. In the 2026
+  // curriculum a term belongs to the TOPIC (constant per grade+subject+topic),
+  // so one term per FILE was either redundant or actively wrong for a file
+  // spanning several topics. Each row now declares meta.term and it must equal
+  // the curriculum topic's term — validated below and re-checked by the DB.
   const supabase = await createClient();
   const [{ data: subj }, { data: grade }] = await Promise.all([
     supabase.from("subjects").select("id, name").eq("id", subjectId).maybeSingle(),
@@ -663,6 +712,13 @@ export async function bulkImportQuestions(
   for (const r of activeTypes) activeByNorm.set(normTypeName(r.name), r);
   const defaultType = pickDefaultType(activeTypes);
 
+  // Curriculum for THIS batch's subject + grade (exam scope only; a topic with
+  // a NULL grade is shared across grades). Rows naming anything else are
+  // rejected here — the v3 RPC would otherwise create the misspelling as a new
+  // topic. An empty tree (nothing seeded yet) skips the check rather than
+  // failing every row.
+  const curriculum = await loadCurriculumIndex(subjectId, gradeId);
+
   const total = payload.length;
   const errors: { index: number; error: string }[] = [];
   // Structurally valid rows, with their 1-based file index preserved so the
@@ -671,18 +727,41 @@ export async function bulkImportQuestions(
   const validFileIndex: number[] = [];
 
   payload.forEach((item, i) => {
-    // Round 39: inject the batch Rüb BEFORE validation so per-row meta.term is
-    // optional/superseded; GENERAL mode still requires meta.topic+meta.subtopic.
-    const withTerm = overrideItemMeta(item, { term });
-    const msg = validateBulkItem(withTerm, t, activeByNorm, defaultType, "general");
+    // Round 52: term is per-row (meta.term) and checked against the curriculum
+    // topic; subject/grade still come from the modal, not the file.
+    const msg = validateBulkItem(
+      item,
+      t,
+      activeByNorm,
+      defaultType,
+      "general",
+      curriculum,
+    );
     if (msg) {
       errors.push({ index: i + 1, error: msg });
       return;
     }
-    // Inject batch subject/grade (superseding any stale file values).
-    validItems.push(
-      overrideItemMeta(withTerm, { subject: subj.name, grade_level: grade.level }),
-    );
+    // Batch subject/grade always supersede stale file values. Topic/subtopic
+    // are rewritten to the DB's EXACT spelling: the check above tolerates case
+    // and spacing, but the RPC matches `topics.name = ...` literally and would
+    // create "toplama" as a second topic beside "Toplama".
+    const patch: Record<string, unknown> = {
+      subject: subj.name,
+      grade_level: grade.level,
+    };
+    if (curriculum) {
+      const meta = (item as { meta?: Record<string, unknown> })?.meta ?? {};
+      const canonical = canonicalCurriculumNames(
+        curriculum,
+        String(meta.topic ?? ""),
+        String(meta.subtopic ?? ""),
+      );
+      if (canonical) {
+        patch.topic = canonical.topic;
+        patch.subtopic = canonical.subtopic;
+      }
+    }
+    validItems.push(overrideItemMeta(item, patch));
     validFileIndex.push(i + 1);
   });
 

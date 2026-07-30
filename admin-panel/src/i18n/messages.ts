@@ -477,7 +477,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.overrideHint":
       "Köhnə formatlı faylda meta.subject və ya meta.grade_level qalıbsa, burada seçilmiş fənn və sinif üstünlük təşkil edir.",
     "bulk.codesHint":
-      "Mövzu və alt-mövzu ada görə tapılır, tapılmadıqda avtomatik yaradılır. type sahəsi sual növünün adı ilə eyni olmalıdır: {types}.",
+      "Mövzu və alt mövzu kurikulumdakı adla üst-üstə düşməlidir — uyğun gəlməyən sətir idxal edilmir. type sahəsi sual növünün adı ilə eyni olmalıdır: {types}.",
     "bulk.fileProblems": "Fayldakı problemlər",
     "bulk.fixFile": "İdxaldan əvvəl göstərilən sətirləri düzəldin.",
     "bulk.rowNotObject": "sətir sual obyekti deyil",
@@ -507,6 +507,35 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qfilter.allGrades": "Bütün siniflər",
     "qfilter.allStatuses": "Bütün statuslar",
     "qfilter.clear": "Filtrləri təmizlə",
+    // ---- Round 52 §9: rüb filtri, rübə görə sıralama, boş nəticə ----
+    "qsort.byTerm": "Rübə görə sırala",
+    "questions.noneFiltered": "Seçilmiş filtrlərə uyğun sual tapılmadı.",
+    // ---- Round 52 §10: mövzu seçicisində rüb filtri ----
+    "qform.topicTermFilter": "Rübə görə daralt",
+    "qform.termFromTopic":
+      "Rüb mövzudan götürülür — sual üçün ayrıca seçilmir.",
+    "qform.noTopicsForTerm":
+      "Seçilmiş rübdə bu fənn və sinif üzrə mövzu yoxdur.",
+    "qform.termPickTopic": "Mövzu seçdikdə rüb avtomatik görünəcək.",
+    // ---- Round 52 §6: kurikuluma qarşı idxal yoxlamaları ----
+    "bulk.err.topicNotFound": "Mövzu tapılmadı",
+    "bulk.err.subtopicNotFound": "Alt mövzu tapılmadı",
+    "bulk.err.invalidTerm": "Rüb dəyəri yanlışdır",
+    // ---- Round 52 §7: süni intellekt üçün hazır prompt ----
+    "aiprompt.title": "Süni intellekt üçün prompt (sual yaratmaq)",
+    "aiprompt.intro":
+      "Fənn və sinif seçin — aşağıdakı prompt həmin sinfin kurikulum mövzularını və rüblərini özündə daşıyır. Kopyalayın, istifadə etdiyiniz modelə yapışdırın, cavabdakı JSON-u fayl kimi saxlayıb yuxarıda yükləyin.",
+    "aiprompt.englishNote":
+      "Promptun mətni ingiliscədir (modellər ingiliscə göstərişləri daha dəqiq izləyir); sualların özü isə seçilmiş dildə yaradılır.",
+    "aiprompt.curriculumNote":
+      "Prompta yalnız seçilmiş fənn və sinfin mövzu/alt mövzu siyahısı daxil edilir, ona görə model kurikulumdan kənar ad uydura bilmir.",
+    "aiprompt.pickFirst":
+      "Prompt üçün əvvəlcə fənn və sinif seçin.",
+    "aiprompt.count": "Sual sayı",
+    "aiprompt.copy": "Promptu kopyala",
+    "aiprompt.copied": "Kopyalandı",
+    "aiprompt.copyFailed":
+      "Kopyalamaq mümkün olmadı — mətni seçib əl ilə kopyalayın.",
     "qpage.prev": "Əvvəlki",
     "qpage.next": "Növbəti",
     "qpage.showing": "{total} nəticədən {from}–{to} göstərilir",
@@ -1704,7 +1733,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.overrideHint":
       "If the file still contains meta.subject or meta.grade_level (old format), the subject and grade selected here take precedence.",
     "bulk.codesHint":
-      "Topics and subtopics are matched by name and created automatically when missing. The type field must match a question type name: {types}.",
+      "Topics and subtopics must match a curriculum name exactly — a row that does not match is rejected. The type field must match a question type name: {types}.",
     "bulk.fileProblems": "Problems in the file",
     "bulk.fixFile": "Fix the listed rows before importing.",
     "bulk.rowNotObject": "the row is not a question object",
@@ -1734,6 +1763,34 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qfilter.allGrades": "All grades",
     "qfilter.allStatuses": "All statuses",
     "qfilter.clear": "Clear filters",
+    // ---- Round 52 §9: term filter, sort by term, filtered-empty state ----
+    "qsort.byTerm": "Sort by term",
+    "questions.noneFiltered": "No questions match the current filters.",
+    // ---- Round 52 §10: term filter on the topic picker ----
+    "qform.topicTermFilter": "Narrow by term",
+    "qform.termFromTopic":
+      "The term comes from the topic — it is not set per question.",
+    "qform.noTopicsForTerm":
+      "No topics in this term for the selected subject and grade.",
+    "qform.termPickTopic": "Choose a topic and its term appears here.",
+    // ---- Round 52 §6: curriculum-aware import checks ----
+    "bulk.err.topicNotFound": "Topic not found",
+    "bulk.err.subtopicNotFound": "Subtopic not found",
+    "bulk.err.invalidTerm": "Invalid term value",
+    // ---- Round 52 §7: ready-made AI prompt ----
+    "aiprompt.title": "AI prompt for generating questions",
+    "aiprompt.intro":
+      "Pick a subject and grade — the prompt below then carries that grade's curriculum topics and terms. Copy it, paste it into the model you use, save the JSON it returns as a file and upload it above.",
+    "aiprompt.englishNote":
+      "The prompt body is in English (models follow English instructions most reliably); the questions themselves are written in the language you choose inside it.",
+    "aiprompt.curriculumNote":
+      "Only the selected subject and grade's topics and subtopics are embedded, so the model cannot invent a name outside the curriculum.",
+    "aiprompt.pickFirst": "Choose a subject and a grade to build the prompt.",
+    "aiprompt.count": "Questions",
+    "aiprompt.copy": "Copy prompt",
+    "aiprompt.copied": "Copied",
+    "aiprompt.copyFailed":
+      "Could not copy — select the text and copy it manually.",
     "qpage.prev": "Previous",
     "qpage.next": "Next",
     "qpage.showing": "Showing {from}–{to} of {total}",
@@ -2935,7 +2992,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "bulk.overrideHint":
       "Если файл в старом формате всё ещё содержит meta.subject или meta.grade_level, приоритет имеют выбранные здесь предмет и класс.",
     "bulk.codesHint":
-      "Темы и подтемы находятся по названию и создаются автоматически, если отсутствуют. Поле type должно совпадать с названием типа вопроса: {types}.",
+      "Темы и подтемы должны точно совпадать с названиями из учебной программы — не совпавшая строка не импортируется. Поле type должно совпадать с названием типа вопроса: {types}.",
     "bulk.fileProblems": "Проблемы в файле",
     "bulk.fixFile": "Исправьте указанные строки перед импортом.",
     "bulk.rowNotObject": "строка не является объектом вопроса",
@@ -2965,6 +3022,34 @@ export const messages: Record<Locale, Record<string, string>> = {
     "qfilter.allGrades": "Все классы",
     "qfilter.allStatuses": "Все статусы",
     "qfilter.clear": "Сбросить фильтры",
+    // ---- Round 52 §9: фильтр по четверти, сортировка, пустой результат ----
+    "qsort.byTerm": "Сортировать по четверти",
+    "questions.noneFiltered": "По выбранным фильтрам вопросов нет.",
+    // ---- Round 52 §10: фильтр по четверти в выборе темы ----
+    "qform.topicTermFilter": "Сузить по четверти",
+    "qform.termFromTopic":
+      "Четверть берётся из темы — отдельно для вопроса она не задаётся.",
+    "qform.noTopicsForTerm":
+      "В этой четверти нет тем для выбранного предмета и класса.",
+    "qform.termPickTopic": "Выберите тему — четверть появится здесь.",
+    // ---- Round 52 §6: проверки импорта по учебной программе ----
+    "bulk.err.topicNotFound": "Тема не найдена",
+    "bulk.err.subtopicNotFound": "Подтема не найдена",
+    "bulk.err.invalidTerm": "Неверное значение четверти",
+    // ---- Round 52 §7: готовый промпт для ИИ ----
+    "aiprompt.title": "Промпт для ИИ (генерация вопросов)",
+    "aiprompt.intro":
+      "Выберите предмет и класс — промпт ниже подставит темы и четверти учебной программы этого класса. Скопируйте его, вставьте в свою модель, сохраните полученный JSON как файл и загрузите его выше.",
+    "aiprompt.englishNote":
+      "Текст промпта на английском (модели точнее следуют англоязычным инструкциям); сами вопросы создаются на выбранном внутри него языке.",
+    "aiprompt.curriculumNote":
+      "В промпт попадают только темы и подтемы выбранного предмета и класса, поэтому модель не может придумать название вне программы.",
+    "aiprompt.pickFirst": "Сначала выберите предмет и класс.",
+    "aiprompt.count": "Количество вопросов",
+    "aiprompt.copy": "Скопировать промпт",
+    "aiprompt.copied": "Скопировано",
+    "aiprompt.copyFailed":
+      "Не удалось скопировать — выделите текст и скопируйте вручную.",
     "qpage.prev": "Назад",
     "qpage.next": "Вперёд",
     "qpage.showing": "Показано {from}–{to} из {total}",

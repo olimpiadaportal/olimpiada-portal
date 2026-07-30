@@ -10,6 +10,18 @@
 //     exactly 1 correct). Optional meta.media_asset_id (uuid of a pre-uploaded
 //     question-media asset) attaches the primary locale's image.
 //   * OLYMPIAD rows keep topic/subtopic/term OPTIONAL; 5 options still apply.
+//
+// Round 52 (§6): the mirror also learned the CURRICULUM check — when the caller
+// passes the topic tree for the batch's (subject, grade), an unknown
+// meta.topic / meta.subtopic is flagged in the browser before the upload, and a
+// present-but-invalid meta.term reports "Invalid term value" instead of the
+// "required" message. Same rules as src/lib/admin/bulk-validate.ts; that server
+// copy (and the DB) stay the authority. The two files cannot share code — the
+// server one imports the server-only i18n module.
+
+// Relative on purpose: this module is unit-tested and the vitest config has no
+// "@/" alias.
+import { foldName } from "./admin/curriculum-shared";
 
 export type BulkClientMode = "general" | "olympiad";
 
@@ -123,6 +135,52 @@ function parseClientTerm(v: unknown): number | null {
   return null;
 }
 
+function clientTermAbsent(v: unknown): boolean {
+  return v == null || (typeof v === "string" && v.trim() === "");
+}
+
+// ---- Curriculum index (mirror of bulk-validate.ts) --------------------------
+// Both copies fold names through curriculum-shared's foldName, so the browser
+// pre-check, the server validator and the Curriculum Structure page's duplicate
+// check all agree on what "the same name" means. (curriculum-shared is a plain
+// dependency-free module — safe in a client bundle.)
+export function normCurriculumNameClient(v: string): string {
+  return foldName(v);
+}
+
+export type ClientCurriculumTopic = {
+  name: string;
+  term: number | null;
+  subtopics: string[];
+};
+export type ClientCurriculumIndex = Map<
+  string,
+  { name: string; term: number | null; subtopics: Map<string, string> }
+>;
+
+export function buildClientCurriculumIndex(
+  topics: ClientCurriculumTopic[],
+): ClientCurriculumIndex {
+  const index: ClientCurriculumIndex = new Map();
+  for (const tp of topics) {
+    const key = normCurriculumNameClient(tp.name);
+    if (!key) continue;
+    const existing = index.get(key);
+    const target = existing ?? {
+      name: tp.name,
+      term: tp.term,
+      subtopics: new Map<string, string>(),
+    };
+    if (existing && existing.term == null) target.term = tp.term;
+    for (const st of tp.subtopics) {
+      const stKey = normCurriculumNameClient(st);
+      if (stKey && !target.subtopics.has(stKey)) target.subtopics.set(stKey, st);
+    }
+    index.set(key, target);
+  }
+  return index;
+}
+
 // Per-row structural pre-validation (mirror of the server's bulk-validate
 // rules): primary-locale body, GENERAL-mode topic/subtopic/term requirements,
 // options array, per-type option/correct counts (single_choice = exactly 5
@@ -133,6 +191,8 @@ export function validateBulkRowsClient(
   tt: (k: string) => string,
   rules: ClientTypeRule[],
   mode: BulkClientMode = "general",
+  // Round 52 §6 — optional curriculum for the chosen (subject, grade).
+  curriculum?: ClientCurriculumIndex | null,
 ): RowIssue[] {
   const activeByNorm = new Map<string, ClientTypeRule>();
   for (const r of rules) activeByNorm.set(normClientTypeName(r.name), r);
@@ -162,18 +222,41 @@ export function validateBulkRowsClient(
       issues.push({ row, message: tt("bulk.err.noAzBody") });
     }
 
-    // GENERAL mode: topic + subtopic + term (1..4) are required per row.
+    // GENERAL mode: topic + subtopic + term (1..4) are required per row and,
+    // when a curriculum is supplied, must exist in it.
     if (mode === "general") {
       const topic = it.meta?.topic;
-      if (typeof topic !== "string" || topic.trim() === "") {
+      const topicOk = typeof topic === "string" && topic.trim() !== "";
+      if (!topicOk) {
         issues.push({ row, message: tt("bulk.err.topicRequired") });
       }
       const subtopic = it.meta?.subtopic;
-      if (typeof subtopic !== "string" || subtopic.trim() === "") {
+      const subtopicOk = typeof subtopic === "string" && subtopic.trim() !== "";
+      if (!subtopicOk) {
         issues.push({ row, message: tt("bulk.err.subtopicRequired") });
       }
-      if (parseClientTerm(it.meta?.term) == null) {
+      const term = parseClientTerm(it.meta?.term);
+      if (clientTermAbsent(it.meta?.term)) {
         issues.push({ row, message: tt("bulk.err.termRequired") });
+      } else if (term == null) {
+        issues.push({ row, message: tt("bulk.err.invalidTerm") });
+      }
+
+      if (curriculum && topicOk) {
+        const entry = curriculum.get(normCurriculumNameClient(topic as string));
+        if (!entry) {
+          issues.push({ row, message: tt("bulk.err.topicNotFound") });
+        } else {
+          if (
+            subtopicOk &&
+            !entry.subtopics.has(normCurriculumNameClient(subtopic as string))
+          ) {
+            issues.push({ row, message: tt("bulk.err.subtopicNotFound") });
+          }
+          if (term != null && entry.term != null && entry.term !== term) {
+            issues.push({ row, message: tt("bulk.err.termConflict") });
+          }
+        }
       }
     }
 

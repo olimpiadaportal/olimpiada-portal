@@ -123,11 +123,24 @@ where not exists (
 -- -----------------------------------------------------------------------------
 -- Starter subjects (curated minimum; expand via Admin Panel later).
 -- -----------------------------------------------------------------------------
+-- Round 54 backport: this list had DRIFTED from the live database in two ways,
+-- which broke a from-zero rebuild of the 2026 curriculum (its import refuses to
+-- run against a partial subject set, by design).
+--   * `elm` (Elm / Science) and `fizika` (Fizika / Physics) existed live but were
+--     never seeded here. The 2026 curriculum needs both: the source document
+--     names science per grade (Həyat bilgisi 1-4, Təbiət 5-6, Biologiya/Kimya
+--     7-11) and all of those map onto `elm`, while Fizika maps to `fizika`.
+--   * `az_language`'s NAME is "Məntiq" (Logic) live — the owner repurposed the
+--     row; the legacy CODE is deliberately kept so no FK or pricing row moves.
+-- The subjects_pricing seed below cross-joins every subject, so both new rows
+-- get the standard 3 / 9 / 90 AZN per-interval pricing automatically.
 insert into public.subjects (code, name, status) values
-  ('math',        'Riyaziyyat',      'active'),
-  ('az_language', 'Azərbaycan dili', 'active'),
-  ('english',     'İngilis dili',    'active'),
-  ('informatics', 'İnformatika',     'active')
+  ('math',        'Riyaziyyat',   'active'),
+  ('az_language', 'Məntiq',       'active'),
+  ('english',     'İngilis dili', 'active'),
+  ('informatics', 'İnformatika',  'active'),
+  ('elm',         'Elm',          'active'),
+  ('fizika',      'Fizika',       'active')
 on conflict (code) do nothing;
 
 -- -----------------------------------------------------------------------------
@@ -783,4 +796,23 @@ on conflict (platform) do nothing;
 
 -- =============================================================================
 -- End of 012_seed_initial_data.sql
+-- =============================================================================
+
+
+-- =============================================================================
+-- CURRICULUM 2026 (Round 54) — the topic/subtopic tree is NOT inlined here.
+-- -----------------------------------------------------------------------------
+-- The live curriculum is 260 topics + 1077 subtopics for grades 1-11 across
+-- math / elm / english / az_language / fizika / informatics, each topic carrying
+-- its school term (Rüb 1-4). It is seeded by the self-contained, rerun-safe
+-- migration:
+--
+--     supabase/sql/migrations/2026_07_29_095_import_curriculum_2026.sql
+--
+-- Deliberately referenced rather than inlined: it is ~1500 lines of generated
+-- VALUES, and duplicating it here would create two copies that drift. A
+-- from-zero rebuild must therefore run that ONE migration after 012 to end with
+-- the same tree — it is idempotent, so running it twice is a no-op.
+-- Source of truth for the data: docs/investor/Kurikulum_movzu_alt_movzu_rub_bolgusu_1-11.docx
+-- extracted to supabase/seed/curriculum_2026.json.
 -- =============================================================================

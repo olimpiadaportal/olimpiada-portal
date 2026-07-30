@@ -88,6 +88,17 @@ export default async function RegisterPage({
       )}
 
       <ParentAuthForm mode="register" dict={dict} locale={locale} />
+
+      {/* Point of consent. Registration is where a parent starts creating child
+          records, so the policy has to be one tap away right here — not only in
+          the footer. Presentational only: no checkbox, no extra field and no
+          change to what the form submits or validates. */}
+      <p className="muted" style={{ marginTop: 14 }}>
+        {t("privacy.consentPre")}{" "}
+        <Link href="/privacy">{t("privacy.consentLink")}</Link>
+        {t("privacy.consentPost")}
+      </p>
+
       <p className="muted" style={{ marginTop: 18 }}>
         {t("parent.auth.haveAccount")} <Link href="/login">{t("nav.login")}</Link>
       </p>

@@ -481,7 +481,11 @@ export default function ParentOlympiads() {
                 paddingVertical: spacing.sm,
               }}
             >
-              {buildOlympiadDetailRows(detail, questionCount(detail), locale, t).map((r) => (
+              {/* Parent surface only — the student screen omits the price by
+                  default (see buildOlympiadDetailRows). Still governed by the
+                  purchase-silent store posture: this whole tab loses its money
+                  UI in a store build. */}
+              {buildOlympiadDetailRows(detail, questionCount(detail), locale, t, true).map((r) => (
                 <KeyRow key={r.key} label={r.label} value={r.value} strong={r.key === "price"} />
               ))}
             </View>

@@ -1,5 +1,12 @@
 "use client";
 
+// Round 52 (§9): the Rüb column is now colour-coded and sortable.
+//   * termClass() maps 1..4 (and NULL) to a token-driven badge class — four
+//     distinct hues, amber reserved for "no term". The digit stays in the
+//     label, so colour is redundant encoding rather than the only signal.
+//   * The header is a link (the URL owns sort/filter state, the server does the
+//     ordering) that cycles asc → desc → default, with aria-sort for AT.
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { SubmitButton } from "@/components/ActionButton";
 import {
@@ -14,6 +21,7 @@ import {
   statusPill,
 } from "@/components/EditQuestionModal";
 import type { QuestionTaxonomy } from "@/lib/admin/question-options";
+import { termClass } from "@/lib/termBadge";
 
 export type QuestionRow = {
   id: string;
@@ -24,6 +32,8 @@ export type QuestionRow = {
   // Pre-localized Rüb label ("2-ci rüb"); needsTerm marks a NULL term (legacy
   // "needs review" — excluded from daily-round generation).
   term: string;
+  // Raw 1..4 (null = no term) — picks the badge colour.
+  termValue: number | null;
   needsTerm: boolean;
   body: string;
   status: string;
@@ -53,6 +63,10 @@ export function QuestionsTable({
   perms,
   editorOptions,
   editorTaxonomy,
+  termSortHref,
+  termSortDir,
+  filtered,
+  clearHref,
 }: {
   rows: QuestionRow[];
   taxonomy: Taxonomy;
@@ -63,6 +77,12 @@ export function QuestionsTable({
   // uses): subject/grade selects + exam topic/subtopic cascade.
   editorOptions: Record<string, { value: string; label: string }[]>;
   editorTaxonomy: QuestionTaxonomy;
+  // Round 52 §9 — Rüb column sorting (server-built URL; "" = default order).
+  termSortHref: string;
+  termSortDir: "asc" | "desc" | "";
+  // Empty state: distinguishes "nothing exists yet" from "nothing matches".
+  filtered: boolean;
+  clearHref: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -248,7 +268,28 @@ export function QuestionsTable({
               <th className="col-narrow">{tt("qfield.grade")}</th>
               <th className="col-narrow">{tt("qfield.language")}</th>
               <th>{tt("qfield.topic")}</th>
-              <th className="col-narrow">{tt("qfield.term")}</th>
+              <th
+                className="col-narrow"
+                aria-sort={
+                  termSortDir === "asc"
+                    ? "ascending"
+                    : termSortDir === "desc"
+                      ? "descending"
+                      : "none"
+                }
+              >
+                <Link
+                  className={`th-sort${termSortDir ? " active" : ""}`}
+                  href={termSortHref}
+                  title={tt("qsort.byTerm")}
+                  scroll={false}
+                >
+                  {tt("qfield.term")}
+                  <span className="th-sort-arrow" aria-hidden="true">
+                    {termSortDir === "asc" ? "▲" : termSortDir === "desc" ? "▼" : "↕"}
+                  </span>
+                </Link>
+              </th>
               <th>{tt("qfield.bodyAz")}</th>
               <th className="col-narrow">{tt("qfield.status")}</th>
               <th aria-label="actions" />
@@ -257,8 +298,17 @@ export function QuestionsTable({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="muted">
-                  {tt("questions.none")}
+                <td colSpan={9}>
+                  <div className="table-empty">
+                    <p>
+                      {filtered ? tt("questions.noneFiltered") : tt("questions.none")}
+                    </p>
+                    {filtered && (
+                      <Link className="btn-ghost" href={clearHref}>
+                        {tt("qfilter.clear")}
+                      </Link>
+                    )}
+                  </div>
                 </td>
               </tr>
             )}
@@ -279,11 +329,7 @@ export function QuestionsTable({
                   {r.topic}
                 </td>
                 <td className="col-narrow">
-                  {r.needsTerm ? (
-                    <span className="pill pill-sm pill-warn">{r.term}</span>
-                  ) : (
-                    r.term
-                  )}
+                  <span className={termClass(r.termValue)}>{r.term}</span>
                 </td>
                 <td className="cell-body" title={r.body}>
                   {r.body}

@@ -18,6 +18,19 @@ export function buildOlympiadDetailRows(
   count: number,
   locale: Locale,
   t: (key: string) => string,
+  /**
+   * Round 55 (store compliance): append the AZN price row.
+   *
+   * DEFAULTS TO FALSE — a price must never reach a CHILD. This builder is
+   * shared by the parent catalog and the STUDENT olympiad screen, and it used
+   * to append the price unconditionally, so the student sheet showed an AZN
+   * amount directly above "ask your parent to buy it". That breaks three rules
+   * at once: no price anywhere in the app, children never see commerce, and
+   * children's-advertising rules forbid urging a minor to make an adult buy.
+   * Opting IN keeps the failure mode safe: a new caller that forgets the flag
+   * shows no price, rather than silently exposing one.
+   */
+  includePrice = false,
 ): OlympiadDetailRow[] {
   const rows: OlympiadDetailRow[] = [];
   const push = (key: string, label: string, value: string | null | undefined) => {
@@ -69,10 +82,12 @@ export function buildOlympiadDetailRows(
   push("eventAt", t("poly.det.eventAt"), dateOf(pkg.event_starts_at));
   push("saleStart", t("poly.det.saleStart"), dateOf(pkg.sale_starts_at));
   push("saleEnd", t("poly.det.saleEnd"), dateOf(pkg.sale_ends_at));
-  push(
-    "price",
-    t("poly.det.price"),
-    pkg.price_amount > 0 ? fmtMoney(pkg.price_amount, pkg.currency) : t("poly.free"),
-  );
+  if (includePrice) {
+    push(
+      "price",
+      t("poly.det.price"),
+      pkg.price_amount > 0 ? fmtMoney(pkg.price_amount, pkg.currency) : t("poly.free"),
+    );
+  }
   return rows;
 }

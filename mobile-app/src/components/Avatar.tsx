@@ -4,7 +4,11 @@
 // placeholder. Decorative pastel pairs are component-local by design —
 // tokens.ts only mirrors web values, and these exist solely for avatars
 // (each pair is AA for the bold initial glyphs in both app themes).
-import React from "react";
+//
+// A URL that fails to load (expired signed link, deleted object, offline)
+// falls back to the initials instead of leaving an empty circle: photos are
+// remote and short-lived, so failure is a normal state, not an exception.
+import React, { useState } from "react";
 import { View, type ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import { AppText } from "./AppText";
@@ -43,6 +47,7 @@ export function Avatar({
   url = null,
   size = 40,
   style,
+  onError,
 }: {
   /** Display name — source of the initials and the a11y label. */
   name: string | null | undefined;
@@ -52,11 +57,16 @@ export function Avatar({
   url?: string | null;
   size?: number;
   style?: ViewStyle;
+  /** Called when `url` fails to load, so the caller can drop/refresh it (a
+   *  signed URL is re-signed once). Rendering already falls back to initials. */
+  onError?: () => void;
 }) {
   const key = (seed ?? "").trim() || (name ?? "").trim() || "olympiq";
   const [bg, ink] = PASTELS[hashSeed(key) % PASTELS.length];
+  // The URL that failed, so a retry with a NEW url renders again.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
-  if (url) {
+  if (url && url !== failedUrl) {
     return (
       <View style={[{ width: size, height: size, borderRadius: size / 2, overflow: "hidden", backgroundColor: bg }, style]}>
         <Image
@@ -67,6 +77,10 @@ export function Avatar({
           accessible
           accessibilityLabel={name ?? undefined}
           style={{ width: size, height: size }}
+          onError={() => {
+            setFailedUrl(url);
+            onError?.();
+          }}
         />
       </View>
     );

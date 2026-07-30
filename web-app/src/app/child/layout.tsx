@@ -53,7 +53,6 @@ export default async function ChildLayout({
   const [
     { giveaway },
     { data: student },
-    legacyAvatarUrl,
     { data: streakStatus },
     olympiadOn,
     leaderboardOn,
@@ -67,25 +66,6 @@ export default async function ChildLayout({
       .select("first_name, palette, avatar_kind, avatar_key, avatar_media_path")
       .eq("profile_id", child.profileId)
       .maybeSingle(),
-    // LEGACY self-uploaded avatar URL (public bucket) for the drawer trigger
-    // (degrades to initials on any failure — never blocks the shell from
-    // rendering). The PARENT-SET avatar resolved below takes priority.
-    (async (): Promise<string | null> => {
-      try {
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("avatar_media_id, media_assets:avatar_media_id(bucket, path)")
-          .eq("id", child.profileId)
-          .maybeSingle();
-        const m = (prof as any)?.media_assets;
-        if (m?.bucket && m?.path) {
-          return supabase.storage.from(m.bucket).getPublicUrl(m.path).data.publicUrl;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    })(),
     // Streak source (L1): the real leaderboard engine RPC — students.current_
     // streak maintained by award_attempt_points, with lazy zeroing of a lost
     // streak. Replaces the old distinct-active-days approximation.
@@ -112,12 +92,13 @@ export default async function ChildLayout({
   const firstName = (student as any)?.first_name ?? "";
   const initial = (firstName.trim()[0] ?? "?").toUpperCase();
 
-  // Drawer-trigger avatar priority: the PARENT-SET avatar (photo → signed URL
-  // via the student's OWN session — storage RLS lets the student read their own
-  // object; preset → bundled PNG) wins over the legacy self-uploaded profile
-  // avatar; both fall back to the initials bubble.
-  const avatarUrl =
-    (await resolveChildAvatarUrl(supabase, student as any)) ?? legacyAvatarUrl;
+  // Drawer-trigger avatar: ONE source — the students row — whether the photo
+  // was set by the parent or by the child themselves (photo → signed URL via
+  // the student's OWN session, since storage RLS lets the student read their
+  // own object; preset → bundled PNG; nothing → the initials bubble). The old
+  // public-bucket fallback for a child's self-upload is gone with the bucket
+  // change; leaving it would only ever resolve a deleted object.
+  const avatarUrl = await resolveChildAvatarUrl(supabase, student as any);
 
   // Round 12: the child's chosen LIGHT-MODE palette (data-palette drives the
   // [data-theme="light"] .arena[data-palette] overrides in globals.css). Only a
@@ -207,11 +188,13 @@ export default async function ChildLayout({
                 session: t("drawer2.session"),
                 themeLight: t("drawer2.themeLight"),
                 themeDark: t("drawer2.themeDark"),
-                // Info-page rows → /child/help/* (About / FAQ / Contact).
+                // Info-page rows → /child/help/* (About / FAQ / Contact /
+                // Privacy policy).
                 help: t("nav.help"),
                 about: t("nav.about"),
                 faq: t("nav.faq"),
                 contact: t("nav.contact"),
+                privacy: t("nav.privacy"),
               }}
             />
           </div>

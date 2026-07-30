@@ -32,6 +32,11 @@ import { sanitizeSearchTerm } from "@/lib/admin/search";
 // Round 21 — Rüb/term column, review chips ("needs option E" / "needs term").
 // Round 37 — the daily-round readiness panel is GONE: rounds generate fully
 // automatically (lazy, cumulative-term, subtopic-balanced) with no admin prep.
+// Round 52 (§9) — the Rüb column became a first-class filter dimension: a term
+// select (1–4 + "no term") in the filter bar, a sortable Rüb column header, and
+// colour-coded term badges. Both new params are validated like every other one
+// (whitelist, never interpolated into a query) and both round-trip through the
+// URL, so a filtered list stays shareable and the pager keeps working.
 // ---------------------------------------------------------------------------
 
 const PAGE_SIZES = [25, 50, 100] as const;
@@ -40,6 +45,11 @@ const LIFECYCLE_STATUSES = ["in_review", "published", "rejected"] as const;
 // Review-chip filters: demoted 4-option questions needing an E option, and
 // legacy questions without a term (both excluded from daily rounds).
 const REVIEW_FILTERS = ["optionE", "needsTerm"] as const;
+// Rüb filter: a real term, or "none" for the legacy NULL-term rows.
+const TERM_FILTERS = ["1", "2", "3", "4", "none"] as const;
+// Sort order. "" (default) = newest first; the Rüb column header cycles
+// term_asc → term_desc → default.
+const SORTS = ["term_asc", "term_desc"] as const;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -103,6 +113,12 @@ export default async function QuestionsPage({
   const review = (REVIEW_FILTERS as readonly string[]).includes(reviewRaw)
     ? reviewRaw
     : "";
+  const termRaw = first(sp, "term");
+  const term = (TERM_FILTERS as readonly string[]).includes(termRaw)
+    ? termRaw
+    : "";
+  const sortRaw = first(sp, "sort");
+  const sort = (SORTS as readonly string[]).includes(sortRaw) ? sortRaw : "";
   // One-shot notice banner (whitelisted values only — e.g. the edit page
   // redirects here when an olympiad-pool question id is opened directly).
   const noticeRaw = first(sp, "notice");
@@ -162,6 +178,16 @@ export default async function QuestionsPage({
     if (subtopic) qb = qb.eq("subtopic_id", subtopic);
     if (grade) qb = qb.eq("grade_id", grade);
     if (status) qb = qb.eq("status", status);
+    // Rüb filter (whitelisted above): "none" = the legacy NULL-term rows.
+    if (term === "none") qb = qb.is("term", null);
+    else if (term) qb = qb.eq("term", Number(term));
+    // Sorting. NULL terms always sort LAST so a term-sorted list opens on real
+    // content; created_at stays the tiebreaker so paging is deterministic.
+    if (sort === "term_asc") {
+      qb = qb.order("term", { ascending: true, nullsFirst: false });
+    } else if (sort === "term_desc") {
+      qb = qb.order("term", { ascending: false, nullsFirst: false });
+    }
     const { data, count } = await qb
       .order("created_at", { ascending: false })
       .range(from, to);
@@ -181,8 +207,6 @@ export default async function QuestionsPage({
   const [
     main,
     { data: subjects },
-    { data: topics },
-    { data: subtopics },
     { data: grades },
     { data: qtypes },
     { count: statTotal },
@@ -197,14 +221,6 @@ export default async function QuestionsPage({
   ] = await Promise.all([
     loadRows(),
     supabase.from("subjects").select("id, name, status").order("name"),
-    // Module separation: the Exams surfaces only ever list EXAM-scoped topics
-    // (olympiad-package bulk imports create scope='olympiad' topics).
-    supabase
-      .from("topics")
-      .select("id, subject_id, name")
-      .eq("scope", "exam")
-      .order("name"),
-    supabase.from("subtopics").select("id, topic_id, name").order("name"),
     supabase.from("grades").select("id, name, level").order("level"),
     supabase
       .from("question_types")
@@ -250,24 +266,23 @@ export default async function QuestionsPage({
     // Embedded topics.name via questions.topic_id (NULL topic → em dash).
     topic: r.topics?.name ?? "—",
     term: r.term != null ? t(`term.${r.term}`) : t("term.review"),
+    // Raw 1..4 (or null) drives the colour-coded badge class.
+    termValue: r.term == null ? null : Number(r.term),
     needsTerm: r.term == null,
     body: bodySnippet(r),
     status: r.status,
   }));
 
-  // Subtopics have no scope column — they inherit it via their parent topic,
-  // so keep only subtopics whose parent is in the exam-scoped topic set above.
-  const examTopicIds = new Set(
-    ((topics ?? []) as { id: string }[]).map((r) => r.id),
-  );
-  const examSubtopics = ((subtopics ?? []) as { topic_id: string }[]).filter(
-    (s) => examTopicIds.has(s.topic_id),
-  );
-
+  // The filter bar's cascade reuses loadQuestionTaxonomy's tree instead of
+  // re-querying: it is already EXAM-scoped (olympiad bulk imports create
+  // scope='olympiad' topics that must never appear on the Exams surfaces),
+  // already parent-filtered, and — unlike a bare select() — PAGED, so the
+  // curriculum's 1077 subtopics are not silently cut at PostgREST's 1000-row
+  // cap. Extra fields (grade_id/term) are simply unused here.
   const taxonomy: Taxonomy = {
     subjects: (subjects ?? []) as Taxonomy["subjects"],
-    topics: (topics ?? []) as Taxonomy["topics"],
-    subtopics: examSubtopics as Taxonomy["subtopics"],
+    topics: editorTaxonomy.topics,
+    subtopics: editorTaxonomy.subtopics,
   };
 
   const gradeOptions: FilterOption[] = ((grades ?? []) as any[]).map((g) => ({
@@ -277,6 +292,11 @@ export default async function QuestionsPage({
   const statusOptions: FilterOption[] = LIFECYCLE_STATUSES.map((s) => ({
     value: s,
     label: t(`qstatus.${s}`),
+  }));
+  // Rüb filter options: the four real terms plus the legacy no-term bucket.
+  const termOptions: FilterOption[] = TERM_FILTERS.map((v) => ({
+    value: v,
+    label: v === "none" ? t("qfilter.noTerm") : t(`term.${v}`),
   }));
 
   // Bulk-import modal inputs: ACTIVE subjects only (grades have no status) and
@@ -306,6 +326,8 @@ export default async function QuestionsPage({
     grade,
     status,
     review,
+    term,
+    sort,
     size: String(size),
   };
 
@@ -338,10 +360,11 @@ export default async function QuestionsPage({
   // hosts the edit modal, which needs the whole question-flow dictionary).
   const keys = [
     "qfield.subject", "qfield.grade", "qfield.topic", "qfield.subtopic",
-    "qfield.status",
+    "qfield.status", "qfield.term",
     "qfilter.search", "qfilter.allSubjects", "qfilter.allTopics",
     "qfilter.allSubtopics", "qfilter.allGrades",
-    "qfilter.allStatuses", "qfilter.clear", "qpage.perPage",
+    "qfilter.allStatuses", "qfilter.allTerms", "qfilter.clear",
+    "qpage.perPage",
   ];
   const dict: Record<string, string> = {};
   for (const k of keys) dict[k] = t(k);
@@ -359,6 +382,22 @@ export default async function QuestionsPage({
     { key: "needsTerm", label: t("qchip.needsTerm"), count: needsTermCount ?? 0 },
   ];
 
+  // Rüb column sort: term_asc → term_desc → back to the default (newest).
+  const nextSort = sort === "term_asc" ? "term_desc" : sort === "term_desc" ? null : "term_asc";
+  const termSortHref = href({ sort: nextSort, page: null });
+  const clearHref = href({
+    q: null,
+    subject: null,
+    topic: null,
+    subtopic: null,
+    grade: null,
+    status: null,
+    review: null,
+    term: null,
+    page: null,
+  });
+  const anyFilter = Boolean(q || subject || topic || subtopic || grade || status || review || term);
+
   return (
     // .questions-page widens .admin-content via :has() (like .locations-page)
     // so the table uses the full desktop width instead of the 1120px cap.
@@ -372,8 +411,12 @@ export default async function QuestionsPage({
           <div style={{ display: "flex", gap: 8 }}>
             <BulkUploadModal
               dict={fullDict}
+              locale={locale}
               subjects={bulkSubjects}
               grades={gradeOptions}
+              // Curriculum for the per-row "Topic not found" pre-check and the
+              // AI prompt's embedded topic/subtopic list (§6/§7).
+              taxonomy={editorTaxonomy}
               typeNames={activeTypeNames}
               typeRules={activeTypeRules}
             />
@@ -413,7 +456,13 @@ export default async function QuestionsPage({
           <Link
             key={c.key}
             className={`review-chip${review === c.key ? " active" : ""}`}
-            href={href({ review: review === c.key ? null : c.key, page: null })}
+            // "Needs term" and the Rüb filter are mutually exclusive — turning
+            // that chip on drops a term selection instead of returning nothing.
+            href={href({
+              review: review === c.key ? null : c.key,
+              page: null,
+              ...(c.key === "needsTerm" ? { term: null } : {}),
+            })}
             aria-current={review === c.key ? "true" : undefined}
           >
             {c.label} <b>{c.count}</b>
@@ -425,6 +474,7 @@ export default async function QuestionsPage({
         taxonomy={taxonomy}
         grades={gradeOptions}
         statuses={statusOptions}
+        terms={termOptions}
         current={current}
         dict={dict}
       />
@@ -440,6 +490,10 @@ export default async function QuestionsPage({
         perms={ctx.permissions}
         editorOptions={selectOptions}
         editorTaxonomy={editorTaxonomy}
+        termSortHref={termSortHref}
+        termSortDir={sort === "term_asc" ? "asc" : sort === "term_desc" ? "desc" : ""}
+        filtered={anyFilter}
+        clearHref={clearHref}
       />
 
       {/* Footer pager — server-rendered links preserving all searchParams. */}

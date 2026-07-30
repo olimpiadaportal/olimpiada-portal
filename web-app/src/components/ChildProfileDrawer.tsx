@@ -72,12 +72,13 @@ export function ChildProfileDrawer({
     themeLight?: string;
     themeDark?: string;
     // Info-page rows (web parity with the mobile account sheet): section label
-    // + About / FAQ / Contact links into /child/help/*. Optional with catalog
-    // fallbacks so existing call sites keep compiling.
+    // + About / FAQ / Contact / Privacy links into /child/help/*. Optional with
+    // catalog fallbacks so existing call sites keep compiling.
     help?: string;
     about?: string;
     faq?: string;
     contact?: string;
+    privacy?: string;
   };
 }) {
   const [open, setOpen] = useState(false);
@@ -97,6 +98,7 @@ export function ChildProfileDrawer({
   const aboutLabel = drawer.about ?? tf(["nav.about"], "About");
   const faqLabel = drawer.faq ?? tf(["nav.faq"], "FAQ");
   const contactLabel = drawer.contact ?? tf(["nav.contact"], "Contact");
+  const privacyLabel = drawer.privacy ?? tf(["nav.privacy"], "Privacy policy");
 
   // Close on Escape; move focus into the panel when opened.
   useEffect(() => {
@@ -272,6 +274,31 @@ export function ChildProfileDrawer({
               <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
             </svg>
             <span>{contactLabel}</span>
+          </Link>
+          {/* The policy has to be reachable from inside the student area too,
+              not only from the public site — this app is directed at children
+              and the shield row is where a student would look for it. */}
+          <Link
+            href="/child/help/privacy"
+            className="drawer-link"
+            onClick={() => setOpen(false)}
+          >
+            <svg
+              className="drawer2-row-ic"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 3 5 6v5.5c0 4.2 2.9 8.1 7 9.5 4.1-1.4 7-5.3 7-9.5V6l-7-3Z" />
+              <path d="m9.2 12.2 1.9 1.9 3.7-3.8" />
+            </svg>
+            <span>{privacyLabel}</span>
           </Link>
         </div>
 

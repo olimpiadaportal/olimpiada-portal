@@ -3383,3 +3383,888 @@ a.qpage-link:hover {
   min-width: 190px;
   max-width: 300px;
 }
+
+/* =========================================================================
+   Rüb / term badges + the questions-list term controls (Round 52, §9/§10).
+   COLOUR-CODED per term so an admin scanning the question list sees the
+   curriculum quarter without reading the label. Four distinct hues (blue /
+   teal / green / violet) — amber is deliberately RESERVED for the "no term"
+   warning state so it never collides with a real term. The digit stays in the
+   label text ("2-ci rüb"), so the colour is redundant encoding, not the only
+   signal (colour-blind safe).
+
+   Every value is a token. The admin panel currently ships a single light
+   theme; the [data-theme="dark"] block below is the drop-in override for the
+   day it gains a dark one — it is intentionally NOT wired to
+   prefers-color-scheme, which would paint dark badges onto a light page.
+   ========================================================================= */
+:root {
+  --term-1-fg: #1d4ed8;
+  --term-1-bg: #eff6ff;
+  --term-1-bd: #bfdbfe;
+  --term-2-fg: #0e7490;
+  --term-2-bg: #ecfeff;
+  --term-2-bd: #a5f3fc;
+  --term-3-fg: #047857;
+  --term-3-bg: #ecfdf5;
+  --term-3-bd: #a7f3d0;
+  --term-4-fg: #6d28d9;
+  --term-4-bg: #f5f3ff;
+  --term-4-bd: #ddd6fe;
+  --term-none-fg: #b45309;
+  --term-none-bg: #fffbeb;
+  --term-none-bd: #fcd34d;
+}
+
+[data-theme="dark"] {
+  --term-1-fg: #93c5fd;
+  --term-1-bg: rgba(59, 130, 246, 0.16);
+  --term-1-bd: rgba(147, 197, 253, 0.42);
+  --term-2-fg: #67e8f9;
+  --term-2-bg: rgba(6, 182, 212, 0.16);
+  --term-2-bd: rgba(103, 232, 249, 0.42);
+  --term-3-fg: #6ee7b7;
+  --term-3-bg: rgba(16, 185, 129, 0.16);
+  --term-3-bd: rgba(110, 231, 183, 0.42);
+  --term-4-fg: #c4b5fd;
+  --term-4-bg: rgba(139, 92, 246, 0.18);
+  --term-4-bd: rgba(196, 181, 253, 0.42);
+  --term-none-fg: #fcd34d;
+  --term-none-bg: rgba(245, 158, 11, 0.16);
+  --term-none-bd: rgba(252, 211, 77, 0.45);
+}
+
+.term-badge {
+  display: inline-block;
+  margin-top: 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.term-badge-1 {
+  color: var(--term-1-fg);
+  background: var(--term-1-bg);
+  border-color: var(--term-1-bd);
+}
+.term-badge-2 {
+  color: var(--term-2-fg);
+  background: var(--term-2-bg);
+  border-color: var(--term-2-bd);
+}
+.term-badge-3 {
+  color: var(--term-3-fg);
+  background: var(--term-3-bg);
+  border-color: var(--term-3-bd);
+}
+.term-badge-4 {
+  color: var(--term-4-fg);
+  background: var(--term-4-bg);
+  border-color: var(--term-4-bd);
+}
+/* NULL term — the legacy "needs review" state the review chip counts. */
+.term-badge-none {
+  color: var(--term-none-fg);
+  background: var(--term-none-bg);
+  border-color: var(--term-none-bd);
+  border-style: dashed;
+}
+
+/* Larger read-only badge used by the question form's derived-term row. */
+.term-badge-lg {
+  padding: 5px 14px;
+  font-size: 0.86rem;
+}
+
+/* Sortable table header (currently only the Rüb column). */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+  white-space: nowrap;
+  border-radius: 5px;
+}
+
+.th-sort:hover {
+  color: var(--brand);
+}
+
+.th-sort:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.th-sort-arrow {
+  font-size: 0.7em;
+  opacity: 0.45;
+  line-height: 1;
+}
+
+.th-sort.active .th-sort-arrow {
+  opacity: 1;
+  color: var(--brand);
+}
+
+/* Filtered-empty state inside the questions table. */
+.table-empty {
+  padding: 26px 12px;
+  text-align: center;
+}
+
+.table-empty p {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+/* ---- Question form: derived Rüb row ------------------------------------- */
+.term-derived {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+
+.term-derived .hint {
+  margin: 0;
+}
+
+/* Topic picker's "narrow by Rüb" control sits above the topic select. */
+.topic-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.topic-filter-row > span {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.topic-filter-row select {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+}
+
+/* =========================================================================
+   Bulk import — the copy-pasteable AI prompt block (Round 52, §7).
+   A <details> panel inside the import modal: the admin picks subject + grade,
+   copies the generated prompt (which embeds THAT selection's curriculum
+   topics/subtopics + terms), and pastes it into the model of their choice.
+   ========================================================================= */
+.ai-prompt {
+  margin: 14px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ai-prompt > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-prompt > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ai-prompt > summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
+.ai-prompt[open] > summary::before {
+  content: "▾";
+}
+
+.ai-prompt-body {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-prompt-copied {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ok-fg);
+}
+
+.ai-prompt-text {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+
+[data-theme="dark"] .ai-prompt-text {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+@media (max-width: 640px) {
+  .ai-prompt-text {
+    max-height: 200px;
+    font-size: 0.7rem;
+  }
+}
+
+/* =========================================================================
+   Curriculum Structure (/curriculum) — the Subject › Topic › Subtopic tree
+   that replaced /manage/topics + /manage/subtopics.
+
+   THEMING CONTRACT: every colour below is an existing token
+   (--surface/--border/--text/--muted/--brand/--bg/--warn-*) or a translucent
+   tint of one. No rule hardcodes a page background or a text colour, so a
+   future dark theme only has to redefine the tokens.
+
+   The colour-coded Rüb badges deliberately have NO palette of their own here:
+   they reuse the panel-wide .term-badge classes and --term-N-* tokens (see
+   lib/termBadge.ts), so a Rüb is the same colour on this screen and on the
+   questions screen.
+   ========================================================================= */
+
+/* ---- Toolbar ------------------------------------------------------------ */
+.cur-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 12px;
+}
+
+.cur-toolbar .btn,
+.cur-toolbar .btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cur-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+/* ---- Banners (no subjects / truncated scan) ----------------------------- */
+.cur-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
+.cur-banner-warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+/* ---- Tree --------------------------------------------------------------- */
+.cur-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.cur-tree {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cur-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.cur-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 9px;
+}
+
+/* Subject disclosure: chevron + title are ONE button (one tab stop). */
+.cur-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  text-align: left;
+  border-radius: 7px;
+  min-width: 0;
+}
+
+.cur-group-toggle:hover .cur-group-title {
+  color: var(--brand);
+}
+
+.cur-group-toggle:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.35);
+}
+
+.cur-group-title {
+  font-weight: 650;
+  font-size: 0.92rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.cur-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 9px;
+  white-space: nowrap;
+}
+
+.cur-topics,
+.cur-subtopics {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cur-topics {
+  padding: 4px 6px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cur-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.cur-chevron.open {
+  transform: rotate(90deg);
+}
+
+/* ---- Rows (topic + subtopic share the skeleton) ------------------------- */
+.cur-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.cur-row-topic:hover {
+  background: var(--bg);
+}
+
+.cur-row.dimmed .cur-row-name {
+  color: var(--muted);
+}
+
+.cur-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  padding: 8px 8px;
+  cursor: pointer;
+  color: var(--text);
+  border-radius: 8px;
+}
+
+.cur-row-main.static {
+  cursor: default;
+}
+
+.cur-row-main:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.35);
+}
+
+/* Topic disclosure: the chevron sits inside the row button, so it must not be
+   pulled into the wrapping badge flow. */
+.cur-row-toggle {
+  gap: 4px 8px;
+  padding-left: 4px;
+}
+
+.cur-row-toggle:hover .cur-row-name {
+  color: var(--brand);
+}
+
+/* Subtopic rows have no chevron — indent their text to the topic name column. */
+.cur-row-subtopic .cur-row-main {
+  padding-left: 10px;
+}
+
+.cur-row-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.cur-row-subtopic .cur-row-name {
+  font-weight: 400;
+  font-size: 0.85rem;
+}
+
+.cur-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.cur-row-actions {
+  display: flex;
+  gap: 0;
+  padding-right: 4px;
+  flex-shrink: 0;
+}
+
+.cur-icon-btn {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.cur-icon-btn:hover {
+  background: rgba(100, 116, 139, 0.14);
+  color: var(--text);
+}
+
+.cur-icon-btn.danger:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+/* Subtopic level: indented, with a guide rail back to the parent topic. */
+.cur-subtopics {
+  margin: 2px 0 6px 16px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cur-row-subtopic:hover {
+  background: var(--bg);
+}
+
+.cur-row-subtopic.hit {
+  background: rgba(79, 70, 229, 0.08);
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+
+.cur-subempty {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* ---- Pills -------------------------------------------------------------- */
+.cur-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cur-pill-grade {
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--muted);
+}
+
+.cur-pill-muted {
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--muted);
+}
+
+.cur-pill-hit {
+  background: rgba(79, 70, 229, 0.12);
+  color: var(--brand);
+}
+
+/* ---- Empty state + pager ------------------------------------------------ */
+.cur-empty {
+  padding: 44px 20px;
+  text-align: center;
+}
+
+.cur-empty-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+.cur-empty-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.cur-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.cur-pager-info,
+.cur-pager-page {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.cur-pager-spacer {
+  flex: 1 1 auto;
+}
+
+.cur-pager-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- Forms (modal bodies) ----------------------------------------------- */
+.cur-field-wide {
+  grid-column: 1 / -1;
+}
+
+.cur-field-error {
+  margin-top: 4px;
+  color: #dc2626;
+  font-size: 0.78rem;
+}
+
+.cur-field-hint {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.cur-form-note {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 0.8rem;
+}
+
+.cur-picker {
+  margin: 0 0 14px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.cur-picker-legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.cur-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cur-picker-row select {
+  flex: 1 1 160px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 0.85rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* ---- Delete confirmation ------------------------------------------------ */
+.cur-delete-question {
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.cur-impact {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.cur-impact li {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.cur-impact-note {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.cur-impact-blocked {
+  margin: 0 0 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  font-size: 0.85rem;
+}
+
+/* ---- Toasts ------------------------------------------------------------- */
+.cur-toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(380px, calc(100vw - 32px));
+}
+
+.cur-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+  font-size: 0.85rem;
+  animation: cur-toast-in 0.18s ease-out;
+}
+
+.cur-toast-success {
+  border-left: 4px solid var(--ok-fg);
+}
+
+.cur-toast-error {
+  border-left: 4px solid #dc2626;
+}
+
+.cur-toast-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cur-toast-close {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 5px;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.cur-toast-close:hover {
+  color: var(--text);
+}
+
+@keyframes cur-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cur-toast {
+    animation: none;
+  }
+
+  .cur-chevron {
+    transition: none;
+  }
+}
+
+/* ---- Route skeleton (curriculum/loading.tsx) ---------------------------- */
+.cur-skel {
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--bg) 50%,
+    var(--border) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: 8px;
+  animation: loc-shimmer 1.4s ease-in-out infinite;
+}
+
+.cur-skel-title {
+  width: 260px;
+  max-width: 100%;
+  height: 26px;
+  margin-bottom: 8px;
+}
+
+.cur-skel-subtitle {
+  width: 420px;
+  max-width: 100%;
+  height: 14px;
+}
+
+.cur-skel-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.cur-skel-filter {
+  width: 150px;
+  height: 36px;
+}
+
+.cur-skel-filter.wide {
+  width: 240px;
+}
+
+.cur-skel-btn {
+  width: 130px;
+  height: 36px;
+}
+
+.cur-skel-tree {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cur-skel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cur-skel-grouphead {
+  height: 38px;
+}
+
+.cur-skel-row {
+  height: 42px;
+  margin-left: 18px;
+}
+
+/* ---- Responsive --------------------------------------------------------- */
+@media (max-width: 720px) {
+  .cur-toolbar-spacer {
+    flex-basis: 100%;
+  }
+
+  .cur-row-main {
+    padding: 8px 6px;
+  }
+
+  .cur-subtopics {
+    margin-left: 8px;
+    padding-left: 8px;
+  }
+
+  .cur-pager {
+    justify-content: center;
+  }
+
+  .cur-pager-spacer {
+    flex-basis: 100%;
+  }
+
+  .cur-toasts {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    max-width: none;
+  }
+}
+
+/* Forward-compatible dark hook: matches nothing while the panel ships a single
+   light theme, and needs no further edits once a theme toggle stamps
+   data-theme on the root (same pattern as .ai-prompt-text above). Only the two
+   surfaces whose depth cue is a shadow need an override — everything else is
+   already token-driven. The term badges are covered by the shared
+   [data-theme="dark"] --term-N-* block further up. */
+[data-theme="dark"] .cur-toast {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}

@@ -16,6 +16,7 @@ import {
   Info,
   LogOut,
   Mail,
+  ShieldCheck,
   SunMoon,
   Tag,
   UserRound,
@@ -228,6 +229,18 @@ export function AccountSheet({
             onPress={() => {
               onClose();
               router.push("/(public)/contact");
+            }}
+          />
+          {/* Apple 5.1.4(b): a product directed at minors must carry its
+              children's privacy policy INSIDE the app. It is rendered as a real
+              screen (never an external link — a child is never sent out of the
+              app) and is listed for BOTH roles, unlike pricing. */}
+          <ListRow
+            icon={<ShieldCheck size={20} color={tokens.accent} strokeWidth={2} />}
+            title={t("nav.privacy")}
+            onPress={() => {
+              onClose();
+              router.push("/(public)/privacy");
             }}
           />
           {role === "parent" ? (

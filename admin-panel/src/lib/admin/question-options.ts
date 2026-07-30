@@ -47,6 +47,14 @@ export type QuestionTaxonomy = {
   subtopics: TaxonomySubtopic[];
 };
 
+// PostgREST caps a single response at the project's `max-rows` (1000 by
+// default). The 2026 curriculum is 260 topics but 1077 SUBTOPICS, so a bare
+// select() would silently drop ~77 of them — and a subtopic missing from this
+// list is invisible in the editor's cascade and reads as "Subtopic not found"
+// in the bulk-import pre-check. Everything that can exceed 1000 rows is
+// therefore fetched in pages until a short page arrives.
+const FETCH_PAGE = 1000;
+
 export async function loadQuestionTaxonomy(): Promise<QuestionTaxonomy> {
   const supabase = await createClient();
   const { data: topicRows } = await supabase
@@ -62,16 +70,25 @@ export async function loadQuestionTaxonomy(): Promise<QuestionTaxonomy> {
     term: r.term == null ? null : Number(r.term),
   }));
   const topicIds = new Set(topics.map((t) => t.id));
-  const { data: subtopicRows } = await supabase
-    .from("subtopics")
-    .select("id, topic_id, name")
-    .order("name");
-  const subtopics: TaxonomySubtopic[] = ((subtopicRows ?? []) as any[])
-    .filter((r) => topicIds.has(String(r.topic_id)))
-    .map((r) => ({
-      id: String(r.id),
-      topic_id: String(r.topic_id),
-      name: String(r.name),
-    }));
+
+  const subtopics: TaxonomySubtopic[] = [];
+  for (let offset = 0; ; offset += FETCH_PAGE) {
+    const { data, error } = await supabase
+      .from("subtopics")
+      .select("id, topic_id, name")
+      .order("name")
+      .order("id") // stable tiebreaker: duplicate names must not reorder pages
+      .range(offset, offset + FETCH_PAGE - 1);
+    const rows = (data ?? []) as any[];
+    for (const r of rows) {
+      if (!topicIds.has(String(r.topic_id))) continue; // olympiad-scoped parent
+      subtopics.push({
+        id: String(r.id),
+        topic_id: String(r.topic_id),
+        name: String(r.name),
+      });
+    }
+    if (error || rows.length < FETCH_PAGE) break;
+  }
   return { topics, subtopics };
 }

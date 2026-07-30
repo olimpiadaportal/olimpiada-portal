@@ -13,6 +13,24 @@
 //   * Create-modal image: the file is kept locally (preview + remove) and only
 //     uploaded to a staging path on SUBMIT, so question + image save in ONE
 //     action (saveQuestion verifies, moves and links it — or cleans up).
+//
+// Round 52 (§10) — WHY THE RÜB STAYS DERIVED, NOT EDITABLE.
+// The owner asked for term control on this form. It is deliberately NOT a
+// per-question term select, because in the 2026 curriculum a term is a property
+// of the TOPIC: all 260 (grade, subject, topic) rows carry exactly one term,
+// none spans two. The database agrees and enforces it — trg_question_term_guard
+// rejects a question whose term differs from its topic's, and
+// trg_topic_term_cascade rewrites every child subtopic/question when a topic's
+// term changes. A free term select would therefore offer a state the DB refuses
+// to store: the admin picks "Rüb 3" on a Rüb 1 topic, presses Save and gets an
+// error they cannot resolve without changing the topic.
+// What the admin actually needs — reaching the right topic quickly and seeing
+// which quarter they landed in — is served instead by:
+//   * a Rüb FILTER on the topic picker ("show only Rüb 3 topics"), and
+//   * the resulting term shown as a large colour-coded badge.
+// The one legacy escape hatch stays: a topic whose term is still NULL asks for
+// 1..4 and saveQuestion upgrades the TOPIC (which cascades). That path writes
+// the topic, never a divergent question term.
 import {
   Fragment,
   startTransition,
@@ -25,6 +43,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ActionButton } from "@/components/ActionButton";
 import { saveQuestion, type QuestionState } from "@/lib/admin/questions";
 import type { QuestionTaxonomy } from "@/lib/admin/question-options";
+import { termClass } from "@/lib/termBadge";
 import { localeNames, locales } from "@/i18n/config";
 
 type Opt = { value: string; label: string };
@@ -133,6 +152,8 @@ export function QuestionForm({
     (defaults?.meta?.subtopic_id ?? "") as string,
   );
   const [topicTerm, setTopicTerm] = useState(""); // only for legacy NULL-term topics
+  // §10 — view-only lens on the topic picker ("" = every Rüb). Never submitted.
+  const [topicFilterTerm, setTopicFilterTerm] = useState("");
   const [body, setBody] = useState(defaults?.body ?? "");
   const [prompt, setPrompt] = useState(defaults?.prompt ?? "");
   const [explanation, setExplanation] = useState(defaults?.explanation ?? "");
@@ -151,6 +172,19 @@ export function QuestionForm({
       tp.subject_id === subject &&
       (tp.grade_id == null || tp.grade_id === grade),
   );
+  // §10 — narrow the topic picker to one Rüb. Purely a lens over the same list:
+  // it never changes what is saved, and the CURRENTLY SELECTED topic always
+  // stays in the options (otherwise the select would show a blank value while
+  // a real topic id is posted).
+  const topicOptions = topicFilterTerm
+    ? topicsForSelection.filter(
+        (tp) => String(tp.term ?? "") === topicFilterTerm || tp.id === topic,
+      )
+    : topicsForSelection;
+  const filterHidAll =
+    topicFilterTerm !== "" &&
+    topicsForSelection.length > 0 &&
+    topicOptions.length === 0;
   const subtopicsForTopic = taxonomy.subtopics.filter(
     (st) => st.topic_id === topic,
   );
@@ -343,6 +377,23 @@ export function QuestionForm({
             {tt("qfield.topic")}
             <span className="req"> *</span>
           </span>
+          {/* Rüb lens over the topic list — a shortcut, not a saved value. */}
+          <div className="topic-filter-row">
+            <span>{tt("qform.topicTermFilter")}</span>
+            <select
+              aria-label={tt("qform.topicTermFilter")}
+              disabled={!subject || !grade}
+              value={topicFilterTerm}
+              onChange={(e) => setTopicFilterTerm(e.target.value)}
+            >
+              <option value="">{tt("qfilter.allTerms")}</option>
+              {TERMS.map((n) => (
+                <option key={n} value={n}>
+                  {termLabel(n)}
+                </option>
+              ))}
+            </select>
+          </div>
           <select
             name="topic_id"
             required
@@ -355,7 +406,7 @@ export function QuestionForm({
             }}
           >
             <option value="">{tt("manage.select")}</option>
-            {topicsForSelection.map((tp) => (
+            {topicOptions.map((tp) => (
               <option key={tp.id} value={tp.id}>
                 {tp.name}
               </option>
@@ -363,6 +414,9 @@ export function QuestionForm({
           </select>
           {subject && grade && topicsForSelection.length === 0 && (
             <span className="hint">{tt("qform.noTopicsForSelection")}</span>
+          )}
+          {filterHidAll && (
+            <span className="hint">{tt("qform.noTopicsForTerm")}</span>
           )}
         </label>
 
@@ -387,7 +441,9 @@ export function QuestionForm({
           </select>
         </label>
 
-        {/* Rüb: read-only from the topic; a legacy topic (NULL) asks for one. */}
+        {/* Rüb: DERIVED from the topic (see the header note — the DB enforces
+            question.term = topic.term). Only a legacy NULL-term topic asks for
+            a value, and that value upgrades the TOPIC, not just this row. */}
         <label className="field">
           <span className="field-label">
             {tt("qfield.term")}
@@ -411,12 +467,20 @@ export function QuestionForm({
               <span className="hint">{tt("qform.termLegacy")}</span>
             </>
           ) : (
-            <input
-              type="text"
-              value={selectedTopic?.term != null ? termLabel(selectedTopic.term) : "—"}
-              readOnly
-              disabled
-            />
+            <div className="term-derived">
+              {selectedTopic?.term != null ? (
+                <>
+                  <span
+                    className={`${termClass(selectedTopic.term)} term-badge-lg`}
+                  >
+                    {termLabel(selectedTopic.term)}
+                  </span>
+                  <span className="hint">{tt("qform.termFromTopic")}</span>
+                </>
+              ) : (
+                <span className="hint">{tt("qform.termPickTopic")}</span>
+              )}
+            </div>
           )}
         </label>
       </div>

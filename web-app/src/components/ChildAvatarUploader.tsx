@@ -46,7 +46,10 @@ export function ChildAvatarUploader({
             <input
               type="file"
               name="avatar"
-              accept="image/png,image/jpeg,image/webp,image/gif"
+              // Matches the private `child-avatars` bucket (no GIF, never SVG)
+              // and the parent-side ChildAvatarPicker. UX only — the server
+              // types the upload from its bytes regardless.
+              accept="image/png,image/jpeg,image/webp"
               hidden
               disabled={upPending}
               onChange={(e) => {

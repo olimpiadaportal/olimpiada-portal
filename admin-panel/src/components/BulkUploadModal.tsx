@@ -12,13 +12,26 @@
 // stays disabled until the file passes the client-side pre-checks. Client
 // validation is UX only — the SECURITY DEFINER bulk RPCs remain the authority
 // (assert_question_type_rules etc.).
-import { useActionState, useEffect, useRef, useState } from "react";
+//
+// Round 52 (§4/§6/§7):
+//   * The batch-level Rüb selector is REMOVED. In the 2026 curriculum a term
+//     belongs to the topic (constant per grade+subject+topic), so one term per
+//     file was wrong for any file spanning topics from different quarters. Each
+//     row declares meta.term and it must equal its topic's term.
+//   * When a curriculum exists for the chosen subject + grade, rows naming an
+//     unknown topic/subtopic are flagged HERE, before the upload.
+//   * The AI prompt block (BulkPromptBlock) embeds that same curriculum so the
+//     model cannot invent a name in the first place.
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
+import { BulkPromptBlock } from "@/components/BulkPromptBlock";
 import { bulkImportQuestions, type BulkImportState } from "@/lib/admin/questions";
 import { bulkImportOlympiadQuestions } from "@/lib/admin/olympiad";
+import type { QuestionTaxonomy } from "@/lib/admin/question-options";
 import {
+  buildClientCurriculumIndex,
   downloadBulkTemplate,
   parseBulkFile,
   validateBulkRowsClient,
@@ -30,17 +43,24 @@ type Opt = { value: string; label: string };
 
 export function BulkUploadModal({
   dict,
+  locale,
   grades,
   subjects,
+  taxonomy,
   packageId,
   typeNames,
   typeRules,
   triggerClassName = "btn-ghost",
 }: {
   dict: Record<string, string>;
+  // Panel locale — the language the AI prompt asks the model to write in.
+  locale?: string;
   // General mode: selectable grade + subject lists (active subjects).
   grades?: Opt[];
   subjects?: Opt[];
+  // General mode: the EXAM curriculum (topics + terms + subtopics). Drives the
+  // per-row "Topic not found" pre-check and the AI prompt's embedded list.
+  taxonomy?: QuestionTaxonomy;
   // Olympiad mode: the private pool's package id (subject/grade come from the
   // package row server-side — no selectors on this surface).
   packageId?: string;
@@ -61,15 +81,45 @@ export function BulkUploadModal({
   const [open, setOpen] = useState(false);
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");
-  // Round 39: mandatory batch-level Rüb — applied server-side to EVERY row
-  // (supersedes any per-row meta.term, same pattern as subject/grade).
-  const [termVal, setTermVal] = useState("");
   const [fileName, setFileName] = useState("");
   const [fileError, setFileError] = useState("");
-  const [rowIssues, setRowIssues] = useState<RowIssue[]>([]);
-  const [itemCount, setItemCount] = useState(0);
+  // Parsed rows are KEPT so the issue list can be recomputed when the subject
+  // or grade changes (a different pair means a different curriculum).
+  const [items, setItems] = useState<unknown[]>([]);
   // Bumping the key remounts the file input (the reliable way to clear it).
   const [fileKey, setFileKey] = useState(0);
+
+  // Curriculum for the chosen (subject, grade): a topic belongs to the subject
+  // and either to this grade or to no grade at all (shared). Null in olympiad
+  // mode, before a selection, or when the tree is empty — the row checks then
+  // fall back to schema-only validation instead of rejecting everything.
+  const curriculum = useMemo(() => {
+    if (olympiad || !taxonomy || !subjectId || !gradeId) return null;
+    const topics = taxonomy.topics
+      .filter(
+        (tp) =>
+          tp.subject_id === subjectId &&
+          (tp.grade_id == null || tp.grade_id === gradeId),
+      )
+      .map((tp) => ({
+        name: tp.name,
+        term: tp.term,
+        subtopics: taxonomy.subtopics
+          .filter((st) => st.topic_id === tp.id)
+          .map((st) => st.name),
+      }));
+    return topics.length > 0 ? buildClientCurriculumIndex(topics) : null;
+  }, [olympiad, taxonomy, subjectId, gradeId]);
+
+  const rowIssues: RowIssue[] = useMemo(
+    () =>
+      items.length === 0
+        ? []
+        : validateBulkRowsClient(items, tt, rules, mode, curriculum),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, curriculum, mode, dict],
+  );
+  const itemCount = items.length;
 
   // Both server actions share the same state shape.
   const serverAction = olympiad ? bulkImportOlympiadQuestions : bulkImportQuestions;
@@ -86,8 +136,7 @@ export function BulkUploadModal({
     if (state?.ok && state !== lastHandled.current) {
       lastHandled.current = state;
       setFileName("");
-      setRowIssues([]);
-      setItemCount(0);
+      setItems([]);
       setFileKey((k) => k + 1);
       router.refresh();
     }
@@ -95,8 +144,7 @@ export function BulkUploadModal({
 
   function resetFileState() {
     setFileError("");
-    setRowIssues([]);
-    setItemCount(0);
+    setItems([]);
   }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -112,8 +160,7 @@ export function BulkUploadModal({
       setFileError(parsed.error);
       return;
     }
-    setRowIssues(validateBulkRowsClient(parsed.items, tt, rules, mode));
-    setItemCount(parsed.items.length);
+    setItems(parsed.items);
   }
 
   const fileReady = fileName !== "" && fileError === "" && rowIssues.length === 0;
@@ -201,31 +248,22 @@ export function BulkUploadModal({
                   )}
                 </label>
 
-                <label className="field">
-                  <span className="field-label">
-                    {tt("qfield.term")}
-                    <span className="req"> *</span>
-                  </span>
-                  <select
-                    name="term"
-                    required
-                    value={termVal}
-                    onChange={(e) => setTermVal(e.target.value)}
-                  >
-                    <option value="">{tt("manage.select")}</option>
-                    {[1, 2, 3, 4].map((n) => (
-                      <option key={n} value={n}>
-                        {tt(`term.${n}`)}
-                      </option>
-                    ))}
-                  </select>
-                  {termVal === "" && (
-                    <span className="hint">{tt("bulk.chooseTerm")}</span>
-                  )}
-                </label>
               </div>
               <p className="hint">{tt("bulk.batchNote")}</p>
+              {/* Round 52: no batch Rüb select — meta.term is per row and must
+                  match its curriculum topic's term. */}
               <p className="hint">{tt("bulk.termNote")}</p>
+
+              {/* §7 — the ready-made AI prompt, built from the selection above. */}
+              <BulkPromptBlock
+                dict={dict}
+                locale={locale ?? "az"}
+                subjects={subjects ?? []}
+                grades={grades ?? []}
+                subjectId={subjectId}
+                gradeId={gradeId}
+                taxonomy={taxonomy ?? { topics: [], subtopics: [] }}
+              />
             </>
           )}
 

@@ -4,6 +4,15 @@
 // checks (type whitelist, 2MB cap) are UX only and reuse the exact web error
 // keys; the SERVER magic-byte sniff remains the authority — its error keys
 // come back through the BFF envelope and are translated here too.
+//
+// The two roles do NOT share a destination, so they do not share the rules:
+//   parent  → their OWN avatar in the public `profile-avatars` bucket
+//             (an adult publishing their own picture; gif allowed),
+//   student → their students row + the PRIVATE `child-avatars` bucket, read
+//             back only through a signed URL, and removing it DELETES the
+//             object. png/jpeg/webp only — that bucket rejects gif, so
+//             accepting one here would only produce a server-side failure.
+// One endpoint serves both; the BFF branches on the bearer's role.
 import React, { useState } from "react";
 import { View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -12,6 +21,12 @@ import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
+import {
+  CHILD_AVATAR_ALLOWED_MIME,
+  CHILD_AVATAR_EXT_BY_MIME,
+  CHILD_AVATAR_MIME_BY_EXT,
+  MAX_CHILD_AVATAR_BYTES,
+} from "@/lib/childAvatar";
 import { bffRemoveAvatar, bffUploadAvatar } from "@/lib/api";
 
 type T = (key: string) => string;
@@ -42,14 +57,32 @@ const MIME_BY_EXT: Record<string, string> = {
   gif: "image/gif",
 };
 
-function mimeOf(asset: ImagePicker.ImagePickerAsset): string | null {
+function mimeOf(
+  asset: ImagePicker.ImagePickerAsset,
+  mimeByExt: Record<string, string>,
+): string | null {
   if (asset.mimeType && asset.mimeType.length > 0) return asset.mimeType.toLowerCase();
   const ext = (asset.uri.split(".").pop() ?? "").toLowerCase();
-  return MIME_BY_EXT[ext] ?? null;
+  return mimeByExt[ext] ?? null;
 }
 
-export function AvatarSection({ hasAvatar, t }: { hasAvatar: boolean; t: T }) {
+export function AvatarSection({
+  hasAvatar,
+  t,
+  variant = "parent",
+}: {
+  hasAvatar: boolean;
+  t: T;
+  /** "student" = the child's OWN photo: private bucket, no gif, and Remove
+   *  really deletes the file. */
+  variant?: "parent" | "student";
+}) {
   const { tokens } = useTheme();
+  const isStudent = variant === "student";
+  const allowedMime = isStudent ? CHILD_AVATAR_ALLOWED_MIME : ALLOWED_MIME;
+  const extByMime = isStudent ? CHILD_AVATAR_EXT_BY_MIME : EXT_BY_MIME;
+  const mimeByExt = isStudent ? CHILD_AVATAR_MIME_BY_EXT : MIME_BY_EXT;
+  const maxBytes = isStudent ? MAX_CHILD_AVATAR_BYTES : MAX_AVATAR_BYTES;
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<"upload" | "remove" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,12 +115,12 @@ export function AvatarSection({ hasAvatar, t }: { hasAvatar: boolean; t: T }) {
     const asset = result.assets[0];
     if (!asset) return;
 
-    const mime = mimeOf(asset);
-    if (!mime || !ALLOWED_MIME.has(mime)) {
+    const mime = mimeOf(asset, mimeByExt);
+    if (!mime || !allowedMime.has(mime)) {
       setError(t("profile.err.fileType"));
       return;
     }
-    if (typeof asset.fileSize === "number" && asset.fileSize > MAX_AVATAR_BYTES) {
+    if (typeof asset.fileSize === "number" && asset.fileSize > maxBytes) {
       setError(t("profile.err.fileTooLarge"));
       return;
     }
@@ -95,7 +128,7 @@ export function AvatarSection({ hasAvatar, t }: { hasAvatar: boolean; t: T }) {
     setPending("upload");
     const res = await bffUploadAvatar({
       uri: asset.uri,
-      name: asset.fileName ?? `avatar.${EXT_BY_MIME[mime] ?? "jpg"}`,
+      name: asset.fileName ?? `avatar.${extByMime[mime] ?? "jpg"}`,
       type: mime,
     });
     setPending(null);
@@ -145,8 +178,15 @@ export function AvatarSection({ hasAvatar, t }: { hasAvatar: boolean; t: T }) {
         ) : null}
       </View>
       <AppText variant="muted" style={{ fontSize: 12, textAlign: "center" }}>
-        {t("profile.avatarHint")}
+        {isStudent ? t("addchild.avatar.requirements") : t("profile.avatarHint")}
       </AppText>
+      {/* Say the guarantee out loud on the child's own screen: the photo is
+          private, and removing it deletes the file. */}
+      {isStudent ? (
+        <AppText variant="muted" style={{ fontSize: 12, textAlign: "center" }}>
+          {t("mob.prof.avatarPrivate")}
+        </AppText>
+      ) : null}
       {error ? (
         <AppText variant="muted" color={tokens.danger} style={{ textAlign: "center" }}>
           {error}

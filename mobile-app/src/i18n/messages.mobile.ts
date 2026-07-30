@@ -32,6 +32,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.prof.confirmPassword": "Şifrəni təsdiqləyin",
     "mob.prof.passwordMismatch": "Şifrələr uyğun gəlmir.",
     "mob.prof.deleteFinal": "Son addım: bu əməliyyat geri qaytarıla bilməz. Hesab həmişəlik silinsin?",
+    "mob.prof.avatarPrivate":
+      "Şəklini yalnız sən və valideynin görə bilər. Şəkli silsən, fayl tamamilə silinir.",
     "prof2.err.generic": "Əməliyyat alınmadı. Bir azdan yenidən cəhd edin.",
     "mob.pay.webOnly": "Abunəliklər və ödənişlər ailənin veb hesabından idarə olunur.",
     "mob.addchild.webPlan": "Övladın profili yaradıldı. 8 rəqəmli giriş ID-sini almaq üçün planı ailənin veb hesabında seçin.",
@@ -136,6 +138,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.prof.confirmPassword": "Confirm password",
     "mob.prof.passwordMismatch": "Passwords do not match.",
     "mob.prof.deleteFinal": "Last step: this cannot be undone. Permanently delete the account?",
+    "mob.prof.avatarPrivate":
+      "Only you and your parent can see your photo. If you remove it, the file is deleted.",
     "prof2.err.generic": "Something went wrong. Please try again shortly.",
     "mob.pay.webOnly": "Subscriptions and payments are managed from your family's web account.",
     "mob.addchild.webPlan": "Your child's profile has been created. To get the 8-digit login ID, choose a plan on your family's web account.",
@@ -234,6 +238,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.prof.confirmPassword": "Подтвердите пароль",
     "mob.prof.passwordMismatch": "Пароли не совпадают.",
     "mob.prof.deleteFinal": "Последний шаг: это действие нельзя отменить. Удалить аккаунт навсегда?",
+    "mob.prof.avatarPrivate":
+      "Твоё фото видишь только ты и твой родитель. Если удалить фото, файл удаляется полностью.",
     "prof2.err.generic": "Не удалось выполнить действие. Повторите попытку позже.",
     "mob.pay.webOnly": "Подписки и платежи управляются через веб-аккаунт вашей семьи.",
     "mob.addchild.webPlan": "Профиль ребёнка создан. Чтобы получить 8-значный ID для входа, выберите план в веб-аккаунте семьи.",

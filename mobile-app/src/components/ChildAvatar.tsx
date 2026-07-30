@@ -8,7 +8,12 @@
 // the same object on every render; the path changes on every re-upload, so a
 // changed avatar naturally misses the cache. Leaderboards/rankings stay on the
 // plain initials Avatar — never render photos there.
-import React, { useEffect, useState } from "react";
+//
+// A signed URL is a WASTING asset: it expires, the object can be deleted from
+// under it, and the device can be offline. Every one of those must land on the
+// initials bubble, never on a broken image — so a load failure drops the cache
+// entry, re-signs ONCE, and gives up to initials if that fails too.
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, type ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import { supabase } from "@/lib/supabase";
@@ -48,12 +53,26 @@ async function signedChildAvatarUrl(path: string): Promise<string | null> {
   }
 }
 
-/** A signed display URL for a photo path (null while loading / on failure). */
-function useSignedChildAvatarUrl(path: string | null): string | null {
+/**
+ * A signed display URL for a photo path (null while loading / on failure), plus
+ * the `onError` the <Image> calls when that URL does not load: it clears the
+ * cached URL so the whole app stops handing out a dead link, falls back to
+ * initials immediately, and re-signs the path once (an expired link is the
+ * common case and re-signing fixes it silently).
+ */
+function useSignedChildAvatarUrl(path: string | null): {
+  url: string | null;
+  onError: () => void;
+} {
   const cached = path ? cache.get(path) : undefined;
   const [url, setUrl] = useState<string | null>(
     cached && cached.expiresAt > Date.now() ? cached.url : null,
   );
+  // Re-sign trigger. Holds the path it already retried, so the one retry is
+  // per-path and resets by itself when the avatar changes.
+  const [attempt, setAttempt] = useState(0);
+  const retriedPath = useRef<string | null>(null);
+
   useEffect(() => {
     if (!path) {
       setUrl(null);
@@ -66,8 +85,18 @@ function useSignedChildAvatarUrl(path: string | null): string | null {
     return () => {
       live = false;
     };
+  }, [path, attempt]);
+
+  const onError = useCallback(() => {
+    if (!path) return;
+    cache.delete(path);
+    setUrl(null); // initials right now, rather than a broken image
+    if (retriedPath.current === path) return; // one retry per path
+    retriedPath.current = path;
+    setAttempt((n) => n + 1);
   }, [path]);
-  return path ? url : null;
+
+  return { url: path ? url : null, onError };
 }
 
 // ---- renderer ---------------------------------------------------------------------
@@ -78,8 +107,10 @@ export function ChildAvatar({
   seed,
   size = 40,
   style,
-  /** Legacy self-uploaded profile avatar URL (public bucket) — used only when
-   *  the parent-set avatar is absent (web child-header priority parity). */
+  /** PARENT self-avatar URL (the public `profile-avatars` bucket) for the
+   *  shared header trigger, used only when there is no students row at all.
+   *  NEVER pass a URL for a student: a child's photograph is private, comes
+   *  from `row` and is signed above. */
   fallbackUrl = null,
 }: {
   row: ChildAvatarFields | null | undefined;
@@ -90,7 +121,9 @@ export function ChildAvatar({
   fallbackUrl?: string | null;
 }) {
   const source = resolveChildAvatarSource(row);
-  const signedUrl = useSignedChildAvatarUrl(source.type === "photo" ? source.path : null);
+  const { url: signedUrl, onError } = useSignedChildAvatarUrl(
+    source.type === "photo" ? source.path : null,
+  );
 
   if (source.type === "preset") {
     return (
@@ -112,10 +145,19 @@ export function ChildAvatar({
   }
 
   if (source.type === "photo" && signedUrl) {
-    return <Avatar name={name} seed={seed} url={signedUrl} size={size} style={style} />;
+    return (
+      <Avatar
+        name={name}
+        seed={seed}
+        url={signedUrl}
+        size={size}
+        style={style}
+        onError={onError}
+      />
+    );
   }
 
-  // default, legacy fallback, or a photo that failed to sign / is still loading
+  // default, parent fallback, or a photo that failed to sign / is still loading
   return (
     <Avatar
       name={name}

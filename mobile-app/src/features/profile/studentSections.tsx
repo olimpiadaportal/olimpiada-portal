@@ -1,8 +1,9 @@
 // Student profile section cards (mobile port of web ChildProfile +
 // StickerThemePicker + PalettePicker + the read-only school-info card):
 //   * identity header — Avatar (initials fallback on the shared component,
-//     real picker via the BFF), name, 8-digit ID (mono, grouped "1234 5678")
-//     and the "only a parent can change" hint,
+//     real picker via the BFF; the photo is private and signed per viewer),
+//     name, 8-digit ID (mono, grouped "1234 5678") and the "only a parent can
+//     change" hint,
 //   * editable name (bffUpdateStudentName — web childUpdateOwnName twin),
 //   * security — change password DIRECTLY via supabase.auth.updateUser after
 //     the web childChangeOwnPassword client checks (≥8 chars, ≠ the child's
@@ -48,6 +49,7 @@ import { bffUpdateStudentName } from "@/lib/api";
 import { useFieldChain } from "@/lib/useFieldChain";
 import { supabase } from "@/lib/supabase";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { hasRemovableChildPhoto } from "@/lib/childAvatar";
 import { groupChildId } from "@/features/parent/commerce";
 import { AvatarSection } from "./AvatarPicker";
 import {
@@ -93,15 +95,10 @@ export function StudentIdentityCard({ profile, t }: { profile: StudentProfile; t
   return (
     <Card style={{ gap: spacing.lg }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.lg }}>
-        {/* Parent-set avatar (preset/photo, signed via the student's OWN
-            session) wins over the legacy self-uploaded photo (web parity). */}
-        <ChildAvatar
-          row={profile.avatar}
-          name={profile.name || "—"}
-          seed={profileId}
-          fallbackUrl={profile.avatarUrl}
-          size={64}
-        />
+        {/* The students row is the single avatar source: preset PNG, or a photo
+            in the PRIVATE child-avatars bucket signed with the student's OWN
+            session. No `fallbackUrl` — a child photo is never a public URL. */}
+        <ChildAvatar row={profile.avatar} name={profile.name || "—"} seed={profileId} size={64} />
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
           {/* 174pt beside the 64pt avatar at 320pt ≈ 11 chars at variant
               "title", so one line clipped az double-barrelled names. Two lines
@@ -121,7 +118,14 @@ export function StudentIdentityCard({ profile, t }: { profile: StudentProfile; t
           </AppText>
         </View>
       </View>
-      <AvatarSection hasAvatar={profile.avatarUrl !== null} t={t} />
+      {/* "Remove photo" must mean "there IS a photo object to delete": a
+          preset is a bundled PNG, so offering Remove for one is a no-op
+          button. Derived from the students row, never from a resolved URL. */}
+      <AvatarSection
+        variant="student"
+        hasAvatar={hasRemovableChildPhoto(profile.avatar)}
+        t={t}
+      />
     </Card>
   );
 }

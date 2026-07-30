@@ -331,30 +331,18 @@ export default function ParentSubscription() {
           {section === "invoices" ? (
             <View style={{ gap: spacing.md }}>
               <SectionHeader title={t("billing.invoicesTitle")} />
-              {[
-                { id: "INV-2026-001", date: t("billing.date1") },
-                { id: "INV-2025-012", date: t("billing.date2") },
-              ].map((row) => (
-                <Card key={row.id} style={{ gap: spacing.xs }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-                    <FileText size={18} color={tokens.accent} strokeWidth={2} />
-                    <AppText variant="mono" style={{ flex: 1, fontWeight: "700" }}>
-                      {row.id}
-                    </AppText>
-                    <Pill label={t("billing.paid")} tone="ok" />
-                  </View>
-                  <KeyRow label={t("billing.col.date")} value={row.date} />
-                  <KeyRow label={t("billing.col.plan")} value={t("pricing.plan.monthly.name")} />
-                  <KeyRow label={t("billing.col.subjects")} value={t("billing.threeSubjects")} />
-                  <KeyRow label={t("billing.col.amount")} value="≈ 18 AZN" />
-                  <AppText variant="muted" color={tokens.muted} style={{ fontSize: 12 }}>
-                    {t("billing.download")} — {t("billing.soon")}
-                  </AppText>
-                </Card>
-              ))}
-              <AppText variant="muted" style={{ fontSize: 12 }}>
-                {t("billing.demoNote")}
-              </AppText>
+              {/* Round 55 (store compliance): the two FABRICATED PAID invoices
+                  (INV-2026-001 / INV-2025-012, each with a "≈ 18 AZN" amount and
+                  a green Paid pill) are DELETED. Guideline 2.3.1 names promoting
+                  a false price as grounds for removal from the App Store AND
+                  termination of the developer account, and a "demo" disclaimer
+                  does not cure a displayed false price — it renders as a real
+                  receipt for money that was never charged. Until real invoices
+                  exist there is nothing truthful to show, so the section states
+                  that plainly. */}
+              <Card>
+                <AppText variant="muted">{t("billing.invoicesEmpty")}</AppText>
+              </Card>
             </View>
           ) : null}
 

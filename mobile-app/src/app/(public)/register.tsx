@@ -203,6 +203,31 @@ export default function Register() {
             onPress={() => void submit()}
           />
         </Card>
+
+        {/* Privacy consent line (web /register parity). Legal notice, not a
+            marketing link — the owner's "auth surfaces stay minimal" rule bans
+            info/marketing CTAs here, and a data-protection notice at the point
+            where a parent creates the family account is the opposite of that.
+            The three parts are separate keys and render inline as
+            "{Pre} {Link}{Post}", so each language keeps its own word order and
+            the sentence wraps naturally at 320pt instead of being three stacked
+            fragments. The policy opens IN-APP; nothing here leaves the app. */}
+        <AppText
+          variant="muted"
+          style={{ textAlign: "center", lineHeight: 20 }}
+        >
+          {t("privacy.consentPre")}{" "}
+          <AppText
+            variant="label"
+            color={tokens.accent}
+            accessibilityRole="link"
+            onPress={() => router.push("/(public)/privacy")}
+            suppressHighlighting
+          >
+            {t("privacy.consentLink")}
+          </AppText>
+          {t("privacy.consentPost")}
+        </AppText>
       </View>
     </Screen>
   );

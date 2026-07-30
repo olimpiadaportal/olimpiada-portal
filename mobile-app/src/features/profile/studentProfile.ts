@@ -1,7 +1,12 @@
 // Student self-profile reads + the sticker-theme selection writes. Everything
 // runs on the child's OWN JWT:
-//   * students / profiles reads are RLS self-row scoped (web child/profile
-//     page parity, including the structured-catalog → free-text fallbacks),
+//   * the students read is RLS self-row scoped (web child/profile page parity,
+//     including the structured-catalog → free-text fallbacks),
+//   * the avatar comes from the students row ONLY. This read used to also
+//     resolve profiles.avatar_media_id into a PUBLIC storage URL — a
+//     photograph of a minor on a world-readable link. That path is gone: a
+//     child photo lives in the private `child-avatars` bucket and is signed
+//     per viewer by ChildAvatar,
 //   * sticker catalog reads see ENABLED themes only (RLS),
 //   * child_sticker_selections upsert/delete is the web stickerActions
 //     contract: RLS lets the child write only their OWN row and WITH CHECK
@@ -29,11 +34,10 @@ export type StudentProfile = {
   classGrade: string | null;
   city: string | null;
   school: string | null;
-  /** Legacy SELF-uploaded profile avatar (public bucket). The parent-set
-   *  avatar below WINS over it (web child-header priority parity). */
-  avatarUrl: string | null;
-  /** Parent-managed avatar columns from the OWN students row (RLS self-read);
-   *  ChildAvatar resolves preset/photo/default from these. */
+  /** The ONLY avatar source for a student: the three avatar columns of their
+   *  OWN students row (RLS self-read). ChildAvatar resolves preset/photo/
+   *  default from these and signs a photo with the viewer's own session — a
+   *  child photo is never handed out as a public URL. */
   avatar: ChildAvatarFields | null;
 };
 
@@ -46,32 +50,20 @@ export function useStudentProfile(opts?: { enabled?: boolean }) {
     queryKey: studentProfileKey(profileId),
     enabled: !!profileId && (opts?.enabled ?? true),
     queryFn: async () => {
-      const [studentRes, profRes] = await Promise.all([
-        supabase
-          .from("students")
-          .select(
-            "first_name, last_name, child_unique_id, palette, city, school_name, class_grade, " +
-              "avatar_kind, avatar_key, avatar_media_path, " +
-              "grade:grade_id(name, level), district:district_id(name), school:school_id(name)",
-          )
-          .eq("profile_id", profileId!)
-          .maybeSingle(),
-        supabase
-          .from("profiles")
-          .select("avatar:avatar_media_id(bucket, path)")
-          .eq("id", profileId!)
-          .maybeSingle(),
-      ]);
+      const studentRes = await supabase
+        .from("students")
+        .select(
+          "first_name, last_name, child_unique_id, palette, city, school_name, class_grade, " +
+            "avatar_kind, avatar_key, avatar_media_path, " +
+            "grade:grade_id(name, level), district:district_id(name), school:school_id(name)",
+        )
+        .eq("profile_id", profileId!)
+        .maybeSingle();
       if (studentRes.error) throw studentRes.error;
       const s = (studentRes.data ?? {}) as Record<string, any>;
       const first = typeof s.first_name === "string" ? s.first_name : "";
       const last = typeof s.last_name === "string" ? s.last_name : "";
       const name = `${first} ${last}`.trim();
-      // Avatar read degrades to initials on any failure (web parity).
-      const avatar = (profRes.data as Record<string, any> | null)?.avatar as
-        | { bucket: string; path: string }
-        | null
-        | undefined;
       return {
         firstName: first,
         lastName: last,
@@ -86,8 +78,8 @@ export function useStudentProfile(opts?: { enabled?: boolean }) {
         classGrade: (s.class_grade ?? "").trim() || null,
         city: ((s.district?.name ?? s.city ?? "") as string).trim() || null,
         school: ((s.school?.name ?? s.school_name ?? "") as string).trim() || null,
-        avatarUrl:
-          avatar?.bucket && avatar?.path ? publicStorageUrl(avatar.bucket, avatar.path) : null,
+        // Malformed/missing columns degrade to the initials bubble in
+        // resolveChildAvatarSource — never a broken image.
         avatar: {
           avatar_kind: typeof s.avatar_kind === "string" ? s.avatar_kind : null,
           avatar_key: typeof s.avatar_key === "string" ? s.avatar_key : null,

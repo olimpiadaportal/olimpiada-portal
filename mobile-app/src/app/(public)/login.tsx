@@ -5,6 +5,15 @@
 // fields, gradient primary CTA and ONE register link — nothing else. The
 // owner's rule: auth surfaces carry no marketing/info links (the public pages
 // stay routable in-app; pricing shows up inside the parent flows).
+//
+// The ONE conditional exception: when the server answers parent.err.unverified
+// the card grows a resend-confirmation button. It is error RECOVERY, not a
+// link — invisible until the server says this account exists but is
+// unconfirmed, and gone again the moment the error clears. Without it a parent
+// whose confirmation mail was lost is stranded for good (they cannot log in,
+// and a password reset does not confirm an address); the register screen's
+// "check your inbox" card is local state and is unreachable by then. Web
+// closes the same gap with the durable /verify-email URL.
 import React, { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -17,6 +26,7 @@ import { Card } from "@/components/Card";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { Segmented } from "@/components/Segmented";
 import { ChildIdField, PasswordField, TextField } from "@/components/TextField";
+import { ResendConfirmation } from "@/components/ResendConfirmation";
 import { spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
@@ -159,6 +169,12 @@ export default function Login() {
                 <AppText variant="muted" color={tokens.danger}>
                   {t(error)}
                 </AppText>
+              ) : null}
+              {/* Recovery for the unconfirmed account (see the header note).
+                  Keyed on the email in state, so it needs no re-typing; the
+                  cooldown starts at zero because nothing was just sent. */}
+              {error === "parent.err.unverified" ? (
+                <ResendConfirmation email={email.trim()} />
               ) : null}
               <Button
                 title={t("parent.auth.login")}

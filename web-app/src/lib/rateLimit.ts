@@ -13,10 +13,27 @@ import "server-only";
 // reset windows. That still blunts bulk harvesting; a shared store (DB table
 // or Redis — Redis stays optional per project rules) is the production
 // follow-up if stronger guarantees are ever needed.
+//
+// WHY THE BUCKET MAP HANGS OFF globalThis: Next emits this module TWICE in a
+// production build — once into the route-handler bundle (/api/**) and once
+// into the RSC/server-action layer. Two module instances = two `new Map()` =
+// two independent budgets, so a caller could take the full limit on a server
+// action and the full limit again on the matching BFF route (verified in
+// .next/server: distinct webpack module ids for the same source file). Every
+// call site that documents ONE shared web+mobile budget depends on this line;
+// do not turn it back into a module-local Map.
 
 type Bucket = { count: number; resetAt: number };
 
-const buckets = new Map<string, Bucket>();
+declare global {
+  // eslint-disable-next-line no-var
+  var __olympiqRateBuckets: Map<string, Bucket> | undefined;
+}
+
+const buckets: Map<string, Bucket> = (globalThis.__olympiqRateBuckets ??= new Map<
+  string,
+  Bucket
+>());
 const MAX_BUCKETS = 10_000; // hard memory cap; oldest evicted beyond this
 
 function sweep(now: number): void {

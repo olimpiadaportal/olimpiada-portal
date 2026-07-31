@@ -66,7 +66,9 @@ export type PrivacyPolicyStatus = {
 export const PRIVACY_POLICY: PrivacyPolicyStatus = {
   effectiveDate: "",
   lastUpdated: "",
-  websiteUrl: "",
+  // Registered 2026-07-30 (Namecheap). The apex serves the site; www redirects
+  // to it at the host level, so the canonical form carries no "www".
+  websiteUrl: "olympiq.ai",
   privacyEmail: "",
   hostingRegion: "",
   serverLogRetention: "",

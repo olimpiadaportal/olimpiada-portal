@@ -181,8 +181,9 @@ export function bffPost<T>(
   path: string,
   body: unknown,
   fallbackErrorKey: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<BffResult<T>> {
-  return bffJsonPost<T>(path, body, fallbackErrorKey, false);
+  return bffJsonPost<T>(path, body, fallbackErrorKey, false, extraHeaders);
 }
 
 // ---- endpoint payload shapes (mirror web-app/src/app/api/mobile/v1/*) ----
@@ -218,6 +219,35 @@ export function bffRegisterParent(fields: {
     "/api/mobile/v1/auth/register",
     fields,
     "parent.err.createFailed",
+  );
+}
+
+/**
+ * Resend the SIGNUP confirmation email (pre-auth: no token, no session, no
+ * entitlement). Goes through the BFF and never through supabase.auth.resend
+ * from the app — the client-side call would bypass the house rate limiter, and
+ * this is an outbound-email trigger with a real per-day cost.
+ *
+ * ANTI-ENUMERATION: the server answers the identical 200 for an unknown
+ * address, an already-confirmed one and a per-address GoTrue rejection, so
+ * `ok: true` means "handled", NOT "a mail was delivered" — the copy shown for
+ * it stays hedged. Failures are 400 (malformed address), 429 (throttled) and
+ * 500 (the mail rail itself is down — address-independent, so reporting it
+ * leaks nothing and beats a false "sent").
+ * Send the address AS TYPED; the server trims and lowercases it.
+ *
+ * The x-olympiq-client header is what keeps a random web page from driving
+ * this money-spending endpoint from a visitor's browser: it makes the request
+ * non-simple, so a cross-origin browser must preflight, and the route answers
+ * no OPTIONS. Native fetch is not subject to CORS, so this costs the app
+ * nothing.
+ */
+export function bffResendConfirmation(email: string) {
+  return bffPost<{ sent: true }>(
+    "/api/mobile/v1/auth/resend",
+    { email },
+    "verify.resendFailed",
+    { "x-olympiq-client": "mobile" },
   );
 }
 

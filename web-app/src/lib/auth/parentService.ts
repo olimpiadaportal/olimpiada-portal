@@ -6,6 +6,7 @@
 // (requires Auth SMTP) the user is routed to /verify-email until confirmed.
 // setup_parent (service-role RPC) provisions the role either way. addChild
 // reuses the Stage-8 createChild service, authorizing the current parent first.
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
@@ -29,6 +30,10 @@ import {
 } from "@/lib/auth/parentValidation";
 import { getT } from "@/i18n/server";
 import { rateLimitAllow } from "@/lib/rateLimit";
+import {
+  allowResendAttempt,
+  isMailInfrastructureFailure,
+} from "@/lib/auth/resendConfirmationCore";
 import { writeAuditLog } from "@/lib/audit";
 
 export type AuthFormState = { error?: string } | null;
@@ -124,8 +129,14 @@ export async function registerParent(
 
   // Verification disabled on the project → a session exists → straight in.
   if (signUp.session) redirect("/dashboard");
-  // Otherwise the user must confirm their email first.
-  redirect("/verify-email");
+  // Otherwise the user must confirm their email first. `sent=1` is the same
+  // content-free "we just mailed you" flag /forgot-password already uses (no
+  // address, no PII, nothing to leak through history/logs/Referer). It exists
+  // so /verify-email can ARM the resend cooldown on arrival: signUp has this
+  // instant triggered a confirmation mail, and GoTrue refuses another to the
+  // same address inside its minimum-interval window — without the flag the
+  // very first tap would report success for a mail that was never sent.
+  redirect("/verify-email?sent=1");
 }
 
 export async function parentLogin(
@@ -206,6 +217,87 @@ export async function requestPasswordReset(
   });
   // Never reveal whether the email exists.
   redirect("/forgot-password?sent=1");
+}
+
+// ---- Resend the SIGNUP confirmation email ---------------------------------
+// The only self-service escape hatch now that "Confirm email" is ON: an
+// unconfirmed parent cannot log in, and a password reset does NOT confirm an
+// address — so a lost/filtered first mail would otherwise strand the account
+// permanently. Adds nothing to the auth model: no session, no privilege, no
+// service-role client (auth.resend is an anon-callable operation).
+//
+// Unlike requestPasswordReset this does NOT redirect: the whole point is a
+// visible success / pending / throttled state on the page, so it returns state.
+//
+// ENUMERATION: unknown address, already-confirmed address and a per-address
+// GoTrue rejection all answer the identical { ok: true }. Only two things are
+// reported honestly — a malformed address (the sender's own typo), and a
+// failure of OUR mail rail (address-independent, see isMailInfrastructureFailure).
+// Known residual: response LATENCY still differs, because a real send waits on
+// SMTP while a short-circuit returns immediately. Not padded here — /login
+// already discloses account existence by explicit owner decision, so the extra
+// signal ("is it confirmed yet") is marginal against a real cost to everyone's
+// UX. Do not read the neutral answer as a timing guarantee.
+// `throttled` is a UI hint, not an outcome: it lets the form hold its button
+// for the cooldown instead of letting a frustrated user hammer a request that
+// is already being refused. It says nothing about the ADDRESS (every bucket
+// reports identically), so it is not an enumeration signal.
+export type ResendConfirmationState =
+  | { ok?: boolean; error?: string; throttled?: boolean }
+  | null;
+
+export async function resendConfirmationEmail(
+  _prev: ResendConfirmationState,
+  formData: FormData,
+): Promise<ResendConfirmationState> {
+  const t = await getT();
+  const email = f(formData, "email").toLowerCase();
+  // A malformed address is the sender's own typo — rejecting it reveals
+  // nothing about which accounts exist.
+  if (!email || email.length > EMAIL_MAX || !EMAIL_RE.test(email)) {
+    return { error: t("parent.err.email") };
+  }
+  // Three shared buckets (per address / per source / global) — see
+  // lib/auth/resendConfirmationCore for the sizes and the reasoning. The mobile
+  // BFF route calls this SAME function, so web and mobile really do share one
+  // budget and a caller cannot double it by switching surface.
+  if (!allowResendAttempt(email, await headers())) {
+    return { error: t("parent.err.tooMany"), throttled: true };
+  }
+
+  try {
+    // ANON/SSR client on purpose — resend is NOT privileged and must never
+    // touch the service-role client. Same emailRedirectTo as registerParent so
+    // the link lands on the working /auth/callback exchange.
+    const supabase = await createServerSupabase();
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${siteUrl()}/auth/callback` },
+    });
+    if (error) {
+      // Log the CODE only — never the address, never the message.
+      console.error(
+        "resendConfirmationEmail: resend rejected",
+        (error as { code?: string }).code ?? "unknown_error",
+      );
+      // Branch ONLY on address-INDEPENDENT failures (mail rail down / quota
+      // gone): those happen the same for every address, so reporting them
+      // leaks nothing, and hiding them would show a green "sent" while nothing
+      // could possibly arrive. Everything else — unknown address, already
+      // confirmed, asked again inside GoTrue's per-address interval — stays
+      // swallowed behind the neutral answer, or the form becomes an
+      // account-enumeration oracle.
+      if (isMailInfrastructureFailure(error)) {
+        return { error: t("verify.resendFailed") };
+      }
+    }
+  } catch {
+    // supabase-js only throws non-AuthError values, so this is a last-resort
+    // net (the classified faults above return through the normal path).
+    return { error: t("verify.resendFailed") };
+  }
+  return { ok: true };
 }
 
 export async function updatePassword(

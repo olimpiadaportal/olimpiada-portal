@@ -4,6 +4,14 @@
 // project requires email confirmation the BFF returns verify_email instead of
 // tokens and this screen shows the check-your-inbox notice (restyled as a
 // success card per plan §3). Card-grouped fields + gradient CTA.
+//
+// The notice also carries the RESEND control (web /verify-email parity): a
+// confirmation mail that never arrives otherwise strands the account for good —
+// the parent cannot log in (unconfirmed) and a password reset does not help an
+// unconfirmed account. Here the address is already in state, so resending costs
+// no typing; on the web the user re-types it. The same control also sits on
+// Login behind the "confirm your email" error, for the parent who comes back
+// days later — this card is local state and is gone by then.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
@@ -17,6 +25,7 @@ import { PasswordField, TextField } from "@/components/TextField";
 import { PhoneField, E164_RE } from "@/components/PhoneField";
 import { Card } from "@/components/Card";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { ResendConfirmation } from "@/components/ResendConfirmation";
 import { radius, spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
@@ -60,6 +69,8 @@ export default function Register() {
     const res = await registerParent({ firstName, lastName, email, password, phone });
     setPending(false);
     if (res.error) return setError(res.error);
+    // The card's resend control starts on cooldown: sign-up just triggered the
+    // confirmation mail, so GoTrue's per-address window is already running.
     if (res.verifyEmail) setVerifySent(true);
     // Tokens case: the (public) layout redirects into the parent tabs.
   }
@@ -105,9 +116,23 @@ export default function Register() {
             <AppText variant="muted" style={{ textAlign: "center" }}>
               {t("verify.body")}
             </AppText>
+            {/* WHICH inbox. The address is the one thing the user cannot check
+                from here, and a typo in it is the commonest reason the mail
+                "never arrived" — resending to the same typo would not help.
+                It is data, not copy, so it needs no string; middle-ellipsis
+                keeps the domain readable at 320pt. */}
+            <AppText
+              variant="label"
+              numberOfLines={1}
+              ellipsizeMode="middle"
+              style={{ textAlign: "center", maxWidth: "100%" }}
+            >
+              {email.trim()}
+            </AppText>
             <AppText variant="muted" style={{ textAlign: "center" }}>
               {t("verify.hint")}
             </AppText>
+            <ResendConfirmation email={email.trim()} startOnCooldown />
           </Card>
         </View>
       </Screen>

@@ -1571,6 +1571,29 @@ ul.clean li {
   font-size: 0.86rem;
   margin: 0;
 }
+/* Outcome of an email-confirmation link, shown above the login form
+   (?verify=failed|expired|ok). Token-driven so it works in both themes; the
+   failure variant carries a resend link, so it must read as actionable rather
+   than as a dead end. */
+.auth-note {
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 38%, transparent);
+}
+.auth-note a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+.auth-note-ok {
+  color: var(--lime);
+  background: color-mix(in srgb, var(--lime) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lime) 38%, transparent);
+}
 .arena-form .arena-btn {
   margin-top: 4px;
   justify-content: center;

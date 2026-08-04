@@ -22,12 +22,19 @@ const KEYS = [
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; verify?: string }>;
 }) {
-  const { tab } = await searchParams;
+  const { tab, verify } = await searchParams;
   // Whitelist: only the exact value "student" flips the initial tab; anything
   // else (missing, garbage, arrays) falls back to the parent tab.
   const defaultTab: "student" | "parent" = tab === "student" ? "student" : "parent";
+  // Outcome of an email-confirmation link (/auth/confirm, /auth/callback).
+  // Until 2026-08-04 those routes redirected here with `?verify=failed` and
+  // NOTHING rendered it — a user whose link had expired was dropped on a login
+  // form with no explanation and no way to tell a dead link from a typo. Only
+  // these three values are honoured; anything else renders nothing.
+  const verifyState =
+    verify === "failed" || verify === "expired" || verify === "ok" ? verify : null;
   const t = await getT();
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
@@ -53,6 +60,21 @@ export default async function LoginPage({
         <BackLink label={t("nav.back")} />
         <p className="arena-eyebrow">{t("arena.brand")}</p>
         <h1 style={{ marginBottom: 20 }}>{t("login.title")}</h1>
+        {verifyState && (
+          <div
+            role="status"
+            className={verifyState === "ok" ? "auth-note auth-note-ok" : "auth-note"}
+            style={{ marginBottom: 16 }}
+          >
+            <p style={{ margin: 0 }}>{t(`verify.state.${verifyState}`)}</p>
+            {verifyState !== "ok" && (
+              // A dead link needs an ACTION, not just an apology.
+              <p style={{ margin: "6px 0 0" }}>
+                <a href="/verify-email">{t("verify.resend")}</a>
+              </p>
+            )}
+          </div>
+        )}
         <ArenaLogin dict={dict} defaultTab={defaultTab} />
       </div>
     </>

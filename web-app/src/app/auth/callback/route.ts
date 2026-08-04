@@ -1,29 +1,25 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { isSafeRelativeUrl } from "@/lib/notifications/types";
+import { confirmEmailLink } from "@/lib/auth/confirmEmail";
 
-// Only ever forward to a same-origin RELATIVE path. Anything else (absolute
-// URLs, protocol-relative "//evil.com", backslash tricks, or the userinfo
-// trick where "@evil.com" appended to the origin becomes credentials@host)
-// falls back to the dashboard. Prevents open redirects (R7 security fix).
-// Round 51 (audit F15): the shape check is now the ONE shared predicate —
-// this local copy had no control-char/length rule while the shared one had no
-// `@` rule; two implementations of the same rule always drift.
-function safeNext(raw: string | null): string {
-  return isSafeRelativeUrl(raw) ? raw : "/dashboard";
-}
-
-// Email-confirmation + recovery callback. Supabase appends `?code=...`; we
-// exchange it for a session (sets cookies) and route the user onward.
+// LEGACY entry point, kept working on purpose.
+//
+// Until 2026-08-04 the templates used `{{ .ConfirmationURL }}`, which routes
+// through Supabase's own /auth/v1/verify and lands back HERE with `?code=`.
+// New templates link to /auth/confirm with `{{ .TokenHash }}` instead — see
+// lib/auth/confirmEmail.ts for why the old shape could never work for a mobile
+// sign-up. Links already sitting in inboxes still point at this path, and a
+// confirmation email is exactly the kind of thing someone opens three days
+// later, so this route stays and shares the one resolver.
+//
+// It also still receives the `?next=/reset-password` recovery hand-off.
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  const next = safeNext(searchParams.get("next"));
+  const url = new URL(request.url);
+  const result = await confirmEmailLink(url);
 
-  if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(`${origin}${next}`);
+  if (result.ok) {
+    return NextResponse.redirect(`${url.origin}${result.next}`);
   }
-  return NextResponse.redirect(`${origin}/login?verify=failed`);
+  return NextResponse.redirect(
+    `${url.origin}/login?verify=${result.reason === "expired" ? "expired" : "failed"}`,
+  );
 }

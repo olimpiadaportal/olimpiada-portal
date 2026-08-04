@@ -578,6 +578,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "verify.resent":
       "Əgər bu ünvan təsdiq gözləyirsə, təsdiq linki yenidən göndərildi. Poçtunuzu və spam qovluğunu yoxlayın.",
     "verify.resendFailed": "Link göndərilə bilmədi. Bir az sonra yenidən cəhd edin.",
+    "verify.state.ok": "E-poçtunuz təsdiqləndi. İndi hesabınıza daxil ola bilərsiniz.",
+    "verify.state.expired": "Bu təsdiq linkinin vaxtı bitib. Sizə yeni link göndərə bilərik.",
+    "verify.state.failed": "Bu təsdiq linki işləmədi. Ola bilsin ki, artıq istifadə olunub və ya natamam köçürülüb.",
     "forgot.title": "Şifrəni sıfırla",
     "forgot.hint": "E-poçt ünvanınızı daxil edin — sıfırlama linki göndərəcəyik.",
     "forgot.submit": "Link göndər",
@@ -2222,6 +2225,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "verify.resent":
       "If that address is waiting to be confirmed, we've sent the link again. Check your inbox and your spam folder.",
     "verify.resendFailed": "Couldn't send the link. Please try again in a moment.",
+    "verify.state.ok": "Your email is confirmed. You can sign in now.",
+    "verify.state.expired": "That confirmation link has expired. We can send you a new one.",
+    "verify.state.failed": "That confirmation link did not work. It may already have been used, or copied incompletely.",
     "forgot.title": "Reset password",
     "forgot.hint": "Enter your email and we'll send a reset link.",
     "forgot.submit": "Send link",
@@ -3850,6 +3856,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "verify.resent":
       "Если этот адрес ожидает подтверждения, ссылка отправлена повторно. Проверьте почту и папку «Спам».",
     "verify.resendFailed": "Не удалось отправить ссылку. Попробуйте ещё раз чуть позже.",
+    "verify.state.ok": "E-mail подтверждён. Теперь вы можете войти.",
+    "verify.state.expired": "Срок действия ссылки истёк. Мы можем отправить новую.",
+    "verify.state.failed": "Ссылка не сработала. Возможно, её уже использовали или скопировали не полностью.",
     "forgot.title": "Сброс пароля",
     "forgot.hint": "Введите эл. почту — мы отправим ссылку для сброса.",
     "forgot.submit": "Отправить ссылку",

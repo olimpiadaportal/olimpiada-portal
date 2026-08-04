@@ -118,7 +118,36 @@ Today confirmation is OFF, which is why registration signs a parent in immediate
 
 Supabase sends **one template per email type for all users** — it cannot pick a language per recipient without custom auth hooks. So each template below is **Azerbaijani first** (the default locale and the majority of users), with English and Russian underneath, separated by a rule. Every recipient can read the one that applies to them.
 
-Supabase variables: `{{ .ConfirmationURL }}` (the action link), `{{ .SiteURL }}`, `{{ .Email }}`.
+### ⚠ Never use `{{ .ConfirmationURL }}` — it cannot work for the mobile app
+
+**Changed 2026-08-04. If a template still contains `{{ .ConfirmationURL }}`, replace it.**
+
+`{{ .ConfirmationURL }}` routes the click through Supabase's own endpoint:
+
+```
+{SUPABASE_URL}/auth/v1/verify?token=<hash>&type=signup&redirect_to=<our page>
+```
+
+GoTrue verifies the token there and then redirects back to us — but **what it appends
+depends on the flow the sign-up used**, and our two apps sign up differently:
+
+| Sign-up path | Client | GoTrue appends | Result |
+|---|---|---|---|
+| web-app registration | `@supabase/ssr` → PKCE | `?code=…` | Works **only in the browser that submitted the form** — exchanging the code needs the `code_verifier` cookie written at sign-up. A phone, a second browser, or cleared cookies fails. |
+| mobile app (via the BFF) | bare `supabase-js`, `persistSession: false` | `#access_token=…` | **Never works.** That is a URL *fragment*; browsers do not send it to the server, so no route handler can read it — the link always failed. |
+
+The fix is to skip `/auth/v1/verify` entirely: link to **our own** `/auth/confirm` with
+`{{ .TokenHash }}` and let the app verify the OTP itself. `verifyOtp({ token_hash, type })`
+is flow-agnostic, so one link works for a web sign-up and a mobile one alike.
+
+The old `/auth/callback` path still resolves links already sitting in inboxes.
+
+Supabase variables used below: `{{ .TokenHash }}` (the one-time token), `{{ .SiteURL }}`,
+`{{ .Email }}`.
+
+> **`{{ .SiteURL }}` must be `https://olympiq.ai`** — set it in
+> **Authentication → URL Configuration → Site URL** (step 4). If it is still
+> `http://localhost:3000`, every link in every email points at the user's own machine.
 
 ### 6.1 "Confirm signup"
 
@@ -131,7 +160,7 @@ Supabase variables: `{{ .ConfirmationURL }}` (the action link), `{{ .SiteURL }}`
   <p><strong>Salam!</strong></p>
   <p>OlympIQ-də valideyn hesabı yaratdığınız üçün təşəkkür edirik. Hesabınızı aktivləşdirmək üçün aşağıdakı düyməni klikləyin.</p>
   <p style="margin:24px 0">
-    <a href="{{ .ConfirmationURL }}" style="background:#7c3aed;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block">E-poçtu təsdiqlə</a>
+    <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email" style="background:#7c3aed;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block">E-poçtu təsdiqlə</a>
   </p>
   <p style="font-size:13px;color:#6b7280">Bu hesabı siz yaratmamısınızsa, bu məktubu nəzərə almayın.</p>
 
@@ -162,7 +191,7 @@ Supabase variables: `{{ .ConfirmationURL }}` (the action link), `{{ .SiteURL }}`
   <p><strong>Salam!</strong></p>
   <p>Hesabınızın şifrəsini yeniləmək üçün sorğu aldıq. Yeni şifrə təyin etmək üçün aşağıdakı düyməni klikləyin.</p>
   <p style="margin:24px 0">
-    <a href="{{ .ConfirmationURL }}" style="background:#7c3aed;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block">Şifrəni yenilə</a>
+    <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password" style="background:#7c3aed;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block">Şifrəni yenilə</a>
   </p>
   <p style="font-size:13px;color:#6b7280">Bu sorğunu siz göndərməmisinizsə, heç bir əməliyyat tələb olunmur — şifrəniz dəyişməyəcək.</p>
 
@@ -184,9 +213,52 @@ Supabase variables: `{{ .ConfirmationURL }}` (the action link), `{{ .SiteURL }}`
 
 ### 6.3 "Change Email Address"
 
-Same structure. Azerbaijani body: *"Hesabınızın e-poçt ünvanını dəyişmək üçün sorğu aldıq. Təsdiqləmək üçün aşağıdakı düyməni klikləyin."* — button label **"Yeni e-poçtu təsdiqlə"**. English: *"We received a request to change your account email. Click the button above to confirm."* Russian: *"Мы получили запрос на смену e-mail. Нажмите кнопку выше для подтверждения."*
+**Subject:** `OlympIQ — yeni e-poçtu təsdiqləyin / Confirm your new email / Подтвердите новый e-mail`
+
+```html
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2430;line-height:1.6">
+  <h2 style="color:#7c3aed;margin:0 0 12px">OlympIQ</h2>
+
+  <p><strong>Salam!</strong></p>
+  <p>Hesabınızın e-poçt ünvanını dəyişmək üçün sorğu aldıq. Təsdiqləmək üçün aşağıdakı düyməni klikləyin.</p>
+  <p style="margin:24px 0">
+    <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email_change" style="background:#7c3aed;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold;display:inline-block">Yeni e-poçtu təsdiqlə</a>
+  </p>
+  <p style="font-size:13px;color:#6b7280">Bu sorğunu siz göndərməmisinizsə, heç bir əməliyyat tələb olunmur — ünvanınız dəyişməyəcək.</p>
+
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0">
+
+  <p><strong>Hello!</strong></p>
+  <p>We received a request to change your account email. Click the button above to confirm.</p>
+  <p style="font-size:13px;color:#6b7280">If you did not request this, no action is needed — your address will not change.</p>
+
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0">
+
+  <p><strong>Здравствуйте!</strong></p>
+  <p>Мы получили запрос на смену e-mail. Нажмите кнопку выше для подтверждения.</p>
+  <p style="font-size:13px;color:#6b7280">Если вы не отправляли запрос, ничего делать не нужно — адрес не изменится.</p>
+
+  <p style="font-size:12px;color:#9ca3af;margin-top:28px">olympiq.ai</p>
+</div>
+```
+
+> The app has **no in-app email-change action** — email is fixed at registration — so this template only fires if you change an address from the Supabase dashboard. Set it anyway: an unset template falls back to Supabase's English default with a `{{ .ConfirmationURL }}` link, which is the broken shape this whole section exists to remove.
 
 > The app currently has **no in-app email-change action** — email is fixed at registration — so this template is only a safety net if you change an address from the Supabase dashboard.
+
+### 6.4 The `type` values, and why they differ
+
+`/auth/confirm` whitelists the `type` parameter and passes it to `verifyOtp`. Use exactly:
+
+| Template | `type` | Extra |
+|---|---|---|
+| Confirm signup | `email` | — |
+| Reset password | `recovery` | `&next=/reset-password` |
+| Change email address | `email_change` | — |
+| Magic link (unused) | `magiclink` | — |
+
+`next` is validated server-side and may only be a same-origin **relative** path; anything
+else falls back to the dashboard, so it cannot be used as an open redirect.
 
 ---
 
@@ -201,6 +273,43 @@ Same structure. Azerbaijani body: *"Hesabınızın e-poçt ünvanını dəyişm�
 If mail lands in spam: DNS authentication has not propagated (step 1), or SPF was added as a second record instead of merged.
 
 ---
+
+## 8. Troubleshooting — "no email arrives at all"
+
+A broken LINK and a missing EMAIL are different faults. §6 fixes the link. If the mail
+never arrives, the template is not the cause — work down this list, in order. The first
+two are decisive and take a minute each.
+
+**1. Supabase Dashboard → Logs → Auth Logs.** Filter to the moment you registered.
+- A row with an SMTP error → Brevo rejected it. Read the message and go to step 3.
+- **No row at all** → GoTrue never attempted a send. Go to step 2.
+
+**2. Was the address already registered?** This is the most common cause during testing.
+Supabase deliberately does **not** resend a confirmation to an address that already
+exists — it returns a *fake success* so an attacker cannot enumerate accounts. Every
+retest with the same inbox is therefore silent.
+- Check **Authentication → Users** for the address.
+- If it is there with `Confirmed at` empty, delete it and register again, or use the
+  in-app **resend** flow (`/verify-email`), which is built for exactly this.
+- Testing with `you+1@gmail.com`, `you+2@gmail.com`, … gives a fresh account each time
+  and all of them land in the same inbox.
+
+**3. Rate limits.** Two separate ones, both silent:
+- **Authentication → Rate Limits → "Rate limit for sending emails"** — the per-hour cap.
+- **Project Settings → Authentication → SMTP → "Minimum interval between emails"** —
+  per address. Rapid retests hit this constantly.
+
+**4. Is custom SMTP actually enabled?** Saving the fields is not the same as flipping
+**Enable Custom SMTP** on. With it off, Supabase's built-in sender is used, which is
+capped at a handful of messages per hour and only mails project members.
+
+**5. Brevo → Transactional → Logs.** If Supabase logged a successful hand-off but the
+mail never arrived, the answer is here — *delivered*, *soft bounce*, *blocked*, or
+*spam*. A sender address that is not on an authenticated domain gets blocked outright.
+
+**6. Free-tier quota.** 300 emails/day. The counter is on the Brevo dashboard.
+
+Only after all six come back clean is it worth suspecting the template.
 
 ## Known limitations
 

@@ -55,7 +55,33 @@ Listing copy, keywords and the asset inventory now live in **`docs/STORE_LISTING
 - **Tablet screenshots are phone captures** (owner's deliberate stopgap to unblock submission). Play accepts it but flags the app as not optimised for large screens, which suppresses tablet visibility. Replace with real 1080×1920 tablet AVD captures before public launch.
 - Phone screenshots must be exactly **1080×1920** — a raw 20:9 device capture (1080×2400) is rejected by Play.
 - The `Data deletion` answer says partial deletion is NOT offered (only full account deletion). If a partial-deletion path is ever built, update the declaration.
+- **RE-UPLOAD the Play icon + feature graphic.** The ones uploaded on 2026-08-04 before the brand landed carry the PLACEHOLDER blue-chevron mark. Correct files: `mobile-app/store-assets/play-icon-512.png` and `play-feature-1024x500-az.png`.
 - ~~The Android adaptive icon is inverted vs the master icon~~ — **RESOLVED 2026-08-04** by the brand landing below.
+
+## PINNED — EMAIL CONFIRMATION LINKS WERE BROKEN (fixed in code 2026-08-04; OWNER MUST UPDATE SUPABASE)
+
+**Symptom reported:** a new registration from the deployed mobile app produces no usable confirmation.
+
+**Root cause (proved from the code, and independently documented in the owner's own Elmly project at `side/UniPrep-master/src/services/supabase.ts:249-254`):** the templates linked to `{{ .ConfirmationURL }}`, which routes the click through `{SUPABASE_URL}/auth/v1/verify?...&redirect_to=<ours>`. What GoTrue appends on the way back depends on the flow the SIGN-UP used, and the two apps sign up differently:
+
+| Sign-up path | Client | GoTrue appends | Result |
+|---|---|---|---|
+| web-app registration | `@supabase/ssr` → PKCE | `?code=…` | Works ONLY in the browser that submitted the form (needs the `code_verifier` cookie). Another device, another browser, or cleared cookies → fails. |
+| mobile app via the BFF | bare `supabase-js`, `persistSession: false` | `#access_token=…` | **Never worked.** A URL *fragment* is not sent to the server, so no route handler can read it. Not a tuning problem — unfixable server-side. |
+
+**Third, separate bug:** `/auth/callback` redirected failures to `/login?verify=failed` and **nothing rendered it** — the user landed on a login form with no explanation and no way to distinguish a dead link from a typo. This is very likely what the owner saw earlier as "login redirects with no error".
+
+**Fixed in code:** new `web-app/src/app/auth/confirm/route.ts` + shared `web-app/src/lib/auth/confirmEmail.ts` verify the OTP directly (`verifyOtp({ token_hash, type })`), which is flow-agnostic and works for web and mobile sign-ups alike. `/auth/callback` now delegates to the same resolver so links already sitting in inboxes keep working. `type` is whitelisted (never cast from the URL) and `next` stays same-origin-relative. Login now renders `?verify=ok|expired|failed` with a resend link, trilingual (`verify.state.*`).
+
+**❌ OWNER MUST DO — the code fix does nothing until these land in Supabase:**
+1. **Replace the link in all three templates** (Confirm signup / Reset password / Change email) with the `{{ .TokenHash }}` form in `docs/EMAIL_SETUP_BREVO.md` §6. Exact per-template `type` values are in §6.4.
+2. **Authentication → URL Configuration → Site URL = `https://olympiq.ai`.** `{{ .SiteURL }}` is now baked into every link; if this is still localhost, every email points at the user's own machine.
+3. **Redirect URLs must include** `https://olympiq.ai/auth/confirm` and `https://olympiq.ai/auth/callback`.
+4. **Verify `NEXT_PUBLIC_SITE_URL` is set in Vercel** — `siteUrl()` falls back to `http://localhost:3000`, which would poison `emailRedirectTo` on every signup.
+
+**⚠️ A broken link and a missing email are DIFFERENT faults.** If mail still never arrives after the above, the template is not the cause — `docs/EMAIL_SETUP_BREVO.md` §8 is a six-step ordered checklist. The two most likely causes during testing are (a) **the address was already registered** — Supabase deliberately does not resend to an existing account and returns a fake success, so every retest with the same inbox is silent; and (b) the **per-address minimum interval** / hourly send rate limit. Supabase **Logs → Auth Logs** settles it in one look.
+
+**Still unverified (needs a real device):** end-to-end mobile registration → email → confirm → sign in. After confirming in the browser the user returns to the app and logs in; there is no deep-link back into the app yet, which is acceptable but worth revisiting.
 
 ## PINNED — BRAND IDENTITY LANDED (2026-08-04)
 

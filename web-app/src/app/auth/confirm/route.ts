@@ -15,7 +15,11 @@ import { confirmEmailLink } from "@/lib/auth/confirmEmail";
 // points at the resend form, so a user whose link aged out has somewhere to go.
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const result = await confirmEmailLink(url);
+  // Success lands on the confirmation PAGE, not straight in the dashboard: a
+  // user who registered in the mobile app needs to be told it worked and handed
+  // a way back into the app, which cannot inherit this browser's session. The
+  // recovery template overrides this with `next=/reset-password`.
+  const result = await confirmEmailLink(url, "/auth/confirmed");
 
   if (result.ok) {
     return NextResponse.redirect(`${url.origin}${result.next}`);

@@ -1571,6 +1571,55 @@ ul.clean li {
   font-size: 0.86rem;
   margin: 0;
 }
+/* /auth/confirmed — the page a verified confirmation link lands on. Renders
+   under the ROOT layout (no site header), so it carries its own centring and
+   spacing rather than inheriting a shell. Token-driven for both themes. */
+.confirmed {
+  max-width: 460px;
+  margin: 48px auto;
+  padding: 0 20px;
+  text-align: center;
+}
+.confirmed-mark {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+}
+.confirmed h1 {
+  margin: 0 0 10px;
+  font-size: 1.5rem;
+}
+.confirmed-body {
+  margin: 0 0 26px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+/* Column, not a row: at 320px two side-by-side buttons wrap mid-label in az
+   and ru, where these strings are longest. */
+.confirmed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.confirmed-actions .btn,
+.confirmed-actions .btn-ghost {
+  justify-content: center;
+  text-align: center;
+}
+.confirmed-hint {
+  margin: 20px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 /* Outcome of an email-confirmation link, shown above the login form
    (?verify=failed|expired|ok). Token-driven so it works in both themes; the
    failure variant carries a resend link, so it must read as actionable rather

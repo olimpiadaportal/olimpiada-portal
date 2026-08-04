@@ -58,6 +58,18 @@ Listing copy, keywords and the asset inventory now live in **`docs/STORE_LISTING
 - **RE-UPLOAD the Play icon + feature graphic.** The ones uploaded on 2026-08-04 before the brand landed carry the PLACEHOLDER blue-chevron mark. Correct files: `mobile-app/store-assets/play-icon-512.png` and `play-feature-1024x500-az.png`.
 - ~~The Android adaptive icon is inverted vs the master icon~~ — **RESOLVED 2026-08-04** by the brand landing below.
 
+## PINNED — GO-LIVE CHECKLIST (owner decision 2026-08-04: the dev/staging Supabase project IS production)
+
+The owner confirmed the existing Supabase project will serve production directly. It is currently clean — 260 topics, **0 questions**, 0 test attempts, 2 students, 8 test auth users — so promoting it is reasonable. These are the things that must happen **before real families are on it**, in rough priority order.
+
+1. **Upgrade Supabase to Pro.** The free tier has **no point-in-time recovery**. Today a mistake costs a curriculum import; after launch it costs every family's progress with no way back. This is the single highest-value item.
+2. **Add the `child_login_attempts` retention job.** The table stores 8-digit child IDs + hashed IPs **forever** (only failures inside a 15-minute window are cleared; `016_scheduled_jobs.sql` schedules no cleanup). Two consequences: an indefinitely-growing table of minors' identifiers, and a privacy policy that **cannot state a real retention period** — `privacy.learning_data_retention` stays a "to be confirmed" chip until this exists. Fix: a `pg_cron` job in `016` deleting rows older than the chosen window, then set the retention value in admin → Settings → Privacy.
+3. **Decide the staging story.** The from-zero rebuild proof (`drop schema public cascade` inside a rolled-back transaction) is the strongest validation in this project — it caught the `get_mobile_config` shape break in migration 097. It **must never run against a database holding real users**; this project already lost data once when migration `095`'s internal `commit;` defeated an outer rollback. Either provision a separate staging project, or accept that schema changes ship without a from-zero proof. **Owner has not chosen yet.**
+4. **Delete the test accounts** (8 real-email auth users incl. `googleplaytester@olympiq.ai` and the 2026-08-04 registration tests) so they do not sit in production forever and skew the first leaderboards.
+5. **Import the question bank.** It is **empty**. Nothing is playable, and the 8 olympiad packages have no pool — each needs at least `questions_per_attempt` published questions per target grade before it can serve an attempt.
+6. **Fill the privacy policy** — 71 `OWNER MUST CONFIRM` markers remain; six are now admin-fillable with no code change. Lawyer review of the children's-data sections still required.
+7. **Deliverability**: the sending domain is young. Confirm SPF/DKIM/DMARC pass on a real delivery and consider raising DMARC from `p=none` once traffic is steady.
+
 ## PINNED — EMAIL CONFIRMATION LINKS WERE BROKEN (fixed in code 2026-08-04; OWNER MUST UPDATE SUPABASE)
 
 **Symptom reported:** a new registration from the deployed mobile app produces no usable confirmation.
@@ -81,7 +93,11 @@ Listing copy, keywords and the asset inventory now live in **`docs/STORE_LISTING
 
 **⚠️ A broken link and a missing email are DIFFERENT faults.** If mail still never arrives after the above, the template is not the cause — `docs/EMAIL_SETUP_BREVO.md` §8 is a six-step ordered checklist. The two most likely causes during testing are (a) **the address was already registered** — Supabase deliberately does not resend to an existing account and returns a fake success, so every retest with the same inbox is silent; and (b) the **per-address minimum interval** / hourly send rate limit. Supabase **Logs → Auth Logs** settles it in one look.
 
-**Still unverified (needs a real device):** end-to-end mobile registration → email → confirm → sign in. After confirming in the browser the user returns to the app and logs in; there is no deep-link back into the app yet, which is acceptable but worth revisiting.
+**✅ VERIFIED END TO END 2026-08-04** (owner, mobile app via Expo tunnel): register → Brevo delivers → click the emailed link → `/auth/confirm` verifies → signed in. Brevo's transactional log showed `sent / delivered / opened`; the "opened" event was Gmail's image proxy prefetching the tracking pixel, not a human, and the apparent delivery delay was Gmail filing the message before the client re-synced.
+
+**Post-confirmation hand-off (added same day).** Success no longer redirects silently into `/dashboard` — it lands on `/auth/confirmed`, which states plainly that the address is confirmed and offers both ways forward: **Open the OlympIQ app** (`olympiq://login`, already in the app's deep-link allowlist) and **continue on the website**. User-Agent decides which is PRIMARY, never which exists — a UA is a hint, and desktop-mode-on-phone or an in-app browser would otherwise strand the user. The page sits outside the `(public)` route group on purpose, so it renders with no site header — which also removes one path by which a signed-out store reviewer is a tap away from the pricing nav.
+
+**⚠️ Future improvement — Universal Links / Android App Links.** The custom `olympiq://` scheme requires a user tap and shows a confirm dialog on iOS. The better answer is `https://olympiq.ai/auth/confirmed` opening the app directly, which needs an `apple-app-site-association` file + the Associated Domains entitlement, and `assetlinks.json` + the app's **Play App Signing SHA-256**, which does not exist until the app is uploaded. Revisit after the first Play release.
 
 ## PINNED — BRAND IDENTITY LANDED (2026-08-04)
 

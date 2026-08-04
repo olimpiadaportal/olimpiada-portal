@@ -2,7 +2,7 @@
   "expo": {
     "name": "OlympIQ",
     "slug": "olympiq",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "olympiq",
@@ -24,7 +24,7 @@
     "android": {
       "package": "ai.olympiq.app",
       "adaptiveIcon": {
-        "backgroundColor": "#fffbf5",
+        "backgroundColor": "#141B4D",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },

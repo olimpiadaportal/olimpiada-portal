@@ -266,6 +266,74 @@ export const SETTING_META: Record<string, SettingMeta> = {
     labelKey: "settings.sys.supported_locales.label",
     helpKey: "settings.sys.supported_locales.help",
   },
+
+  // ---------------------------------------------------------------------------
+  // PRIVACY POLICY (migration 097) — rendered on the Privacy tab.
+  //
+  // The facts the CODE cannot derive. They were compiled-in constants in
+  // {web-app,mobile-app}/src/lib/privacyPolicy.ts, which made every correction a
+  // code change plus an app-store release; the constants remain as the offline
+  // fallback and a non-empty value here wins.
+  //
+  // Leaving one EMPTY is a valid, meaningful state: every reader renders a
+  // neutral "to be confirmed" chip in its own language rather than inventing a
+  // fact. `privacy.effective_date` is the exception that matters — while it is
+  // empty the whole policy presents itself as a DRAFT and is not in force.
+  //
+  // NOT here on purpose: pushLive / paymentsLive. get_mobile_config() derives
+  // them from the notifications_push flag and the resolved payment mode, so a
+  // regulator-facing claim can never contradict the switch it describes. Both
+  // are still admin-controlled — through the Features tab, which is where that
+  // control belongs.
+  //
+  // Dates are rendered VERBATIM, never parsed, and the same string is shown in
+  // all three languages — hence the numeric placeholder.
+  // ---------------------------------------------------------------------------
+  "privacy.effective_date": {
+    kind: "text",
+    labelKey: "settings.sys.privacy_effective_date.label",
+    helpKey: "settings.sys.privacy_effective_date.help",
+    placeholder: "15.08.2026",
+  },
+  "privacy.last_updated": {
+    kind: "text",
+    labelKey: "settings.sys.privacy_last_updated.label",
+    helpKey: "settings.sys.privacy_last_updated.help",
+    placeholder: "15.08.2026",
+  },
+  "privacy.contact_email": {
+    kind: "email",
+    labelKey: "settings.sys.privacy_contact_email.label",
+    helpKey: "settings.sys.privacy_contact_email.help",
+    placeholder: "privacy@example.com",
+  },
+  "privacy.website_url": {
+    kind: "text",
+    labelKey: "settings.sys.privacy_website_url.label",
+    helpKey: "settings.sys.privacy_website_url.help",
+    placeholder: "olympiq.ai",
+  },
+  "privacy.hosting_region": {
+    kind: "text",
+    labelKey: "settings.sys.privacy_hosting_region.label",
+    helpKey: "settings.sys.privacy_hosting_region.help",
+    placeholder: "eu-central-1",
+  },
+  "privacy.server_log_retention": {
+    kind: "text",
+    labelKey: "settings.sys.privacy_server_log_retention.label",
+    helpKey: "settings.sys.privacy_server_log_retention.help",
+  },
+  "privacy.learning_data_retention": {
+    kind: "text",
+    labelKey: "settings.sys.privacy_learning_data_retention.label",
+    helpKey: "settings.sys.privacy_learning_data_retention.help",
+  },
+  "privacy.backup_retention": {
+    kind: "text",
+    labelKey: "settings.sys.privacy_backup_retention.label",
+    helpKey: "settings.sys.privacy_backup_retention.help",
+  },
 };
 
 // Supported UI locales (matches the app's i18n config) for locale inputs.

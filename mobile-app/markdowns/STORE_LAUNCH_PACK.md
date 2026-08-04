@@ -13,6 +13,16 @@ production `autoIncrement`); OTA runtime pinned by `runtimeVersion: {policy: "ap
 
 ## 1. Listing metadata (az default · en · ru)
 
+> **SUPERSEDED 2026-08-04 — do not submit anything from this section.**
+> The live listing copy is `docs/STORE_LISTING_COPY.md`. Two things below are now wrong:
+> the daily round is described as "the same questions for everyone", which stopped being
+> true at Round 42 (the set is drawn per student), and the copy mentions subscriptions
+> and payments, which must never appear in store metadata
+> (`docs/STORE_PAYMENTS_COMPLIANCE.md`). Kept only as a record of what M4 drafted.
+>
+> §2 onward — the data-safety inventory, reviewer notes and age-rating answers — is
+> still current and still the single source for both stores' privacy forms.
+
 App name (both stores): **OlympIQ** (30 chars max — fits).
 
 ### 1.1 Subtitle (iOS, ≤30 chars) / Short description (Play, ≤80 chars)

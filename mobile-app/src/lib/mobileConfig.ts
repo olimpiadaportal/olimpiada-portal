@@ -2,6 +2,7 @@
 // unit-tested in __tests__/config.test.ts). The server resolves the payment
 // mode; the client NEVER computes or trusts one. Missing/malformed fields
 // degrade to the SAFE side: modules off, payments off, maintenance off.
+import type { PrivacyPolicyOverrides } from "@/lib/privacyPolicy";
 
 export type PaymentMode = "real" | "demo" | "giveaway" | "off";
 
@@ -29,6 +30,10 @@ export type MobileConfig = {
   locales: { supported: string[]; default: string };
   contact: { email: string; phone: string; whatsapp: string; address: string; mapQuery: string };
   social: { facebook: string; instagram: string; youtube: string; tiktok: string };
+  // Migration 097. Deliberately the ONLY snake_case member of this type: it is
+  // handed straight to resolvePrivacyPolicyStatus(), which both codebases share,
+  // so renaming the fields here would mean mapping them back before every call.
+  privacy: PrivacyPolicyOverrides;
   version: { ios: PlatformGate; android: PlatformGate };
 };
 
@@ -48,6 +53,31 @@ function tri(v: unknown): TriMessage {
     return { az: str(o.az), en: str(o.en), ru: str(o.ru) };
   }
   return { ...EMPTY_TRI };
+}
+
+/**
+ * Privacy metadata, preserving ABSENCE rather than coercing it.
+ *
+ * `bool()` would turn a missing `push_live` into `false`, and the resolver
+ * treats any explicit boolean as an answer — so an old server that predates
+ * migration 097 would silently assert "push is not live" instead of falling
+ * back to the compiled-in default. Only a real boolean is passed through.
+ */
+function privacy(v: unknown): PrivacyPolicyOverrides {
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const out: PrivacyPolicyOverrides = {
+    effective_date: str(o.effective_date),
+    last_updated: str(o.last_updated),
+    website_url: str(o.website_url),
+    contact_email: str(o.contact_email),
+    hosting_region: str(o.hosting_region),
+    server_log_retention: str(o.server_log_retention),
+    learning_data_retention: str(o.learning_data_retention),
+    backup_retention: str(o.backup_retention),
+  };
+  if (typeof o.push_live === "boolean") out.push_live = o.push_live;
+  if (typeof o.payments_live === "boolean") out.payments_live = o.payments_live;
+  return out;
 }
 
 function gate(v: unknown): PlatformGate {
@@ -108,6 +138,7 @@ export function parseMobileConfig(raw: unknown): MobileConfig {
       youtube: str(social.youtube),
       tiktok: str(social.tiktok),
     },
+    privacy: privacy(o.privacy),
     version: { ios: gate(version.ios), android: gate(version.android) },
   };
 }

@@ -1,8 +1,8 @@
 import { getT, type T } from "@/i18n/server";
 import { CmsProse } from "@/components/CmsProse";
-import { getPublicSiteSettings } from "@/lib/flags";
+import { getPublicSiteSettings, getPrivacyPolicyStatus } from "@/lib/flags";
 import { toPolicyList, toPolicyTable } from "@/lib/policyContent";
-import { PRIVACY_POLICY, isPrivacyPolicyDraft } from "@/lib/privacyPolicy";
+import { isPrivacyPolicyDraft } from "@/lib/privacyPolicy";
 
 // Shared privacy-policy body — rendered by the public /privacy page, the in-app
 // parent /help/privacy page and the student /child/help/privacy page from this
@@ -16,9 +16,11 @@ import { PRIVACY_POLICY, isPrivacyPolicyDraft } from "@/lib/privacyPolicy";
 //     which mirror docs/PRIVACY_POLICY.md — the document the owner submits to
 //     App Store Connect and Google Play. Nothing is hardcoded here.
 //   * the facts the code cannot know (effective date, hosting region, retention
-//     periods) → src/lib/privacyPolicy.ts. Each is answered ONCE there instead
-//     of three times in three languages; an unanswered one renders a neutral
-//     "to be confirmed" chip rather than an invented fact.
+//     periods) → the ADMIN PANEL (/settings → Privacy), read here through
+//     getPrivacyPolicyStatus(); src/lib/privacyPolicy.ts holds the compiled-in
+//     fallback for when the database has not answered. Each is answered ONCE
+//     instead of three times in three languages; an unanswered one renders a
+//     neutral "to be confirmed" chip rather than an invented fact.
 //   * the contact details → the admin Site-Settings the Contact page already
 //     uses (contact.support_email / support_phone / address), so the policy can
 //     never quote an address the rest of the site has moved on from.
@@ -149,13 +151,16 @@ function Kv({
 export async function PrivacyPolicy() {
   const t = await getT();
   const site = await getPublicSiteSettings();
-  const draft = isPrivacyPolicyDraft();
+  // Migration 097: admin-owned facts over the compiled-in defaults, with
+  // pushLive/paymentsLive derived from the flag and the payment mode.
+  const policy = await getPrivacyPolicyStatus();
+  const draft = isPrivacyPolicyDraft(policy);
   const tbd = t("privacy.tbd");
 
   const supportEmail = site.supportEmail.trim();
   // Dedicated privacy mailbox if the owner set one, otherwise the same support
   // address the Contact page publishes — never a made-up one.
-  const privacyEmail = PRIVACY_POLICY.privacyEmail.trim() || supportEmail;
+  const privacyEmail = policy.privacyEmail.trim() || supportEmail;
 
   return (
     <article className="pp">
@@ -167,13 +172,13 @@ export async function PrivacyPolicy() {
           <div className="pp-kv-row">
             <dt>{t("privacy.effective")}</dt>
             <dd>
-              <Val value={PRIVACY_POLICY.effectiveDate} tbd={tbd} />
+              <Val value={policy.effectiveDate} tbd={tbd} />
             </dd>
           </div>
           <div className="pp-kv-row">
             <dt>{t("privacy.updated")}</dt>
             <dd>
-              <Val value={PRIVACY_POLICY.lastUpdated} tbd={tbd} />
+              <Val value={policy.lastUpdated} tbd={tbd} />
             </dd>
           </div>
         </dl>
@@ -243,7 +248,7 @@ export async function PrivacyPolicy() {
                 : undefined
             }
           />
-          <Kv label={t("privacy.s2.website")} value={PRIVACY_POLICY.websiteUrl} tbd={tbd} />
+          <Kv label={t("privacy.s2.website")} value={policy.websiteUrl} tbd={tbd} />
           <Kv
             label={t("privacy.s2.requests")}
             value={privacyEmail}
@@ -281,7 +286,7 @@ export async function PrivacyPolicy() {
           <div className="pp-kv-row">
             <dt>{t("privacy.s4.logRetention")}</dt>
             <dd>
-              <Val value={PRIVACY_POLICY.serverLogRetention} tbd={tbd} />
+              <Val value={policy.serverLogRetention} tbd={tbd} />
             </dd>
           </div>
         </dl>
@@ -350,7 +355,7 @@ export async function PrivacyPolicy() {
         <CmsProse text={t("privacy.s7.intro")} />
         <PolicyTable t={t} k="privacy.s7.table" />
         <CmsProse
-          text={PRIVACY_POLICY.pushLive ? t("privacy.s7.pushOn") : t("privacy.s7.pushOff")}
+          text={policy.pushLive ? t("privacy.s7.pushOn") : t("privacy.s7.pushOff")}
         />
         <CmsProse text={t("privacy.s7.otherIntro")} />
         <PolicyList t={t} k="privacy.s7.other" />
@@ -358,7 +363,7 @@ export async function PrivacyPolicy() {
           <div className="pp-kv-row">
             <dt>{t("privacy.s7.regionLabel")}</dt>
             <dd>
-              <Val value={PRIVACY_POLICY.hostingRegion} tbd={tbd} />
+              <Val value={policy.hostingRegion} tbd={tbd} />
             </dd>
           </div>
         </dl>
@@ -371,7 +376,7 @@ export async function PrivacyPolicy() {
         <CmsProse
           className="pp-strong"
           text={
-            PRIVACY_POLICY.paymentsLive
+            policy.paymentsLive
               ? t("privacy.s8.statusOn")
               : t("privacy.s8.statusOff")
           }
@@ -389,7 +394,7 @@ export async function PrivacyPolicy() {
           <div className="pp-kv-row">
             <dt>{t("privacy.s9.otherRetention")}</dt>
             <dd>
-              <Val value={PRIVACY_POLICY.learningDataRetention} tbd={tbd} />
+              <Val value={policy.learningDataRetention} tbd={tbd} />
             </dd>
           </div>
         </dl>
@@ -410,7 +415,7 @@ export async function PrivacyPolicy() {
           <div className="pp-kv-row">
             <dt>{t("privacy.s9.backupLabel")}</dt>
             <dd>
-              <Val value={PRIVACY_POLICY.backupRetention} tbd={tbd} />
+              <Val value={policy.backupRetention} tbd={tbd} />
             </dd>
           </div>
         </dl>

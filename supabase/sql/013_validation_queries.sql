@@ -847,16 +847,36 @@ select '56_mobile_control_plane' as check_name,
              and has_function_privilege('anon','public.get_mobile_content(text)','EXECUTE') = true
             then 'PASS' else 'FAIL' end as status;
 
--- 57) get_mobile_config() whitelist shape: EXACTLY the seven documented top-level
+-- 57) get_mobile_config() whitelist shape: EXACTLY the eight documented top-level
 --     keys, a complete per-platform version block, and a valid resolved payment
 --     mode — the function must never grow into a `select *` settings dump.
+--     `privacy` joined the list in migration 097.
 select '57_mobile_config_shape' as check_name,
        case when (select array_agg(k order by k)
                     from jsonb_object_keys(public.get_mobile_config()) k)
-               = array['contact','flags','locales','maintenance','payment','social','version']
+               = array['contact','flags','locales','maintenance','payment','privacy','social','version']
              and public.get_mobile_config()->'version'->'ios' is not null
              and public.get_mobile_config()->'version'->'android' is not null
              and (public.get_mobile_config()->'payment'->>'mode') in ('real','demo','giveaway','off')
+            then 'PASS' else 'FAIL' end as status;
+
+-- 57b) Migration 097 — privacy metadata. The eight admin-owned facts are seeded
+--      and exposed, and the two DERIVED booleans agree with the switches they
+--      describe. That agreement is the whole reason they are not settings: a
+--      free-typed copy could tell parents no push data is collected while the
+--      pipeline is live. `payments_live` is 'real' ONLY — demo and giveaway move
+--      no money, so §8 must keep describing payments in the future tense.
+select '57b_privacy_metadata' as check_name,
+       case when (select count(*) from public.system_settings where key like 'privacy.%') = 8
+             and (select array_agg(k order by k)
+                    from jsonb_object_keys(public.get_mobile_config()->'privacy') k)
+               = array['backup_retention','contact_email','effective_date','hosting_region',
+                       'last_updated','learning_data_retention','payments_live','push_live',
+                       'server_log_retention','website_url']
+             and (public.get_mobile_config()->'privacy'->>'push_live')::boolean
+                 = (public.get_mobile_config()->'flags'->>'notifications_push')::boolean
+             and (public.get_mobile_config()->'privacy'->>'payments_live')::boolean
+                 = (public.get_mobile_config()->'payment'->>'mode' = 'real')
             then 'PASS' else 'FAIL' end as status;
 
 -- 58) Round 18 engine guarantees (migrations 046/047/048): question-scope

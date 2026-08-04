@@ -258,6 +258,64 @@ export default async function SettingsPage() {
     </div>
   );
 
+  /* ------------------------------ Tab: Privacy ------------------------------ */
+  // Migration 097. The policy TEXT is not edited here — it lives in the i18n
+  // catalog and docs/PRIVACY_POLICY.md, so it goes through code review and a
+  // lawyer, and the page can never drift from the document the stores read.
+  // What IS edited here are the facts the code cannot derive.
+  //
+  // Rendered directly (academic-card pattern) so the labels come from the LOCAL
+  // trilingual strings until messages.ts gains the settings.sys.privacy_* keys.
+  const privacyField = (key: string) => {
+    const meta = SETTING_META[key];
+    if (!meta) return null;
+    return (
+      <SettingEditor
+        key={key}
+        settingKey={key}
+        kind={meta.kind as SettingFieldKind}
+        value={settingValue.get(key)}
+        exists={settingValue.has(key)}
+        localeOptions={LOCALE_OPTIONS}
+        placeholder={meta.placeholder}
+        strings={{
+          ...editorBase,
+          label: lt(meta.labelKey),
+          help: lt(meta.helpKey),
+        }}
+      />
+    );
+  };
+
+  const privacyTab = (
+    <div className="settings-panel-stack">
+      <SettingCard
+        title={lt("settings.privacy.title")}
+        description={lt("settings.privacy.desc")}
+      >
+        {/* The effective date is the single switch between "draft" and "in
+            force", so the warning sits above the field rather than in its
+            help text, where it reads as a footnote. */}
+        <p className="hint" style={{ marginTop: 0, marginBottom: 12 }}>
+          {lt("settings.privacy.draftNote")}
+        </p>
+        {privacyField("privacy.effective_date")}
+        {privacyField("privacy.last_updated")}
+        {privacyField("privacy.contact_email")}
+        {privacyField("privacy.website_url")}
+        {privacyField("privacy.hosting_region")}
+        {privacyField("privacy.server_log_retention")}
+        {privacyField("privacy.learning_data_retention")}
+        {privacyField("privacy.backup_retention")}
+        {/* Explains the two values that have no field here, so their absence
+            reads as a decision rather than an omission. */}
+        <p className="hint" style={{ marginTop: 12 }}>
+          {lt("settings.privacy.derivedNote")}
+        </p>
+      </SettingCard>
+    </div>
+  );
+
   /* --------------------------- Tab: Localization ---------------------------- */
   const localizationTab = (
     <div className="settings-panel-stack">
@@ -409,6 +467,7 @@ export default async function SettingsPage() {
             content: localizationTab,
           },
           { id: "features", label: t("settings.tab.features"), content: featuresTab },
+          { id: "privacy", label: lt("settings.privacy.title"), content: privacyTab },
         ]}
       />
     </div>

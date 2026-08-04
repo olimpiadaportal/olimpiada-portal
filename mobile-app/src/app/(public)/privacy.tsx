@@ -48,7 +48,10 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { fontSize, lineHeight, radius, spacing } from "@/theme/tokens";
 import { useContentOverrides, useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
-import { PRIVACY_POLICY, isPrivacyPolicyDraft } from "@/lib/privacyPolicy";
+import {
+  isPrivacyPolicyDraft,
+  resolvePrivacyPolicyStatus,
+} from "@/lib/privacyPolicy";
 import { useT } from "@/i18n/useT";
 
 const SECTION_IDS = [
@@ -86,13 +89,19 @@ export default function Privacy() {
     scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.md), animated: true });
   };
 
-  const draft = isPrivacyPolicyDraft();
+  // Migration 097: the admin owns these facts. `config.data` is undefined on
+  // first paint and stays undefined offline — and this screen MUST work signed
+  // out and offline (Apple 5.1.4(b)) — so the resolver falls back to the
+  // compiled-in defaults rather than rendering a page of "to be confirmed".
+  const policy = resolvePrivacyPolicyStatus(config.data?.privacy);
+
+  const draft = isPrivacyPolicyDraft(policy);
   const tbd = t("privacy.tbd");
 
   const supportEmail = (config.data?.contact.email ?? "").trim();
   // Dedicated privacy mailbox if the owner set one, otherwise the same support
   // address the Contact screen publishes — never a made-up one.
-  const privacyEmail = PRIVACY_POLICY.privacyEmail.trim() || supportEmail;
+  const privacyEmail = policy.privacyEmail.trim() || supportEmail;
   const address = (config.data?.contact.address ?? "").trim() || t("privacy.s2.addressValue");
 
   return (
@@ -158,12 +167,12 @@ export default function Privacy() {
           <View style={{ gap: spacing.sm }}>
             <PolicyKv
               label={t("privacy.effective")}
-              value={PRIVACY_POLICY.effectiveDate}
+              value={policy.effectiveDate}
               tbd={tbd}
             />
             <PolicyKv
               label={t("privacy.updated")}
-              value={PRIVACY_POLICY.lastUpdated}
+              value={policy.lastUpdated}
               tbd={tbd}
             />
           </View>
@@ -271,7 +280,7 @@ export default function Privacy() {
             />
             <PolicyKv
               label={t("privacy.s2.website")}
-              value={PRIVACY_POLICY.websiteUrl}
+              value={policy.websiteUrl}
               tbd={tbd}
             />
             <PolicyKv
@@ -305,7 +314,7 @@ export default function Privacy() {
           <PolicyTable text={t("privacy.s4.techTable")} />
           <PolicyKv
             label={t("privacy.s4.logRetention")}
-            value={PRIVACY_POLICY.serverLogRetention}
+            value={policy.serverLogRetention}
             tbd={tbd}
           />
 
@@ -368,13 +377,13 @@ export default function Privacy() {
           <Prose>{t("privacy.s7.intro")}</Prose>
           <PolicyTable text={t("privacy.s7.table")} />
           <Prose>
-            {PRIVACY_POLICY.pushLive ? t("privacy.s7.pushOn") : t("privacy.s7.pushOff")}
+            {policy.pushLive ? t("privacy.s7.pushOn") : t("privacy.s7.pushOff")}
           </Prose>
           <Prose>{t("privacy.s7.otherIntro")}</Prose>
           <PolicyList text={t("privacy.s7.other")} />
           <PolicyKv
             label={t("privacy.s7.regionLabel")}
-            value={PRIVACY_POLICY.hostingRegion}
+            value={policy.hostingRegion}
             tbd={tbd}
           />
         </Section>
@@ -383,7 +392,7 @@ export default function Privacy() {
         <Section id="s8" t={t} onMeasure={measure("s8")}>
           <PolicyList text={t("privacy.s8.list")} />
           <Prose emphasis>
-            {PRIVACY_POLICY.paymentsLive
+            {policy.paymentsLive
               ? t("privacy.s8.statusOn")
               : t("privacy.s8.statusOff")}
           </Prose>
@@ -396,7 +405,7 @@ export default function Privacy() {
           <Prose>{t("privacy.s9.notifRetention")}</Prose>
           <PolicyKv
             label={t("privacy.s9.otherRetention")}
-            value={PRIVACY_POLICY.learningDataRetention}
+            value={policy.learningDataRetention}
             tbd={tbd}
           />
 
@@ -414,7 +423,7 @@ export default function Privacy() {
           <Prose>{t("privacy.s9.backupNote")}</Prose>
           <PolicyKv
             label={t("privacy.s9.backupLabel")}
-            value={PRIVACY_POLICY.backupRetention}
+            value={policy.backupRetention}
             tbd={tbd}
           />
 

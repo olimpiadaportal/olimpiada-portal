@@ -723,6 +723,26 @@ values
   ('leaderboard.rank.min_attempts',  '2'::jsonb)
 on conflict (key) do nothing;
 
+-- Migration 097: admin-owned privacy-policy metadata — the facts the code
+-- cannot derive (effective date, hosting region, retention periods). The
+-- compiled-in constants in {web-app,mobile-app}/src/lib/privacyPolicy.ts remain
+-- the FALLBACK; a non-empty value here wins. Empty string = "not yet known",
+-- which every reader renders as a neutral "to be confirmed" chip.
+-- pushLive / paymentsLive are deliberately NOT settings — get_mobile_config()
+-- DERIVES them from the notifications_push flag and the payment mode, so a
+-- regulator-facing claim can never contradict the switch it describes.
+insert into public.system_settings (key, value_json)
+values
+  ('privacy.effective_date',          '"04.08.2026"'::jsonb),
+  ('privacy.last_updated',            '"04.08.2026"'::jsonb),
+  ('privacy.website_url',             '"olympiq.ai"'::jsonb),
+  ('privacy.contact_email',           '""'::jsonb),
+  ('privacy.hosting_region',          '""'::jsonb),
+  ('privacy.server_log_retention',    '""'::jsonb),
+  ('privacy.learning_data_retention', '""'::jsonb),
+  ('privacy.backup_retention',        '""'::jsonb)
+on conflict (key) do nothing;
+
 --
 
 

@@ -538,6 +538,25 @@ begin
         'instagram', coalesce((select value_json->>0 from public.system_settings where key='social.instagram'), ''),
         'youtube',   coalesce((select value_json->>0 from public.system_settings where key='social.youtube'), ''),
         'tiktok',    coalesce((select value_json->>0 from public.system_settings where key='social.tiktok'), '')),
+    -- Migration 097: admin-owned privacy-policy metadata. The compiled-in
+    -- constants in {web-app,mobile-app}/src/lib/privacyPolicy.ts stay as the
+    -- FALLBACK so an offline phone still renders a coherent page; a non-empty
+    -- value here wins.
+    'privacy', jsonb_build_object(
+        'effective_date',          coalesce((select value_json->>0 from public.system_settings where key='privacy.effective_date'), ''),
+        'last_updated',            coalesce((select value_json->>0 from public.system_settings where key='privacy.last_updated'), ''),
+        'website_url',             coalesce((select value_json->>0 from public.system_settings where key='privacy.website_url'), ''),
+        'contact_email',           coalesce((select value_json->>0 from public.system_settings where key='privacy.contact_email'), ''),
+        'hosting_region',          coalesce((select value_json->>0 from public.system_settings where key='privacy.hosting_region'), ''),
+        'server_log_retention',    coalesce((select value_json->>0 from public.system_settings where key='privacy.server_log_retention'), ''),
+        'learning_data_retention', coalesce((select value_json->>0 from public.system_settings where key='privacy.learning_data_retention'), ''),
+        'backup_retention',        coalesce((select value_json->>0 from public.system_settings where key='privacy.backup_retention'), ''),
+        -- DERIVED, never stored: both already have exactly one canonical switch
+        -- in this database, and a second free-typed admin copy could only ever
+        -- contradict it. 'real' only — demo/giveaway move no money and touch no
+        -- card data, so §8 must keep describing payments in the future tense.
+        'push_live',               coalesce((v_flags->>'notifications_push')::boolean, false),
+        'payments_live',           (v_mode = 'real')),
     'version', coalesce(v_version, '{}'::jsonb)
   );
 end;

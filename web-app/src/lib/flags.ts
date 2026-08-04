@@ -16,6 +16,13 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { defaultLocale, locales, type Locale } from "@/i18n/config";
+import { getPaymentModeInfo } from "@/lib/paymentMode";
+import {
+  PRIVACY_POLICY,
+  resolvePrivacyPolicyStatus,
+  type PrivacyPolicyOverrides,
+  type PrivacyPolicyStatus,
+} from "@/lib/privacyPolicy";
 
 // M25: the admin-edited public CHROME (site_content overrides, public site
 // settings, locale settings, feature flags) used to be re-read from the DB on
@@ -397,5 +404,85 @@ export const getLocaleSettings = cache(
       return { enabled: [...locales], fallback: defaultLocale };
     }
     return fetchLocaleSettings();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// PRIVACY-POLICY METADATA (migration 097)
+//
+// The eight facts the code cannot derive — effective date, hosting region,
+// retention periods — moved out of the compiled-in constant and into
+// system_settings so an administrator can correct them without a code change
+// and, on mobile, without an app-store release.
+//
+// The compiled-in PRIVACY_POLICY stays as the FALLBACK. Every failure path here
+// degrades to it rather than to blanks, because this page is regulator-facing:
+// a service-role hiccup must not turn a published policy into a wall of "to be
+// confirmed".
+// ---------------------------------------------------------------------------
+
+/**
+ * Only the eight admin-typed STRINGS are cached. The two booleans are derived
+ * from live switches and are resolved outside this cache — see below.
+ */
+const fetchPrivacySettings = unstable_cache(
+  async (): Promise<PrivacyPolicyOverrides> => {
+    const out: PrivacyPolicyOverrides = {};
+    try {
+      const supabase = getAdminClient();
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("key, value_json")
+        .in("key", [
+          "privacy.effective_date",
+          "privacy.last_updated",
+          "privacy.website_url",
+          "privacy.contact_email",
+          "privacy.hosting_region",
+          "privacy.server_log_retention",
+          "privacy.learning_data_retention",
+          "privacy.backup_retention",
+        ]);
+      if (error || !data) return out;
+      for (const row of data as { key: string; value_json: unknown }[]) {
+        const v = typeof row.value_json === "string" ? row.value_json.trim() : "";
+        // `privacy.effective_date` -> `effective_date`. Derived from the key
+        // rather than switch-cased so adding a ninth setting is a one-line
+        // change in the list above and in PrivacyPolicyOverrides.
+        const field = row.key.slice("privacy.".length) as keyof PrivacyPolicyOverrides;
+        (out as Record<string, unknown>)[field] = v;
+      }
+    } catch {
+      // keep fallbacks
+    }
+    return out;
+  },
+  ["privacy-policy-settings"],
+  { revalidate: 60 },
+);
+
+/**
+ * The privacy status as the page should render it: admin values over
+ * compiled-in defaults, with the two switch-derived booleans resolved live.
+ *
+ * `pushLive` and `paymentsLive` are NOT settings anywhere. They mirror the
+ * notifications_push flag and the payment mode, so they are read from those and
+ * can never contradict them. `paymentsLive` is `real` ONLY — demo and giveaway
+ * modes move no money and touch no card data, so §8 must keep describing
+ * payments in the future tense while either is on.
+ */
+export const getPrivacyPolicyStatus = cache(
+  async (): Promise<PrivacyPolicyStatus> => {
+    if (!isServiceRoleConfigured) return PRIVACY_POLICY;
+    const [overrides, pushLive, payment] = await Promise.all([
+      fetchPrivacySettings(),
+      isFeatureEnabled("notifications_push"),
+      getPaymentModeInfo(),
+    ]);
+    return resolvePrivacyPolicyStatus({
+      ...overrides,
+      push_live: pushLive,
+      payments_live: payment.mode === "real",
+    });
   },
 );

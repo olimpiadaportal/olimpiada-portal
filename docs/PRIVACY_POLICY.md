@@ -27,8 +27,8 @@ of them — never a mixture.
 
 # Bölmə A — OlympIQ Məxfilik Siyasəti
 
-**Qüvvəyə minmə tarixi:** `[OWNER MUST CONFIRM: dərc olunan gün, məsələn 2026-08-15]`
-**Son yenilənmə:** `[OWNER MUST CONFIRM: eyni tarix]`
+**Qüvvəyə minmə tarixi:** 04.08.2026
+**Son yenilənmə:** 04.08.2026
 
 Bu siyasət OlympIQ veb saytına və OlympIQ mobil tətbiqinə (iOS və Android) aiddir.
 
@@ -496,8 +496,8 @@ etdiyiniz anlamına gəlir.
 
 # Part B — OlympIQ Privacy Policy
 
-**Effective date:** `[OWNER MUST CONFIRM: the day this is published, e.g. 2026-08-15]`
-**Last updated:** `[OWNER MUST CONFIRM: same date]`
+**Effective date:** 04.08.2026
+**Last updated:** 04.08.2026
 
 This policy covers the OlympIQ website and the OlympIQ mobile app for iOS and Android.
 
@@ -968,8 +968,8 @@ effect means you accept the updated policy.
 
 # Часть C — Политика конфиденциальности OlympIQ
 
-**Дата вступления в силу:** `[OWNER MUST CONFIRM: день публикации, например 15.08.2026]`
-**Последнее обновление:** `[OWNER MUST CONFIRM: та же дата]`
+**Дата вступления в силу:** 04.08.2026
+**Последнее обновление:** 04.08.2026
 
 Эта политика распространяется на сайт OlympIQ и на мобильное приложение OlympIQ для iOS и Android.
 

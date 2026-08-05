@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   registerParent,
   parentLogin,
@@ -22,6 +22,22 @@ export function ParentAuthForm({
   const tt = (k: string) => dict[k] ?? k;
   const fn = mode === "register" ? registerParent : parentLogin;
   const [state, action, pending] = useActionState<AuthFormState, FormData>(fn, null);
+
+  // "Email already registered" is the one error resubmitting cannot fix — the
+  // same address will be rejected identically every time. So the button stays
+  // DISABLED until the address actually changes, which turns a dead retry loop
+  // into an obvious "edit this field" cue.
+  //
+  // Compared against the server's NORMALIZED echo (trimmed + lowercased), so
+  // retyping the same address with different capitalisation or a stray space
+  // does not re-enable the button on a change that the server would collapse
+  // back to the same value.
+  const [email, setEmail] = useState("");
+  const emailRejected =
+    mode === "register" &&
+    state?.code === "email_exists" &&
+    !!state.rejectedEmail &&
+    email.trim().toLowerCase() === state.rejectedEmail;
 
   return (
     <form action={action} className="form auth-form">
@@ -55,6 +71,9 @@ export function ParentAuthForm({
           required
           autoComplete="email"
           placeholder={tt("parent.auth.emailPh")}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          aria-invalid={emailRejected || undefined}
         />
       </label>
       {mode === "register" && (
@@ -80,7 +99,14 @@ export function ParentAuthForm({
         />
       </label>
       {state?.error && <p className="form-error">{state.error}</p>}
-      <button className="btn" type="submit" disabled={pending}>
+      {/* A duplicate address is the one case with an obvious next step, so
+          offer it rather than leaving the user to find the login page. */}
+      {emailRejected && (
+        <p className="form-hint">
+          <a href="/login">{tt("parent.auth.login")}</a>
+        </p>
+      )}
+      <button className="btn" type="submit" disabled={pending || emailRejected}>
         {pending
           ? tt("parent.auth.submitting")
           : tt(mode === "register" ? "parent.auth.register" : "parent.auth.login")}

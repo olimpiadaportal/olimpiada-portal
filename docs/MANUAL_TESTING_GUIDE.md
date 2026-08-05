@@ -223,8 +223,8 @@ If anything in §1–§5 doesn't match its **Expect**, report it and I'll fix it
 
 > **Prerequisite (one-time):** apply the Round-3 DB migration to **dev/staging**, then re-run validation:
 > ```bash
-> psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/migrations/2026_06_29_017_cities_schools_grade_promotion.sql
-> psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/013_validation_queries.sql   # expect 25/25 PASS
+> psql "$OLIMPIADA_PROD_DB_URL" -f supabase/sql/migrations/2026_06_29_017_cities_schools_grade_promotion.sql
+> psql "$OLIMPIADA_PROD_DB_URL" -f supabase/sql/013_validation_queries.sql   # expect 25/25 PASS
 > ```
 > This seeds 15 Azerbaijani **cities**, makes schools require a city, adds the `graduated` flag + `advance_student_grades()` RPC, and extends Add-Child. (A full from-zero rebuild already passed 25/25.)
 
@@ -286,8 +286,8 @@ If anything here doesn't match its **Expect**, tell me which **R#** + what you s
 > **Prerequisites (do these first, or fixes will look absent):**
 > 1. Apply the Round-4 migration to dev/staging, then re-validate:
 >    ```bash
->    psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/migrations/2026_07_01_018_news_view_count.sql
->    psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/013_validation_queries.sql   # expect 26/26 PASS
+>    psql "$OLIMPIADA_PROD_DB_URL" -f supabase/sql/migrations/2026_07_01_018_news_view_count.sql
+>    psql "$OLIMPIADA_PROD_DB_URL" -f supabase/sql/013_validation_queries.sql   # expect 26/26 PASS
 >    ```
 > 2. **Restart both dev servers** and **log in again in each app** — the session cookie was renamed per-app (`sb-olimpiada-web` / `sb-olimpiada-admin`), so old sessions are ignored once.
 

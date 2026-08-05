@@ -55,6 +55,8 @@ export default function Register() {
   // change the locale while an error is on screen, and the message has to
   // follow it.
   const [error, setError] = useState<string | null>(null);
+  // Normalized address the server rejected as already registered, or null.
+  const [rejectedEmail, setRejectedEmail] = useState<string | null>(null);
   const [verifySent, setVerifySent] = useState(false);
 
   async function submit() {
@@ -68,7 +70,15 @@ export default function Register() {
     setError(null);
     const res = await registerParent({ firstName, lastName, email, password, phone });
     setPending(false);
-    if (res.error) return setError(res.error);
+    if (res.error) {
+      // "Already registered" is the one failure resubmitting cannot fix — the
+      // same address is rejected identically every time. Remember it so the
+      // button stays blocked until the field actually changes (web parity).
+      if (res.error === "parent.err.emailExists") {
+        setRejectedEmail(email.trim().toLowerCase());
+      }
+      return setError(res.error);
+    }
     // The card's resend control starts on cooldown: sign-up just triggered the
     // confirmation mail, so GoTrue's per-address window is already running.
     if (res.verifyEmail) setVerifySent(true);
@@ -79,6 +89,12 @@ export default function Register() {
   // number, the country trigger is a Pressable and never joins a chain) →
   // password. "Done" calls the SAME submit the button calls, and only when the
   // button would be pressable (Button blocks itself while pending).
+  // Blocked only while the field still holds the exact address the server
+  // rejected; editing it (case/whitespace aside — the server normalizes both)
+  // frees the button immediately.
+  const emailRejected =
+    rejectedEmail !== null && email.trim().toLowerCase() === rejectedEmail;
+
   const chain = useFieldChain(5, {
     onLast: () => {
       if (!pending) void submit();
@@ -225,6 +241,7 @@ export default function Register() {
             variant="gradient"
             pending={pending}
             pendingTitle={t("parent.auth.submitting")}
+            disabled={emailRejected}
             onPress={() => void submit()}
           />
         </Card>

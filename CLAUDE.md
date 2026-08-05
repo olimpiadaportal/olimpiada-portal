@@ -29,9 +29,15 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - At the start of every stage, read `STATUS.md`, `IMPLEMENTATION_EXECUTION_PLAN.md`, and `CODING_AGENT_PROMPTS.md`.
 - Read only the markdown files required for the active stage. Do not reread every project markdown.
 - If a stage includes SQL/database/schema/RLS/storage work, automatically apply the database rules from `CODING_AGENT_PROMPTS.md` (Prompt 8) and the database versioning workflow. Do not wait for a separate database prompt.
-- For SQL/database stages, automatically run database validation against the **dev/staging** database using `OLIMPIADA_DEV_DB_URL` from the local terminal environment (e.g. `psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/0XX_file.sql`). Do not ask the human owner to manually run all SQL files unless automation is impossible (no `OLIMPIADA_DEV_DB_URL`, or no `psql`/safe execution method available).
+- **TWO DATABASES, AND THE NAMES ARE NOT INTUITIVE (owner decision, 2026-08-04) — read this before any `psql`:**
+  - **`OLIMPIADA_PROD_DB_URL` is PRODUCTION.** It is the live `eu-west-1` (West EU, Ireland) Supabase project that serves `olympiq.ai`, the mobile app and the admin panel. It holds real accounts. *(Until 2026-08-04 this same connection string was exposed under a name ending in `_DEV_DB_URL`. The rename exists precisely so nobody reads "DEV" and assumes a sandbox. If only that older variable is still set in the environment, treat it as PRODUCTION.)*
+  - **`OLIMPIADA_STAGING_DB_URL` is the SANDBOX.** Same region, free tier, schema-only, no real data. Anything destructive goes here.
+- **Forward migrations** (`\i supabase/sql/migrations/…`) run against **staging first, then production**, and only after the staging run passes.
+- **DESTRUCTIVE VALIDATION IS STAGING-ONLY.** The from-zero rebuild proof (`drop schema public cascade` → rebuild `001`–`012`,`014`,`015`,`016`,`013` inside a transaction) must **NEVER** touch `OLIMPIADA_PROD_DB_URL`, even wrapped in `begin; … rollback;`. That wrapper has failed in this repository once: migration `2026_07_29_095` contained its own `begin; … commit;`, and the inner `commit` committed the OUTER transaction including the `drop schema` — every row was lost. Two rules follow, both mandatory:
+  1. Before any rebuild, grep every file to be sourced for `^\s*(begin|commit|rollback)\s*;` and abort if a canonical file self-transacts. Never `\i` a migration inside a rebuild.
+  2. If `OLIMPIADA_STAGING_DB_URL` is unset, **do not run the rebuild at all** — say so and continue. A skipped proof is a tracked gap; a rebuild against production is unrecoverable.
+- Run read-only validation (`013_validation_queries.sql`) against **either** database; it mutates nothing.
 - If database validation fails, identify the exact file and error, fix the SQL inside the current stage scope, and rerun validation. Repeat until validation passes or a genuine blocker is found.
-- For SQL/database stages, use **dev/staging only — never run against production.**
 - After every implementation, self-review, fix, or stage close, end the response with a concise `Human Next Actions` section.
 - `Human Next Actions` must include: what the human must manually check, whether UI/manual testing is needed, whether Supabase dashboard checking is needed, whether to commit/push (with a suggested commit message), whether deployment should be checked (after Vercel is connected), the expected success result, what to do if it fails, and the next prompt to use.
 - Whenever a human step needs code, SQL, shell commands, dashboard clicks, env values, or config, provide the EXACT ready-to-run snippet/steps in the response — clearly labeled, copy-paste ready, with placeholders for any value the human must choose (e.g. email/password). Never describe a manual step abstractly when a concrete snippet is possible. Never put real secrets in the snippet.
@@ -81,9 +87,9 @@ Full sourced analysis: **`docs/STORE_PAYMENTS_COMPLIANCE.md`** (authoritative; s
 
 ## Secret Handling (Non-Negotiable)
 
-- Never print, echo, save, log, commit, or otherwise expose `OLIMPIADA_DEV_DB_URL`, database passwords, the Supabase service role key, API keys, or any other secret.
+- Never print, echo, save, log, commit, or otherwise expose `OLIMPIADA_PROD_DB_URL`, `OLIMPIADA_STAGING_DB_URL`, database passwords, the Supabase service role key, API keys, or any other secret.
 - Do not write secrets into `.env` files tracked by Git, markdown, `STATUS.md`, logs, command output, or commit messages.
-- When using `OLIMPIADA_DEV_DB_URL`, reference it only as the shell variable `"$OLIMPIADA_DEV_DB_URL"`; never expand or display its value. Redact any connection string from command output before reporting.
+- Reference either database URL only as the shell variable (`"$OLIMPIADA_PROD_DB_URL"` / `"$OLIMPIADA_STAGING_DB_URL"`); never expand or display its value. Redact any connection string from command output before reporting.
 - Secrets live only in the local terminal environment and untracked local env files. The repository is never a place for secrets.
 
 ## Localization (Permanent, Non-Negotiable)

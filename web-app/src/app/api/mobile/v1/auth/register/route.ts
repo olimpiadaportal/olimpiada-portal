@@ -17,6 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
 import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { validateParentRegistration } from "@/lib/auth/parentValidation";
+import { isExistingAccountSignUp } from "@/lib/auth/signUpOutcome";
 import { rateLimitAllow } from "@/lib/rateLimit";
 import { writeAuditLog } from "@/lib/audit";
 
@@ -110,6 +111,14 @@ export async function POST(request: Request): Promise<Response> {
         return json({ error: "parent.err.emailExists", retryable: false }, 409);
       }
       return json({ error: "parent.err.createFailed", retryable: false }, 400);
+    }
+    // The case the branch above cannot see: with "Confirm email" on, an address
+    // that already belongs to a CONFIRMED account comes back as HTTP 200 with an
+    // obfuscated user and no mail sent. Unhandled, the app showed "check your
+    // inbox" for a mail that would never arrive. Same 409 as the explicit-error
+    // path so the client has one case to handle. See lib/auth/signUpOutcome.ts.
+    if (isExistingAccountSignUp(signUp)) {
+      return json({ error: "parent.err.emailExists", retryable: false }, 409);
     }
 
     // Provision the parent role/row now (service role; valid pre-confirmation).

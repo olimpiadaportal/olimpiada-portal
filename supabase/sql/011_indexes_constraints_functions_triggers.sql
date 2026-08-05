@@ -6770,6 +6770,93 @@ $$;
 revoke all on function public.apply_subject_change(uuid, uuid[], uuid[], text) from public, anon, authenticated;
 grant execute on function public.apply_subject_change(uuid, uuid[], uuid[], text) to service_role;
 
+-- -----------------------------------------------------------------------------
+-- Migration 098: deleting a parent must not leave orphaned children.
+--
+-- The FK graph cascades everything except the child itself — `parents` cascades
+-- `parent_student_links` away, while `students.created_by_parent_profile_id` is
+-- only SET NULL, so the student's profile, credentials and auth user all
+-- survive with no link to anyone. The account becomes invisible to every parent
+-- surface yet can still sign in. Both existing students were already in exactly
+-- that state when this was written.
+--
+-- Application code (admin `deleteParent`, web `deleteParentAccountCore`) already
+-- deleted children first and still does; it simply is not the only route — the
+-- Supabase dashboard and psql bypass it entirely. The rule belongs where the
+-- deletion happens.
+--
+-- BEFORE DELETE, not AFTER: the link rows are cascaded away by this very delete,
+-- so an AFTER trigger would run with the evidence already gone.
+-- -----------------------------------------------------------------------------
+create or replace function public.fn_cascade_delete_parent_children()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_children uuid[];
+begin
+  select coalesce(array_agg(distinct child), '{}')
+    into v_children
+  from (
+    select s.profile_id as child
+      from public.students s
+     where s.created_by_parent_profile_id = old.profile_id
+    union
+    select l.student_profile_id
+      from public.parent_student_links l
+     where l.parent_profile_id = old.profile_id
+  ) q
+  -- Shared children are KEPT and merely unlinked: deleting a live account
+  -- because a co-parent left would be worse than the orphan this fixes.
+  where not exists (
+    select 1
+      from public.parent_student_links l2
+     where l2.student_profile_id = q.child
+       and l2.parent_profile_id <> old.profile_id
+  )
+  and q.child <> old.profile_id;
+
+  if array_length(v_children, 1) is null then
+    return old;
+  end if;
+
+  -- Preferred path: the auth user cascades profiles -> students ->
+  -- child_credentials -> links, and leaves nothing in auth.users either.
+  -- Best-effort: if the owning role ever loses rights here, an exception would
+  -- abort the parent's deletion entirely. The public-schema delete below is the
+  -- guarantee.
+  begin
+    delete from auth.users u
+     where u.id in (
+       select p.auth_user_id
+         from public.profiles p
+        where p.id = any(v_children)
+          and p.auth_user_id is not null
+     );
+  exception
+    when insufficient_privilege or undefined_table then
+      null;
+  end;
+
+  delete from public.profiles p where p.id = any(v_children);
+
+  return old;
+end;
+$fn$;
+
+comment on function public.fn_cascade_delete_parent_children() is
+  'Migration 098: deletes a departing parent''s children (profiles + auth users) '
+  'so no orphan child account survives, whatever route deleted the parent. '
+  'Children still linked to another parent are kept.';
+
+drop trigger if exists trg_parents_cascade_children on public.parents;
+create trigger trg_parents_cascade_children
+  before delete on public.parents
+  for each row
+  execute function public.fn_cascade_delete_parent_children();
+
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql
 -- =============================================================================

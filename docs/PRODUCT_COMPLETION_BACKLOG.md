@@ -16,7 +16,7 @@ Each item below was re-checked against the actual code + dev DB. Summary of the 
 - **B2 Real leaderboard** — full engine: append-only points ledger, single-writer trigger, `get_leaderboard`/`get_my_leaderboard_rank`, seasons, child board UI + admin management (migrations 039/041). ✅
 - **B4 Notifications center** — full in-app center: producer/broadcast RPCs, bell + parent/child pages, admin composer, event generators, per-channel prefs, retention; email/push architected behind flags (migrations 042/043/044). ✅
 - **C3 web-app ESLint** — `.eslintrc.json` added to both apps; `next lint` runs clean non-interactively. ✅
-- **C7 Brand rename** — `package.json` names are `olympiq-*`; READMEs say OlympIQ (the AZ word "olimpiada" + `OLIMPIADA_DEV_DB_URL` are deliberately kept). ✅
+- **C7 Brand rename** — `package.json` names are `olympiq-*`; READMEs say OlympIQ (the AZ word "olimpiada" + `OLIMPIADA_PROD_DB_URL` are deliberately kept). ✅
 - **C8 pg_cron (dev)** — 6 jobs live on dev (grade promotion, access recompute, attempt expiry, leaderboard rollover, notification dispatch + prune). Production scheduling remains a deploy-time step. ✅
 - **D3 Profiles phone** — `profiles.phone` (E.164 + check) added; parent registration enforces it (migration 025). ✅
 - **A3 (partial)** — the *expiry* half of subscription lifecycle is now automated (past_due→expired sweep); charge-at-trial-end / dunning still need a provider. ◑
@@ -62,7 +62,7 @@ Each item below was re-checked against the actual code + dev DB. Summary of the 
 - 🔵 **No JS test framework** in web/admin (recorded assumption, Rounds 9–10). Mobile track introduces jest-expo + Maestro; decide whether to backfill Vitest for web/admin.
 - 🔵 **Admin MFA + stricter auth rate limiting** (pre-production hardening note since Stage 3); the Round-7 in-memory limiter's serverless caveat → durable store when deploying (documented).
 - 🔵 **Error reporting/monitoring**: none in either app (no Sentry). Decide per privacy posture; mobile plan proposes optional sentry-expo behind the same decision.
-- ✅ **DONE (2026-07-08 verify).** ~~🔵 Brand rename in `package.json`/READMEs.~~ Package names are `olympiq-web-app`/`olympiq-admin-panel`; READMEs say OlympIQ. (The AZ word "olimpiada" and `OLIMPIADA_DEV_DB_URL` are intentionally kept.)
+- ✅ **DONE (2026-07-08 verify).** ~~🔵 Brand rename in `package.json`/READMEs.~~ Package names are `olympiq-web-app`/`olympiq-admin-panel`; READMEs say OlympIQ. (The AZ word "olimpiada" and `OLIMPIADA_PROD_DB_URL` are intentionally kept.)
 - ✅ **DONE on dev / 🔵 prod deploy-time (2026-07-08 verify).** 6 cron jobs run on dev (grade promotion, access recompute, attempt expiry, leaderboard rollover, notification dispatch + prune). On production, enable `pg_cron` and run canonical `016` at deploy time (all jobs are backported there).
 
 ## D. Data & content

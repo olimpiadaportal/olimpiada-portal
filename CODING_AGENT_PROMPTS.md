@@ -111,7 +111,7 @@ It must contain, in this order (omit a line only if it is genuinely not applicab
 1. **What to manually check** — exactly what the human owner should look at/verify.
 2. **UI / manual testing needed?** — whether the human must manually test UI/design/business behavior (only when apps exist), and which flows.
 3. **Supabase dashboard needed?** — whether the human must use the Supabase dashboard/SQL editor, and for what.
-4. **Database run/validation** — if Claude already ran SQL + validation automatically against dev/staging via `OLIMPIADA_DEV_DB_URL`, say so and report PASS/FAIL (never print the URL). Only if automation was impossible, give the exact SQL files and numeric run order (dev/staging first, never production).
+4. **Database run/validation** — if Claude already ran SQL + validation automatically against dev/staging via `OLIMPIADA_PROD_DB_URL`, say so and report PASS/FAIL (never print the URL). Only if automation was impossible, give the exact SQL files and numeric run order (dev/staging first, never production).
 5. **Expected success result** — what a passing result looks like.
 6. **If it fails** — what to do / which prompt to use to report the failure.
 7. **Commit/push?** — whether the human should commit and push.
@@ -130,7 +130,7 @@ The human owner's job stays small. Claude Code handles technical validation auto
 - manually commits and pushes to GitHub using the commit message Claude provides,
 - checks deployment status manually after Vercel is connected later.
 
-Claude Code handles SQL execution, database validation, fixes, and `STATUS.md` updates automatically for database stages (using `OLIMPIADA_DEV_DB_URL` against dev/staging, never production, never exposing secrets).
+Claude Code handles SQL execution, database validation, fixes, and `STATUS.md` updates automatically for database stages (using `OLIMPIADA_PROD_DB_URL` against dev/staging, never production, never exposing secrets).
 
 ---
 
@@ -193,7 +193,7 @@ MAIN:
 ----------------
 Run Prompt 2 from CODING_AGENT_PROMPTS.md for the current active stage.
 
-Use OLIMPIADA_DEV_DB_URL from the environment.
+Use OLIMPIADA_PROD_DB_URL from the environment.
 Do not print or save secrets.
 Keep the report short.
 ----------------
@@ -232,13 +232,13 @@ If the active stage is a MOBILE stage (M1–M4), additionally read — in this o
 If this stage includes database/schema/Supabase/RLS/storage/migration work, do all of this automatically (no separate prompt needed):
 - apply Prompt 8 from this file and the database versioning workflow before writing SQL,
 - detect that the stage is database-related from `STATUS.md` and the stage docs,
-- check whether `OLIMPIADA_DEV_DB_URL` exists in the environment WITHOUT printing it (e.g. `[ -n "$OLIMPIADA_DEV_DB_URL" ] && echo set || echo missing`),
+- check whether `OLIMPIADA_PROD_DB_URL` exists in the environment WITHOUT printing it (e.g. `[ -n "$OLIMPIADA_PROD_DB_URL" ] && echo set || echo missing`),
 - check whether `psql` (or another safe SQL execution method) is available,
-- if both exist, run the stage's SQL files in the required numeric order against the dev/staging database via `psql "$OLIMPIADA_DEV_DB_URL" -f supabase/sql/0XX_file.sql`, then run the validation queries (`013_validation_queries.sql`),
+- if both exist, run the stage's SQL files in the required numeric order against the dev/staging database via `psql "$OLIMPIADA_PROD_DB_URL" -f supabase/sql/0XX_file.sql`, then run the validation queries (`013_validation_queries.sql`),
 - if a SQL file errors, identify the exact file and error, fix it inside the current stage scope, and rerun,
 - use dev/staging ONLY — never production,
-- never print, echo, save, or commit `OLIMPIADA_DEV_DB_URL`, passwords, keys, or any secret; redact any connection string from output,
-- if `OLIMPIADA_DEV_DB_URL` or `psql` is missing, do not run SQL — instead give the human the exact run order in `Human Next Actions`,
+- never print, echo, save, or commit `OLIMPIADA_PROD_DB_URL`, passwords, keys, or any secret; redact any connection string from output,
+- if `OLIMPIADA_PROD_DB_URL` or `psql` is missing, do not run SQL — instead give the human the exact run order in `Human Next Actions`,
 - update `STATUS.md` (files changed, validation result, environment = dev/staging, blockers).
 
 After implementation:

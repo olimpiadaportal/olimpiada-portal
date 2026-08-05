@@ -30,13 +30,25 @@ import {
 } from "@/lib/auth/parentValidation";
 import { getT } from "@/i18n/server";
 import { rateLimitAllow } from "@/lib/rateLimit";
+import { isExistingAccountSignUp } from "@/lib/auth/signUpOutcome";
+import { setPendingVerifyEmail } from "@/lib/auth/pendingVerifyEmail";
 import {
   allowResendAttempt,
   isMailInfrastructureFailure,
 } from "@/lib/auth/resendConfirmationCore";
 import { writeAuditLog } from "@/lib/audit";
 
-export type AuthFormState = { error?: string } | null;
+/**
+ * `error` is already-translated text for display. `code` is the MACHINE reason,
+ * added so the form can react to a specific failure without string-matching a
+ * localized sentence — today: keep Register disabled until the rejected email is
+ * actually edited. `rejectedEmail` is echoed back (normalized, lowercased) so
+ * that comparison survives the user typing the same address with different case
+ * or padding.
+ */
+export type AuthFormState =
+  | { error?: string; code?: "email_exists"; rejectedEmail?: string }
+  | null;
 
 function f(formData: FormData, name: string): string {
   const v = formData.get(name);
@@ -98,9 +110,26 @@ export async function registerParent(
       ((error as { code?: string }).code === "user_already_exists" ||
         /already.*regist|already.*in use|exists/i.test(error.message))
     ) {
-      return { error: t("parent.err.emailExists") };
+      return { error: t("parent.err.emailExists"), code: "email_exists", rejectedEmail: email };
     }
     return { error: t("parent.err.createFailed") };
+  }
+  // …and the case the branch above CANNOT catch. With "Confirm email" enabled,
+  // signing up an address that already belongs to a CONFIRMED account is not an
+  // error at all: GoTrue returns HTTP 200 with an obfuscated user object and
+  // sends no mail, deliberately, so an attacker cannot enumerate accounts.
+  //
+  // Left unhandled that produced the worst possible outcome — we happily routed
+  // the user to "check your inbox" for a mail that would never arrive, with no
+  // way to tell that from a slow delivery. The obfuscated object is identifiable
+  // by an EMPTY `identities` array, which is the documented marker.
+  //
+  // Reporting it is a deliberate enumeration trade-off, and consistent with one
+  // this project already accepts: parent login distinguishes "no account" from
+  // "wrong password" at the owner's request. The mitigation is the same — the
+  // rate limiter above (5 attempts per address per 15 minutes).
+  if (isExistingAccountSignUp(signUp)) {
+    return { error: t("parent.err.emailExists"), code: "email_exists", rejectedEmail: email };
   }
 
   // Provision the parent role/row now (service role; valid pre-confirmation).
@@ -129,6 +158,14 @@ export async function registerParent(
 
   // Verification disabled on the project → a session exists → straight in.
   if (signUp.session) redirect("/dashboard");
+
+  // Hand the address to /verify-email so it can resend WITHOUT asking the user
+  // to type it again — they just typed it, and asking twice reads like the app
+  // forgot. A COOKIE, never a query parameter: an address in the URL lands in
+  // browser history, server logs and the Referer header of every asset the page
+  // loads, which is exactly the PII leak the `sent=1` flag was designed to
+  // avoid. httpOnly, so page scripts cannot read it either.
+  await setPendingVerifyEmail(email);
   // Otherwise the user must confirm their email first. `sent=1` is the same
   // content-free "we just mailed you" flag /forgot-password already uses (no
   // address, no PII, nothing to leak through history/logs/Referer). It exists

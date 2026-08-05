@@ -22,9 +22,16 @@ export function ResendConfirmationForm({
   // tap that would silently do nothing. Cold arrivals (bookmark, second device,
   // the login screen's "confirm your email" error) get 0 and stay usable.
   justSent = false,
+  // The address registration is waiting on, from the short-lived cookie set at
+  // sign-up. When present the input is HIDDEN and this value is submitted — the
+  // user typed it moments ago and asking again reads like the app forgot. Null
+  // (cold arrival, expired cookie) falls back to asking, which is the only way
+  // a user returning days later can resend at all.
+  knownEmail = null,
 }: {
   dict: Record<string, string>;
   justSent?: boolean;
+  knownEmail?: string | null;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [state, action, pending] = useActionState<ResendConfirmationState, FormData>(
@@ -35,7 +42,7 @@ export function ResendConfirmationForm({
   // resolves, and this form (unlike /forgot-password) stays on the page — a
   // cleared address after every attempt would make the retry the feature exists
   // for require re-typing.
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(knownEmail ?? "");
   // A DEADLINE, not a decrementing counter. This screen's entire job is to send
   // the user to another tab to read their mail, and browsers clamp background
   // timers hard (Chrome drops a hidden tab to roughly one wake per minute after
@@ -96,24 +103,31 @@ export function ResendConfirmationForm({
         setEditedSinceSend(false);
       }}
     >
-      <label className="field">
-        <span className="field-label">{tt("parent.auth.email")} *</span>
-        <input
-          name="email"
-          type="email"
-          required
-          autoComplete="email"
-          placeholder={tt("parent.auth.emailPh")}
-          value={email}
-          onChange={(e) => {
-            const next = e.target.value;
-            setEmail(next);
-            const same = next.trim().toLowerCase() === sentTo;
-            setEditedSinceSend(!same);
-            if (sentTo !== null && !same) setCooldownEndsAt(0);
-          }}
-        />
-      </label>
+      {knownEmail ? (
+        // Known address: submit it without showing a field. Hidden rather than
+        // read-only so there is nothing to focus, edit or mistake for an action
+        // — the page already names the inbox above the form.
+        <input type="hidden" name="email" value={knownEmail} />
+      ) : (
+        <label className="field">
+          <span className="field-label">{tt("parent.auth.email")} *</span>
+          <input
+            name="email"
+            type="email"
+            required
+            autoComplete="email"
+            placeholder={tt("parent.auth.emailPh")}
+            value={email}
+            onChange={(e) => {
+              const next = e.target.value;
+              setEmail(next);
+              const same = next.trim().toLowerCase() === sentTo;
+              setEditedSinceSend(!same);
+              if (sentTo !== null && !same) setCooldownEndsAt(0);
+            }}
+          />
+        </label>
+      )}
       {state?.error && <p className="form-error">{state.error}</p>}
       {/* useActionState keeps the PREVIOUS state while a new submission is in
           flight, so without the !pending guard a stale success sits next to a

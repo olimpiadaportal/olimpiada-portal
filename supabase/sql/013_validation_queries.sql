@@ -860,6 +860,23 @@ select '57_mobile_config_shape' as check_name,
              and (public.get_mobile_config()->'payment'->>'mode') in ('real','demo','giveaway','off')
             then 'PASS' else 'FAIL' end as status;
 
+-- 57c) Migration 098 — no orphaned children. The cascade trigger is armed, and
+--      no student is unreachable (a student with neither a creator nor a parent
+--      link cannot be listed by any parent or admin surface, yet can still sign
+--      in — which is precisely the state the trigger exists to prevent).
+select '57c_parent_child_cascade' as check_name,
+       case when exists (
+              select 1 from pg_trigger
+               where tgname = 'trg_parents_cascade_children'
+                 and tgrelid = 'public.parents'::regclass
+                 and not tgisinternal)
+             and not exists (
+              select 1 from public.students s
+               where s.created_by_parent_profile_id is null
+                 and not exists (select 1 from public.parent_student_links l
+                                  where l.student_profile_id = s.profile_id))
+            then 'PASS' else 'FAIL' end as status;
+
 -- 57b) Migration 097 — privacy metadata. The eight admin-owned facts are seeded
 --      and exposed, and the two DERIVED booleans agree with the switches they
 --      describe. That agreement is the whole reason they are not settings: a

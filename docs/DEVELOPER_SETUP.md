@@ -98,7 +98,7 @@ Verify: `git config --get user.name` and `git config --get user.email`.
 ## 5. Supabase dev/staging database setup
 
 - Save **only the dev/staging** connection URL as a Windows **user** environment
-  variable named `OLIMPIADA_DEV_DB_URL`.
+  variable named `OLIMPIADA_PROD_DB_URL`.
 - **Never** save the production DB URL on a dev machine.
 - **Never** commit `.env`/secret files (`.env*` is already git-ignored).
 
@@ -106,7 +106,7 @@ Set the user env var (PowerShell — replace the placeholder with your real
 dev/staging URL; do not share it):
 
 ```powershell
-setx OLIMPIADA_DEV_DB_URL "postgresql://USER:PASSWORD@HOST:5432/DBNAME"
+setx OLIMPIADA_PROD_DB_URL "postgresql://USER:PASSWORD@HOST:5432/DBNAME"
 ```
 
 > `setx` persists the variable for **new** terminals. Close and reopen your terminal
@@ -116,12 +116,12 @@ setx OLIMPIADA_DEV_DB_URL "postgresql://USER:PASSWORD@HOST:5432/DBNAME"
 
 ```bash
 # Git Bash
-[ -n "$OLIMPIADA_DEV_DB_URL" ] && echo "set" || echo "missing"
+[ -n "$OLIMPIADA_PROD_DB_URL" ] && echo "set" || echo "missing"
 ```
 
 ```powershell
 # PowerShell
-if ($env:OLIMPIADA_DEV_DB_URL) { "set" } else { "missing" }
+if ($env:OLIMPIADA_PROD_DB_URL) { "set" } else { "missing" }
 ```
 
 ---
@@ -154,7 +154,7 @@ Troubleshooting.
    ```
 
 Claude reads `STATUS.md` for the active stage and, for database stages, validates
-SQL automatically against dev/staging using `OLIMPIADA_DEV_DB_URL`.
+SQL automatically against dev/staging using `OLIMPIADA_PROD_DB_URL`.
 
 ---
 
@@ -178,7 +178,7 @@ Use only the `main` branch unless told otherwise.
 - **Never** print, paste, or echo the database URL or any password/token/key.
 - **Never** commit secrets, `.env`, `.env.local`, service-role keys, or SSH private keys.
 - Use **dev/staging only** for automated SQL validation. **Never** production.
-- Reference the DB only as the variable `"$OLIMPIADA_DEV_DB_URL"` — never its value.
+- Reference the DB only as the variable `"$OLIMPIADA_PROD_DB_URL"` — never its value.
 
 ---
 
@@ -193,7 +193,7 @@ enable **Auto Confirm User** → Create. (This fires `on_auth_user_created`, whi
 creates the `profiles` row automatically.)
 
 **Step 2 — Activate + assign the admin role** (Supabase SQL editor, or
-`psql "$OLIMPIADA_DEV_DB_URL"`). Replace the email placeholder:
+`psql "$OLIMPIADA_PROD_DB_URL"`). Replace the email placeholder:
 
 ```sql
 update public.profiles set status = 'active'

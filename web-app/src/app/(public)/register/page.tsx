@@ -25,6 +25,12 @@ const KEYS = [
   "parent.auth.firstNamePh", "parent.auth.lastNamePh",
   "parent.auth.emailPh", "parent.auth.passwordPh",
   "auth.showPassword", "auth.hidePassword",
+  // The "check your inbox" panel the form swaps to after a successful
+  // registration — it renders in place rather than redirecting, so the address
+  // the user just typed is still in component state and never has to be asked
+  // for again. See ParentAuthForm.
+  "verify.title", "verify.bodyTo", "verify.hint", "verify.resendPrompt",
+  "verify.resend", "verify.resent", "verify.resendFailed", "nav.login",
 ];
 
 export default async function RegisterPage({

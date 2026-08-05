@@ -8,6 +8,7 @@ import {
 } from "@/lib/auth/parentService";
 import { PasswordInput } from "@/components/PasswordInput";
 import { PhoneField } from "@/components/PhoneField";
+import { ResendConfirmationForm } from "@/components/ResendConfirmationForm";
 
 export function ParentAuthForm({
   mode,
@@ -38,6 +39,35 @@ export function ParentAuthForm({
     state?.code === "email_exists" &&
     !!state.rejectedEmail &&
     email.trim().toLowerCase() === state.rejectedEmail;
+
+  // Registration succeeded and needs confirmation. Rendered IN PLACE instead of
+  // redirecting to /verify-email, so `email` is still the address the user just
+  // typed — the resend below needs no cookie, no query parameter and no second
+  // round of typing. Mirrors the mobile register screen exactly.
+  if (state?.verifyEmail) {
+    const typed = email.trim();
+    return (
+      <section className="prose" style={{ maxWidth: 460 }}>
+        <h2 style={{ marginTop: 0 }}>{tt("verify.title")}</h2>
+        <p>
+          {tt("verify.bodyTo")} <strong>{typed}</strong>
+        </p>
+        <p className="muted">{tt("verify.hint")}</p>
+        <p className="muted" style={{ marginTop: 18 }}>
+          {tt("verify.resendPrompt")}
+        </p>
+        {/* justSent: registration triggered a mail this instant, so GoTrue's
+            per-address interval is already running — the button must arrive
+            counting down rather than offering a tap that silently does nothing. */}
+        <ResendConfirmationForm dict={dict} justSent knownEmail={typed} />
+        <p style={{ marginTop: 14 }}>
+          <a className="btn-ghost" href="/login">
+            {tt("nav.login")}
+          </a>
+        </p>
+      </section>
+    );
+  }
 
   return (
     <form action={action} className="form auth-form">

@@ -47,7 +47,13 @@ import { writeAuditLog } from "@/lib/audit";
  * or padding.
  */
 export type AuthFormState =
-  | { error?: string; code?: "email_exists"; rejectedEmail?: string }
+  | {
+      error?: string;
+      code?: "email_exists";
+      rejectedEmail?: string;
+      /** Registration succeeded and the account needs email confirmation. */
+      verifyEmail?: true;
+    }
   | null;
 
 function f(formData: FormData, name: string): string {
@@ -87,6 +93,33 @@ export async function registerParent(
   const { displayName, email, phone } = check;
   if (!rateLimitAllow("register", email, 5, WINDOW_15_MIN)) {
     return { error: t("parent.err.tooMany") };
+  }
+
+  // AUTHORITATIVE duplicate check, before any account is created.
+  //
+  // Reading it off the signUp RESPONSE is not sufficient: GoTrue only obfuscates
+  // (empty `identities`) when the existing account is CONFIRMED. If it is
+  // UNCONFIRMED it treats the repeat sign-up as a resend and returns a normal
+  // user object — indistinguishable from a first registration, which is exactly
+  // how duplicates kept getting through during testing.
+  //
+  // One indexed equality probe on auth.users (migration 099), on a path already
+  // limited to 5 attempts per address per 15 minutes.
+  const admin = getAdminClient();
+  const { data: taken, error: takenError } = await admin.rpc("email_is_registered", {
+    p_email: email,
+  });
+  // A failed CHECK must not become a failed registration: if the RPC is
+  // unavailable we fall through to signUp, which still refuses duplicates —
+  // just with a less precise message. Fail open on the check, never on the ban.
+  if (takenError) {
+    console.error("registerParent: email_is_registered failed", takenError.code ?? "unknown");
+  } else if (taken === true) {
+    return {
+      error: t("parent.err.emailExists"),
+      code: "email_exists",
+      rejectedEmail: email,
+    };
   }
 
   // EMAIL VERIFICATION REQUIRED: use signUp (sends a confirmation email) rather
@@ -133,7 +166,7 @@ export async function registerParent(
   }
 
   // Provision the parent role/row now (service role; valid pre-confirmation).
-  const admin = getAdminClient();
+  // `admin` is the client created for the duplicate check above.
   const { data: parentProfileId } = await admin.rpc("setup_parent", {
     p_auth_user_id: signUp.user.id,
     p_display_name: displayName || null,
@@ -166,14 +199,18 @@ export async function registerParent(
   // loads, which is exactly the PII leak the `sent=1` flag was designed to
   // avoid. httpOnly, so page scripts cannot read it either.
   await setPendingVerifyEmail(email);
-  // Otherwise the user must confirm their email first. `sent=1` is the same
-  // content-free "we just mailed you" flag /forgot-password already uses (no
-  // address, no PII, nothing to leak through history/logs/Referer). It exists
-  // so /verify-email can ARM the resend cooldown on arrival: signUp has this
-  // instant triggered a confirmation mail, and GoTrue refuses another to the
-  // same address inside its minimum-interval window — without the flag the
-  // very first tap would report success for a mail that was never sent.
-  redirect("/verify-email?sent=1");
+
+  // RETURN, don't redirect. The form swaps to a "check your inbox" panel in
+  // place, and because it never navigated it still holds the address the user
+  // typed — so the resend needs no cookie, no query parameter and no second
+  // round of typing. This is also exactly what the mobile register screen does,
+  // so the two flows now match.
+  //
+  // The cookie above stays as a SECONDARY path: it is what lets the standalone
+  // /verify-email route (reached from a bookmark or the login screen's
+  // "confirm your email" error) know the address within the same session. If it
+  // fails to survive for any reason, the panel is unaffected.
+  return { verifyEmail: true };
 }
 
 export async function parentLogin(

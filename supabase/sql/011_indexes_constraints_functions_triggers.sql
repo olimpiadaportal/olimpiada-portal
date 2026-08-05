@@ -6857,6 +6857,46 @@ create trigger trg_parents_cascade_children
   for each row
   execute function public.fn_cascade_delete_parent_children();
 
+-- -----------------------------------------------------------------------------
+-- Migration 099: authoritative "is this email already taken?".
+--
+-- Reading it off the signUp RESPONSE is not sufficient: GoTrue only obfuscates a
+-- duplicate (empty `identities`) when the existing account is CONFIRMED. An
+-- UNCONFIRMED one is treated as a resend and comes back looking exactly like a
+-- first registration — which is how duplicates kept getting through.
+--
+-- Performance: one equality probe against `idx_users_email` / the unique
+-- `users_email_partial_key`. `lower()` is applied to the PARAMETER, never the
+-- column — `lower(u.email) = …` would discard the plain index. Verified plan:
+-- Index Only Scan.
+--
+-- Service_role ONLY: this is an account-existence oracle. anon/authenticated are
+-- revoked EXPLICITLY because Supabase's default privileges grant EXECUTE on new
+-- functions to both.
+-- -----------------------------------------------------------------------------
+create or replace function public.email_is_registered(p_email text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+      from auth.users u
+     where u.email = lower(trim(coalesce(p_email, '')))
+  );
+$$;
+
+comment on function public.email_is_registered(text) is
+  'Migration 099: true when an auth user already holds this email, CONFIRMED or '
+  'not. Service-role only (account-existence oracle). Soft-deleted users still '
+  'count — their row keeps the unique index entry, so the address is genuinely '
+  'unavailable and reporting it free would only move the failure later.';
+
+revoke all on function public.email_is_registered(text) from public, anon, authenticated;
+grant execute on function public.email_is_registered(text) to service_role;
+
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql
 -- =============================================================================

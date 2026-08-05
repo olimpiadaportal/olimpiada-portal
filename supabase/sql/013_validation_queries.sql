@@ -860,6 +860,17 @@ select '57_mobile_config_shape' as check_name,
              and (public.get_mobile_config()->'payment'->>'mode') in ('real','demo','giveaway','off')
             then 'PASS' else 'FAIL' end as status;
 
+-- 57d) Migration 099 — the duplicate-email check exists, answers correctly, and
+--      is NOT reachable by anon/authenticated (it is an account-existence
+--      oracle; Supabase's default privileges would otherwise publish it).
+select '57d_email_is_registered' as check_name,
+       case when to_regprocedure('public.email_is_registered(text)') is not null
+             and has_function_privilege('service_role','public.email_is_registered(text)','EXECUTE')
+             and not has_function_privilege('anon','public.email_is_registered(text)','EXECUTE')
+             and not has_function_privilege('authenticated','public.email_is_registered(text)','EXECUTE')
+             and public.email_is_registered('nobody-9f3a2b@example.invalid') = false
+            then 'PASS' else 'FAIL' end as status;
+
 -- 57c) Migration 098 — no orphaned children. The cascade trigger is armed, and
 --      no student is unreachable (a student with neither a creator nor a parent
 --      link cannot be listed by any parent or admin surface, yet can still sign

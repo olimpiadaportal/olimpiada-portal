@@ -86,6 +86,25 @@ export async function POST(request: Request): Promise<Response> {
       return json({ error: "parent.err.createFailed", retryable: true }, 503);
     }
 
+    // AUTHORITATIVE duplicate check, before any account is created. Twin of the
+    // web action's — GoTrue only obfuscates a duplicate when the existing
+    // account is CONFIRMED; an UNCONFIRMED one comes back looking like a fresh
+    // sign-up, so the response alone cannot be trusted. One indexed probe
+    // (migration 099). A failed CHECK falls through rather than failing the
+    // registration: signUp still refuses duplicates, just less precisely.
+    const admin = getAdminClient();
+    const { data: taken, error: takenError } = await admin.rpc("email_is_registered", {
+      p_email: email,
+    });
+    if (takenError) {
+      console.error(
+        "mobile register: email_is_registered failed",
+        takenError.code ?? "unknown",
+      );
+    } else if (taken === true) {
+      return json({ error: "parent.err.emailExists", retryable: false }, 409);
+    }
+
     // Bare token client — no cookies, no persistence; the session (if any)
     // lives only in this response.
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -122,7 +141,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     // Provision the parent role/row now (service role; valid pre-confirmation).
-    const admin = getAdminClient();
+    // `admin` is the client created for the duplicate check above.
     const { data: parentProfileId } = await admin.rpc("setup_parent", {
       p_auth_user_id: signUp.user.id,
       p_display_name: displayName || null,

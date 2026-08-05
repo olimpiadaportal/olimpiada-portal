@@ -58,6 +58,20 @@ Listing copy, keywords and the asset inventory now live in **`docs/STORE_LISTING
 - **RE-UPLOAD the Play icon + feature graphic.** The ones uploaded on 2026-08-04 before the brand landed carry the PLACEHOLDER blue-chevron mark. Correct files: `mobile-app/store-assets/play-icon-512.png` and `play-feature-1024x500-az.png`.
 - ~~The Android adaptive icon is inverted vs the master icon~~ — **RESOLVED 2026-08-04** by the brand landing below.
 
+## PINNED — REGISTRATION HARDENING ROUND 2 (2026-08-05) — supersedes parts of the 08-04 entry below
+
+**Why a second round:** both 08-04 fixes were incomplete in the same way — they relied on GoTrue's RESPONSE shape, which only tells the truth in one of the two duplicate cases.
+
+**1. Duplicate email is now checked against the database, not inferred.** GoTrue obfuscates a duplicate (empty `identities`) ONLY when the existing account is **CONFIRMED**. When it is **UNCONFIRMED** it treats the repeat sign-up as a resend and returns a perfectly normal user object — indistinguishable from a first registration. During testing that is the common case (register, never click the link, register again), which is why duplicates still got through. Migration **099** adds `public.email_is_registered(text)`: one equality probe on `auth.users.email`, **service_role only** (anon/authenticated revoked explicitly — Supabase's default privileges would otherwise publish an account-existence oracle). Called before `signUp` by BOTH the web action and the mobile BFF. The response-shape check stays as a backstop.
+> **Performance:** verified plan is **Index Only Scan** on `idx_users_email`. `lower()` is applied to the PARAMETER, never the column — `lower(u.email) = …` would discard the plain index and force a sequential scan of every user. That inversion is the whole performance story; do not "simplify" it.
+> **Failure mode is deliberate:** if the RPC errors, registration CONTINUES (signUp still refuses duplicates, just with a vaguer message). A broken check must never become a broken registration.
+
+**2. The web "check your inbox" screen no longer redirects.** `registerParent` now RETURNS `{ verifyEmail: true }` and the form swaps to the panel **in place**, so the address is still in component state — no cookie, no query parameter, no re-typing, and no dependency on a cookie surviving a server-action redirect (the suspected reason the 08-04 fix did not take effect). This is exactly what the mobile register screen already did, so the two flows now match. The 30-minute httpOnly cookie is kept as a SECONDARY path so the standalone `/verify-email` route (bookmark, login-screen error link) also knows the address within the session; if it fails, the panel is unaffected. `/verify-email` keeps its input as the cold-arrival fallback — removing it would strand the exact user the feature exists for.
+
+**Mobile needed no change for #2** — `ResendConfirmation` already takes the address as a prop on both the register and login screens.
+
+**Live validation: 90/90 PASS, 0 FAIL** (new check `57d`). Canonical backport: `011` + `013`.
+
 ## PINNED — REGISTRATION / VERIFY / DELETION FIXES (2026-08-04)
 
 **1. Duplicate email no longer silently dead-ends.** With "Confirm email" ON, GoTrue answers a sign-up for an ALREADY-CONFIRMED address with HTTP **200** and an obfuscated user — deliberately, to prevent enumeration — and sends no mail. The old code saw success and routed the user to "check your inbox" for a mail that would never arrive, indistinguishable from slow delivery. Detected now via the documented marker (an **empty `identities` array**) in the shared pure helper `web-app/src/lib/auth/signUpOutcome.ts`, used by BOTH the web action and the mobile BFF (5 unit tests). Ambiguous shapes fail OPEN — a missing `identities` is never read as a duplicate, because a false positive blocks a real registration while a false negative costs one wasted email. UI: Register stays **disabled until the rejected address is edited** (web + mobile), compared against the server's normalized echo so case/whitespace changes don't re-enable it.

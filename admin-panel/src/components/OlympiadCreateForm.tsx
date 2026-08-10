@@ -15,6 +15,7 @@ import {
 import { ActionButton } from "@/components/ActionButton";
 import { DateTimeLocalField } from "@/components/DateTimeLocalField";
 import { OlympiadCycleSummary } from "@/components/OlympiadCycleSummary";
+import { OlympiadJsonFormat } from "@/components/OlympiadJsonFormat";
 import { localeNames, locales, type Locale } from "@/i18n/config";
 import {
   downloadBulkTemplate,
@@ -385,6 +386,10 @@ export function OlympiadCreateForm({
                   onChange={(e) => void onFileChange(g.value, e)}
                 />
               </label>
+              {/* The format for THIS grade, collapsed. Sits above the errors so
+                  an admin fixing a rejected file sees the reference and the
+                  problem together. */}
+              <OlympiadJsonFormat gradeLabel={g.label} dict={dict} />
               {fs.fileName !== "" && <p className="hint">{fs.fileName}</p>}
               {fs.fileError !== "" && <p className="form-error">{fs.fileError}</p>}
               {fs.rowIssues.length > 0 && (

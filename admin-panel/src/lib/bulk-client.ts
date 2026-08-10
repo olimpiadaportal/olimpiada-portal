@@ -70,15 +70,28 @@ export const BULK_TEMPLATE_GENERAL = [
   },
 ];
 
-// OLYMPIAD template: subject + grade come from the PACKAGE; topic/subtopic/
-// term are optional (term is ignored for package pools), so the minimal item
-// carries only translations + the 5 options.
+// OLYMPIAD template: NOTHING the package form already knows appears here.
+//
+//   subject       <- olympiad_packages.subject_id   (injected by the RPC)
+//   grade         <- the upload slot the file was dropped into
+//   olympiad type <- olympiad_packages.olympiad_type_id (migration 100 — until
+//                    then the RPC read `meta.olympiad_type` by NAME from every
+//                    row, so the admin had to retype a value already chosen in
+//                    the form, and a typo silently produced NULL)
+//
+// Everything else the importer accepts is OPTIONAL and deliberately absent:
+//   meta.type            defaults to single_choice (5 options, exactly 1 correct)
+//   meta.topic/subtopic  optional for package pools — the olympiad draw is
+//                        package+grade scoped and never reads them
+//   meta.term            ignored entirely for package pools
+//   meta.source, meta.media_asset_id
+//
+// So the file carries ONLY what has to come from the questions themselves.
+// Files that still contain the old fields keep importing — they are ignored,
+// not rejected.
 export const BULK_TEMPLATE_OLYMPIAD = [
   {
     primary_locale: "az",
-    meta: {
-      olympiad_type: "School",
-    },
     translations: TEMPLATE_TRANSLATIONS,
     options: TEMPLATE_OPTIONS,
   },

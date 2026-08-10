@@ -723,6 +723,61 @@ a {
   margin-top: 10px;
 }
 
+/* Collapsible "JSON format" block inside each grade's upload slot. Collapsed by
+   default (see OlympiadJsonFormat) — many selected grades would otherwise bury
+   the upload fields under repeated copies of the same block. */
+.oly-json-format {
+  margin: 8px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2, transparent);
+}
+.oly-json-format > summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  /* list-style on the marker keeps the native disclosure triangle in Firefox
+     while Safari/Chrome need the ::-webkit variant below. */
+  list-style-position: inside;
+}
+.oly-json-format > summary::-webkit-details-marker {
+  margin-right: 4px;
+}
+.oly-json-format[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.oly-json-body {
+  padding: 10px;
+}
+.oly-json-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+.oly-json-copied {
+  font-size: 0.82rem;
+  color: var(--ok);
+  /* Reserve the line so the row does not jump when the pill appears. */
+  min-height: 1em;
+}
+.oly-json-pre {
+  margin: 0;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--code-bg, rgba(127, 127, 127, 0.12));
+  font-size: 0.78rem;
+  line-height: 1.45;
+  /* The template is wider than the slot on a laptop; scroll it rather than let
+     it stretch the whole form. */
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre;
+}
+
 /* One row per target grade on the edit page: name, pool count, remove. */
 .oly-grade-row {
   display: flex;

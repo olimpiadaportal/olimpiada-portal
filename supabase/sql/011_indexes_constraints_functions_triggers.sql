@@ -3231,10 +3231,15 @@ begin
 
       perform public.assert_question_type_rules(v_type, coalesce(v_item->'options','[]'::jsonb));
 
-      v_oly := null;
-      if coalesce(v_item->'meta'->>'olympiad_type','') <> '' then
-        select id into v_oly from public.olympiad_types where name = (v_item->'meta'->>'olympiad_type');
-      end if;
+      -- Migration 100: the PACKAGE owns the olympiad type. `meta.olympiad_type`
+      -- in an uploaded row is ignored — the admin already chose the type in the
+      -- package form, and asking every question to repeat it only created a way
+      -- to disagree with it (a typo produced NULL silently, since the old
+      -- lookup-by-name had no not-found branch). Subject and grade were already
+      -- injected the same way; this closes the last redundant field.
+      select p.olympiad_type_id into v_oly
+        from public.olympiad_packages p
+       where p.id = p_package_id;
 
       v_source := null;
       if coalesce(v_item->'meta'->>'source','') <> '' then

@@ -860,6 +860,19 @@ select '57_mobile_config_shape' as check_name,
              and (public.get_mobile_config()->'payment'->>'mode') in ('real','demo','giveaway','off')
             then 'PASS' else 'FAIL' end as status;
 
+-- 57e) Migration 100 — the olympiad PACKAGE owns the olympiad type. The pool
+--      importer must derive it from olympiad_packages and must NOT read
+--      meta.olympiad_type from the uploaded rows; the GENERAL importer keeps
+--      that lookup, because it has no package to inherit from.
+select '57e_olympiad_type_from_package' as check_name,
+       case when position('olympiad_type_id into v_oly' in
+                pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) > 0
+             and position('where name = (v_item->''meta''->>''olympiad_type'')' in
+                pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) = 0
+             and position('where name = (v_item->''meta''->>''olympiad_type'')' in
+                pg_get_functiondef('public.bulk_insert_questions(jsonb,text)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status;
+
 -- 57d) Migration 099 — the duplicate-email check exists, answers correctly, and
 --      is NOT reachable by anon/authenticated (it is an account-existence
 --      oracle; Supabase's default privileges would otherwise publish it).

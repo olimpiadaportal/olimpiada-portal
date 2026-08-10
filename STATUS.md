@@ -58,6 +58,22 @@ Listing copy, keywords and the asset inventory now live in **`docs/STORE_LISTING
 - **RE-UPLOAD the Play icon + feature graphic.** The ones uploaded on 2026-08-04 before the brand landed carry the PLACEHOLDER blue-chevron mark. Correct files: `mobile-app/store-assets/play-icon-512.png` and `play-feature-1024x500-az.png`.
 - ~~The Android adaptive icon is inverted vs the master icon~~ — **RESOLVED 2026-08-04** by the brand landing below.
 
+## PINNED — OLYMPIAD POOL UPLOAD: per-grade JSON format helper (2026-08-05)
+
+**Unchanged on purpose:** one upload field per selected grade, one independent pool per grade, the per-student non-repeating rotation, and the creation-only pool rule. Per-grade validation errors already rendered under each slot (`fileError` + `rowIssues`) and still do.
+
+**What the file must now contain — and what it no longer repeats.** The importer already injected `subject` (from `olympiad_packages.subject_id`) and `grade` (from the upload slot). It did **not** inject the olympiad TYPE: `bulk_insert_olympiad_package_questions` read `meta.olympiad_type` by NAME from every row, so the admin had to retype a value already chosen in the package form — and a typo produced **NULL silently**, because the lookup-by-name had no not-found branch. **Migration 100** derives it from `olympiad_packages.olympiad_type_id` instead. `meta.olympiad_type` is now inert for package pools: older files keep importing, the field is ignored rather than rejected. `bulk_insert_questions` (general bank) is deliberately untouched — it has no package to inherit from. Check `57e` asserts both halves.
+
+**Everything else was already optional and is now omitted from the shown format:** `meta.type` (defaults to `single_choice` = 5 options / exactly 1 correct), `meta.topic` / `meta.subtopic` (optional for package pools — the olympiad draw is package+grade scoped and never reads them), `meta.term` (ignored entirely for package pools), `meta.source`, `meta.media_asset_id`. So the file carries only what genuinely comes from the questions: `primary_locale`, `translations`, `options`.
+
+**UI:** a collapsed `<details>` "JSON format — {grade}" block inside every grade slot, with a Copy button, a 2-second "Copied" confirmation (`aria-live`), and a trilingual instruction to copy it, send it to ChatGPT with the raw questions, and upload the result **into that grade's field**. Collapsed by default because eleven grades would otherwise be eleven copies of the same block. The JSON is identical for every grade by design — the slot IS the grade.
+
+**⚠️ Regression caught by the validation suite, worth remembering:** migration 100 first revoked EXECUTE from `authenticated` on the olympiad importer. That would have broken package creation outright — the function is SECURITY DEFINER with an internal `is_admin()` gate and the admin panel calls it **as the signed-in administrator**, not through the service role. Check `23_olympiad_private_pool` asserts `anon = false AND authenticated = true`; it failed immediately and the grants were restored. Do not "tighten" that grant.
+
+**Also worth remembering:** `pg_get_functiondef` returned the olympiad importer's body with **CRLF** line endings (it was created from a CRLF file), so a multi-line anchor written in an LF migration could never match. Patches of that shape must `replace(src, chr(13), '')` first — the patched function is then re-created with clean LF endings.
+
+**Live validation: 91/91 PASS, 0 FAIL.** Canonical backport: `011` + `013`.
+
 ## PINNED — REGISTRATION HARDENING ROUND 2 (2026-08-05) — supersedes parts of the 08-04 entry below
 
 **Why a second round:** both 08-04 fixes were incomplete in the same way — they relied on GoTrue's RESPONSE shape, which only tells the truth in one of the two duplicate cases.

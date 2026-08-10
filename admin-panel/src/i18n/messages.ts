@@ -632,7 +632,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "olybulk.note": "Bu paketə məxsus özəl sualları JSON faylı ilə toplu yükləyin. Bu suallar yalnız bu paketdə görünür və ümumi sual bankına düşmür.",
     "olybulk.count": "Bu paketdəki özəl suallar",
     "olybulk.fromPackage":
-      "Fənn və sinif paketdən avtomatik götürülür. Köhnə formatlı faylda meta.subject və ya meta.grade_level qalıbsa, onlara məhəl qoyulmur — paketin dəyərləri istifadə olunur.",
+      "Fənn, sinif və olimpiada növü paketdən avtomatik götürülür. Köhnə formatlı faylda meta.subject, meta.grade_level və ya meta.olympiad_type qalıbsa, onlara məhəl qoyulmur — paketin dəyərləri istifadə olunur.",
+    "olyjson.summary": "JSON formatı — {grade}",
+    "olyjson.howto":
+      "Aşağıdakı formatı kopyalayın, ChatGPT-yə suallarla birlikdə göndərin və “bu sualları həmin JSON formatına çevir” deyin. Alınan faylı məhz bu sinfin yükləmə sahəsinə əlavə edin.",
+    "olyjson.inherited":
+      "Fayla sinif, fənn və olimpiada növü yazmayın: bu fayl {grade} sahəsinə yüklənəcəyi üçün bütün suallar avtomatik həmin sinfə, paketin fənninə və növünə aid olur.",
+    "olyjson.copy": "JSON formatını kopyala",
+    "olyjson.copied": "Kopyalandı",
+    "olyjson.rules":
+      "Hər sualda dəqiq 5 cavab variantı və yalnız 1 düzgün cavab olmalıdır. Azərbaycan dilində sual mətni (translations.az.body) mütləqdir.",
     "olybulk.pickFirst":
       "Şablonu yükləmək və fayl seçmək üçün əvvəlcə fənn və sinif seçin.",
     "olybulk.err.pkgGrade":
@@ -1885,7 +1894,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "olybulk.note": "Bulk-upload this package's private questions from a JSON file. These questions appear only in this package and never enter the general question bank.",
     "olybulk.count": "Private questions in this package",
     "olybulk.fromPackage":
-      "The subject and grade are taken from the package automatically. If an older file still contains meta.subject or meta.grade_level, those values are ignored — the package's values are used.",
+      "The subject, grade and olympiad type are taken from the package automatically. If an older file still contains meta.subject, meta.grade_level or meta.olympiad_type, those values are ignored — the package's values are used.",
+    "olyjson.summary": "JSON format — {grade}",
+    "olyjson.howto":
+      "Copy the format below, send it to ChatGPT together with your questions, and ask it to convert them into that JSON. Upload the result into this grade's field.",
+    "olyjson.inherited":
+      "Do not put the grade, subject or olympiad type in the file: because it is uploaded to the {grade} field, every question automatically belongs to that grade and inherits the package's subject and type.",
+    "olyjson.copy": "Copy JSON format",
+    "olyjson.copied": "Copied",
+    "olyjson.rules":
+      "Each question needs exactly 5 answer options and exactly 1 correct answer. The Azerbaijani question text (translations.az.body) is required.",
     "olybulk.pickFirst":
       "Choose a subject and grade first to download the template and upload a file.",
     "olybulk.err.pkgGrade":
@@ -3145,7 +3163,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "olybulk.note": "Загрузите частные вопросы этого пакета из файла JSON. Эти вопросы видны только в данном пакете и не попадают в общий банк вопросов.",
     "olybulk.count": "Частных вопросов в этом пакете",
     "olybulk.fromPackage":
-      "Предмет и класс автоматически берутся из пакета. Если в старом файле остались meta.subject или meta.grade_level, они игнорируются — используются значения пакета.",
+      "Предмет, класс и тип олимпиады автоматически берутся из пакета. Если в старом файле остались meta.subject, meta.grade_level или meta.olympiad_type, они игнорируются — используются значения пакета.",
+    "olyjson.summary": "Формат JSON — {grade}",
+    "olyjson.howto":
+      "Скопируйте формат ниже, отправьте его в ChatGPT вместе с вопросами и попросите преобразовать их в этот JSON. Готовый файл загрузите в поле именно этого класса.",
+    "olyjson.inherited":
+      "Не указывайте в файле класс, предмет и тип олимпиады: файл загружается в поле {grade}, поэтому все вопросы автоматически относятся к этому классу и наследуют предмет и тип пакета.",
+    "olyjson.copy": "Скопировать формат JSON",
+    "olyjson.copied": "Скопировано",
+    "olyjson.rules":
+      "В каждом вопросе должно быть ровно 5 вариантов ответа и ровно 1 правильный. Текст вопроса на азербайджанском (translations.az.body) обязателен.",
     "olybulk.pickFirst":
       "Сначала выберите предмет и класс, чтобы скачать шаблон и загрузить файл.",
     "olybulk.err.pkgGrade":

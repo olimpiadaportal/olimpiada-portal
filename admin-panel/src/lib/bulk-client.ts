@@ -97,6 +97,113 @@ export const BULK_TEMPLATE_OLYMPIAD = [
   },
 ];
 
+// MIXED templates (Round 53) — identical to the text-only ones plus ONE
+// optional field, `meta.image`: the question's picture, embedded as a base64
+// data URL. On import the server decodes it, types it from its magic bytes,
+// uploads it to the question-media bucket and stores only the reference; no
+// base64 ever reaches the database.
+//
+// The value here is a real 1x1 PNG so the shape is unambiguous to whichever
+// model the admin hands the template to — a placeholder string like
+// "<base64>" reliably produces files with a placeholder string in them.
+//
+// `meta.image` is OPTIONAL and per question: a mixed pool is text questions and
+// image questions TOGETHER, which is the whole point of the mode.
+//
+// Answer-option images are NOT in this template yet — the schema does not carry
+// them, so advertising the field would produce files whose option images are
+// silently dropped. They are added here in the same change that makes them work.
+const TEMPLATE_IMAGE =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+export const BULK_TEMPLATE_GENERAL_MIXED = [
+  {
+    primary_locale: "az",
+    meta: {
+      topic: "Toplama",
+      subtopic: "Birrəqəmli ədədlər",
+      term: 1,
+      image: TEMPLATE_IMAGE,
+    },
+    translations: TEMPLATE_TRANSLATIONS,
+    options: TEMPLATE_OPTIONS,
+  },
+];
+
+export const BULK_TEMPLATE_OLYMPIAD_MIXED = [
+  {
+    primary_locale: "az",
+    meta: { image: TEMPLATE_IMAGE },
+    translations: TEMPLATE_TRANSLATIONS,
+    options: TEMPLATE_OPTIONS,
+  },
+];
+
+/** The template for a (general|olympiad) x (text|mixed) combination. */
+export function bulkTemplateFor(
+  mode: BulkClientMode,
+  questionMode: "text" | "mixed",
+): unknown[] {
+  if (questionMode === "mixed") {
+    return mode === "olympiad" ? BULK_TEMPLATE_OLYMPIAD_MIXED : BULK_TEMPLATE_GENERAL_MIXED;
+  }
+  return mode === "olympiad" ? BULK_TEMPLATE_OLYMPIAD : BULK_TEMPLATE_GENERAL;
+}
+
+// ---------------------------------------------------------------------------
+// Mixed-mode media (Round 53). Client twin of validateItemMedia in
+// lib/admin/bulk-validate.ts — same rules, same message keys, so a row is
+// flagged identically before upload and on the server.
+// ---------------------------------------------------------------------------
+const CLIENT_MEDIA_MAX_BYTES = 5 * 1024 * 1024;
+const CLIENT_DATA_URL_HEAD = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,/i;
+const CLIENT_ALLOWED_DECLARED = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
+/** Decoded length without allocating — never materialize an oversized paste. */
+function clientB64Bytes(b64: string): number {
+  const clean = b64.replace(/\s/g, "");
+  if (clean.length === 0) return 0;
+  const pad = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+  return Math.floor((clean.length * 3) / 4) - pad;
+}
+
+export function validateClientItemMedia(
+  item: unknown,
+  tt: (k: string) => string,
+  mixed: boolean,
+): string | null {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  const meta = (item as { meta?: unknown }).meta;
+  const m =
+    meta && typeof meta === "object" && !Array.isArray(meta)
+      ? (meta as Record<string, unknown>)
+      : {};
+  const raw = m.image;
+  // Absent is fine even in mixed mode: a mixed pool is text questions AND
+  // image questions together, not images everywhere.
+  if (raw == null || (typeof raw === "string" && raw.trim() === "")) return null;
+
+  if (!mixed) return tt("bulk.err.mediaNotAllowed");
+  if (typeof raw !== "string") return tt("bulk.err.badImage");
+
+  const head = CLIENT_DATA_URL_HEAD.exec(raw.trim());
+  if (!head) return tt("bulk.err.badImage");
+  if (!CLIENT_ALLOWED_DECLARED.has(head[1].toLowerCase())) {
+    return tt("bulk.err.imageType");
+  }
+  const payload = raw.trim().slice(head[0].length);
+  if (payload.length === 0) return tt("bulk.err.badImage");
+  if (clientB64Bytes(payload) > CLIENT_MEDIA_MAX_BYTES) {
+    return tt("bulk.err.imageTooLarge");
+  }
+  return null;
+}
+
 // Case/space-insensitive normalization so "Multiple choice", "multiple_choice"
 // and "Multiple  Choice" all resolve to the same active type.
 export function normClientTypeName(v: string): string {
@@ -107,9 +214,9 @@ export function normClientTypeName(v: string): string {
 export function downloadBulkTemplate(
   filename: string,
   mode: BulkClientMode = "general",
+  questionMode: "text" | "mixed" = "text",
 ): void {
-  const template =
-    mode === "olympiad" ? BULK_TEMPLATE_OLYMPIAD : BULK_TEMPLATE_GENERAL;
+  const template = bulkTemplateFor(mode, questionMode);
   const blob = new Blob([JSON.stringify(template, null, 2)], {
     type: "application/json",
   });
@@ -206,6 +313,10 @@ export function validateBulkRowsClient(
   mode: BulkClientMode = "general",
   // Round 52 §6 — optional curriculum for the chosen (subject, grade).
   curriculum?: ClientCurriculumIndex | null,
+  // Round 53 — mixed mode allows `meta.image` (a base64 data URL). Text-only
+  // mode REPORTS an image rather than ignoring it: a file with images imported
+  // as text-only would drop every one of them and still look successful.
+  mediaOpts?: { mixed?: boolean },
 ): RowIssue[] {
   const activeByNorm = new Map<string, ClientTypeRule>();
   for (const r of rules) activeByNorm.set(normClientTypeName(r.name), r);
@@ -226,6 +337,12 @@ export function validateBulkRowsClient(
       translations?: Record<string, { body?: unknown } | undefined>;
       options?: unknown;
     };
+
+    // Embedded media, checked on the same bytes the server will decode. The
+    // declared mime is only an early filter — the authoritative check is the
+    // server-side magic-byte sniff, which is what rejects an SVG labelled PNG.
+    const mediaMsg = validateClientItemMedia(item, tt, mediaOpts?.mixed === true);
+    if (mediaMsg) issues.push({ row, message: mediaMsg });
 
     // Required primary-locale body (defaults to az).
     const plRaw = typeof it.primary_locale === "string" ? it.primary_locale : "az";

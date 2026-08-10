@@ -88,6 +88,13 @@ export function BulkUploadModal({
   const [items, setItems] = useState<unknown[]>([]);
   // Bumping the key remounts the file input (the reliable way to clear it).
   const [fileKey, setFileKey] = useState(0);
+  // Round 53 — MANDATORY import type. Intentionally starts unset with no
+  // default: defaulting to "text" would let a mixed file import with every
+  // image silently dropped, which looks like success. Everything below the
+  // selector stays hidden until one is chosen, so there is no partially-usable
+  // state to misread. The server re-checks it (a hidden field is editable).
+  const [questionMode, setQuestionMode] = useState<"" | "text" | "mixed">("");
+  const modeChosen = questionMode !== "";
 
   // Curriculum for the chosen (subject, grade): a topic belongs to the subject
   // and either to this grade or to no grade at all (shared). Null in olympiad
@@ -115,9 +122,11 @@ export function BulkUploadModal({
     () =>
       items.length === 0
         ? []
-        : validateBulkRowsClient(items, tt, rules, mode, curriculum),
+        : validateBulkRowsClient(items, tt, rules, mode, curriculum, {
+            mixed: questionMode === "mixed",
+          }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, curriculum, mode, dict],
+    [items, curriculum, mode, dict, questionMode],
   );
   const itemCount = items.length;
 
@@ -165,7 +174,10 @@ export function BulkUploadModal({
 
   const fileReady = fileName !== "" && fileError === "" && rowIssues.length === 0;
   const canSubmit =
-    !pending && fileReady && (olympiad || (gradeId !== "" && subjectId !== ""));
+    !pending &&
+    modeChosen &&
+    fileReady &&
+    (olympiad || (gradeId !== "" && subjectId !== ""));
 
   const codesHint = tt("bulk.codesHint").replace(
     "{types}",
@@ -192,6 +204,50 @@ export function BulkUploadModal({
         {olympiad && <p className="muted">{tt("olybulk.note")}</p>}
 
         <form action={action} className="form">
+          {/* ---- MANDATORY import type — before every other control -------- */}
+          <fieldset className="bulk-mode">
+            <legend className="field-label">
+              {tt("bulk.mode.label")}
+              <span className="req"> *</span>
+            </legend>
+            <div className="bulk-mode-options">
+              {(
+                [
+                  { v: "text", label: "bulk.mode.text", hint: "bulk.mode.textHint" },
+                  { v: "mixed", label: "bulk.mode.mixed", hint: "bulk.mode.mixedHint" },
+                ] as const
+              ).map((o) => (
+                <label
+                  key={o.v}
+                  className={`bulk-mode-opt${questionMode === o.v ? " is-selected" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="question_mode"
+                    value={o.v}
+                    checked={questionMode === o.v}
+                    onChange={() => setQuestionMode(o.v)}
+                    disabled={pending}
+                  />
+                  <span className="bulk-mode-opt-body">
+                    <span className="bulk-mode-opt-title">{tt(o.label)}</span>
+                    <span className="hint">{tt(o.hint)}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {!modeChosen && <p className="hint">{tt("bulk.mode.required")}</p>}
+            {questionMode === "mixed" && (
+              <p className="hint">{tt("bulk.mode.mixedNote")}</p>
+            )}
+          </fieldset>
+
+          {/* Everything below is INACCESSIBLE until a type is chosen. Hidden
+              rather than merely disabled: a disabled file input still reads as
+              "the next step", while an absent one makes the single required
+              action obvious. */}
+          {!modeChosen ? null : (
+          <>
           {olympiad ? (
             <>
               <input type="hidden" name="__id" value={packageId} />
@@ -329,10 +385,10 @@ export function BulkUploadModal({
               type="button"
               onClick={() =>
                 downloadBulkTemplate(
-                  olympiad
-                    ? "olympiad-questions-template.json"
-                    : "questions-template.json",
+                  `${olympiad ? "olympiad-questions" : "questions"}-${questionMode}-template.json`,
                   mode,
+                  // Safe: the button only renders once a mode is chosen.
+                  questionMode === "mixed" ? "mixed" : "text",
                 )
               }
               disabled={pending}
@@ -340,6 +396,8 @@ export function BulkUploadModal({
               {tt("bulk.template")}
             </button>
           </div>
+          </>
+          )}
         </form>
 
         {state?.error && <p className="form-error">{state.error}</p>}

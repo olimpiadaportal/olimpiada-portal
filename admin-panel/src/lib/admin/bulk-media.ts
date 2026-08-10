@@ -149,7 +149,11 @@ export function decodeImageDataUrl(
  */
 export async function uploadIngestedImage(
   supabase: SupabaseClient,
-  ownerProfileId: string,
+  // Nullable to match the guards' ctx.profileId and the column itself
+  // (media_assets.owner_profile_id is nullable, as the manual attach path
+  // already relies on). Widened rather than cast at the call site — a cast
+  // would only hide the same null.
+  ownerProfileId: string | null,
   bytes: Buffer,
   mime: keyof typeof EXT_BY_SNIFFED,
 ): Promise<{ ok: true; media: IngestedMedia } | { ok: false; reason: MediaFailure }> {

@@ -59,6 +59,27 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.termConflict": "rüb mövcud mövzunun rübü ilə uyğun gəlmir",
     "bulk.err.badMedia":
       "meta.media_asset_id düzgün sual şəklinə istinad etmir",
+    "bulk.err.badImage":
+      "meta.image düzgün base64 data URL deyil (data:image/png;base64,… formatında olmalıdır)",
+    "bulk.err.imageType":
+      "şəkil formatı dəstəklənmir — yalnız PNG, JPEG, WEBP və ya GIF",
+    "bulk.err.imageTooLarge": "şəkil çox böyükdür — hər şəkil ən çox 5 MB",
+    "bulk.err.mediaNotAllowed":
+      "bu faylda şəkil var, amma «Yalnız yazılı sual» rejimi seçilib — «Qarışıq sual» rejimini seçin",
+    "bulk.err.imageTotal":
+      "fayldakı şəkillərin ümumi həcmi hədi aşır — ən çox 40 MB",
+    "bulk.err.imageUpload":
+      "şəkil yüklənə bilmədi — yenidən cəhd edin",
+    "bulk.mode.label": "İdxal növü",
+    "bulk.mode.required":
+      "İdxal növünü seçin. Davam etmək üçün sualların yalnız yazılı və ya qarışıq formatda olduğunu göstərməlisiniz.",
+    "bulk.mode.text": "Yalnız yazılı sual",
+    "bulk.mode.textHint": "Suallar və cavab variantları yalnız mətndən ibarətdir.",
+    "bulk.mode.mixed": "Qarışıq sual",
+    "bulk.mode.mixedHint":
+      "Bəzi suallarda və ya cavab variantlarında şəkil var. Şəkillər JSON-un içində base64 kimi göndərilir.",
+    "bulk.mode.mixedNote":
+      "Şəkilləri ayrıca yükləmək lazım deyil: JSON faylındakı base64 şəkillər idxal zamanı avtomatik olaraq yaddaşa köçürülür.",
     "olybulk.optionalMeta":
       "Olimpiada idxalında meta.topic / meta.subtopic / meta.term istəyə bağlıdır.",
     "olybulk.err.creationOnly":
@@ -120,6 +141,26 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.termConflict": "the term conflicts with the topic's existing term",
     "bulk.err.badMedia":
       "meta.media_asset_id does not reference a valid question image",
+    "bulk.err.badImage":
+      "meta.image is not a valid base64 data URL (expected data:image/png;base64,…)",
+    "bulk.err.imageType":
+      "unsupported image format — only PNG, JPEG, WEBP or GIF",
+    "bulk.err.imageTooLarge": "image too large — 5 MB maximum per image",
+    "bulk.err.mediaNotAllowed":
+      "this file contains images but “Text-only questions” is selected — choose “Mixed questions”",
+    "bulk.err.imageTotal":
+      "the images in this file exceed the total limit — 40 MB maximum",
+    "bulk.err.imageUpload": "the image could not be uploaded — please try again",
+    "bulk.mode.label": "Import type",
+    "bulk.mode.required":
+      "Choose the import type. To continue you must state whether the questions are text-only or mixed.",
+    "bulk.mode.text": "Text-only questions",
+    "bulk.mode.textHint": "Questions and answer options contain text only.",
+    "bulk.mode.mixed": "Mixed questions",
+    "bulk.mode.mixedHint":
+      "Some questions or answer options contain images. Images travel inside the JSON as base64.",
+    "bulk.mode.mixedNote":
+      "No separate image upload is needed: base64 images in the JSON are moved into storage automatically during import.",
     "olybulk.optionalMeta":
       "In olympiad imports meta.topic / meta.subtopic / meta.term are optional.",
     "olybulk.err.creationOnly":
@@ -180,6 +221,26 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.termConflict": "четверть не совпадает с четвертью темы",
     "bulk.err.badMedia":
       "meta.media_asset_id не ссылается на корректное изображение вопроса",
+    "bulk.err.badImage":
+      "meta.image не является корректным base64 data URL (ожидается data:image/png;base64,…)",
+    "bulk.err.imageType":
+      "формат изображения не поддерживается — только PNG, JPEG, WEBP или GIF",
+    "bulk.err.imageTooLarge": "изображение слишком большое — максимум 5 МБ на изображение",
+    "bulk.err.mediaNotAllowed":
+      "в файле есть изображения, но выбран режим «Только текстовые вопросы» — выберите «Смешанные вопросы»",
+    "bulk.err.imageTotal":
+      "суммарный объём изображений в файле превышает лимит — максимум 40 МБ",
+    "bulk.err.imageUpload": "не удалось загрузить изображение — попробуйте ещё раз",
+    "bulk.mode.label": "Тип импорта",
+    "bulk.mode.required":
+      "Выберите тип импорта. Чтобы продолжить, укажите, содержат ли вопросы только текст или являются смешанными.",
+    "bulk.mode.text": "Только текстовые вопросы",
+    "bulk.mode.textHint": "Вопросы и варианты ответов содержат только текст.",
+    "bulk.mode.mixed": "Смешанные вопросы",
+    "bulk.mode.mixedHint":
+      "В некоторых вопросах или вариантах ответа есть изображения. Изображения передаются внутри JSON в виде base64.",
+    "bulk.mode.mixedNote":
+      "Отдельная загрузка изображений не нужна: base64-изображения из JSON автоматически переносятся в хранилище при импорте.",
     "olybulk.optionalMeta":
       "В олимпиадном импорте meta.topic / meta.subtopic / meta.term необязательны.",
     "olybulk.err.creationOnly":

@@ -20,6 +20,7 @@ import {
   buildCurriculumIndex,
   canonicalCurriculumNames,
   validateBulkItem,
+  validateItemMedia,
   normTypeName,
   mapRpcRowError,
   overrideItemMeta,
@@ -27,6 +28,13 @@ import {
   type ActiveTypeRule,
   type CurriculumIndex,
 } from "@/lib/admin/bulk-validate";
+import {
+  BULK_MEDIA_TOTAL_MAX_BYTES,
+  decodeImageDataUrl,
+  removeIngestedMedia,
+  uploadIngestedImage,
+  type IngestedMedia,
+} from "@/lib/admin/bulk-media";
 
 // `ok` is set only on the modal ("stay") path: the create-question modal needs
 // a success result instead of a redirect so it can close and refresh in place.
@@ -645,7 +653,8 @@ export async function bulkImportQuestions(
   _prev: BulkImportState,
   formData: FormData,
 ): Promise<BulkImportState> {
-  await requirePermission("content.create");
+  // ctx is needed for media_assets.owner_profile_id on the mixed-mode path.
+  const ctx = await requirePermission("content.create");
   const t = withLocalStrings(await getT(), await getLocale());
 
   // Batch-level Subject + Grade come from the modal selects (NOT from the
@@ -719,6 +728,17 @@ export async function bulkImportQuestions(
   // failing every row.
   const curriculum = await loadCurriculumIndex(subjectId, gradeId);
 
+  // Round 53: the import MODE is mandatory and comes from the modal. It is not
+  // cosmetic — it decides whether an embedded image is expected data or a sign
+  // the admin picked the wrong mode (see validateItemMedia). Anything other
+  // than the two known values is refused rather than defaulted, so a missing
+  // field can never silently import a mixed file as text-only.
+  const mode = s(formData, "question_mode");
+  if (mode !== "text" && mode !== "mixed") {
+    return { ok: false, error: t("bulk.mode.required") };
+  }
+  const mixed = mode === "mixed";
+
   const total = payload.length;
   const errors: { index: number; error: string }[] = [];
   // Structurally valid rows, with their 1-based file index preserved so the
@@ -739,6 +759,13 @@ export async function bulkImportQuestions(
     );
     if (msg) {
       errors.push({ index: i + 1, error: msg });
+      return;
+    }
+    // Media shape/size/type, on the same bytes the server will decode. Checked
+    // here so a bad image is a numbered row error before anything is uploaded.
+    const mediaMsg = validateItemMedia(item, t, mixed);
+    if (mediaMsg) {
+      errors.push({ index: i + 1, error: mediaMsg });
       return;
     }
     // Batch subject/grade always supersede stale file values. Topic/subtopic
@@ -765,6 +792,70 @@ export async function bulkImportQuestions(
     validFileIndex.push(i + 1);
   });
 
+  // ---- Mixed mode: base64 -> storage, BEFORE the import RPC ---------------
+  //
+  // The images must exist first: bulk question ids are generated inside the
+  // RPC, so there is nothing to attach an image to afterwards. That ordering
+  // creates the only orphan window in this path — objects uploaded here have no
+  // question row yet — so every uploaded asset is tracked and removed if any
+  // later step fails. See lib/admin/bulk-media.ts.
+  const uploaded: IngestedMedia[] = [];
+  if (mixed && validItems.length > 0) {
+    let totalBytes = 0;
+    for (let i = 0; i < validItems.length; i++) {
+      const meta = (validItems[i].meta ?? {}) as Record<string, unknown>;
+      const raw = meta.image;
+      if (raw == null || (typeof raw === "string" && raw.trim() === "")) continue;
+
+      const decoded = decodeImageDataUrl(raw);
+      if (!decoded.ok) {
+        // Re-running the same rules server-side: the client check above already
+        // covers shape and size, but the SNIFF only happens here, so this is
+        // where an SVG wearing a PNG label is caught.
+        await removeIngestedMedia(supabase, uploaded);
+        return {
+          ok: false,
+          error: t(
+            decoded.reason === "tooLarge"
+              ? "bulk.err.imageTooLarge"
+              : decoded.reason === "unsupportedType"
+                ? "bulk.err.imageType"
+                : "bulk.err.badImage",
+          ),
+        };
+      }
+
+      totalBytes += decoded.bytes.length;
+      if (totalBytes > BULK_MEDIA_TOTAL_MAX_BYTES) {
+        await removeIngestedMedia(supabase, uploaded);
+        return { ok: false, error: t("bulk.err.imageTotal") };
+      }
+
+      const up = await uploadIngestedImage(
+        supabase,
+        ctx.profileId,
+        decoded.bytes,
+        decoded.mime,
+      );
+      if (!up.ok) {
+        await removeIngestedMedia(supabase, uploaded);
+        return { ok: false, error: t("bulk.err.imageUpload") };
+      }
+      uploaded.push(up.media);
+
+      // Hand the RPC the uuid through the field it ALREADY understands, and
+      // DELETE the payload so no base64 can reach the database. Deleted, not
+      // set to undefined: `undefined` survives in the object and only vanishes
+      // because JSON.stringify happens to drop it — too subtle to rely on for
+      // the one guarantee that keeps megabytes of base64 out of Postgres.
+      const patched = overrideItemMeta(validItems[i], {
+        media_asset_id: up.media.mediaAssetId,
+      });
+      delete (patched.meta as Record<string, unknown>).image;
+      validItems[i] = patched;
+    }
+  }
+
   let successful = 0;
   if (validItems.length > 0) {
     const { data, error } = await supabase.rpc("bulk_insert_questions", {
@@ -773,6 +864,7 @@ export async function bulkImportQuestions(
     });
     if (error) {
       console.error("[admin] question bulk import failed", error.message);
+      await removeIngestedMedia(supabase, uploaded);
       return { ok: false, error: t("err.server") };
     }
     const rpc = data as {

@@ -713,7 +713,7 @@ a {
 }
 
 .oly-grade-check:has(input:checked) {
-  border-color: var(--accent);
+  border-color: var(--brand);
   background: rgba(79, 70, 229, 0.06);
 }
 
@@ -4322,4 +4322,61 @@ a.qpage-link:hover {
    [data-theme="dark"] --term-N-* block further up. */
 [data-theme="dark"] .cur-toast {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------------------------------------------------------------------------
+   Bulk import — MANDATORY question-mode selector (Round 53).
+   Rendered above every other control; nothing below it exists until one option
+   is chosen, so this block is the first thing the admin can interact with.
+   --------------------------------------------------------------------------- */
+.bulk-mode {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0 0 16px;
+  /* A fieldset carries UA defaults that fight the form grid. */
+  min-inline-size: 0;
+}
+.bulk-mode > legend {
+  padding: 0 6px;
+}
+.bulk-mode-options {
+  display: grid;
+  /* Two cards side by side on a roomy modal, stacked when narrow — the hint
+     text under each label runs to two lines in az and ru. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+.bulk-mode-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  /* The whole card is the label, so the click target is the card, not the
+     8px radio — this is the one required choice on the screen. */
+}
+.bulk-mode-opt:hover {
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--border));
+}
+.bulk-mode-opt.is-selected {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+}
+.bulk-mode-opt input[type="radio"] {
+  margin-top: 3px;
+  flex: none;
+}
+.bulk-mode-opt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* minWidth:0 so a long az/ru hint wraps instead of widening the grid cell. */
+  min-width: 0;
+}
+.bulk-mode-opt-title {
+  font-weight: 600;
 }

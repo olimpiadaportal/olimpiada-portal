@@ -290,6 +290,68 @@ export function validateBulkItem(
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// MIXED MODE — embedded image validation (Round 53)
+//
+// A mixed-mode file may carry `meta.image` as a base64 data URL, which the
+// server decodes, verifies and uploads before the import RPC runs. These rules
+// are checked HERE first, on the exact same bytes, so a bad image is a numbered
+// row error in the browser rather than a failed upload halfway through a batch.
+//
+// The declared mime in the data URL is deliberately NOT trusted — it is used
+// only to reject obvious nonsense early. The authoritative check is the
+// magic-byte sniff on the server (lib/admin/bulk-media.ts), which is what keeps
+// an SVG wearing a `image/png` label out of the bucket.
+// ---------------------------------------------------------------------------
+
+/** Mirrors BULK_MEDIA_MAX_BYTES in lib/admin/bulk-media.ts (5 MB decoded). */
+export const BULK_MEDIA_MAX_BYTES_CLIENT = 5 * 1024 * 1024;
+
+const DATA_URL_HEAD_RE = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,/i;
+const ALLOWED_DECLARED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+/** Decoded byte length WITHOUT allocating — an oversized paste must not be materialized. */
+function b64Bytes(b64: string): number {
+  const clean = b64.replace(/\s/g, "");
+  if (clean.length === 0) return 0;
+  const pad = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+  return Math.floor((clean.length * 3) / 4) - pad;
+}
+
+/**
+ * Validate one row's embedded media. Returns a localized message or null.
+ *
+ * `mixed` false means the admin chose "text only", so an image present in the
+ * file is a MISMATCH worth reporting rather than silently dropping — it almost
+ * always means the wrong mode was picked, and silently importing the questions
+ * without their images would look like success.
+ */
+export function validateItemMedia(item: unknown, t: T, mixed: boolean): string | null {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  const meta = (item as { meta?: unknown }).meta;
+  const m =
+    meta && typeof meta === "object" && !Array.isArray(meta)
+      ? (meta as Record<string, unknown>)
+      : {};
+  const raw = m.image;
+  // Absent is always fine: media is optional even in mixed mode, because a
+  // mixed pool is text-only questions AND image questions together.
+  if (raw == null || (typeof raw === "string" && raw.trim() === "")) return null;
+
+  if (!mixed) return t("bulk.err.mediaNotAllowed");
+  if (typeof raw !== "string") return t("bulk.err.badImage");
+
+  const head = DATA_URL_HEAD_RE.exec(raw.trim());
+  if (!head) return t("bulk.err.badImage");
+  if (!ALLOWED_DECLARED.has(head[1].toLowerCase())) return t("bulk.err.imageType");
+
+  const payload = raw.trim().slice(head[0].length);
+  if (payload.length === 0) return t("bulk.err.badImage");
+  if (b64Bytes(payload) > BULK_MEDIA_MAX_BYTES_CLIENT) return t("bulk.err.imageTooLarge");
+
+  return null;
+}
+
 // Maps a raw RPC row error (SQLERRM) to a specific trilingual message by known
 // substrings — never leaks raw SQL text. Most are rare (subject/grade are
 // injected and type/options/topic/term are pre-validated before the RPC), but

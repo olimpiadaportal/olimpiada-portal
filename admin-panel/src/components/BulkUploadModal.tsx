@@ -22,7 +22,14 @@
 //     unknown topic/subtopic are flagged HERE, before the upload.
 //   * The AI prompt block (BulkPromptBlock) embeds that same curriculum so the
 //     model cannot invent a name in the first place.
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
@@ -38,6 +45,11 @@ import {
   type ClientTypeRule,
   type RowIssue,
 } from "@/lib/bulk-client";
+import {
+  discardUploadedMedia,
+  uploadEmbeddedMedia,
+} from "@/lib/bulk-upload-media";
+import { verifyImportImage } from "@/lib/admin/import-media";
 
 type Opt = { value: string; label: string };
 
@@ -154,6 +166,7 @@ export function BulkUploadModal({
   function resetFileState() {
     setFileError("");
     setItems([]);
+    setMediaIssues([]);
   }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -172,9 +185,63 @@ export function BulkUploadModal({
     setItems(parsed.items);
   }
 
+  // Media phase state. `uploading` is separate from the action's `pending` so
+  // the button can say "uploading images" during the part that happens BEFORE
+  // the server action is dispatched — otherwise a large batch looks frozen.
+  const [uploading, setUploading] = useState(false);
+  const [mediaIssues, setMediaIssues] = useState<RowIssue[]>([]);
+
+  /**
+   * Submit handler for MIXED mode.
+   *
+   * Images are uploaded one request each and replaced by their verified uuids,
+   * so the request that finally reaches the server action carries no base64 at
+   * all — its size depends on the number of questions, never on image bytes.
+   * Text-only mode skips all of this and posts the original file untouched.
+   */
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    if (questionMode !== "mixed" || items.length === 0) return; // native submit
+    e.preventDefault();
+    const form = e.currentTarget;
+    setUploading(true);
+    setMediaIssues([]);
+
+    const batchId = crypto.randomUUID();
+    const result = await uploadEmbeddedMedia(
+      items,
+      batchId,
+      (ext) => `imports/${batchId}/${crypto.randomUUID()}.${ext}`,
+      verifyImportImage,
+    );
+    setUploading(false);
+
+    if (result.failures.length > 0) {
+      // Nothing is imported when any image fails: a partial import would leave
+      // the admin reconciling which questions made it. Objects already uploaded
+      // are discarded here, and the server sweep covers whatever this misses.
+      setMediaIssues(
+        result.failures.map((f) => ({ row: f.row, message: tt(f.messageKey) })),
+      );
+      await discardUploadedMedia(result.uploaded.map((u) => u.path));
+      return;
+    }
+
+    // Post the rewritten array on the SAME `file` field, so the server action's
+    // parse contract is unchanged — it still receives a JSON File.
+    const fd = new FormData(form);
+    fd.set(
+      "file",
+      new File([JSON.stringify(result.items)], fileName || "import.json", {
+        type: "application/json",
+      }),
+    );
+    startTransition(() => action(fd));
+  }
+
   const fileReady = fileName !== "" && fileError === "" && rowIssues.length === 0;
   const canSubmit =
     !pending &&
+    !uploading &&
     modeChosen &&
     fileReady &&
     (olympiad || (gradeId !== "" && subjectId !== ""));
@@ -203,7 +270,7 @@ export function BulkUploadModal({
       >
         {olympiad && <p className="muted">{tt("olybulk.note")}</p>}
 
-        <form action={action} className="form">
+        <form action={action} onSubmit={handleSubmit} className="form">
           {/* ---- MANDATORY import type — before every other control -------- */}
           <fieldset className="bulk-mode">
             <legend className="field-label">
@@ -344,6 +411,19 @@ export function BulkUploadModal({
             </p>
           )}
 
+          {mediaIssues.length > 0 && (
+            <div className="bulk-issues" role="alert">
+              <span className="bulk-issues-title">{tt("bulk.fileProblems")}</span>{" "}
+              — {tt("bulk.fixFile")}
+              <ul>
+                {mediaIssues.map((is, i) => (
+                  <li key={i}>
+                    {tt("bulk.row")} {is.row}: {is.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {rowIssues.length > 0 && (
             <div className="bulk-issues" role="alert">
               <span className="bulk-issues-title">{tt("bulk.fileProblems")}</span>{" "}
@@ -374,8 +454,8 @@ export function BulkUploadModal({
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <ActionButton
               className="btn"
-              pending={pending}
-              pendingLabel={tt("bulk.submitting")}
+              pending={pending || uploading}
+              pendingLabel={tt(uploading ? "bulk.uploadingMedia" : "bulk.submitting")}
               disabled={!canSubmit}
             >
               {tt("bulk.submit")}

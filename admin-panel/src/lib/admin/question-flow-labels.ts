@@ -70,6 +70,7 @@ const STRINGS: Record<Locale, Dict> = {
       "fayldakı şəkillərin ümumi həcmi hədi aşır — ən çox 40 MB",
     "bulk.err.imageUpload":
       "şəkil yüklənə bilmədi — yenidən cəhd edin",
+    "bulk.uploadingMedia": "Şəkillər yüklənir…",
     "bulk.mode.label": "İdxal növü",
     "bulk.mode.required":
       "İdxal növünü seçin. Davam etmək üçün sualların yalnız yazılı və ya qarışıq formatda olduğunu göstərməlisiniz.",
@@ -151,6 +152,7 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.imageTotal":
       "the images in this file exceed the total limit — 40 MB maximum",
     "bulk.err.imageUpload": "the image could not be uploaded — please try again",
+    "bulk.uploadingMedia": "Uploading images…",
     "bulk.mode.label": "Import type",
     "bulk.mode.required":
       "Choose the import type. To continue you must state whether the questions are text-only or mixed.",
@@ -231,6 +233,7 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.imageTotal":
       "суммарный объём изображений в файле превышает лимит — максимум 40 МБ",
     "bulk.err.imageUpload": "не удалось загрузить изображение — попробуйте ещё раз",
+    "bulk.uploadingMedia": "Загрузка изображений…",
     "bulk.mode.label": "Тип импорта",
     "bulk.mode.required":
       "Выберите тип импорта. Чтобы продолжить, укажите, содержат ли вопросы только текст или являются смешанными.",

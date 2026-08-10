@@ -44,6 +44,17 @@ import { EXT_BY_SNIFFED, sniffImageMime } from "../imageSniff";
 
 /** Same bucket and cap the manual attach path uses (lib/admin/media.ts). */
 export const BULK_MEDIA_BUCKET = "question-media";
+
+/**
+ * Prefix for objects this import path creates. Provenance is readable from the
+ * key alone, which is what makes a targeted sweep possible later:
+ *   bulk/      server-decoded base64 (this module)
+ *   imports/   browser-uploaded, server-verified (import-media action)
+ *   staging/   the single-question create modal
+ *   questions/ already attached to a question
+ */
+export const BULK_MEDIA_PREFIX = "bulk/";
+export const IMPORT_MEDIA_PREFIX = "imports/";
 export const BULK_MEDIA_MAX_BYTES = 5 * 1024 * 1024; // 5 MB decoded, per image
 
 /**
@@ -234,4 +245,64 @@ export async function removeIngestedMedia(
       `count=${media.length}`,
     );
   }
+}
+
+/**
+ * Which of these client-supplied media uuids may this admin actually attach?
+ *
+ * WHY THIS EXISTS — a real authorization hole, not a theoretical one
+ * -----------------------------------------------------------------
+ * `meta.media_asset_id` arrives INSIDE the uploaded file, so it is attacker
+ * data. Two facts make it dangerous together:
+ *
+ *   1. The RLS policy `media_insert` (010_rls_policies.sql) lets any panel user
+ *      holding `content.create` INSERT a media_assets row with ANY bucket, path,
+ *      mime_type and file_size_bytes. Nothing verifies the row describes a real
+ *      object, let alone an image.
+ *   2. The import RPC's only check is `ma.bucket = 'question-media'`
+ *      (011_indexes_constraints_functions_triggers.sql). It never sniffs bytes.
+ *
+ * So without this gate a content manager can hand-craft a row pointing at
+ * ANOTHER question's image — or at no object at all — and attach it by uuid.
+ * The bytes are never examined on that path.
+ *
+ * The rule: a uuid is claimable only if it is a question-media asset that THIS
+ * admin owns, sitting under a prefix our own verified-upload path created.
+ * Anything else (another user's asset, a `questions/<id>/` object belonging to
+ * an existing question, a fabricated row) is refused.
+ *
+ * Returns the set of ids that passed. The caller rejects the rest by row.
+ */
+export async function claimableMediaIds(
+  supabase: SupabaseClient,
+  ownerProfileId: string | null,
+  ids: string[],
+): Promise<Set<string>> {
+  const unique = [...new Set(ids)].filter((v) => typeof v === "string" && v.length > 0);
+  if (unique.length === 0 || !ownerProfileId) return new Set();
+
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("id, path")
+    .eq("bucket", BULK_MEDIA_BUCKET)
+    .eq("owner_profile_id", ownerProfileId)
+    .in("id", unique);
+
+  if (error) {
+    // Fail CLOSED: an unreadable answer must not become an accepted claim.
+    console.error("[admin] media claim check failed", error.message);
+    return new Set();
+  }
+
+  const ok = new Set<string>();
+  for (const row of (data ?? []) as { id: string; path: string }[]) {
+    const p = typeof row.path === "string" ? row.path : "";
+    // Only assets minted by an import path. `questions/<id>/…` is deliberately
+    // excluded — those belong to a question already, and re-attaching one is
+    // exactly the abuse this guards.
+    if (p.startsWith(IMPORT_MEDIA_PREFIX) || p.startsWith(BULK_MEDIA_PREFIX)) {
+      ok.add(row.id);
+    }
+  }
+  return ok;
 }

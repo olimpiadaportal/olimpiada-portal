@@ -30,6 +30,7 @@ import {
 } from "@/lib/admin/bulk-validate";
 import {
   BULK_MEDIA_TOTAL_MAX_BYTES,
+  claimableMediaIds,
   decodeImageDataUrl,
   removeIngestedMedia,
   uploadIngestedImage,
@@ -791,6 +792,42 @@ export async function bulkImportQuestions(
     validItems.push(overrideItemMeta(item, patch));
     validFileIndex.push(i + 1);
   });
+
+  // ---- Client-supplied media uuids must be CLAIMABLE -----------------------
+  //
+  // `meta.media_asset_id` arrives inside the uploaded file, so it is attacker
+  // data. RLS lets any panel user with content.create insert a media_assets row
+  // with any bucket/path/size, and the import RPC's only check is
+  // `bucket = 'question-media'` — it never sniffs bytes. Without this gate a
+  // content manager could point a uuid at another question's image, or at no
+  // object at all, and have it attached.
+  //
+  // Only assets THIS admin owns, under an import-created prefix, are accepted.
+  {
+    const supplied: { idx: number; id: string }[] = [];
+    validItems.forEach((it, i) => {
+      const raw = (it.meta as Record<string, unknown> | undefined)?.media_asset_id;
+      if (typeof raw === "string" && raw.trim() !== "") {
+        supplied.push({ idx: i, id: raw.trim() });
+      }
+    });
+    if (supplied.length > 0) {
+      const claimable = await claimableMediaIds(
+        supabase,
+        ctx.profileId,
+        supplied.map((s2) => s2.id),
+      );
+      // Walk backwards: rejecting a row splices the parallel index arrays, and
+      // forward iteration would skip the element shifted into the freed slot.
+      for (let k = supplied.length - 1; k >= 0; k--) {
+        const { idx, id } = supplied[k];
+        if (claimable.has(id)) continue;
+        errors.push({ index: validFileIndex[idx], error: t("bulk.err.badMedia") });
+        validItems.splice(idx, 1);
+        validFileIndex.splice(idx, 1);
+      }
+    }
+  }
 
   // ---- Mixed mode: base64 -> storage, BEFORE the import RPC ---------------
   //

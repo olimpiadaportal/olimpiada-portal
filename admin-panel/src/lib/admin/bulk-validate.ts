@@ -166,6 +166,8 @@ export function validateBulkItem(
   // Round 52 §6 — optional curriculum for the batch's (subject, grade). When
   // supplied, GENERAL rows must name a topic/subtopic that exists in it.
   curriculum?: CurriculumIndex | null,
+  // Round 53 — mixed mode permits per-option images.
+  mixed = false,
 ): string | null {
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     return t("bulk.err.notObject");
@@ -267,7 +269,10 @@ export function validateBulkItem(
     }
   }
 
-  // Every option needs a non-empty az text and must stay within the length cap.
+  // Every option needs an az TEXT or an az IMAGE, and text must stay within the
+  // length cap. The text-only requirement was relaxed in Round 53 — "which of
+  // these pictures" is a real question shape — but an option carrying neither
+  // is still refused, here and by the DB constraint.
   for (let i = 0; i < options.length; i++) {
     const o = options[i];
     const textObj =
@@ -278,7 +283,10 @@ export function validateBulkItem(
         ? ((o as { text: Record<string, unknown> }).text)
         : {};
     const az = typeof textObj.az === "string" ? textObj.az.trim() : "";
-    if (!az) return t("bulk.err.optionText").replace("{i}", String(i + 1));
+    const oMedia = validateOptionMedia(o, t, mixed, i);
+    if (oMedia) return oMedia;
+    // validateOptionMedia already rejects "no text AND no image"; reaching here
+    // with empty text means an image is present, which is valid.
     for (const loc of LOCALES3) {
       const val = textObj[loc];
       if (typeof val === "string" && val.length > BULK_OPTION_MAX) {
@@ -349,6 +357,43 @@ export function validateItemMedia(item: unknown, t: T, mixed: boolean): string |
   if (payload.length === 0) return t("bulk.err.badImage");
   if (b64Bytes(payload) > BULK_MEDIA_MAX_BYTES_CLIENT) return t("bulk.err.imageTooLarge");
 
+  return null;
+}
+
+/**
+ * One option's media plus the text-or-image rule. Server twin of
+ * validateClientOptionMedia; the two must stay identical.
+ */
+export function validateOptionMedia(
+  opt: unknown,
+  t: T,
+  mixed: boolean,
+  index: number,
+): string | null {
+  const o =
+    opt && typeof opt === "object" && !Array.isArray(opt)
+      ? (opt as Record<string, unknown>)
+      : {};
+  const img = o.image;
+  const textObj =
+    o.text && typeof o.text === "object" && !Array.isArray(o.text)
+      ? (o.text as Record<string, unknown>)
+      : {};
+  const azText = typeof textObj.az === "string" ? textObj.az.trim() : "";
+
+  const hasImageField = img != null && typeof img === "object" && !Array.isArray(img);
+  const azImage = hasImageField
+    ? String((img as Record<string, unknown>).az ?? "").trim()
+    : "";
+
+  if (hasImageField && !mixed) return t("bulk.err.mediaNotAllowed");
+  if (!azText && !azImage) {
+    return t("bulk.err.optionText").replace("{i}", String(index + 1));
+  }
+  if (azImage) {
+    const res = validateItemMedia({ meta: { image: azImage } }, t, mixed);
+    if (res) return res;
+  }
   return null;
 }
 

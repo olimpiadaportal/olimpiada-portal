@@ -142,6 +142,18 @@ create table if not exists public.answer_option_translations (
   option_id  uuid not null references public.answer_options (id) on delete cascade,
   locale     public.content_locale not null,
   text       text not null,
+  -- Migration 102: optional per-locale answer-option image (question-media
+  -- bucket). It lives HERE and not on answer_options because that row carries
+  -- is_correct and is hidden from students by RLS — a media column there would
+  -- be unreadable to the very screens that must render it. The FK is added in
+  -- 011 with the other media_assets links (fk_aotrans_media).
+  --
+  -- `text` stays NOT NULL and accepts '': the real rule is "text OR image,
+  -- never neither", which the CHECK below carries. Making the column nullable
+  -- would ripple into every renderer and payload branch that assumes a string.
+  media_asset_id uuid,
+  constraint ck_aotrans_text_or_media
+    check (length(btrim(text)) > 0 or media_asset_id is not null),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint uq_option_locale unique (option_id, locale)

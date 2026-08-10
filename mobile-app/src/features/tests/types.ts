@@ -5,7 +5,13 @@
 
 // ---- get_test_attempt payload -------------------------------------------------
 
-export type TestOption = { option_id: string; text: string | null };
+export type TestOption = {
+  option_id: string;
+  text: string | null;
+  /** Round 53: optional per-option figure, same {bucket, path} shape as the
+   *  question's. An option may be text-only, image-only, or both. */
+  image?: { bucket: string; path: string } | null;
+};
 
 export type TestQuestion = {
   question_id: string;
@@ -96,6 +102,8 @@ export type ResultPayload = {
 export type ReviewOption = {
   option_id: string;
   text: string | null;
+  /** Round 53: optional per-option figure (see TestOption). */
+  image?: { bucket: string; path: string } | null;
   is_correct: boolean;
 };
 

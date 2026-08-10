@@ -71,12 +71,15 @@ export default async function TestRunPage({
 
   // Question figures (migration 057): the payload carries {bucket, path} refs;
   // resolve public URLs here (getPublicUrl is a pure URL builder — no request).
+  const publicUrl = (ref?: { bucket?: string; path?: string } | null) =>
+    ref?.bucket && ref?.path
+      ? supabase.storage.from(ref.bucket).getPublicUrl(ref.path).data.publicUrl
+      : null;
   attempt.questions = attempt.questions.map((q) => ({
     ...q,
-    image_url:
-      q.image?.bucket && q.image?.path
-        ? supabase.storage.from(q.image.bucket).getPublicUrl(q.image.path).data.publicUrl
-        : null,
+    image_url: publicUrl(q.image),
+    // Round 53: options may carry their own figure, resolved identically.
+    options: (q.options ?? []).map((o) => ({ ...o, image_url: publicUrl(o.image) })),
   }));
 
   const dict: Record<string, string> = {};

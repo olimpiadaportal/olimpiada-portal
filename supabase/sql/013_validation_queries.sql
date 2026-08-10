@@ -1510,6 +1510,70 @@ select '87_answer_payload_cap' as check_name,
                  pg_get_functiondef('public.save_test_answers(uuid,jsonb)'::regprocedure)) = 0
             then 'PASS' else 'FAIL' end as status;
 
+-- 88) Import-media orphans (Round 53). Bulk-import images are uploaded BEFORE
+--     the questions that reference them exist, so an abandoned or failed import
+--     can leave assets nobody points at. Two independent counts, because they
+--     mean different things:
+--
+--       row_orphans    media_assets rows under imports/ that no consumer
+--                      references — an import was verified but never submitted.
+--       object_orphans storage objects under imports/ with no media_assets row
+--                      at all — the verify step failed AFTER the upload. These
+--                      are invisible to any join, so they are counted here or
+--                      not at all.
+--
+--     A one-off non-zero count is normal (an admin abandoned an import); the
+--     signal is a count that GROWS. The 24h floor keeps a concurrently-open
+--     import out of the numbers. Read-only — safe against either database.
+--
+--     Every media_assets consumer is checked, not just question_translations:
+--     the FKs are ON DELETE SET NULL, so treating a referenced row as an orphan
+--     would silently blank a live image rather than fail.
+select '88_import_media_orphans' as check_name,
+       case when (
+              select count(*) from public.media_assets ma
+               where ma.bucket = 'question-media'
+                 and ma.path like 'imports/%'
+                 and ma.created_at < now() - interval '24 hours'
+                 and not exists (select 1 from public.question_translations x where x.media_asset_id = ma.id)
+                 and not exists (select 1 from public.question_explanations x where x.media_asset_id = ma.id)
+                 and not exists (select 1 from public.profiles x where x.avatar_media_id = ma.id)
+                 and not exists (select 1 from public.wallpapers x where x.media_asset_id = ma.id)
+                 and not exists (select 1 from public.sticker_images x where x.media_asset_id = ma.id)
+                 and not exists (select 1 from public.news x where x.cover_media_id = ma.id)
+                 and not exists (select 1 from public.olympiad_packages x where x.cover_media_id = ma.id)
+            ) = 0
+            and (
+              select count(*) from storage.objects o
+               where o.bucket_id = 'question-media'
+                 and o.name like 'imports/%'
+                 and o.created_at < now() - interval '24 hours'
+                 and not exists (
+                   select 1 from public.media_assets ma
+                    where ma.bucket = 'question-media' and ma.path = o.name)
+            ) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from public.media_assets ma
+         where ma.bucket = 'question-media'
+           and ma.path like 'imports/%'
+           and ma.created_at < now() - interval '24 hours'
+           and not exists (select 1 from public.question_translations x where x.media_asset_id = ma.id)
+           and not exists (select 1 from public.question_explanations x where x.media_asset_id = ma.id)
+           and not exists (select 1 from public.profiles x where x.avatar_media_id = ma.id)
+           and not exists (select 1 from public.wallpapers x where x.media_asset_id = ma.id)
+           and not exists (select 1 from public.sticker_images x where x.media_asset_id = ma.id)
+           and not exists (select 1 from public.news x where x.cover_media_id = ma.id)
+           and not exists (select 1 from public.olympiad_packages x where x.cover_media_id = ma.id)
+       ) as row_orphans,
+       (select count(*) from storage.objects o
+         where o.bucket_id = 'question-media'
+           and o.name like 'imports/%'
+           and o.created_at < now() - interval '24 hours'
+           and not exists (
+             select 1 from public.media_assets ma
+              where ma.bucket = 'question-media' and ma.path = o.name)
+       ) as object_orphans;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

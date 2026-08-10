@@ -110,11 +110,27 @@ export const BULK_TEMPLATE_OLYMPIAD = [
 // `meta.image` is OPTIONAL and per question: a mixed pool is text questions and
 // image questions TOGETHER, which is the whole point of the mode.
 //
-// Answer-option images are NOT in this template yet — the schema does not carry
-// them, so advertising the field would produce files whose option images are
-// silently dropped. They are added here in the same change that makes them work.
+// An OPTION may carry `image` too (per locale, same base64 form). An option is
+// valid with text, with an image, or with both — but never with neither, which
+// is enforced by a CHECK constraint on the table, not just here.
 const TEMPLATE_IMAGE =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+// One option carries an image so the shape is unambiguous; the rest stay
+// text-only, which is what a real mixed pool looks like. An option may have
+// text, an image, or both — but never neither.
+const TEMPLATE_OPTIONS_MIXED = [
+  {
+    is_correct: true,
+    order_index: 0,
+    text: { az: "", en: "", ru: "" },
+    image: { az: TEMPLATE_IMAGE },
+  },
+  { is_correct: false, order_index: 1, text: { az: "3", en: "3", ru: "3" } },
+  { is_correct: false, order_index: 2, text: { az: "5", en: "5", ru: "5" } },
+  { is_correct: false, order_index: 3, text: { az: "6", en: "6", ru: "6" } },
+  { is_correct: false, order_index: 4, text: { az: "7", en: "7", ru: "7" } },
+];
 
 export const BULK_TEMPLATE_GENERAL_MIXED = [
   {
@@ -126,7 +142,7 @@ export const BULK_TEMPLATE_GENERAL_MIXED = [
       image: TEMPLATE_IMAGE,
     },
     translations: TEMPLATE_TRANSLATIONS,
-    options: TEMPLATE_OPTIONS,
+    options: TEMPLATE_OPTIONS_MIXED,
   },
 ];
 
@@ -135,7 +151,7 @@ export const BULK_TEMPLATE_OLYMPIAD_MIXED = [
     primary_locale: "az",
     meta: { image: TEMPLATE_IMAGE },
     translations: TEMPLATE_TRANSLATIONS,
-    options: TEMPLATE_OPTIONS,
+    options: TEMPLATE_OPTIONS_MIXED,
   },
 ];
 
@@ -170,6 +186,49 @@ function clientB64Bytes(b64: string): number {
   if (clean.length === 0) return 0;
   const pad = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
   return Math.floor((clean.length * 3) / 4) - pad;
+}
+
+/**
+ * One option's media, and the rule that an option must carry SOMETHING.
+ *
+ * Returns a message key or null. `index` is 0-based and rendered 1-based, to
+ * match how the option-count errors already read.
+ */
+export function validateClientOptionMedia(
+  opt: unknown,
+  tt: (k: string) => string,
+  mixed: boolean,
+  index: number,
+): string | null {
+  const o =
+    opt && typeof opt === "object" && !Array.isArray(opt)
+      ? (opt as Record<string, unknown>)
+      : {};
+  const img = o.image;
+  const textObj =
+    o.text && typeof o.text === "object" && !Array.isArray(o.text)
+      ? (o.text as Record<string, unknown>)
+      : {};
+  const azText = typeof textObj.az === "string" ? textObj.az.trim() : "";
+
+  const hasImageField = img != null && typeof img === "object" && !Array.isArray(img);
+  const azImage = hasImageField
+    ? String((img as Record<string, unknown>).az ?? "").trim()
+    : "";
+
+  if (hasImageField && !mixed) return tt("bulk.err.mediaNotAllowed");
+
+  // The product rule, mirrored from the DB constraint: text OR image, never
+  // neither. Checked on az because az is the required primary locale.
+  if (!azText && !azImage) {
+    return tt("bulk.err.optionText").replace("{i}", String(index + 1));
+  }
+
+  if (azImage) {
+    const res = validateClientItemMedia({ meta: { image: azImage } }, tt, mixed);
+    if (res) return res;
+  }
+  return null;
 }
 
 export function validateClientItemMedia(
@@ -337,6 +396,18 @@ export function validateBulkRowsClient(
       translations?: Record<string, { body?: unknown } | undefined>;
       options?: unknown;
     };
+
+    // Per-OPTION media and the text-or-image rule.
+    if (Array.isArray((item as { options?: unknown }).options)) {
+      const opts = (item as { options: unknown[] }).options;
+      for (let oi = 0; oi < opts.length; oi++) {
+        const om = validateClientOptionMedia(opts[oi], tt, mediaOpts?.mixed === true, oi);
+        if (om) {
+          issues.push({ row, message: om });
+          break;
+        }
+      }
+    }
 
     // Embedded media, checked on the same bytes the server will decode. The
     // declared mime is only an early filter — the authoritative check is the

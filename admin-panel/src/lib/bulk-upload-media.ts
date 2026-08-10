@@ -78,22 +78,43 @@ export async function uploadEmbeddedMedia(
   const uploaded: { path: string; mediaAssetId: string }[] = [];
   const out = items.map((it) => it);
 
-  // Index every row that actually carries an image.
-  const jobs: { i: number; dataUrl: string }[] = [];
+  // Index every image in the file: the QUESTION's own picture (meta.image) and
+  // each OPTION's per-locale picture (options[n].image.<locale>). Both travel
+  // the same upload+verify path; only where the resulting uuid is written back
+  // differs, which is what `target` records.
+  type Job =
+    | { i: number; dataUrl: string; target: { kind: "question" } }
+    | { i: number; dataUrl: string; target: { kind: "option"; opt: number; locale: string } };
+  const jobs: Job[] = [];
+
   items.forEach((it, i) => {
-    const meta =
-      it && typeof it === "object" && !Array.isArray(it)
-        ? ((it as { meta?: unknown }).meta as Record<string, unknown> | undefined)
-        : undefined;
-    const raw = meta?.image;
-    if (typeof raw === "string" && raw.trim() !== "") jobs.push({ i, dataUrl: raw.trim() });
+    if (!it || typeof it !== "object" || Array.isArray(it)) return;
+    const row = it as Record<string, unknown>;
+
+    const meta = row.meta as Record<string, unknown> | undefined;
+    const q = meta?.image;
+    if (typeof q === "string" && q.trim() !== "") {
+      jobs.push({ i, dataUrl: q.trim(), target: { kind: "question" } });
+    }
+
+    const opts = Array.isArray(row.options) ? (row.options as unknown[]) : [];
+    opts.forEach((o, oi) => {
+      if (!o || typeof o !== "object" || Array.isArray(o)) return;
+      const img = (o as Record<string, unknown>).image;
+      if (!img || typeof img !== "object" || Array.isArray(img)) return;
+      for (const [locale, v] of Object.entries(img as Record<string, unknown>)) {
+        if (typeof v === "string" && v.trim() !== "") {
+          jobs.push({ i, dataUrl: v.trim(), target: { kind: "option", opt: oi, locale } });
+        }
+      }
+    });
   });
   if (jobs.length === 0) return { items: out, failures, uploaded, batchId };
 
   let totalBytes = 0;
   let stopped = false;
 
-  async function runOne(job: { i: number; dataUrl: string }): Promise<void> {
+  async function runOne(job: Job): Promise<void> {
     if (stopped) return;
     const row = job.i + 1;
 
@@ -149,10 +170,26 @@ export async function uploadEmbeddedMedia(
     // Rewrite: the uuid the server will re-check replaces the payload, and the
     // payload is DELETED so no base64 can travel in the import request.
     const src = out[job.i] as Record<string, unknown>;
-    const meta = { ...((src.meta ?? {}) as Record<string, unknown>) };
-    meta.media_asset_id = res.mediaAssetId;
-    delete meta.image;
-    out[job.i] = { ...src, meta };
+
+    if (job.target.kind === "question") {
+      const meta = { ...((src.meta ?? {}) as Record<string, unknown>) };
+      meta.media_asset_id = res.mediaAssetId;
+      delete meta.image;
+      out[job.i] = { ...src, meta };
+      return;
+    }
+
+    // Option image: the uuid replaces the data URL IN PLACE, keeping the
+    // per-locale map shape the importer expects (options[n].image.<locale>).
+    // Rebuilt rather than mutated because several option images on the same row
+    // are uploaded concurrently and would otherwise race on one shared object.
+    const opts = [...((src.options ?? []) as unknown[])];
+    const target = { ...((opts[job.target.opt] ?? {}) as Record<string, unknown>) };
+    const image = { ...((target.image ?? {}) as Record<string, unknown>) };
+    image[job.target.locale] = res.mediaAssetId;
+    target.image = image;
+    opts[job.target.opt] = target;
+    out[job.i] = { ...src, options: opts };
   }
 
   // Bounded fan-out.

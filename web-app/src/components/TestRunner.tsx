@@ -23,7 +23,16 @@ import { QuestionImage } from "@/components/QuestionImage";
 import { cancelTest, saveTestAnswers, submitTest } from "@/lib/auth/testActions";
 import type { AnswerItem } from "@/lib/testAnswers";
 
-export type TestOption = { option_id: string; text: string };
+export type TestOption = {
+  option_id: string;
+  // Nullable since Round 53: an option may be image-only, and the RPC already
+  // emitted coalesce(...) — the old non-null type was simply wrong about it.
+  text: string | null;
+  /** Storage ref as the RPC emits it; the page turns it into a URL. */
+  image?: { bucket: string; path: string } | null;
+  /** Resolved public URL, filled in by the page from {bucket, path}. */
+  image_url?: string | null;
+};
 export type TestQuestion = {
   question_id: string;
   type: string;
@@ -586,7 +595,21 @@ export function TestRunner({
                       onClick={() => select(q.question_id, o.option_id)}
                     >
                       <span className="arena-opt-key">{LETTERS[i] ?? i + 1}</span>
-                      <span>{o.text}</span>
+                      {/* An option carries text, an image, or both. The image
+                          is NOT decorative when there is no text — it IS the
+                          answer — so the alt text falls back to the letter,
+                          which is what a screen-reader user selects by. */}
+                      <span className="arena-opt-body">
+                        {o.image_url && (
+                          <img
+                            className="arena-opt-img"
+                            src={o.image_url}
+                            alt={o.text?.trim() ? "" : (LETTERS[i] ?? String(i + 1))}
+                            loading="lazy"
+                          />
+                        )}
+                        {o.text?.trim() ? <span>{o.text}</span> : null}
+                      </span>
                     </button>
                   );
                 })}

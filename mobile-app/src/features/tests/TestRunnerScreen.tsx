@@ -69,6 +69,7 @@ import {
 import type { AttemptMeta, AttemptRowMeta, TestAttemptData } from "./types";
 import { ConfirmModal } from "./ConfirmModal";
 import { QuestionImage } from "./QuestionImage";
+import { OptionImage } from "@/features/tests/OptionImage";
 import { ArenaButton, Notice, Panel, tint, useArena } from "./ui";
 
 const TESTS_TAB = "/(student)/(tabs)/tests" as const;
@@ -1013,7 +1014,10 @@ function RunnerActive({
                   key={o.option_id}
                   accessibilityRole="radio"
                   accessibilityState={{ checked: selected }}
-                  accessibilityLabel={o.text ?? ""}
+                  // An image-only option has no text; falling back to "" left
+                // the radio unlabelled. The letter is what the student hears
+                // and what they are choosing between.
+                accessibilityLabel={o.text?.trim() ? o.text : (LETTERS[i] ?? String(i + 1))}
                   onPress={() => select(q.question_id, o.option_id)}
                   style={({ pressed }) => ({
                     flexDirection: "row",
@@ -1046,9 +1050,21 @@ function RunnerActive({
                       {LETTERS[i] ?? String(i + 1)}
                     </AppText>
                   </View>
-                  <AppText color={arena.ink} style={{ flex: 1, fontSize: 15, lineHeight: 21 }}>
-                    {o.text ?? ""}
-                  </AppText>
+                  {/* An option carries text, a figure, or both. flex:1 +
+                      minWidth:0 so a long az/ru label wraps instead of pushing
+                      the check icon off a 320pt screen. */}
+                  <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+                    {o.image ? (
+                      <OptionImage
+                        url={publicStorageUrl(o.image.bucket, o.image.path)}
+                      />
+                    ) : null}
+                    {o.text?.trim() ? (
+                      <AppText color={arena.ink} style={{ fontSize: 15, lineHeight: 21 }}>
+                        {o.text}
+                      </AppText>
+                    ) : null}
+                  </View>
                   {selected ? (
                     <Check size={18} color={arena.blue} strokeWidth={2.5} />
                   ) : null}

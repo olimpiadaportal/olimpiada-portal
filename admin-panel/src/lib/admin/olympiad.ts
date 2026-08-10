@@ -20,10 +20,13 @@ import {
   overrideItemMeta,
   pickDefaultType,
   type ActiveTypeRule,
+  validateItemMedia,
 } from "@/lib/admin/bulk-validate";
 import { getT, getLocale, type T } from "@/i18n/server";
 import { parseIsoTimestamp } from "@/lib/admin/datetime";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
+import { withLocalStrings } from "@/lib/admin/question-flow-labels";
+import { rejectUnclaimableMedia } from "@/lib/admin/bulk-media";
 import {
   fillTemplate,
   gradeLabel,
@@ -645,15 +648,24 @@ function validateRows(
   activeByNorm: Map<string, ActiveTypeRule>,
   defaultType: ActiveTypeRule | null,
   gradeLevel: number,
+  // Round 53 — mixed mode permits `meta.image`; text-only mode REPORTS one
+  // rather than dropping it, which would import the questions without their
+  // pictures and still look successful.
+  mixed = false,
 ): ValidatedRows {
   const errors: { index: number; error: string }[] = [];
   const validItems: Record<string, unknown>[] = [];
   const validFileIndex: number[] = [];
   payload.forEach((item, i) => {
     // OLYMPIAD mode: topic/subtopic/term stay optional (package-scoped pool).
-    const msg = validateBulkItem(item, t, activeByNorm, defaultType, "olympiad");
+    const msg = validateBulkItem(item, t, activeByNorm, defaultType, "olympiad", null, mixed);
     if (msg) {
       errors.push({ index: i + 1, error: msg });
+      return;
+    }
+    const mediaMsg = validateItemMedia(item, t, mixed);
+    if (mediaMsg) {
+      errors.push({ index: i + 1, error: mediaMsg });
       return;
     }
     validItems.push(overrideItemMeta(item, { grade_level: gradeLevel }));
@@ -749,8 +761,29 @@ export async function bulkImportOlympiadQuestions(
   const parsedFile = await readBulkFile(fd, t);
   if ("error" in parsedFile) return { ok: false, error: parsedFile.error };
 
+  // Mandatory import type, same contract as the general bank. Refused rather
+  // than defaulted: defaulting to "text" would import a mixed file with every
+  // image silently dropped and still report success.
+  const qMode = s(fd, "question_mode");
+  const tq = withLocalStrings(t, await getLocale());
+  if (qMode !== "text" && qMode !== "mixed") {
+    return { ok: false, error: tq("bulk.mode.required") };
+  }
+
   const { activeByNorm, defaultType } = await loadActiveTypeRules(supabase);
-  const rows = validateRows(parsedFile.payload, t, activeByNorm, defaultType, gradeLevel);
+  const rows = validateRows(
+    parsedFile.payload,
+    tq,
+    activeByNorm,
+    defaultType,
+    gradeLevel,
+    qMode === "mixed",
+  );
+
+  // Client-supplied media uuids must be claimable by THIS admin — see
+  // claimableMediaIds. The RPC only checks the bucket, and RLS lets a panel
+  // user fabricate a media_assets row pointing anywhere.
+  await rejectUnclaimableMedia(supabase, ctx.profileId, rows, tq);
 
   const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows);
   if ("error" in imp) return { ok: false, error: imp.error };
@@ -846,6 +879,19 @@ export async function createOlympiadPackageWithQuestions(
   const typeRes = await resolveOlympiadTypeId(supabase, fields, t);
   if ("error" in typeRes) return { error: typeRes.error };
 
+  // Round 53 — ONE mandatory import type for the WHOLE package. Per-grade modes
+  // were considered and rejected: every grade file comes from the same external
+  // step and the same template, so a per-grade switch would only create a way
+  // for two grades to disagree, with nothing gained. Refused rather than
+  // defaulted — a default would import a mixed file with every image silently
+  // dropped and still report success.
+  const tq = withLocalStrings(t, locale);
+  const qMode = s(fd, "question_mode");
+  if (qMode !== "text" && qMode !== "mixed") {
+    return { error: tq("bulk.mode.required") };
+  }
+  const mixed = qMode === "mixed";
+
   // Round 34: validate EVERY grade's file BEFORE creating anything. The
   // package must not be creatable while any selected grade lacks a valid
   // pool — a bad file in one grade blocks the whole creation, and the admin
@@ -863,7 +909,8 @@ export async function createOlympiadPackageWithQuestions(
       badGrades.push(grade.name);
       continue;
     }
-    const rows = validateRows(parsed.payload, t, activeByNorm, defaultType, grade.level);
+    const rows = validateRows(parsed.payload, tq, activeByNorm, defaultType, grade.level, mixed);
+    await rejectUnclaimableMedia(supabase, ctx.profileId, rows, tq);
     if (rows.validItems.length === 0 || rows.errors.length > 0) {
       badGrades.push(grade.name);
       for (const e of rows.errors) {

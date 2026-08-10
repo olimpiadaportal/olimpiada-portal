@@ -108,6 +108,12 @@ export function OlympiadCreateForm({
   // Per-grade file state (client pre-validation mirror). File inputs are
   // uncontrolled; deselecting a grade clears its slot via the ref map.
   const [files, setFiles] = useState<Record<string, FileState>>({});
+  // Round 53 — ONE mandatory import type for the whole package. No default:
+  // defaulting to "text" would import a mixed file with every image silently
+  // dropped and still look successful. The grade slots stay hidden until it is
+  // chosen, so there is no partially-usable state to misread.
+  const [questionMode, setQuestionMode] = useState<"" | "text" | "mixed">("");
+  const modeChosen = questionMode !== "";
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   function toggleGrade(id: string) {
@@ -140,7 +146,9 @@ export function OlympiadCreateForm({
     if ("error" in parsed) {
       next.fileError = parsed.error;
     } else {
-      next.rowIssues = validateBulkRowsClient(parsed.items, tt, typeRules, "olympiad");
+      next.rowIssues = validateBulkRowsClient(parsed.items, tt, typeRules, "olympiad", null, {
+        mixed: questionMode === "mixed",
+      });
       next.itemCount = parsed.items.length;
     }
     setFiles((p) => ({ ...p, [gradeId]: next }));
@@ -151,7 +159,11 @@ export function OlympiadCreateForm({
     // Template rows carry NO subject/grade meta — the server injects the
     // package's subject and each slot's grade — so only the subject shows in
     // the filename; the SAME template serves every grade slot.
-    downloadBulkTemplate(`olympiad-questions-${slugLabel(subj)}.json`, "olympiad");
+    downloadBulkTemplate(
+      `olympiad-questions-${slugLabel(subj)}-${questionMode || "text"}.json`,
+      "olympiad",
+      questionMode === "mixed" ? "mixed" : "text",
+    );
   }
 
   const typeChosen =
@@ -181,6 +193,7 @@ export function OlympiadCreateForm({
         poolMeetsPerAttempt(files[id]?.itemCount ?? 0, perAttemptNum),
       ));
   const canSubmit =
+    modeChosen &&
     !pending && targetsChosen && allReady && perAttemptNum !== null && activeReady;
 
   const codesHint = tt("bulk.codesHint").replace(
@@ -192,6 +205,42 @@ export function OlympiadCreateForm({
 
   return (
     <form action={action} className="form">
+      {/* ---- MANDATORY import type — before every other control ---------- */}
+      <fieldset className="bulk-mode">
+        <legend className="field-label">
+          {tt("bulk.mode.label")}
+          <span className="req"> *</span>
+        </legend>
+        <div className="bulk-mode-options">
+          {(
+            [
+              { v: "text", label: "bulk.mode.text", hint: "bulk.mode.textHint" },
+              { v: "mixed", label: "bulk.mode.mixed", hint: "bulk.mode.mixedHint" },
+            ] as const
+          ).map((o) => (
+            <label
+              key={o.v}
+              className={`bulk-mode-opt${questionMode === o.v ? " is-selected" : ""}`}
+            >
+              <input
+                type="radio"
+                name="question_mode"
+                value={o.v}
+                checked={questionMode === o.v}
+                onChange={() => setQuestionMode(o.v)}
+                disabled={pending}
+              />
+              <span className="bulk-mode-opt-body">
+                <span className="bulk-mode-opt-title">{tt(o.label)}</span>
+                <span className="hint">{tt(o.hint)}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {!modeChosen && <p className="hint">{tt("bulk.mode.required")}</p>}
+        {questionMode === "mixed" && <p className="hint">{tt("bulk.mode.mixedNote")}</p>}
+      </fieldset>
+
       {/* ---- Mandatory olympiad type (first field; "Other" adds a new one) --- */}
       <label className="field">
         <span className="field-label">{tt("oly2.type")} *</span>
@@ -330,7 +379,11 @@ export function OlympiadCreateForm({
         </div>
       ))}
 
-      {/* ---- Per-grade question pools (all mandatory) --------------------- */}
+      {/* ---- Per-grade question pools (all mandatory) ---------------------
+          Hidden until the import type is chosen: a greyed-out row of file
+          inputs still reads as "the next step", while an absent one makes the
+          single required action obvious. */}
+      {modeChosen && (
       <div style={{ marginTop: 16 }}>
         <h3>{tt("oly2.pool")} *</h3>
         <p className="muted">{tt("oly2.perGradeNote")}</p>
@@ -432,6 +485,7 @@ export function OlympiadCreateForm({
           <p className="hint">{tt("oly2.err.needQuestions")}</p>
         )}
       </div>
+      )}
 
       {state?.error && (
         <div>

@@ -10,7 +10,13 @@ import {
 } from "@/components/TestReviewList";
 import { ChildNavActive } from "@/components/ChildNav";
 
-type ReviewOption = { option_id: string; text: string | null; is_correct: boolean };
+type ReviewOption = {
+  option_id: string;
+  text: string | null;
+  /** Round 53: optional per-option figure ref, same shape as the question's. */
+  image?: { bucket: string; path: string } | null;
+  is_correct: boolean;
+};
 type ReviewQuestion = {
   question_id: string;
   body: string | null;
@@ -77,6 +83,14 @@ export default async function TestReviewPage({
   const score = Math.round(Number(review.score ?? 0));
   const max = Math.round(Number(review.max ?? 0));
 
+  // One resolver for every {bucket, path} in the payload — the question's
+  // figure and, since Round 53, each option's. getPublicUrl is a pure URL
+  // builder (no request), so calling it per option costs nothing.
+  const publicUrl = (ref?: { bucket?: string; path?: string } | null) =>
+    ref?.bucket && ref?.path
+      ? supabase.storage.from(ref.bucket).getPublicUrl(ref.path).data.publicUrl
+      : null;
+
   // Shape each question once (server-side) into the client list's contract:
   // computed state + per-option selected/correct flags (no answer-key RPC or
   // Set crosses the server→client boundary).
@@ -89,15 +103,13 @@ export default async function TestReviewPage({
       body: q.body,
       prompt: q.prompt,
       // Question figure → public URL (getPublicUrl is a pure URL builder).
-      image_url:
-        q.image?.bucket && q.image?.path
-          ? supabase.storage.from(q.image.bucket).getPublicUrl(q.image.path).data.publicUrl
-          : null,
+      image_url: publicUrl(q.image),
       state,
       explanation: q.explanation,
       options: q.options.map((o) => ({
         option_id: o.option_id,
         text: o.text,
+        image_url: publicUrl(o.image),
         is_correct: o.is_correct,
         is_selected: selected.has(o.option_id),
       })),

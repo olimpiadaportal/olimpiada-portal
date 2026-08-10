@@ -306,3 +306,55 @@ export async function claimableMediaIds(
   }
   return ok;
 }
+
+/**
+ * Shape both importers use to carry pre-validated rows toward the RPC.
+ * Declared here so the claim gate can operate on either without either
+ * importer depending on the other.
+ */
+export type ClaimableRows = {
+  errors: { index: number; error: string }[];
+  validItems: Record<string, unknown>[];
+  validFileIndex: number[];
+};
+
+/**
+ * Drop every row whose `meta.media_asset_id` this admin may not attach.
+ *
+ * Mutates `rows` in place, recording a per-row error for each rejection, so a
+ * bad uuid costs one question rather than the whole file.
+ *
+ * Iterates BACKWARDS on purpose: removing an element splices the two parallel
+ * index arrays, and forward iteration would then skip whichever row shifted
+ * into the freed slot — the classic way a filter like this silently lets one
+ * bad row through.
+ */
+export async function rejectUnclaimableMedia(
+  supabase: SupabaseClient,
+  ownerProfileId: string | null,
+  rows: ClaimableRows,
+  t: (k: string) => string,
+): Promise<void> {
+  const supplied: { idx: number; id: string }[] = [];
+  rows.validItems.forEach((it, i) => {
+    const raw = (it.meta as Record<string, unknown> | undefined)?.media_asset_id;
+    if (typeof raw === "string" && raw.trim() !== "") {
+      supplied.push({ idx: i, id: raw.trim() });
+    }
+  });
+  if (supplied.length === 0) return;
+
+  const claimable = await claimableMediaIds(
+    supabase,
+    ownerProfileId,
+    supplied.map((x) => x.id),
+  );
+
+  for (let k = supplied.length - 1; k >= 0; k--) {
+    const { idx, id } = supplied[k];
+    if (claimable.has(id)) continue;
+    rows.errors.push({ index: rows.validFileIndex[idx], error: t("bulk.err.badMedia") });
+    rows.validItems.splice(idx, 1);
+    rows.validFileIndex.splice(idx, 1);
+  }
+}

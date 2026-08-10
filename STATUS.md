@@ -58,6 +58,31 @@ Listing copy, keywords and the asset inventory now live in **`docs/STORE_LISTING
 - **RE-UPLOAD the Play icon + feature graphic.** The ones uploaded on 2026-08-04 before the brand landed carry the PLACEHOLDER blue-chevron mark. Correct files: `mobile-app/store-assets/play-icon-512.png` and `play-feature-1024x500-az.png`.
 - ~~The Android adaptive icon is inverted vs the master icon~~ — **RESOLVED 2026-08-04** by the brand landing below.
 
+## PINNED — MIXED-MODE BULK IMPORT (images in JSON) — Round 53, 2026-08-05
+
+**Shipped end to end.** Both importers (standard Questions + Olympiad packages) take a mandatory `Yalnız yazılı sual` / `Qarışıq sual` selector; mixed mode accepts images embedded in the JSON, moves them into `question-media`, and stores only the reference. No manual extraction, renaming, ZIP or separate upload.
+
+**Migrations 101–104** (all proved in rolled-back transactions, applied, backported; **from-zero rebuild 92/92 PASS**):
+- `101` olympiad importer accepts `meta.media_asset_id` — it previously ignored the field entirely, so such a file imported as "successful" with no image and **no error**.
+- `102` `answer_option_translations.media_asset_id` + `ck_aotrans_text_or_media`. On the TRANSLATION table because `answer_options` carries `is_correct` and is RLS-hidden from students; `text` stays NOT NULL and accepts `''` so the constraint, not nullability, carries the "text OR image" rule.
+- `103` the three LIVE payload branches serve the option image (`get_practice_attempt`, `get_test_attempt`, `get_test_review`). The two SNAPSHOT branches are deliberately untouched — `daily_rounds.content_snapshot` is frozen and its writer was dropped in `083`, so historical rounds can never be backfilled.
+- `104` both importers write per-locale option images, and the insert condition became "text OR image" — the old empty-text skip would have left an image-only option with no translation row at all.
+
+**⚠️ THREE THINGS THAT WILL BITE A FUTURE MIGRATION:**
+1. **`pg_get_functiondef` returns CRLF** for functions created from the canonical files (252 CRs measured). A multi-line anchor written in an LF migration can NEVER match. Always `replace(src, chr(13), '')` first.
+2. **Canonical `011` is itself CRLF** (6907 CRLF / 0 LF). A backport script must translate its anchors, not normalise the file.
+3. **Migration markers are load-bearing.** `100`'s anchor is consumed once applied, so it detects "already done" by the literal `Migration 100` comment. Every later patch of that function must PRESERVE the earlier markers or re-running them raises instead of skipping. `104` asserts both `100` and `101` survive.
+
+**SECURITY — a live hole, closed.** `meta.media_asset_id` arrives inside the uploaded file. RLS `media_insert` lets any `content.create` user insert a `media_assets` row with an arbitrary bucket/path/size, and the RPC only checks `bucket='question-media'` — so a crafted uuid could attach **another question's image, or none at all**, with the bytes never examined. `claimableMediaIds` now accepts a supplied uuid only when it is a question-media asset **owned by that admin** under an import-created prefix, fail-closed. Pre-existing since Round 21; the new flow made it the normal path.
+
+**SCALABILITY — request size no longer depends on images.** Base64 in the body was O(image bytes) and would exceed any limit. The browser now uploads each image as its own request to `imports/<batch>/`, a server action re-downloads and re-sniffs the bytes before writing the `media_assets` row, and the submitted JSON contains no base64 at all → **O(question count)**. The browser also sniffs BEFORE uploading, because the verifier rejects a stored content-type that contradicts the bytes — otherwise a mislabelled image uploads and then fails verification, leaving an orphan.
+
+**Orphans:** new class (verified but never submitted). Swept opportunistically on the next import — scoped by owner, `imports/` prefix, 24h age, and unreferenced by EVERY `media_assets` consumer (the FKs are `SET NULL`, so deleting a referenced row would silently blank a live image). **pg_cron cannot do this** — it can delete the metadata row but not the bytes, converting one orphan into a worse invisible one. Detection: **check 88**, reporting stranded rows and stranded objects separately.
+
+**PRECONDITION FIXED:** `saveQuestion` used to delete+reinsert every answer option. With `ON DELETE CASCADE` on the translations, any unrelated question edit would have silently destroyed every option image **and** every non-edited locale's text. Options are now matched by `order_index` and updated in place; stale rows are removed last.
+
+**Still text-only by design:** legacy `daily_rounds` snapshots (frozen), and `get_practice_attempt` served **no media at all** before `103` — not even the question image. That was a pre-existing gap, now closed for both.
+
 ## PINNED — OLYMPIAD POOL UPLOAD: per-grade JSON format helper (2026-08-05)
 
 **Unchanged on purpose:** one upload field per selected grade, one independent pool per grade, the per-student non-repeating rotation, and the creation-only pool rule. Per-grade validation errors already rendered under each slot (`fileError` + `rowIssues`) and still do.

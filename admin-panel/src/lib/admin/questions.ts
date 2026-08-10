@@ -30,7 +30,7 @@ import {
 } from "@/lib/admin/bulk-validate";
 import {
   BULK_MEDIA_TOTAL_MAX_BYTES,
-  claimableMediaIds,
+  rejectUnclaimableMedia,
   decodeImageDataUrl,
   removeIngestedMedia,
   uploadIngestedImage,
@@ -422,23 +422,69 @@ export async function saveQuestion(
       .eq("locale", locale);
   }
 
-  // Replace answer options (delete + reinsert keeps it simple and correct).
-  await supabase.from("answer_options").delete().eq("question_id", questionId);
+  // ---- Answer options: UPDATE IN PLACE, never delete + reinsert -------------
+  //
+  // This used to delete every option and insert fresh rows. That was harmless
+  // while an option was only (is_correct, order_index, text) — and destructive
+  // the moment anything hangs off the option id. `answer_option_translations`
+  // cascades from `answer_options`, so a delete takes the per-locale rows with
+  // it: under the old code, editing a question's WORDING silently destroyed
+  // every option image and every non-edited locale's text.
+  //
+  // Options are matched by ORDER INDEX, which is what the form edits — the
+  // olympiad pool editor already works this way and is the model here.
+  const { data: existingOpts } = await supabase
+    .from("answer_options")
+    .select("id, order_index")
+    .eq("question_id", questionId)
+    .order("order_index");
+  const existing = (existingOpts ?? []) as { id: string; order_index: number }[];
+
   for (const o of options) {
-    const { data: opt, error: oErr } = await supabase
-      .from("answer_options")
-      .insert({
-        question_id: questionId,
-        is_correct: o.is_correct,
-        order_index: o.order_index,
-      })
-      .select("id")
-      .single();
-    if (oErr || !opt) return cleanup("answer option insert failed", oErr?.message);
+    const match = existing.find((e) => e.order_index === o.order_index);
+    let optionId: string;
+
+    if (match) {
+      const { error: uErr } = await supabase
+        .from("answer_options")
+        .update({ is_correct: o.is_correct })
+        .eq("id", match.id);
+      if (uErr) return cleanup("answer option update failed", uErr.message);
+      optionId = match.id;
+    } else {
+      const { data: opt, error: oErr } = await supabase
+        .from("answer_options")
+        .insert({
+          question_id: questionId,
+          is_correct: o.is_correct,
+          order_index: o.order_index,
+        })
+        .select("id")
+        .single();
+      if (oErr || !opt) return cleanup("answer option insert failed", oErr?.message);
+      optionId = opt.id as string;
+    }
+
+    // Upsert only THIS locale's text — the other locales' rows (and any media
+    // attached to them) are left untouched, which is the whole point.
     const { error: tErr } = await supabase
       .from("answer_option_translations")
-      .insert({ option_id: opt.id, locale, text: o.text });
+      .upsert(
+        { option_id: optionId, locale, text: o.text },
+        { onConflict: "option_id,locale" },
+      );
     if (tErr) return cleanup("answer option translation failed", tErr.message);
+  }
+
+  // Options removed from the form (the count can only shrink via a type change)
+  // are deleted LAST, so a failure above leaves the question intact.
+  const keptIndexes = new Set(options.map((o) => o.order_index));
+  const stale = existing.filter((e) => !keptIndexes.has(e.order_index));
+  if (stale.length > 0) {
+    await supabase
+      .from("answer_options")
+      .delete()
+      .in("id", stale.map((e) => e.id));
   }
 
   // ---- Attach the staged image (create only) --------------------------------
@@ -757,6 +803,7 @@ export async function bulkImportQuestions(
       defaultType,
       "general",
       curriculum,
+      mixed,
     );
     if (msg) {
       errors.push({ index: i + 1, error: msg });
@@ -803,31 +850,13 @@ export async function bulkImportQuestions(
   // object at all, and have it attached.
   //
   // Only assets THIS admin owns, under an import-created prefix, are accepted.
-  {
-    const supplied: { idx: number; id: string }[] = [];
-    validItems.forEach((it, i) => {
-      const raw = (it.meta as Record<string, unknown> | undefined)?.media_asset_id;
-      if (typeof raw === "string" && raw.trim() !== "") {
-        supplied.push({ idx: i, id: raw.trim() });
-      }
-    });
-    if (supplied.length > 0) {
-      const claimable = await claimableMediaIds(
-        supabase,
-        ctx.profileId,
-        supplied.map((s2) => s2.id),
-      );
-      // Walk backwards: rejecting a row splices the parallel index arrays, and
-      // forward iteration would skip the element shifted into the freed slot.
-      for (let k = supplied.length - 1; k >= 0; k--) {
-        const { idx, id } = supplied[k];
-        if (claimable.has(id)) continue;
-        errors.push({ index: validFileIndex[idx], error: t("bulk.err.badMedia") });
-        validItems.splice(idx, 1);
-        validFileIndex.splice(idx, 1);
-      }
-    }
-  }
+  // Shared with the olympiad importer so the two can never diverge on what
+  // counts as claimable.
+  await rejectUnclaimableMedia(supabase, ctx.profileId, {
+    errors,
+    validItems,
+    validFileIndex,
+  }, t);
 
   // ---- Mixed mode: base64 -> storage, BEFORE the import RPC ---------------
   //

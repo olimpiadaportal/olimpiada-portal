@@ -54,6 +54,17 @@ alter table public.question_explanations drop constraint if exists fk_qexpl_medi
 alter table public.question_explanations add constraint fk_qexpl_media
   foreign key (media_asset_id) references public.media_assets (id) on delete set null;
 
+-- Migration 102: the ANSWER-OPTION image. Same ON DELETE SET NULL as the
+-- question figure above — deleting an asset blanks the link, it must never
+-- cascade away a live answer option.
+alter table public.answer_option_translations drop constraint if exists fk_aotrans_media;
+alter table public.answer_option_translations add constraint fk_aotrans_media
+  foreign key (media_asset_id) references public.media_assets (id) on delete set null;
+-- Partial: only a minority of options ever carry an image.
+create index if not exists idx_aotrans_media
+  on public.answer_option_translations (media_asset_id)
+  where media_asset_id is not null;
+
 -- wallpapers (003) -> media_assets (008) for the image-kind catalog entries.
 alter table public.wallpapers drop constraint if exists fk_wallpapers_media;
 alter table public.wallpapers add constraint fk_wallpapers_media
@@ -1432,9 +1443,23 @@ begin
         v_order := v_order + 1;
         for v_loc in select jsonb_object_keys(coalesce(v_opt->'text','{}'::jsonb))
         loop
-          if v_loc in ('az','en','ru') and coalesce(v_opt->'text'->>v_loc,'') <> '' then
-            insert into public.answer_option_translations (option_id, locale, text)
-            values (v_optid, v_loc::public.content_locale, v_opt->'text'->>v_loc);
+          -- Migration 104: write the row when the locale has TEXT **or** an
+          -- IMAGE. The old condition skipped empty text, which would leave an
+          -- image-only option with no translation row at all.
+          if v_loc in ('az','en','ru')
+             and (coalesce(v_opt->'text'->>v_loc,'') <> ''
+                  or coalesce(v_opt->'image'->>v_loc,'') <> '') then
+            if coalesce(v_opt->'image'->>v_loc,'') <> ''
+               and not exists (
+                 select 1 from public.media_assets ma
+                  where ma.id = (v_opt->'image'->>v_loc)::uuid
+                    and ma.bucket = 'question-media') then
+              raise exception 'option image does not reference a question-media asset';
+            end if;
+            insert into public.answer_option_translations (option_id, locale, text, media_asset_id)
+            values (v_optid, v_loc::public.content_locale,
+                    coalesce(v_opt->'text'->>v_loc, ''),
+                    nullif(v_opt->'image'->>v_loc,'')::uuid);
           end if;
         end loop;
       end loop;
@@ -2537,13 +2562,21 @@ begin
         'options', (
           select coalesce(jsonb_agg(
             jsonb_build_object('option_id', ao.id,
-                               'text', coalesce(aot.text, aot_az.text))
+                               'text', coalesce(aot.text, aot_az.text),
+                               -- Migration 103: per-locale option image.
+                               'image', case when aom.id is null then null
+                                             else jsonb_build_object('bucket', aom.bucket,
+                                                                     'path', aom.path) end)
             order by ao.order_index), '[]'::jsonb)
           from public.answer_options ao
           left join public.answer_option_translations aot
             on aot.option_id = ao.id and aot.locale = v_loc::public.content_locale
           left join public.answer_option_translations aot_az
             on aot_az.option_id = ao.id and aot_az.locale = 'az'
+          -- Migration 103: the option's image, resolved locale-then-az exactly
+          -- like its text above.
+          left join public.media_assets aom
+            on aom.id = coalesce(aot.media_asset_id, aot_az.media_asset_id)
           where ao.question_id = taa.question_id
         )
       ) as q
@@ -3164,6 +3197,11 @@ declare
   v_qid      uuid; v_optid uuid;
   v_pl       text; v_loc text; v_opt jsonb; v_order int;
   v_pool_grade uuid;
+  -- Migration 101: optional pre-uploaded question image (the same field the
+  -- general importer accepts). Assigned unconditionally per item below — it is
+  -- loop-persistent, so leaving it unset would carry the previous question's
+  -- image onto the next one.
+  v_media uuid;
 begin
   -- Audit H2 (migration 035): olympiad pools are an Admin-only module (content
   -- managers must never manage Olympiad Preparation) — no permission fallback.
@@ -3271,6 +3309,15 @@ begin
         end if;
       end if;
 
+      -- ---- optional pre-uploaded question image (migration 101) ----
+      v_media := nullif(v_item->'meta'->>'media_asset_id','')::uuid;
+      if v_media is not null and not exists (
+        select 1 from public.media_assets ma
+        where ma.id = v_media and ma.bucket = 'question-media'
+      ) then
+        raise exception 'media_asset_id does not reference a question-media asset';
+      end if;
+
       v_pl := coalesce(v_item->>'primary_locale','az');
       if v_pl not in ('az','en','ru') then v_pl := 'az'; end if;
       if coalesce(v_item->'translations'->v_pl->>'body','') = '' then
@@ -3291,9 +3338,10 @@ begin
       for v_loc in select jsonb_object_keys(v_item->'translations')
       loop
         if v_loc in ('az','en','ru') and coalesce(v_item->'translations'->v_loc->>'body','') <> '' then
-          insert into public.question_translations (question_id, locale, body, prompt)
+          insert into public.question_translations (question_id, locale, body, prompt, media_asset_id)
           values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'body',
-                  nullif(v_item->'translations'->v_loc->>'prompt',''));
+                  nullif(v_item->'translations'->v_loc->>'prompt',''),
+                  case when v_loc = v_pl then v_media end);
           if coalesce(v_item->'translations'->v_loc->>'explanation','') <> '' then
             insert into public.question_explanations (question_id, locale, explanation_body)
             values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'explanation');
@@ -3311,9 +3359,23 @@ begin
         v_order := v_order + 1;
         for v_loc in select jsonb_object_keys(coalesce(v_opt->'text','{}'::jsonb))
         loop
-          if v_loc in ('az','en','ru') and coalesce(v_opt->'text'->>v_loc,'') <> '' then
-            insert into public.answer_option_translations (option_id, locale, text)
-            values (v_optid, v_loc::public.content_locale, v_opt->'text'->>v_loc);
+          -- Migration 104: write the row when the locale has TEXT **or** an
+          -- IMAGE. The old condition skipped empty text, which would leave an
+          -- image-only option with no translation row at all.
+          if v_loc in ('az','en','ru')
+             and (coalesce(v_opt->'text'->>v_loc,'') <> ''
+                  or coalesce(v_opt->'image'->>v_loc,'') <> '') then
+            if coalesce(v_opt->'image'->>v_loc,'') <> ''
+               and not exists (
+                 select 1 from public.media_assets ma
+                  where ma.id = (v_opt->'image'->>v_loc)::uuid
+                    and ma.bucket = 'question-media') then
+              raise exception 'option image does not reference a question-media asset';
+            end if;
+            insert into public.answer_option_translations (option_id, locale, text, media_asset_id)
+            values (v_optid, v_loc::public.content_locale,
+                    coalesce(v_opt->'text'->>v_loc, ''),
+                    nullif(v_opt->'image'->>v_loc,'')::uuid);
           end if;
         end loop;
       end loop;
@@ -3928,13 +3990,21 @@ begin
         'options', (
           select coalesce(jsonb_agg(
             jsonb_build_object('option_id', ao.id,
-                               'text', coalesce(aot.text, aot_az.text))
+                               'text', coalesce(aot.text, aot_az.text),
+                               -- Migration 103: per-locale option image.
+                               'image', case when aom.id is null then null
+                                             else jsonb_build_object('bucket', aom.bucket,
+                                                                     'path', aom.path) end)
             order by ao.order_index), '[]'::jsonb)
           from public.answer_options ao
           left join public.answer_option_translations aot
             on aot.option_id = ao.id and aot.locale = v_loc::public.content_locale
           left join public.answer_option_translations aot_az
             on aot_az.option_id = ao.id and aot_az.locale = 'az'
+          -- Migration 103: the option's image, resolved locale-then-az exactly
+          -- like its text above.
+          left join public.media_assets aom
+            on aom.id = coalesce(aot.media_asset_id, aot_az.media_asset_id)
           where ao.question_id = taa.question_id
         )
       ) as q
@@ -4298,6 +4368,10 @@ begin
           select coalesce(jsonb_agg(
             jsonb_build_object('option_id', ao.id,
                                'text', coalesce(aot.text, aot_az.text),
+                               -- Migration 103: per-locale option image.
+                               'image', case when aom.id is null then null
+                                             else jsonb_build_object('bucket', aom.bucket,
+                                                                     'path', aom.path) end,
                                'is_correct', ao.is_correct)
             order by ao.order_index), '[]'::jsonb)
           from public.answer_options ao
@@ -4305,6 +4379,10 @@ begin
             on aot.option_id = ao.id and aot.locale = v_loc::public.content_locale
           left join public.answer_option_translations aot_az
             on aot_az.option_id = ao.id and aot_az.locale = 'az'
+          -- Migration 103: the option's image, resolved locale-then-az exactly
+          -- like its text above.
+          left join public.media_assets aom
+            on aom.id = coalesce(aot.media_asset_id, aot_az.media_asset_id)
           where ao.question_id = taa.question_id
         )
       ) as q

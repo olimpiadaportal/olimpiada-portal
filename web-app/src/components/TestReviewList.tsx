@@ -17,6 +17,8 @@ export type ReviewState = "correct" | "wrong" | "skipped";
 export type ReviewListOption = {
   option_id: string;
   text: string | null;
+  /** Round 53: an option may be image-only, so text alone cannot identify it. */
+  image_url?: string | null;
   is_correct: boolean;
   is_selected: boolean;
 };
@@ -129,7 +131,17 @@ export function TestReviewList({
                 return (
                   <div className={cls} key={o.option_id}>
                     <span className="arena-opt-key">{LETTERS[oi] ?? oi + 1}</span>
-                    <span className="tst-review-opt-text">{o.text}</span>
+                    <span className="tst-review-opt-text">
+                      {o.image_url && (
+                        <img
+                          className="arena-opt-img"
+                          src={o.image_url}
+                          alt={o.text?.trim() ? "" : (LETTERS[oi] ?? String(oi + 1))}
+                          loading="lazy"
+                        />
+                      )}
+                      {o.text?.trim() ? <span>{o.text}</span> : null}
+                    </span>
                     <span className="tst-review-tags mono">
                       {o.is_selected && <em>{tt("test.review.your")}</em>}
                       {o.is_correct && <b>✓ {tt("test.review.correctAnswer")}</b>}

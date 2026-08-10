@@ -25,6 +25,7 @@ import {
 } from "./logic";
 import type { ReviewQuestion } from "./types";
 import { QuestionImage } from "./QuestionImage";
+import { OptionImage } from "@/features/tests/OptionImage";
 import {
   ArenaButton,
   BackBar,
@@ -359,9 +360,19 @@ function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
                   {LETTERS[oi] ?? String(oi + 1)}
                 </AppText>
               </View>
-              <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
-                {o.text ?? ""}
-              </AppText>
+              {/* Text, a figure, or both (Round 53). minWidth:0 so a long
+                  az/ru label wraps rather than pushing the result tags off a
+                  320pt screen. */}
+              <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+                {o.image ? (
+                  <OptionImage url={publicStorageUrl(o.image.bucket, o.image.path)} />
+                ) : null}
+                {o.text?.trim() ? (
+                  <AppText color={arena.ink} style={{ fontSize: 14, lineHeight: 20 }}>
+                    {o.text}
+                  </AppText>
+                ) : null}
+              </View>
               <View style={{ alignItems: "flex-end", gap: 2 }}>
                 {isSelected ? (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>

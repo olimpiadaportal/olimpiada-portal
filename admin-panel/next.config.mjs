@@ -53,6 +53,25 @@ const SECURITY_HEADERS = [
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    serverActions: {
+      // Bulk question import posts its JSON through a Server Action, and Next's
+      // DEFAULT body limit is 1 MB — below the 2 MB file cap this app validates
+      // and advertises ("Max 2 MB"). A 1.5 MB file was therefore rejected by the
+      // platform BEFORE any of our code ran, surfacing as an opaque action
+      // failure instead of the app's own "file too large" message: the action's
+      // first statement (requirePermission / requireAdmin) is never reached, so
+      // nothing logs and nothing validates.
+      //
+      // Raised to 12 MB because an olympiad package posts EVERY selected grade's
+      // file in ONE FormData, and mixed-mode files embed images as base64, which
+      // inflates the payload by ~1.37x. The real ceilings stay where they are
+      // enforceable and specific: BULK_MAX_FILE_BYTES per file, and the decoded
+      // per-image cap in the media ingest path. This value only stops the
+      // platform from failing first and silently.
+      bodySizeLimit: "12mb",
+    },
+  },
   images: {
     remotePatterns: [
       {

@@ -9,6 +9,7 @@
 // i18n keys / typed flags only. Anti-cheat: nothing here ever selects
 // answer_options or any is_correct outside the graded review payload.
 import { supabase } from "@/lib/supabase";
+import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/coverage";
 import type { Locale } from "@/i18n";
 import type {
   AnswerItem,
@@ -51,7 +52,7 @@ export async function fetchSubjectAccess(
       .maybeSingle(),
     supabase
       .from("child_subscriptions")
-      .select("status, subscription_subjects(subjects(id, code, name))")
+      .select(CHILD_COVERAGE_SELECT)
       .eq("student_profile_id", profileId)
       .in("status", ["trialing", "active"]),
   ]);
@@ -65,16 +66,12 @@ export async function fetchSubjectAccess(
       "inactive") as string;
   const hasAccess = access === "trialing" || access === "active" || freeNow;
 
+  // Per-subject periods: the subscription outlives its shortest-cycle
+  // subject, so the status filter alone would offer a lapsed one that
+  // start_topic_test_attempt then refuses.
   const subjMap = new Map<string, { code: string | null; name: string }>();
-  for (const s of (subsRes.data ?? []) as any[]) {
-    for (const ss of s.subscription_subjects ?? []) {
-      if (ss.subjects) {
-        subjMap.set(ss.subjects.id, {
-          code: ss.subjects.code ?? null,
-          name: ss.subjects.name,
-        });
-      }
-    }
+  for (const s of liveCoveredSubjects(subsRes.data as any[])) {
+    subjMap.set(s.id, { code: s.code, name: s.name });
   }
   if (freeNow) {
     const { data: priced, error } = await supabase

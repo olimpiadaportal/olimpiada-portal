@@ -38,12 +38,18 @@ function buildPrompt({
   count,
   locale,
   topics,
+  mixed,
 }: {
   subject: string;
   grade: string;
   count: number;
   locale: string;
   topics: { name: string; term: number | null; subtopics: string[] }[];
+  // MIXED mode changes what the model must produce, so it changes the prompt.
+  // A single prompt for both modes told a mixed-mode admin "no images" and
+  // never mentioned the ZIP — the exact opposite of the format that surface
+  // accepts.
+  mixed: boolean;
 }): string {
   const language = LOCALE_NAMES[locale] ?? LOCALE_NAMES.az;
 
@@ -67,7 +73,14 @@ function buildPrompt({
     [
       {
         primary_locale: locale,
-        meta: { topic: exTopic, subtopic: exSubtopic, term: exTerm },
+        meta: mixed
+          ? {
+              topic: exTopic,
+              subtopic: exSubtopic,
+              term: exTerm,
+              image: "images/q1.png",
+            }
+          : { topic: exTopic, subtopic: exSubtopic, term: exTerm },
         translations: {
           az: {
             body: "2 + 2 neçə edir?",
@@ -90,6 +103,75 @@ function buildPrompt({
     2,
   );
 
+  const metaSchema = mixed
+    ? `    "meta": {
+      "topic":    "<copied character-for-character from the CURRICULUM below>",
+      "subtopic": "<one subtopic of that topic, copied character-for-character>",
+      "term":     <the number printed next to that topic: 1, 2, 3 or 4>,
+      "image":    "images/q1.png"        <- OPTIONAL, only for a picture question
+    },`
+    : `    "meta": {
+      "topic":    "<copied character-for-character from the CURRICULUM below>",
+      "subtopic": "<one subtopic of that topic, copied character-for-character>",
+      "term":     <the number printed next to that topic: 1, 2, 3 or 4>
+    },`;
+
+  const optionSchema = mixed
+    ? `    "options": [
+      { "is_correct": true,  "order_index": 0, "text": { "az": "...", "en": "...", "ru": "..." } },
+      { "is_correct": false, "order_index": 1, "text": { "az": "...", "en": "...", "ru": "..." } },
+      { "is_correct": false, "order_index": 2, "text": { "az": "...", "en": "...", "ru": "..." } },
+      { "is_correct": false, "order_index": 3, "text": { "az": "...", "en": "...", "ru": "..." } },
+      { "is_correct": false, "order_index": 4, "text": { "az": "", "en": "", "ru": "" },
+        "image": { "az": "images/q1_option_1.png" } }   <- OPTIONAL picture option
+    ]`
+    : `    "options": [
+      { "is_correct": true,  "order_index": 0, "text": { "az": "...", "en": "...", "ru": "..." } },
+      { "is_correct": false, "order_index": 1, "text": { "az": "...", "en": "...", "ru": "..." } },
+      { "is_correct": false, "order_index": 2, "text": { "az": "...", "en": "...", "ru": "..." } },
+      { "is_correct": false, "order_index": 3, "text": { "az": "...", "en": "...", "ru": "..." } },
+      { "is_correct": false, "order_index": 4, "text": { "az": "...", "en": "...", "ru": "..." } }
+    ]`;
+
+  // Only mixed mode gets this block: in text-only mode every sentence in it
+  // would describe a shape the importer rejects.
+  const mediaSection = mixed
+    ? `
+MEDIA — this import is a ZIP, not a bare JSON file
+  The upload looks like this:
+
+    mixed_questions.zip
+      questions.json                 <- the array you return
+      images/q1.png                  <- the picture files
+      images/q1_option_1.png
+
+  "meta.image" and "options[n].image.<locale>" hold a RELATIVE PATH to a file
+  inside that ZIP, resolved from the folder holding questions.json. Use a file
+  name ONLY if it was given to you — never invent one. Never embed the picture
+  itself: no base64, no "data:" URL, no http link, no markdown image. A question
+  or an option with no picture simply omits the field.
+`
+    : "";
+
+  const optionRule = mixed
+    ? `  6. Every option needs a non-empty "text"."az" OR an "image"."az" — never
+     neither. An option may carry both.`
+    : `  6. Every option needs a non-empty "text"."az".`;
+
+  const plainTextRule = mixed
+    ? `  7. Plain text only inside every text field: no markdown, no LaTeX, no HTML.
+     Pictures are separate FILES referenced by path (see MEDIA above), never
+     content inside the JSON. No "All of the above" / "None of the above"
+     options. The four wrong answers must be plausible, not obvious filler.`
+    : `  7. Plain text only: no markdown, no LaTeX, no HTML, no images, no
+     "All of the above" / "None of the above" options. The four wrong answers
+     must be plausible, not obvious filler.`;
+
+  const pictureRule = mixed
+    ? `  9. No duplicated questions. A question MAY depend on a picture — reference
+     it with "meta.image" and make sure that file is in the ZIP.`
+    : `  9. No duplicated questions and no question that depends on a picture.`;
+
   return `You are writing multiple-choice questions for OlympIQ, an Azerbaijani
 school platform. Follow the format below EXACTLY — the output is uploaded to an
 importer that rejects any row that deviates.
@@ -107,25 +189,15 @@ OUTPUT
 
   {
     "primary_locale": "${locale}",
-    "meta": {
-      "topic":    "<copied character-for-character from the CURRICULUM below>",
-      "subtopic": "<one subtopic of that topic, copied character-for-character>",
-      "term":     <the number printed next to that topic: 1, 2, 3 or 4>
-    },
+${metaSchema}
     "translations": {
       "az": { "body": "...", "prompt": "...", "explanation": "..." },
       "en": { "body": "..." },
       "ru": { "body": "..." }
     },
-    "options": [
-      { "is_correct": true,  "order_index": 0, "text": { "az": "...", "en": "...", "ru": "..." } },
-      { "is_correct": false, "order_index": 1, "text": { "az": "...", "en": "...", "ru": "..." } },
-      { "is_correct": false, "order_index": 2, "text": { "az": "...", "en": "...", "ru": "..." } },
-      { "is_correct": false, "order_index": 3, "text": { "az": "...", "en": "...", "ru": "..." } },
-      { "is_correct": false, "order_index": 4, "text": { "az": "...", "en": "...", "ru": "..." } }
-    ]
+${optionSchema}
   }
-
+${mediaSection}
 RULES — each one is enforced by the importer; a row that breaks it is rejected
   1. EXACTLY 5 options per question (A-E) and EXACTLY ONE with
      "is_correct": true. Never 4, never 6, never two correct answers.
@@ -142,13 +214,11 @@ RULES — each one is enforced by the importer; a row that breaks it is rejected
      default (single choice) is what we want.
   5. "translations" must contain a non-empty "${locale}"."body". "prompt" and
      "explanation" are optional; "en"/"ru" blocks are optional.
-  6. Every option needs a non-empty "text"."az".
-  7. Plain text only: no markdown, no LaTeX, no HTML, no images, no
-     "All of the above" / "None of the above" options. The four wrong answers
-     must be plausible, not obvious filler.
+${optionRule}
+${plainTextRule}
   8. Spread the ${count} questions across the listed subtopics instead of
      stacking them on one, and keep the wording age-appropriate for the grade.
-  9. No duplicated questions and no question that depends on a picture.
+${pictureRule}
 
 CURRICULUM — the ONLY topic and subtopic names you may use
 ${curriculum || "  (no topics found for this subject and grade)"}
@@ -166,6 +236,7 @@ export function BulkPromptBlock({
   subjectId,
   gradeId,
   taxonomy,
+  questionMode,
 }: {
   dict: Record<string, string>;
   locale: string;
@@ -175,6 +246,10 @@ export function BulkPromptBlock({
   subjectId: string;
   gradeId: string;
   taxonomy: QuestionTaxonomy;
+  // The chosen import type. The prompt DESCRIBES the accepted format, so it has
+  // to follow it: a text-only prompt handed to a mixed-mode admin forbids the
+  // images that mode exists for.
+  questionMode: "" | "text" | "mixed";
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [count, setCount] = useState<number>(25);
@@ -209,8 +284,19 @@ export function BulkPromptBlock({
       count,
       locale,
       topics,
+      mixed: questionMode === "mixed",
     });
-  }, [ready, taxonomy, subjectId, gradeId, subjectName, gradeName, count, locale]);
+  }, [
+    ready,
+    taxonomy,
+    subjectId,
+    gradeId,
+    subjectName,
+    gradeName,
+    count,
+    locale,
+    questionMode,
+  ]);
 
   async function copy() {
     setCopyError(false);
@@ -231,6 +317,7 @@ export function BulkPromptBlock({
       <div className="ai-prompt-body">
         <p className="hint">{tt("aiprompt.intro")}</p>
         <p className="hint">{tt("aiprompt.curriculumNote")}</p>
+        <p className="hint">{tt("aiprompt.mixedNote")}</p>
         <p className="hint">{tt("aiprompt.englishNote")}</p>
 
         {!ready ? (

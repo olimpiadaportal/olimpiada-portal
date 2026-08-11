@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { getParentFreeAccess } from "@/lib/freeAccess";
-import { parseSelectionParams } from "@/lib/pricingConfigurator";
+import { parsePlanParams } from "@/lib/pricingConfigurator";
 import { AddChildWizard } from "@/components/AddChildWizard";
 
 // All i18n keys the (client) wizard needs, resolved server-side into a dict.
@@ -33,6 +33,16 @@ const KEYS = [
   "pricing2.badge.popular", "pricing2.popular", "pricing2.mostPopular",
   "billing.popular",
   "billing.perWeek", "billing.perMonth", "billing.perYear",
+  // Migration 109 — per-subject cycle cards + the grouped summary.
+  "plan.cycle", "plan.cycleAria", "plan.cycleChangedAria",
+  "plan.group.weekly", "plan.group.monthly", "plan.group.yearly",
+  "plan.group.subtotal", "plan.dueToday", "plan.dueTodayNote",
+  "plan.renewals", "plan.renewalLine.weekly", "plan.renewalLine.monthly",
+  "plan.renewalLine.yearly", "plan.mixedNote", "plan.fromPrice",
+  "plan.removeAria", "plan.perSubjectHint",
+  "cfg.add", "cfg.addAria", "cfg.allAdded", "cfg.unpriced", "cfg.emptySelection",
+  "cfg.warnAllUnpriced", "cfg.warnSomeUnpriced", "sub.trial", "sub.days",
+  "sub.discount",
   "pricing.plan.weekly.note", "pricing.plan.monthly.note",
   "pricing.plan.yearly.note",
   // payment (demo)
@@ -60,7 +70,11 @@ const KEYS = [
 export default async function NewChildPage({
   searchParams,
 }: {
-  searchParams: Promise<{ subjects?: string | string[]; interval?: string | string[] }>;
+  searchParams: Promise<{
+    plan?: string | string[];
+    subjects?: string | string[];
+    interval?: string | string[];
+  }>;
 }) {
   await requireParent();
   const t = await getT();
@@ -162,14 +176,14 @@ export default async function NewChildPage({
     .sort((a, b) => a.name.localeCompare(b.name, "az"));
 
   // Hand-off from the public /services configurator:
-  // `?subjects=<uuid,…>&interval=<week|month|year>`. This is UNTRUSTED input —
+  // `?plan=<uuid>:<cycle>,…` (migration 109), with the older
+  // `?subjects=…&interval=…` pair still accepted. This is UNTRUSTED input —
   // validated here against the catalog the wizard actually offers (UUID shape,
   // de-duplicated, capped at 20, unknown/archived/unpriced ids dropped
   // silently, unknown interval falls back to monthly). It only PRESELECTS the
   // wizard; subscribeChild re-validates every id, re-checks ownership and
   // re-prices server-side, so a forged link can never buy anything.
-  const { subjectIds: initialSubjectIds, interval: initialInterval } =
-    parseSelectionParams(search, subjects);
+  const { plan: initialPlan } = parsePlanParams(search, subjects);
 
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
@@ -194,8 +208,7 @@ export default async function NewChildPage({
         dict={dict}
         paymentMode={paymentMode}
         freeAccessActive={freeAccessActive}
-        initialSubjectIds={initialSubjectIds}
-        initialInterval={initialInterval}
+        initialPlan={initialPlan}
       />
     </section>
   );

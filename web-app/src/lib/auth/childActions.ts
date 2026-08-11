@@ -5,7 +5,7 @@
 // actions and their PracticeRunner flow were removed — topic tests and daily
 // rounds on the shared timed player replaced them.)
 import { createHash } from "node:crypto";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { childLogin, childLogout } from "@/lib/auth/childLoginService";
@@ -40,6 +40,34 @@ export async function childLoginAction(
   if (!result.ok) {
     return { error: t(result.errors[0] ?? "auth.child.err.invalidCredentials") };
   }
+
+  // Seed the SSR theme cookie from the child's stored preference. This is what
+  // makes the choice real on a DEVICE THE CHILD HAS NEVER USED: there the cookie
+  // is empty, so without this the first authenticated render would paint dark and
+  // hide the palette until the child toggled the theme by hand. The session
+  // cookies are already written, so the child's own row is readable under RLS.
+  // A failed read must never fail the login — the default simply applies.
+  try {
+    const supabase = await createClient();
+    const { data: student } = await supabase
+      .from("students")
+      .select("theme_pref")
+      .eq("child_unique_id", childUniqueId)
+      .maybeSingle();
+    const pref = (student as { theme_pref?: string | null } | null)?.theme_pref;
+    if (pref === "light" || pref === "dark") {
+      (await cookies()).set("theme", pref, {
+        path: "/",
+        maxAge: 31536000,
+        sameSite: "lax",
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+      });
+    }
+  } catch {
+    // Preference unreadable — fall through to the dark default.
+  }
+
   redirect("/child");
 }
 

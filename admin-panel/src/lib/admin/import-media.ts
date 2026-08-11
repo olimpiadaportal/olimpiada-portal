@@ -4,9 +4,9 @@
 //
 // WHY THE BROWSER UPLOADS AND THE SERVER ONLY VERIFIES
 // ---------------------------------------------------
-// Sending base64 inside the import request makes the request size O(image
-// bytes): a package with several image-heavy grades exceeds any body limit we
-// could pick, and it fails at the framework layer — before the action's first
+// Carrying the images inside the import request makes its size O(image bytes):
+// a package with several image-heavy grades exceeds any body limit we could
+// pick, and it fails at the framework layer — before the action's first
 // statement — so nothing is logged and no translated message is shown.
 //
 // Uploading each image as its own request from the browser makes the import
@@ -25,7 +25,6 @@
 // action refuses uuids that were not minted here (claimableMediaIds). Storage
 // `mimetype` metadata comes from the uploader's own contentType, so it is
 // attacker-controlled; the recorded mime is always the SNIFFED one.
-import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
 import { getLocale, getT } from "@/i18n/server";
@@ -54,15 +53,12 @@ export type VerifyImportImageState =
   | { ok: true; mediaAssetId: string }
   | { ok: false; error: string };
 
-/**
- * The batch path a browser must upload to. Exported so the client builds the
- * exact key this action will accept — a mismatch is the difference between a
- * verified asset and an orphan.
- */
-export async function importMediaPath(batchId: string, ext: string): Promise<string> {
-  return `${IMPORT_MEDIA_PREFIX}${batchId}/${randomUUID()}.${ext}`;
-}
-
+// The key a browser must upload to is built by buildImportMediaPath in
+// lib/bulk-media-shared.ts — a plain function, not an action. It used to live
+// here as an exported async twin with no caller at all: every export of a
+// "use server" module is a POST-able endpoint, so a helper nobody calls is pure
+// attack surface, and the three components went on hardcoding the literal
+// anyway.
 export async function verifyImportImage(
   batchId: string,
   path: string,
@@ -169,6 +165,12 @@ async function sweepAbandonedImportMedia(profileId: string | null): Promise<void
     const consumers: [string, string][] = [
       ["question_translations", "media_asset_id"],
       ["question_explanations", "media_asset_id"],
+      // Migration 102 added OPTION images. Omitting this table here was a live
+      // data-loss bug: the sweep runs on every verifyImportImage call, so the
+      // next mixed import would treat yesterday's option images as orphans and
+      // delete them — blanking a text+image option (FK is ON DELETE SET NULL)
+      // and stranding an image-only option's row against deleted bytes.
+      ["answer_option_translations", "media_asset_id"],
       ["profiles", "avatar_media_id"],
       ["wallpapers", "media_asset_id"],
       ["sticker_images", "media_asset_id"],
@@ -190,10 +192,19 @@ async function sweepAbandonedImportMedia(profileId: string | null): Promise<void
 
     // Rows first: a media_assets row pointing at a deleted object is the more
     // confusing half-state of the two.
-    await supabase.from("media_assets").delete().in(
+    //
+    // The error is CHECKED before the bytes go. A delete can legitimately fail —
+    // an image-only option is protected by ck_aotrans_text_or_media, so nulling
+    // its link raises — and removing the objects anyway would leave a live row
+    // pointing at nothing, which is the one state worse than a leaked file.
+    const { error: delErr } = await supabase.from("media_assets").delete().in(
       "id",
       orphans.map((o) => o.id),
     );
+    if (delErr) {
+      console.error("[admin] import media sweep: row delete failed", delErr.code ?? "unknown");
+      return;
+    }
     await supabase.storage.from(BULK_MEDIA_BUCKET).remove(orphans.map((o) => o.path));
   } catch (e) {
     // Best-effort by construction. A failed sweep is a tracked cost; a sweep

@@ -15,7 +15,7 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.allGrades": "Bütün siniflər",
     // ---- pool section on the package edit page ----
     "olyq.manageNote":
-      "Sualları aşağıda tək-tək əlavə edib redaktə edə bilərsiniz; toplu yükləmə yalnız paket yaradılarkən mümkündür.",
+      "Sualları aşağıda tək-tək əlavə edib redaktə edə bilərsiniz; sinfin hovuzuna toplu şəkildə sual əlavə etmək üçün yuxarıdakı «Siniflər» bölməsindən istifadə edin.",
     "olyq.archivedNote":
       "Arxivlənmiş suallar yeni cəhdlərə düşmür; keçmiş nəticələr oxunaqlı qalır.",
     "olyq.add": "Yeni sual",
@@ -92,7 +92,7 @@ const STRINGS: Record<Locale, Dict> = {
   en: {
     "olyq.allGrades": "All grades",
     "olyq.manageNote":
-      "Add and edit questions one by one below; bulk upload is only available while creating the package.",
+      "Add and edit questions one by one below; to add many questions to a grade's pool at once, use the Grades section above.",
     "olyq.archivedNote":
       "Archived questions are excluded from new attempts; past results stay readable.",
     "olyq.add": "Add question",
@@ -164,7 +164,7 @@ const STRINGS: Record<Locale, Dict> = {
   ru: {
     "olyq.allGrades": "Все классы",
     "olyq.manageNote":
-      "Добавляйте и редактируйте вопросы по одному ниже; массовая загрузка доступна только при создании пакета.",
+      "Добавляйте и редактируйте вопросы по одному ниже; чтобы добавить в пул класса сразу много вопросов, используйте раздел «Классы» выше.",
     "olyq.archivedNote":
       "Архивные вопросы не попадают в новые попытки; прошлые результаты остаются доступными.",
     "olyq.add": "Добавить вопрос",

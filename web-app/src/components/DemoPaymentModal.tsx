@@ -24,13 +24,21 @@
 import { Modal } from "@/components/Modal";
 
 export type DemoPayQuote = {
-  /** "12.50 AZN" — the prorated top-up due right now. Ignored when noCharge. */
+  /** "12.50 AZN" — the amount due right now. Ignored when noCharge. */
   dueNowLabel: string;
-  /** Full sentence: either "Then X/interval from <date>" or, when noCharge,
-   *  the "no charge now — the new rate starts on <date>" sentence. */
+  /** Full sentence: either the renewal sentence or, when noCharge, the "no
+   *  charge now — the new rate starts on <date>" sentence. */
   thenLabel: string;
-  /** True when the prorated top-up is 0 (trial / weekly interval / waived
-   *  under the minimum charge) — the sheet explains instead of showing 0. */
+  /**
+   * Migration 109: one PRE-FORMATTED renewal sentence per billing cycle. With
+   * per-subject cycles a single "then X / month" line cannot describe the plan,
+   * so the caller passes the group sentences it already built from the
+   * authoritative server quote. Still strings only — this sheet never computes
+   * an amount.
+   */
+  lines?: { label: string; value: string }[];
+  /** True when nothing is due now (trial, removal-only, scheduled cycle change)
+   *  — the sheet explains instead of showing 0. */
   noCharge: boolean;
 };
 
@@ -106,7 +114,15 @@ export function DemoPaymentModal({
                   <span className="q-label">{tt("subjedit.dueNow")}</span>
                   <span>{quote.dueNowLabel}</span>
                 </div>
-                <p className="subjedit-note">{quote.thenLabel}</p>
+                {quote.lines && quote.lines.length > 0 ? (
+                  quote.lines.map((line, i) => (
+                    <p className="subjedit-note" key={i}>
+                      {line.value}
+                    </p>
+                  ))
+                ) : (
+                  <p className="subjedit-note">{quote.thenLabel}</p>
+                )}
               </>
             )
           ) : (

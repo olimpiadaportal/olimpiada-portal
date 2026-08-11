@@ -7,13 +7,19 @@
 //
 // Round 41 (web parity — structured change summary): the summary is a
 // SaaS-style card in a fixed order: Selected subjects (count) · Added ·
-// Removed · Pay now · Next billing · Note. The new recurring rate appears in
-// EXACTLY ONE sentence (subjedit.nextBillingLine, filled with {date}/{total}/
-// {currency}/{interval}); the no-charge line (subjedit.noChargeNow) and the
-// removal note (subjedit.noteText) are PRICE-FREE and only carry {date}. The
-// retired thenRate/removalNotice/billingExplainer keys are gone from the
-// catalog. Amounts stay authoritative (bffQuoteSubjectChange's due_now /
-// new_recurring_total — diff-based, never client-computed).
+// Removed · Pay now · Renewals · Note. The no-charge line
+// (subjedit.noChargeNow) and the removal note (subjedit.noteText) are
+// PRICE-FREE and only carry {date}. Amounts stay authoritative
+// (bffQuoteSubjectChange's due_now / renewals — never client-computed).
+//
+// Migration 109 — PER-SUBJECT CYCLES. Every covered subject carries its own
+// billing cycle, so this editor shows each subject's cycle and PRESERVES it
+// when the subject set changes (it posts the desired full set as `items`).
+// Choosing a different cycle for an existing subject stays a WEB action: the
+// mobile parent surface is deliberately display-first for commerce, and a
+// scheduled cycle change is a billing change. The single
+// subjedit.nextBillingLine sentence is replaced by one plan.renewalLine.*
+// sentence per cycle — one sentence cannot describe a mixed plan.
 import React, { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { AppText } from "@/components/AppText";
@@ -25,12 +31,14 @@ import { bffQuoteSubjectChange, bffUpdateSubjects, type SubjectChangeQuote } fro
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
 import {
-  INTERVAL_PER_KEY,
+  INTERVAL_NAME_KEY,
   fmtAmount,
   fmtBakuDate,
   fmtMoney,
   isInterval,
+  renewalLineKey,
   type CommercePosture,
+  type Interval,
   type SubjectOption,
 } from "./commerce";
 import { DemoPaySheet } from "./DemoPaySheet";
@@ -46,8 +54,12 @@ function useSubjectChangeQuote(
   addKey: string,
   removeKey: string,
   enabled: boolean,
+  // Migration 109: the desired FULL set with each subject's cycle. It is part
+  // of the key, so a cycle that differs produces a different quote rather than
+  // silently reusing the previous one.
+  itemsKey = "",
 ) {
-  const key = `${studentId}|${addKey}|${removeKey}`;
+  const key = `${studentId}|${addKey}|${removeKey}|${itemsKey}`;
   const [result, setResult] = useState<{
     key: string;
     quote: SubjectChangeQuote | null;
@@ -63,6 +75,12 @@ function useSubjectChangeQuote(
         studentId,
         addKey ? addKey.split(",") : [],
         removeKey ? removeKey.split(",") : [],
+        itemsKey
+          ? itemsKey.split(",").map((raw) => {
+              const [subject_id, interval] = raw.split(":");
+              return { subject_id, interval };
+            })
+          : undefined,
       );
       if (!cancelled) {
         setResult({ key, quote: res.ok ? res.data : null, error: res.ok ? null : res.error });
@@ -72,7 +90,7 @@ function useSubjectChangeQuote(
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [active, studentId, addKey, removeKey, key]);
+  }, [active, studentId, addKey, removeKey, itemsKey, key]);
 
   const fresh = active && result.key === key;
   return {
@@ -110,27 +128,35 @@ function SumSubjectLine({ name, color }: { name: string; color: string }) {
   );
 }
 
+/** One subject as the live subscription currently covers it (migration 109). */
+export type CoveredSubject = {
+  subjectId: string;
+  /** THIS subject's cycle (already resolved against the subscription default). */
+  interval: string | null;
+  /** A cycle change scheduled for this subject's next renewal. */
+  pendingInterval: string | null;
+  /** Non-null = scheduled removal; access runs to its own period end. */
+  removeAt: string | null;
+};
+
 export function ManageSubjectsEditor({
   studentId,
   subjects,
-  coveredIds,
-  endingIds = [],
-  interval,
+  covered: coveredRows,
+  defaultInterval,
   posture,
   addsDisabled = false,
   onSaved,
 }: {
   studentId: string;
   subjects: SubjectOption[];
-  /** Subject ids in the GO-FORWARD plan (scheduled removals excluded). */
-  coveredIds: string[];
-  /** Subject ids with a scheduled removal (access runs to the period end).
-   *  They render UNCHECKED with an "ends at period end" chip — otherwise a
-   *  completed removal looks like it failed and the parent has no way to
-   *  re-tick the subject to cancel it. Web ManageSubjects parity. */
-  endingIds?: string[];
-  /** The live subscription's billing interval. */
-  interval: string | null;
+  /** Every covered subject with ITS OWN cycle. A row with `removeAt` set is
+   *  scheduled for removal: it renders UNCHECKED with an "ends at period end"
+   *  chip — otherwise a completed removal looks like it failed and the parent
+   *  has no way to re-tick the subject to cancel it. Web parity. */
+  covered: CoveredSubject[];
+  /** The subscription's DEFAULT cycle — what a newly added subject inherits. */
+  defaultInterval: string | null;
   posture: CommercePosture;
   /** Removal-only mode (payments off): the server deliberately keeps
    *  REMOVALS legal when payments are off — a parent must always be able to
@@ -142,12 +168,38 @@ export function ManageSubjectsEditor({
 }) {
   const { tokens } = useTheme();
   const { t, locale } = useT();
-  const iv = isInterval(interval) ? interval : "month";
+  const iv: Interval = isInterval(defaultInterval) ? defaultInterval : "month";
 
-  const coveredKey = useMemo(() => [...coveredIds].sort().join(","), [coveredIds]);
+  // Each subject's OWN cycle, so a row is priced and labelled on the cycle the
+  // parent actually pays for it — not on one plan-wide interval.
+  const cycleOf = useMemo(() => {
+    const m = new Map<string, Interval>();
+    for (const c of coveredRows) {
+      m.set(c.subjectId, isInterval(c.interval) ? c.interval : iv);
+    }
+    return m;
+  }, [coveredRows, iv]);
+  const pendingOf = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of coveredRows) {
+      if (c.pendingInterval) m.set(c.subjectId, c.pendingInterval);
+    }
+    return m;
+  }, [coveredRows]);
+  const coveredKey = useMemo(
+    () =>
+      coveredRows
+        .filter((c) => !c.removeAt)
+        .map((c) => c.subjectId)
+        .sort()
+        .join(","),
+    [coveredRows],
+  );
   const covered = useMemo(() => new Set(coveredKey ? coveredKey.split(",") : []), [coveredKey]);
-  const endingKey = useMemo(() => [...endingIds].sort().join(","), [endingIds]);
-  const ending = useMemo(() => new Set(endingKey ? endingKey.split(",") : []), [endingKey]);
+  const ending = useMemo(
+    () => new Set(coveredRows.filter((c) => c.removeAt).map((c) => c.subjectId)),
+    [coveredRows],
+  );
   // User edits are the SYMMETRIC DIFFERENCE vs the live coverage, so the
   // selection is DERIVED (covered XOR toggled) and auto-resyncs when a save
   // refetches the coverage — no state-sync effect needed.
@@ -171,29 +223,71 @@ export function ManageSubjectsEditor({
 
   const addKey = useMemo(() => toAdd.map((s) => s.id).sort().join(","), [toAdd]);
   const removeKey = useMemo(() => toRemove.map((s) => s.id).sort().join(","), [toRemove]);
+  // The DESIRED full set, each subject keeping its own cycle; a NEW subject
+  // inherits the subscription's default (changing a cycle is a web action).
+  // A subject with a SCHEDULED cycle change posts that scheduled cycle, not the
+  // one it is currently paid on: the server treats "the cycle you are already
+  // paid on" as a request to CANCEL the schedule, so posting ss.interval here
+  // would make an unrelated add/remove silently undo the parent's web choice.
+  const items = useMemo(
+    () =>
+      [...selected].map((id) => {
+        const pending = pendingOf.get(id);
+        return {
+          subject_id: id,
+          interval: isInterval(pending) ? pending : (cycleOf.get(id) ?? iv),
+        };
+      }),
+    [selected, cycleOf, pendingOf, iv],
+  );
+  const itemsKey = useMemo(
+    () =>
+      items
+        .map((i) => `${i.subject_id}:${i.interval}`)
+        .sort()
+        .join(","),
+    [items],
+  );
   const {
     quote,
     loading: quoting,
     error: quoteError,
-  } = useSubjectChangeQuote(studentId, addKey, removeKey, selected.size > 0);
-  const quoteInterval = quote && isInterval(quote.interval) ? quote.interval : iv;
-  // subjedit.nextBillingLine composes "{total} {currency} / {interval}" itself
-  // — {interval} wants the bare word ("ay"/"il"/"həftə"), so strip the leading
-  // "/ " off the existing billing.perX key.
-  const bareInterval = t(INTERVAL_PER_KEY[quoteInterval]).replace(/^\/\s*/, "");
+  } = useSubjectChangeQuote(studentId, addKey, removeKey, selected.size > 0, itemsKey);
 
-  // Round 41 sentences (web ManageSubjects twins): the new recurring rate
-  // appears ONLY in nextBillingSentence; the other two are price-free.
-  const nextBillingSentence = (q: SubjectChangeQuote) =>
-    t("subjedit.nextBillingLine")
-      .replace("{date}", fmtBakuDate(q.effective_from, locale))
-      .replace("{total}", fmtAmount(q.new_recurring_total, locale))
-      .replace("{currency}", q.currency)
-      .replace("{interval}", bareInterval);
+  // Migration 109: ONE renewal sentence per cycle. A single "{total} {currency}
+  // / {interval}" line cannot express a plan whose subjects renew on different
+  // dates for different amounts.
+  const renewalSentences = (q: SubjectChangeQuote): string[] =>
+    (q.renewals ?? [])
+      .filter((r) => isInterval(r.interval))
+      .map((r) =>
+        t(renewalLineKey(r.interval as Interval))
+          .replace("{total}", fmtAmount(r.total, locale))
+          .replace("{currency}", q.currency),
+      );
   const noChargeSentence = (q: SubjectChangeQuote) =>
     t("subjedit.noChargeNow").replace("{date}", fmtBakuDate(q.effective_from, locale));
-  const noteSentence = (q: SubjectChangeQuote) =>
-    t("subjedit.noteText").replace("{date}", fmtBakuDate(q.removals_effective_at, locale));
+  // ONE LINE PER REMOVED SUBJECT with ITS OWN period end. removals_effective_at
+  // is a single scalar and cannot describe a plan whose subjects run to
+  // different dates, so a yearly subject used to be reported as ending on the
+  // weekly one's date. Falls back to the old sentence only when an older server
+  // returns no per-subject list.
+  const removalSentences = (q: SubjectChangeQuote): string[] => {
+    const rows = q.removals_effective ?? [];
+    if (rows.length === 0) {
+      return [t("subjedit.noteText").replace("{date}", fmtBakuDate(q.removals_effective_at, locale))];
+    }
+    const byId = new Map(subjects.map((s) => [s.id, s]));
+    return [
+      ...rows.map((r) => {
+        const s = byId.get(r.subject_id);
+        return t("subjedit.noteLine")
+          .replace("{subject}", s ? subjectLabel(t, s.code, s.name) : r.subject_id)
+          .replace("{date}", fmtBakuDate(r.remove_at, locale));
+      }),
+      t("subjedit.noteNoRefund"),
+    ];
+  };
 
   /** The DemoPaySheet total: the authoritative due_now amount, or the
    *  price-free no-charge sentence when it's 0 (trial / weekly / waived —
@@ -227,7 +321,7 @@ export function ManageSubjectsEditor({
     if (pending) return; // double-submit guard
     setPending(true);
     setError(null);
-    const res = await bffUpdateSubjects(studentId, [...selected]);
+    const res = await bffUpdateSubjects(studentId, [...selected], items);
     setPending(false);
     if (!res.ok) {
       setError(t(res.error));
@@ -266,19 +360,36 @@ export function ManageSubjectsEditor({
           // coverage) — in removal-only mode that side is disabled and shows
           // no price line.
           const wouldAdd = !isChecked && !covered.has(s.id);
+          // Its OWN cycle: the price and the chip both describe what this
+          // subject actually costs, not one plan-wide interval.
+          const rowIv = cycleOf.get(s.id) ?? iv;
+          const pendingIv = pendingOf.get(s.id);
           return (
             <SubjectCheckRow
               key={s.id}
               name={subjectLabel(t, s.code, s.name)}
-              priceText={addsDisabled && wouldAdd ? "" : fmtMoney(s.prices[iv] ?? 0, "AZN", locale)}
+              priceText={
+                addsDisabled && wouldAdd
+                  ? ""
+                  : `${fmtMoney(s.prices[rowIv] ?? 0, "AZN", locale)} · ${t(
+                      INTERVAL_NAME_KEY[rowIv],
+                    )}`
+              }
               checked={isChecked}
               onToggle={() => toggle(s.id)}
               chip={
-                covered.has(s.id)
-                  ? t("subjedit.activeChip")
-                  : ending.has(s.id) && !isChecked
-                    ? t("subjedit.endingChip")
-                    : undefined
+                pendingIv && isInterval(pendingIv)
+                  ? // A bare cycle name next to a row priced on a DIFFERENT
+                    // cycle reads as a rendering bug — say when it applies.
+                    t("subjedit.pendingChip").replace(
+                      "{cycle}",
+                      t(INTERVAL_NAME_KEY[pendingIv]),
+                    )
+                  : covered.has(s.id)
+                    ? t("subjedit.activeChip")
+                    : ending.has(s.id) && !isChecked
+                      ? t("subjedit.endingChip")
+                      : undefined
               }
               chipTone={covered.has(s.id) ? "active" : "ending"}
               disabled={pending || (addsDisabled && wouldAdd)}
@@ -331,14 +442,22 @@ export function ManageSubjectsEditor({
                 )}
               </SumBlock>
             ) : null}
-            {/* Next billing: the ONLY place the new recurring rate appears. */}
-            <SumBlock label={t("subjedit.nextBilling")}>
-              <AppText variant="body">{nextBillingSentence(quote)}</AppText>
+            {/* Renewals: one sentence per cycle — no invented combined rate. */}
+            <SumBlock label={t("plan.renewals")}>
+              {renewalSentences(quote).map((line, i) => (
+                <AppText variant="body" key={i}>
+                  {line}
+                </AppText>
+              ))}
             </SumBlock>
             {/* Note: price-free removal terms. */}
             {toRemove.length > 0 ? (
               <SumBlock label={t("subjedit.noteLabel")}>
-                <AppText variant="muted">{noteSentence(quote)}</AppText>
+                {removalSentences(quote).map((line, i) => (
+                  <AppText variant="muted" key={i}>
+                    {line}
+                  </AppText>
+                ))}
               </SumBlock>
             ) : null}
           </>
@@ -393,7 +512,11 @@ export function ManageSubjectsEditor({
         ]}
         totalLabel={t("subjedit.dueNow")}
         totalValue={dueNowValueText()}
-        thenText={!quoting && quote && quote.due_now > 0 ? nextBillingSentence(quote) : null}
+        thenText={
+          !quoting && quote && quote.due_now > 0
+            ? (renewalSentences(quote)[0] ?? null)
+            : null
+        }
         note={t("pay.note")}
         confirmLabel={noChargeConfirm ? t("pay.confirmNoCharge") : t("pay.payNow")}
         error={error}

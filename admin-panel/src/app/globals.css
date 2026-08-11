@@ -836,6 +836,22 @@ a {
   flex: 1;
 }
 
+/* Migration 108 — a grade is now a BLOCK: the summary line plus its collapsible
+   bulk-append panel. The separator moved from the line to the block so the open
+   panel stays inside the same visual group instead of below a divider. */
+.oly-grade-block {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.oly-grade-block:last-child {
+  border-bottom: 0;
+}
+
+.oly-grade-block .oly-grade-row {
+  border-bottom: 0;
+}
+
 /* Round 49 — live per-grade cycle summary under the per-attempt count field. */
 .oly-cycle {
   border: 1px solid var(--border);
@@ -2564,6 +2580,19 @@ a.qpage-link:hover {
 
 .bulk-issues-title {
   font-weight: 700;
+}
+
+/* The mixed-import ZIP tree. A <pre> because the layout IS the message — the
+   indentation is what tells the admin where questions.json has to sit. */
+.bulk-zip-layout {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--code-bg, rgba(127, 127, 127, 0.12));
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  white-space: pre;
 }
 
 @media (max-width: 640px) {

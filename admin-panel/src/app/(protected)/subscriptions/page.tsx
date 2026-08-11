@@ -190,9 +190,12 @@ export default async function SubscriptionsPage({
                   <th>{lt("subs.col.subjects")}</th>
                   <th>{lt("subs.col.interval")}</th>
                   <th>{lt("subs.col.status")}</th>
-                  <th>{lt("subs.col.amount")}</th>
+                  {/* Migration 109: total_amount is the NEXT INVOICE (the
+                      subjects renewing at next_renewal_at), not a monthly rate. */}
+                  <th>{lt("subs.col.nextInvoice")}</th>
                   <th>{lt("subs.col.source")}</th>
                   <th>{lt("subs.col.trialEnd")}</th>
+                  <th>{lt("subs.col.nextCharge")}</th>
                   <th>{lt("subs.col.periodEnd")}</th>
                   <th>{lt("subs.col.updated")}</th>
                   <th aria-label="actions" />
@@ -218,7 +221,17 @@ export default async function SubscriptionsPage({
                       <td className="subs-subjects">
                         {row.subjectNames.length ? row.subjectNames.join(", ") : "—"}
                       </td>
-                      <td className="nowrap">{lt(`subs.interval.${row.interval}`)}</td>
+                      {/* The DEFAULT cycle for new subjects, plus a badge when
+                          the row's subjects actually run on more than one. */}
+                      <td className="nowrap">
+                        {lt(`subs.interval.${row.interval}`)}
+                        {new Set(row.subjectPlans.map((p) => p.interval)).size > 1 && (
+                          <>
+                            {" "}
+                            <span className="pill pill-sm">{lt("subs.mixedCycles")}</span>
+                          </>
+                        )}
+                      </td>
                       <td className="nowrap">
                         <span className={`pill ${statusPillClass(row.status)}`}>
                           {lt(`subs.status.${row.status}`)}
@@ -231,6 +244,7 @@ export default async function SubscriptionsPage({
                         </span>
                       </td>
                       <td className="nowrap muted">{fmt(row.trialEndsAt)}</td>
+                      <td className="nowrap muted">{fmt(row.nextRenewalAt)}</td>
                       <td className="nowrap muted">{fmt(row.currentPeriodEnd)}</td>
                       <td className="nowrap muted">{fmt(row.updatedAt)}</td>
                       <td className="nowrap">

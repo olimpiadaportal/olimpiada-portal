@@ -16,7 +16,9 @@
 // the family, and a removal that really deletes the object. There is no longer
 // a second child-avatar write path that can drift.
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { resolvePaletteChoice } from "@/lib/theme/palettes";
 import { requireChild } from "@/lib/auth/session";
 import { updateChildOwnNameCore } from "@/lib/auth/childProfileCore";
 import {
@@ -52,33 +54,92 @@ export async function childUpdateOwnName(
   return { ok: true };
 }
 
-// The 5 child-friendly LIGHT-MODE palette slugs (must match the students.palette
-// CHECK and the [data-theme="light"] .arena[data-palette] CSS in globals.css).
-// "" / "default" clears the choice (NULL = default look).
-const PALETTE_SLUGS = new Set(["sky", "bubblegum", "mint", "sunset", "rainbow"]);
-
 // Set (or clear) the logged-in child's own light-mode palette. Self-row update via
 // the SSR client — students_write RLS allows profile_id = current_profile; only the
-// palette column is written, and only a whitelisted slug (or NULL) ever reaches it.
+// palette/theme_pref columns are written, and only a whitelisted slug (or NULL)
+// ever reaches the palette column. The whitelist is the shared catalogue
+// (lib/theme/palettes.ts), which is also what generates the CSS and what the
+// students_palette_chk CHECK is asserted against — one whitelist, not three.
 export async function selectPalette(
   _prev: ChildProfileState,
   formData: FormData,
 ): Promise<ChildProfileState> {
   const child = await requireChild(); // authorize FIRST
   const t = await getT();
-  const raw = String(formData.get("palette") ?? "").trim();
-  const palette = PALETTE_SLUGS.has(raw) ? raw : null; // "" / unknown -> default
+  // "" / unknown -> default; a real slug additionally turns Dark Mode off (the
+  // rule lives in the catalogue module so it is unit-testable).
+  const { palette, themePref } = resolvePaletteChoice(formData.get("palette"));
+
+  const patch: { palette: string | null; theme_pref?: "light" } = { palette };
+  if (themePref) patch.theme_pref = themePref;
 
   const supabase = await createClient();
-  const { error } = await supabase
+  // .select() is REQUIRED, not decoration: PostgREST returns no error when an
+  // UPDATE matches zero rows (RLS denial, missing students row), so without it
+  // the action reported ok, the optimistic flip in PalettePicker was never
+  // rolled back, and the choice quietly vanished on the next refresh — the very
+  // "persistence looks fine but isn't" failure this feature exists to fix.
+  const { data: saved, error } = await supabase
     .from("students")
-    .update({ palette })
-    .eq("profile_id", child.profileId);
-  if (error) return { error: t("profile.err.updateFailed") };
+    .update(patch)
+    .eq("profile_id", child.profileId)
+    .select("profile_id");
+  if (error || !saved || saved.length === 0) {
+    return { error: t("profile.err.updateFailed") };
+  }
+
+  // Keep the server-rendered <html data-theme> in step with the column on the
+  // very next render. httpOnly:false is deliberate and required — the boot
+  // migration script reads it — and it carries no secret.
+  if (palette !== null) await writeThemeCookie("light");
 
   revalidatePath("/child");
   revalidatePath("/child/profile");
   return { ok: true };
+}
+
+// Persist the logged-in child's own dark/light choice. Deliberately does NOT
+// touch `palette`: two independent columns are what make "dark may override the
+// palette but must never erase it" structural rather than something a restore
+// path has to get right.
+export async function setChildThemePref(
+  theme: string,
+): Promise<ChildProfileState> {
+  const child = await requireChild(); // authorize FIRST
+  const t = await getT();
+  // Explicit enum whitelist — the client string never reaches the column.
+  const next = theme === "light" ? "light" : theme === "dark" ? "dark" : null;
+  if (!next) return { error: t("profile.err.updateFailed") };
+
+  const supabase = await createClient();
+  // Zero matched rows is not an error in PostgREST — see selectPalette above.
+  const { data: saved, error } = await supabase
+    .from("students")
+    .update({ theme_pref: next })
+    .eq("profile_id", child.profileId)
+    .select("profile_id");
+  if (error || !saved || saved.length === 0) {
+    return { error: t("profile.err.updateFailed") };
+  }
+
+  // No revalidatePath here on purpose: nothing rendered reads theme_pref (the
+  // root layout paints <html data-theme> from the cookie, which is already
+  // updated), so refreshing would re-run every child query on each toggle click
+  // for no visible change.
+  await writeThemeCookie(next);
+  return { ok: true };
+}
+
+// The SSR transport for the theme (see app/layout.tsx): a readable, secret-free
+// cookie the root layout turns into <html data-theme>.
+async function writeThemeCookie(value: "light" | "dark") {
+  (await cookies()).set("theme", value, {
+    path: "/",
+    maxAge: 31536000,
+    sameSite: "lax",
+    httpOnly: false,
+    secure: process.env.NODE_ENV === "production",
+  });
 }
 
 // Web routes whose rendered avatar goes stale when the child's photo changes:

@@ -893,6 +893,11 @@ ul.clean li {
   --blue: #2f6bff;
   --red: #ff4d6d;
   --gold: #ffc94d;
+  /* Ink painted ON the accent fill (buttons, active tab, selected option key…).
+     A token, not a per-component flip: with 26 palettes the old "one extra
+     light-mode rule per component" pattern meant every new accent-filled
+     component was a component the palettes had forgotten. */
+  --on-accent: #0a0e1a;
 
   min-height: 100vh;
   background:
@@ -922,7 +927,7 @@ ul.clean li {
 
 .arena ::selection {
   background: var(--lime);
-  color: #0a0e1a;
+  color: var(--on-accent);
 }
 
 /* ---- Top app navigation ----
@@ -1010,7 +1015,7 @@ ul.clean li {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   background: var(--lime);
-  color: #0a0e1a;
+  color: var(--on-accent);
   border: 0;
   padding: 12px 20px;
   cursor: pointer;
@@ -1364,7 +1369,7 @@ ul.clean li {
 }
 .arena-opt.selected .arena-opt-key {
   background: var(--lime);
-  color: #0a0e1a;
+  color: var(--on-accent);
   border-color: var(--lime);
 }
 .arena-quiz-actions {
@@ -1530,7 +1535,7 @@ ul.clean li {
 }
 .arena-tab.active {
   background: var(--lime);
-  color: #0a0e1a;
+  color: var(--on-accent);
 }
 
 /* ---- Arena forms ---- */
@@ -1697,15 +1702,7 @@ ul.clean li {
 }
 
 [data-theme="light"] .arena-nav {
-  background: rgba(246, 248, 252, 0.85);
-}
-
-/* Lime is used as a solid fill behind dark text in several places; on light it
-   is a darker green, so the text on top must be light for contrast. */
-[data-theme="light"] .arena-btn,
-[data-theme="light"] .arena-tab.active,
-[data-theme="light"] .arena-opt.selected .arena-opt-key {
-  color: #ffffff;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
 }
 
 [data-theme="light"] .arena-opt.selected {
@@ -2318,7 +2315,7 @@ ul.clean li {
 }
 .arena .info-slide-num {
   background: var(--lime);
-  color: #0a0e1a;
+  color: var(--on-accent);
 }
 .arena .info-dot {
   background: var(--line);
@@ -3397,7 +3394,9 @@ ul.clean li {
    FAQ/contact/About surfaces are token-driven (--surface/--border/--text/…),
    which the arena redefines only as --panel/--line/--ink. Map them here — the
    exact .arena .ntf trick — so these pages follow the arena dark/light themes
-   AND every light palette (sky/bubblegum/mint/sunset/rainbow). --muted comes
+   AND every palette in the generated catalogue (src/lib/theme/palettes.ts —
+   naming individual slugs here is how a hardcoded whitelist creeps back in).
+   --muted comes
    from the .arena scope itself; --shadow stays inherited from the root
    [data-theme] tokens (soft purple in light, deep in dark). */
 .arena .help-page,
@@ -4483,40 +4482,36 @@ ul.clean li {
   --blue: #6d28d9;
   --red: #ff4757;
   --gold: #ff8a00;
+  /* Light flips the on-accent ink to white; the accent is a saturated mid-tone
+     in every palette, so white is the AA-passing side. */
+  --on-accent: #ffffff;
+  /* Custom properties resolve at the use site on the SAME element, so a palette
+     rule that sets nothing but tokens still re-tints this gradient — that is
+     what lets a palette be twelve declarations with no companion selectors. */
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(124, 58, 237, 0.08), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(255, 138, 0, 0.06), transparent 55%),
+    radial-gradient(1200px 600px at 80% -10%, color-mix(in srgb, var(--lime) 10%, transparent), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 55%),
     var(--bg);
 }
-/* Text painted onto the (now purple) accent fill flips to white. */
+/* Accent tints are derived from --lime rather than restated per palette: a
+   palette rule then needs nothing but its twelve tokens, and these five
+   surfaces re-tint themselves. (::selection ink comes from --on-accent, which
+   the light block flips to white just above.) */
 [data-theme="light"] .arena ::selection {
-  background: #7c3aed;
-  color: #ffffff;
+  background: var(--lime);
+  color: var(--on-accent);
 }
-[data-theme="light"] .arena-btn {
-  color: #ffffff;
-}
-[data-theme="light"] .arena-tab.active {
-  color: #ffffff;
-}
-[data-theme="light"] .arena .info-slide-num {
-  color: #ffffff;
-}
-[data-theme="light"] .arena-opt.selected .arena-opt-key {
-  color: #ffffff;
-}
-/* Lime-tinted accents become soft purple tints. */
 [data-theme="light"] .arena-opt.selected {
-  background: rgba(124, 58, 237, 0.08);
+  background: color-mix(in srgb, var(--lime) 8%, transparent);
 }
 [data-theme="light"] .arena-table tr.me td {
-  background: rgba(124, 58, 237, 0.07);
+  background: color-mix(in srgb, var(--lime) 7%, transparent);
 }
 [data-theme="light"] .arena .pw-eye:focus-visible {
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lime) 35%, transparent);
 }
 [data-theme="light"] .arena .pnav-brand::before {
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lime) 18%, transparent);
 }
 /* Softer chrome shadows on light. */
 [data-theme="light"] .arena .drawer {
@@ -4524,100 +4519,10 @@ ul.clean li {
 }
 /* End ROUND 8 student light theme */
 
-/* =============================================================================
-   ROUND 12 — CHILD-FRIENDLY LIGHT-MODE PALETTES (Prompt 3).
-   Five selectable palettes for the student panel, chosen in the profile. Each
-   overrides the SAME .arena local tokens the whole panel is built on, scoped to
-   [data-theme="light"] .arena[data-palette="<slug>"] — so:
-     * DARK MODE IS NEVER TOUCHED (these rules only match in light mode), and
-     * the choice is orthogonal to the theme toggle (a `data-palette` attribute
-       set SSR on the .arena wrapper from students.palette).
-   The accent (--lime) stays vivid enough that the existing white-on-accent rules
-   (buttons/active tab/selected key) keep AA contrast. The hardcoded-purple accent
-   TINTS from the base light block are re-pointed per palette (higher specificity).
-   ========================================================================== */
-
-/* 1) Sky Blue / Soft Yellow */
-[data-theme="light"] .arena[data-palette="sky"] {
-  --bg: #f2f8ff; --bg2: #e9f3ff; --panel: #ffffff; --panel2: #eaf4ff;
-  --line: #d7e8fb; --ink: #16324a; --muted: #5f7a93; --dim: #9fb4c9;
-  --lime: #1e88e5; --blue: #0f6fd6; --gold: #f6b93b; --red: #ff5a5f;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(30, 136, 229, 0.10), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(246, 185, 59, 0.10), transparent 55%),
-    var(--bg);
-}
-[data-theme="light"] .arena[data-palette="sky"] ::selection { background: #1e88e5; color: #fff; }
-[data-theme="light"] .arena[data-palette="sky"] .arena-opt.selected { background: rgba(30, 136, 229, 0.10); }
-[data-theme="light"] .arena[data-palette="sky"] .arena-table tr.me td { background: rgba(30, 136, 229, 0.09); }
-[data-theme="light"] .arena[data-palette="sky"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.35); }
-[data-theme="light"] .arena[data-palette="sky"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.18); }
-
-/* 2) Pink / Purple (Bubblegum) */
-[data-theme="light"] .arena[data-palette="bubblegum"] {
-  --bg: #fff2fb; --bg2: #fce9f8; --panel: #ffffff; --panel2: #fbeaf9;
-  --line: #f4d6ec; --ink: #3a1436; --muted: #8a5f83; --dim: #c09bb8;
-  --lime: #e0399e; --blue: #9b34e0; --gold: #ff9f43; --red: #ff5a7a;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(224, 57, 158, 0.10), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(155, 52, 224, 0.08), transparent 55%),
-    var(--bg);
-}
-[data-theme="light"] .arena[data-palette="bubblegum"] ::selection { background: #e0399e; color: #fff; }
-[data-theme="light"] .arena[data-palette="bubblegum"] .arena-opt.selected { background: rgba(224, 57, 158, 0.10); }
-[data-theme="light"] .arena[data-palette="bubblegum"] .arena-table tr.me td { background: rgba(224, 57, 158, 0.09); }
-[data-theme="light"] .arena[data-palette="bubblegum"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(224, 57, 158, 0.35); }
-[data-theme="light"] .arena[data-palette="bubblegum"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(224, 57, 158, 0.18); }
-
-/* 3) Mint / Green */
-[data-theme="light"] .arena[data-palette="mint"] {
-  --bg: #f0fbf6; --bg2: #e6f8ef; --panel: #ffffff; --panel2: #e8f9f1;
-  --line: #cdeede; --ink: #123a2c; --muted: #5a8073; --dim: #9dc4b5;
-  --lime: #12b886; --blue: #0ca678; --gold: #f6b93b; --red: #ff5a5f;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(18, 184, 134, 0.10), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(246, 185, 59, 0.09), transparent 55%),
-    var(--bg);
-}
-[data-theme="light"] .arena[data-palette="mint"] ::selection { background: #12b886; color: #fff; }
-[data-theme="light"] .arena[data-palette="mint"] .arena-opt.selected { background: rgba(18, 184, 134, 0.11); }
-[data-theme="light"] .arena[data-palette="mint"] .arena-table tr.me td { background: rgba(18, 184, 134, 0.10); }
-[data-theme="light"] .arena[data-palette="mint"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(18, 184, 134, 0.35); }
-[data-theme="light"] .arena[data-palette="mint"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(18, 184, 134, 0.18); }
-
-/* 4) Orange / Cream (Sunset) */
-[data-theme="light"] .arena[data-palette="sunset"] {
-  --bg: #fff8f0; --bg2: #fff1e2; --panel: #ffffff; --panel2: #fff0df;
-  --line: #f6e0c8; --ink: #43260f; --muted: #8a6c50; --dim: #c7a888;
-  --lime: #f5731f; --blue: #e0561a; --gold: #ffb23e; --red: #ff5a5f;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(245, 115, 31, 0.10), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(255, 178, 62, 0.10), transparent 55%),
-    var(--bg);
-}
-[data-theme="light"] .arena[data-palette="sunset"] ::selection { background: #f5731f; color: #fff; }
-[data-theme="light"] .arena[data-palette="sunset"] .arena-opt.selected { background: rgba(245, 115, 31, 0.11); }
-[data-theme="light"] .arena[data-palette="sunset"] .arena-table tr.me td { background: rgba(245, 115, 31, 0.10); }
-[data-theme="light"] .arena[data-palette="sunset"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(245, 115, 31, 0.35); }
-[data-theme="light"] .arena[data-palette="sunset"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(245, 115, 31, 0.18); }
-
-/* 5) Rainbow Pastel */
-[data-theme="light"] .arena[data-palette="rainbow"] {
-  --bg: #fbf6ff; --bg2: #f3f0ff; --panel: #ffffff; --panel2: #f2ecff;
-  --line: #e6def7; --ink: #2b1f45; --muted: #6f6690; --dim: #b3a9cf;
-  --lime: #7c5cff; --blue: #ff6bad; --gold: #ffb03a; --red: #ff5d73;
-  background:
-    radial-gradient(900px 500px at 82% -12%, rgba(124, 92, 255, 0.10), transparent 60%),
-    radial-gradient(800px 480px at 12% -8%, rgba(255, 107, 173, 0.09), transparent 58%),
-    radial-gradient(900px 520px at -10% 112%, rgba(255, 176, 58, 0.08), transparent 55%),
-    var(--bg);
-}
-[data-theme="light"] .arena[data-palette="rainbow"] ::selection { background: #7c5cff; color: #fff; }
-[data-theme="light"] .arena[data-palette="rainbow"] .arena-opt.selected { background: rgba(124, 92, 255, 0.11); }
-[data-theme="light"] .arena[data-palette="rainbow"] .arena-table tr.me td { background: rgba(124, 92, 255, 0.10); }
-[data-theme="light"] .arena[data-palette="rainbow"] .pw-eye:focus-visible { box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.35); }
-[data-theme="light"] .arena[data-palette="rainbow"] .pnav-brand::before { box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.18); }
-/* End ROUND 12 child palettes */
+/* The selectable child palettes are GENERATED — see palettes.generated.css
+   (imported by app/layout.tsx) and its source src/lib/theme/palettes.ts. Each
+   is twelve token declarations scoped to [data-theme="light"] .arena
+   [data-palette="<slug>"]; everything else above follows automatically. */
 
 
 /* ============ ROUND 8 MERGE: about.css ============ */
@@ -6969,20 +6874,12 @@ ul.clean li {
   color: var(--danger);
 }
 
-/* --- Billing-interval segmented control (real radios) --- */
-.pcfg-fieldset {
-  margin: 20px 0 0;
-  padding: 0;
-  border: 0;
-}
-.pcfg-legend {
-  padding: 0;
-  margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--muted);
-}
-.pcfg-seg {
+/* --- Billing-cycle segmented control (real radios) ------------------------
+   Shared by the configurator and by the per-subject plan cards (.splan-seg),
+   which only override the compact sizing below — five stacked cards each own
+   one of these, so the rail has to stay scannable at a smaller scale. */
+.pcfg-seg,
+.splan-seg {
   display: flex;
   gap: 4px;
   padding: 4px;
@@ -6990,7 +6887,8 @@ ul.clean li {
   border-radius: 999px;
   background: var(--lang-track);
 }
-.pcfg-seg-item {
+.pcfg-seg-item,
+.splan-seg-item {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
@@ -7008,7 +6906,8 @@ ul.clean li {
     background-color 0.15s ease,
     color 0.15s ease;
 }
-.pcfg-seg-item input {
+.pcfg-seg-item input,
+.splan-seg-item input {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -7017,20 +6916,271 @@ ul.clean li {
   opacity: 0;
   cursor: pointer;
 }
-.pcfg-seg-item span {
+.pcfg-seg-item span,
+.splan-seg-item span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pcfg-seg-item.is-on {
+.pcfg-seg-item.is-on,
+.splan-seg-item.is-on {
   background: var(--lang-active-bg);
   color: var(--accent);
   box-shadow: 0 1px 2px var(--shadow);
 }
-.pcfg-seg-item input:focus-visible ~ span {
+.pcfg-seg-item input:focus-visible ~ span,
+.splan-seg-item input:focus-visible ~ span {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
   border-radius: 999px;
+}
+
+/* ==========================================================================
+   PER-SUBJECT PLAN CARDS (.splan-*) — migration 109
+   One card per selected subject: [name] [its own cycle] [its price]. Kept
+   next to the .pcfg-* family because they are the same surface; token-driven
+   throughout so the Energetic light theme and the owner's dark reference both
+   work without a second palette.
+   ========================================================================== */
+.splan-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.splan-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 1px 2px var(--shadow);
+  animation: splan-in 160ms ease-out both;
+}
+@media (min-width: 720px) {
+  .splan-card {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 14px;
+  }
+}
+.splan-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.splan-card:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.splan-card.is-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.splan-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.splan-subject {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.splan-chip {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.splan-chip-active {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  color: var(--accent);
+}
+.splan-chip-ending,
+.splan-chip-pendingChange {
+  border-color: color-mix(in srgb, var(--accent-2, var(--accent)) 45%, var(--border));
+  color: var(--accent-2, var(--accent));
+}
+.splan-remove {
+  flex: none;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.splan-remove:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--danger);
+}
+.splan-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.splan-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.splan-plan {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+/* Compact rail: five of these stack on one page, so they run shorter and
+   smaller than the standalone configurator control. */
+.splan-seg {
+  gap: 2px;
+  padding: 3px;
+}
+.splan-seg-item {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.splan-seg-item.is-unsold {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.splan-price {
+  /* Reserved width: changing the cycle must never reflow the row. */
+  min-width: 132px;
+  text-align: right;
+  font-weight: 700;
+}
+.splan-price-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  animation: splan-price-swap 160ms ease-out both;
+}
+.splan-price-per {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.splan-price-skeleton {
+  display: inline-block;
+  width: 96px;
+  height: 16px;
+  border-radius: 6px;
+  background: var(--border);
+  opacity: 0.6;
+}
+@keyframes splan-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes splan-price-swap {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   GROUPED PLAN SUMMARY (.psum-*) — migration 109
+   One block per billing cycle in use, then the single honest aggregate
+   (due today). Never a combined periodic total when the cycles differ.
+   ========================================================================== */
+.psum {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  transition: opacity 0.15s ease;
+}
+.psum.is-loading {
+  /* Dim, never blank: a missing number reads as an error and the previous
+     figure is still the right one until the new quote lands. */
+  opacity: 0.55;
+}
+.psum-empty {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+.psum-group {
+  padding: 10px 0 0;
+  border-top: 1px dashed var(--border);
+}
+.psum-group-title {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.psum-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.psum-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+.psum-val {
+  text-align: right;
+  white-space: nowrap;
+}
+.psum-per {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.psum-subtotal {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+}
+.psum-due {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+.psum-due .psum-val {
+  color: var(--accent);
+}
+.psum-note,
+.psum-warn {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.psum-warn {
+  color: var(--danger);
+}
+.psum-renewals {
+  display: grid;
+  gap: 4px;
 }
 
 /* --- Price breakdown --- */
@@ -7639,13 +7789,10 @@ ul.clean li {
 }
 .arena .prof2-btn-primary {
   background: var(--lime);
-  color: #0a0e1a;
+  color: var(--on-accent);
 }
 .arena .prof2-btn-primary:hover:not(:disabled) {
   box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.45);
-}
-[data-theme="light"] .arena .prof2-btn-primary {
-  color: #ffffff;
 }
 .arena .prof2-btn-outline {
   background: var(--panel2);
@@ -7774,9 +7921,28 @@ ul.clean li {
 /* End ROUND 9 global fixes */
 
 /* ---- R9 T5: shared Modal (portal into <body>) -------------------------------
-   Token-driven so it reads correctly in light, dark and the student area (the
-   portal renders OUTSIDE .arena, so root tokens apply everywhere — that is
-   intentional and keeps one consistent modal look). */
+   Token-driven so it reads correctly in light, dark and the student area. The
+   portal renders OUTSIDE .arena, so root tokens apply by default; when the
+   child has chosen a palette, Modal.tsx mirrors .arena data-palette onto the
+   overlay and the block below remaps that palette onto these same token names
+   — without it every dialog stayed purple/cream under all 26 palettes. */
+
+/* Scoped to [data-theme="light"] ON PURPOSE. palettes.generated.css only
+   defines --panel/--line/--ink/… for the light theme, so an unscoped mapping
+   would resolve var(--panel) to nothing in dark and blank the panel background
+   entirely. In dark the attribute is simply inert, exactly as it is on .arena. */
+[data-theme="light"] .modal-overlay[data-palette] {
+  --surface: var(--panel, #ffffff);
+  --text: var(--ink, #2a1a3e);
+  --border: var(--line, #e9e0f7);
+  --accent: var(--lime, #7c3aed);
+  --chip-bg: var(--panel2, #f7f0fe);
+  --chip-text: var(--ink, #2a1a3e);
+  --pill-bg: var(--panel2, #f7f0fe);
+  --pill-text: var(--lime, #7c3aed);
+  --warn: var(--gold, #c2610a);
+  --danger: var(--red, #ff4757);
+}
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -9343,28 +9509,6 @@ ul.clean li {
   margin: 0 -9px;
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.2));
 }
-/* Round 12 — palette picker swatch (reuses .stk-card/.stk-grid). The swatch is a
-   mini preview of a palette's page background + two accent dots. */
-.pal-grid {
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-}
-.pal-sw {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 92px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--line, var(--border)) 60%, transparent);
-}
-.pal-dot {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-}
 .stk-collage img:nth-child(1) {
   transform: rotate(-10deg) translateY(3px);
 }
@@ -9423,16 +9567,11 @@ ul.clean li {
   height: 22px;
   border-radius: 999px;
   background: var(--lime, var(--accent));
-  color: #0a0e1a;
+  color: var(--on-accent, #0a0e1a);
   display: grid;
   place-items: center;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   z-index: 3;
-}
-/* On the light arena the lime token resolves dark — flip the check to white
-   (same treatment the old wp2 check had). */
-[data-theme="light"] .arena .stk-check {
-  color: #ffffff;
 }
 /* Pending overlay + spinner on the clicked card. */
 .stk-spin {
@@ -9472,6 +9611,151 @@ ul.clean li {
   color: var(--red, #c0392b);
   font-size: 13px;
   font-weight: 600;
+}
+
+/* ---- Palette picker (pal2-*) --------------------------------------------
+   26 palettes grouped into six sections. Each card carries a MINIATURE of the
+   student panel — nav bar, two cards, a button — painted entirely from --p-*
+   custom properties set inline from the catalogue, so a preview can never
+   drift from the palette it advertises. Reuses .stk-check / .stk-spin. */
+.pal2-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.pal2-group-h {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--dim, var(--muted));
+  margin: 0 0 10px;
+}
+.pal2-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 12px;
+}
+.pal2-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid var(--line, var(--border));
+  background: var(--panel2, var(--chip-bg));
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.14s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.pal2-card:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px -12px rgba(0, 0, 0, 0.35);
+}
+.pal2-card:focus-visible {
+  outline: 2px solid var(--lime, var(--accent));
+  outline-offset: 2px;
+}
+.pal2-card:disabled {
+  cursor: default;
+}
+.pal2-preview {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--p-bg);
+  border: 1px solid var(--p-line);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+.pal2-pv-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 5px;
+  background: var(--p-panel);
+  border-bottom: 1px solid var(--p-line);
+}
+.pal2-pv-pill {
+  width: 14px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--p-line);
+}
+.pal2-pv-pill:first-child {
+  width: 18px;
+  background: var(--p-accent);
+}
+.pal2-pv-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  min-height: 0;
+}
+.pal2-pv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 5px;
+  border-radius: 4px;
+  background: var(--p-panel);
+  border: 1px solid var(--p-line);
+}
+.pal2-pv-line {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--p-ink);
+}
+.pal2-pv-line + .pal2-pv-line {
+  width: 62%;
+  background: var(--p-muted);
+}
+.pal2-pv-btn {
+  margin: 0 5px 5px auto;
+  width: 34px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--p-accent);
+  color: #fff;
+}
+.pal2-dots {
+  display: flex;
+  gap: 5px;
+  padding: 0 2px;
+}
+.pal2-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.pal2-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink, var(--text));
+  overflow-wrap: anywhere;
+  padding: 0 2px 2px;
+}
+.pal2-card.is-selected {
+  border-color: var(--lime, var(--accent));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lime, var(--accent)) 40%, transparent);
+}
+.pal2-card.is-selected .pal2-name {
+  color: var(--lime, var(--accent));
+}
+@media (prefers-reduced-motion: reduce) {
+  .pal2-card {
+    transition: none;
+  }
+  .pal2-card:hover:not(:disabled) {
+    transform: none;
+  }
 }
 
 /* ---- 2) Decorative sticker layer (child shell) --------------------------- */
@@ -10960,7 +11244,7 @@ ul.clean li {
 
 /* ==========================================================================
    L-quick — child HOME leaderboard quick-look card (.lbq-*). Token-driven so
-   it works in the arena dark theme, the light theme, and all 5 palettes.
+   it works in the arena dark theme, the light theme, and every palette.
    Rendered ONLY inside `.arena`, so the arena CSS vars resolve by inheritance
    (same pattern as the .lb-* classes above). Gated by the `leaderboard` flag.
    Round 21: lives inside the .arena-cols grid (no own bottom margin — the
@@ -11044,8 +11328,8 @@ ul.clean li {
    Token-driven so ONE base ruleset works on every surface. The parent/public
    shells resolve --surface/--border/--text/--accent/--danger from the root
    [data-theme] tokens; inside the student arena the `.arena .ntf` remap points
-   those same custom properties at the arena palette (dark + light + all 5
-   palettes) — the exact trick used by .arena .arena-controls.
+   those same custom properties at the arena palette (dark + light + every
+   palette) — the exact trick used by .arena .arena-controls.
    ========================================================================== */
 .ntf {
   position: relative;
@@ -12325,6 +12609,15 @@ body[data-site-typography] .btn-ghost {
 @media (prefers-reduced-motion: reduce) {
   [data-seg]::before,
   [data-seg] > * {
+    transition: none !important;
+  }
+  /* Migration 109: the plan card's mount fade and its price-swap fade are
+     decoration only — the final state is identical without them. */
+  .splan-card,
+  .splan-price-value {
+    animation: none !important;
+  }
+  .psum {
     transition: none !important;
   }
 }

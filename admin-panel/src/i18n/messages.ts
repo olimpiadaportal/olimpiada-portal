@@ -531,6 +531,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Prompta yalnız seçilmiş fənn və sinfin mövzu/alt mövzu siyahısı daxil edilir, ona görə model kurikulumdan kənar ad uydura bilmir.",
     "aiprompt.pickFirst":
       "Prompt üçün əvvəlcə fənn və sinif seçin.",
+    "aiprompt.mixedNote":
+      "Prompt seçdiyiniz idxal növünə uyğunlaşır: qarışıq rejimdə o, ZIP quruluşunu və şəkil yollarını izah edir, yalnız yazılı rejimdə isə şəkilləri qadağan edir.",
     "aiprompt.count": "Sual sayı",
     "aiprompt.copy": "Promptu kopyala",
     "aiprompt.copied": "Kopyalandı",
@@ -636,6 +638,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "olyjson.summary": "JSON formatı — {grade}",
     "olyjson.howto":
       "Aşağıdakı formatı kopyalayın, ChatGPT-yə suallarla birlikdə göndərin və “bu sualları həmin JSON formatına çevir” deyin. Alınan faylı məhz bu sinfin yükləmə sahəsinə əlavə edin.",
+    "olyjson.howtoZip":
+      "Aşağıdakı formatı kopyalayın, ChatGPT-yə suallarla birlikdə göndərin və “bu sualları həmin JSON formatına çevir” deyin. Alınan mətni questions.json adı ilə yadda saxlayın, şəkilləri images/ qovluğuna qoyun, qovluğu ZIP-ə yığın və ZIP faylını məhz bu sinfin yükləmə sahəsinə əlavə edin.",
     "olyjson.inherited":
       "Fayla sinif, fənn və olimpiada növü yazmayın: bu fayl {grade} sahəsinə yüklənəcəyi üçün bütün suallar avtomatik həmin sinfə, paketin fənninə və növünə aid olur.",
     "olyjson.copy": "JSON formatını kopyala",
@@ -1795,6 +1799,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "aiprompt.curriculumNote":
       "Only the selected subject and grade's topics and subtopics are embedded, so the model cannot invent a name outside the curriculum.",
     "aiprompt.pickFirst": "Choose a subject and a grade to build the prompt.",
+    "aiprompt.mixedNote":
+      "The prompt follows the import type you chose: in mixed mode it explains the ZIP layout and the image paths, in text-only mode it forbids images.",
     "aiprompt.count": "Questions",
     "aiprompt.copy": "Copy prompt",
     "aiprompt.copied": "Copied",
@@ -1898,6 +1904,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "olyjson.summary": "JSON format — {grade}",
     "olyjson.howto":
       "Copy the format below, send it to ChatGPT together with your questions, and ask it to convert them into that JSON. Upload the result into this grade's field.",
+    "olyjson.howtoZip":
+      "Copy the format below, send it to ChatGPT together with your questions, and ask it to convert them into that JSON. Save the result as questions.json, put the pictures in an images/ folder next to it, zip the folder and upload the ZIP into this grade's field.",
     "olyjson.inherited":
       "Do not put the grade, subject or olympiad type in the file: because it is uploaded to the {grade} field, every question automatically belongs to that grade and inherits the package's subject and type.",
     "olyjson.copy": "Copy JSON format",
@@ -3063,6 +3071,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "aiprompt.curriculumNote":
       "В промпт попадают только темы и подтемы выбранного предмета и класса, поэтому модель не может придумать название вне программы.",
     "aiprompt.pickFirst": "Сначала выберите предмет и класс.",
+    "aiprompt.mixedNote":
+      "Промпт подстраивается под выбранный тип импорта: в смешанном режиме он описывает структуру ZIP и пути к картинкам, а в текстовом — запрещает изображения.",
     "aiprompt.count": "Количество вопросов",
     "aiprompt.copy": "Скопировать промпт",
     "aiprompt.copied": "Скопировано",
@@ -3167,6 +3177,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "olyjson.summary": "Формат JSON — {grade}",
     "olyjson.howto":
       "Скопируйте формат ниже, отправьте его в ChatGPT вместе с вопросами и попросите преобразовать их в этот JSON. Готовый файл загрузите в поле именно этого класса.",
+    "olyjson.howtoZip":
+      "Скопируйте формат ниже, отправьте его в ChatGPT вместе с вопросами и попросите преобразовать их в этот JSON. Сохраните результат как questions.json, положите изображения в папку images/ рядом с ним, упакуйте папку в ZIP и загрузите ZIP в поле именно этого класса.",
     "olyjson.inherited":
       "Не указывайте в файле класс, предмет и тип олимпиады: файл загружается в поле {grade}, поэтому все вопросы автоматически относятся к этому классу и наследуют предмет и тип пакета.",
     "olyjson.copy": "Скопировать формат JSON",

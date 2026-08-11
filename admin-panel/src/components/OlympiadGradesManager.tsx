@@ -2,9 +2,12 @@
 
 // Grades & Pools manager on the package EDIT page (Round 34). Shows every
 // target grade with its REAL published pool count; a grade is only ever ADDED
-// together with its validated question file (per-grade creation-only import),
-// and REMOVED through the guarded RPC — the server blocks removal while any
-// purchase entitles that grade and archives (never deletes) the pool.
+// together with its validated question file (so no grade starts with an empty
+// pool), and REMOVED through the guarded RPC — the server blocks removal while
+// any purchase entitles that grade and archives (never deletes) the pool.
+// Migration 108: an ALREADY-targeted grade's pool can be APPENDED to from its
+// own row (OlympiadGradeBulkAppend) — including the package's own grade, which
+// by definition never appears in the add-grade form below.
 import { useActionState, useState } from "react";
 import {
   addOlympiadPackageGrade,
@@ -12,6 +15,7 @@ import {
   type OlympiadGradeState,
 } from "@/lib/admin/olympiad";
 import { ActionButton } from "@/components/ActionButton";
+import { OlympiadGradeBulkAppend } from "@/components/OlympiadGradeBulkAppend";
 import {
   parseBulkFile,
   validateBulkRowsClient,
@@ -82,27 +86,38 @@ export function OlympiadGradesManager({
 
       <div>
         {targetGrades.map((g) => (
-          <div key={g.id} className="oly-grade-row">
-            <strong>{g.name}</strong>
-            <span className="muted">
-              {g.questions} {tt("olyq.col.body").toLowerCase()}
-            </span>
-            <span className="grow" />
-            <form
-              action={rmAction}
-              onSubmit={() => setRemovingId(g.id)}
-            >
-              <input type="hidden" name="__id" value={packageId} />
-              <input type="hidden" name="grade_id" value={g.id} />
-              <ActionButton
-                pending={rmPending && removingId === g.id}
-                pendingLabel={tt("oly2.removing")}
-                className="btn-ghost btn-sm"
-                disabled={rmPending || targetGrades.length <= 1}
+          // The append panel sits UNDER the summary line rather than inside it,
+          // so the row keeps its single-line layout while collapsed.
+          <div key={g.id} className="oly-grade-block">
+            <div className="oly-grade-row">
+              <strong>{g.name}</strong>
+              <span className="muted">
+                {g.questions} {tt("olyq.col.body").toLowerCase()}
+              </span>
+              <span className="grow" />
+              <form
+                action={rmAction}
+                onSubmit={() => setRemovingId(g.id)}
               >
-                {tt("oly2.removeGrade")}
-              </ActionButton>
-            </form>
+                <input type="hidden" name="__id" value={packageId} />
+                <input type="hidden" name="grade_id" value={g.id} />
+                <ActionButton
+                  pending={rmPending && removingId === g.id}
+                  pendingLabel={tt("oly2.removing")}
+                  className="btn-ghost btn-sm"
+                  disabled={rmPending || targetGrades.length <= 1}
+                >
+                  {tt("oly2.removeGrade")}
+                </ActionButton>
+              </form>
+            </div>
+            <OlympiadGradeBulkAppend
+              dict={dict}
+              packageId={packageId}
+              gradeId={g.id}
+              gradeName={g.name}
+              typeRules={typeRules}
+            />
           </div>
         ))}
       </div>

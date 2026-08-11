@@ -6,11 +6,11 @@ import { ParentAuthForm } from "@/components/ParentAuthForm";
 import { getPublicSubjectPricing } from "@/lib/pricing";
 import { subjectLabel } from "@/lib/subjectLabel";
 import {
-  computeQuote,
+  buildPlanQuery,
+  computePlanQuote,
   formatAzn,
   INTERVAL_LABEL_KEY,
-  INTERVAL_PER_KEY,
-  parseSelectionParams,
+  parsePlanParams,
 } from "@/lib/pricingConfigurator";
 
 const KEYS = [
@@ -36,7 +36,11 @@ const KEYS = [
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ subjects?: string | string[]; interval?: string | string[] }>;
+  searchParams: Promise<{
+    plan?: string | string[];
+    subjects?: string | string[];
+    interval?: string | string[];
+  }>;
 }) {
   const t = await getT();
   const locale = await getLocale();
@@ -48,18 +52,19 @@ export default async function RegisterPage({
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
 
-  // Hand-off from the /services configurator: `?subjects=<uuid,…>&interval=<iv>`.
-  // Treated as untrusted input — validated against the LIVE subject catalog
-  // (UUID shape, de-duplicated, capped, unknown/archived ids dropped silently),
-  // then shown back as a read-only recap so the visitor's choice visibly
-  // survives the jump into registration. Nothing here is billable: the amount
-  // is informational and the server re-prices at checkout.
+  // Hand-off from the /services configurator: `?plan=<uuid>:<cycle>,…` (the
+  // older `?subjects=…&interval=…` pair still parses). Treated as untrusted
+  // input — validated against the LIVE subject catalog (UUID shape,
+  // de-duplicated, capped, unknown/archived ids dropped silently), then shown
+  // back as a read-only recap so the visitor's choice visibly survives the jump
+  // into registration. Nothing here is billable: the amount is informational and
+  // the server re-prices at checkout.
   const catalog = await getPublicSubjectPricing();
-  const { subjectIds, interval } = parseSelectionParams(
-    await searchParams,
-    catalog.subjects,
-  );
-  const quote = computeQuote(catalog.subjects, subjectIds, interval);
+  const { plan } = parsePlanParams(await searchParams, catalog.subjects);
+  const quote = computePlanQuote(catalog.subjects, plan);
+  // Rebuilt (never echoed) so the basket — cycles included — reaches Add-Child
+  // after the account exists. Ids and cycles only; a price never travels.
+  const planQuery = buildPlanQuery(plan);
 
   return (
     <section className="prose" style={{ maxWidth: 440 }}>
@@ -72,9 +77,14 @@ export default async function RegisterPage({
         <aside className="pcfg-recap">
           <p className="pcfg-recap-title">{t("cfg.recap.title")}</p>
           <ul className="pcfg-recap-list">
+            {/* Each row names the cycle the visitor chose FOR THAT SUBJECT —
+                the recap is the proof their per-subject choice survived. */}
             {quote.lines.map((line) => (
               <li key={line.id}>
-                <span>{subjectLabel(t, line.code, line.name)}</span>
+                <span>
+                  {subjectLabel(t, line.code, line.name)} ·{" "}
+                  {t(INTERVAL_LABEL_KEY[line.interval])}
+                </span>
                 <span className="pcfg-recap-price">
                   {line.price === null ? t("cfg.unpriced") : formatAzn(line.price, locale)}
                 </span>
@@ -82,14 +92,14 @@ export default async function RegisterPage({
             ))}
           </ul>
           <p className="pcfg-recap-total">
-            <span>
-              {t("cfg.totalLabel")} · {t(INTERVAL_LABEL_KEY[interval])}
-            </span>
-            <strong>
-              {formatAzn(quote.total, locale)} {t(INTERVAL_PER_KEY[interval])}
-            </strong>
+            {/* No period suffix: the basket may span several cycles. */}
+            <span>{t("plan.dueToday")}</span>
+            <strong>{formatAzn(quote.dueToday, locale)}</strong>
           </p>
           <p className="pcfg-recap-note">{t("cfg.recap.note")}</p>
+          <p className="pcfg-recap-note">
+            <Link href={`/children/new${planQuery}`}>{t("cfg.ctaNoteParent")}</Link>
+          </p>
         </aside>
       )}
 

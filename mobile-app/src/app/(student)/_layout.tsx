@@ -9,6 +9,7 @@ import React from "react";
 import { Redirect, Stack } from "expo-router";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useArena } from "@/features/arena/useArena";
+import { useStudentThemeSync } from "@/features/profile/useStudentTheme";
 import { useT } from "@/i18n/useT";
 
 // Anchor the stack on the tabs: a cold deep link (push tap, OS link) straight
@@ -22,6 +23,10 @@ export default function StudentLayout() {
   const role = useAuthStore((s) => s.role);
   const { arena } = useArena();
   const { t } = useT();
+  // Adopt students.theme_pref once per signed-in child. Without it dark/light
+  // is device-local only, so the arena can paint dark — hiding the saved
+  // palette entirely — on a phone whose OS is in dark mode.
+  useStudentThemeSync();
 
   if (status !== "signedIn") return <Redirect href="/(public)/welcome" />;
   if (role === "parent") return <Redirect href="/(parent)/(tabs)/home" />;

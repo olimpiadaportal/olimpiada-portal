@@ -22,6 +22,14 @@ import {
   subjectPrice,
   toggleSubject,
   type ConfiguratorSubject,
+  addPlanSubject,
+  buildPlanHref,
+  buildPlanQuery,
+  computePlanQuote,
+  normalizePlan,
+  parsePlanParams,
+  removePlanSubject,
+  setPlanInterval,
 } from "@/lib/pricingConfigurator";
 
 // Investor-approved public pricing: 3 / 9 / 90 AZN per subject per
@@ -435,5 +443,216 @@ describe("buildSelectionQuery / buildSelectionHref (hand-off leaving the page)",
     );
     expect(parsed.subjectIds).toEqual(selection);
     expect(parsed.interval).toBe("week");
+  });
+});
+
+/* ==========================================================================
+   PER-SUBJECT PLANS (migration 109)
+   Each subject carries its own billing cycle. The cases below are the ones a
+   wrong answer would be visible to a customer — and the isolation rule is
+   asserted structurally, not by value, because "changing one subject's plan
+   must never alter another's" is the whole point of the change.
+   ========================================================================== */
+
+describe("normalizePlan", () => {
+  it("drops unknown ids and keeps the LAST entry for a repeated subject", () => {
+    const plan = normalizePlan(
+      [
+        { subjectId: MATH.id, interval: "week" },
+        { subjectId: ARCHIVED_ID, interval: "month" },
+        { subjectId: MATH.id, interval: "year" },
+      ],
+      CATALOG,
+    );
+    expect(plan).toEqual([{ subjectId: MATH.id, interval: "year" }]);
+  });
+
+  it("falls back to a cycle the subject is actually sold on", () => {
+    // ENGLISH is monthly-only, so a weekly request resolves to the default.
+    const plan = normalizePlan([{ subjectId: ENGLISH.id, interval: "week" }], CATALOG);
+    expect(plan).toEqual([{ subjectId: ENGLISH.id, interval: DEFAULT_PLAN_INTERVAL }]);
+  });
+
+  it("caps the basket at MAX_CONFIGURATOR_SUBJECTS", () => {
+    const pool = [MATH, SCIENCE, LOGIC, ENGLISH];
+    const many = Array.from({ length: MAX_CONFIGURATOR_SUBJECTS + 5 }, (_, i) => ({
+      subjectId: pool[i % pool.length].id,
+      interval: "month" as const,
+    }));
+    expect(normalizePlan(many, CATALOG).length).toBeLessThanOrEqual(
+      MAX_CONFIGURATOR_SUBJECTS,
+    );
+  });
+});
+
+describe("setPlanInterval", () => {
+  const base = [
+    { subjectId: MATH.id, interval: "month" as const },
+    { subjectId: SCIENCE.id, interval: "week" as const },
+    { subjectId: LOGIC.id, interval: "year" as const },
+  ];
+
+  it("changes exactly one entry", () => {
+    const next = setPlanInterval(base, SCIENCE.id, "year");
+    expect(next.map((p) => p.interval)).toEqual(["month", "year", "year"]);
+  });
+
+  it("leaves every other entry REFERENTIALLY equal", () => {
+    // The investor's isolation rule, asserted structurally: an untouched
+    // subject's object must be the very same object, so no future refactor can
+    // quietly rebuild (and mis-set) its cycle.
+    const next = setPlanInterval(base, SCIENCE.id, "year");
+    expect(next[0]).toBe(base[0]);
+    expect(next[2]).toBe(base[2]);
+    expect(next[1]).not.toBe(base[1]);
+  });
+
+  it("returns the same entry when the cycle is unchanged", () => {
+    const next = setPlanInterval(base, SCIENCE.id, "week");
+    expect(next[1]).toBe(base[1]);
+  });
+
+  it("ignores a subject that is not in the plan", () => {
+    expect(setPlanInterval(base, ARCHIVED_ID, "week")).toEqual(base);
+  });
+});
+
+describe("addPlanSubject / removePlanSubject", () => {
+  it("never produces a duplicate across add then remove then re-add", () => {
+    let plan = addPlanSubject([], MATH.id, CATALOG, "week");
+    plan = addPlanSubject(plan, MATH.id, CATALOG, "year");
+    expect(plan).toHaveLength(1);
+    plan = removePlanSubject(plan, MATH.id);
+    expect(plan).toHaveLength(0);
+    plan = addPlanSubject(plan, MATH.id, CATALOG, "year");
+    expect(plan).toEqual([{ subjectId: MATH.id, interval: "year" }]);
+  });
+
+  it("ignores unknown ids", () => {
+    expect(addPlanSubject([], ARCHIVED_ID, CATALOG)).toEqual([]);
+  });
+});
+
+describe("computePlanQuote", () => {
+  it("groups by cycle and sums dueToday across mixed cycles", () => {
+    const quote = computePlanQuote(CATALOG, [
+      { subjectId: MATH.id, interval: "week" },
+      { subjectId: SCIENCE.id, interval: "year" },
+      { subjectId: LOGIC.id, interval: "year" },
+    ]);
+    expect(quote.usedIntervals).toEqual(["week", "year"]);
+    expect(quote.groups.week.count).toBe(1);
+    expect(quote.groups.week.subtotal).toBe(3);
+    expect(quote.groups.year.count).toBe(2);
+    expect(quote.groups.year.subtotal).toBe(180);
+    expect(quote.groups.month.count).toBe(0);
+    // 3 + 90 + 90 — each subject at ITS OWN cycle's price.
+    expect(quote.dueToday).toBe(183);
+    expect(quote.mixed).toBe(true);
+  });
+
+  it("reports mixed:false for a single-cycle basket", () => {
+    const quote = computePlanQuote(CATALOG, [
+      { subjectId: MATH.id, interval: "month" },
+      { subjectId: SCIENCE.id, interval: "month" },
+    ]);
+    expect(quote.mixed).toBe(false);
+    expect(quote.usedIntervals).toEqual(["month"]);
+    expect(quote.dueToday).toBe(18);
+  });
+
+  it("excludes an unpriced line from dueToday and flags it", () => {
+    const quote = computePlanQuote(CATALOG, [
+      { subjectId: MATH.id, interval: "month" },
+      // ENGLISH is not sold weekly — the line renders but costs nothing.
+      { subjectId: ENGLISH.id, interval: "week" },
+    ]);
+    expect(quote.dueToday).toBe(9);
+    expect(quote.hasUnpriced).toBe(true);
+    expect(quote.allUnpriced).toBe(false);
+    expect(quote.pricedCount).toBe(1);
+  });
+
+  it("flags allUnpriced when nothing in the basket is sold on its cycle", () => {
+    const quote = computePlanQuote(CATALOG, [
+      { subjectId: ENGLISH.id, interval: "year" },
+    ]);
+    expect(quote.allUnpriced).toBe(true);
+    expect(quote.dueToday).toBe(0);
+  });
+
+  it("is empty for an empty plan", () => {
+    const quote = computePlanQuote(CATALOG, []);
+    expect(quote.hasSelection).toBe(false);
+    expect(quote.usedIntervals).toEqual([]);
+    expect(quote.mixed).toBe(false);
+  });
+});
+
+describe("parsePlanParams / buildPlanQuery", () => {
+  it("round-trips a mixed-cycle basket", () => {
+    const plan = [
+      { subjectId: MATH.id, interval: "week" as const },
+      { subjectId: LOGIC.id, interval: "year" as const },
+    ];
+    const params = new URLSearchParams(buildPlanQuery(plan));
+    const parsed = parsePlanParams({ plan: params.get("plan") ?? undefined }, CATALOG);
+    expect(parsed.plan).toEqual(plan);
+  });
+
+  it("drops non-UUID and unknown ids", () => {
+    const parsed = parsePlanParams(
+      { plan: "not-a-uuid:week," + ARCHIVED_ID + ":month," + MATH.id + ":year" },
+      CATALOG,
+    );
+    expect(parsed.plan).toEqual([{ subjectId: MATH.id, interval: "year" }]);
+  });
+
+  it("falls back to the platform default for an unknown cycle", () => {
+    const parsed = parsePlanParams({ plan: MATH.id + ":decade" }, CATALOG);
+    expect(parsed.plan).toEqual([
+      { subjectId: MATH.id, interval: DEFAULT_PLAN_INTERVAL },
+    ]);
+  });
+
+  it("discards an over-long value entirely", () => {
+    const parsed = parsePlanParams({ plan: (MATH.id + ":week,").repeat(200) }, CATALOG);
+    expect(parsed.plan).toEqual([]);
+  });
+
+  it("caps the parsed basket", () => {
+    const pool = [MATH, SCIENCE, LOGIC, ENGLISH];
+    const raw = Array.from(
+      { length: MAX_CONFIGURATOR_SUBJECTS + 5 },
+      (_, i) => pool[i % pool.length].id + ":month",
+    ).join(",");
+    expect(parsePlanParams({ plan: raw }, CATALOG).plan.length).toBeLessThanOrEqual(
+      MAX_CONFIGURATOR_SUBJECTS,
+    );
+  });
+
+  it("falls back to the legacy subjects+interval pair when plan is absent", () => {
+    // Every bookmarked/shared link built before per-subject cycles must keep
+    // preselecting — this is the compatibility leg of the hand-off.
+    const parsed = parsePlanParams(
+      { subjects: MATH.id + "," + LOGIC.id, interval: "year" },
+      CATALOG,
+    );
+    expect(parsed.plan).toEqual([
+      { subjectId: MATH.id, interval: "year" },
+      { subjectId: LOGIC.id, interval: "year" },
+    ]);
+    expect(parsed.interval).toBe("year");
+  });
+});
+
+describe("buildPlanHref", () => {
+  it("stays a same-origin relative path and carries no price", () => {
+    const href = buildPlanHref("/children/new", [
+      { subjectId: MATH.id, interval: "week" },
+    ]);
+    expect(href.startsWith("/children/new?")).toBe(true);
+    expect(href).not.toMatch(/^(https?:)?\/\//);
+    expect(href).not.toMatch(/\d+(\.\d+)?\s*AZN/i);
   });
 });

@@ -37,13 +37,8 @@ import { CmsProse } from "@/components/CmsProse";
 import { ListRow } from "@/components/ListRow";
 import { PasswordField, TextField } from "@/components/TextField";
 import { useTheme } from "@/theme/ThemeProvider";
-import {
-  ARENA_LIGHT,
-  ARENA_PALETTES,
-  radius,
-  spacing,
-  type ArenaPalette,
-} from "@/theme/tokens";
+import { ARENA_LIGHT, radius, spacing, type ArenaPalette } from "@/theme/tokens";
+import { ARENA_PALETTE_GROUPS } from "@/theme/palettes.generated";
 import { useT } from "@/i18n/useT";
 import { bffUpdateStudentName } from "@/lib/api";
 import { useFieldChain } from "@/lib/useFieldChain";
@@ -605,19 +600,29 @@ export function StickerThemeSection({ t }: { t: T }) {
 
 /* ------------------------------ palette picker ------------------------------ */
 
-// Preview swatches DERIVED from the arena light tokens (redesign §4-Student):
-// each palette previews its own background + its two leading accents. One
-// source of truth — when ARENA_LIGHT changes, the picker follows automatically.
-const PREVIEWS: { id: ArenaPalette; bg: string; a: string; b: string }[] =
-  ARENA_PALETTES.map((id) => ({
-    id,
+// Preview swatches DERIVED from the arena light tokens: each palette previews
+// its own background + its two leading accents. One source of truth — the
+// tokens are generated from the web catalogue, so the picker follows it with no
+// edit here. The sections mirror the web picker: 27 flat cards is the long
+// unstructured list the grouped layout replaces.
+const PALETTE_SECTIONS: {
+  group: string;
+  items: { id: ArenaPalette; bg: string; a: string; b: string }[];
+}[] = [
+  { group: "", slugs: ["default"] as readonly string[] },
+  ...ARENA_PALETTE_GROUPS,
+].map((row) => ({
+  group: row.group,
+  items: row.slugs.map((id) => ({
+    id: id as ArenaPalette,
     bg: ARENA_LIGHT[id].bg,
     a: ARENA_LIGHT[id].lime,
     b: ARENA_LIGHT[id].blue,
-  }));
+  })),
+}));
 
 export function PaletteSection({ current, t }: { current: ArenaPalette; t: T }) {
-  const { tokens } = useTheme();
+  const { tokens, setPreference } = useTheme();
   const setPalette = useSetStudentPalette();
   const [pendingId, setPendingId] = useState<ArenaPalette | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -632,7 +637,15 @@ export function PaletteSection({ current, t }: { current: ArenaPalette; t: T }) 
     setPendingId(p);
     const ok = await setPalette(p);
     setPendingId(null);
-    if (!ok) setError(t("profile.err.updateFailed"));
+    if (!ok) {
+      setError(t("profile.err.updateFailed"));
+      return;
+    }
+    // Palettes are a LIGHT-mode surface only, so a palette chosen in dark mode
+    // would save and change nothing. Switching the local preference matches the
+    // theme_pref the write just persisted. "default" is the absence of a
+    // palette and stays theme-neutral.
+    if (p !== "default") setPreference("light");
   }
 
   return (
@@ -644,37 +657,49 @@ export function PaletteSection({ current, t }: { current: ArenaPalette; t: T }) 
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("pal.hint")}
       </AppText>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        {PREVIEWS.map((p) => (
-          <SelectableCard
-            key={p.id}
-            label={t(`pal.${p.id}`)}
-            selected={selected === p.id}
-            pending={pendingId === p.id}
-            disabled={pendingId !== null}
-            onPress={() => void choose(p.id)}
-            selectedNote={t("prof2.selected")}
-          >
-            <View
-              style={{
-                width: "100%",
-                aspectRatio: 1.5,
-                borderRadius: radius.sm,
-                backgroundColor: p.bg,
-                borderWidth: 1,
-                borderColor: tokens.border,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: spacing.sm,
-              }}
-            >
-              <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: p.a }} />
-              <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: p.b }} />
-            </View>
-          </SelectableCard>
-        ))}
-      </View>
+      <AppText variant="muted" style={{ fontSize: 12 }}>
+        {t("pal.darkNote")}
+      </AppText>
+      {PALETTE_SECTIONS.map((section) => (
+        <View key={section.group || "default"} style={{ gap: spacing.sm }}>
+          {section.group ? (
+            <AppText variant="muted" style={{ fontSize: 11, letterSpacing: 1 }}>
+              {t(`pal.group.${section.group}`).toUpperCase()}
+            </AppText>
+          ) : null}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            {section.items.map((p) => (
+              <SelectableCard
+                key={p.id}
+                label={t(`pal.${p.id}`)}
+                selected={selected === p.id}
+                pending={pendingId === p.id}
+                disabled={pendingId !== null}
+                onPress={() => void choose(p.id)}
+                selectedNote={t("prof2.selected")}
+              >
+                <View
+                  style={{
+                    width: "100%",
+                    aspectRatio: 1.5,
+                    borderRadius: radius.sm,
+                    backgroundColor: p.bg,
+                    borderWidth: 1,
+                    borderColor: tokens.border,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: spacing.sm,
+                  }}
+                >
+                  <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: p.a }} />
+                  <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: p.b }} />
+                </View>
+              </SelectableCard>
+            ))}
+          </View>
+        </View>
+      ))}
       {error ? (
         <AppText variant="muted" color={tokens.danger}>
           {error}

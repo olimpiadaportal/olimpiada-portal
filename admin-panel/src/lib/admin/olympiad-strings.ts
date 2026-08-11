@@ -66,10 +66,16 @@ const STRINGS: Record<Locale, Dict> = {
     "oly2.err.gradeExists": "Bu sinif artıq paketə daxildir.",
     "oly2.gradeRemoved": "Sinif silindi; hovuzundakı suallar arxivləndi.",
     "oly2.uploading": "Yüklənir…",
-    // bulk_insert_olympiad_package_questions is creation-only: the DB rejects
-    // importing into a package that already has questions.
-    "oly2.err.creationOnly":
-      "Hər sinfin sual hovuzu bir dəfə — paket yaradılarkən və ya sinif paketə əlavə olunarkən — yüklənir. Sonradan ayrı-ayrı sualları aşağıdakı redaktorla idarə edin.",
+    // Migration 108: an EXISTING target grade's pool can be appended to.
+    "oly2.bulkAppend": "Toplu yüklə",
+    "oly2.bulkAppendHint":
+      "Bu sinfin hovuzuna yeni suallar əlavə edin. Mövcud suallar silinmir — fayldakı suallar hovuzun üstünə əlavə olunur. Eyni sual (mətn və variantlar eynidirsə) təkrar əlavə edilmir.",
+    "oly2.bulkAppendBtn": "Sualları əlavə et",
+    "oly2.appending": "Əlavə olunur…",
+    "oly2.bulkAppendOk": "{n} sual hovuza əlavə edildi.",
+    "oly2.bulkAppendPartial": "{n} sual əlavə edildi, {m} sətir buraxıldı.",
+    "oly2.poolAppendNote":
+      "Hər seçilmiş sinif üçün sual faylı mütləqdir — boş hovuzlu sinif yaranmır. Paket yaradıldıqdan sonra sinfin hovuzuna redaktə səhifəsindən yeni suallar əlavə edə bilərsiniz.",
     // Round 49: an attempt serves exactly `questions_per_attempt` questions,
     // rotated per student (no repeat until that student's cycle ends).
     "oly2.allQuestionsNote":
@@ -158,8 +164,15 @@ const STRINGS: Record<Locale, Dict> = {
     "oly2.err.gradeExists": "This grade is already part of the package.",
     "oly2.gradeRemoved": "Grade removed; its pool questions were archived.",
     "oly2.uploading": "Uploading…",
-    "oly2.err.creationOnly":
-      "Each grade's question pool is uploaded ONCE — when the package is created or when the grade is added to it. After that, manage individual questions with the editor below.",
+    "oly2.bulkAppend": "Bulk upload",
+    "oly2.bulkAppendHint":
+      "Add more questions to this grade's pool. Nothing is removed — the file's questions are appended to what is already there, and a question that is already in the pool (same text and options) is skipped.",
+    "oly2.bulkAppendBtn": "Append questions",
+    "oly2.appending": "Appending…",
+    "oly2.bulkAppendOk": "{n} questions were added to the pool.",
+    "oly2.bulkAppendPartial": "{n} questions added, {m} rows skipped.",
+    "oly2.poolAppendNote":
+      "Every selected grade needs its question file — no grade starts with an empty pool. Once the package exists you can add more questions to a grade's pool from its edit page.",
     "oly2.allQuestionsNote":
       "Every attempt serves the number of questions configured on the package. Questions are drawn on a per-student cycle: no repeats until the pool is used up, then that student's cycle resets.",
     "oly2.saleStart": "Sale start (optional)",
@@ -244,8 +257,15 @@ const STRINGS: Record<Locale, Dict> = {
     "oly2.err.gradeExists": "Этот класс уже входит в пакет.",
     "oly2.gradeRemoved": "Класс удалён; вопросы его пула отправлены в архив.",
     "oly2.uploading": "Загрузка…",
-    "oly2.err.creationOnly":
-      "Пул вопросов класса загружается ОДИН раз — при создании пакета или при добавлении класса. Дальше отдельные вопросы редактируются в редакторе ниже.",
+    "oly2.bulkAppend": "Массовая загрузка",
+    "oly2.bulkAppendHint":
+      "Добавьте вопросы в пул этого класса. Существующие вопросы не удаляются — вопросы из файла добавляются к пулу, а уже имеющийся вопрос (тот же текст и варианты) пропускается.",
+    "oly2.bulkAppendBtn": "Добавить вопросы",
+    "oly2.appending": "Добавление…",
+    "oly2.bulkAppendOk": "В пул добавлено вопросов: {n}.",
+    "oly2.bulkAppendPartial": "Добавлено вопросов: {n}, пропущено строк: {m}.",
+    "oly2.poolAppendNote":
+      "Для каждого выбранного класса нужен файл вопросов — класс с пустым пулом не возникает. После создания пакета вопросы в пул класса можно добавить на странице его редактирования.",
     "oly2.allQuestionsNote":
       "Каждая попытка содержит столько вопросов, сколько задано в пакете. Вопросы выдаются по циклу для каждого ученика: повторов нет, пока пул не закончится, затем цикл этого ученика сбрасывается.",
     "oly2.saleStart": "Начало продаж (необязательно)",

@@ -7,6 +7,7 @@ import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
 import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/childSubjects";
 
 export default async function ChildDashboard() {
   const child = await requireChild();
@@ -38,10 +39,12 @@ export default async function ChildDashboard() {
         .select("first_name, access_status")
         .eq("profile_id", child.profileId)
         .maybeSingle(),
-      // Subjects this child is subscribed to (for practice).
+      // Subjects this child is subscribed to (for practice). Per-subject
+      // periods mean the SUBSCRIPTION can outlive an individual subject, so the
+      // rows are filtered by each subject's own period end below.
       supabase
         .from("child_subscriptions")
-        .select("status, subscription_subjects(subjects(id, code, name))")
+        .select(CHILD_COVERAGE_SELECT)
         .eq("student_profile_id", child.profileId)
         .in("status", ["trialing", "active"]),
       // Graded attempts → real mini-stats + per-subject strength (no
@@ -84,12 +87,8 @@ export default async function ChildDashboard() {
   // id → locale-aware display label (subj.<code> via subjectLabel; DB name as
   // the fallback). Only labels change — ids stay the stored values.
   const subjMap = new Map<string, string>();
-  for (const s of (subs ?? []) as any[]) {
-    for (const ss of s.subscription_subjects ?? []) {
-      if (ss.subjects) {
-        subjMap.set(ss.subjects.id, subjectLabel(t, ss.subjects.code, ss.subjects.name));
-      }
-    }
+  for (const s of liveCoveredSubjects(subs as any[])) {
+    subjMap.set(s.id, subjectLabel(t, s.code, s.name));
   }
   // Giveaway: every subject with ACTIVE pricing becomes practicable, merged
   // over the subscribed set. RLS note: subjects_pricing active rows are

@@ -1,9 +1,17 @@
-// Shared demo-mode subscribe engine: Subjects (checkboxes, ≥1) → Plan cards
-// (week/month/year with the LIVE server quote incl. sibling discount) → the
-// cosmetic DemoPaySheet → bffSubscribe (allocates + returns the 8-digit ID).
-// Used by the add-child wizard (after Info) and by children/[id]/subscribe
-// for an existing child without a live subscription. Rendered ONLY when the
-// posture allows demo payments — 'real'/'off'/free modes never mount this.
+// Shared demo-mode subscribe engine: Subjects (checkboxes, ≥1) → one PLAN CARD
+// PER SUBJECT (each with its OWN week/month/year cycle, priced by the LIVE
+// server quote incl. sibling discount) → the cosmetic DemoPaySheet →
+// bffSubscribe (allocates + returns the 8-digit ID). Used by the add-child
+// wizard (after Info) and by children/[id]/subscribe for an existing child
+// without a live subscription. Rendered ONLY when the posture allows demo
+// payments — 'real'/'off'/free modes never mount this.
+//
+// Migration 109: the single global cycle picker is GONE. It was the last place
+// in the product that could only produce an all-weekly / all-monthly /
+// all-yearly plan, so a plan started on the phone could never be the mixed one
+// the same family can build on the web. The flow now posts `items`
+// ([{subject_id, interval}]); the legacy {interval, subject_ids} body stays
+// alive in lib/api.planBody for already-shipped binaries.
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { AppText } from "@/components/AppText";
@@ -17,13 +25,16 @@ import { subjectLabel } from "@/lib/subjectLabel";
 import {
   INTERVALS,
   INTERVAL_NAME_KEY,
-  INTERVAL_NOTE_KEY,
   INTERVAL_PER_KEY,
-  estimateTotal,
+  estimatePlanTotal,
   extractChildUniqueId,
   fmtMoney,
+  groupLabelKey,
+  normalizePlan,
   parseQuote,
+  setPlanInterval,
   type Interval,
+  type PlanItem,
   type Quote,
   type SubjectOption,
 } from "./commerce";
@@ -117,126 +128,148 @@ export function SubjectCheckRow({
 
 // ---- debounced authoritative quote ------------------------------------------------
 
-/** Debounced (~400ms) server quote for a subject set + interval. The result is
+/** Debounced (~400ms) server quote for a PER-SUBJECT basket. The result is
  *  keyed by its input, so quote/loading are DERIVED — a stale response for an
- *  older selection simply never matches the current key. */
+ *  older basket simply never matches the current key. */
 export function useServerQuote(
   studentId: string | null,
-  interval: Interval,
-  selectedIds: ReadonlySet<string>,
+  plan: readonly PlanItem[],
   enabled: boolean,
 ) {
-  const selKey = useMemo(() => [...selectedIds].sort().join(","), [selectedIds]);
-  const key = `${studentId ?? ""}|${interval}|${selKey}`;
+  const planKey = useMemo(
+    () =>
+      plan
+        .map((p) => `${p.subjectId}:${p.interval}`)
+        .sort()
+        .join(","),
+    [plan],
+  );
+  const key = `${studentId ?? ""}|${planKey}`;
   const [result, setResult] = useState<{ key: string; quote: Quote | null }>({
     key: "",
     quote: null,
   });
 
-  const active = enabled && !!studentId && selKey.length > 0;
+  const active = enabled && !!studentId && planKey.length > 0;
   useEffect(() => {
     if (!active || !studentId) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const res = await bffQuote(studentId, interval, selKey.split(","));
+      const items = planKey.split(",").map((raw) => {
+        const [subject_id, interval] = raw.split(":");
+        return { subject_id, interval };
+      });
+      // The positional (interval, subjectIds) pair is the legacy fallback and is
+      // ignored whenever `items` is non-empty — see lib/api.planBody.
+      const res = await bffQuote(
+        studentId,
+        items[0]?.interval ?? "month",
+        items.map((i) => i.subject_id),
+        items,
+      );
       if (!cancelled) setResult({ key, quote: res.ok ? parseQuote(res.data) : null });
     }, 400);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [active, studentId, interval, selKey, key]);
+  }, [active, studentId, planKey, key]);
 
   const fresh = active && result.key === key;
   return { quote: fresh ? result.quote : null, loading: active && !fresh };
 }
 
-// ---- plan cards -------------------------------------------------------------------
+// ---- per-subject plan card --------------------------------------------------------
 
-function PlanCards({
+/** One selected subject with ITS OWN cycle — the web SubjectPlanCard twin.
+ *  Changing a cycle here touches only this subject (setPlanInterval returns
+ *  every other entry by reference), which is the investor's isolation rule. */
+function SubjectPlanCard({
+  subject,
   interval,
   onSelect,
-  priceFor,
   disabled,
+  locale,
 }: {
+  subject: SubjectOption;
   interval: Interval;
   onSelect: (iv: Interval) => void;
-  priceFor: (iv: Interval) => string;
   disabled: boolean;
+  locale: Parameters<typeof fmtMoney>[2];
 }) {
   const { tokens } = useTheme();
   const { t } = useT();
+  const price = subject.prices[interval];
+  const sold = typeof price === "number";
   return (
-    <View style={{ gap: spacing.md }}>
-      {INTERVALS.map((iv) => {
-        const selected = iv === interval;
-        const popular = iv === "month";
-        return (
-          <Pressable
-            key={iv}
-            accessibilityRole="button"
-            accessibilityState={{ selected, disabled }}
-            accessibilityLabel={t(INTERVAL_NAME_KEY[iv])}
-            onPress={disabled ? undefined : () => onSelect(iv)}
-            style={[
-              {
-                backgroundColor: tokens.surface,
-                borderRadius: radius.lg,
-                borderWidth: 2,
+    <View
+      style={[
+        {
+          backgroundColor: tokens.surface,
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: tokens.border,
+          padding: spacing.lg,
+          gap: spacing.sm,
+        },
+        shadow("card", tokens.shadow),
+      ]}
+    >
+      <View style={{ flexDirection: "row", alignItems: "baseline", gap: spacing.sm }}>
+        <AppText variant="label" style={{ flex: 1, flexShrink: 1, minWidth: 0 }}>
+          {subjectLabel(t, subject.code, subject.name)}
+        </AppText>
+        <AppText variant="heading" color={sold ? tokens.accent : tokens.muted}>
+          {sold ? fmtMoney(price, "AZN", locale) : t("cfg.unpriced")}
+        </AppText>
+        {sold ? <AppText variant="muted">{t(INTERVAL_PER_KEY[interval])}</AppText> : null}
+      </View>
+      <AppText variant="eyebrow" style={{ textTransform: "uppercase" }}>
+        {t("plan.cycle")}
+      </AppText>
+      <View
+        accessibilityRole="radiogroup"
+        accessibilityLabel={t("plan.cycleAria").replace(
+          "{subject}",
+          subjectLabel(t, subject.code, subject.name),
+        )}
+        style={{ flexDirection: "row", gap: spacing.sm }}
+      >
+        {INTERVALS.map((iv) => {
+          const selected = iv === interval;
+          // A cycle the subject is not sold on is shown but unselectable: the
+          // server quote rejects such a basket outright, so offering it would
+          // only produce a failed quote the parent cannot explain.
+          const unavailable = typeof subject.prices[iv] !== "number";
+          return (
+            <Pressable
+              key={iv}
+              accessibilityRole="radio"
+              accessibilityState={{ selected, disabled: disabled || unavailable }}
+              accessibilityLabel={t(INTERVAL_NAME_KEY[iv])}
+              onPress={disabled || unavailable ? undefined : () => onSelect(iv)}
+              style={{
+                flex: 1,
+                alignItems: "center",
+                paddingVertical: spacing.sm,
+                borderRadius: radius.sm,
+                borderWidth: selected ? 2 : 1,
                 borderColor: selected ? tokens.accent : tokens.border,
-                padding: spacing.lg,
-                gap: spacing.xs,
-              },
-              selected ? shadow("card", tokens.shadow) : null,
-            ]}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-              <AppText variant="label" style={{ flex: 1 }}>
+                backgroundColor: selected ? tokens.pillBg : "transparent",
+                opacity: unavailable ? 0.4 : 1,
+              }}
+            >
+              <AppText
+                variant="label"
+                color={selected ? tokens.accent : tokens.muted}
+                style={{ fontSize: 12 }}
+              >
                 {t(INTERVAL_NAME_KEY[iv])}
               </AppText>
-              {popular ? (
-                <View
-                  style={{
-                    backgroundColor: tokens.accent2,
-                    borderRadius: 999,
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: 2,
-                  }}
-                >
-                  <AppText variant="label" color="#ffffff" style={{ fontSize: 11 }}>
-                    {t("billing.popular")}
-                  </AppText>
-                </View>
-              ) : null}
-              <View
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 11,
-                  borderWidth: 2,
-                  borderColor: selected ? tokens.accent : tokens.border,
-                  backgroundColor: selected ? tokens.accent : "transparent",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {selected ? (
-                  <AppText variant="label" color="#ffffff" style={{ fontSize: 12 }}>
-                    ✓
-                  </AppText>
-                ) : null}
-              </View>
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "baseline", gap: spacing.sm }}>
-              <AppText variant="heading" color={selected ? tokens.accent : tokens.text}>
-                {priceFor(iv)}
-              </AppText>
-              <AppText variant="muted">{t(INTERVAL_PER_KEY[iv])}</AppText>
-            </View>
-            <AppText variant="muted">{t(INTERVAL_NOTE_KEY[iv])}</AppText>
-          </Pressable>
-        );
-      })}
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -262,11 +295,14 @@ export function SubscribeFlow({
   onDone: (childUniqueId: string | null) => void;
 }) {
   const { tokens } = useTheme();
-  const { t } = useT();
+  const { t, locale } = useT();
 
   const [step, setStepState] = useState<SubscribeStep>("subjects");
   const [sel, setSel] = useState<Set<string>>(() => new Set());
-  const [interval, setInterval_] = useState<Interval>("month");
+  // The cycle CHOSEN for each subject. Absent = the platform default; every
+  // entry is re-resolved against what the subject is actually sold on by
+  // normalizePlan below, so a stale choice can never post an unpriced pair.
+  const [cycles, setCycles] = useState<Record<string, Interval>>({});
   const [subjectsError, setSubjectsError] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [payPending, setPayPending] = useState(false);
@@ -277,9 +313,24 @@ export function SubscribeFlow({
     onStepChange?.(s);
   };
 
-  const { quote, loading: quoting } = useServerQuote(studentId, interval, sel, step === "plan");
-  const estimate = estimateTotal(subjects, sel, interval);
+  const byId = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
+  const plan = useMemo<PlanItem[]>(
+    () =>
+      normalizePlan(
+        [...sel].map((id) => ({ subjectId: id, interval: cycles[id] ?? "month" })),
+        subjects,
+      ),
+    [sel, cycles, subjects],
+  );
+
+  const { quote, loading: quoting } = useServerQuote(studentId, plan, step === "plan");
+  const estimate = estimatePlanTotal(subjects, plan);
   const currency = quote?.currency ?? "AZN";
+  // The cycles actually in use, in display order — one breakdown block each.
+  const usedIntervals = useMemo(
+    () => INTERVALS.filter((iv) => plan.some((p) => p.interval === iv)),
+    [plan],
+  );
 
   const toggle = (id: string) => {
     setSubjectsError(null);
@@ -295,7 +346,15 @@ export function SubscribeFlow({
     if (payPending) return; // double-submit guard
     setPayPending(true);
     setPayError(null);
-    const res = await bffSubscribe(studentId, interval, [...sel]);
+    const items = plan.map((p) => ({ subject_id: p.subjectId, interval: p.interval }));
+    // The positional pair is the legacy body an older binary posts; `items` is
+    // what this build sends and what makes a MIXED plan expressible at all.
+    const res = await bffSubscribe(
+      studentId,
+      items[0]?.interval ?? "month",
+      items.map((i) => i.subject_id),
+      items,
+    );
     setPayPending(false);
     if (!res.ok) {
       setPayError(t(res.error));
@@ -305,10 +364,29 @@ export function SubscribeFlow({
     onDone(extractChildUniqueId(res.data));
   }
 
-  const priceFor = (iv: Interval) =>
-    iv === interval && quote
-      ? fmtMoney(quote.total, quote.currency)
-      : fmtMoney(estimateTotal(subjects, sel, iv), "AZN");
+  /** "from {price} / {cycle}" — the cheapest cycle this subject is sold on.
+   *  Falls back to the not-sold label rather than rendering Infinity. */
+  const fromPriceText = (s: SubjectOption): string => {
+    let best: { price: number; iv: Interval } | null = null;
+    for (const iv of INTERVALS) {
+      const p = s.prices[iv];
+      if (typeof p !== "number") continue;
+      if (!best || p < best.price) best = { price: p, iv };
+    }
+    if (!best) return t("cfg.unpriced");
+    return t("plan.fromPrice")
+      .replace("{price}", fmtMoney(best.price, "AZN", locale))
+      .replace("{cycle}", t(INTERVAL_NAME_KEY[best.iv]));
+  };
+
+  /** Per-cycle subtotal: the SERVER's discounted group total wins; the local
+   *  sum is a list-price placeholder until the quote lands. */
+  const groupTotal = (iv: Interval): number =>
+    quote?.groups?.[iv]?.total ??
+    estimatePlanTotal(
+      subjects,
+      plan.filter((p) => p.interval === iv),
+    );
 
   return (
     <View style={{ gap: spacing.lg }}>
@@ -323,7 +401,9 @@ export function SubscribeFlow({
                 <SubjectCheckRow
                   key={s.id}
                   name={subjectLabel(t, s.code, s.name)}
-                  priceText={fmtMoney(s.prices[interval] ?? 0, "AZN")}
+                  // No global cycle exists any more, so the list shows the
+                  // cheapest cycle the subject is sold on ("from …").
+                  priceText={fromPriceText(s)}
                   checked={sel.has(s.id)}
                   onToggle={() => toggle(s.id)}
                 />
@@ -353,24 +433,46 @@ export function SubscribeFlow({
         </>
       ) : (
         <>
-          <AppText variant="label">{t("sub.interval")}</AppText>
-          <PlanCards
-            interval={interval}
-            onSelect={setInterval_}
-            priceFor={priceFor}
-            disabled={payPending}
-          />
+          <AppText variant="label">{t("plan.perSubjectHint")}</AppText>
+          {plan.map((item) => {
+            const s = byId.get(item.subjectId);
+            if (!s) return null;
+            return (
+              <SubjectPlanCard
+                key={item.subjectId}
+                subject={s}
+                interval={item.interval}
+                disabled={payPending}
+                locale={locale}
+                onSelect={(iv) => {
+                  // setPlanInterval keeps every other entry by reference, so
+                  // one subject's cycle can never disturb another's.
+                  const next = setPlanInterval(plan, item.subjectId, iv);
+                  setCycles(
+                    Object.fromEntries(next.map((p) => [p.subjectId, p.interval])),
+                  );
+                }}
+              />
+            );
+          })}
 
           <Card>
-            <KeyRow
-              label={t("pay.subtotal")}
-              value={fmtMoney(quote ? quote.base : estimate, currency)}
-            />
+            {/* One block per cycle in use — no single periodic total is honest
+                once the basket spans more than one. */}
+            {usedIntervals.map((iv) => (
+              <KeyRow
+                key={iv}
+                label={t(groupLabelKey(iv))}
+                value={`${fmtMoney(groupTotal(iv), currency, locale)} ${t(
+                  INTERVAL_PER_KEY[iv],
+                )}`}
+              />
+            ))}
             <KeyRow
               label={t("pay.discount")}
               value={
                 quote && quote.discountPercent > 0
-                  ? `−${quote.discountPercent}% (−${fmtMoney(quote.discount, currency)})`
+                  ? `−${quote.discountPercent}% (−${fmtMoney(quote.discount, currency, locale)})`
                   : "0%"
               }
             />
@@ -380,21 +482,24 @@ export function SubscribeFlow({
             <View
               style={{ height: 1, backgroundColor: tokens.border, marginVertical: spacing.sm }}
             />
+            {/* Deliberately NO period suffix: this is what checkout charges now. */}
             <KeyRow
-              label={t("pay.total")}
-              value={`${fmtMoney(quote ? quote.total : estimate, currency)} ${t(
-                INTERVAL_PER_KEY[interval],
-              )}`}
+              label={t("plan.dueToday")}
+              value={fmtMoney(quote ? quote.total : estimate, currency, locale)}
               strong
             />
             <AppText variant="muted" style={{ marginTop: spacing.sm }}>
-              {quoting ? t("sub.calculating") : t("sub.siblingNote")}
+              {quoting
+                ? t("sub.calculating")
+                : usedIntervals.length > 1
+                  ? t("plan.dueTodayNote")
+                  : t("sub.siblingNote")}
             </AppText>
           </Card>
 
           <Button
             title={t("pay.payNow")}
-            disabled={sel.size === 0}
+            disabled={plan.length === 0}
             onPress={() => {
               setPayError(null);
               setPayOpen(true);
@@ -415,22 +520,20 @@ export function SubscribeFlow({
         onConfirm={() => void confirmPay()}
         pending={payPending}
         rows={[
-          {
-            label: t("pay.subtotal"),
-            value: fmtMoney(quote ? quote.base : estimate, currency),
-          },
+          ...usedIntervals.map((iv) => ({
+            label: t(groupLabelKey(iv)),
+            value: `${fmtMoney(groupTotal(iv), currency, locale)} ${t(INTERVAL_PER_KEY[iv])}`,
+          })),
           {
             label: t("pay.discount"),
             value:
               quote && quote.discountPercent > 0
-                ? `−${quote.discountPercent}% (−${fmtMoney(quote.discount, currency)})`
+                ? `−${quote.discountPercent}% (−${fmtMoney(quote.discount, currency, locale)})`
                 : "0%",
           },
         ]}
-        totalLabel={t("pay.total")}
-        totalValue={`${fmtMoney(quote ? quote.total : estimate, currency)} ${t(
-          INTERVAL_PER_KEY[interval],
-        )}`}
+        totalLabel={t("plan.dueToday")}
+        totalValue={fmtMoney(quote ? quote.total : estimate, currency, locale)}
         note={t("pay.note")}
         confirmLabel={t("pay.payNow")}
         error={payError}

@@ -8,10 +8,17 @@
 // ownership check, the create_child_subscription RPC (server-computed price /
 // sibling discount / trial) and the deferred 8-digit login-ID allocation +
 // synthetic-email application. The ID is revealed once, here.
+//
+// Migration 109 — DUAL BODY, same contract as the sibling /quote route:
+// `items: [{subject_id, interval}]` starts a PER-SUBJECT plan; without it the
+// legacy `interval` + `subject_ids` pair is expanded server-side into a uniform
+// basket, so already-shipped binaries keep working. Every legacy response field
+// is preserved; `items` / `groups` are additive.
 import { bearerFreeAccessChecker, createBearerClient, extractBearerToken, resolveBearerParent } from "@/lib/auth/mobileBearer";
 import { subscribeChildCore } from "@/lib/auth/subscriptionCore";
 import { isUuid } from "@/lib/uuid";
 import {
+  bodyPlanItems,
   bodyStr,
   bodyStrArray,
   errorResponse,
@@ -39,11 +46,13 @@ export async function POST(
     const body = await readJsonBody(request);
     // resolveBearerParent verified this token, so it is present and valid here.
     const token = extractBearerToken(request) ?? "";
+    const items = bodyPlanItems(body);
     const res = await subscribeChildCore({
       parentProfileId: parent.profileId,
       studentId,
       interval: bodyStr(body, "interval"),
       subjectIds: bodyStrArray(body, "subject_ids"),
+      items: items.length > 0 ? items : undefined,
       isFreeAccessActive: bearerFreeAccessChecker(createBearerClient(token)),
     });
     if (!res.ok) {
@@ -58,6 +67,8 @@ export async function POST(
       total: res.result.total,
       trial_days: res.result.trial_days,
       currency: res.result.currency,
+      items: res.result.items,
+      groups: res.result.groups,
     });
   } catch {
     // Never leak internals (error.message) to any client.

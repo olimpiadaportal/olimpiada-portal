@@ -5,6 +5,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { StickerThemePicker, type StickerThemeCard } from "@/components/StickerThemePicker";
 import { PalettePicker } from "@/components/PalettePicker";
+import { ARENA_PALETTES, PALETTE_GROUPS } from "@/lib/theme/palettes";
 import { ChildProfile } from "@/components/ChildProfile";
 import { CmsProse } from "@/components/CmsProse";
 
@@ -29,8 +30,9 @@ export default async function ChildProfilePage() {
     )
     .eq("profile_id", child.profileId)
     .maybeSingle();
-  const currentPalette = ((student as any)?.palette ?? null) as
-    | "sky" | "bubblegum" | "mint" | "sunset" | "rainbow" | null;
+  // Validated against the catalogue inside <PalettePicker/> — no slug union here,
+  // so adding a palette never touches this page.
+  const currentPalette = ((student as any)?.palette ?? null) as string | null;
   const childFirst = (student as any)?.first_name ?? "";
   const childLast = (student as any)?.last_name ?? "";
   const childName = `${childFirst} ${childLast}`.trim();
@@ -145,6 +147,19 @@ export default async function ChildProfilePage() {
     }),
   );
 
+  // Palette strings for the client picker: the server still resolves every
+  // string (same contract as the sticker picker), but the list is built from the
+  // catalogue so adding a palette needs no edit here.
+  // pal.darkNote is deliberately absent: this page renders it itself, above
+  // the picker. Passing it too would leave a string in the dict that no
+  // component reads.
+  const paletteDict: Record<string, string> = {
+    "pal.default": t("pal.default"),
+    "prof2.selected": t("prof2.selected"),
+  };
+  for (const g of PALETTE_GROUPS) paletteDict[`pal.group.${g}`] = t(`pal.group.${g}`);
+  for (const p of ARENA_PALETTES) paletteDict[`pal.${p.slug}`] = t(`pal.${p.slug}`);
+
   const { data: stickerSel } = await supabase
     .from("child_sticker_selections")
     .select("theme_id")
@@ -206,22 +221,14 @@ export default async function ChildProfilePage() {
           />
         </section>
 
-        {/* Round 12 — child-friendly light-mode palette picker. */}
+        {/* Child-friendly light-mode palette picker. */}
         <section className="prof2-card" aria-label={t("pal.title")}>
           <h2 className="prof2-sec-title">{t("pal.title")}</h2>
           <p className="prof2-sec-hint">{t("pal.hint")}</p>
-          <PalettePicker
-            selected={currentPalette}
-            dict={{
-              "pal.default": t("pal.default"),
-              "pal.sky": t("pal.sky"),
-              "pal.bubblegum": t("pal.bubblegum"),
-              "pal.mint": t("pal.mint"),
-              "pal.sunset": t("pal.sunset"),
-              "pal.rainbow": t("pal.rainbow"),
-              "prof2.selected": t("prof2.selected"),
-            }}
-          />
+          {/* Stated BEFORE the child clicks: picking a palette turns Dark Mode
+              off, and turning it back on keeps the palette. */}
+          <p className="prof2-sec-hint">{t("pal.darkNote")}</p>
+          <PalettePicker selected={currentPalette} dict={paletteDict} />
         </section>
       </div>
     </div>

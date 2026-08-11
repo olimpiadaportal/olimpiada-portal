@@ -14,6 +14,50 @@ import { getChildFreeAccessActive } from "@/lib/freeAccess";
 // `name` stays the raw DB fallback. Ids remain the stored/submitted values.
 export type ChildSubject = { id: string; code: string | null; name: string };
 
+/**
+ * The columns every child-facing subject list must read. `current_period_end`
+ * on BOTH levels is not redundant: since migration 109 the SUBSCRIPTION's value
+ * is the MAX across subjects ("coverage ends"), so it stays in the future while
+ * an individual weekly subject has already lapsed — and a legacy row whose own
+ * period is still NULL inherits it.
+ */
+export const CHILD_COVERAGE_SELECT =
+  "status, current_period_end, subscription_subjects(remove_at, current_period_end, subjects(id, code, name))";
+
+/**
+ * Subjects the child can actually START something in right now.
+ *
+ * Filtering on `child_subscriptions.status` alone lists a subject whose own
+ * cycle has ended — the yearly subject keeps the subscription alive, the lapsed
+ * weekly one stays on screen, and the attempt RPCs then reject it with
+ * `coalesce(ss.current_period_end, cs.current_period_end) > now()`. Same
+ * predicate here, so the UI never offers something the engine will refuse.
+ *
+ * Pure and `now`-injectable so the rule is unit-testable without a database.
+ */
+export function liveCoveredSubjects(
+  rows: readonly any[] | null | undefined,
+  now: number = Date.now(),
+): ChildSubject[] {
+  const map = new Map<string, ChildSubject>();
+  for (const sub of rows ?? []) {
+    for (const ss of sub?.subscription_subjects ?? []) {
+      if (!ss?.subjects) continue;
+      // remove_at first: a scheduled removal is the earlier of the two dates,
+      // and once it passes the subject is gone even if the row's period end was
+      // never rewritten.
+      const endsAt = ss.remove_at ?? ss.current_period_end ?? sub?.current_period_end ?? null;
+      if (endsAt && new Date(endsAt).getTime() <= now) continue;
+      map.set(ss.subjects.id, {
+        id: ss.subjects.id,
+        code: ss.subjects.code ?? null,
+        name: ss.subjects.name,
+      });
+    }
+  }
+  return [...map.values()];
+}
+
 export type ChildSubjectAccess = {
   /** giveaway OR free-access interval currently active */
   freeNow: boolean;
@@ -41,7 +85,7 @@ export async function getChildSubjectAccess(
         .maybeSingle(),
       supabase
         .from("child_subscriptions")
-        .select("status, subscription_subjects(subjects(id, code, name))")
+        .select(CHILD_COVERAGE_SELECT)
         .eq("student_profile_id", childProfileId)
         .in("status", ["trialing", "active"]),
     ]);
@@ -51,15 +95,8 @@ export async function getChildSubjectAccess(
   const hasAccess = access === "trialing" || access === "active" || freeNow;
 
   const subjMap = new Map<string, { code: string | null; name: string }>();
-  for (const s of (subs ?? []) as any[]) {
-    for (const ss of s.subscription_subjects ?? []) {
-      if (ss.subjects) {
-        subjMap.set(ss.subjects.id, {
-          code: ss.subjects.code ?? null,
-          name: ss.subjects.name,
-        });
-      }
-    }
+  for (const s of liveCoveredSubjects(subs as any[])) {
+    subjMap.set(s.id, { code: s.code, name: s.name });
   }
   // Free window: every subject with ACTIVE pricing is available (active
   // subjects_pricing rows are publicly readable — pricing-page policy).

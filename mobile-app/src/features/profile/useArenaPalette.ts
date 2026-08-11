@@ -12,10 +12,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/features/auth/authStore";
 import { QK, useStudentSelf, type StudentSelf } from "@/features/arena/queries";
+import { ARENA_PALETTE_SLUGS } from "@/theme/palettes.generated";
 import type { ArenaPalette } from "@/theme/tokens";
 
-/** The 5 saveable slugs (students.palette CHECK); "default" is stored as NULL. */
-const PALETTE_SLUGS = new Set(["sky", "bubblegum", "mint", "sunset", "rainbow"]);
+/** The saveable slugs (students.palette CHECK); "default" is stored as NULL. */
+const PALETTE_SLUGS: ReadonlySet<string> = new Set(ARENA_PALETTE_SLUGS);
 
 export function normalizePalette(raw: unknown): ArenaPalette {
   return typeof raw === "string" && PALETTE_SLUGS.has(raw) ? (raw as ArenaPalette) : "default";
@@ -30,6 +31,11 @@ export function useArenaPalette(): ArenaPalette {
  * Save (or clear) the palette on the child's own JWT and patch the shared
  * arena self cache so the chrome re-skins immediately. Returns false on
  * failure (callers show the generic trilingual update error).
+ *
+ * Choosing a REAL palette also writes theme_pref='light' — the same rule the
+ * web action applies. Palettes only exist as a light-mode surface, so without
+ * it the phone would reproduce the exact bug being fixed on web: the choice
+ * saves and nothing changes. "default" stays theme-neutral.
  */
 export function useSetStudentPalette() {
   const profileId = useAuthStore((s) => s.profileId);
@@ -37,11 +43,18 @@ export function useSetStudentPalette() {
   return async (palette: ArenaPalette): Promise<boolean> => {
     if (!profileId) return false;
     const value = PALETTE_SLUGS.has(palette) ? palette : null; // "default" → NULL
-    const { error } = await supabase
+    const patch: { palette: string | null; theme_pref?: "light" } = { palette: value };
+    if (value !== null) patch.theme_pref = "light";
+    // .select() is REQUIRED: PostgREST returns no error when an UPDATE matches
+    // zero rows (RLS denial, missing students row), so without it the save
+    // reported success, the chrome re-skinned from the patched cache, and the
+    // choice was gone on the next launch.
+    const { data: saved, error } = await supabase
       .from("students")
-      .update({ palette: value })
-      .eq("profile_id", profileId);
-    if (error) return false;
+      .update(patch)
+      .eq("profile_id", profileId)
+      .select("profile_id");
+    if (error || !saved || saved.length === 0) return false;
     const next = normalizePalette(value);
     queryClient.setQueryData<StudentSelf>(QK.self(profileId), (prev) =>
       prev ? { ...prev, palette: next } : prev,

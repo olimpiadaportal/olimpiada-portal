@@ -1,17 +1,21 @@
 "use client";
 
-// Bulk question import as a modal (general question bank + olympiad private
-// pools). GENERAL mode requires a Subject + Grade (batch-level selects) and a
-// JSON file whose rows carry meta.topic + meta.subtopic + meta.term (1..4)
-// (bulk import v3); meta.type is optional (single_choice by default) and
-// meta.media_asset_id may reference a pre-uploaded question image. OLYMPIAD
-// mode asks for the FILE ONLY: the package's own Subject and Grade are applied
-// server-side to every imported row (topic/subtopic/term stay optional), and
-// the DB accepts pool uploads ONLY while the package is being created — a
-// package that already has questions rejects the import. The submit button
-// stays disabled until the file passes the client-side pre-checks. Client
-// validation is UX only — the SECURITY DEFINER bulk RPCs remain the authority
-// (assert_question_type_rules etc.).
+// Bulk question import as a modal for the GENERAL question bank. The import
+// type decides the FILE TYPE: text-only takes the JSON array, mixed takes a ZIP
+// holding questions.json plus the images it references. A Subject + Grade are
+// chosen at batch level and rows carry meta.topic + meta.subtopic + meta.term
+// (1..4) (bulk import v3); meta.type is optional (single_choice by default) and
+// meta.media_asset_id may reference a pre-uploaded question image. The submit
+// button stays disabled until the file passes the client-side pre-checks.
+// Client validation is UX only — the SECURITY DEFINER bulk RPC remains the
+// authority (assert_question_type_rules etc.).
+//
+// OLYMPIAD MODE IS GONE. This modal used to take a `packageId` and post to
+// bulkImportOlympiadQuestions, but it is mounted only on /questions and never
+// with a package. Olympiad pools are uploaded from their own surfaces
+// (OlympiadCreateForm at creation, OlympiadGradeBulkAppend per grade after it),
+// and the dead branch kept an authenticated server action POST-able for a UI
+// nobody could reach.
 //
 // Round 52 (§4/§6/§7):
 //   * The batch-level Rüb selector is REMOVED. In the 2026 curriculum a term
@@ -22,34 +26,19 @@
 //     unknown topic/subtopic are flagged HERE, before the upload.
 //   * The AI prompt block (BulkPromptBlock) embeds that same curriculum so the
 //     model cannot invent a name in the first place.
-import {
-  startTransition,
-  useActionState,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActionButton } from "@/components/ActionButton";
 import { Modal } from "@/components/Modal";
 import { BulkPromptBlock } from "@/components/BulkPromptBlock";
 import { bulkImportQuestions, type BulkImportState } from "@/lib/admin/questions";
-import { bulkImportOlympiadQuestions } from "@/lib/admin/olympiad";
 import type { QuestionTaxonomy } from "@/lib/admin/question-options";
 import {
   buildClientCurriculumIndex,
   downloadBulkTemplate,
-  parseBulkFile,
-  validateBulkRowsClient,
   type ClientTypeRule,
-  type RowIssue,
 } from "@/lib/bulk-client";
-import {
-  discardUploadedMedia,
-  uploadEmbeddedMedia,
-} from "@/lib/bulk-upload-media";
-import { verifyImportImage } from "@/lib/admin/import-media";
+import { useBulkFilePicker } from "@/lib/useBulkFilePicker";
 
 type Opt = { value: string; label: string };
 
@@ -59,7 +48,6 @@ export function BulkUploadModal({
   grades,
   subjects,
   taxonomy,
-  packageId,
   typeNames,
   typeRules,
   triggerClassName = "btn-ghost",
@@ -67,15 +55,12 @@ export function BulkUploadModal({
   dict: Record<string, string>;
   // Panel locale — the language the AI prompt asks the model to write in.
   locale?: string;
-  // General mode: selectable grade + subject lists (active subjects).
+  // Selectable grade + subject lists (active subjects).
   grades?: Opt[];
   subjects?: Opt[];
-  // General mode: the EXAM curriculum (topics + terms + subtopics). Drives the
-  // per-row "Topic not found" pre-check and the AI prompt's embedded list.
+  // The EXAM curriculum (topics + terms + subtopics). Drives the per-row
+  // "Topic not found" pre-check and the AI prompt's embedded list.
   taxonomy?: QuestionTaxonomy;
-  // Olympiad mode: the private pool's package id (subject/grade come from the
-  // package row server-side — no selectors on this surface).
-  packageId?: string;
   // Active question-type names, for the short reference hint.
   typeNames?: string[];
   // Active question types + their structure rules (options_required /
@@ -86,20 +71,10 @@ export function BulkUploadModal({
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const router = useRouter();
-  const olympiad = Boolean(packageId);
-  const mode = olympiad ? ("olympiad" as const) : ("general" as const);
-  const rules = typeRules ?? [];
 
   const [open, setOpen] = useState(false);
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");
-  const [fileName, setFileName] = useState("");
-  const [fileError, setFileError] = useState("");
-  // Parsed rows are KEPT so the issue list can be recomputed when the subject
-  // or grade changes (a different pair means a different curriculum).
-  const [items, setItems] = useState<unknown[]>([]);
-  // Bumping the key remounts the file input (the reliable way to clear it).
-  const [fileKey, setFileKey] = useState(0);
   // Round 53 — MANDATORY import type. Intentionally starts unset with no
   // default: defaulting to "text" would let a mixed file import with every
   // image silently dropped, which looks like success. Everything below the
@@ -109,11 +84,11 @@ export function BulkUploadModal({
   const modeChosen = questionMode !== "";
 
   // Curriculum for the chosen (subject, grade): a topic belongs to the subject
-  // and either to this grade or to no grade at all (shared). Null in olympiad
-  // mode, before a selection, or when the tree is empty — the row checks then
-  // fall back to schema-only validation instead of rejecting everything.
+  // and either to this grade or to no grade at all (shared). Null before a
+  // selection or when the tree is empty — the row checks then fall back to
+  // schema-only validation instead of rejecting everything.
   const curriculum = useMemo(() => {
-    if (olympiad || !taxonomy || !subjectId || !gradeId) return null;
+    if (!taxonomy || !subjectId || !gradeId) return null;
     const topics = taxonomy.topics
       .filter(
         (tp) =>
@@ -128,24 +103,20 @@ export function BulkUploadModal({
           .map((st) => st.name),
       }));
     return topics.length > 0 ? buildClientCurriculumIndex(topics) : null;
-  }, [olympiad, taxonomy, subjectId, gradeId]);
+  }, [taxonomy, subjectId, gradeId]);
 
-  const rowIssues: RowIssue[] = useMemo(
-    () =>
-      items.length === 0
-        ? []
-        : validateBulkRowsClient(items, tt, rules, mode, curriculum, {
-            mixed: questionMode === "mixed",
-          }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, curriculum, mode, dict, questionMode],
-  );
-  const itemCount = items.length;
+  // Parse + row validation + the mixed media phase, shared with the two
+  // olympiad upload surfaces (lib/useBulkFilePicker.ts).
+  const picker = useBulkFilePicker({
+    dict,
+    questionMode,
+    mode: "general",
+    typeRules: typeRules ?? [],
+    curriculum,
+  });
 
-  // Both server actions share the same state shape.
-  const serverAction = olympiad ? bulkImportOlympiadQuestions : bulkImportQuestions;
   const [state, action, pending] = useActionState<BulkImportState, FormData>(
-    serverAction,
+    bulkImportQuestions,
     null,
   );
 
@@ -153,98 +124,24 @@ export function BulkUploadModal({
   // modal and force a fresh file choice before any re-submit (prevents an
   // accidental duplicate import of the same file).
   const lastHandled = useRef<BulkImportState>(null);
+  // `reset` alone, never the whole picker: the hook returns a fresh object each
+  // render, so depending on it would re-run this effect forever.
+  const { reset: resetPicker } = picker;
   useEffect(() => {
     if (state?.ok && state !== lastHandled.current) {
       lastHandled.current = state;
-      setFileName("");
-      setItems([]);
-      setFileKey((k) => k + 1);
+      resetPicker();
       router.refresh();
     }
-  }, [state, router]);
+  }, [state, router, resetPicker]);
 
-  function resetFileState() {
-    setFileError("");
-    setItems([]);
-    setMediaIssues([]);
-  }
-
-  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    resetFileState();
-    const f = e.target.files?.[0];
-    if (!f) {
-      setFileName("");
-      return;
-    }
-    setFileName(f.name);
-    const parsed = await parseBulkFile(f, tt);
-    if ("error" in parsed) {
-      setFileError(parsed.error);
-      return;
-    }
-    setItems(parsed.items);
-  }
-
-  // Media phase state. `uploading` is separate from the action's `pending` so
-  // the button can say "uploading images" during the part that happens BEFORE
-  // the server action is dispatched — otherwise a large batch looks frozen.
-  const [uploading, setUploading] = useState(false);
-  const [mediaIssues, setMediaIssues] = useState<RowIssue[]>([]);
-
-  /**
-   * Submit handler for MIXED mode.
-   *
-   * Images are uploaded one request each and replaced by their verified uuids,
-   * so the request that finally reaches the server action carries no base64 at
-   * all — its size depends on the number of questions, never on image bytes.
-   * Text-only mode skips all of this and posts the original file untouched.
-   */
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    if (questionMode !== "mixed" || items.length === 0) return; // native submit
-    e.preventDefault();
-    const form = e.currentTarget;
-    setUploading(true);
-    setMediaIssues([]);
-
-    const batchId = crypto.randomUUID();
-    const result = await uploadEmbeddedMedia(
-      items,
-      batchId,
-      (ext) => `imports/${batchId}/${crypto.randomUUID()}.${ext}`,
-      verifyImportImage,
-    );
-    setUploading(false);
-
-    if (result.failures.length > 0) {
-      // Nothing is imported when any image fails: a partial import would leave
-      // the admin reconciling which questions made it. Objects already uploaded
-      // are discarded here, and the server sweep covers whatever this misses.
-      setMediaIssues(
-        result.failures.map((f) => ({ row: f.row, message: tt(f.messageKey) })),
-      );
-      await discardUploadedMedia(result.uploaded.map((u) => u.path));
-      return;
-    }
-
-    // Post the rewritten array on the SAME `file` field, so the server action's
-    // parse contract is unchanged — it still receives a JSON File.
-    const fd = new FormData(form);
-    fd.set(
-      "file",
-      new File([JSON.stringify(result.items)], fileName || "import.json", {
-        type: "application/json",
-      }),
-    );
-    startTransition(() => action(fd));
-  }
-
-  const fileReady = fileName !== "" && fileError === "" && rowIssues.length === 0;
   const canSubmit =
     !pending &&
-    !uploading &&
+    !picker.uploading &&
     modeChosen &&
-    fileReady &&
-    (olympiad || (gradeId !== "" && subjectId !== ""));
+    picker.fileReady &&
+    gradeId !== "" &&
+    subjectId !== "";
 
   const codesHint = tt("bulk.codesHint").replace(
     "{types}",
@@ -268,9 +165,13 @@ export function BulkUploadModal({
         closeLabel={tt("modal.close")}
         busy={pending}
       >
-        {olympiad && <p className="muted">{tt("olybulk.note")}</p>}
-
-        <form action={action} onSubmit={handleSubmit} className="form">
+        <form
+          action={action}
+          onSubmit={(e) =>
+            void picker.handleSubmit(e, (fd) => startTransition(() => action(fd)))
+          }
+          className="form"
+        >
           {/* ---- MANDATORY import type — before every other control -------- */}
           <fieldset className="bulk-mode">
             <legend className="field-label">
@@ -315,121 +216,119 @@ export function BulkUploadModal({
               action obvious. */}
           {!modeChosen ? null : (
           <>
-          {olympiad ? (
-            <>
-              <input type="hidden" name="__id" value={packageId} />
-              {/* Subject + Grade are inherited from the package server-side —
-                  this surface intentionally has NO selectors for them. */}
-              <p className="hint">{tt("olybulk.fromPackage")}</p>
-            </>
-          ) : (
-            <>
-              <div className="form-grid">
-                <label className="field">
-                  <span className="field-label">
-                    {tt("qfield.subject")}
-                    <span className="req"> *</span>
-                  </span>
-                  <select
-                    name="subject_id"
-                    required
-                    value={subjectId}
-                    onChange={(e) => setSubjectId(e.target.value)}
-                  >
-                    <option value="">{tt("manage.select")}</option>
-                    {(subjects ?? []).map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                  {subjectId === "" && (
-                    <span className="hint">{tt("bulk.chooseSubject")}</span>
-                  )}
-                </label>
+          <div className="form-grid">
+            <label className="field">
+              <span className="field-label">
+                {tt("qfield.subject")}
+                <span className="req"> *</span>
+              </span>
+              <select
+                name="subject_id"
+                required
+                value={subjectId}
+                onChange={(e) => setSubjectId(e.target.value)}
+              >
+                <option value="">{tt("manage.select")}</option>
+                {(subjects ?? []).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {subjectId === "" && (
+                <span className="hint">{tt("bulk.chooseSubject")}</span>
+              )}
+            </label>
 
-                <label className="field">
-                  <span className="field-label">
-                    {tt("qfield.grade")}
-                    <span className="req"> *</span>
-                  </span>
-                  <select
-                    name="grade_id"
-                    required
-                    value={gradeId}
-                    onChange={(e) => setGradeId(e.target.value)}
-                  >
-                    <option value="">{tt("manage.select")}</option>
-                    {(grades ?? []).map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                  {gradeId === "" && (
-                    <span className="hint">{tt("bulk.chooseGrade")}</span>
-                  )}
-                </label>
+            <label className="field">
+              <span className="field-label">
+                {tt("qfield.grade")}
+                <span className="req"> *</span>
+              </span>
+              <select
+                name="grade_id"
+                required
+                value={gradeId}
+                onChange={(e) => setGradeId(e.target.value)}
+              >
+                <option value="">{tt("manage.select")}</option>
+                {(grades ?? []).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {gradeId === "" && (
+                <span className="hint">{tt("bulk.chooseGrade")}</span>
+              )}
+            </label>
 
-              </div>
-              <p className="hint">{tt("bulk.batchNote")}</p>
-              {/* Round 52: no batch Rüb select — meta.term is per row and must
-                  match its curriculum topic's term. */}
-              <p className="hint">{tt("bulk.termNote")}</p>
+          </div>
+          <p className="hint">{tt("bulk.batchNote")}</p>
+          {/* Round 52: no batch Rüb select — meta.term is per row and must
+              match its curriculum topic's term. */}
+          <p className="hint">{tt("bulk.termNote")}</p>
 
-              {/* §7 — the ready-made AI prompt, built from the selection above. */}
-              <BulkPromptBlock
-                dict={dict}
-                locale={locale ?? "az"}
-                subjects={subjects ?? []}
-                grades={grades ?? []}
-                subjectId={subjectId}
-                gradeId={gradeId}
-                taxonomy={taxonomy ?? { topics: [], subtopics: [] }}
-              />
-            </>
-          )}
+          {/* §7 — the ready-made AI prompt, built from the selection above.
+              questionMode is passed because the prompt DESCRIBES the format:
+              without it the mixed-mode admin was handed a prompt forbidding
+              images and omitting the ZIP layout the mode requires. */}
+          <BulkPromptBlock
+            dict={dict}
+            locale={locale ?? "az"}
+            subjects={subjects ?? []}
+            grades={grades ?? []}
+            subjectId={subjectId}
+            gradeId={gradeId}
+            taxonomy={taxonomy ?? { topics: [], subtopics: [] }}
+            questionMode={questionMode}
+          />
 
           <label className="field">
             <span className="field-label">
-              {tt("bulk.fileLabel")}
+              {tt(questionMode === "mixed" ? "bulk.fileLabelZip" : "bulk.fileLabel")}
               <span className="req"> *</span>
             </span>
             <input
-              key={fileKey}
+              key={picker.fileKey}
               type="file"
               name="file"
-              accept="application/json,.json"
+              accept={
+                questionMode === "mixed" ? ".zip,application/zip" : "application/json,.json"
+              }
               required
-              onChange={onFileChange}
+              onChange={(e) => void picker.onFileChange(e)}
             />
           </label>
-          {fileError !== "" && <p className="form-error">{fileError}</p>}
-          {fileReady && itemCount > 0 && (
+          {questionMode === "mixed" && (
+            <pre className="bulk-zip-layout">{tt("bulk.zipLayout")}</pre>
+          )}
+          {picker.fileError !== "" && <p className="form-error">{picker.fileError}</p>}
+          {picker.fileReady && (
             <p className="hint">
-              {tt("bulk.itemsFound").replace("{n}", String(itemCount))}
+              {tt("bulk.itemsFound").replace("{n}", String(picker.items.length))}
             </p>
           )}
 
-          {mediaIssues.length > 0 && (
+          {/* File-level problems carry no row number, so they sit above the
+              numbered lists rather than inside them. */}
+          {picker.zipIssues.length > 0 && (
             <div className="bulk-issues" role="alert">
               <span className="bulk-issues-title">{tt("bulk.fileProblems")}</span>{" "}
               — {tt("bulk.fixFile")}
               <ul>
-                {mediaIssues.map((is, i) => (
-                  <li key={i}>
-                    {tt("bulk.row")} {is.row}: {is.message}
-                  </li>
+                {picker.zipIssues.map((msg, i) => (
+                  <li key={i}>{msg}</li>
                 ))}
               </ul>
             </div>
           )}
-          {rowIssues.length > 0 && (
+          {[...picker.mediaIssues, ...picker.rowIssues].length > 0 && (
             <div className="bulk-issues" role="alert">
               <span className="bulk-issues-title">{tt("bulk.fileProblems")}</span>{" "}
               — {tt("bulk.fixFile")}
               <ul>
-                {rowIssues.map((is, i) => (
+                {[...picker.mediaIssues, ...picker.rowIssues].map((is, i) => (
                   <li key={i}>
                     {tt("bulk.row")} {is.row}: {is.message}
                   </li>
@@ -438,24 +337,23 @@ export function BulkUploadModal({
             </div>
           )}
 
-          <p className="hint">{tt("bulk.fileHint")}</p>
+          <p className="hint">
+            {tt(questionMode === "mixed" ? "bulk.fileHintZip" : "bulk.fileHint")}
+          </p>
           {/* v3 format rules: five A–E options / one correct everywhere; the
               general bank additionally requires topic + subtopic + term and
               may reference a pre-uploaded image. */}
           <p className="hint">{tt("bulk.fiveRule")}</p>
-          {!olympiad && <p className="hint">{tt("bulk.generalMeta")}</p>}
-          {!olympiad && <p className="hint">{tt("bulk.mediaHint")}</p>}
-          {olympiad && <p className="hint">{tt("olybulk.optionalMeta")}</p>}
+          <p className="hint">{tt("bulk.generalMeta")}</p>
+          <p className="hint">{tt("bulk.mediaHint")}</p>
           <p className="hint">{codesHint}</p>
-          {/* Olympiad mode: olybulk.fromPackage above already explains that
-              legacy meta.subject / meta.grade_level values are ignored. */}
-          {!olympiad && <p className="hint">{tt("bulk.overrideHint")}</p>}
+          <p className="hint">{tt("bulk.overrideHint")}</p>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <ActionButton
               className="btn"
-              pending={pending || uploading}
-              pendingLabel={tt(uploading ? "bulk.uploadingMedia" : "bulk.submitting")}
+              pending={pending || picker.uploading}
+              pendingLabel={tt(picker.uploading ? "bulk.uploadingMedia" : "bulk.submitting")}
               disabled={!canSubmit}
             >
               {tt("bulk.submit")}
@@ -465,8 +363,10 @@ export function BulkUploadModal({
               type="button"
               onClick={() =>
                 downloadBulkTemplate(
-                  `${olympiad ? "olympiad-questions" : "questions"}-${questionMode}-template.json`,
-                  mode,
+                  `questions-${questionMode}-template.${
+                    questionMode === "mixed" ? "zip" : "json"
+                  }`,
+                  "general",
                   // Safe: the button only renders once a mode is chosen.
                   questionMode === "mixed" ? "mixed" : "text",
                 )

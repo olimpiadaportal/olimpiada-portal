@@ -1,23 +1,43 @@
 "use client";
 
+// START-A-PLAN form for a child with NO live subscription.
+//
+// Migration 109: there is no global billing-period control any more. The parent
+// picks subjects, gives EACH of them its own cycle on a <SubjectPlanCard>, and
+// <PlanSummary> shows the per-cycle breakdown fed by the debounced AUTHORITATIVE
+// server quote (the sibling discount is only ever computed server-side).
+//
+// The form posts one repeated `plan` field per selection ("<uuid>:<interval>");
+// the old `interval` hidden input is gone, because a single "/ ay" suffix under
+// a mixed-cycle basket is exactly the misleading label the requirement forbids.
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import {
   subscribeChild,
   quoteSubscription,
   type SubscribeState,
   type QuoteResult,
 } from "@/lib/auth/subscriptionService";
-import { useT } from "@/i18n/I18nProvider";
+import { PlanSummary } from "@/components/PlanSummary";
+import { SubjectPlanCard } from "@/components/SubjectPlanCard";
+import { useLocale, useT } from "@/i18n/I18nProvider";
 import { subjectLabel } from "@/lib/subjectLabel";
+import {
+  addPlanSubject,
+  availableSubjects,
+  computePlanQuote,
+  formatAzn,
+  INTERVAL_LABEL_KEY,
+  PLAN_INTERVALS,
+  removePlanSubject,
+  setPlanInterval,
+  subjectPrice,
+  type ConfiguratorSubject,
+  type PlanInterval,
+  type PlanItem,
+} from "@/lib/pricingConfigurator";
 
 type Subj = { id: string; code: string | null; name: string; prices: Record<string, number> };
-
-const INTERVAL_KEY: Record<string, string> = {
-  week: "pricing.weekly",
-  month: "pricing.monthly",
-  year: "pricing.yearly",
-};
 
 export function SubscribeForm({
   studentId,
@@ -31,45 +51,51 @@ export function SubscribeForm({
   const tt = (k: string) => dict[k] ?? k;
   // Locale-aware subject labels (subj.<code>) via the app-wide provider dict.
   const t = useT();
+  const locale = useLocale();
   const [state, action, pending] = useActionState<SubscribeState, FormData>(
     subscribeChild,
     null,
   );
-  const [interval, setIntervalState] = useState("month");
-  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [plan, setPlan] = useState<PlanItem[]>([]);
   const [quote, setQuote] = useState<QuoteResult | null>(null);
 
-  // Cosmetic, instant client subtotal (the server reprices authoritatively below).
-  const subtotal = Array.from(sel).reduce(
-    (sum, id) => sum + (subjects.find((s) => s.id === id)?.prices[interval] ?? 0),
-    0,
+  const catalog = useMemo<ConfiguratorSubject[]>(
+    () => subjects.map((s) => ({ ...s, prices: s.prices as ConfiguratorSubject["prices"] })),
+    [subjects],
+  );
+  const byId = useMemo(() => new Map(catalog.map((s) => [s.id, s])), [catalog]);
+  const available = useMemo(
+    () => availableSubjects(catalog, plan.map((p) => p.subjectId)),
+    [catalog, plan],
+  );
+  // Cosmetic, instant client preview (the server reprices authoritatively below).
+  const localQuote = useMemo(() => computePlanQuote(catalog, plan), [catalog, plan]);
+  // Serialized basket: the quote effect keys on subject AND cycle, so changing
+  // one card's cycle refetches while an unrelated re-render does not.
+  const planKey = useMemo(
+    () => plan.map((p) => `${p.subjectId}:${p.interval}`).join(","),
+    [plan],
   );
 
-  // Live, AUTHORITATIVE preview: ask the server for base/discount/total whenever the
-  // selection or interval changes (sibling discount is computed server-side).
+  // Live, AUTHORITATIVE preview. The `cancelled` guard means a slow response for
+  // an older basket can never overwrite a newer one.
   useEffect(() => {
-    const ids = Array.from(sel);
-    if (ids.length === 0) {
+    if (!planKey) {
       setQuote(null);
       return;
     }
     let cancelled = false;
-    quoteSubscription({ studentId, interval, subjectIds: ids }).then((q) => {
+    const items = planKey.split(",").map((raw) => {
+      const [subjectId, interval] = raw.split(":");
+      return { subjectId, interval };
+    });
+    quoteSubscription({ studentId, items }).then((q) => {
       if (!cancelled) setQuote(q);
     });
     return () => {
       cancelled = true;
     };
-  }, [sel, interval, studentId]);
-
-  function toggle(id: string) {
-    setSel((p) => {
-      const n = new Set(p);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  }
+  }, [planKey, studentId]);
 
   if (state?.ok && state.result) {
     const r = state.result;
@@ -91,19 +117,24 @@ export function SubscribeForm({
           <li>
             {tt("sub.base")}: {r.base} {r.currency}
           </li>
-          {r.discount_percent > 0 && (
-            <li>
-              {tt("sub.discount")}: −{r.discount_percent}% (−{r.discount} {r.currency})
-            </li>
-          )}
-          <li>
-            {tt("sub.total")}: <strong>{r.total} {r.currency}</strong> /{" "}
-            {tt(INTERVAL_KEY[interval])}
-          </li>
-          <li>
-            {tt("sub.trial")}: {r.trial_days} {tt("sub.days")}
-          </li>
         </ul>
+        {/* Every OTHER figure — sibling discount, per-cycle subtotals, what was
+            charged, the trial — comes from the server result. Rendering them
+            here as well left a list-price "due today" from the browser sitting
+            under the amount that was actually charged. */}
+        <PlanSummary
+          quote={localQuote}
+          server={{
+            discountPercent: r.discount_percent,
+            discount: r.discount,
+            dueToday: r.total,
+            trialDays: r.trial_days,
+            currency: r.currency,
+            groups: r.groups ?? null,
+          }}
+          locale={locale}
+          t={tt}
+        />
         <Link className="btn" href="/dashboard">
           {tt("parent.dash.title")}
         </Link>
@@ -114,98 +145,131 @@ export function SubscribeForm({
   return (
     <form action={action} className="form" style={{ maxWidth: 560 }}>
       <input type="hidden" name="student_id" value={studentId} />
-      {Array.from(sel).map((id) => (
-        <input key={id} type="hidden" name="subject" value={id} />
+      {plan.map((p) => (
+        <input
+          key={p.subjectId}
+          type="hidden"
+          name="plan"
+          value={`${p.subjectId}:${p.interval}`}
+        />
       ))}
-      <input type="hidden" name="interval" value={interval} />
 
-      {/* 1) Subjects FIRST (checkboxes). */}
+      {/* 1) Pick the subjects. */}
       <div>
         <span className="field-label">{tt("sub.subjects")}</span>
-        {subjects.length === 0 ? (
+        {catalog.length === 0 ? (
           <p className="muted">{tt("sub.noSubjectsAvailable")}</p>
+        ) : available.length === 0 ? (
+          <p className="muted">{tt("cfg.allAdded")}</p>
         ) : (
-          subjects.map((s) => (
-            <label
-              key={s.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-                padding: "6px 0",
-              }}
-            >
-              <span>
-                <input
-                  type="checkbox"
-                  checked={sel.has(s.id)}
-                  onChange={() => toggle(s.id)}
-                />{" "}
-                {subjectLabel(t, s.code, s.name)}
-              </span>
-              <span className="muted">{s.prices[interval] ?? "—"} AZN</span>
-            </label>
-          ))
+          <ul className="pcfg-list">
+            {available.map((s) => {
+              // No global cycle exists, so the list shows the cheapest one.
+              let from: { price: number; iv: PlanInterval } | null = null;
+              for (const iv of PLAN_INTERVALS) {
+                const p = subjectPrice(s, iv);
+                if (p === null) continue;
+                if (!from || p < from.price) from = { price: p, iv };
+              }
+              return (
+                <li key={s.id} className="pcfg-row">
+                  <span className="pcfg-row-main">
+                    <span className="pcfg-row-name">{subjectLabel(t, s.code, s.name)}</span>
+                    <span className="pcfg-row-price">
+                      {from === null
+                        ? tt("cfg.unpriced")
+                        : tt("plan.fromPrice")
+                            .replace("{price}", formatAzn(from.price, locale))
+                            .replace("{cycle}", tt(INTERVAL_LABEL_KEY[from.iv]))}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="pcfg-add"
+                    onClick={() => setPlan((prev) => addPlanSubject(prev, s.id, catalog))}
+                    aria-label={tt("cfg.addAria").replace(
+                      "{subject}",
+                      subjectLabel(t, s.code, s.name),
+                    )}
+                  >
+                    <span aria-hidden="true" className="pcfg-add-glyph">
+                      +
+                    </span>
+                    {tt("cfg.add")}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
 
-      {/* 2) Live subtotal. */}
-      <p className="muted" style={{ marginTop: 8 }}>
-        {tt("sub.subtotal")}: <strong>{subtotal} AZN</strong>
-      </p>
-
-      {/* 3) Billing-period selector (recomputes the payable amount). */}
-      <div style={{ marginTop: 14 }}>
-        <span className="field-label">{tt("sub.interval")}</span>
-        <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
-          {["week", "month", "year"].map((iv) => (
-            <label key={iv} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input
-                type="radio"
-                name="interval_choice"
-                value={iv}
-                checked={interval === iv}
-                onChange={() => setIntervalState(iv)}
+      {/* 2) One card per selection: name, its own cycle, its price, remove. */}
+      {plan.length > 0 && (
+        <div className="splan-list" style={{ marginTop: 14 }}>
+          <p className="hint">{tt("plan.perSubjectHint")}</p>
+          {plan.map((item) => {
+            const s = byId.get(item.subjectId);
+            if (!s) return null;
+            return (
+              <SubjectPlanCard
+                key={s.id}
+                id={s.id}
+                code={s.code}
+                name={s.name}
+                interval={item.interval}
+                prices={s.prices}
+                onIntervalChange={(id, iv) =>
+                  setPlan((prev) => setPlanInterval(prev, id, iv))
+                }
+                onRemove={(id) => setPlan((prev) => removePlanSubject(prev, id))}
+                disabled={pending}
+                locale={locale}
+                t={tt}
               />
-              {tt(INTERVAL_KEY[iv])}
-            </label>
-          ))}
+            );
+          })}
         </div>
-      </div>
+      )}
 
-      {/* 4) Authoritative server preview: base / sibling discount / total. */}
+      {/* 3) Authoritative server preview: base / sibling discount / due today. */}
       <div className="card" style={{ marginTop: 14 }}>
-        {sel.size === 0 ? (
+        {plan.length === 0 ? (
           <p className="muted">{tt("sub.previewHint")}</p>
         ) : quote && quote.ok ? (
-          <ul className="clean">
-            <li>
-              {tt("sub.base")}: {quote.base} {quote.currency}
-            </li>
-            <li>
-              {tt("sub.discount")}:{" "}
-              {quote.discount_percent > 0
-                ? `−${quote.discount_percent}% (−${quote.discount} ${quote.currency})`
-                : `0% (${tt("sub.noSibling")})`}
-            </li>
-            <li>
-              {tt("sub.totalNow")}:{" "}
-              <strong>
-                {quote.total} {quote.currency}
-              </strong>{" "}
-              / {tt(INTERVAL_KEY[interval])}
-            </li>
-            <li className="muted">
-              {tt("sub.trial")}: {quote.trial_days} {tt("sub.days")}
-            </li>
-          </ul>
+          <>
+            <div className="quote-row">
+              <span className="q-label">{tt("sub.base")}</span>
+              <span>
+                {quote.base} {quote.currency}
+              </span>
+            </div>
+            {quote.discount_percent === 0 && (
+              <p className="muted">{tt("sub.noSibling")}</p>
+            )}
+            <PlanSummary
+              quote={localQuote}
+              server={{
+                discountPercent: quote.discount_percent,
+                discount: quote.discount,
+                dueToday: quote.total,
+                trialDays: quote.trial_days,
+                currency: quote.currency,
+                // Per-cycle subtotals at the SIBLING rate; the local quote can
+                // only ever hold list prices.
+                groups: quote.groups ?? null,
+              }}
+              locale={locale}
+              t={tt}
+            />
+          </>
         ) : (
           <p className="muted">{tt("sub.calculating")}</p>
         )}
       </div>
 
       {state?.error && <p className="form-error">{state.error}</p>}
-      <button className="btn" type="submit" disabled={pending || sel.size === 0}>
+      <button className="btn" type="submit" disabled={pending || plan.length === 0}>
         {pending ? tt("sub.submitting") : tt("sub.submit")}
       </button>
     </form>

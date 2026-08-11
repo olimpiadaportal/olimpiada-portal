@@ -8,12 +8,16 @@
 // free-access gate as any other billing change — via the bearer client).
 // Server semantics are identical to the web on purpose: in REAL payment mode
 // the mobile CLIENT enforces its read-only posture; the server never loosens.
-// An optional `interval` field is accepted for forward compatibility and
-// ignored — the batch editor only changes subjects, exactly like the web.
+//
+// Migration 109: the cycle is now REAL and PER SUBJECT. `items:
+// [{subject_id, interval}]` posts the DESIRED FULL set with each subject's
+// cycle and the server derives adds / removes / cycle changes itself; the
+// legacy `subject_ids`-only body still works for already-shipped binaries.
 import { bearerFreeAccessChecker, createBearerClient, extractBearerToken, resolveBearerParent } from "@/lib/auth/mobileBearer";
 import { updateSubscriptionSubjectsCore } from "@/lib/auth/subscriptionCore";
 import { isUuid } from "@/lib/uuid";
 import {
+  bodyPlanItems,
   bodyStrArray,
   errorResponse,
   okResponse,
@@ -40,16 +44,22 @@ export async function POST(
     const body = await readJsonBody(request);
     // resolveBearerParent verified this token, so it is present and valid here.
     const token = extractBearerToken(request) ?? "";
+    const items = bodyPlanItems(body);
     const res = await updateSubscriptionSubjectsCore({
       parentProfileId: parent.profileId,
       studentId,
       subjectIds: bodyStrArray(body, "subject_ids"),
+      items: items.length > 0 ? items : undefined,
       isFreeAccessActive: bearerFreeAccessChecker(createBearerClient(token)),
     });
     if (!res.ok) {
       return errorResponse(res.errorKey, statusForErrorKey(res.errorKey));
     }
-    return okResponse({ added: res.added, removed: res.removed });
+    return okResponse({
+      added: res.added,
+      removed: res.removed,
+      plan_changed: res.planChanged,
+    });
   } catch {
     // Never leak internals (error.message) to any client.
     return errorResponse("sub.err.failed", 500, true);

@@ -299,35 +299,25 @@ export function validateBulkItem(
 }
 
 // ---------------------------------------------------------------------------
-// MIXED MODE — embedded image validation (Round 53)
+// MIXED MODE — image references
 //
-// A mixed-mode file may carry `meta.image` as a base64 data URL, which the
-// server decodes, verifies and uploads before the import RPC runs. These rules
-// are checked HERE first, on the exact same bytes, so a bad image is a numbered
-// row error in the browser rather than a failed upload halfway through a batch.
+// Images arrive as entries in the uploaded ZIP. The BROWSER reads them, sniffs
+// their magic bytes, uploads each one on its own request and replaces the
+// reference with the uuid a server action minted after re-typing the STORED
+// bytes (lib/admin/import-media.ts). By the time an import action runs, the
+// only legal shape is a uuid.
 //
-// The declared mime in the data URL is deliberately NOT trusted — it is used
-// only to reject obvious nonsense early. The authoritative check is the
-// magic-byte sniff on the server (lib/admin/bulk-media.ts), which is what keeps
-// an SVG wearing a `image/png` label out of the bucket.
+// So the server's job here is narrow and absolute: refuse anything that is not
+// an already-verified reference. A surviving `meta.image`, a data URL, a path —
+// each means the request did not come through the import UI, and none of them
+// can be honoured without reintroducing a bytes path this flow deleted.
 // ---------------------------------------------------------------------------
 
-/** Mirrors BULK_MEDIA_MAX_BYTES in lib/admin/bulk-media.ts (5 MB decoded). */
-export const BULK_MEDIA_MAX_BYTES_CLIENT = 5 * 1024 * 1024;
-
-const DATA_URL_HEAD_RE = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,/i;
-const ALLOWED_DECLARED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-
-/** Decoded byte length WITHOUT allocating — an oversized paste must not be materialized. */
-function b64Bytes(b64: string): number {
-  const clean = b64.replace(/\s/g, "");
-  if (clean.length === 0) return 0;
-  const pad = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
-  return Math.floor((clean.length * 3) / 4) - pad;
-}
+const MEDIA_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Validate one row's embedded media. Returns a localized message or null.
+ * Validate one row's media reference. Returns a localized message or null.
  *
  * `mixed` false means the admin chose "text only", so an image present in the
  * file is a MISMATCH worth reporting rather than silently dropping — it almost
@@ -341,23 +331,26 @@ export function validateItemMedia(item: unknown, t: T, mixed: boolean): string |
     meta && typeof meta === "object" && !Array.isArray(meta)
       ? (meta as Record<string, unknown>)
       : {};
+  // meta.media_asset_id is the field the browser phase WRITES, so its shape is
+  // checked here — the option path already does the same. Without it a
+  // non-uuid reached claimableMediaIds' .in("id", …) against a uuid column,
+  // PostgREST errored, and the gate's fail-closed branch then rejected EVERY
+  // media-carrying row in the file instead of the one bad row.
+  const rawId = m.media_asset_id;
+  if (rawId != null && !(typeof rawId === "string" && rawId.trim() === "")) {
+    const id = typeof rawId === "string" ? rawId.trim() : "";
+    if (!MEDIA_UUID_RE.test(id)) return t("bulk.err.badMedia");
+  }
+
   const raw = m.image;
   // Absent is always fine: media is optional even in mixed mode, because a
   // mixed pool is text-only questions AND image questions together.
   if (raw == null || (typeof raw === "string" && raw.trim() === "")) return null;
 
   if (!mixed) return t("bulk.err.mediaNotAllowed");
-  if (typeof raw !== "string") return t("bulk.err.badImage");
-
-  const head = DATA_URL_HEAD_RE.exec(raw.trim());
-  if (!head) return t("bulk.err.badImage");
-  if (!ALLOWED_DECLARED.has(head[1].toLowerCase())) return t("bulk.err.imageType");
-
-  const payload = raw.trim().slice(head[0].length);
-  if (payload.length === 0) return t("bulk.err.badImage");
-  if (b64Bytes(payload) > BULK_MEDIA_MAX_BYTES_CLIENT) return t("bulk.err.imageTooLarge");
-
-  return null;
+  // The browser phase DELETES meta.image and writes meta.media_asset_id, so any
+  // surviving value — whatever its shape — means this request bypassed the UI.
+  return t("bulk.err.imageNotUploaded");
 }
 
 /**
@@ -382,17 +375,20 @@ export function validateOptionMedia(
   const azText = typeof textObj.az === "string" ? textObj.az.trim() : "";
 
   const hasImageField = img != null && typeof img === "object" && !Array.isArray(img);
-  const azImage = hasImageField
-    ? String((img as Record<string, unknown>).az ?? "").trim()
-    : "";
+  const imageMap = hasImageField ? (img as Record<string, unknown>) : {};
+  const azImage = hasImageField ? String(imageMap.az ?? "").trim() : "";
 
   if (hasImageField && !mixed) return t("bulk.err.mediaNotAllowed");
   if (!azText && !azImage) {
     return t("bulk.err.optionText").replace("{i}", String(index + 1));
   }
-  if (azImage) {
-    const res = validateItemMedia({ meta: { image: azImage } }, t, mixed);
-    if (res) return res;
+  // EVERY locale, not just az: migration 104 casts each present locale's value
+  // with ::uuid, so a non-uuid in en or ru aborts the whole RPC instead of
+  // failing one row.
+  for (const value of Object.values(imageMap)) {
+    if (value == null || (typeof value === "string" && value.trim() === "")) continue;
+    const v = typeof value === "string" ? value.trim() : "";
+    if (!MEDIA_UUID_RE.test(v)) return t("bulk.err.imageNotUploaded");
   }
   return null;
 }
@@ -418,6 +414,9 @@ export function mapRpcRowError(raw: unknown, t: T): string {
   if (low.includes("unknown topic") || low.includes("topic not found")) {
     return t("bulk.err.topicNotFound");
   }
+  // Migration 108: the olympiad pool importer reports a row whose content
+  // already exists in that (package, grade) pool instead of inserting it twice.
+  if (low.includes("duplicate question")) return t("bulk.err.duplicate");
   if (low.includes("media_asset_id")) return t("bulk.err.badMedia");
   return t("bulk.err.generic");
 }

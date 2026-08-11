@@ -173,6 +173,14 @@ create unique index if not exists uq_child_subscriptions_live
   on public.child_subscriptions (student_profile_id)
   where status in ('trialing', 'active', 'past_due');
 create index if not exists idx_sub_subjects_subject on public.subscription_subjects (subject_id);
+-- Migration 109: each subject owns its own period, so the access gates and the
+-- expiry scan both look up (subscription, period end); next_renewal_at is the
+-- MIN over those, scanned only for live plans.
+create index if not exists idx_sub_subjects_period
+  on public.subscription_subjects (child_subscription_id, current_period_end);
+create index if not exists idx_child_subs_next_renewal
+  on public.child_subscriptions (next_renewal_at)
+  where status in ('trialing', 'active', 'past_due');
 create index if not exists idx_checkout_owner on public.checkout_sessions (owner_parent_profile_id);
 create index if not exists idx_sibling_discounts_owner on public.sibling_discounts (owner_parent_profile_id);
 
@@ -679,6 +687,78 @@ drop trigger if exists trg_audit_child_subscriptions on public.child_subscriptio
 create trigger trg_audit_child_subscriptions
   after insert or update or delete on public.child_subscriptions
   for each row execute function public.fn_audit_row();
+
+-- Migration 109 — per-subject billing periods. child_subscriptions no longer
+-- carries the billing dates itself: current_period_end is the MAX of the
+-- subjects' period ends (coverage ends), next_renewal_at is the MIN (next
+-- charge) and base/discount/total_amount are the NEXT invoice. This trigger is
+-- their SINGLE writer; an RPC that also assigned them would drift from it
+-- inside one release, which is the failure 013 check 92 recomputes against.
+-- (The REVOKE/GRANT for this function lives with the other subscription-engine
+-- grants further down, after 010's blanket grants.)
+create or replace function public.fn_sync_subscription_period()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_sub  uuid;
+  v_max  timestamptz;
+  v_min  timestamptz;
+  v_base numeric(12,2);
+  v_pct  numeric(5,2);
+begin
+  -- OLD is UNASSIGNED (not null) during an INSERT, so reading it there raises
+  -- "record old is not assigned yet" — branch on TG_OP rather than coalescing.
+  if tg_op = 'DELETE' then
+    v_sub := old.child_subscription_id;
+  else
+    v_sub := new.child_subscription_id;
+  end if;
+  if v_sub is null then return null; end if;
+
+  select sibling_discount_percent into v_pct
+  from public.child_subscriptions where id = v_sub;
+  -- The parent row is gone (cascade delete): nothing to reconcile.
+  if not found then return null; end if;
+
+  select max(ss.current_period_end),
+         min(ss.current_period_end) filter (where ss.remove_at is null)
+    into v_max, v_min
+  from public.subscription_subjects ss
+  where ss.child_subscription_id = v_sub;
+
+  -- The NEXT invoice = the subjects whose cycle ends first. A NULL period end
+  -- (legacy row that still inherits) falls into the group so the amount never
+  -- silently drops a paid subject.
+  select coalesce(sum(ss.price_amount), 0) into v_base
+  from public.subscription_subjects ss
+  where ss.child_subscription_id = v_sub
+    and ss.remove_at is null
+    and (v_min is null or ss.current_period_end is not distinct from v_min);
+
+  update public.child_subscriptions cs
+     set current_period_end = coalesce(v_max, cs.current_period_end),
+         next_renewal_at    = v_min,
+         base_amount        = v_base,
+         discount_amount    = round(v_base * coalesce(v_pct, 0) / 100.0, 2),
+         total_amount       = v_base - round(v_base * coalesce(v_pct, 0) / 100.0, 2),
+         updated_at         = now()
+   where cs.id = v_sub;
+
+  return null;
+end;
+$$;
+
+comment on function public.fn_sync_subscription_period() is
+  'Migration 109: derives child_subscriptions.current_period_end (MAX = coverage ends), next_renewal_at (MIN = next charge) and base/discount/total_amount (the NEXT invoice) from the per-subject rows. THE ONLY WRITER of those five columns — coalesce keeps a legacy row''s stored period when every subject period is still NULL, so the trigger can never blank a row.';
+
+drop trigger if exists trg_sync_subscription_period on public.subscription_subjects;
+create trigger trg_sync_subscription_period
+  after insert or update or delete on public.subscription_subjects
+  for each row
+  execute function public.fn_sync_subscription_period();
 
 -- -----------------------------------------------------------------------------
 -- Child authentication & account model (Stage 8, increment 1).
@@ -1572,21 +1652,330 @@ revoke all on function public.setup_parent(uuid, text) from public, anon, authen
 grant execute on function public.setup_parent(uuid, text) to service_role;
 
 -- -----------------------------------------------------------------------------
--- Child subscription engine (Stage 11, increment 1).
--- Backported from migrations/2026_06_28_012_child_subscription_engine.sql. Placed
--- at the END of this file so the function-privilege REVOKEs below run AFTER 010's
--- blanket grants — otherwise anon/authenticated's EXECUTE grant would remain.
--- Server-side pricing + subscription creation: price = sum(subject pricing for the
--- interval); sibling discount (2nd 10% / 3rd+ 15%, investor 2026-07-15) and trial length are computed
--- HERE, never by the client. quote_* is read-only (preview); create_* writes the
--- subscription as a 7-day trial and flips the child to access 'trialing'. Real
--- charge/webhook is provider-specific and out of scope until a provider is chosen.
+-- Child subscription engine (Stage 11, increment 1; PER-SUBJECT since 109).
+-- Backported from migrations/2026_06_28_012_child_subscription_engine.sql and
+-- migrations/2026_08_11_109_per_subject_billing_interval.sql. Placed at the END
+-- of this file so the function-privilege REVOKEs below run AFTER 010's blanket
+-- grants — otherwise anon/authenticated's EXECUTE grant would remain.
+--
+-- Every subject carries its OWN cycle and its OWN period, so the authoritative
+-- pair is quote_child_plan / create_child_plan, taking a validated basket
+-- [{subject_id, interval}]. plan_items_normalize is the single input gate: it
+-- enforces the array shape, the <=20 cap, UUID-shaped ids and the plan_interval
+-- whitelist, and de-duplicates. Prices are ALWAYS re-read from subjects_pricing
+-- and the sibling discount (2nd 10% / 3rd+ 15%, investor 2026-07-15) is applied
+-- per cycle group with the historical rounding rule, so a uniform basket
+-- returns exactly the number the single-interval path always returned.
+--
+-- quote_child_subscription / create_child_subscription stay as thin wrappers
+-- with their EXACT historical signatures: 013 pins them, admin_grant_child_access
+-- calls them and already-shipped mobile binaries still post {interval,
+-- subject_ids}. They build a uniform basket and delegate — ONE implementation.
+--
 -- SECURITY DEFINER; service_role EXECUTE only (called from the parent server
 -- action's admin client after it authorizes the parent + child). create_* calls
 -- quote_*, so quote_* is defined first.
 -- -----------------------------------------------------------------------------
 
--- Read-only price quote (base, sibling discount, total, trial length).
+create or replace function public.plan_items_normalize(p_items jsonb)
+-- `interval` is a reserved type keyword, so it cannot be a bare RETURNS TABLE
+-- column name — the parser reads it as the start of a type. Quoting the
+-- DECLARATION is enough: qualified reads (n.interval) still resolve unquoted,
+-- so all 31 call sites are untouched.
+returns table (subject_id uuid, "interval" public.plan_interval)
+language plpgsql
+immutable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then
+    raise exception 'plan: items must be a json array'
+      using errcode = 'check_violation', hint = 'bad_items';
+  end if;
+  if jsonb_array_length(p_items) > 20 then
+    raise exception 'plan: too many subjects'
+      using errcode = 'check_violation', hint = 'too_many_subjects';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_items) as e(v)
+    where jsonb_typeof(e.v) <> 'object'
+  ) then
+    raise exception 'plan: item must be an object'
+      using errcode = 'check_violation', hint = 'bad_items';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_items) as e(v)
+    where coalesce(e.v ->> 'subject_id', '')
+          !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  ) then
+    raise exception 'plan: bad subject id'
+      using errcode = 'check_violation', hint = 'bad_subject';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_items) as e(v)
+    where coalesce(e.v ->> 'interval', '') not in ('week', 'month', 'year')
+  ) then
+    raise exception 'plan: bad interval'
+      using errcode = 'check_violation', hint = 'bad_interval';
+  end if;
+
+  -- LAST occurrence wins: a UI that appends a changed cycle must not have to
+  -- rewrite the array it already sent.
+  return query
+    select distinct on ((e.v ->> 'subject_id')::uuid)
+           (e.v ->> 'subject_id')::uuid,
+           (e.v ->> 'interval')::public.plan_interval
+    from jsonb_array_elements(p_items) with ordinality as e(v, ord)
+    order by (e.v ->> 'subject_id')::uuid, e.ord desc;
+end;
+$$;
+
+comment on function public.plan_items_normalize(jsonb) is
+  'Migration 109: the ONE server-side gate for a client-supplied plan basket. Enforces array shape, <=20 items, UUID-shaped subject_id and the plan_interval whitelist, de-duplicating on subject_id (last wins). Raises check_violation with hints bad_items / bad_subject / bad_interval / too_many_subjects.';
+
+create or replace function public.quote_child_plan(
+  p_student_profile_id uuid,
+  p_items              jsonb
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner   uuid;
+  v_rank    int;
+  v_pct     numeric(5,2);
+  v_missing int;
+  v_count   int;
+  v_base    numeric(12,2);
+  v_disc    numeric(12,2);
+  v_total   numeric(12,2);
+  v_trial   int;
+  v_items   jsonb;
+  v_groups  jsonb;
+  v_ivs     int;
+begin
+  select count(*) into v_count from public.plan_items_normalize(p_items);
+  if v_count = 0 then raise exception 'quote: no subjects selected'; end if;
+
+  select created_by_parent_profile_id into v_owner
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then raise exception 'quote: child has no owning parent'; end if;
+
+  -- Every (subject, ITS OWN cycle) pair must have active pricing. Same message
+  -- shape as the single-interval quote so existing mappers keep working.
+  select count(*) into v_missing
+  from public.plan_items_normalize(p_items) n
+  where not exists (
+    select 1 from public.subjects_pricing sp
+    where sp.subject_id = n.subject_id
+      and sp.interval = n.interval
+      and sp.status = 'active');
+  if v_missing > 0 then raise exception 'quote: missing pricing for % subject(s)', v_missing; end if;
+
+  -- Sibling rank = (this parent's OTHER children already on a live
+  -- subscription) + 1. Copied verbatim from quote_child_subscription: a fixed
+  -- percent composes trivially across cycle groups.
+  select count(distinct cs.student_profile_id) + 1 into v_rank
+  from public.child_subscriptions cs
+  where cs.owner_parent_profile_id = v_owner
+    and cs.student_profile_id <> p_student_profile_id
+    and cs.status in ('trialing', 'active', 'past_due');
+  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
+
+  select jsonb_agg(jsonb_build_object(
+           'subject_id', n.subject_id,
+           'interval',   n.interval,
+           'price',      sp.price_amount,
+           'currency',   'AZN'))
+    into v_items
+  from public.plan_items_normalize(p_items) n
+  join public.subjects_pricing sp
+    on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active';
+
+  -- Per-cycle groups, each rounded with EXACTLY today's rule
+  -- (discount = round(group_base * pct / 100, 2)).
+  with g as (
+    select n.interval as iv,
+           count(*)::int as cnt,
+           coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
+    from public.plan_items_normalize(p_items) n
+    join public.subjects_pricing sp
+      on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
+    group by n.interval)
+  select jsonb_object_agg(g.iv, jsonb_build_object(
+           'count', g.cnt,
+           'base',  g.base,
+           'discount', round(g.base * v_pct / 100.0, 2),
+           'total', g.base - round(g.base * v_pct / 100.0, 2))),
+         coalesce(sum(g.base), 0),
+         coalesce(sum(round(g.base * v_pct / 100.0, 2)), 0),
+         count(*)::int
+    into v_groups, v_base, v_disc, v_ivs
+  from g;
+
+  v_total := v_base - v_disc;
+
+  select coalesce(trial_days, 7) into v_trial from public.launch_promo_config where id = 1;
+  v_trial := coalesce(v_trial, 7);
+
+  return jsonb_build_object(
+    'items', coalesce(v_items, '[]'::jsonb),
+    'groups', coalesce(v_groups, '{}'::jsonb),
+    'base', v_base, 'discount_percent', v_pct, 'discount', v_disc,
+    'total', v_total, 'rank', v_rank, 'trial_days', v_trial, 'currency', 'AZN',
+    'mixed', coalesce(v_ivs, 0) > 1);
+end;
+$$;
+
+comment on function public.quote_child_plan(uuid, jsonb) is
+  'Migration 109: read-only price quote for a PER-SUBJECT basket [{subject_id, interval}]. Prices are re-read from subjects_pricing; the sibling discount (2nd 10% / 3rd+ 15%) is applied per cycle group with today''s rounding rule, so a uniform basket returns exactly the number quote_child_subscription always returned.';
+
+create or replace function public.create_child_plan(
+  p_student_profile_id uuid,
+  p_items              jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner    uuid;
+  v_q        jsonb;
+  v_sub      uuid;
+  v_trial    int;
+  v_child    text;
+  v_auth     uuid;
+  v_had_any  boolean;
+  v_status   public.subscription_status;
+  v_default  public.plan_interval;
+  v_trialend timestamptz;
+  v_row      record;
+begin
+  -- Round 48 kill switch (migration 089): no paid write while the payment mode
+  -- is off. Defence in depth -- the web/BFF layer checks too, but this is the
+  -- layer that cannot be forgotten.
+  perform public.assert_payments_enabled();
+
+  select created_by_parent_profile_id, child_unique_id
+    into v_owner, v_child
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then raise exception 'create: child has no owning parent'; end if;
+
+  -- Serialize all subscription writes of ONE family: prevents the double-submit
+  -- duplicate row and the concurrent sibling-rank race (audit C2 + M14).
+  perform pg_advisory_xact_lock(hashtextextended(v_owner::text, 42));
+
+  if exists (
+    select 1 from public.child_subscriptions
+    where student_profile_id = p_student_profile_id
+      and status in ('trialing', 'active', 'past_due')
+  ) then
+    raise exception 'create: child already has a live subscription'
+      using errcode = 'unique_violation';
+  end if;
+
+  v_q := public.quote_child_plan(p_student_profile_id, p_items);
+
+  -- The DEFAULT cycle for subjects added later = the most common cycle in the
+  -- basket; ties resolve year > month > week (the longer commitment is the
+  -- safer default to inherit).
+  select n.interval into v_default
+  from public.plan_items_normalize(p_items) n
+  group by n.interval
+  order by count(*) desc,
+           case n.interval when 'year' then 3 when 'month' then 2 else 1 end desc
+  limit 1;
+
+  -- Trial once per child: any prior subscription row (canceled/expired
+  -- included) means no new free trial (audit C2).
+  v_had_any := exists (
+    select 1 from public.child_subscriptions
+    where student_profile_id = p_student_profile_id);
+  if v_had_any then
+    v_trial  := 0;
+    v_status := 'active';
+  else
+    v_trial  := (v_q->>'trial_days')::int;
+    v_status := 'trialing';
+  end if;
+  v_trialend := now() + (v_trial || ' days')::interval;
+
+  -- base/discount/total/current_period_end/next_renewal_at are DELIBERATELY not
+  -- written here: trg_sync_subscription_period derives all five from the
+  -- per-subject rows inserted below.
+  insert into public.child_subscriptions
+    (student_profile_id, owner_parent_profile_id, interval, status,
+     trial_started_at, trial_ends_at, current_period_start,
+     sibling_discount_percent, currency, provider)
+  values
+    (p_student_profile_id, v_owner, v_default, v_status,
+     case when v_status = 'trialing' then now() end,
+     case when v_status = 'trialing' then v_trialend end,
+     now(),
+     (v_q->>'discount_percent')::numeric, 'AZN', 'none')
+  returning id into v_sub;
+
+  for v_row in
+    select n.subject_id, n.interval, sp.price_amount
+    from public.plan_items_normalize(p_items) n
+    join public.subjects_pricing sp
+      on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
+  loop
+    insert into public.subscription_subjects
+      (child_subscription_id, subject_id, interval, price_amount, currency,
+       current_period_start, current_period_end)
+    values
+      (v_sub, v_row.subject_id, v_row.interval, v_row.price_amount, 'AZN',
+       now(),
+       case when v_status = 'trialing' then v_trialend
+            else now() + case v_row.interval
+                           when 'week'  then interval '7 days'
+                           when 'month' then interval '1 month'
+                           else              interval '1 year'
+                         end
+       end)
+    on conflict do nothing;
+  end loop;
+
+  if (v_q->>'discount_percent')::numeric > 0 then
+    insert into public.sibling_discounts
+      (owner_parent_profile_id, child_subscription_id, child_rank, discount_percent)
+    values (v_owner, v_sub, (v_q->>'rank')::int, (v_q->>'discount_percent')::numeric);
+  end if;
+
+  -- Allocate the deferred 8-digit login ID now (first plan chosen) if the child
+  -- has none, and backfill the credential mapping so child login works.
+  if v_child is null then
+    v_child := public.allocate_child_unique_id(p_student_profile_id);
+    update public.child_credentials
+       set child_unique_id = v_child, updated_at = now()
+     where student_profile_id = p_student_profile_id;
+  end if;
+
+  select auth_user_id into v_auth
+  from public.child_credentials where student_profile_id = p_student_profile_id;
+
+  update public.students
+     set access_status = case when v_status = 'trialing' then 'trialing' else 'active' end::public.child_access_status
+   where profile_id = p_student_profile_id;
+
+  return v_q || jsonb_build_object(
+    'subscription_id', v_sub, 'status', v_status::text, 'trial_days', v_trial,
+    'interval', v_default::text,
+    'new_child_unique_id', v_child, 'auth_user_id', v_auth);
+end;
+$$;
+
+comment on function public.create_child_plan(uuid, jsonb) is
+  'Migration 109: starts a child subscription from a PER-SUBJECT basket. Each subject opens its own period (trial end while trialing, else now() + its own cycle); child_subscriptions.interval stores only the DEFAULT cycle for future adds. The amount columns are left to trg_sync_subscription_period.';
+
+-- Read-only price quote (base, sibling discount, total, trial length) — the
+-- uniform-basket wrapper over quote_child_plan.
 create or replace function public.quote_child_subscription(
   p_student_profile_id uuid,
   p_interval           public.plan_interval,
@@ -1598,54 +1987,14 @@ stable
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  v_owner   uuid;
-  v_base    numeric(12,2);
-  v_rank    int;
-  v_pct     numeric(5,2);
-  v_amt     numeric(12,2);
-  v_total   numeric(12,2);
-  v_trial   int;
-  v_missing int;
+declare v_items jsonb;
 begin
   if p_subject_ids is null or array_length(p_subject_ids, 1) is null then
     raise exception 'quote: no subjects selected';
   end if;
-
-  select created_by_parent_profile_id into v_owner
-  from public.students where profile_id = p_student_profile_id;
-  if v_owner is null then raise exception 'quote: child has no owning parent'; end if;
-
-  -- Every selected subject must have active pricing for the interval.
-  select count(*) into v_missing
-  from unnest(p_subject_ids) s(sid)
-  where not exists (
-    select 1 from public.subjects_pricing sp
-    where sp.subject_id = s.sid and sp.interval = p_interval and sp.status = 'active'
-  );
-  if v_missing > 0 then raise exception 'quote: missing pricing for % subject(s)', v_missing; end if;
-
-  select coalesce(sum(sp.price_amount), 0) into v_base
-  from public.subjects_pricing sp
-  where sp.subject_id = any (p_subject_ids) and sp.interval = p_interval and sp.status = 'active';
-
-  -- Sibling rank = (this parent's OTHER children already on a live subscription) + 1.
-  select count(distinct cs.student_profile_id) + 1 into v_rank
-  from public.child_subscriptions cs
-  where cs.owner_parent_profile_id = v_owner
-    and cs.student_profile_id <> p_student_profile_id
-    and cs.status in ('trialing', 'active', 'past_due');
-
-  v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
-  v_amt := round(v_base * v_pct / 100.0, 2);
-  v_total := v_base - v_amt;
-
-  select coalesce(trial_days, 7) into v_trial from public.launch_promo_config where id = 1;
-  v_trial := coalesce(v_trial, 7);
-
-  return jsonb_build_object(
-    'base', v_base, 'discount_percent', v_pct, 'discount', v_amt,
-    'total', v_total, 'rank', v_rank, 'trial_days', v_trial, 'currency', 'AZN');
+  select jsonb_agg(jsonb_build_object('subject_id', s.sid, 'interval', p_interval))
+    into v_items from unnest(p_subject_ids) s(sid);
+  return public.quote_child_plan(p_student_profile_id, v_items);
 end;
 $$;
 
@@ -1767,105 +2116,18 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  v_owner   uuid;
-  v_q       jsonb;
-  v_sub     uuid;
-  v_sid     uuid;
-  v_trial   int;
-  v_child   text;
-  v_auth    uuid;
-  v_had_any boolean;
-  v_status  public.subscription_status;
-  v_end     timestamptz;
+declare v_items jsonb;
 begin
-  -- Round 48 kill switch (migration 089): no paid write while the
-  -- payment mode is off. Defence in depth -- the web/BFF layer checks
-  -- too, but this is the layer that cannot be forgotten.
+  -- Round 48 kill switch: create_child_plan asserts too, but this wrapper is a
+  -- paid entry point in its own right and must not depend on its callee for a
+  -- money gate.
   perform public.assert_payments_enabled();
-  select created_by_parent_profile_id, child_unique_id
-    into v_owner, v_child
-  from public.students where profile_id = p_student_profile_id;
-  if v_owner is null then raise exception 'create: child has no owning parent'; end if;
-
-  -- Serialize all subscription writes of ONE family: prevents the double-submit
-  -- duplicate row and the concurrent sibling-rank race (audit C2 + M14).
-  perform pg_advisory_xact_lock(hashtextextended(v_owner::text, 42));
-
-  if exists (
-    select 1 from public.child_subscriptions
-    where student_profile_id = p_student_profile_id
-      and status in ('trialing', 'active', 'past_due')
-  ) then
-    raise exception 'create: child already has a live subscription'
-      using errcode = 'unique_violation';
+  if p_subject_ids is null or array_length(p_subject_ids, 1) is null then
+    raise exception 'create: no subjects selected';
   end if;
-
-  v_q := public.quote_child_subscription(p_student_profile_id, p_interval, p_subject_ids);
-
-  -- Trial once per child: any prior subscription row (canceled/expired included)
-  -- means no new free trial — the new plan starts as a paid period (audit C2).
-  v_had_any := exists (
-    select 1 from public.child_subscriptions
-    where student_profile_id = p_student_profile_id
-  );
-  if v_had_any then
-    v_trial  := 0;
-    v_status := 'active';
-    v_end    := now() + case p_interval
-                          when 'week'  then interval '7 days'
-                          when 'month' then interval '1 month'
-                          else              interval '1 year'
-                        end;
-  else
-    v_trial  := (v_q->>'trial_days')::int;
-    v_status := 'trialing';
-    v_end    := now() + (v_trial || ' days')::interval;
-  end if;
-
-  insert into public.child_subscriptions
-    (student_profile_id, owner_parent_profile_id, interval, status,
-     trial_started_at, trial_ends_at, current_period_start, current_period_end,
-     base_amount, sibling_discount_percent, discount_amount, total_amount, currency, provider)
-  values
-    (p_student_profile_id, v_owner, p_interval, v_status,
-     case when v_status = 'trialing' then now() end,
-     case when v_status = 'trialing' then v_end end,
-     now(), v_end,
-     (v_q->>'base')::numeric, (v_q->>'discount_percent')::numeric,
-     (v_q->>'discount')::numeric, (v_q->>'total')::numeric, 'AZN', 'none')
-  returning id into v_sub;
-
-  foreach v_sid in array p_subject_ids loop
-    insert into public.subscription_subjects (child_subscription_id, subject_id)
-    values (v_sub, v_sid) on conflict do nothing;
-  end loop;
-
-  if (v_q->>'discount_percent')::numeric > 0 then
-    insert into public.sibling_discounts
-      (owner_parent_profile_id, child_subscription_id, child_rank, discount_percent)
-    values (v_owner, v_sub, (v_q->>'rank')::int, (v_q->>'discount_percent')::numeric);
-  end if;
-
-  -- Allocate the deferred 8-digit login ID now (first plan chosen) if the child has
-  -- none, and backfill the credential mapping so child login works.
-  if v_child is null then
-    v_child := public.allocate_child_unique_id(p_student_profile_id);
-    update public.child_credentials
-       set child_unique_id = v_child, updated_at = now()
-     where student_profile_id = p_student_profile_id;
-  end if;
-
-  select auth_user_id into v_auth
-  from public.child_credentials where student_profile_id = p_student_profile_id;
-
-  update public.students
-     set access_status = case when v_status = 'trialing' then 'trialing' else 'active' end::public.child_access_status
-   where profile_id = p_student_profile_id;
-
-  return v_q || jsonb_build_object(
-    'subscription_id', v_sub, 'status', v_status::text, 'trial_days', v_trial,
-    'new_child_unique_id', v_child, 'auth_user_id', v_auth);
+  select jsonb_agg(jsonb_build_object('subject_id', s.sid, 'interval', p_interval))
+    into v_items from unnest(p_subject_ids) s(sid);
+  return public.create_child_plan(p_student_profile_id, v_items);
 end;
 $$;
 
@@ -1887,17 +2149,12 @@ declare
   v_interval public.plan_interval;
   v_rank     int;
   v_pct      numeric(5,2);
-  v_subjects uuid[];
-  v_base     numeric(12,2);
-  v_amt      numeric(12,2);
-  v_total    numeric(12,2);
+  v_price    numeric(12,2);
+  v_end      timestamptz;
 begin
-  -- Round 48 kill switch (migration 089): no paid write while the
-  -- payment mode is off. Defence in depth -- the web/BFF layer checks
-  -- too, but this is the layer that cannot be forgotten.
   perform public.assert_payments_enabled();
-  select id, interval, owner_parent_profile_id
-    into v_sub, v_interval, v_owner
+  select id, interval, owner_parent_profile_id, current_period_end
+    into v_sub, v_interval, v_owner, v_end
   from public.child_subscriptions
   where student_profile_id = p_student_profile_id
     and status in ('trialing', 'active', 'past_due')
@@ -1905,25 +2162,28 @@ begin
   limit 1;
   if v_sub is null then raise exception 'add_subject: no active subscription'; end if;
 
-  if not exists (
-    select 1 from public.subjects_pricing sp
-    where sp.subject_id = p_subject_id and sp.interval = v_interval and sp.status = 'active'
-  ) then
+  select sp.price_amount into v_price
+  from public.subjects_pricing sp
+  where sp.subject_id = p_subject_id and sp.interval = v_interval and sp.status = 'active';
+  if v_price is null then
     raise exception 'add_subject: no active pricing for subject %', p_subject_id;
   end if;
 
-  insert into public.subscription_subjects (child_subscription_id, subject_id)
-  values (v_sub, p_subject_id) on conflict do nothing;
-
-  select array_agg(subject_id) into v_subjects
-  from public.subscription_subjects where child_subscription_id = v_sub;
-
-  select coalesce(sum(sp.price_amount), 0) into v_base
-  from public.subjects_pricing sp
-  where sp.subject_id = any (v_subjects) and sp.interval = v_interval and sp.status = 'active';
+  insert into public.subscription_subjects
+    (child_subscription_id, subject_id, interval, price_amount, currency,
+     current_period_start, current_period_end)
+  values
+    (v_sub, p_subject_id, v_interval, v_price, 'AZN', now(),
+     now() + case v_interval
+               when 'week'  then interval '7 days'
+               when 'month' then interval '1 month'
+               else              interval '1 year'
+             end)
+  on conflict (child_subscription_id, subject_id) do update
+    set remove_at = null, price_amount = excluded.price_amount;
 
   -- Audit H7: recompute the sibling rank NOW (same formula as the quote RPC) so
-  -- the previewed and the stored totals always match; the percent is stored back.
+  -- the previewed and the stored totals always match.
   select count(distinct cs.student_profile_id) + 1 into v_rank
   from public.child_subscriptions cs
   where cs.owner_parent_profile_id = v_owner
@@ -1931,17 +2191,21 @@ begin
     and cs.status in ('trialing', 'active', 'past_due');
   v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
 
-  v_amt   := round(v_base * v_pct / 100.0, 2);
-  v_total := v_base - v_amt;
-
+  -- The percent moves first, then one touch of the subject rows re-fires
+  -- trg_sync_subscription_period so base/discount/total are re-derived from the
+  -- new percent by their single writer.
   update public.child_subscriptions
-     set base_amount = v_base, sibling_discount_percent = v_pct,
-         discount_amount = v_amt, total_amount = v_total, updated_at = now()
+     set sibling_discount_percent = v_pct, updated_at = now()
    where id = v_sub;
+  update public.subscription_subjects
+     set currency = currency
+   where child_subscription_id = v_sub;
 
-  return jsonb_build_object(
-    'base', v_base, 'discount_percent', v_pct, 'discount', v_amt,
-    'total', v_total, 'currency', 'AZN', 'subscription_id', v_sub);
+  return (select jsonb_build_object(
+            'base', cs.base_amount, 'discount_percent', cs.sibling_discount_percent,
+            'discount', cs.discount_amount, 'total', cs.total_amount,
+            'currency', cs.currency, 'subscription_id', cs.id)
+          from public.child_subscriptions cs where cs.id = v_sub);
 end;
 $$;
 
@@ -1955,19 +2219,13 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_sub      uuid;
-  v_owner    uuid;
-  v_interval public.plan_interval;
-  v_rank     int;
-  v_pct      numeric(5,2);
-  v_count    int;
-  v_subjects uuid[];
-  v_base     numeric(12,2);
-  v_amt      numeric(12,2);
-  v_total    numeric(12,2);
+  v_sub   uuid;
+  v_owner uuid;
+  v_rank  int;
+  v_pct   numeric(5,2);
+  v_count int;
 begin
-  select id, interval, owner_parent_profile_id
-    into v_sub, v_interval, v_owner
+  select id, owner_parent_profile_id into v_sub, v_owner
   from public.child_subscriptions
   where student_profile_id = p_student_profile_id
     and status in ('trialing', 'active', 'past_due')
@@ -1984,13 +2242,6 @@ begin
   delete from public.subscription_subjects
   where child_subscription_id = v_sub and subject_id = p_subject_id;
 
-  select array_agg(subject_id) into v_subjects
-  from public.subscription_subjects where child_subscription_id = v_sub;
-
-  select coalesce(sum(sp.price_amount), 0) into v_base
-  from public.subjects_pricing sp
-  where sp.subject_id = any (v_subjects) and sp.interval = v_interval and sp.status = 'active';
-
   -- Audit H7: live sibling rank (see add_subscription_subject).
   select count(distinct cs.student_profile_id) + 1 into v_rank
   from public.child_subscriptions cs
@@ -1999,17 +2250,21 @@ begin
     and cs.status in ('trialing', 'active', 'past_due');
   v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
 
-  v_amt   := round(v_base * v_pct / 100.0, 2);
-  v_total := v_base - v_amt;
-
+  -- Percent first, then one no-op touch of the subject rows so
+  -- trg_sync_subscription_period (their single writer) re-derives the amounts
+  -- from the NEW percent — the delete above fired it with the old one.
   update public.child_subscriptions
-     set base_amount = v_base, sibling_discount_percent = v_pct,
-         discount_amount = v_amt, total_amount = v_total, updated_at = now()
+     set sibling_discount_percent = v_pct, updated_at = now()
    where id = v_sub;
+  update public.subscription_subjects
+     set currency = currency
+   where child_subscription_id = v_sub;
 
-  return jsonb_build_object(
-    'base', v_base, 'discount_percent', v_pct, 'discount', v_amt,
-    'total', v_total, 'currency', 'AZN', 'subscription_id', v_sub);
+  return (select jsonb_build_object(
+            'base', cs.base_amount, 'discount_percent', cs.sibling_discount_percent,
+            'discount', cs.discount_amount, 'total', cs.total_amount,
+            'currency', cs.currency, 'subscription_id', cs.id)
+          from public.child_subscriptions cs where cs.id = v_sub);
 end;
 $$;
 
@@ -2021,6 +2276,14 @@ revoke all on function public.add_subscription_subject(uuid, uuid) from public, 
 grant execute on function public.add_subscription_subject(uuid, uuid) to service_role;
 revoke all on function public.remove_subscription_subject(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.remove_subscription_subject(uuid, uuid) to service_role;
+-- Migration 109 — the per-subject engine + its input gate + the period trigger.
+revoke all on function public.plan_items_normalize(jsonb) from public, anon, authenticated;
+grant execute on function public.plan_items_normalize(jsonb) to service_role;
+revoke all on function public.quote_child_plan(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.quote_child_plan(uuid, jsonb) to service_role;
+revoke all on function public.create_child_plan(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.create_child_plan(uuid, jsonb) to service_role;
+revoke all on function public.fn_sync_subscription_period() from public, anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Admin subject pricing (migration 069): the ONLY admin write path into
@@ -2385,6 +2648,7 @@ declare
   v_sub     uuid;
   v_sid     uuid;
   v_ids     jsonb;
+  v_end     timestamptz;
 begin
   if p_subject_ids is null or array_length(p_subject_ids, 1) is null then
     raise exception 'admin_grant: no subjects selected';
@@ -2420,20 +2684,22 @@ begin
     raise exception 'admin_grant: child already has a live subscription';
   end if;
 
+  v_end := now() + (v_days || ' days')::interval;
+
   insert into public.child_subscriptions
     (student_profile_id, owner_parent_profile_id, interval, status,
-     current_period_start, current_period_end,
-     base_amount, sibling_discount_percent, discount_amount, total_amount,
-     currency, provider)
+     current_period_start, sibling_discount_percent, currency, provider)
   values
     (p_student_profile_id, v_owner, p_interval, 'active',
-     now(), now() + (v_days || ' days')::interval,
-     0, 0, 0, 0, 'AZN', 'admin_grant')
+     now(), 0, 'AZN', 'admin_grant')
   returning id into v_sub;
 
   foreach v_sid in array p_subject_ids loop
-    insert into public.subscription_subjects (child_subscription_id, subject_id)
-    values (v_sub, v_sid) on conflict do nothing;
+    insert into public.subscription_subjects
+      (child_subscription_id, subject_id, interval, price_amount, currency,
+       current_period_start, current_period_end)
+    values (v_sub, v_sid, p_interval, 0, 'AZN', now(), v_end)
+    on conflict do nothing;
   end loop;
 
   v_ids := public.activate_child_login_id(p_student_profile_id);
@@ -2443,7 +2709,7 @@ begin
 
   return jsonb_build_object(
     'subscription_id', v_sub, 'status', 'active', 'days', v_days,
-    'current_period_end', to_jsonb(now() + (v_days || ' days')::interval))
+    'current_period_end', to_jsonb(v_end))
     || v_ids;
 end;
 $$;
@@ -2503,6 +2769,11 @@ begin
         and cs.status in ('trialing', 'active', 'canceled')
         and cs.current_period_end is not null
         and cs.current_period_end > now()
+        -- Migration 109: cs.current_period_end is the MAX of the per-subject
+        -- periods, so the subscription outlives its shortest-cycle subject —
+        -- gating on it alone would keep serving a lapsed weekly subject. The
+        -- coalesce keeps a legacy row (NULL period) behaving exactly as before.
+        and coalesce(ss.current_period_end, cs.current_period_end) > now()
     ) then
       raise exception 'start_practice: no active access' using errcode = 'check_violation';
     end if;
@@ -3211,7 +3482,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = public, pg_temp
-as $
+as $$
 declare
   v_status  public.catalog_status;
   v_pkg_per int;
@@ -3238,7 +3509,7 @@ begin
     new.olympiad_package_id, v_pkg_per, new.grade_id);
   return new;
 end;
-$;
+$$;
 
 comment on function public.olympiad_grade_pool_guard() is
   'Migration 107: blocks adding a target grade to — or raising a grade''s '
@@ -3249,14 +3520,50 @@ comment on function public.olympiad_grade_pool_guard() is
 -- canonical run order: 011 functions first, 015 tables later).
 
 -- ---------------------------------------------------------------------------
+-- norm_import_text (migration 108): text normalizer shared by both sides of the
+-- olympiad import duplicate key (trim, collapse whitespace, lowercase).
+-- Deliberately NOT `strict`: the coalesce lives INSIDE the body so a NULL folds
+-- to ''. The stored side reads answer_option_translations through a LEFT JOIN
+-- (the importer writes no row for a locale with neither text nor image) while
+-- the incoming side reads a possibly-absent JSON key — both must produce the
+-- same '' or every append would report zero duplicates.
+-- ---------------------------------------------------------------------------
+create or replace function public.norm_import_text(p_text text)
+returns text
+language sql
+immutable
+parallel safe
+set search_path = public, pg_temp
+as $$
+  select lower(regexp_replace(btrim(coalesce(p_text, '')), '\s+', ' ', 'g'))
+$$;
+
+comment on function public.norm_import_text(text) is
+  'Migration 108: normalizes text for the olympiad import duplicate key (trim, '
+  'collapse whitespace, lowercase; NULL folds to ''''). service-internal — '
+  'reached only from bulk_insert_olympiad_package_questions.';
+
+-- Supabase's default privileges grant EXECUTE on new functions to anon and
+-- authenticated, so revoking `public` alone would leave it callable.
+revoke all on function public.norm_import_text(text) from public, anon, authenticated;
+grant execute on function public.norm_import_text(text) to service_role;
+
+
+-- ---------------------------------------------------------------------------
 -- bulk_insert_olympiad_package_questions (Batch D; v2 migration 059): import
 -- PRIVATE trilingual questions for one olympiad package. Same item format as
 -- bulk_insert_questions but every inserted question gets olympiad_package_id =
 -- p_package_id and is published immediately (the attempt engine requires
 -- status='published'), so it stays out of the general pool. Subject defaults to
 -- the package's subject; type optional (defaults single_choice, migration 059).
--- CREATION-ONLY since migration 059 (owner item 15): rejected once the package
--- already has questions. Administrator-only (audit H2); never anon-executable.
+-- APPENDABLE PER GRADE since migration 108 (owner 2026-08-11 — supersedes the
+-- migration-059 creation-only rule): a further upload into a grade that already
+-- has questions ADDS to its pool. A row whose primary-locale body, option texts
+-- and image references match one already in that (package, grade) pool is
+-- reported as a per-row error and skipped, so re-uploading a file is safe. A row
+-- carrying images never matches (media uuids are minted per upload), and the
+-- guard is best-effort rather than a constraint — two simultaneous appends can
+-- both insert. Administrator-only (audit H2); never anon-executable.
 -- ---------------------------------------------------------------------------
 drop function if exists public.bulk_insert_olympiad_package_questions(uuid, jsonb);
 
@@ -3288,6 +3595,9 @@ declare
   -- loop-persistent, so leaving it unset would carry the previous question's
   -- image onto the next one.
   v_media uuid;
+  -- Migration 108: content keys of THIS grade's existing pool, snapshotted once.
+  v_dup_keys text[] := '{}';
+  v_key      text;
 begin
   -- Audit H2 (migration 035): olympiad pools are an Admin-only module (content
   -- managers must never manage Olympiad Preparation) — no permission fallback.
@@ -3320,15 +3630,34 @@ begin
       using errcode = 'check_violation', hint = 'pool_grade_not_targeted';
   end if;
 
-  -- CREATION-ONLY, now PER GRADE (owner item 15, migration 059 → Round 34):
-  -- once THIS grade's pool holds questions, further bulk imports into it are
-  -- rejected — each grade's pool is uploaded exactly once, during package
-  -- creation or when the grade is first added to the package.
-  if exists (select 1 from public.questions
-              where olympiad_package_id = p_package_id and grade_id = v_pool_grade) then
-    raise exception 'olympiad: questions can only be bulk uploaded once per grade'
-      using errcode = 'check_violation';
-  end if;
+  -- Migration 108: APPEND, duplicate-guarded (replaces the creation-only raise).
+  -- ONE snapshot of the existing pool's content keys, taken before the loop, so
+  -- a 500-row import costs O(pool + rows) instead of re-querying per row. The
+  -- snapshot is never extended during the loop — a row is only ever compared
+  -- against what was already in the pool when the call started.
+  -- ARCHIVED questions are included on purpose: the row still exists, and
+  -- restoring it is the right admin action for a question that is already there.
+  select coalesce(array_agg(k), '{}') into v_dup_keys
+  from (
+    select md5(
+             public.norm_import_text(qt.body) || chr(31) ||
+             public.norm_import_text(qt.media_asset_id::text) || chr(31) ||
+             coalesce((
+               select string_agg(
+                        public.norm_import_text(aot.text) || chr(29) ||
+                        public.norm_import_text(aot.media_asset_id::text),
+                        chr(30) order by ao.order_index)
+               from public.answer_options ao
+               left join public.answer_option_translations aot
+                 on aot.option_id = ao.id and aot.locale = q2.primary_locale
+               where ao.question_id = q2.id), '')
+           ) as k
+    from public.questions q2
+    join public.question_translations qt
+      on qt.question_id = q2.id and qt.locale = q2.primary_locale
+    where q2.olympiad_package_id = p_package_id
+      and q2.grade_id = v_pool_grade
+  ) s;
 
   for v_item in select * from jsonb_array_elements(p_questions)
   loop
@@ -3410,6 +3739,26 @@ begin
         raise exception 'missing % body', v_pl;
       end if;
 
+      -- Migration 108: the incoming row's content key, built exactly like the
+      -- stored one above. The option ORDER must mirror the insert's
+      -- coalesce(order_index, v_order) with v_order starting at 0 — ordinality
+      -- is 1-based, hence ord - 1 — or the two keys diverge and nothing ever
+      -- matches.
+      select md5(
+               public.norm_import_text(v_item->'translations'->v_pl->>'body') || chr(31) ||
+               public.norm_import_text(v_media::text) || chr(31) ||
+               coalesce((
+                 select string_agg(
+                          public.norm_import_text(o->'text'->>v_pl) || chr(29) ||
+                          public.norm_import_text(o->'image'->>v_pl),
+                          chr(30) order by coalesce((o->>'order_index')::int, (ord - 1)::int))
+                 from jsonb_array_elements(coalesce(v_item->'options','[]'::jsonb))
+                        with ordinality as t(o, ord)), '')
+             ) into v_key;
+      if v_key = any(v_dup_keys) then
+        raise exception 'duplicate question already in this grade pool';
+      end if;
+
       -- PRIVATE + published; difficulty removed (difficulty_id null).
       insert into public.questions
         (grade_id, subject_id, topic_id, subtopic_id, type_id, difficulty_id,
@@ -3466,6 +3815,11 @@ begin
         end loop;
       end loop;
 
+      -- v_key is deliberately NOT pushed back into v_dup_keys: the comparison
+      -- is against the PRE-EXISTING pool only. Two identical rows inside one
+      -- file both import, exactly as they did before 108 — creation and
+      -- add-grade are all-or-nothing, so failing the second one would undo a
+      -- package creation that used to succeed.
       v_ok := v_ok + 1;
     exception when others then
       v_fail := v_fail + 1;
@@ -3480,8 +3834,17 @@ $$;
 comment on function public.bulk_insert_olympiad_package_questions(uuid, jsonb, uuid) is
   'Bulk import of PRIVATE trilingual questions into ONE GRADE POOL of an '
   'olympiad package (Round 34). p_grade_id must be a package target grade '
-  '(default: the legacy single package grade). CREATION-ONLY PER GRADE — '
-  'rejected once that grade''s pool has questions. Administrators only.';
+  '(default: the legacy single package grade). APPENDABLE per grade (migration '
+  '108, owner 2026-08-11 — supersedes the migration-059 creation-only rule): a '
+  'row whose primary-locale body, option texts and image references already '
+  'existed in that pool WHEN THE CALL STARTED is reported as a per-row error '
+  'and skipped, so re-uploading a file is safe. Rows inserted by the same call '
+  'are never compared against each other, so a file with two identical rows '
+  'imports exactly as it did before 108. Rows carrying images are never matched '
+  '(media uuids are minted per upload), and the key is bound to the primary '
+  'locale on both sides — the same question re-uploaded with a different '
+  'primary_locale does not match. Best-effort guard, NOT a constraint — two '
+  'simultaneous appends can both insert. Administrators only.';
 
 revoke all on function public.bulk_insert_olympiad_package_questions(uuid, jsonb, uuid) from public, anon;
 grant execute on function public.bulk_insert_olympiad_package_questions(uuid, jsonb, uuid) to authenticated, service_role;
@@ -3751,6 +4114,12 @@ declare
   v_restored   int;
 begin
   -- 1) Expire live subscriptions whose trial/paid period has ended.
+  --    Migration 109 kept this step correct WITHOUT a change, because
+  --    current_period_end is defined as the MAX of the per-subject period ends
+  --    ("is there any coverage left"). Do NOT "fix" it to the MIN: that would
+  --    expire a whole subscription — and a paid yearly subject with it — the
+  --    moment its shortest-cycle subject lapsed. Per-subject expiry is enforced
+  --    where it belongs, in the attempt gates.
   update public.child_subscriptions
      set status = 'expired', updated_at = now()
    where status in ('trialing', 'active', 'past_due')
@@ -3855,6 +4224,11 @@ begin
         and cs.status in ('trialing', 'active', 'canceled')
         and cs.current_period_end is not null
         and cs.current_period_end > now()
+        -- Migration 109: cs.current_period_end is the MAX of the per-subject
+        -- periods, so the subscription outlives its shortest-cycle subject —
+        -- gating on it alone would keep serving a lapsed weekly subject. The
+        -- coalesce keeps a legacy row (NULL period) behaving exactly as before.
+        and coalesce(ss.current_period_end, cs.current_period_end) > now()
     ) then
       raise exception 'start_test: no active access' using errcode = 'check_violation';
     end if;
@@ -4646,6 +5020,11 @@ begin
         and cs.status in ('trialing', 'active', 'canceled')
         and cs.current_period_end is not null
         and cs.current_period_end > now()
+        -- Migration 109: cs.current_period_end is the MAX of the per-subject
+        -- periods, so the subscription outlives its shortest-cycle subject —
+        -- gating on it alone would keep serving a lapsed weekly subject. The
+        -- coalesce keeps a legacy row (NULL period) behaving exactly as before.
+        and coalesce(ss.current_period_end, cs.current_period_end) > now()
     ) then
       raise exception 'daily: no active access' using errcode = 'check_violation';
     end if;
@@ -6408,30 +6787,37 @@ create trigger trg_notify_progress_milestones
   execute function public.notify_progress_milestones_tg();
 
 -- Pre-expiry scanner (cron): parents whose child subscription lapses within 3
--- days. Idempotency keyed by (subscription, period_end) → once per period.
+-- days. Migration 109: the scan is PER SUBJECT (each owns its own period) but
+-- grouped by (subscription, period end), so a uniform plan still produces ONE
+-- notice while a weekly subject can never silence a yearly one's. Idempotency
+-- keyed by (subscription, period_end) → once per period.
 create or replace function public.notify_expiring_subscriptions()
 returns int language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_row record; v_days int; v_name text; v_n int := 0;
 begin
   for v_row in
-    select cs.id, cs.owner_parent_profile_id, cs.current_period_end,
+    select cs.id, cs.owner_parent_profile_id, ss.current_period_end as period_end,
            s.first_name, s.last_name
     from public.child_subscriptions cs
+    join public.subscription_subjects ss on ss.child_subscription_id = cs.id
     join public.students s on s.profile_id = cs.student_profile_id
     where cs.status in ('trialing', 'active')
-      and cs.current_period_end is not null
-      and cs.current_period_end > now()
-      and cs.current_period_end <= now() + interval '3 days'
+      and ss.remove_at is null
+      and ss.current_period_end is not null
+      and ss.current_period_end > now()
+      and ss.current_period_end <= now() + interval '3 days'
       and cs.owner_parent_profile_id is not null
+    group by cs.id, cs.owner_parent_profile_id, ss.current_period_end,
+             s.first_name, s.last_name
   loop
-    v_days := greatest(1, ceil(extract(epoch from (v_row.current_period_end - now())) / 86400.0)::int);
+    v_days := greatest(1, ceil(extract(epoch from (v_row.period_end - now())) / 86400.0)::int);
     v_name := coalesce(nullif(btrim(coalesce(v_row.first_name, '') || ' ' || coalesce(v_row.last_name, '')), ''), 'övladınız');
     perform public.create_notification(
       v_row.owner_parent_profile_id, 'subject_expiring', 'Abunə bitmək üzrədir',
       v_name || ' üçün abunə ' || v_days::text || ' gün sonra bitir.',
       jsonb_build_object('child_name', v_name, 'days', v_days, 'subscription_id', v_row.id),
       array['in_app'],
-      'subexp:' || v_row.id::text || ':' || v_row.current_period_end::text,
+      'subexp:' || v_row.id::text || ':' || v_row.period_end::text,
       3, '/subscription', 'billing', null);
     v_n := v_n + 1;
   end loop;
@@ -6496,6 +6882,7 @@ declare
   v_to       text;
   v_end      timestamptz;
   v_student  uuid;
+  v_touched  int;
 begin
   -- Administrator only (subscription/payment modules are Admin-only; content
   -- managers must never reach this).
@@ -6522,20 +6909,34 @@ begin
         using errcode = 'check_violation', hint = 'invalid_transition';
     end if;
     v_to := 'active';
-    -- Open a period when there is none / it already lapsed.
-    if v_end is null or v_end <= now() then
-      v_end := now() + case v_sub.interval
-                         when 'week'  then interval '7 days'
-                         when 'month' then interval '30 days'
-                         else interval '365 days'
-                       end;
-    end if;
+    -- Open a period PER SUBJECT on its own cycle, where there is none / it
+    -- already lapsed.
+    update public.subscription_subjects ss
+       set current_period_start = coalesce(ss.current_period_start, now()),
+           current_period_end   = now() + case coalesce(ss.interval, v_sub.interval)
+                                            when 'week'  then interval '7 days'
+                                            when 'month' then interval '30 days'
+                                            else              interval '365 days'
+                                          end
+     where ss.child_subscription_id = p_subscription_id
+       and (ss.current_period_end is null or ss.current_period_end <= now());
+    get diagnostics v_touched = row_count;
     update public.child_subscriptions
        set status = 'active',
            current_period_start = coalesce(current_period_start, now()),
-           current_period_end   = v_end,
            updated_at = now()
      where id = p_subscription_id;
+    -- A subscription with no subject rows has nothing for the trigger to
+    -- derive from; keep the historical direct write for that degenerate case.
+    if v_touched = 0 and (v_end is null or v_end <= now()) then
+      update public.child_subscriptions
+         set current_period_end = now() + case v_sub.interval
+                                            when 'week'  then interval '7 days'
+                                            when 'month' then interval '30 days'
+                                            else              interval '365 days'
+                                          end
+       where id = p_subscription_id;
+    end if;
 
   elsif p_action = 'cancel' then
     if v_from not in ('trialing', 'active', 'past_due') then
@@ -6553,11 +6954,18 @@ begin
       raise exception 'subscription: cannot expire from %', v_from
         using errcode = 'check_violation', hint = 'invalid_transition';
     end if;
-    v_to  := 'expired';
-    v_end := now();
+    v_to := 'expired';
+    update public.subscription_subjects
+       set current_period_end = now()
+     where child_subscription_id = p_subscription_id;
+    get diagnostics v_touched = row_count;
     update public.child_subscriptions
-       set status = 'expired', current_period_end = v_end, updated_at = now()
+       set status = 'expired', updated_at = now()
      where id = p_subscription_id;
+    if v_touched = 0 then
+      update public.child_subscriptions
+         set current_period_end = now() where id = p_subscription_id;
+    end if;
 
   else -- extend
     if v_from not in ('trialing', 'active', 'past_due', 'canceled') then
@@ -6568,13 +6976,28 @@ begin
       raise exception 'subscription: days must be 1..730' using errcode = 'check_violation',
         hint = 'bad_days';
     end if;
-    -- Extend from NOW when the period already lapsed, else from its end.
-    v_end := greatest(coalesce(v_sub.current_period_end, now()), now())
-             + make_interval(days => p_days);
-    update public.child_subscriptions
-       set current_period_end = v_end, updated_at = now()
-     where id = p_subscription_id;
+    -- Extend from NOW when the subject's period already lapsed, else from its
+    -- end — per subject, so a yearly subject is not pulled back to a weekly's
+    -- date and vice versa.
+    update public.subscription_subjects ss
+       set current_period_end =
+             greatest(coalesce(ss.current_period_end, now()), now())
+             + make_interval(days => p_days)
+     where ss.child_subscription_id = p_subscription_id;
+    get diagnostics v_touched = row_count;
+    if v_touched = 0 then
+      update public.child_subscriptions
+         set current_period_end =
+               greatest(coalesce(v_sub.current_period_end, now()), now())
+               + make_interval(days => p_days),
+             updated_at = now()
+       where id = p_subscription_id;
+    end if;
   end if;
+
+  -- Coverage end after the fan-out (the trigger already wrote it).
+  select current_period_end into v_end
+  from public.child_subscriptions where id = p_subscription_id;
 
   -- Reconcile the child's cached access flag for THIS student (same rules as
   -- recompute_child_access(), applied to one row so the UI is instantly right).
@@ -6627,22 +7050,30 @@ revoke all on function public.admin_manage_child_subscription(uuid, text, int) f
 grant execute on function public.admin_manage_child_subscription(uuid, text, int) to authenticated, service_role;
 
 -- =============================================================================
--- Mid-cycle SUBJECT CHANGE billing (migration 078). Owner-approved model:
---   ADD    -> immediate access + a PRORATED top-up for the days left in the
---             current period; the recurring rate rises from now on.
---   REMOVE -> never refunds. Access is kept until the period end
---             (subscription_subjects.remove_at) and the recurring rate drops
---             at the next renewal.
--- One shared renewal date per child. quote_subject_change() is the SINGLE
--- source of the math and apply_subject_change() calls it, so the previewed
--- price can never drift from the applied one (audit H7). Amounts are never
--- accepted from a client. Supersedes add_subscription_subject /
--- remove_subscription_subject (kept above for reference; no longer called).
+-- Mid-cycle PLAN CHANGE billing (migration 078, per-subject since 109).
+-- Owner-approved model:
+--   ADD         -> immediate access and a FULL first cycle, charged in full.
+--                  Proration is RETIRED: with per-subject periods there is no
+--                  shared period left to prorate into, and the subject receives
+--                  the whole cycle it pays for. subscription_changes keeps its
+--                  shape (remaining_ratio = 1, period_days = null) so a charge
+--                  stays reconstructible for disputes.
+--   REMOVE      -> never refunds. Access runs to THAT SUBJECT'S own period end
+--                  (subscription_subjects.remove_at) and the subject drops out
+--                  of the next invoice.
+--   PLAN CHANGE -> a different cycle for an already-paid subject is SCHEDULED
+--                  into pending_interval and applies at that subject's renewal.
+--                  One rule in both directions: no refund, no surprise charge.
+-- quote_plan_change() is the SINGLE source of the math and apply_plan_change()
+-- calls it, so the previewed price can never drift from the applied one (audit
+-- H7). Amounts are never accepted from a client. quote_subject_change /
+-- apply_subject_change stay as add/remove wrappers with their exact historical
+-- signatures (013 pins them; the mobile BFF and shipped binaries call them).
 -- =============================================================================
-create or replace function public.quote_subject_change(
+
+create or replace function public.quote_plan_change(
   p_student_profile_id uuid,
-  p_add                uuid[] default '{}',
-  p_remove             uuid[] default '{}'
+  p_items              jsonb
 )
 returns jsonb
 language plpgsql
@@ -6651,23 +7082,21 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_min_charge  constant numeric(12,2) := 0.50;  -- waive micro-charges
-  v_sub         public.child_subscriptions%rowtype;
-  v_owner       uuid;
-  v_pct         numeric(5,2);
-  v_rank        int;
-  v_add         uuid[] := coalesce(p_add, '{}');
-  v_remove      uuid[] := coalesce(p_remove, '{}');
-  v_cur_base    numeric(12,2);
-  v_next_base   numeric(12,2);
-  v_added_base  numeric(12,2);
-  v_cur_total   numeric(12,2);
-  v_next_total  numeric(12,2);
-  v_ratio       numeric(8,6) := 0;
-  v_period_days numeric(10,4);
-  v_prorate     boolean := false;
-  v_due         numeric(12,2) := 0;
-  v_remaining   int;
+  v_sub        public.child_subscriptions%rowtype;
+  v_owner      uuid;
+  v_rank       int;
+  v_pct        numeric(5,2);
+  v_cur_base   numeric(12,2);
+  v_next_base  numeric(12,2);
+  v_added_base numeric(12,2);
+  v_due        numeric(12,2) := 0;
+  v_items      jsonb;
+  v_groups     jsonb;
+  v_renewals   jsonb;
+  v_removals   jsonb;
+  v_changes    jsonb;
+  v_ivs        int;
+  v_remaining  int;
 begin
   select * into v_sub
   from public.child_subscriptions
@@ -6680,7 +7109,6 @@ begin
   end if;
   v_owner := v_sub.owner_parent_profile_id;
 
-  -- Sibling discount as of NOW (same formula as quote_child_subscription).
   select count(distinct cs.student_profile_id) + 1 into v_rank
   from public.child_subscriptions cs
   where cs.owner_parent_profile_id = v_owner
@@ -6688,93 +7116,502 @@ begin
     and cs.status in ('trialing', 'active', 'past_due');
   v_pct := case when v_rank <= 1 then 0 when v_rank = 2 then 10 else 15 end;
 
-  -- CURRENT recurring set = subjects not already scheduled for removal.
+  -- CURRENT recurring set = live subjects, each priced on ITS OWN cycle.
   select coalesce(sum(sp.price_amount), 0) into v_cur_base
   from public.subscription_subjects ss
   join public.subjects_pricing sp
     on sp.subject_id = ss.subject_id
-   and sp.interval = v_sub.interval
+   and sp.interval = coalesce(ss.interval, v_sub.interval)
    and sp.status = 'active'
   where ss.child_subscription_id = v_sub.id
     and ss.remove_at is null;
 
-  -- Only genuinely NEW subjects are billable (ignore ones already on the plan).
+  -- ADDS = desired subjects not currently covered. Each buys a FULL first cycle
+  -- (proration retired — see the file header).
   select coalesce(sum(sp.price_amount), 0) into v_added_base
-  from public.subjects_pricing sp
-  where sp.subject_id = any (v_add)
-    and sp.interval = v_sub.interval
-    and sp.status = 'active'
-    and not exists (
-      select 1 from public.subscription_subjects ss
-      where ss.child_subscription_id = v_sub.id
-        and ss.subject_id = sp.subject_id
-        and ss.remove_at is null);
+  from public.plan_items_normalize(p_items) n
+  join public.subjects_pricing sp
+    on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
+  where not exists (
+    select 1 from public.subscription_subjects ss
+    where ss.child_subscription_id = v_sub.id
+      and ss.subject_id = n.subject_id
+      and ss.remove_at is null);
 
-  -- NEXT recurring set = current + additions - removals.
+  -- NEXT recurring set = the desired set, priced on the desired cycles.
   select coalesce(sum(sp.price_amount), 0) into v_next_base
-  from public.subjects_pricing sp
-  where sp.interval = v_sub.interval
-    and sp.status = 'active'
-    and (
-      sp.subject_id = any (v_add)
-      or exists (
+  from public.plan_items_normalize(p_items) n
+  join public.subjects_pricing sp
+    on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active';
+
+  select jsonb_agg(jsonb_build_object(
+           'subject_id', n.subject_id, 'interval', n.interval,
+           'price', sp.price_amount, 'currency', v_sub.currency))
+    into v_items
+  from public.plan_items_normalize(p_items) n
+  join public.subjects_pricing sp
+    on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active';
+
+  with g as (
+    select n.interval as iv, count(*)::int as cnt,
+           coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
+    from public.plan_items_normalize(p_items) n
+    join public.subjects_pricing sp
+      on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
+    group by n.interval)
+  select jsonb_object_agg(g.iv, jsonb_build_object(
+           'count', g.cnt, 'base', g.base,
+           'discount', round(g.base * v_pct / 100.0, 2),
+           'total', g.base - round(g.base * v_pct / 100.0, 2))),
+         count(*)::int
+    into v_groups, v_ivs
+  from g;
+
+  -- due_now: the ADDS only, at the sibling rate, rounded per cycle group. A
+  -- trial charges nothing (the adds ride the trial like every other subject).
+  if v_sub.status <> 'trialing' then
+    with g as (
+      select n.interval as iv, coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
+      from public.plan_items_normalize(p_items) n
+      join public.subjects_pricing sp
+        on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
+      where not exists (
         select 1 from public.subscription_subjects ss
         where ss.child_subscription_id = v_sub.id
-          and ss.subject_id = sp.subject_id
+          and ss.subject_id = n.subject_id
           and ss.remove_at is null)
-    )
-    and not (sp.subject_id = any (v_remove));
-
-  v_cur_total  := v_cur_base  - round(v_cur_base  * v_pct / 100.0, 2);
-  v_next_total := v_next_base - round(v_next_base * v_pct / 100.0, 2);
-
-  -- Elapsed/remaining share of the CURRENT period (exact, from the DB clock).
-  if v_sub.current_period_end is not null
-     and v_sub.current_period_start is not null
-     and v_sub.current_period_end > v_sub.current_period_start then
-    v_period_days := round(
-      extract(epoch from (v_sub.current_period_end - v_sub.current_period_start)) / 86400.0, 4);
-    v_ratio := greatest(0, least(1, round(
-      extract(epoch from (v_sub.current_period_end - now()))
-      / nullif(extract(epoch from (v_sub.current_period_end - v_sub.current_period_start)), 0), 6)));
+      group by n.interval)
+    select coalesce(sum(g.base - round(g.base * v_pct / 100.0, 2)), 0) into v_due from g;
   end if;
 
-  -- Prorate only for a paid, non-weekly period that still has time left.
-  v_prorate := v_sub.status <> 'trialing'
-               and v_sub.interval <> 'week'
-               and v_ratio > 0
-               and v_added_base > 0;
+  -- Per-cycle renewal sentences, built from the DESIRED basket. Reading the
+  -- STORED rows here is what told a parent who had just moved a subject to
+  -- yearly that they would renew at the WEEKLY amount: p_items already carries
+  -- the chosen cycle (and, for an untouched subject, its pending_interval --
+  -- both wrappers compose it that way), so the sentence now describes the plan
+  -- the parent is about to have instead of the one they are leaving.
+  -- An already-covered subject renews at ITS OWN period end; a newly added one
+  -- opens a full cycle at now(), which is exactly what apply_plan_change writes.
+  with r as (
+    select n.interval as iv,
+           min(case
+                 when ss.subject_id is null
+                   then now() + case n.interval
+                                  when 'week'  then interval '7 days'
+                                  when 'month' then interval '1 month'
+                                  else              interval '1 year'
+                                end
+                 else coalesce(ss.current_period_end, v_sub.current_period_end)
+               end) as next_at,
+           coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
+    from public.plan_items_normalize(p_items) n
+    join public.subjects_pricing sp
+      on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
+    left join public.subscription_subjects ss
+      on ss.child_subscription_id = v_sub.id
+     and ss.subject_id = n.subject_id
+     and ss.remove_at is null
+    group by n.interval)
+  select jsonb_agg(jsonb_build_object(
+           'interval', r.iv, 'next_at', r.next_at,
+           'total', r.base - round(r.base * v_pct / 100.0, 2)))
+    into v_renewals from r;
 
-  if v_prorate then
-    v_due := round(v_added_base * (1 - v_pct / 100.0) * v_ratio, 2);
-    if v_due < v_min_charge then v_due := 0; end if;  -- waived
-  end if;
+  -- REMOVES = covered but absent from the desired set; each keeps access to ITS
+  -- OWN period end (never the subscription's).
+  select jsonb_agg(jsonb_build_object(
+           'subject_id', ss.subject_id,
+           'remove_at', coalesce(ss.current_period_end, v_sub.current_period_end)))
+    into v_removals
+  from public.subscription_subjects ss
+  where ss.child_subscription_id = v_sub.id
+    and ss.remove_at is null
+    and not exists (
+      select 1 from public.plan_items_normalize(p_items) n
+      where n.subject_id = ss.subject_id);
+
+  -- PLAN CHANGES = covered with a different cycle; scheduled, never charged.
+  -- The comparison basis is the EFFECTIVE cycle -- pending_interval when one is
+  -- already scheduled -- so re-selecting the ORIGINAL cycle is itself a change
+  -- (it CANCELS the schedule). Comparing against ss.interval alone locked in a
+  -- parent who mis-clicked 'yearly': the diff came back empty, Save stayed
+  -- disabled and nothing could unschedule the change.
+  select jsonb_agg(jsonb_build_object(
+           'subject_id', ss.subject_id,
+           'from', coalesce(ss.pending_interval, ss.interval, v_sub.interval),
+           'to', n.interval,
+           'effective_at', coalesce(ss.current_period_end, v_sub.current_period_end)))
+    into v_changes
+  from public.subscription_subjects ss
+  join public.plan_items_normalize(p_items) n on n.subject_id = ss.subject_id
+  where ss.child_subscription_id = v_sub.id
+    and ss.remove_at is null
+    and n.interval is distinct from coalesce(ss.pending_interval, ss.interval, v_sub.interval);
 
   v_remaining := greatest(0, ceil(
-    extract(epoch from (coalesce(v_sub.current_period_end, now()) - now())) / 86400.0)::int);
+    extract(epoch from (coalesce(v_sub.next_renewal_at, v_sub.current_period_end, now()) - now())) / 86400.0)::int);
 
   return jsonb_build_object(
+    'items',    coalesce(v_items, '[]'::jsonb),
+    'groups',   coalesce(v_groups, '{}'::jsonb),
+    'renewals', coalesce(v_renewals, '[]'::jsonb),
+    'removals_effective', coalesce(v_removals, '[]'::jsonb),
+    'plan_changes', coalesce(v_changes, '[]'::jsonb),
+    'mixed', coalesce(v_ivs, 0) > 1,
+    -- Legacy contract keys: the web/BFF/mobile parsers still read these.
     'subscription_id',        v_sub.id,
     'status',                 v_sub.status,
     'interval',               v_sub.interval,
     'currency',               v_sub.currency,
     'discount_percent',       v_pct,
-    'current_recurring_total', v_cur_total,
-    'new_recurring_total',    v_next_total,
+    'current_recurring_total', v_cur_base - round(v_cur_base * v_pct / 100.0, 2),
+    'new_recurring_total',    v_next_base - round(v_next_base * v_pct / 100.0, 2),
     'due_now',                v_due,
-    'prorated',               v_prorate and v_due > 0,
-    'proration_waived',       v_prorate and v_due = 0,
+    'prorated',               false,
+    'proration_waived',       false,
     'added_base',             v_added_base,
-    'remaining_ratio',        v_ratio,
+    'remaining_ratio',        1,
     'days_remaining',         v_remaining,
-    'period_days',            v_period_days,
-    -- The new recurring rate (and any removal) takes effect at the renewal.
-    'effective_from',         v_sub.current_period_end,
-    'removals_effective_at',  v_sub.current_period_end);
+    'period_days',            null,
+    -- effective_from = the NEXT CHARGE date, which is what next_renewal_at (the
+    -- MIN) genuinely means; the per-subject dates a cycle change takes effect on
+    -- are in plan_changes[].effective_at.
+    'effective_from',         coalesce(v_sub.next_renewal_at, v_sub.current_period_end),
+    -- LEGACY SCALAR, superseded by removals_effective[] above. It used to be the
+    -- subscription MIN, so removing a YEARLY subject from a plan that also held
+    -- a weekly one told the parent access ended in 7 days while the DB granted a
+    -- year. It is now the last of the REMOVED subjects' own dates, so an
+    -- already-shipped binary can only ever overstate, never cut access short.
+    'removals_effective_at',  coalesce(
+      (select max((e.v ->> 'remove_at')::timestamptz)
+         from jsonb_array_elements(coalesce(v_removals, '[]'::jsonb)) as e(v)),
+      v_sub.next_renewal_at, v_sub.current_period_end));
+end;
+$$;
+
+comment on function public.quote_plan_change(uuid, jsonb) is
+  'Migration 109: diffs a DESIRED full per-subject basket against the live subscription into adds / removes / plan_changes and prices it. due_now = the adds'' full first cycles at the sibling rate (proration retired); a cycle change costs nothing now and applies at that subject''s renewal.';
+
+create or replace function public.apply_plan_change(
+  p_student_profile_id uuid,
+  p_items              jsonb,
+  p_idempotency_key    text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_quote   jsonb;
+  v_sub     public.child_subscriptions%rowtype;
+  v_actor   uuid := public.current_profile_id();
+  v_pct     numeric(5,2);
+  v_before  numeric(12,2);
+  v_after   numeric(12,2);
+  v_left    int;
+  v_prior   jsonb;
+  v_adds    int;
+  v_changes int;
+  v_row     record;
+begin
+  -- Replay guard: the same batch key returns the original outcome untouched.
+  if p_idempotency_key is not null then
+    select jsonb_build_object('idempotent', true, 'applied_at', min(created_at))
+      into v_prior
+    from public.subscription_changes
+    where idempotency_key = p_idempotency_key
+      and student_profile_id = p_student_profile_id
+    having count(*) > 0;
+    if v_prior is not null then return v_prior; end if;
+  end if;
+
+  -- ONE source of truth for the numbers (preview == charged, audit H7).
+  v_quote := public.quote_plan_change(p_student_profile_id, p_items);
+
+  select count(*)::int into v_adds
+  from public.plan_items_normalize(p_items) n
+  where not exists (
+    select 1 from public.subscription_subjects ss
+    where ss.child_subscription_id = (v_quote->>'subscription_id')::uuid
+      and ss.subject_id = n.subject_id
+      and ss.remove_at is null);
+  v_changes := jsonb_array_length(v_quote->'plan_changes');
+
+  -- Round 48/51 kill switch: while payments are off a parent may still REMOVE
+  -- subjects (never trap someone into paying), but may not ADD one — and a
+  -- cycle change is a billing change, so it is blocked too.
+  if v_adds > 0 or v_changes > 0 then
+    perform public.assert_payments_enabled();
+  end if;
+
+  select * into v_sub from public.child_subscriptions
+  where id = (v_quote->>'subscription_id')::uuid
+  for update;
+
+  v_pct    := (v_quote->>'discount_percent')::numeric;
+  v_before := (v_quote->>'current_recurring_total')::numeric;
+  v_after  := (v_quote->>'new_recurring_total')::numeric;
+
+  -- ---- removals: keep access to THIS SUBJECT'S own period end --------------
+  select count(*) into v_left
+  from public.subscription_subjects ss
+  where ss.child_subscription_id = v_sub.id
+    and ss.remove_at is null
+    and exists (select 1 from public.plan_items_normalize(p_items) n
+                 where n.subject_id = ss.subject_id);
+  if v_left < 1 and v_adds < 1 then
+    raise exception 'subject_change: at least one subject must remain'
+      using errcode = 'check_violation', hint = 'last_subject';
+  end if;
+
+  for v_row in
+    select ss.subject_id,
+           coalesce(ss.current_period_end, v_sub.current_period_end, now()) as ends_at,
+           coalesce(ss.interval, v_sub.interval) as iv
+    from public.subscription_subjects ss
+    where ss.child_subscription_id = v_sub.id
+      and ss.remove_at is null
+      and not exists (select 1 from public.plan_items_normalize(p_items) n
+                       where n.subject_id = ss.subject_id)
+  loop
+    update public.subscription_subjects
+       set remove_at = v_row.ends_at
+     where child_subscription_id = v_sub.id and subject_id = v_row.subject_id;
+
+    insert into public.subscription_changes
+      (child_subscription_id, student_profile_id, owner_parent_profile_id, change_type,
+       subject_id, interval, effective_at, prorated_amount, currency, recurring_before,
+       recurring_after, discount_percent, remaining_ratio, period_days, idempotency_key,
+       created_by_profile_id)
+    values
+      (v_sub.id, p_student_profile_id, v_sub.owner_parent_profile_id, 'remove',
+       v_row.subject_id, v_row.iv, v_row.ends_at, 0, v_sub.currency, v_before,
+       v_after, v_pct, 1, null, p_idempotency_key, v_actor)
+    on conflict do nothing;
+  end loop;
+
+  -- ---- additions: a NEW full cycle anchored at now() -----------------------
+  for v_row in
+    select n.subject_id, n.interval as iv, sp.price_amount
+    from public.plan_items_normalize(p_items) n
+    join public.subjects_pricing sp
+      on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
+    where not exists (
+      select 1 from public.subscription_subjects ss
+      where ss.child_subscription_id = v_sub.id
+        and ss.subject_id = n.subject_id
+        and ss.remove_at is null)
+  loop
+    -- Un-schedule a pending removal instead of duplicating the row.
+    insert into public.subscription_subjects
+      (child_subscription_id, subject_id, interval, price_amount, currency,
+       current_period_start, current_period_end)
+    values
+      (v_sub.id, v_row.subject_id, v_row.iv, v_row.price_amount, v_sub.currency,
+       now(),
+       now() + case v_row.iv
+                 when 'week'  then interval '7 days'
+                 when 'month' then interval '1 month'
+                 else              interval '1 year'
+               end)
+    on conflict (child_subscription_id, subject_id) do update
+      set remove_at            = null,
+          interval             = excluded.interval,
+          pending_interval     = null,
+          price_amount         = excluded.price_amount,
+          current_period_start = excluded.current_period_start,
+          current_period_end   = excluded.current_period_end;
+
+    insert into public.subscription_changes
+      (child_subscription_id, student_profile_id, owner_parent_profile_id, change_type,
+       subject_id, interval, effective_at, prorated_amount, currency, recurring_before,
+       recurring_after, discount_percent, remaining_ratio, period_days, idempotency_key,
+       created_by_profile_id)
+    values
+      (v_sub.id, p_student_profile_id, v_sub.owner_parent_profile_id, 'add',
+       v_row.subject_id, v_row.iv, now(),
+       round(coalesce(v_row.price_amount, 0) * (1 - v_pct / 100.0), 2),
+       v_sub.currency, v_before, v_after, v_pct, 1, null, p_idempotency_key, v_actor)
+    on conflict do nothing;
+  end loop;
+
+  -- ---- cycle changes: SCHEDULED only, never a refund, never a charge -------
+  for v_row in
+    select ss.subject_id,
+           coalesce(ss.pending_interval, ss.interval, v_sub.interval) as from_iv,
+           coalesce(ss.interval, v_sub.interval) as cur_iv,
+           n.interval as to_iv,
+           coalesce(ss.current_period_end, v_sub.current_period_end, now()) as ends_at
+    from public.subscription_subjects ss
+    join public.plan_items_normalize(p_items) n on n.subject_id = ss.subject_id
+    where ss.child_subscription_id = v_sub.id
+      and ss.remove_at is null
+      and n.interval is distinct from coalesce(ss.pending_interval, ss.interval, v_sub.interval)
+  loop
+    -- Choosing the cycle the subject is ALREADY paid on CANCELS a scheduled
+    -- change rather than scheduling a no-op, which is the only way back for a
+    -- parent who picked the wrong cycle.
+    update public.subscription_subjects
+       set pending_interval =
+             case when v_row.to_iv = v_row.cur_iv then null else v_row.to_iv end
+     where child_subscription_id = v_sub.id and subject_id = v_row.subject_id;
+
+    insert into public.subscription_changes
+      (child_subscription_id, student_profile_id, owner_parent_profile_id, change_type,
+       subject_id, interval, effective_at, prorated_amount, currency, recurring_before,
+       recurring_after, discount_percent, remaining_ratio, period_days, idempotency_key,
+       created_by_profile_id)
+    values
+      (v_sub.id, p_student_profile_id, v_sub.owner_parent_profile_id, 'plan_change',
+       v_row.subject_id, v_row.to_iv, v_row.ends_at, 0, v_sub.currency, v_before,
+       v_after, v_pct, 1, null, p_idempotency_key, v_actor)
+    on conflict do nothing;
+  end loop;
+
+  -- TODO(real-provider): capture (v_quote->>'due_now') through the PSP HERE,
+  -- inside this transaction's boundary, then write the resulting payment id
+  -- back onto the ledger rows and insert the matching public.payments row.
+  -- NEVER accept the amount from a client.
+
+  return v_quote || jsonb_build_object('applied', true, 'charged', false);
+end;
+$$;
+
+comment on function public.apply_plan_change(uuid, jsonb, text) is
+  'Migration 109: applies a DESIRED full per-subject basket atomically — adds open their own now()-anchored cycle, removals are scheduled for THAT subject''s own period end, cycle changes write pending_interval only. quote_plan_change is the single source of the numbers; assert_payments_enabled() gates adds and cycle changes while removals stay legal.';
+
+-- ---- the boundary job: a scheduled cycle actually takes effect --------------
+-- Without this, pending_interval is WRITE-ONLY: apply_plan_change stores the
+-- parent's choice and nothing in the platform ever moves it into
+-- subscription_subjects.interval, so "Riyaziyyat aylıq -> illik" is remembered
+-- and never applied. This is the job that applies it, at that subject's own
+-- period boundary.
+--
+-- DELIBERATELY NOT A RENEWAL. There is no payment provider yet (every path here
+-- ends at the TODO(real-provider) seam and returns 'charged', false), so this
+-- never extends a period, never grants access and never writes a payment --
+-- doing so would silently turn every plan into a free perpetual one. It
+-- promotes the scheduled cycle and re-freezes the price at the moment the paid
+-- period ends, which is precisely the state the future charge has to read.
+create or replace function public.apply_due_plan_changes()
+returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_row   record;
+  v_price numeric(12,2);
+  v_n     int := 0;
+begin
+  for v_row in
+    select ss.child_subscription_id, ss.subject_id, ss.pending_interval,
+           ss.current_period_end, cs.student_profile_id,
+           cs.owner_parent_profile_id, cs.currency, cs.sibling_discount_percent
+    from public.subscription_subjects ss
+    join public.child_subscriptions cs on cs.id = ss.child_subscription_id
+    where ss.pending_interval is not null
+      and ss.remove_at is null
+      and ss.current_period_end is not null
+      and ss.current_period_end <= now()
+      and cs.status in ('trialing', 'active', 'past_due')
+  loop
+    select sp.price_amount into v_price
+    from public.subjects_pricing sp
+    where sp.subject_id = v_row.subject_id
+      and sp.interval = v_row.pending_interval
+      and sp.status = 'active';
+    -- Pricing for the new cycle was archived: LEAVE the schedule in place. Both
+    -- alternatives are worse -- dropping it discards the parent's decision, and
+    -- promoting it anyway would freeze a NULL price into the next invoice.
+    if v_price is null then continue; end if;
+
+    update public.subscription_subjects
+       set interval         = v_row.pending_interval,
+           pending_interval = null,
+           price_amount     = v_price
+     where child_subscription_id = v_row.child_subscription_id
+       and subject_id = v_row.subject_id;
+
+    -- Ledger row, keyed on the (subject, period end) that fell due, so a second
+    -- run inside the same boundary is a no-op instead of a duplicate.
+    insert into public.subscription_changes
+      (child_subscription_id, student_profile_id, owner_parent_profile_id, change_type,
+       subject_id, interval, effective_at, prorated_amount, currency,
+       discount_percent, remaining_ratio, period_days, idempotency_key,
+       created_by_profile_id)
+    values
+      (v_row.child_subscription_id, v_row.student_profile_id,
+       v_row.owner_parent_profile_id, 'plan_change', v_row.subject_id,
+       v_row.pending_interval, v_row.current_period_end, 0, v_row.currency,
+       coalesce(v_row.sibling_discount_percent, 0), 1, null,
+       'planroll:' || v_row.child_subscription_id::text || ':'
+         || v_row.subject_id::text || ':' || v_row.current_period_end::text,
+       null)
+    on conflict do nothing;
+
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end;
+$$;
+
+comment on function public.apply_due_plan_changes() is
+  'Migration 109: promotes each subject''s SCHEDULED cycle (pending_interval -> interval, price re-frozen) once its own paid period ends. Scheduled hourly in 016. It never extends a period or grants access -- renewal/charging is the unimplemented provider seam -- so its only effect is that a parent''s cycle choice is no longer stored and forgotten.';
+
+revoke all on function public.apply_due_plan_changes() from public, anon, authenticated;
+grant execute on function public.apply_due_plan_changes() to service_role;
+
+create or replace function public.quote_subject_change(
+  p_student_profile_id uuid,
+  p_add                uuid[] default '{}',
+  p_remove             uuid[] default '{}'
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_sub   public.child_subscriptions%rowtype;
+  v_items jsonb;
+begin
+  select * into v_sub
+  from public.child_subscriptions
+  where student_profile_id = p_student_profile_id
+    and status in ('trialing', 'active', 'past_due')
+  order by created_at desc
+  limit 1;
+  if not found then
+    raise exception 'subject_change: no active subscription' using errcode = 'no_data_found';
+  end if;
+
+  -- Compose the DESIRED full set from the live coverage + the add/remove diff,
+  -- keeping every kept subject on ITS OWN cycle so a mixed plan is not
+  -- flattened by an old caller.
+  select jsonb_agg(jsonb_build_object('subject_id', x.sid, 'interval', x.iv))
+    into v_items
+  from (
+    select ss.subject_id as sid,
+           coalesce(ss.pending_interval, ss.interval, v_sub.interval) as iv
+    from public.subscription_subjects ss
+    where ss.child_subscription_id = v_sub.id
+      and ss.remove_at is null
+      and not (ss.subject_id = any (coalesce(p_remove, '{}')))
+    union
+    select s.sid, v_sub.interval
+    from unnest(coalesce(p_add, '{}')) s(sid)
+  ) x;
+
+  return public.quote_plan_change(p_student_profile_id, coalesce(v_items, '[]'::jsonb));
 end;
 $$;
 revoke all on function public.quote_subject_change(uuid, uuid[], uuid[]) from public, anon, authenticated;
 grant execute on function public.quote_subject_change(uuid, uuid[], uuid[]) to service_role;
+revoke all on function public.quote_plan_change(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.quote_plan_change(uuid, jsonb) to service_role;
 
 -- ----------------------------------------------------------------------------
 -- 4) apply_subject_change — atomic: adds get immediate access + a prorated
@@ -6793,151 +7630,46 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_quote     jsonb;
-  v_sub       public.child_subscriptions%rowtype;
-  v_add       uuid[] := coalesce(p_add, '{}');
-  v_remove    uuid[] := coalesce(p_remove, '{}');
-  v_actor     uuid := public.current_profile_id();
-  v_subject   uuid;
-  v_price     numeric(12,2);
-  v_pct       numeric(5,2);
-  v_ratio     numeric(8,6);
-  v_share     numeric(12,2);
-  v_due       numeric(12,2);
-  v_before    numeric(12,2);
-  v_after     numeric(12,2);
-  v_base      numeric(12,2);
-  v_left      int;
-  v_prior     jsonb;
+  v_sub   public.child_subscriptions%rowtype;
+  v_items jsonb;
 begin
-  -- Round 48 kill switch (migration 089): while payments are off a
-  -- parent may still REMOVE subjects (never trap someone into paying),
-  -- but may not ADD one.
+  -- Round 48 kill switch: adds are paid, removals stay legal.
   if coalesce(array_length(p_add, 1), 0) > 0 then
     perform public.assert_payments_enabled();
   end if;
-  -- Replay guard: the same batch key returns the original outcome untouched.
-  if p_idempotency_key is not null then
-    select jsonb_build_object('idempotent', true, 'applied_at', min(created_at))
-      into v_prior
-    from public.subscription_changes
-    where idempotency_key = p_idempotency_key
-      and student_profile_id = p_student_profile_id
-    having count(*) > 0;
-    if v_prior is not null then return v_prior; end if;
+
+  select * into v_sub
+  from public.child_subscriptions
+  where student_profile_id = p_student_profile_id
+    and status in ('trialing', 'active', 'past_due')
+  order by created_at desc
+  limit 1;
+  if not found then
+    raise exception 'subject_change: no active subscription' using errcode = 'no_data_found';
   end if;
 
-  -- ONE source of truth for the numbers (preview == charged, audit H7).
-  v_quote := public.quote_subject_change(p_student_profile_id, v_add, v_remove);
-
-  select * into v_sub from public.child_subscriptions
-  where id = (v_quote->>'subscription_id')::uuid
-  for update;
-
-  v_pct   := (v_quote->>'discount_percent')::numeric;
-  v_ratio := (v_quote->>'remaining_ratio')::numeric;
-  v_due   := (v_quote->>'due_now')::numeric;
-  v_before := (v_quote->>'current_recurring_total')::numeric;
-  v_after  := (v_quote->>'new_recurring_total')::numeric;
-
-  -- ---- removals: keep access to the period end, drop from the next cycle ----
-  if array_length(v_remove, 1) is not null then
-    -- At least one subject must survive into the next period.
-    select count(*) into v_left
+  select jsonb_agg(jsonb_build_object('subject_id', x.sid, 'interval', x.iv))
+    into v_items
+  from (
+    select ss.subject_id as sid,
+           coalesce(ss.pending_interval, ss.interval, v_sub.interval) as iv
     from public.subscription_subjects ss
     where ss.child_subscription_id = v_sub.id
       and ss.remove_at is null
-      and not (ss.subject_id = any (v_remove));
-    if v_left < 1 and array_length(v_add, 1) is null then
-      raise exception 'subject_change: at least one subject must remain'
-        using errcode = 'check_violation', hint = 'last_subject';
-    end if;
+      and not (ss.subject_id = any (coalesce(p_remove, '{}')))
+    union
+    select s.sid, v_sub.interval
+    from unnest(coalesce(p_add, '{}')) s(sid)
+  ) x;
 
-    update public.subscription_subjects ss
-       set remove_at = v_sub.current_period_end
-     where ss.child_subscription_id = v_sub.id
-       and ss.subject_id = any (v_remove)
-       and ss.remove_at is null;
-
-    foreach v_subject in array v_remove loop
-      insert into public.subscription_changes
-        (child_subscription_id, student_profile_id, owner_parent_profile_id, change_type,
-         subject_id, effective_at, prorated_amount, currency, recurring_before, recurring_after,
-         discount_percent, remaining_ratio, period_days, idempotency_key, created_by_profile_id)
-      values
-        (v_sub.id, p_student_profile_id, v_sub.owner_parent_profile_id, 'remove',
-         v_subject, coalesce(v_sub.current_period_end, now()), 0, v_sub.currency, v_before, v_after,
-         v_pct, v_ratio, (v_quote->>'period_days')::numeric, p_idempotency_key, v_actor)
-      on conflict do nothing;
-    end loop;
-  end if;
-
-  -- ---- additions: immediate access + prorated top-up -----------------------
-  if array_length(v_add, 1) is not null then
-    foreach v_subject in array v_add loop
-      -- Un-schedule a pending removal instead of duplicating the row.
-      update public.subscription_subjects
-         set remove_at = null
-       where child_subscription_id = v_sub.id and subject_id = v_subject;
-
-      insert into public.subscription_subjects (child_subscription_id, subject_id)
-      values (v_sub.id, v_subject)
-      on conflict do nothing;
-
-      select sp.price_amount into v_price
-      from public.subjects_pricing sp
-      where sp.subject_id = v_subject and sp.interval = v_sub.interval and sp.status = 'active';
-
-      -- Per-subject share of the same proration the quote returned. Waived
-      -- (v_due = 0) means every share is 0 too, so the ledger always sums to
-      -- exactly what was charged.
-      v_share := 0;
-      if v_due > 0 and coalesce(v_price, 0) > 0 then
-        v_share := round(v_price * (1 - v_pct / 100.0) * v_ratio, 2);
-      end if;
-
-      insert into public.subscription_changes
-        (child_subscription_id, student_profile_id, owner_parent_profile_id, change_type,
-         subject_id, effective_at, prorated_amount, currency, recurring_before, recurring_after,
-         discount_percent, remaining_ratio, period_days, idempotency_key, created_by_profile_id)
-      values
-        (v_sub.id, p_student_profile_id, v_sub.owner_parent_profile_id, 'add',
-         v_subject, now(), v_share, v_sub.currency, v_before, v_after,
-         v_pct, v_ratio, (v_quote->>'period_days')::numeric, p_idempotency_key, v_actor)
-      on conflict do nothing;
-    end loop;
-  end if;
-
-  -- ---- recurring rate = subjects that survive into the next period ---------
-  select coalesce(sum(sp.price_amount), 0) into v_base
-  from public.subscription_subjects ss
-  join public.subjects_pricing sp
-    on sp.subject_id = ss.subject_id
-   and sp.interval = v_sub.interval
-   and sp.status = 'active'
-  where ss.child_subscription_id = v_sub.id
-    and ss.remove_at is null;
-
-  update public.child_subscriptions
-     set base_amount = v_base,
-         sibling_discount_percent = v_pct,
-         discount_amount = round(v_base * v_pct / 100.0, 2),
-         total_amount = v_base - round(v_base * v_pct / 100.0, 2),
-         updated_at = now()
-   where id = v_sub.id;
-
-  -- TODO(real-provider): capture (v_quote->>'due_now') through the PSP HERE,
-  -- inside this transaction's boundary, then write the resulting payment id
-  -- back onto the ledger rows (provider / provider_payment_id) and insert the
-  -- matching public.payments row. Until a provider exists nothing is charged —
-  -- the amount is recorded on the ledger only. NEVER accept the amount from a
-  -- client; it must always come from quote_subject_change().
-
-  return v_quote || jsonb_build_object('applied', true, 'charged', false);
+  return public.apply_plan_change(
+    p_student_profile_id, coalesce(v_items, '[]'::jsonb), p_idempotency_key);
 end;
 $$;
 revoke all on function public.apply_subject_change(uuid, uuid[], uuid[], text) from public, anon, authenticated;
 grant execute on function public.apply_subject_change(uuid, uuid[], uuid[], text) to service_role;
+revoke all on function public.apply_plan_change(uuid, jsonb, text) from public, anon, authenticated;
+grant execute on function public.apply_plan_change(uuid, jsonb, text) to service_role;
 
 -- -----------------------------------------------------------------------------
 -- Migration 098: deleting a parent must not leave orphaned children.

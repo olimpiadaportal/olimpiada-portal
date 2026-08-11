@@ -1,28 +1,26 @@
 "use client";
 
-// Round 11 (item 1) — Manage-Subjects CHECKBOX editor for an existing child's
-// live subscription. The parent sees ALL subjects as checkboxes: the child's
-// CURRENT/ACTIVE subjects pre-checked (accent treatment + "Aktiv" chip) and
-// the ADDITIONAL available subjects unchecked, each with its price for the
-// subscription's interval. A live summary shows the selected count, pending
-// additions/removals and a debounced server quote (authoritative sibling-
-// discount pricing — never computed client-side).
+// MANAGE SUBJECTS — the editor for a child's LIVE subscription.
 //
-// PAYMENT-FIRST contract (owner requirement): toggling checkboxes is PURE
-// client state — nothing is applied until the parent confirms. If the pending
-// diff contains ANY addition (including mixed add+remove diffs), Save first
-// opens the payment sheet (DemoPaymentModal) in BOTH 'demo' AND 'real' modes —
-// there is no provider yet; the real-provider seam is server-side and will
-// replace the sheet for 'real' mode when it lands. Only the sheet's explicit
-// confirm submits updateSubscriptionSubjectsAction (THE single apply step);
-// cancel/close applies nothing and keeps the selection for a retry.
-// Removal-only diffs skip payment and submit directly (the remove RPC
-// re-prices server-side at the kept sibling-discount rate).
+// Migration 109 turned this into a per-subject PLAN editor: every covered
+// subject carries its own billing cycle, so the parent can add a subject,
+// remove one, or move one subject to another cycle without touching the rest.
+// The old single subscription-level `interval` prop is gone — one cycle for the
+// whole plan is no longer true in the database and cannot be true here.
 //
-// The SERVER diffs the posted DESIRED FULL set against the live subscription
-// and applies via the re-pricing RPCs — ownership recheck, payment-mode gate
-// ('off'/'giveaway' rejected) and all amounts are server-side; the client
-// never sends prices.
+// PAYMENT-FIRST contract (owner requirement), now three-way:
+//   * ANY ADDITION (including a mixed diff) opens the payment sheet
+//     (DemoPaymentModal) BEFORE the apply, in BOTH 'demo' and 'real' modes —
+//     there is no provider yet and the real charge seam is server-side.
+//   * A REMOVAL-ONLY diff submits directly: nothing is charged, access runs to
+//     that subject's own period end and no refund is ever made.
+//   * A CYCLE-CHANGE-ONLY diff also submits directly. It is SCHEDULED into
+//     pending_interval and takes effect at that subject's next renewal, so
+//     there is nothing to charge now and a payment sheet would be a lie.
+//
+// The SERVER receives the DESIRED FULL set (subject + cycle) and derives the
+// adds / removes / cycle changes itself — ownership recheck, payment-mode gate
+// and every amount are server-side; the client never sends a price.
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   quoteSubjectChange,
@@ -31,44 +29,58 @@ import {
   type SubjectsUpdateState,
 } from "@/lib/auth/subscriptionService";
 import { DemoPaymentModal } from "@/components/DemoPaymentModal";
+import { PlanSummary } from "@/components/PlanSummary";
+import { SubjectPlanCard } from "@/components/SubjectPlanCard";
 import { useLocale, useT } from "@/i18n/I18nProvider";
 import { formatLongDate } from "@/lib/formatDate";
 import { subjectLabel } from "@/lib/subjectLabel";
+import {
+  addPlanSubject,
+  availableSubjects,
+  computePlanQuote,
+  DEFAULT_PLAN_INTERVAL,
+  formatAzn,
+  INTERVAL_LABEL_KEY,
+  isPlanInterval,
+  PLAN_INTERVALS,
+  removePlanSubject,
+  setPlanInterval,
+  subjectPrice,
+  type ConfiguratorSubject,
+  type PlanInterval,
+  type PlanItem,
+} from "@/lib/pricingConfigurator";
 
 type Subj = { id: string; code: string | null; name: string; prices: Record<string, number> };
 
-const INTERVAL_KEY: Record<string, string> = {
-  week: "pricing.weekly",
-  month: "pricing.monthly",
-  year: "pricing.yearly",
+/** One subject as the live subscription currently covers it. */
+export type CoveredSubject = {
+  subjectId: string;
+  /** Resolved cycle: the subject's own, falling back to the subscription's. */
+  interval: string;
+  /** A cycle change already scheduled for this subject's renewal. */
+  pendingInterval: string | null;
+  /** This subject's own period end. */
+  periodEnd: string | null;
+  /** Set once a removal is scheduled — access still runs to periodEnd. */
+  removeAt: string | null;
 };
 
 export function ManageSubjects({
   studentId,
   subjects,
-  coveredIds,
-  endingIds = [],
-  interval,
+  covered,
   paymentMode,
   dict,
 }: {
   studentId: string;
   subjects: Subj[];
-  coveredIds: string[];
-  /**
-   * Round 32: subjects already SCHEDULED for removal — their access runs to the
-   * period end but they are no longer part of the go-forward plan, so they
-   * render unchecked with an "ends soon" hint. Re-ticking one cancels the
-   * scheduled removal (apply_subject_change clears remove_at).
-   */
-  endingIds?: string[];
-  /** The live subscription's billing interval ("week" | "month" | "year"). */
-  interval: string;
+  covered: CoveredSubject[];
   /**
    * Server-resolved payment mode. "real" | "demo" → full editor. "off" →
-   * REMOVAL-ONLY (Round 51, audit F7): the DB kill switch blocks ADDS but
-   * deliberately keeps removals legal — a parent must always be able to stop
-   * paying, so the editor stays mounted with the add side disabled.
+   * REMOVAL-ONLY (Round 51, audit F7): the DB kill switch blocks ADDS and, since
+   * 109, cycle changes too — a cycle change is a billing change — but
+   * deliberately keeps removals legal, so a parent can always stop paying.
    */
   paymentMode: string;
   dict: Record<string, string>;
@@ -77,58 +89,119 @@ export function ManageSubjects({
   // Locale-aware subject labels (subj.<code>) via the app-wide provider dict.
   const t = useT();
   const locale = useLocale();
-  const intervalLabel = tt(INTERVAL_KEY[interval] ?? "pricing.monthly");
 
-  // Round 32: renewal/removal dates come back from quote_subject_change as
-  // timestamptz. Round 46: every date on this page goes through the shared
-  // Baku formatter — a local Intl.DateTimeFormat here is what produced the
-  // "2026 M08 22" root-locale output when the runtime had no az month data.
+  // Round 46: every date on this page goes through the shared Baku formatter —
+  // a local Intl.DateTimeFormat here is what produced the "2026 M08 22"
+  // root-locale output when the runtime had no az month data.
   const fmtDate = useCallback(
     (iso: string | null) => formatLongDate(iso, locale),
     [locale],
   );
 
-  const covered = useMemo(() => new Set(coveredIds), [coveredIds]);
-  const ending = useMemo(() => new Set(endingIds), [endingIds]);
-  const coveredKey = useMemo(() => [...coveredIds].sort().join(","), [coveredIds]);
+  const catalog = useMemo<ConfiguratorSubject[]>(
+    () => subjects.map((s) => ({ ...s, prices: s.prices as ConfiguratorSubject["prices"] })),
+    [subjects],
+  );
+  const byId = useMemo(() => new Map(catalog.map((s) => [s.id, s])), [catalog]);
 
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(coveredIds));
-  // After a successful save the server revalidates the page and coveredIds
-  // changes — resync so the checkboxes/summary reset to the new live coverage.
+  // The GO-FORWARD plan = covered subjects that are not already scheduled for
+  // removal. A scheduled removal renders as an available subject again, so
+  // re-adding it cancels the removal (apply_plan_change clears remove_at).
+  const active = useMemo(() => covered.filter((c) => !c.removeAt), [covered]);
+  const activeById = useMemo(
+    () => new Map(active.map((c) => [c.subjectId, c])),
+    [active],
+  );
+  const endingById = useMemo(
+    () => new Map(covered.filter((c) => c.removeAt).map((c) => [c.subjectId, c])),
+    [covered],
+  );
+  // The cycle a subject is EFFECTIVELY on = a scheduled change first, then the
+  // cycle it is paid on. Seeding the editor from `interval` alone is what made
+  // a saved cycle change look like it had failed: the radio snapped straight
+  // back to the old cycle on the next render, because the change lives in
+  // pending_interval until that subject's own period ends.
+  const effectiveCycle = useCallback(
+    (c: CoveredSubject): PlanInterval => {
+      const raw = c.pendingInterval ?? c.interval;
+      return isPlanInterval(raw) ? raw : DEFAULT_PLAN_INTERVAL;
+    },
+    [],
+  );
+  // Resync key: subjects AND their effective cycles, so a successful save +
+  // revalidate resets the editor even when only a cycle moved.
+  const coveredKey = useMemo(
+    () =>
+      active
+        .map((c) => `${c.subjectId}:${effectiveCycle(c)}`)
+        .sort()
+        .join(","),
+    [active, effectiveCycle],
+  );
+
+  const seedPlan = useCallback(
+    (): PlanItem[] =>
+      active.map((c) => ({ subjectId: c.subjectId, interval: effectiveCycle(c) })),
+    [active, effectiveCycle],
+  );
+  const [plan, setPlan] = useState<PlanItem[]>(seedPlan);
   useEffect(() => {
-    setSelected(new Set(coveredKey ? coveredKey.split(",") : []));
+    setPlan(seedPlan());
+    // seedPlan is derived from `active`; coveredKey is the value that actually
+    // changes when the server revalidates after a save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coveredKey]);
 
-  const { toAdd, toRemove } = useMemo(
-    () => ({
-      toAdd: subjects.filter((s) => selected.has(s.id) && !covered.has(s.id)),
-      toRemove: subjects.filter((s) => !selected.has(s.id) && covered.has(s.id)),
-    }),
-    [subjects, selected, covered],
+  const available = useMemo(
+    () => availableSubjects(catalog, plan.map((p) => p.subjectId)),
+    [catalog, plan],
   );
-  const hasDiff = toAdd.length > 0 || toRemove.length > 0;
-  const toAddKey = useMemo(() => toAdd.map((s) => s.id).sort().join(","), [toAdd]);
-  const toRemoveKey = useMemo(() => toRemove.map((s) => s.id).sort().join(","), [toRemove]);
+  const localQuote = useMemo(() => computePlanQuote(catalog, plan), [catalog, plan]);
 
-  // Debounced (~400ms) AUTHORITATIVE preview of the PENDING diff (Round 32:
-  // quote_subject_change, not the full-set quote_child_subscription) — the
-  // prorated "due now" top-up for additions, the new recurring rate, and when
-  // each takes effect. The same numbers apply_subject_change will charge.
+  // Three-way diff. A cycle change is a real change even though the subject set
+  // is identical — without it the "no changes" state would swallow it.
+  const { toAdd, toRemove, toChangePlan } = useMemo(() => {
+    const inPlan = new Set(plan.map((p) => p.subjectId));
+    return {
+      toAdd: plan.filter((p) => !activeById.has(p.subjectId)),
+      toRemove: active.filter((c) => !inPlan.has(c.subjectId)),
+      // Compared against the EFFECTIVE cycle (a scheduled change wins), so
+      // re-selecting the cycle the subject is actually paid on registers as a
+      // change and CANCELS the schedule. Comparing against `interval` alone
+      // meant a parent who mis-clicked "yearly" got hasDiff === false and a
+      // disabled Save — locked into the mistake with no way back.
+      toChangePlan: plan.filter((p) => {
+        const cur = activeById.get(p.subjectId);
+        return !!cur && effectiveCycle(cur) !== p.interval;
+      }),
+    };
+  }, [plan, active, activeById, effectiveCycle]);
+  const hasDiff = toAdd.length > 0 || toRemove.length > 0 || toChangePlan.length > 0;
+  const planKey = useMemo(
+    () => plan.map((p) => `${p.subjectId}:${p.interval}`).join(","),
+    [plan],
+  );
+
+  // Debounced (~400ms) AUTHORITATIVE preview of the DESIRED FULL set — the same
+  // numbers apply_plan_change will charge. seqRef drops a stale response so a
+  // slow request for an older basket can never overwrite a newer one.
   const [quote, setQuote] = useState<SubjectChangeQuote | null>(null);
   const [quoting, setQuoting] = useState(false);
   const seqRef = useRef(0);
   useEffect(() => {
-    if (!hasDiff) {
+    if (!hasDiff || !planKey) {
       setQuote(null);
       setQuoting(false);
       return;
     }
-    const addIds = toAddKey ? toAddKey.split(",") : [];
-    const removeIds = toRemoveKey ? toRemoveKey.split(",") : [];
+    const items = planKey.split(",").map((raw) => {
+      const [subjectId, interval] = raw.split(":");
+      return { subjectId, interval };
+    });
     const seq = ++seqRef.current;
     setQuoting(true);
     const timer = setTimeout(() => {
-      quoteSubjectChange({ studentId, add: addIds, remove: removeIds })
+      quoteSubjectChange({ studentId, items })
         .then((res) => {
           if (seqRef.current !== seq) return; // stale response — ignore
           setQuote(res.ok ? res.quote : null);
@@ -141,20 +214,35 @@ export function ManageSubjects({
         });
     }, 400);
     return () => clearTimeout(timer);
-  }, [hasDiff, toAddKey, toRemoveKey, studentId]);
+  }, [hasDiff, planKey, studentId]);
 
-  // Round 41: the new recurring rate appears in EXACTLY ONE sentence (Next
-  // billing); the removal note is price-free. Shared with the payment sheet.
-  const nextBillingSentence = (q: SubjectChangeQuote) =>
-    tt("subjedit.nextBillingLine")
-      .replace("{date}", fmtDate(q.effectiveFrom))
-      .replace("{total}", String(q.newRecurringTotal))
-      .replace("{currency}", q.currency)
-      .replace("{interval}", intervalLabel);
   const noChargeSentence = (q: SubjectChangeQuote) =>
     tt("subjedit.noChargeNow").replace("{date}", fmtDate(q.effectiveFrom));
-  const noteSentence = (q: SubjectChangeQuote) =>
-    tt("subjedit.noteText").replace("{date}", fmtDate(q.removalsEffectiveAt));
+  // ONE LINE PER REMOVED SUBJECT, each with ITS OWN period end. The single
+  // `removalsEffectiveAt` scalar is the subscription minimum, so dropping a
+  // yearly subject from a plan that also holds a weekly one told the parent
+  // access ended in 7 days while the database granted a year.
+  const removalLines = (q: SubjectChangeQuote): string[] =>
+    (q.removals ?? []).map((r) => {
+      const s = byId.get(r.subject_id);
+      return tt("subjedit.noteLine")
+        .replace("{subject}", s ? subjectLabel(t, s.code, s.name) : r.subject_id)
+        .replace("{date}", fmtDate(r.remove_at));
+    });
+  const cycleName = (iv: string) =>
+    isPlanInterval(iv) ? tt(INTERVAL_LABEL_KEY[iv]) : iv;
+  // Per-cycle renewal sentences replace the single "{total} {currency} /
+  // {interval}" line — one sentence cannot express mixed cycles.
+  const renewalLines = (q: SubjectChangeQuote): string[] =>
+    (q.renewals ?? []).map((r) =>
+      tt(
+        `plan.renewalLine.${
+          r.interval === "week" ? "weekly" : r.interval === "year" ? "yearly" : "monthly"
+        }`,
+      )
+        .replace("{total}", String(r.total))
+        .replace("{currency}", q.currency),
+    );
 
   const [state, formAction, saving] = useActionState<SubjectsUpdateState, FormData>(
     updateSubscriptionSubjectsAction,
@@ -163,114 +251,149 @@ export function ManageSubjects({
   const formRef = useRef<HTMLFormElement>(null);
   const [payOpen, setPayOpen] = useState(false);
 
-  // Payments off → adds are refused server-side (assert_payments_enabled);
-  // mirror that here by making unchecked subjects unselectable.
+  // Payments off → adds AND cycle changes are refused server-side
+  // (assert_payments_enabled); mirror that here. Removals stay available.
   const addsDisabled = paymentMode === "off";
-
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        if (next.size <= 1) return prev; // ≥1 subject must remain (server enforces too)
-        next.delete(id);
-      } else {
-        if (addsDisabled) return prev; // removal-only mode
-        next.add(id);
-      }
-      return next;
-    });
-  }
 
   function onSaveClick() {
     if (!hasDiff || saving) return;
-    // PAYMENT-FIRST: any ADDITION (also in mixed add+remove diffs) opens the
-    // payment sheet before the apply — in BOTH 'demo' and 'real' modes (no
-    // provider yet; the real charge seam is server-side and will replace the
-    // sheet for 'real' when it lands). One confirm covers the whole change.
+    // PAYMENT-FIRST: only an ADDITION costs money now. A scheduled cycle change
+    // and a removal both charge nothing, so they submit directly.
     if (toAdd.length > 0) {
       setPayOpen(true);
       return;
     }
-    // Removal-only diff: no payment step — the server re-prices on remove.
     formRef.current?.requestSubmit();
   }
 
   const showSaved = state?.ok === true && !hasDiff && !saving;
 
   return (
-    <div className="form" style={{ maxWidth: 560 }}>
+    <div className="form" style={{ maxWidth: 640 }}>
       <h2 style={{ marginBottom: 4 }}>{tt("subjedit.title")}</h2>
-      <p className="subjedit-note">{tt("pricing.perSubjectNote")}</p>
+      <p className="subjedit-note">{tt("plan.perSubjectHint")}</p>
 
       {subjects.length === 0 ? (
         <p className="muted">{tt("sub.noSubjectsAvailable")}</p>
       ) : (
         <>
-          {/* ALL subjects as checkboxes: active ones pre-checked + chip. */}
-          <ul className="subjedit-list">
-            {subjects.map((s) => {
-              const isActive = covered.has(s.id);
-              const isChecked = selected.has(s.id);
-              const isLastOne = isChecked && selected.size <= 1;
-              const price = s.prices[interval];
+          {/* One card per subject on the go-forward plan. */}
+          <div className="splan-list">
+            {plan.map((item) => {
+              const s = byId.get(item.subjectId);
+              if (!s) return null;
+              const cur = activeById.get(item.subjectId);
+              const pending = cur?.pendingInterval ?? null;
+              const isLastOne = plan.length <= 1;
               return (
-                <li key={s.id}>
-                  <label
-                    className={`subjedit-item${isActive ? " is-active" : ""}${
-                      isChecked ? " is-checked" : ""
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => toggle(s.id)}
-                      disabled={saving || isLastOne || (addsDisabled && !isChecked)}
-                      title={
-                        isLastOne
-                          ? tt("subjedit.minOne")
-                          : addsDisabled && !isChecked
-                            ? tt("gate.paymentsOff")
-                            : undefined
-                      }
-                    />
-                    <span className="subjedit-name">{subjectLabel(t, s.code, s.name)}</span>
-                    {isActive && (
-                      <span className="subjedit-chip-active">{tt("subjedit.activeChip")}</span>
-                    )}
-                    {/* Already scheduled for removal: still usable until the
-                        period end, but off the go-forward plan. Re-ticking it
-                        cancels the removal. */}
-                    {ending.has(s.id) && !isChecked && (
-                      <span className="subjedit-chip-ending">{tt("subjedit.endingChip")}</span>
-                    )}
-                    <span className="subjedit-price">
-                      {price != null ? `${price} AZN / ${intervalLabel}` : "—"}
-                    </span>
-                  </label>
-                </li>
+                <SubjectPlanCard
+                  key={s.id}
+                  id={s.id}
+                  code={s.code}
+                  name={s.name}
+                  interval={item.interval}
+                  prices={s.prices}
+                  onIntervalChange={(id, iv) =>
+                    setPlan((prev) => setPlanInterval(prev, id, iv))
+                  }
+                  onRemove={(id) => setPlan((prev) => removePlanSubject(prev, id))}
+                  removeDisabled={isLastOne || saving}
+                  removeDisabledReason={tt("subjedit.minOne")}
+                  // A covered subject's cycle cannot move while payments are off.
+                  disabled={saving || (addsDisabled && !!cur)}
+                  loading={quoting}
+                  chip={pending ? "pendingChange" : cur ? "active" : undefined}
+                  // A bare cycle name ("İllik") next to a radio sitting on
+                  // "Aylıq" is indistinguishable from a rendering bug — the
+                  // chip has to say WHEN that cycle applies.
+                  chipText={
+                    pending
+                      ? tt("subjedit.pendingChip").replace("{cycle}", cycleName(pending))
+                      : cur
+                        ? tt("subjedit.activeChip")
+                        : undefined
+                  }
+                  locale={locale}
+                  t={tt}
+                />
               );
             })}
-          </ul>
+          </div>
           <p className="hint">{tt("subjedit.minOne")}</p>
 
-          {/* Round 41 — structured change summary (SaaS-style card): Selected ·
-              Added · Removed · Pay now · Next billing · Note. The new recurring
-              rate appears ONCE (Next billing); the note carries no prices. */}
+          {/* Subjects that can still be added (including ones whose removal is
+              already scheduled — re-adding cancels that removal). */}
+          {available.length > 0 && (
+            <ul className="pcfg-list" style={{ marginTop: 10 }}>
+              {available.map((s) => {
+                let from: { price: number; iv: PlanInterval } | null = null;
+                for (const iv of PLAN_INTERVALS) {
+                  const p = subjectPrice(s, iv);
+                  if (p === null) continue;
+                  if (!from || p < from.price) from = { price: p, iv };
+                }
+                return (
+                  <li key={s.id} className="pcfg-row">
+                    <span className="pcfg-row-main">
+                      <span className="pcfg-row-name">
+                        {subjectLabel(t, s.code, s.name)}
+                      </span>
+                      {endingById.has(s.id) && (
+                        <span className="subjedit-chip-ending">
+                          {tt("subjedit.endingChip")}
+                        </span>
+                      )}
+                      <span className="pcfg-row-price">
+                        {from === null
+                          ? tt("cfg.unpriced")
+                          : tt("plan.fromPrice")
+                              .replace("{price}", formatAzn(from.price, locale))
+                              .replace("{cycle}", tt(INTERVAL_LABEL_KEY[from.iv]))}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="pcfg-add"
+                      onClick={() => setPlan((prev) => addPlanSubject(prev, s.id, catalog))}
+                      disabled={saving || addsDisabled}
+                      title={addsDisabled ? tt("gate.paymentsOff") : undefined}
+                      aria-label={tt("cfg.addAria").replace(
+                        "{subject}",
+                        subjectLabel(t, s.code, s.name),
+                      )}
+                    >
+                      <span aria-hidden="true" className="pcfg-add-glyph">
+                        +
+                      </span>
+                      {tt("cfg.add")}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {/* Structured change summary: Selected · Added · Removed · Cycle
+              changes · Due now · Renewals · Note. */}
           <div className="wizard-summary subjedit-summary">
             <div className="quote-row">
               <span className="q-label">{tt("subjedit.selectedCount")}</span>
-              <span>{selected.size}</span>
+              <span>{plan.length}</span>
             </div>
 
             {toAdd.length > 0 && (
               <div className="subjedit-sum-block">
                 <span className="subjedit-sum-label">{tt("subjedit.pendingAdd")}</span>
                 <ul className="subjedit-sum-list">
-                  {toAdd.map((s) => (
-                    <li key={s.id} className="add">
-                      {subjectLabel(t, s.code, s.name)}
-                    </li>
-                  ))}
+                  {toAdd.map((p) => {
+                    const s = byId.get(p.subjectId);
+                    return (
+                      <li key={p.subjectId} className="add">
+                        {s ? subjectLabel(t, s.code, s.name) : p.subjectId} ·{" "}
+                        {cycleName(p.interval)}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -278,12 +401,44 @@ export function ManageSubjects({
               <div className="subjedit-sum-block">
                 <span className="subjedit-sum-label">{tt("subjedit.pendingRemove")}</span>
                 <ul className="subjedit-sum-list">
-                  {toRemove.map((s) => (
-                    <li key={s.id} className="remove">
-                      {subjectLabel(t, s.code, s.name)}
-                    </li>
-                  ))}
+                  {toRemove.map((c) => {
+                    const s = byId.get(c.subjectId);
+                    return (
+                      <li key={c.subjectId} className="remove">
+                        {s ? subjectLabel(t, s.code, s.name) : c.subjectId}
+                      </li>
+                    );
+                  })}
                 </ul>
+              </div>
+            )}
+            {toChangePlan.length > 0 && (
+              <div className="subjedit-sum-block">
+                <span className="subjedit-sum-label">
+                  {tt("subjedit.pendingPlanChange")}
+                </span>
+                <ul className="subjedit-sum-list">
+                  {toChangePlan.map((p) => {
+                    const s = byId.get(p.subjectId);
+                    const cur = activeById.get(p.subjectId);
+                    return (
+                      <li key={p.subjectId}>
+                        {tt("subjedit.planChangeLine")
+                          .replace(
+                            "{subject}",
+                            s ? subjectLabel(t, s.code, s.name) : p.subjectId,
+                          )
+                          // The cycle being LEFT is the effective one, so
+                          // cancelling a schedule reads "İllik → Aylıq" rather
+                          // than the meaningless "Aylıq → Aylıq".
+                          .replace("{from}", cur ? cycleName(effectiveCycle(cur)) : "")
+                          .replace("{to}", cycleName(p.interval))
+                          .replace("{date}", fmtDate(cur?.periodEnd ?? null))}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="subjedit-note">{tt("subjedit.planChangeNote")}</p>
               </div>
             )}
 
@@ -291,8 +446,6 @@ export function ManageSubjects({
               <p className="subjedit-note">{tt("sub.calculating")}</p>
             ) : quote ? (
               <>
-                {/* Pay now: the prorated top-up as ONE prominent amount. A
-                    waived/trial $0 top-up shows the price-free no-charge line. */}
                 {toAdd.length > 0 && (
                   <div className="subjedit-sum-block">
                     <span className="subjedit-sum-label">{tt("subjedit.dueNow")}</span>
@@ -305,28 +458,69 @@ export function ManageSubjects({
                     )}
                   </div>
                 )}
-                {/* Next billing: the ONLY place the new recurring rate appears. */}
+                {/* Renewals: one sentence per cycle — no invented combined rate. */}
                 <div className="subjedit-sum-block">
-                  <span className="subjedit-sum-label">{tt("subjedit.nextBilling")}</span>
-                  <p className="subjedit-sum-line">{nextBillingSentence(quote)}</p>
+                  <span className="subjedit-sum-label">{tt("plan.renewals")}</span>
+                  {renewalLines(quote).map((line, i) => (
+                    <p className="subjedit-sum-line" key={i}>
+                      {line}
+                    </p>
+                  ))}
                 </div>
-                {/* Note: price-free removal terms. */}
                 {toRemove.length > 0 && (
                   <div className="subjedit-sum-block">
                     <span className="subjedit-sum-label">{tt("subjedit.noteLabel")}</span>
-                    <p className="subjedit-sum-line muted">{noteSentence(quote)}</p>
+                    {removalLines(quote).map((line, i) => (
+                      <p className="subjedit-sum-line muted" key={i}>
+                        {line}
+                      </p>
+                    ))}
+                    <p className="subjedit-sum-line muted">{tt("subjedit.noteNoRefund")}</p>
                   </div>
                 )}
               </>
             ) : null}
+
+            {/* Breakdown only: the amounts above are the server's, so this must
+                not print a second, list-price "due today" beneath them. */}
+            <PlanSummary
+              quote={localQuote}
+              server={
+                quote
+                  ? {
+                      discountPercent: quote.discountPercent,
+                      // The sibling discount ON THE DESIRED BASKET, summed from
+                      // the same per-cycle groups the subtotals above come from
+                      // — the RPC rounds per cycle, so re-deriving it from a
+                      // percentage here could disagree by a qəpik.
+                      discount: Object.values(quote.groups ?? {}).reduce(
+                        (sum, g) => sum + g.discount,
+                        0,
+                      ),
+                      dueToday: null,
+                      trialDays: 0,
+                      currency: quote.currency,
+                      groups: quote.groups ?? null,
+                    }
+                  : null
+              }
+              loading={quoting}
+              locale={locale}
+              t={tt}
+            />
           </div>
 
-          {/* Hidden form: student_id + one `subject` entry per DESIRED subject.
-              The server diffs against the live subscription and re-prices. */}
+          {/* Hidden form: student_id + one `plan` entry per DESIRED subject and
+              its cycle. The server diffs against the live subscription. */}
           <form action={formAction} ref={formRef}>
             <input type="hidden" name="student_id" value={studentId} />
-            {[...selected].map((id) => (
-              <input key={id} type="hidden" name="subject" value={id} />
+            {plan.map((p) => (
+              <input
+                key={p.subjectId}
+                type="hidden"
+                name="plan"
+                value={`${p.subjectId}:${p.interval}`}
+              />
             ))}
             <div className="subjedit-actions">
               <button
@@ -357,7 +551,13 @@ export function ManageSubjects({
                 ? {
                     dueNowLabel: `${quote.dueNow} ${quote.currency}`,
                     thenLabel:
-                      quote.dueNow > 0 ? nextBillingSentence(quote) : noChargeSentence(quote),
+                      quote.dueNow > 0
+                        ? (renewalLines(quote)[0] ?? "")
+                        : noChargeSentence(quote),
+                    lines: renewalLines(quote).map((value) => ({
+                      label: tt("plan.renewals"),
+                      value,
+                    })),
                     noCharge: quote.dueNow <= 0,
                   }
                 : null

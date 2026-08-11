@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useMobileConfig } from "@/lib/configQueries";
 import { parseRankPayload, type MyRank } from "@/features/ranking/parse";
+import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/coverage";
 import { ARENA_PALETTES, type ArenaPalette } from "@/theme/tokens";
 
 export const QK = {
@@ -36,12 +37,21 @@ export type StudentSelf = {
   accessStatus: string;
   /** Whitelisted light-mode palette (web data-palette parity); default otherwise. */
   palette: ArenaPalette;
+  /**
+   * The child's OWN dark/light choice, as stored on the server. Reading it is
+   * what makes the preference cross-device: it used to be written from here
+   * (picking a palette persists theme_pref='light') and never read back, so a
+   * child who chose Aurora on the web opened the app in system-dark and saw a
+   * dark arena with no palette — palettes are a light-mode surface only.
+   * `null` = the row predates the column or holds an unexpected value.
+   */
+  themePref: "light" | "dark" | null;
 };
 
 async function fetchStudentSelf(profileId: string): Promise<StudentSelf> {
   const { data, error } = await supabase
     .from("students")
-    .select("first_name, access_status, palette")
+    .select("first_name, access_status, palette, theme_pref")
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw error;
@@ -49,10 +59,12 @@ async function fetchStudentSelf(profileId: string): Promise<StudentSelf> {
   const palette = (ARENA_PALETTES as string[]).includes(raw)
     ? (raw as ArenaPalette)
     : "default";
+  const pref = (data?.theme_pref ?? null) as string | null;
   return {
     firstName: (data?.first_name as string | null) ?? "",
     accessStatus: (data?.access_status as string | null) ?? "inactive",
     palette,
+    themePref: pref === "light" || pref === "dark" ? pref : null,
   };
 }
 
@@ -129,22 +141,13 @@ export type ArenaSubject = { id: string; code: string | null; name: string };
 async function fetchMySubjects(profileId: string): Promise<ArenaSubject[]> {
   const { data, error } = await supabase
     .from("child_subscriptions")
-    .select("status, subscription_subjects(subjects(id, code, name))")
+    .select(CHILD_COVERAGE_SELECT)
     .eq("student_profile_id", profileId)
     .in("status", ["trialing", "active"]);
   if (error) throw error;
-  const map = new Map<string, { code: string | null; name: string }>();
-  for (const s of (data ?? []) as any[]) {
-    for (const ss of s.subscription_subjects ?? []) {
-      if (ss.subjects) {
-        map.set(ss.subjects.id, {
-          code: ss.subjects.code ?? null,
-          name: ss.subjects.name,
-        });
-      }
-    }
-  }
-  return Array.from(map, ([id, v]) => ({ id, code: v.code, name: v.name }));
+  // Per-subject periods: the subscription outlives its shortest-cycle subject,
+  // so the status filter alone would list a lapsed one the engine refuses.
+  return liveCoveredSubjects(data as any[]);
 }
 
 /** Free windows unlock every actively-priced subject (public pricing RLS). */

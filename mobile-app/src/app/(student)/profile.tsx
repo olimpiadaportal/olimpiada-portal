@@ -4,8 +4,8 @@
 // the character-sticker theme picker and the light-mode palette picker (its
 // swatches derive from ARENA_LIGHT). No email and no delete-account here — a
 // child never gets those. Logout stays in the AccountSheet (header avatar),
-// exactly like the parent shell. Body scrolls on the arena background so all
-// five palettes + dark skin the screen.
+// exactly like the parent shell. Body scrolls on the arena background so every
+// palette + dark skins the screen.
 import React from "react";
 import { View } from "react-native";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";

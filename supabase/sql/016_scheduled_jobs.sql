@@ -93,6 +93,23 @@ begin
                           'select public.prune_notifications();');
     raise notice 'pg_cron jobs olympiq_dispatch_scheduled_notifications + olympiq_prune_notifications scheduled.';
 
+    -- Per-subject billing (migration 109): promote each subject's SCHEDULED
+    -- cycle change (pending_interval -> interval) once its own paid period
+    -- ends. Nothing else in the platform reads pending_interval, so without
+    -- this job the column is write-only and a parent's cycle choice is stored
+    -- and never applied. Runs 10 minutes before the hourly access recompute so
+    -- a promoted row is already correct when that job looks at it.
+    perform cron.unschedule(jobid)
+       from cron.job
+      where jobname = 'olympiq_apply_due_plan_changes';
+
+    perform cron.schedule(
+      'olympiq_apply_due_plan_changes',
+      '7 * * * *',                                   -- hourly at :07 UTC
+      'select public.apply_due_plan_changes();'
+    );
+    raise notice 'pg_cron job olympiq_apply_due_plan_changes scheduled (hourly).';
+
     -- Notification scanners (migration 074): warn parents ~3 days before a child
     -- subscription lapses, and all parents in the final 2 days of a giveaway.
     -- Both idempotent (keyed by period/window end), so a daily run never spams.
@@ -104,7 +121,7 @@ begin
                           'select public.notify_giveaway_ending();');
     raise notice 'pg_cron jobs olympiq_notify_expiring_subscriptions + olympiq_notify_giveaway_ending scheduled.';
   else
-    raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry / leaderboard rollover / notifications NOT scheduled (skipped safely).';
+    raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry / leaderboard rollover / plan-change rollover / notifications NOT scheduled (skipped safely).';
   end if;
 end
 $$;

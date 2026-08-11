@@ -133,9 +133,22 @@ export function Modal({
   if (!isOpen) return null;
   if (typeof document === "undefined") return null; // SSR guard
 
+  // The portal lands in <body>, OUTSIDE .arena, so the child's palette tokens
+  // never reached any dialog — under all 26 palettes the daily-round start, the
+  // submit/cancel confirms, the image zoom and the notification detail stayed
+  // purple/cream. Mirroring the attribute is enough: palettes.generated.css
+  // declares the same token block for .modal-overlay[data-palette], and
+  // globals.css maps those names onto the root tokens the modal chrome paints
+  // from. Read during render rather than in an effect so the very first paint
+  // is already correct — this branch is unreachable on the server (the SSR
+  // guard above returns first), which is what makes reading the DOM here safe.
+  const palette =
+    document.querySelector(".arena")?.getAttribute("data-palette") ?? undefined;
+
   return createPortal(
     <div
       className="modal-overlay"
+      data-palette={palette}
       onMouseDown={(e) => {
         // Close only on a true overlay press (not bubbled from the panel).
         if (e.target === e.currentTarget) onClose();

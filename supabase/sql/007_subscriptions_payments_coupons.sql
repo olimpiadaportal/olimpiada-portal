@@ -172,6 +172,23 @@ create table if not exists public.launch_promo_config (
 -- Status, amounts, discount and trial dates are written ONLY by trusted server /
 -- service-role code (webhook-verified). Clients can never set these.
 -- Defined before the tables/ALTER that reference it.
+--
+-- Migration 109 REDEFINED four of these columns. Each SUBJECT now owns its own
+-- cycle and its own period (see subscription_subjects below), so this row is the
+-- container, not the billing anchor:
+--   interval           -> the DEFAULT cycle for newly ADDED subjects, and the
+--                         fallback for subscription_subjects.interval IS NULL.
+--                         It is no longer the renewal anchor.
+--   current_period_end -> the MAX of the subjects' period ends: "coverage ends".
+--                         MAX, never MIN — a lapsing weekly subject must not
+--                         expire a paid yearly one (recompute_child_access, the
+--                         cancel path and uq_child_subscriptions_live all read
+--                         it as "is there any coverage left").
+--   next_renewal_at    -> the MIN: the NEXT charge date.
+--   base/discount/total_amount -> the NEXT INVOICE, i.e. only the subjects
+--                         renewing at next_renewal_at.
+-- All five are written by trg_sync_subscription_period (011) and by nothing
+-- else. For a single-cycle plan MAX = MIN and every amount is unchanged.
 -- -----------------------------------------------------------------------------
 create table if not exists public.child_subscriptions (
   id                       uuid primary key default gen_random_uuid(),
@@ -183,6 +200,7 @@ create table if not exists public.child_subscriptions (
   trial_ends_at            timestamptz,
   current_period_start     timestamptz,
   current_period_end       timestamptz,
+  next_renewal_at          timestamptz,
   base_amount              numeric(12,2),
   sibling_discount_percent numeric(5,2) not null default 0,
   discount_amount          numeric(12,2),
@@ -195,17 +213,36 @@ create table if not exists public.child_subscriptions (
 );
 
 -- -----------------------------------------------------------------------------
--- subscription_subjects : which subjects this child subscription covers.
+-- subscription_subjects : which subjects this child subscription covers, and
+-- since migration 109 ON WHICH CYCLE and FOR WHICH PERIOD.
+--
+-- Each subject owns its cycle AND its period: a weekly and a yearly subject on
+-- one child cannot share a single current_period_end, so an interval column
+-- alone would have been useless. Every new column is NULLABLE and means
+-- "inherit the subscription" when NULL — that is what let the whole existing
+-- estate (and every writer that predates 109) keep working with a one-time
+-- backfill and no rewrite. Readers coalesce, e.g. the attempt engines gate on
+-- coalesce(ss.current_period_end, cs.current_period_end).
 -- -----------------------------------------------------------------------------
 create table if not exists public.subscription_subjects (
   child_subscription_id uuid not null references public.child_subscriptions (id) on delete cascade,
   subject_id            uuid not null references public.subjects (id) on delete cascade,
   added_at              timestamptz not null default now(),
-  -- Migration 078: SCHEDULED removal. Access is kept until this timestamp
-  -- (always = the subscription's current_period_end) and the subject is
-  -- excluded from the NEXT recurring total. NULL = active. Removals never
-  -- refund; they simply lower the next renewal.
+  -- Migration 078: SCHEDULED removal. Access is kept until this timestamp and
+  -- the subject is excluded from the NEXT recurring total. NULL = active.
+  -- Removals never refund; they simply lower the next renewal. Since 109 this
+  -- is always THAT SUBJECT'S own period end, not the subscription's.
   remove_at             timestamptz,
+  -- Migration 109 — per-subject billing. NULL interval/period = inherit the
+  -- subscription (legacy rows); pending_interval is a cycle change SCHEDULED
+  -- for this subject's next renewal (never a refund, never an instant charge);
+  -- price_amount is the list price frozen when the cycle opened.
+  interval              public.plan_interval,
+  pending_interval      public.plan_interval,
+  price_amount          numeric(12,2),
+  currency              text not null default 'AZN',
+  current_period_start  timestamptz,
+  current_period_end    timestamptz,
   primary key (child_subscription_id, subject_id)
 );
 
@@ -220,8 +257,12 @@ create table if not exists public.subscription_changes (
   child_subscription_id   uuid not null references public.child_subscriptions (id) on delete cascade,
   student_profile_id      uuid not null references public.students (profile_id) on delete cascade,
   owner_parent_profile_id uuid references public.profiles (id) on delete set null,
-  change_type             text not null check (change_type in ('add', 'remove')),
+  change_type             text not null check (change_type in ('add', 'remove', 'plan_change')),
   subject_id              uuid not null references public.subjects (id) on delete restrict,
+  -- Migration 109: the cycle the row applied to. On an 'add' prorated_amount is
+  -- now the FULL first-cycle price — per-subject periods leave no shared period
+  -- to prorate into, and the subject receives the full cycle it pays for.
+  interval                public.plan_interval,
   effective_at            timestamptz not null,
   prorated_amount         numeric(12,2) not null default 0,
   currency                text not null default 'AZN',

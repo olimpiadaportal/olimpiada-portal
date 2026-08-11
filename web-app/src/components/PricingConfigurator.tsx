@@ -3,15 +3,17 @@
 // PUBLIC PRICING CONFIGURATOR (services page) — the interactive replacement for
 // the old static Weekly/Monthly/Yearly cards.
 //
-// The visitor picks subjects (left column), picks a billing interval, and sees
-// a live breakdown + total (right column). Everything recomputes on add,
-// remove and interval change.
+// The visitor picks subjects (left column) and gives EACH of them its own
+// billing cycle (right column), with a live per-cycle breakdown below.
+// Migration 109 removed the single global "Ödəniş dövrü" control entirely: one
+// cycle for the whole basket is exactly what the investor requirement forbids,
+// and the database no longer works that way either.
 //
 // THIS COMPONENT IS INFORMATIONAL. It cannot start, modify or authorize a
 // subscription: it renders numbers and produces a LINK carrying subject ids +
-// an interval. No price, discount or total ever leaves the browser, and the
-// existing purchase flow still re-prices server-side through the subscription
-// RPCs (which is where the sibling discount is applied). See
+// their chosen cycles. No price, discount or total ever leaves the browser, and
+// the purchase flow still re-prices server-side through the subscription RPCs
+// (which is where the sibling discount is applied). See
 // lib/pricingConfigurator.ts for the full rationale.
 //
 // NO SIBLING DISCOUNT IS SHOWN HERE. It depends on how many children a
@@ -25,23 +27,24 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useT } from "@/i18n/I18nProvider";
-import { Segmented } from "@/components/Segmented";
+import { PlanSummary } from "@/components/PlanSummary";
+import { SubjectPlanCard } from "@/components/SubjectPlanCard";
 import { subjectLabel } from "@/lib/subjectLabel";
 import {
-  addSubject,
+  addPlanSubject,
   availableSubjects,
-  buildSelectionHref,
+  buildPlanHref,
   type SelectionBasePath,
-  computeQuote,
+  computePlanQuote,
   formatAzn,
   INTERVAL_LABEL_KEY,
-  INTERVAL_PER_KEY,
   PLAN_INTERVALS,
-  removeSubject,
-  selectedSubjects,
+  removePlanSubject,
+  setPlanInterval,
   subjectPrice,
   type ConfiguratorSubject,
   type PlanInterval,
+  type PlanItem,
 } from "@/lib/pricingConfigurator";
 
 /**
@@ -63,17 +66,14 @@ const VISUALLY_HIDDEN: React.CSSProperties = {
 
 export function PricingConfigurator({
   subjects,
-  initialSelected = [],
-  initialInterval,
+  initialPlan = [],
   ctaBasePath,
   ctaNoteKey,
 }: {
   /** Active subjects + per-interval list prices, loaded server-side. */
   subjects: ConfiguratorSubject[];
-  /** Validated preselection (e.g. from a shared link). */
-  initialSelected?: string[];
-  /** Validated preselected interval. */
-  initialInterval: PlanInterval;
+  /** Validated preselection (e.g. from a shared link), each with its cycle. */
+  initialPlan?: PlanItem[];
   /**
    * Where "continue" leads: "/register" for a signed-out visitor,
    * "/children/new" for a signed-in parent, or NULL for a signed-in child —
@@ -95,14 +95,14 @@ export function PricingConfigurator({
   const t = useT();
   const locale = useLocale();
 
-  const [selected, setSelected] = useState<string[]>(initialSelected);
-  const [interval, setIntervalState] = useState<PlanInterval>(initialInterval);
+  const [plan, setPlan] = useState<PlanItem[]>(initialPlan);
   // Round 50 a11y: toggling a subject UNMOUNTS the button that was clicked (the
   // row moves to the other column), which drops keyboard focus to <body>. Move
   // focus to the counterpart control instead, and announce the change — the
   // breakdown's aria-live only reports numbers, never which subject moved.
   const [announcement, setAnnouncement] = useState("");
   const pendingFocusRef = useRef<string | null>(null);
+  const selected = useMemo(() => plan.map((p) => p.subjectId), [plan]);
 
   useEffect(() => {
     const id = pendingFocusRef.current;
@@ -112,11 +112,11 @@ export function PricingConfigurator({
     // Fall back to the list heading when the counterpart is gone (e.g. the
     // subject became unavailable), so focus never lands on <body>.
     (el ?? document.getElementById("pcfg-available-h"))?.focus();
-  }, [selected]);
+  }, [plan]);
 
   const toggle = (subjectId: string, add: boolean, name: string) => {
-    setSelected((prev) =>
-      add ? addSubject(prev, subjectId, subjects) : removeSubject(prev, subjectId),
+    setPlan((prev) =>
+      add ? addPlanSubject(prev, subjectId, subjects) : removePlanSubject(prev, subjectId),
     );
     pendingFocusRef.current = subjectId;
     setAnnouncement(
@@ -124,22 +124,40 @@ export function PricingConfigurator({
     );
   };
 
+  // Changing one card's cycle must never touch another's — setPlanInterval
+  // returns every other entry by reference, and the change is announced
+  // separately because the breakdown's live region only reports numbers.
+  const changeInterval = (subjectId: string, iv: PlanInterval, name: string) => {
+    setPlan((prev) => setPlanInterval(prev, subjectId, iv));
+    setAnnouncement(
+      t("plan.cycleChangedAria")
+        .replace("{subject}", name)
+        .replace("{cycle}", t(INTERVAL_LABEL_KEY[iv])),
+    );
+  };
 
   const available = useMemo(
     () => availableSubjects(subjects, selected),
     [subjects, selected],
   );
-  const chosen = useMemo(() => selectedSubjects(subjects, selected), [subjects, selected]);
-  const quote = useMemo(
-    () => computeQuote(subjects, selected, interval),
-    [subjects, selected, interval],
+  const byId = useMemo(
+    () => new Map(subjects.map((s) => [s.id, s])),
+    [subjects],
   );
+  const quote = useMemo(() => computePlanQuote(subjects, plan), [subjects, plan]);
 
   const label = (s: ConfiguratorSubject) => subjectLabel(t, s.code, s.name);
-  const intervalName = t(INTERVAL_LABEL_KEY[interval]);
-  const href = ctaBasePath
-    ? buildSelectionHref(ctaBasePath, selected, interval)
-    : null;
+  /** The cheapest cycle a subject is actually sold on — the "from" price. */
+  const cheapest = (s: ConfiguratorSubject): { price: number; iv: PlanInterval } | null => {
+    let best: { price: number; iv: PlanInterval } | null = null;
+    for (const iv of PLAN_INTERVALS) {
+      const p = subjectPrice(s, iv);
+      if (p === null) continue;
+      if (!best || p < best.price) best = { price: p, iv };
+    }
+    return best;
+  };
+  const href = ctaBasePath ? buildPlanHref(ctaBasePath, plan) : null;
 
   return (
     <div className="pcfg">
@@ -160,13 +178,19 @@ export function PricingConfigurator({
         ) : (
           <ul className="pcfg-list">
             {available.map((s) => {
-              const price = subjectPrice(s, interval);
+              // There is no global cycle any more, so a single price here would
+              // be a price for nothing. Show the CHEAPEST cycle, labelled.
+              const from = cheapest(s);
               return (
                 <li key={s.id} className="pcfg-row">
                   <span className="pcfg-row-main">
                     <span className="pcfg-row-name">{label(s)}</span>
                     <span className="pcfg-row-price">
-                      {price === null ? t("cfg.unpriced") : formatAzn(price, locale)}
+                      {from === null
+                        ? t("cfg.unpriced")
+                        : t("plan.fromPrice")
+                            .replace("{price}", formatAzn(from.price, locale))
+                            .replace("{cycle}", t(INTERVAL_LABEL_KEY[from.iv]))}
                     </span>
                   </span>
                   <button
@@ -194,117 +218,48 @@ export function PricingConfigurator({
           {t("cfg.selected")}
         </h2>
 
-        {chosen.length === 0 ? (
+        {plan.length === 0 ? (
           <p className="pcfg-empty pcfg-empty-strong">{t("cfg.emptySelection")}</p>
         ) : (
-          <ul className="pcfg-list pcfg-chosen">
-            {chosen.map((s) => {
-              const price = subjectPrice(s, interval);
-              return (
-                <li key={s.id} className="pcfg-row is-selected">
-                  <span className="pcfg-row-main">
-                    <span className="pcfg-row-name">{label(s)}</span>
-                    <span className="pcfg-row-price">
-                      {price === null ? t("cfg.unpriced") : formatAzn(price, locale)}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="pcfg-remove"
-                    onClick={() => toggle(s.id, false, label(s))}
-                    aria-label={t("cfg.removeAria").replace("{subject}", label(s))}
-                    data-pcfg-focus={s.id}
-                  >
-                    <span aria-hidden="true">×</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <p className="pcfg-col-hint">{t("plan.perSubjectHint")}</p>
+            <div className="splan-list">
+              {plan.map((item) => {
+                const s = byId.get(item.subjectId);
+                if (!s) return null;
+                return (
+                  <SubjectPlanCard
+                    key={s.id}
+                    id={s.id}
+                    code={s.code}
+                    name={s.name}
+                    interval={item.interval}
+                    prices={s.prices}
+                    onIntervalChange={(id, iv) => changeInterval(id, iv, label(s))}
+                    onRemove={(id) => toggle(id, false, label(s))}
+                    locale={locale}
+                    t={t}
+                  />
+                );
+              })}
+            </div>
+          </>
         )}
 
-        {/* Billing interval — real radios so arrow-key navigation and screen
-            reader semantics come for free. Values are the DB plan_interval
-            values ("week" | "month" | "year"). Round 51: renders through the
-            shared <Segmented> like every other switcher — the earlier
-            CSS-only `:has()` maths left non-:has() engines with the pill
-            parked on Weekly and no visible selection at all. */}
-        <fieldset className="pcfg-fieldset">
-          <legend className="pcfg-legend">{t("cfg.interval")}</legend>
-          <Segmented className="pcfg-seg">
-            {PLAN_INTERVALS.map((iv) => (
-              <label
-                key={iv}
-                className={iv === interval ? "pcfg-seg-item is-on" : "pcfg-seg-item"}
-              >
-                <input
-                  type="radio"
-                  name="pcfg-interval"
-                  value={iv}
-                  checked={iv === interval}
-                  onChange={() => setIntervalState(iv)}
-                />
-                <span>{t(INTERVAL_LABEL_KEY[iv])}</span>
-              </label>
-            ))}
-          </Segmented>
-        </fieldset>
-
-        {/* Breakdown — count, interval, per-subject price, subtotal, total.
-            aria-live so a screen reader hears the total change. */}
-        <div className="pcfg-breakdown" aria-live="polite">
+        {/* Per-cycle breakdown. No single periodic total is printed when the
+            cycles differ — see PlanSummary for why that would be a false price. */}
+        <div className="pcfg-breakdown">
           <div className="pcfg-brk-row">
             <span>{t("cfg.countLabel")}</span>
             <span className="pcfg-brk-val">
               {/* Show the PRICED denominator when some rows are unpriced, so the
-                  count, the per-subject figure and the total agree on screen. */}
-              {quote.hasUnpriced ? `${quote.pricedCount} / ${quote.count}` : quote.count}
+                  count and the amounts agree on screen. */}
+              {quote.hasUnpriced
+                ? `${quote.pricedCount} / ${quote.lines.length}`
+                : quote.lines.length}
             </span>
           </div>
-          <div className="pcfg-brk-row">
-            <span>{t("cfg.intervalLabel")}</span>
-            <span className="pcfg-brk-val">{intervalName}</span>
-          </div>
-          <div className="pcfg-brk-row">
-            <span>{t("cfg.perSubjectLabel")}</span>
-            <span className="pcfg-brk-val">
-              {quote.perSubject === null
-                ? quote.hasSelection
-                  ? t("cfg.perSubjectMixed")
-                  : "—"
-                : formatAzn(quote.perSubject, locale)}
-            </span>
-          </div>
-          <div className="pcfg-brk-row">
-            <span>{t("cfg.subtotalLabel")}</span>
-            <span className="pcfg-brk-val">{formatAzn(quote.subtotal, locale)}</span>
-          </div>
-          <div className="pcfg-brk-row pcfg-brk-total">
-            <span>{t("cfg.totalLabel")}</span>
-            <span className="pcfg-brk-val">
-              {/* Round 49: when NOTHING in the basket is sold on this interval
-                  the sum is 0 — rendering "0,00 AZN" would tell the visitor it
-                  is free. Show the placeholder and explain instead. */}
-              {quote.allUnpriced ? (
-                "—"
-              ) : (
-                <>
-                  {formatAzn(quote.total, locale)}
-                  <span className="pcfg-brk-per"> {t(INTERVAL_PER_KEY[interval])}</span>
-                </>
-              )}
-            </span>
-          </div>
-          {quote.hasUnpriced && (
-            <p className="pcfg-brk-warn">
-              {quote.allUnpriced
-                ? t("cfg.warnAllUnpriced")
-                : t("cfg.warnSomeUnpriced").replace(
-                    "{n}",
-                    String(quote.count - quote.pricedCount),
-                  )}
-            </p>
-          )}
+          <PlanSummary quote={quote} locale={locale} t={t} />
         </div>
 
         {/* CTA. A child session gets NO purchase CTA (children never purchase);

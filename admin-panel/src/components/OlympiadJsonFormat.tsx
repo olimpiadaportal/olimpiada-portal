@@ -24,19 +24,25 @@
 // No dependency: `<details>` gives the disclosure for free (keyboard- and
 // screen-reader-accessible, works without JS), and the copy uses the platform
 // clipboard with a select-the-text fallback for non-secure origins.
-import { useEffect, useRef, useState } from "react";
-import { BULK_TEMPLATE_OLYMPIAD } from "@/lib/bulk-client";
-
-const FORMAT_JSON = JSON.stringify(BULK_TEMPLATE_OLYMPIAD, null, 2);
+import { useEffect, useMemo, useRef, useState } from "react";
+import { bulkTemplateFor } from "@/lib/bulk-client";
 
 export function OlympiadJsonFormat({
   gradeLabel,
   dict,
+  // The shown format must follow the chosen import type: a mixed-mode admin
+  // copying the text-only shape would produce a file with no images in it.
+  questionMode,
 }: {
   gradeLabel: string;
   dict: Record<string, string>;
+  questionMode: "text" | "mixed";
 }) {
   const tt = (k: string) => dict[k] ?? k;
+  const formatJson = useMemo(
+    () => JSON.stringify(bulkTemplateFor("olympiad", questionMode), null, 2),
+    [questionMode],
+  );
   const [copied, setCopied] = useState(false);
   const preRef = useRef<HTMLPreElement>(null);
   // Clearing the "Copied" pill from a timer that outlives the component is a
@@ -52,7 +58,7 @@ export function OlympiadJsonFormat({
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(FORMAT_JSON);
+      await navigator.clipboard.writeText(formatJson);
     } catch {
       // http:// origins and older browsers have no clipboard API. Selecting the
       // block leaves the admin one Ctrl+C away instead of a dead button.
@@ -78,7 +84,14 @@ export function OlympiadJsonFormat({
       </summary>
       <div className="oly-json-body">
         {/* The workflow, in one sentence, where the admin is about to act. */}
-        <p className="hint">{tt("olyjson.howto")}</p>
+        <p className="hint">
+          {tt(questionMode === "mixed" ? "olyjson.howtoZip" : "olyjson.howto")}
+        </p>
+        {/* The ZIP tree sits next to the JSON it belongs to, so "where does
+            this file go" is answered in the same place it is copied. */}
+        {questionMode === "mixed" && (
+          <pre className="bulk-zip-layout">{tt("bulk.zipLayout")}</pre>
+        )}
         {/* What is NOT in the file, and why — pre-empts "where do I put the
             grade?", which is the first thing a careful admin asks. */}
         <p className="hint">
@@ -94,7 +107,7 @@ export function OlympiadJsonFormat({
           </span>
         </div>
         <pre ref={preRef} className="oly-json-pre">
-          {FORMAT_JSON}
+          {formatJson}
         </pre>
         <p className="hint">{tt("olyjson.rules")}</p>
       </div>

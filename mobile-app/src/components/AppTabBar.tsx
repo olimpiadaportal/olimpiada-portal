@@ -40,7 +40,9 @@ export function appTabPalette(tokens: AppTokens): TabBarPalette {
   };
 }
 
-/** Student arena palette (dark + all five light palettes). */
+/** Student arena palette: dark, plus every light palette in the generated
+ *  catalogue (src/theme/palettes.generated.ts). Do not name individual slugs
+ *  here — that is how a hardcoded whitelist creeps back in. */
 export function arenaTabPalette(arena: ArenaTokens): TabBarPalette {
   return {
     bg: arena.panel,

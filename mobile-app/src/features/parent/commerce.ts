@@ -113,7 +113,90 @@ export function estimateTotal(
   return sum;
 }
 
+// ---- per-subject plans (migration 109) ------------------------------------------
+// Each subject carries its OWN billing cycle. The mobile parent surfaces DISPLAY
+// a mixed plan faithfully and PRESERVE each subject's cycle when the subject set
+// changes; choosing a different cycle for an existing subject is a web action
+// (see MOBILE_APP_MASTER_PLAN — the web is the purchasing rail).
+
+export type PlanItem = { subjectId: string; interval: Interval };
+
+/** Drop unknown subjects, de-duplicate (last wins), cap, and fall back to a
+ *  cycle the subject is actually sold on. Mirrors the web helper of the same
+ *  name so both clients normalize a basket identically. */
+export function normalizePlan(
+  plan: readonly PlanItem[],
+  subjects: SubjectOption[],
+  max = 20,
+): PlanItem[] {
+  const byId = new Map(subjects.map((s) => [s.id, s]));
+  const out = new Map<string, PlanItem>();
+  for (const item of plan ?? []) {
+    const known = byId.get(item?.subjectId ?? "");
+    if (!known) continue;
+    const wanted = isInterval(item.interval) ? item.interval : "month";
+    const sold =
+      typeof known.prices[wanted] === "number"
+        ? wanted
+        : (INTERVALS.find((iv) => typeof known.prices[iv] === "number") ?? wanted);
+    out.set(known.id, { subjectId: known.id, interval: sold });
+  }
+  return [...out.values()].slice(0, max);
+}
+
+/** Change ONE entry's cycle; every other entry is returned by reference so a
+ *  cycle change can never disturb another subject. */
+export function setPlanInterval(
+  plan: readonly PlanItem[],
+  subjectId: string,
+  interval: Interval,
+): PlanItem[] {
+  return plan.map((p) =>
+    p.subjectId === subjectId && p.interval !== interval ? { ...p, interval } : p,
+  );
+}
+
+/** Client-side ESTIMATE for a per-subject basket: each subject at ITS OWN
+ *  cycle's price. Deliberately NOT labelled per period — with mixed cycles no
+ *  single periodic figure is honest. */
+export function estimatePlanTotal(
+  subjects: SubjectOption[],
+  plan: readonly PlanItem[],
+): number {
+  const byId = new Map(subjects.map((s) => [s.id, s]));
+  let sum = 0;
+  for (const item of plan) {
+    sum += byId.get(item.subjectId)?.prices[item.interval] ?? 0;
+  }
+  return sum;
+}
+
+/** i18n key for a cycle's group heading in the grouped summary. */
+export function groupLabelKey(iv: Interval): string {
+  return iv === "week"
+    ? "plan.group.weekly"
+    : iv === "year"
+      ? "plan.group.yearly"
+      : "plan.group.monthly";
+}
+
+/** i18n key for a cycle's renewal sentence. */
+export function renewalLineKey(iv: Interval): string {
+  return iv === "week"
+    ? "plan.renewalLine.weekly"
+    : iv === "year"
+      ? "plan.renewalLine.yearly"
+      : "plan.renewalLine.monthly";
+}
+
 // ---- server quote (BFF /children/:id/quote) --------------------------------------
+
+export type QuoteGroup = {
+  count: number;
+  base: number;
+  discount: number;
+  total: number;
+};
 
 export type Quote = {
   base: number;
@@ -122,6 +205,11 @@ export type Quote = {
   total: number;
   trialDays: number;
   currency: string;
+  // Migration 109 — additive, so a response from an older server (or an older
+  // binary reading a newer one) still parses.
+  items?: { subjectId: string; interval: Interval; price: number | null }[];
+  groups?: Partial<Record<Interval, QuoteGroup>>;
+  mixed?: boolean;
 };
 
 /** Defensive parse of the BFF quote payload (snake_case web contract). */
@@ -135,6 +223,35 @@ export function parseQuote(raw: unknown): Quote | null {
   const base = num(o.base);
   const total = num(o.total);
   if (base === null || total === null) return null;
+  // Migration 109 extras: absent or malformed → undefined, never a throw. The
+  // legacy fields above are parsed exactly as before.
+  let items: Quote["items"];
+  if (Array.isArray(o.items)) {
+    items = [];
+    for (const raw of o.items) {
+      const row = (raw ?? {}) as Record<string, unknown>;
+      if (typeof row.subject_id !== "string" || !isInterval(row.interval)) continue;
+      items.push({
+        subjectId: row.subject_id,
+        interval: row.interval,
+        price: num(row.price),
+      });
+    }
+  }
+  let groups: Quote["groups"];
+  if (o.groups && typeof o.groups === "object" && !Array.isArray(o.groups)) {
+    groups = {};
+    for (const [key, raw] of Object.entries(o.groups as Record<string, unknown>)) {
+      if (!isInterval(key)) continue;
+      const row = (raw ?? {}) as Record<string, unknown>;
+      groups[key] = {
+        count: num(row.count) ?? 0,
+        base: num(row.base) ?? 0,
+        discount: num(row.discount) ?? 0,
+        total: num(row.total) ?? 0,
+      };
+    }
+  }
   return {
     base,
     discountPercent: num(o.discount_percent ?? o.discountPercent) ?? 0,
@@ -142,6 +259,9 @@ export function parseQuote(raw: unknown): Quote | null {
     total,
     trialDays: num(o.trial_days ?? o.trialDays) ?? 0,
     currency: typeof o.currency === "string" && o.currency ? o.currency : "AZN",
+    items,
+    groups,
+    mixed: o.mixed === true,
   };
 }
 

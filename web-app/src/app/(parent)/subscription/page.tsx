@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { CancelSubscription } from "@/components/CancelSubscription";
@@ -13,6 +13,7 @@ import { subjectLabel } from "@/lib/subjectLabel";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { CmsProse } from "@/components/CmsProse";
+import { formatLongDate } from "@/lib/formatDate";
 
 // R8 billing — one-page SaaS subscription center with internal tabs
 // [Plans | Billing | Invoices] that smooth-scroll to same-page sections.
@@ -62,7 +63,16 @@ type Card = {
   studentProfileId: string;
   subscriptionId: string | null;
   name: string;
-  interval: string | null;
+  /**
+   * Migration 109: one entry per covered subject, each with ITS OWN cycle and
+   * period end. The old single `interval` is gone — a child can now hold a
+   * weekly and a yearly subject at once, so no single value describes the plan.
+   */
+  plan: { name: string; interval: string; periodEnd: string | null }[];
+  /** MIN of the subject period ends: the next charge date. */
+  nextRenewalAt: string | null;
+  /** The NEXT invoice amount (the subjects renewing at nextRenewalAt). */
+  totalAmount: number | null;
   subjects: string[];
   status: SubStatus;
   /** Parent-managed avatar display URL (signed photo / preset PNG) or null. */
@@ -77,6 +87,13 @@ const PLANS = [
   { interval: "month", slug: "monthly" },
   { interval: "year", slug: "yearly" },
 ] as const;
+
+// Migration 109: a subject's OWN cycle, named for the per-subject plan list.
+const CYCLE_NAME_KEY: Record<string, string> = {
+  week: "pricing.weekly",
+  month: "pricing.monthly",
+  year: "pricing.yearly",
+};
 
 // Cancel-flow copy passed to the client component so it never touches i18n.
 const CANCEL_KEYS = [
@@ -125,6 +142,7 @@ export default async function ParentSubscription({
 }) {
   const parent = await requireParent();
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
 
   // Round 11: payment-mode awareness (server-resolved). During an active
@@ -162,11 +180,22 @@ export default async function ParentSubscription({
       const childIds = kids.map((c) => c.profile_id);
 
       // Latest live subscription per child.
-      const subByChild = new Map<string, { id: string; interval: string; status: string }>();
+      const subByChild = new Map<
+        string,
+        {
+          id: string;
+          interval: string;
+          status: string;
+          nextRenewalAt: string | null;
+          totalAmount: number | null;
+        }
+      >();
       try {
         const { data: subs } = await supabase
           .from("child_subscriptions")
-          .select("id, student_profile_id, status, interval, created_at")
+          .select(
+            "id, student_profile_id, status, interval, next_renewal_at, total_amount, created_at",
+          )
           .in("student_profile_id", childIds)
           .in("status", LIVE as unknown as string[])
           .order("created_at", { ascending: false });
@@ -176,6 +205,8 @@ export default async function ParentSubscription({
               id: s.id,
               interval: s.interval,
               status: s.status,
+              nextRenewalAt: s.next_renewal_at ?? null,
+              totalAmount: s.total_amount == null ? null : Number(s.total_amount),
             });
           }
         }
@@ -185,18 +216,37 @@ export default async function ParentSubscription({
 
       // Covered subject names for each live subscription (best-effort).
       const subjectsBySub = new Map<string, string[]>();
+      const planBySub = new Map<
+        string,
+        { name: string; interval: string; periodEnd: string | null }[]
+      >();
       const liveSubIds = Array.from(subByChild.values()).map((v) => v.id);
       if (liveSubIds.length > 0) {
         try {
           const { data: covered } = await supabase
             .from("subscription_subjects")
-            .select("child_subscription_id, subjects(code, name)")
+            .select(
+              "child_subscription_id, subject_id, interval, current_period_end, remove_at, subjects(code, name)",
+            )
             .in("child_subscription_id", liveSubIds);
           for (const row of (covered ?? []) as any[]) {
             const list = subjectsBySub.get(row.child_subscription_id) ?? [];
             const nm = row.subjects?.name;
             if (nm) list.push(subjectLabel(t, row.subjects?.code, nm));
             subjectsBySub.set(row.child_subscription_id, list);
+            const rows = planBySub.get(row.child_subscription_id) ?? [];
+            rows.push({
+              name: nm ? subjectLabel(t, row.subjects?.code, nm) : "—",
+              // A legacy row inherits the subscription's cycle.
+              interval:
+                row.interval ??
+                Array.from(subByChild.values()).find(
+                  (v) => v.id === row.child_subscription_id,
+                )?.interval ??
+                "month",
+              periodEnd: row.current_period_end ?? null,
+            });
+            planBySub.set(row.child_subscription_id, rows);
           }
         } catch {
           // Subjects are optional decoration on the card.
@@ -212,7 +262,9 @@ export default async function ParentSubscription({
             name:
               `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() ||
               t("subscription.child"),
-            interval: sub?.interval ?? null,
+            plan: sub ? planBySub.get(sub.id) ?? [] : [],
+            nextRenewalAt: sub?.nextRenewalAt ?? null,
+            totalAmount: sub?.totalAmount ?? null,
             subjects: sub ? subjectsBySub.get(sub.id) ?? [] : [],
             status: normalizeStatus(sub?.status),
             // Parent-managed avatar (signed photo URL / preset PNG / null).
@@ -328,11 +380,38 @@ export default async function ParentSubscription({
     { id: "billing-invoices", label: t("billing.tab.invoices") },
   ];
 
+  // Migration 109: the cycle/next/total rows use the child's REAL numbers where
+  // they exist — next_renewal_at is the MIN of the subject period ends (the
+  // next charge), and total_amount is the invoice that falls due on it. The
+  // hardcoded demo values remain only as the no-plan fallback. The card-on-file
+  // rows below are still the owner-approved demo block.
+  const liveCycles = selectedCard
+    ? Array.from(new Set(selectedCard.plan.map((p) => p.interval)))
+    : [];
   const billingRows: { label: string; value: React.ReactNode }[] = [
     { label: t("billing.current"), value: monthlyName },
-    { label: t("billing.row.cycle"), value: monthlyName },
-    { label: t("billing.row.next"), value: "29/01/2026" },
-    { label: t("billing.totalLabel"), value: "≈ 18 AZN" },
+    {
+      label: t("billing.row.cycle"),
+      value:
+        liveCycles.length === 0
+          ? monthlyName
+          : liveCycles
+              .map((iv) => t(CYCLE_NAME_KEY[iv] ?? "pricing.monthly"))
+              .join(" · "),
+    },
+    {
+      label: t("billing.row.next"),
+      value: selectedCard?.nextRenewalAt
+        ? formatLongDate(selectedCard.nextRenewalAt, locale)
+        : "29/01/2026",
+    },
+    {
+      label: t("billing.totalLabel"),
+      value:
+        selectedCard?.totalAmount != null
+          ? `${selectedCard.totalAmount} AZN`
+          : "≈ 18 AZN",
+    },
     {
       label: t("billing.row.method"),
       value: (
@@ -425,10 +504,50 @@ export default async function ParentSubscription({
                   </span>
                 </div>
 
+                {hasPlan ? (
+                  // Migration 109: a live plan is a LIST of subjects, each on
+                  // its own cycle. Three cycle cards cannot say "you are on
+                  // this one" any more, so they are kept only for the
+                  // no-plan pitch below.
+                  <div className="billing-plan-list">
+                    <ul className="plan-benefits">
+                      {c.plan.map((row) => (
+                        <li key={`${row.name}-${row.interval}`}>
+                          {row.name} · {t(CYCLE_NAME_KEY[row.interval] ?? "pricing.monthly")}
+                          {row.periodEnd ? ` · ${formatLongDate(row.periodEnd, locale)}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="billing-total">
+                      {t("billing.row.next")}:{" "}
+                      <strong>
+                        {c.nextRenewalAt ? formatLongDate(c.nextRenewalAt, locale) : "—"}
+                      </strong>
+                    </div>
+                    {c.totalAmount != null && (
+                      <div className="billing-total">
+                        {t("billing.totalLabel")}: <strong>{c.totalAmount} AZN</strong>
+                      </div>
+                    )}
+                    <div className="plan-per subjedit-per-note">{t("plan.dueTodayNote")}</div>
+                    <div className="plan-per subjedit-per-note">{t("sub.siblingNote")}</div>
+                    {giveaway ? (
+                      <span className="plan-cta subjedit-free-chip" aria-disabled="true">
+                        {t("billing.freeChip")}
+                      </span>
+                    ) : (
+                      // Manage stays available in EVERY mode — removals are
+                      // legal while payments are off (audit F4/F7).
+                      <Link className="plan-cta primary" href={subscribeHref}>
+                        {t("subscription.manageSubjects")}
+                      </Link>
+                    )}
+                  </div>
+                ) : (
                 <div className="plans-grid">
                   {PLANS.map((p, idx) => {
                     const copy = planCopy[idx];
-                    const isCurrent = hasPlan && c.interval === p.interval;
+                    const isCurrent = false;
                     const isPopular = p.interval === "month";
                     const featured = isCurrent || (!hasPlan && isPopular);
                     // M8: DB per-subject price; the sibling discount is NOT
@@ -516,6 +635,7 @@ export default async function ParentSubscription({
                     );
                   })}
                 </div>
+                )}
               </div>
             );
           })

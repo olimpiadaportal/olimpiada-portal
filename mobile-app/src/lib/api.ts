@@ -314,24 +314,50 @@ export const bffAddChild = (fields: AddChildFields) =>
     "auth.child.err.createFailed",
   );
 
-export const bffQuote = (childId: string, interval: string, subjectIds: string[]) =>
+/** A per-subject basket (migration 109). Sent as `items`; when it is omitted
+ *  the endpoints keep their legacy `{interval, subject_ids}` shape — which is
+ *  exactly what already-shipped binaries post and what the BFF still accepts,
+ *  so an OTA is never required to keep an older build working. */
+export type BffPlanItem = { subject_id: string; interval: string };
+
+const planBody = (
+  items: BffPlanItem[] | undefined,
+  interval: string,
+  subjectIds: string[],
+) => (items && items.length > 0 ? { items } : { interval, subject_ids: subjectIds });
+
+export const bffQuote = (
+  childId: string,
+  interval: string,
+  subjectIds: string[],
+  items?: BffPlanItem[],
+) =>
   bffAuthedPost<Record<string, any>>(
     `/api/mobile/v1/children/${childId}/quote`,
-    { interval, subject_ids: subjectIds },
+    planBody(items, interval, subjectIds),
     "sub.err.failed",
   );
 
-export const bffSubscribe = (childId: string, interval: string, subjectIds: string[]) =>
+export const bffSubscribe = (
+  childId: string,
+  interval: string,
+  subjectIds: string[],
+  items?: BffPlanItem[],
+) =>
   bffAuthedPost<Record<string, any>>(
     `/api/mobile/v1/children/${childId}/subscribe`,
-    { interval, subject_ids: subjectIds },
+    planBody(items, interval, subjectIds),
     "sub.err.failed",
   );
 
-export const bffUpdateSubjects = (childId: string, subjectIds: string[]) =>
+export const bffUpdateSubjects = (
+  childId: string,
+  subjectIds: string[],
+  items?: BffPlanItem[],
+) =>
   bffAuthedPost<Record<string, any>>(
     `/api/mobile/v1/children/${childId}/subjects`,
-    { subject_ids: subjectIds },
+    items && items.length > 0 ? { items } : { subject_ids: subjectIds },
     "sub.err.failed",
   );
 
@@ -358,12 +384,36 @@ export type SubjectChangeQuote = {
   period_days: number;
   effective_from: string;
   removals_effective_at: string | null;
+  // Migration 109 (additive): proration for additions is RETIRED — `prorated`
+  // is always false and `due_now` is the adds' FULL first cycles at the
+  // sibling rate. `renewals` replaces the single recurring figure, which
+  // cannot describe a plan whose subjects run on different cycles.
+  items?: { subject_id: string; interval: string; price: number | null }[];
+  groups?: Record<string, { count: number; base: number; discount: number; total: number }>;
+  renewals?: { interval: string; next_at: string | null; total: number }[];
+  // Per-subject removal dates. `removals_effective_at` above is ONE scalar and
+  // cannot describe a plan whose subjects run to different dates — dropping a
+  // yearly subject from a plan that also holds a weekly one was reported as
+  // "ends in 7 days" while the database granted a year.
+  removals_effective?: { subject_id: string; remove_at: string | null }[];
+  plan_changes?: {
+    subject_id: string;
+    from: string;
+    to: string;
+    effective_at: string | null;
+  }[];
+  mixed?: boolean;
 };
 
-export const bffQuoteSubjectChange = (childId: string, add: string[], remove: string[]) =>
+export const bffQuoteSubjectChange = (
+  childId: string,
+  add: string[],
+  remove: string[],
+  items?: BffPlanItem[],
+) =>
   bffAuthedPost<SubjectChangeQuote>(
     `/api/mobile/v1/children/${childId}/subjects/quote`,
-    { add, remove },
+    items && items.length > 0 ? { items } : { add, remove },
     "sub.err.failed",
   );
 

@@ -24,6 +24,17 @@
 // built by `buildSelectionQuery` carries subject IDs and an interval, never a
 // price.
 //
+// PER-SUBJECT PLANS (migration 109)
+// ---------------------------------
+// Since each subject carries its OWN billing cycle, the authoritative pair is
+//   starting a plan   → `create_child_plan` (quote: `quote_child_plan`)
+//   changing a plan   → `apply_plan_change` (quote: `quote_plan_change`)
+// and the single-interval RPCs above are wrappers over them. The `PlanItem`
+// half of this module mirrors that shape. The query string now carries a cycle
+// per subject (`?plan=<uuid>:week,<uuid>:year`) — still ids and cycles only,
+// still never a price, and still re-validated against the live catalog on
+// arrival.
+//
 // NO SIBLING DISCOUNT HERE — DELIBERATE
 // -------------------------------------
 // The sibling discount (2nd child 10%, 3rd+ 15%) depends on how many children
@@ -473,4 +484,297 @@ export function buildSelectionHref(
   interval: PlanInterval,
 ): string {
   return `${basePath}${buildSelectionQuery(selected, interval)}`;
+}
+
+/* ------------------------------------------------------------ per-subject -- */
+
+/** One selected subject together with the cycle chosen FOR IT. */
+export type PlanItem = { subjectId: string; interval: PlanInterval };
+
+/** A whole basket: subjects in selection order, each on its own cycle. */
+export type PlanSelection = readonly PlanItem[];
+
+/** The cycles a subject is actually sold on, in display order. */
+function soldIntervals(subject: ConfiguratorSubject): PlanInterval[] {
+  return PLAN_INTERVALS.filter((iv) => subjectPrice(subject, iv) !== null);
+}
+
+/**
+ * Pick the cycle to use for a subject when the requested one is not sold:
+ * prefer the platform default, else the first cycle the subject IS sold on,
+ * else keep the request so the card can render its "not sold" state instead of
+ * silently switching to something the visitor did not choose.
+ */
+function resolveInterval(
+  subject: ConfiguratorSubject,
+  requested: PlanInterval,
+): PlanInterval {
+  if (subjectPrice(subject, requested) !== null) return requested;
+  if (subjectPrice(subject, DEFAULT_PLAN_INTERVAL) !== null) return DEFAULT_PLAN_INTERVAL;
+  return soldIntervals(subject)[0] ?? requested;
+}
+
+/**
+ * Clean an arbitrary plan against the live catalog, with the same guarantees
+ * {@link addSubject} gives a flat selection: unknown / archived ids dropped,
+ * one entry per subject (LAST occurrence wins, so an appended cycle change
+ * replaces the earlier one), capped at {@link MAX_CONFIGURATOR_SUBJECTS}, and
+ * every interval either sold or resolved by {@link resolveInterval}.
+ */
+export function normalizePlan(
+  plan: PlanSelection,
+  catalog: readonly ConfiguratorSubject[],
+): PlanItem[] {
+  const byId = catalogIndex(catalog);
+  const bySubject = new Map<string, PlanItem>();
+  for (const item of plan ?? []) {
+    const known = byId.get((item?.subjectId ?? "").toLowerCase());
+    if (!known) continue;
+    const requested = isPlanInterval(item.interval)
+      ? item.interval
+      : DEFAULT_PLAN_INTERVAL;
+    bySubject.set(known.id, {
+      subjectId: known.id,
+      interval: resolveInterval(known, requested),
+    });
+  }
+  return [...bySubject.values()].slice(0, MAX_CONFIGURATOR_SUBJECTS);
+}
+
+/**
+ * Add one subject on a cycle. Unknown ids and already-selected subjects are
+ * ignored (no duplicates, ever) and the cap is respected. Returns a NEW array.
+ */
+export function addPlanSubject(
+  plan: PlanSelection,
+  id: string,
+  catalog: readonly ConfiguratorSubject[],
+  interval?: PlanInterval,
+): PlanItem[] {
+  const known = catalogIndex(catalog).get((id ?? "").toLowerCase());
+  if (!known) return [...plan];
+  const target = known.id.toLowerCase();
+  if (plan.some((p) => p.subjectId.toLowerCase() === target)) return [...plan];
+  if (plan.length >= MAX_CONFIGURATOR_SUBJECTS) return [...plan];
+  return [
+    ...plan,
+    {
+      subjectId: known.id,
+      interval: resolveInterval(
+        known,
+        isPlanInterval(interval) ? interval : DEFAULT_PLAN_INTERVAL,
+      ),
+    },
+  ];
+}
+
+/** Remove one subject. Removing an absent subject is a no-op. NEW array. */
+export function removePlanSubject(plan: PlanSelection, id: string): PlanItem[] {
+  const target = (id ?? "").toLowerCase();
+  return plan.filter((p) => p.subjectId.toLowerCase() !== target);
+}
+
+/**
+ * Change the cycle of EXACTLY ONE entry.
+ *
+ * This is the investor's isolation rule made structural: every other entry is
+ * returned by reference, so "changing one subject's plan never changes
+ * another's" is not a convention a future refactor can quietly break — it is
+ * asserted by identity in the unit tests.
+ */
+export function setPlanInterval(
+  plan: PlanSelection,
+  id: string,
+  interval: PlanInterval,
+): PlanItem[] {
+  const target = (id ?? "").toLowerCase();
+  const iv: PlanInterval = isPlanInterval(interval) ? interval : DEFAULT_PLAN_INTERVAL;
+  return plan.map((p) =>
+    p.subjectId.toLowerCase() === target && p.interval !== iv
+      ? { subjectId: p.subjectId, interval: iv }
+      : p,
+  );
+}
+
+/** One priced row of a per-subject breakdown. */
+export type PlanQuoteLine = ConfiguratorLine & { interval: PlanInterval };
+
+/** The rows sharing one cycle, plus their subtotal. */
+export type PlanQuoteGroup = {
+  count: number;
+  subtotal: number;
+  lines: PlanQuoteLine[];
+};
+
+/**
+ * The per-subject price preview. Same informational status as
+ * {@link ConfiguratorQuote} — never an authorization to charge.
+ *
+ * There is deliberately no `total` field: with mixed cycles no single periodic
+ * figure is honest, and the one number that IS honest — what checkout charges
+ * right now — is `dueToday`, which carries no period suffix anywhere in the UI.
+ * `perSubject` is gone for the same reason (it only meant something under one
+ * global interval).
+ */
+export type PlanQuote = {
+  lines: PlanQuoteLine[];
+  groups: Record<PlanInterval, PlanQuoteGroup>;
+  /** The cycles actually in use, in display order. */
+  usedIntervals: PlanInterval[];
+  /** `true` only with MORE THAN ONE distinct cycle in the basket. */
+  mixed: boolean;
+  /** Sum of the priced lines, each at its own cycle's price. */
+  dueToday: number;
+  currency: "AZN";
+  hasSelection: boolean;
+  hasUnpriced: boolean;
+  pricedCount: number;
+  allUnpriced: boolean;
+};
+
+function emptyGroups(): Record<PlanInterval, PlanQuoteGroup> {
+  return {
+    week: { count: 0, subtotal: 0, lines: [] },
+    month: { count: 0, subtotal: 0, lines: [] },
+    year: { count: 0, subtotal: 0, lines: [] },
+  };
+}
+
+/**
+ * Build the live preview for a per-subject plan. Pure, like
+ * {@link computeQuote}: unknown ids are ignored rather than throwing, so a
+ * stale shared link degrades instead of crashing the page.
+ */
+export function computePlanQuote(
+  catalog: readonly ConfiguratorSubject[],
+  plan: PlanSelection,
+): PlanQuote {
+  const byId = catalogIndex(catalog);
+  const lines: PlanQuoteLine[] = [];
+  for (const item of plan ?? []) {
+    const subject = byId.get((item?.subjectId ?? "").toLowerCase());
+    if (!subject) continue;
+    const iv: PlanInterval = isPlanInterval(item.interval)
+      ? item.interval
+      : DEFAULT_PLAN_INTERVAL;
+    lines.push({
+      id: subject.id,
+      code: subject.code,
+      name: subject.name,
+      interval: iv,
+      price: subjectPrice(subject, iv),
+    });
+  }
+
+  const groups = emptyGroups();
+  let dueToday = 0;
+  let hasUnpriced = false;
+  for (const line of lines) {
+    const group = groups[line.interval];
+    group.count += 1;
+    group.lines.push(line);
+    if (line.price === null) {
+      hasUnpriced = true;
+      continue;
+    }
+    group.subtotal = round2(group.subtotal + line.price);
+    dueToday += line.price;
+  }
+  dueToday = round2(dueToday);
+
+  const usedIntervals = PLAN_INTERVALS.filter((iv) => groups[iv].count > 0);
+  const pricedCount = lines.filter((l) => l.price !== null).length;
+
+  return {
+    lines,
+    groups,
+    usedIntervals,
+    mixed: usedIntervals.length > 1,
+    dueToday,
+    currency: "AZN",
+    hasSelection: lines.length > 0,
+    hasUnpriced,
+    pricedCount,
+    allUnpriced: lines.length > 0 && pricedCount === 0,
+  };
+}
+
+/** A validated per-subject hand-off. */
+export type ParsedPlan = {
+  plan: PlanItem[];
+  /**
+   * The legacy single interval, still returned so a caller that has not moved
+   * to per-subject cycles (or a page that only needs a sensible default for the
+   * NEXT subject added) keeps working.
+   */
+  interval: PlanInterval;
+};
+
+/**
+ * Validate a `?plan=<uuid>:week,<uuid>:year` hand-off against the live catalog,
+ * falling back to the legacy `?subjects=…&interval=…` pair when `plan` is
+ * absent — every bookmarked link, shared link and register→add-child hand-off
+ * built before per-subject cycles keeps preselecting.
+ *
+ * Hardened exactly like {@link parseSelectionParams}: an over-long value
+ * discards the whole selection, non-UUID entries and ids missing from the
+ * catalog are dropped silently, duplicates collapse (last wins), the result is
+ * capped, and an unrecognized cycle falls back to {@link DEFAULT_PLAN_INTERVAL}.
+ * This is a UX preselection only — the server re-validates and re-prices.
+ */
+export function parsePlanParams(
+  raw: {
+    plan?: string | string[] | undefined;
+    subjects?: string | string[] | undefined;
+    interval?: string | string[] | undefined;
+  },
+  catalog: readonly ConfiguratorSubject[],
+): ParsedPlan {
+  const legacy = parseSelectionParams(raw ?? {}, catalog);
+  const rawPlan = firstParam(raw?.plan);
+  if (!rawPlan || rawPlan.length > MAX_PARAM_LENGTH) {
+    return {
+      plan: normalizePlan(
+        legacy.subjectIds.map((id) => ({ subjectId: id, interval: legacy.interval })),
+        catalog,
+      ),
+      interval: legacy.interval,
+    };
+  }
+
+  const items: PlanItem[] = [];
+  for (const part of rawPlan.split(",")) {
+    const [rawId, rawIv] = part.trim().split(":");
+    const candidate = (rawId ?? "").trim();
+    if (!UUID_RE.test(candidate)) continue;
+    items.push({
+      subjectId: candidate,
+      interval: isPlanInterval(rawIv) ? rawIv : DEFAULT_PLAN_INTERVAL,
+    });
+  }
+  return { plan: normalizePlan(items, catalog), interval: legacy.interval };
+}
+
+/**
+ * Build the per-subject hand-off query: `?plan=<id>:<iv>,<id>:<iv>`, or `""`
+ * when nothing is selected. Ids and cycles only — never a price.
+ */
+export function buildPlanQuery(plan: PlanSelection): string {
+  const parts = (plan ?? [])
+    .filter(
+      (p) =>
+        p &&
+        typeof p.subjectId === "string" &&
+        UUID_RE.test(p.subjectId) &&
+        isPlanInterval(p.interval),
+    )
+    .slice(0, MAX_CONFIGURATOR_SUBJECTS)
+    .map((p) => `${p.subjectId}:${p.interval}`);
+  if (parts.length === 0) return "";
+  return `?plan=${encodeURIComponent(parts.join(","))}`;
+}
+
+/** Full per-subject hand-off href: a same-origin RELATIVE path + the query. */
+export function buildPlanHref(basePath: SelectionBasePath, plan: PlanSelection): string {
+  return `${basePath}${buildPlanQuery(plan)}`;
 }

@@ -66,6 +66,17 @@ export type SubscriptionListParams = {
   periodEndTo: string; // YYYY-MM-DD or ""
 };
 
+/** One covered subject with ITS OWN billing cycle (migration 109). */
+export type SubjectPlanRow = {
+  name: string;
+  /** This subject's own cycle (already resolved against the row's default). */
+  interval: string;
+  periodEnd: string | null;
+  /** A cycle change scheduled for this subject's next renewal. */
+  pendingInterval: string | null;
+  removeAt: string | null;
+};
+
 export type SubscriptionListRow = {
   id: string;
   studentProfileId: string;
@@ -74,6 +85,13 @@ export type SubscriptionListRow = {
   parentName: string;
   parentEmail: string | null;
   subjectNames: string[];
+  /** Migration 109: per-subject cycles/periods. `subjectNames` stays for the
+   *  existing compact list. */
+  subjectPlans: SubjectPlanRow[];
+  /** MIN of the subject period ends — the NEXT charge date. */
+  nextRenewalAt: string | null;
+  /** Migration 109: the DEFAULT cycle for newly added subjects, no longer the
+   *  plan's single cycle. Read subjectPlans for what the family actually pays. */
   interval: string;
   status: string;
   provider: string;
@@ -100,6 +118,18 @@ const PAGE_SIZE = SUBSCRIPTION_PAGE_SIZE;
 function childName(s: { first_name: string | null; last_name: string | null } | null): string {
   if (!s) return "—";
   return [s.first_name, s.last_name].filter(Boolean).join(" ") || "—";
+}
+
+/** Per-subject cycles/periods off an embedded subscription_subjects list. A
+ *  NULL cycle is a pre-109 row and inherits the subscription's default. */
+function subjectPlans(r: any): SubjectPlanRow[] {
+  return ((r?.subscription_subjects ?? []) as any[]).map((s) => ({
+    name: s.subjects?.name ?? "—",
+    interval: s.interval ?? r?.interval ?? "month",
+    periodEnd: s.current_period_end ?? null,
+    pendingInterval: s.pending_interval ?? null,
+    removeAt: s.remove_at ?? null,
+  }));
 }
 
 export async function listSubscriptions(
@@ -158,21 +188,52 @@ export async function listSubscriptions(
     if (orClauses.length === 0) return { rows: [], total: 0, loadError: false };
   }
 
+  // Migration 109: the cycle filter can no longer be `.eq("interval", …)` on
+  // the parent row — a child whose default is monthly may hold a YEARLY subject
+  // and would be missed. Resolve the matching subscription ids first (the
+  // subject's own cycle, plus the legacy NULL-inherits-the-parent case), then
+  // filter by id, mirroring the free-text two-step above.
+  let intervalIds: string[] | null = null;
+  if (interval) {
+    const [ownRes, legacyRes] = await Promise.all([
+      admin
+        .from("subscription_subjects")
+        .select("child_subscription_id")
+        .eq("interval", interval),
+      admin
+        .from("subscription_subjects")
+        .select("child_subscription_id, child_subscriptions!inner(interval)")
+        .is("interval", null)
+        .eq("child_subscriptions.interval", interval),
+    ]);
+    const ids = new Set<string>();
+    for (const r of (ownRes.data ?? []) as { child_subscription_id: string }[]) {
+      ids.add(r.child_subscription_id);
+    }
+    for (const r of (legacyRes.data ?? []) as { child_subscription_id: string }[]) {
+      ids.add(r.child_subscription_id);
+    }
+    intervalIds = [...ids];
+    // No subscription carries that cycle — an empty `in.()` is rejected by
+    // PostgREST, so return the empty page directly.
+    if (intervalIds.length === 0) return { rows: [], total: 0, loadError: false };
+  }
+
   let qb = admin
     .from("child_subscriptions")
     .select(
       `id, interval, status, provider, currency, base_amount, sibling_discount_percent,
        discount_amount, total_amount, trial_ends_at, current_period_start, current_period_end,
-       created_at, updated_at, student_profile_id, owner_parent_profile_id,
+       next_renewal_at, created_at, updated_at, student_profile_id, owner_parent_profile_id,
        students(first_name, last_name),
        profiles!owner_parent_profile_id(display_name, email),
-       subscription_subjects(subjects(name))`,
+       subscription_subjects(subject_id, interval, pending_interval, current_period_end, remove_at, subjects(name))`,
       { count: "exact" },
     );
 
   if (orClauses.length) qb = qb.or(orClauses.join(","));
   if (status) qb = qb.eq("status", status);
-  if (interval) qb = qb.eq("interval", interval);
+  if (intervalIds) qb = qb.in("id", intervalIds);
   if (provider) qb = qb.eq("provider", provider);
   if (fromIso) qb = qb.gte("current_period_end", fromIso);
   if (toIso) qb = qb.lte("current_period_end", toIso);
@@ -198,6 +259,8 @@ export async function listSubscriptions(
     subjectNames: ((r.subscription_subjects ?? []) as any[])
       .map((s) => s.subjects?.name)
       .filter(Boolean),
+    subjectPlans: subjectPlans(r),
+    nextRenewalAt: r.next_renewal_at ?? null,
     interval: r.interval,
     status: r.status,
     provider: r.provider ?? "none",
@@ -245,11 +308,12 @@ export async function getSubscriptionDetail(
     .select(
       `id, interval, status, provider, provider_subscription_id, currency, base_amount,
        sibling_discount_percent, discount_amount, total_amount, trial_started_at,
-       trial_ends_at, current_period_start, current_period_end, created_at, updated_at,
+       trial_ends_at, current_period_start, current_period_end, next_renewal_at,
+       created_at, updated_at,
        student_profile_id, owner_parent_profile_id,
        students(first_name, last_name, access_status, child_unique_id),
        profiles!owner_parent_profile_id(display_name, email),
-       subscription_subjects(subjects(name))`,
+       subscription_subjects(subject_id, interval, pending_interval, current_period_end, remove_at, subjects(name))`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -278,6 +342,8 @@ export async function getSubscriptionDetail(
     subjectNames: ((r.subscription_subjects ?? []) as any[])
       .map((s) => s.subjects?.name)
       .filter(Boolean),
+    subjectPlans: subjectPlans(r),
+    nextRenewalAt: r.next_renewal_at ?? null,
     interval: r.interval,
     status: r.status,
     provider: r.provider ?? "none",

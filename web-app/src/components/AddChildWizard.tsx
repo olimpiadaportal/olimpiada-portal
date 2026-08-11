@@ -12,9 +12,11 @@
 //     1. INFO     — name, city, school (filtered to city), grade, password.
 //                   "Next" calls the addChild server action (creates the child,
 //                   NO login ID yet) and stores the returned studentProfileId.
-//     2. SUBJECTS — per-subject pricing checkboxes (≥1 required).
-//     3. PLAN     — modern plan CARDS (Weekly/Monthly/Yearly, subscription-page
-//                   contract classes) + a LIVE server quote (sibling discount).
+//     2. SUBJECTS — pick the subjects AND give each one its own billing cycle
+//                   (≥1 required). Migration 109 moved the cycle here, per
+//                   subject; there is no global cycle control any more.
+//     3. PLAN     — REVIEW: the grouped per-cycle breakdown + a LIVE server
+//                   quote (sibling discount).
 //     4. PAYMENT  — the DEMO card form (cosmetic, never charged). "Pay" calls
 //                   subscribeChild, which allocates + reveals the 8-digit ID.
 //                   NOTE: the future real provider replaces the SERVER seam
@@ -37,7 +39,7 @@
 // subscribeChild). The demo card fields are NOT validated against any processor.
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { PasswordInput } from "@/components/PasswordInput";
 import {
   ChildAvatarPicker,
@@ -54,6 +56,25 @@ import {
   activateChildGiveaway,
   type QuoteResult,
 } from "@/lib/auth/subscriptionService";
+import { PlanSummary } from "@/components/PlanSummary";
+import { SubjectPlanCard } from "@/components/SubjectPlanCard";
+import {
+  addPlanSubject,
+  availableSubjects,
+  computePlanQuote,
+  DEFAULT_PLAN_INTERVAL,
+  formatAzn,
+  INTERVAL_LABEL_KEY,
+  isPlanInterval,
+  normalizePlan,
+  PLAN_INTERVALS,
+  removePlanSubject,
+  setPlanInterval,
+  subjectPrice,
+  type ConfiguratorSubject,
+  type PlanInterval,
+  type PlanItem,
+} from "@/lib/pricingConfigurator";
 
 type City = { id: string; name: string };
 // NAMING (Round 21): `districts` is the CITIES table (historic naming) —
@@ -91,22 +112,6 @@ const FLOWS: Record<string, StepId[]> = {
   off: ["info", "done"],
 };
 
-const INTERVAL_KEY: Record<string, string> = {
-  week: "pricing.weekly",
-  month: "pricing.monthly",
-  year: "pricing.yearly",
-};
-
-// Plan-card copy per interval — reuses the public pricing / billing keys so the
-// wizard cards read exactly like the Subscription page cards.
-const PLAN_META: Record<string, { perKey: string; noteKey: string }> = {
-  week: { perKey: "billing.perWeek", noteKey: "pricing.plan.weekly.note" },
-  month: { perKey: "billing.perMonth", noteKey: "pricing.plan.monthly.note" },
-  year: { perKey: "billing.perYear", noteKey: "pricing.plan.yearly.note" },
-};
-
-const INTERVALS = ["week", "month", "year"] as const;
-
 export function AddChildWizard({
   cities,
   cityDistricts,
@@ -116,6 +121,7 @@ export function AddChildWizard({
   dict,
   paymentMode,
   freeAccessActive = false,
+  initialPlan,
   initialSubjectIds = [],
   initialInterval = "month",
 }: {
@@ -130,37 +136,23 @@ export function AddChildWizard({
   /** H8: server-resolved active free-access window for this parent. */
   freeAccessActive?: boolean;
   /**
-   * Optional PRESELECTION handed off from the public /services configurator
-   * (`?subjects=…&interval=…`). Already validated server-side against this
-   * same `subjects` catalog — unknown/archived ids were dropped there. Purely
-   * a UX convenience: the parent can still change everything, and
-   * subscribeChild re-validates and re-prices authoritatively.
+   * PRESELECTION handed off from the public /services configurator
+   * (`?plan=<uuid>:<cycle>,…`), already validated server-side against this same
+   * `subjects` catalog. Purely a UX convenience: the parent can still change
+   * everything, and subscribeChild re-validates and re-prices authoritatively.
+   */
+  initialPlan?: PlanItem[];
+  /**
+   * Legacy `?subjects=…&interval=…` hand-off, still accepted so a stale
+   * bookmarked link keeps preselecting. Ignored when `initialPlan` is given.
    */
   initialSubjectIds?: string[];
-  /** Preselected billing interval ("week" | "month" | "year"). */
   initialInterval?: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const locale = useLocale();
   // Locale-aware subject labels (subj.<code>) via the app-wide provider dict.
   const t = useT();
-  // Same fallback chain the Subscription page uses for the popular badge:
-  // skip keys the dict doesn't resolve (getT returns the key itself when a
-  // key is missing, so `v === k` means "not translated").
-  const pick = (...keys: string[]): string => {
-    for (const k of keys) {
-      const v = dict[k];
-      if (v && v !== k) return v;
-    }
-    return "";
-  };
-  const popularBadge = pick(
-    "pricing2.badge.popular",
-    "pricing2.popular",
-    "pricing2.mostPopular",
-    "billing.popular",
-  );
-
   // H8: a live free-access window rides the giveaway flow (Info → Done, free
   // activation). Payments-off keeps its own flow: nothing to activate there.
   const freeFlow =
@@ -191,12 +183,27 @@ export function AddChildWizard({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarDone, setAvatarDone] = useState(false);
 
-  // Step 2 — subjects. Seeded from the (server-validated) /services hand-off
-  // when present, otherwise empty.
-  const [sel, setSel] = useState<Set<string>>(() => new Set(initialSubjectIds));
+  // Step 2 — subjects AND their cycles. Seeded from the (server-validated)
+  // /services hand-off; the legacy subjects+interval pair still preselects.
+  const catalog = useMemo<ConfiguratorSubject[]>(
+    () => subjects.map((s) => ({ ...s, prices: s.prices as ConfiguratorSubject["prices"] })),
+    [subjects],
+  );
+  const [plan, setPlan] = useState<PlanItem[]>(() =>
+    normalizePlan(
+      initialPlan && initialPlan.length > 0
+        ? initialPlan
+        : initialSubjectIds.map((subjectId) => ({
+            subjectId,
+            interval: isPlanInterval(initialInterval)
+              ? initialInterval
+              : DEFAULT_PLAN_INTERVAL,
+          })),
+      catalog,
+    ),
+  );
 
-  // Step 3 — plan + live quote. Seeded from the hand-off interval.
-  const [interval, setIntervalState] = useState(initialInterval);
+  // Step 3 — review + live quote.
   const [quote, setQuote] = useState<QuoteResult | null>(null);
 
   // Step 4 — demo payment + the result.
@@ -225,36 +232,41 @@ export function AddChildWizard({
         ]
       : citySchoolsAll;
 
-  // Live, AUTHORITATIVE quote whenever the plan step inputs change.
+  // The basket serialized as subject+cycle pairs: the quote effect keys on THIS
+  // so a cycle change on one card refetches, and an unrelated re-render does not.
+  const planKey = useMemo(
+    () => plan.map((p) => `${p.subjectId}:${p.interval}`).join(","),
+    [plan],
+  );
+  const byId = useMemo(() => new Map(catalog.map((s) => [s.id, s])), [catalog]);
+  const available = useMemo(
+    () => availableSubjects(catalog, plan.map((p) => p.subjectId)),
+    [catalog, plan],
+  );
+  const localQuote = useMemo(() => computePlanQuote(catalog, plan), [catalog, plan]);
+
+  // Live, AUTHORITATIVE quote whenever the review step's inputs change.
   useEffect(() => {
     if (cur !== "plan" || !studentProfileId) return;
-    const ids = Array.from(sel);
-    if (ids.length === 0) {
+    if (!planKey) {
       setQuote(null);
       return;
     }
     let cancelled = false;
-    // Drop a stale quote (fetched for another interval/subject set) so the
-    // selected card falls back to the honest client estimate while refetching.
+    // Drop a stale quote (fetched for another basket) so the summary falls back
+    // to the honest client estimate while refetching.
     setQuote(null);
-    quoteSubscription({ studentId: studentProfileId, interval, subjectIds: ids }).then(
-      (q) => {
-        if (!cancelled) setQuote(q);
-      },
-    );
+    const items = planKey.split(",").map((raw) => {
+      const [subjectId, interval] = raw.split(":");
+      return { subjectId, interval };
+    });
+    quoteSubscription({ studentId: studentProfileId, items }).then((q) => {
+      if (!cancelled) setQuote(q);
+    });
     return () => {
       cancelled = true;
     };
-  }, [cur, studentProfileId, sel, interval]);
-
-  function toggleSubject(id: string) {
-    setSel((p) => {
-      const n = new Set(p);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  }
+  }, [cur, studentProfileId, planKey]);
 
   // STEP "info" → create the child (no login ID yet) and advance. In giveaway
   // mode the SAME transition then grants free access + reveals the 8-digit ID.
@@ -355,8 +367,8 @@ export function AddChildWizard({
     setPayError(null);
     const fd = new FormData();
     fd.set("student_id", studentProfileId);
-    fd.set("interval", interval);
-    for (const id of sel) fd.append("subject", id);
+    // One entry per subject, carrying ITS cycle. No global `interval` field.
+    for (const p of plan) fd.append("plan", `${p.subjectId}:${p.interval}`);
 
     startTransition(async () => {
       const res = await subscribeChild(null, fd);
@@ -369,14 +381,10 @@ export function AddChildWizard({
     });
   }
 
-  // Client-side ESTIMATE (subjects × per-interval price) — shown until the
-  // authoritative server quote arrives for the selected interval.
-  const intervalTotal = (iv: string) =>
-    Array.from(sel).reduce(
-      (sum, id) => sum + (subjects.find((s) => s.id === id)?.prices[iv] ?? 0),
-      0,
-    );
-  const subtotal = intervalTotal(interval);
+  // Client-side ESTIMATE — each subject at its own cycle's price, shown until
+  // the authoritative server quote arrives. Never a "per period" figure: the
+  // basket may span several cycles.
+  const subtotal = localQuote.dueToday;
 
   return (
     <div className="wizard">
@@ -580,85 +588,98 @@ export function AddChildWizard({
         {cur === "subjects" && (
           <div className="form">
             <span className="field-label">{tt("sub.subjects")}</span>
+            <p className="hint">{tt("plan.perSubjectHint")}</p>
             {subjects.length === 0 ? (
               <p className="muted">{tt("sub.noSubjectsAvailable")}</p>
             ) : (
-              subjects.map((s) => (
-                <label
-                  key={s.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    padding: "6px 0",
-                  }}
-                >
-                  <span>
-                    <input
-                      type="checkbox"
-                      checked={sel.has(s.id)}
-                      onChange={() => toggleSubject(s.id)}
-                    />{" "}
-                    {subjectLabel(t, s.code, s.name)}
-                  </span>
-                  <span className="muted">{s.prices[interval] ?? "—"} AZN</span>
-                </label>
-              ))
+              <>
+                {plan.length > 0 && (
+                  <div className="splan-list">
+                    {plan.map((item) => {
+                      const s = byId.get(item.subjectId);
+                      if (!s) return null;
+                      return (
+                        <SubjectPlanCard
+                          key={s.id}
+                          id={s.id}
+                          code={s.code}
+                          name={s.name}
+                          interval={item.interval}
+                          prices={s.prices}
+                          onIntervalChange={(id, iv) =>
+                            setPlan((prev) => setPlanInterval(prev, id, iv))
+                          }
+                          onRemove={(id) => setPlan((prev) => removePlanSubject(prev, id))}
+                          disabled={pending}
+                          locale={locale}
+                          t={tt}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                {available.length === 0 ? (
+                  <p className="muted">{tt("cfg.allAdded")}</p>
+                ) : (
+                  <ul className="pcfg-list" style={{ marginTop: 10 }}>
+                    {available.map((s) => {
+                      // No global cycle exists any more, so the picker shows the
+                      // cheapest cycle the subject is actually sold on.
+                      let from: { price: number; iv: PlanInterval } | null = null;
+                      for (const iv of PLAN_INTERVALS) {
+                        const p = subjectPrice(s, iv);
+                        if (p === null) continue;
+                        if (!from || p < from.price) from = { price: p, iv };
+                      }
+                      return (
+                        <li key={s.id} className="pcfg-row">
+                          <span className="pcfg-row-main">
+                            <span className="pcfg-row-name">
+                              {subjectLabel(t, s.code, s.name)}
+                            </span>
+                            <span className="pcfg-row-price">
+                              {from === null
+                                ? tt("cfg.unpriced")
+                                : tt("plan.fromPrice")
+                                    .replace("{price}", formatAzn(from.price, locale))
+                                    .replace("{cycle}", tt(INTERVAL_LABEL_KEY[from.iv]))}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            className="pcfg-add"
+                            onClick={() =>
+                              setPlan((prev) => addPlanSubject(prev, s.id, catalog))
+                            }
+                            disabled={pending}
+                            aria-label={tt("cfg.addAria").replace(
+                              "{subject}",
+                              subjectLabel(t, s.code, s.name),
+                            )}
+                          >
+                            <span aria-hidden="true" className="pcfg-add-glyph">
+                              +
+                            </span>
+                            {tt("cfg.add")}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </>
             )}
           </div>
         )}
 
         {/* =========================== STEP — PLAN =========================== */}
-        {/* R11: modern selectable plan CARDS (subscription-page contract classes).
-            Each card = a real <button> (keyboard: Tab + Enter/Space; state via
-            aria-pressed). Prices shown per card are the client estimate for the
-            CURRENT subject selection; the selected card switches to the live
-            server quote (sibling discount included) as soon as it arrives. */}
+        {/* Migration 109: this step is the REVIEW. The three global plan cards
+            are gone — the cycle is chosen per subject on the previous step —
+            and the breakdown is grouped by cycle, because a single "/ ay" total
+            under a mixed basket would be a false price. */}
         {cur === "plan" && (
           <div className="wiz-plan-step">
-            <span className="field-label">{tt("sub.interval")}</span>
-            <div
-              className="plans-grid wiz-plans"
-              role="group"
-              aria-label={tt("sub.interval")}
-            >
-              {INTERVALS.map((iv) => {
-                const selected = interval === iv;
-                const isPopular = iv === "month";
-                const amount =
-                  selected && quote && quote.ok ? quote.total : intervalTotal(iv);
-                const currency =
-                  selected && quote && quote.ok ? quote.currency : "AZN";
-                return (
-                  <button
-                    key={iv}
-                    type="button"
-                    className={`plan-card wiz-plan-card${selected ? " featured" : ""}`}
-                    aria-pressed={selected}
-                    onClick={() => setIntervalState(iv)}
-                    disabled={pending}
-                  >
-                    {isPopular && popularBadge !== "" && (
-                      <span className="plan-badge">{popularBadge}</span>
-                    )}
-                    <span
-                      className={`wiz-plan-check${selected ? " on" : ""}`}
-                      aria-hidden="true"
-                    >
-                      ✓
-                    </span>
-                    <span className="plan-name">{tt(INTERVAL_KEY[iv])}</span>
-                    <span className="plan-price">
-                      {amount} {currency}
-                    </span>
-                    <span className="plan-per">{tt(PLAN_META[iv].perKey)}</span>
-                    <span className="plan-desc">{tt(PLAN_META[iv].noteKey)}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Server-authoritative quote summary (unchanged contract). */}
+            <span className="field-label">{tt("plan.cycle")}</span>
             <div className="wizard-summary">
               <div className="quote-row">
                 <span className="q-label">{tt("pay.subtotal")}</span>
@@ -667,21 +688,29 @@ export function AddChildWizard({
                   {quote && quote.ok ? quote.currency : "AZN"}
                 </span>
               </div>
-              <div className="quote-row">
-                <span className="q-label">{tt("pay.discount")}</span>
-                <span>
-                  {quote && quote.ok && quote.discount_percent > 0
-                    ? `−${quote.discount_percent}% (−${quote.discount} ${quote.currency})`
-                    : `0%`}
-                </span>
-              </div>
-              <div className="quote-total">
-                <span>{tt("pay.total")}</span>
-                <span>
-                  {quote && quote.ok ? quote.total : subtotal}{" "}
-                  {quote && quote.ok ? quote.currency : "AZN"} / {tt(INTERVAL_KEY[interval])}
-                </span>
-              </div>
+              <PlanSummary
+                quote={localQuote}
+                server={
+                  quote && quote.ok
+                    ? {
+                        discountPercent: quote.discount_percent,
+                        discount: quote.discount,
+                        dueToday: quote.total,
+                        trialDays: quote.trial_days,
+                        currency: quote.currency,
+                        // The per-cycle groups carry the sibling discount already
+                        // applied. Omitting them made PlanSummary fall back to its
+                        // client list-price sum, so a 2nd/3rd child saw
+                        // UNDISCOUNTED per-cycle subtotals and renewal sentences
+                        // under a correctly discounted total.
+                        groups: quote.groups ?? null,
+                      }
+                    : null
+                }
+                loading={!quote}
+                locale={locale}
+                t={tt}
+              />
             </div>
           </div>
         )}
@@ -718,11 +747,13 @@ export function AddChildWizard({
             </div>
 
             <div className="wizard-summary" style={{ marginTop: 18 }}>
+              {/* No period suffix: with per-subject cycles the only honest
+                  single figure is what is charged now. */}
               <div className="quote-total">
-                <span>{tt("pay.total")}</span>
+                <span>{tt("plan.dueToday")}</span>
                 <span>
                   {quote && quote.ok ? quote.total : subtotal}{" "}
-                  {quote && quote.ok ? quote.currency : "AZN"} / {tt(INTERVAL_KEY[interval])}
+                  {quote && quote.ok ? quote.currency : "AZN"}
                 </span>
               </div>
             </div>
@@ -806,7 +837,7 @@ export function AddChildWizard({
               type="button"
               className="btn"
               onClick={() => setStepIdx(2)}
-              disabled={pending || sel.size === 0}
+              disabled={pending || plan.length === 0}
             >
               {tt("addchild.next")}
             </button>
@@ -816,7 +847,7 @@ export function AddChildWizard({
               type="button"
               className="btn"
               onClick={() => setStepIdx(3)}
-              disabled={pending || sel.size === 0}
+              disabled={pending || plan.length === 0}
             >
               {tt("addchild.next")}
             </button>
@@ -826,7 +857,7 @@ export function AddChildWizard({
               type="button"
               className="btn"
               onClick={confirmPayment}
-              disabled={pending || sel.size === 0}
+              disabled={pending || plan.length === 0}
             >
               {pending ? tt("pay.processing") : tt("pay.payNow")}
             </button>

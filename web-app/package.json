@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:palettes": "node ./scripts/gen-palettes.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

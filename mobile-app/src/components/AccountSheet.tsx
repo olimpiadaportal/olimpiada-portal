@@ -32,6 +32,7 @@ import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useAppLockStore } from "@/features/applock/appLockStore";
+import { useSetStudentTheme } from "@/features/profile/useStudentTheme";
 
 function IconChip({ children }: { children: React.ReactNode }) {
   const { tokens } = useTheme();
@@ -67,6 +68,7 @@ export function AccountSheet({
   const setLocale = useLocaleStore((s) => s.setLocale);
   const config = useMobileConfig();
   const role = useAuthStore((s) => s.role);
+  const setTheme = useSetStudentTheme();
   const signOut = useAuthStore((s) => s.signOut);
   const lockEnabled = useAppLockStore((s) => s.enabled);
   const setLockEnabled = useAppLockStore((s) => s.setEnabled);
@@ -177,7 +179,11 @@ export function AccountSheet({
                 { value: "dark" as const, label: t("drawer2.themeDark") },
               ]}
               value={theme.theme}
-              onChange={(v) => theme.setPreference(v)}
+              // For a STUDENT this also writes students.theme_pref, so the
+              // choice reaches their other devices and the web arena instead of
+              // living only in this phone's SecureStore. Parents keep the
+              // device-local setter.
+              onChange={(v) => void setTheme(v)}
             />
           </View>
         </View>

@@ -7,7 +7,7 @@
 // type inline); grades are a multi-select; each selected grade gets its own
 // file slot with live client-side validation (UX only — the server action +
 // SECURITY DEFINER RPC stay the authority).
-import { useActionState, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import {
   createOlympiadPackageWithQuestions,
   type OlympiadCreateState,
@@ -19,7 +19,6 @@ import { OlympiadJsonFormat } from "@/components/OlympiadJsonFormat";
 import { localeNames, locales, type Locale } from "@/i18n/config";
 import {
   downloadBulkTemplate,
-  parseBulkFile,
   validateBulkRowsClient,
   type ClientTypeRule,
   type RowIssue,
@@ -31,6 +30,17 @@ import {
   parsePerAttempt,
   poolMeetsPerAttempt,
 } from "@/lib/admin/olympiad-per-attempt";
+import { discardUploadedMedia } from "@/lib/bulk-upload-media";
+import { makeZipRefChecker } from "@/lib/zip-bulk";
+// The parse + media phase are the SAME ones the two single-file surfaces run
+// (lib/useBulkFilePicker.ts); only the per-grade bookkeeping lives here.
+import {
+  EMPTY_BULK_PICK,
+  jsonImportFile,
+  parseBulkPick,
+  runBulkMediaPhase,
+  type BulkPickState,
+} from "@/lib/useBulkFilePicker";
 
 type Opt = { value: string; label: string };
 /** A grade option carries its level so the summary can name it per locale. */
@@ -53,14 +63,11 @@ function slugLabel(input: string): string {
   );
 }
 
-type FileState = {
-  fileName: string;
-  fileError: string;
-  rowIssues: RowIssue[];
-  itemCount: number;
-};
+/** One grade slot: the shared pick state plus the row issues this form renders
+ *  under each slot. `items`/`zip` are what the MIXED media phase consumes. */
+type FileState = BulkPickState & { rowIssues: RowIssue[] };
 
-const EMPTY_FILE: FileState = { fileName: "", fileError: "", rowIssues: [], itemCount: 0 };
+const EMPTY_FILE: FileState = { ...EMPTY_BULK_PICK, rowIssues: [] };
 
 export function OlympiadCreateForm({
   dict,
@@ -125,6 +132,10 @@ export function OlympiadCreateForm({
   const [questionMode, setQuestionMode] = useState<"" | "text" | "mixed">("");
   const modeChosen = questionMode !== "";
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  // Separate from the action's `pending` so the button can say "uploading
+  // images" during the part that happens BEFORE the action is dispatched —
+  // otherwise a large mixed batch looks frozen.
+  const [uploading, setUploading] = useState(false);
 
   function toggleGrade(id: string) {
     setSelectedGrades((prev) => {
@@ -152,23 +163,36 @@ export function OlympiadCreateForm({
     });
   }
 
+  // Switching the import type clears EVERY grade's file and input. The two
+  // modes accept different file types, so a .zip left in a slot would otherwise
+  // be posted through the text-only path without a re-pick.
+  useEffect(() => {
+    setFiles({});
+    for (const input of Object.values(inputRefs.current)) {
+      if (input) input.value = "";
+    }
+  }, [questionMode]);
+
   async function onFileChange(gradeId: string, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) {
+    if (!file || questionMode === "") {
       setFiles((p) => ({ ...p, [gradeId]: EMPTY_FILE }));
       return;
     }
-    const next: FileState = { ...EMPTY_FILE, fileName: file.name };
-    const parsed = await parseBulkFile(file, tt);
-    if ("error" in parsed) {
-      next.fileError = parsed.error;
-    } else {
-      next.rowIssues = validateBulkRowsClient(parsed.items, tt, typeRules, "olympiad", null, {
-        mixed: questionMode === "mixed",
-      });
-      next.itemCount = parsed.items.length;
-    }
-    setFiles((p) => ({ ...p, [gradeId]: next }));
+    const pick = await parseBulkPick(file, questionMode, tt);
+    setFiles((p) => ({
+      ...p,
+      [gradeId]: {
+        ...pick,
+        rowIssues:
+          pick.items.length === 0
+            ? []
+            : validateBulkRowsClient(pick.items, tt, typeRules, "olympiad", null, {
+                mixed: questionMode === "mixed",
+                zipHas: pick.zip ? makeZipRefChecker(pick.zip) : undefined,
+              }),
+      },
+    }));
   }
 
   function onTemplate() {
@@ -177,7 +201,9 @@ export function OlympiadCreateForm({
     // package's subject and each slot's grade — so only the subject shows in
     // the filename; the SAME template serves every grade slot.
     downloadBulkTemplate(
-      `olympiad-questions-${slugLabel(subj)}-${questionMode || "text"}.json`,
+      `olympiad-questions-${slugLabel(subj)}-${questionMode || "text"}.${
+        questionMode === "mixed" ? "zip" : "json"
+      }`,
       "olympiad",
       questionMode === "mixed" ? "mixed" : "text",
     );
@@ -193,7 +219,14 @@ export function OlympiadCreateForm({
   const gradeState = (id: string): "missing" | "invalid" | "ready" => {
     const fs = files[id];
     if (!fs || !fs.fileName) return "missing";
-    if (fs.fileError || fs.rowIssues.length > 0 || fs.itemCount === 0) return "invalid";
+    if (
+      fs.fileError ||
+      fs.rowIssues.length > 0 ||
+      fs.zipIssues.length > 0 ||
+      fs.items.length === 0
+    ) {
+      return "invalid";
+    }
     return "ready";
   };
   const allReady =
@@ -236,12 +269,75 @@ export function OlympiadCreateForm({
     f.status !== "active" ||
     Array.from(selectedGrades).every((id) => {
       const need = gradeCount(id);
-      return need !== null && poolMeetsPerAttempt(files[id]?.itemCount ?? 0, need);
+      return need !== null && poolMeetsPerAttempt(files[id]?.items.length ?? 0, need);
     });
   const canSubmit =
     modeChosen &&
-    !pending && targetsChosen && allReady && perAttemptNum !== null &&
+    !pending && !uploading && targetsChosen && allReady && perAttemptNum !== null &&
     overridesValid && activeReady;
+
+  /**
+   * MIXED submit: read each grade's images out of its ZIP, upload them, and
+   * post the rewritten rows on the same per-grade `file_<gradeId>` fields the
+   * server action already expects. Text-only returns immediately and the form
+   * submits natively, byte-for-byte as before.
+   *
+   * The browser's own `required` validation on the file inputs runs BEFORE this
+   * handler, so a missing file is still blocked without any help from here.
+   */
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    if (questionMode !== "mixed") return; // native submit
+    e.preventDefault();
+    const form = e.currentTarget;
+    const ids = Array.from(selectedGrades);
+    setUploading(true);
+
+    // ONE batch for the whole submit: verifyImportImage confines the object to
+    // imports/<batchId>/ and accepts any uuid filename, so per-grade batches
+    // would buy nothing and complicate the cleanup below.
+    const batchId = crypto.randomUUID();
+    const rewritten: Record<string, unknown[]> = {};
+    const uploadedPaths: string[] = [];
+
+    // Sequential on purpose: the media phase already fans out four wide
+    // internally, so running eleven grades at once would multiply timeouts
+    // rather than finish sooner.
+    for (const id of ids) {
+      const fs = files[id];
+      // Fail closed: without a parsed archive the original .zip would be posted
+      // on the file field and the server would try to JSON.parse it.
+      if (!fs?.zip) {
+        setUploading(false);
+        await discardUploadedMedia(uploadedPaths);
+        return;
+      }
+      const phase = await runBulkMediaPhase(fs.items, fs.zip, tt, batchId);
+      uploadedPaths.push(...phase.uploadedPaths);
+
+      if (!phase.ok) {
+        // All-or-nothing across grades, matching the rule that a bad file in
+        // one grade blocks the whole creation: everything uploaded so far, for
+        // every grade, is discarded before returning.
+        setFiles((p) => ({
+          ...p,
+          [id]: { ...(p[id] ?? EMPTY_FILE), rowIssues: phase.issues },
+        }));
+        setUploading(false);
+        await discardUploadedMedia(uploadedPaths);
+        return;
+      }
+      rewritten[id] = phase.items;
+    }
+    setUploading(false);
+
+    const fd = new FormData(form);
+    for (const id of ids) {
+      const items = rewritten[id];
+      if (!items) continue;
+      fd.set(`file_${id}`, jsonImportFile(items, files[id]?.fileName ?? ""));
+    }
+    startTransition(() => action(fd));
+  }
 
   const codesHint = tt("bulk.codesHint").replace(
     "{types}",
@@ -251,7 +347,7 @@ export function OlympiadCreateForm({
   const orderedSelected = grades.filter((g) => selectedGrades.has(g.value));
 
   return (
-    <form action={action} className="form">
+    <form action={action} onSubmit={handleSubmit} className="form">
       {/* ---- MANDATORY import type — before every other control ---------- */}
       <fieldset className="bulk-mode">
         <legend className="field-label">
@@ -484,7 +580,7 @@ export function OlympiadCreateForm({
       <div style={{ marginTop: 16 }}>
         <h3>{tt("oly2.pool")} *</h3>
         <p className="muted">{tt("oly2.perGradeNote")}</p>
-        <p className="hint">{tt("oly2.err.creationOnly")}</p>
+        <p className="hint">{tt("oly2.poolAppendNote")}</p>
         <p className="hint">{tt("olybulk.fromPackage")}</p>
         {selectedGrades.size === 0 && <p className="hint">{tt("olybulk.pickFirst")}</p>}
 
@@ -511,13 +607,13 @@ export function OlympiadCreateForm({
                   <span className="req"> *</span>{" "}
                   {stateKind === "ready" && (
                     <span className="pill pill-sm pill-ok">
-                      {tt("oly2.gradeReady").replace("{n}", String(fs.itemCount))}
+                      {tt("oly2.gradeReady").replace("{n}", String(fs.items.length))}
                     </span>
                   )}
                   {stateKind === "invalid" && (
                     <span className="pill pill-sm pill-warn">
                       {fs.fileError ||
-                        tt("oly2.gradeInvalid").replace("{n}", String(invalidRows || fs.itemCount))}
+                        tt("oly2.gradeInvalid").replace("{n}", String(invalidRows || fs.items.length))}
                     </span>
                   )}
                   {stateKind === "missing" && (
@@ -530,18 +626,37 @@ export function OlympiadCreateForm({
                   }}
                   type="file"
                   name={`file_${g.value}`}
-                  accept="application/json,.json"
+                  accept={
+                    questionMode === "mixed"
+                      ? ".zip,application/zip"
+                      : "application/json,.json"
+                  }
                   required
-                  disabled={pending}
+                  disabled={pending || uploading}
                   onChange={(e) => void onFileChange(g.value, e)}
                 />
               </label>
               {/* The format for THIS grade, collapsed. Sits above the errors so
                   an admin fixing a rejected file sees the reference and the
                   problem together. */}
-              <OlympiadJsonFormat gradeLabel={g.label} dict={dict} />
+              <OlympiadJsonFormat
+                gradeLabel={g.label}
+                dict={dict}
+                questionMode={questionMode === "mixed" ? "mixed" : "text"}
+              />
               {fs.fileName !== "" && <p className="hint">{fs.fileName}</p>}
               {fs.fileError !== "" && <p className="form-error">{fs.fileError}</p>}
+              {fs.zipIssues.length > 0 && (
+                <div className="bulk-issues" role="alert">
+                  <span className="bulk-issues-title">{tt("bulk.fileProblems")}</span>{" "}
+                  — {tt("bulk.fixFile")}
+                  <ul>
+                    {fs.zipIssues.map((msg, i) => (
+                      <li key={i}>{msg}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {fs.rowIssues.length > 0 && (
                 <div className="bulk-issues" role="alert">
                   <span className="bulk-issues-title">{tt("bulk.fileProblems")}</span>{" "}
@@ -569,13 +684,18 @@ export function OlympiadCreateForm({
             key: g.value,
             name: g.label,
             level: g.level,
-            pool: gradeState(g.value) === "ready" ? files[g.value]?.itemCount ?? 0 : 0,
+            pool: gradeState(g.value) === "ready" ? files[g.value]?.items.length ?? 0 : 0,
             // Migration 106: estimate each grade's cycle from ITS count.
             perAttemptRaw: perGrade[g.value]?.q ?? "",
           }))}
         />
 
-        <p className="hint">{tt("bulk.fileHint")}</p>
+        <p className="hint">
+          {tt(questionMode === "mixed" ? "bulk.fileHintZip" : "bulk.fileHint")}
+        </p>
+        {questionMode === "mixed" && (
+          <pre className="bulk-zip-layout">{tt("bulk.zipLayout")}</pre>
+        )}
         {/* v3: five A–E options / exactly one correct (was 4 pre-055). */}
         <p className="hint">{tt("bulk.fiveRule")}</p>
         <p className="hint">{tt("olybulk.optionalMeta")}</p>
@@ -601,7 +721,11 @@ export function OlympiadCreateForm({
         </div>
       )}
 
-      <ActionButton pending={pending} pendingLabel={tt("manage.saving")} disabled={!canSubmit}>
+      <ActionButton
+        pending={pending || uploading}
+        pendingLabel={tt(uploading ? "bulk.uploadingMedia" : "manage.saving")}
+        disabled={!canSubmit}
+      >
         {submitLabel}
       </ActionButton>
     </form>

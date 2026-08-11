@@ -22,6 +22,9 @@
 // Relative on purpose: this module is unit-tested and the vitest config has no
 // "@/" alias.
 import { foldName } from "./admin/curriculum-shared";
+import { BULK_MEDIA_TOTAL_MAX_BYTES } from "./bulk-media-shared";
+import { normalizeZipPath } from "./zipRead";
+import { buildStoredZip } from "./zipWrite";
 
 export type BulkClientMode = "general" | "olympiad";
 
@@ -97,24 +100,20 @@ export const BULK_TEMPLATE_OLYMPIAD = [
   },
 ];
 
-// MIXED templates (Round 53) — identical to the text-only ones plus ONE
-// optional field, `meta.image`: the question's picture, embedded as a base64
-// data URL. On import the server decodes it, types it from its magic bytes,
-// uploads it to the question-media bucket and stores only the reference; no
-// base64 ever reaches the database.
-//
-// The value here is a real 1x1 PNG so the shape is unambiguous to whichever
-// model the admin hands the template to — a placeholder string like
-// "<base64>" reliably produces files with a placeholder string in them.
+// MIXED templates — identical to the text-only ones plus ONE optional field,
+// `meta.image`: a RELATIVE PATH to a file inside the same ZIP, resolved from
+// the folder that holds questions.json. The browser reads the entry, types it
+// from its magic bytes, uploads it and rewrites the row to the resulting uuid,
+// so the import request never carries image bytes at all.
 //
 // `meta.image` is OPTIONAL and per question: a mixed pool is text questions and
 // image questions TOGETHER, which is the whole point of the mode.
 //
-// An OPTION may carry `image` too (per locale, same base64 form). An option is
+// An OPTION may carry `image` too (per locale, same path form). An option is
 // valid with text, with an image, or with both — but never with neither, which
 // is enforced by a CHECK constraint on the table, not just here.
-const TEMPLATE_IMAGE =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const TEMPLATE_IMAGE = "images/q1.png";
+const TEMPLATE_OPTION_IMAGE = "images/q1_option_1.png";
 
 // One option carries an image so the shape is unambiguous; the rest stay
 // text-only, which is what a real mixed pool looks like. An option may have
@@ -124,7 +123,7 @@ const TEMPLATE_OPTIONS_MIXED = [
     is_correct: true,
     order_index: 0,
     text: { az: "", en: "", ru: "" },
-    image: { az: TEMPLATE_IMAGE },
+    image: { az: TEMPLATE_OPTION_IMAGE },
   },
   { is_correct: false, order_index: 1, text: { az: "3", en: "3", ru: "3" } },
   { is_correct: false, order_index: 2, text: { az: "5", en: "5", ru: "5" } },
@@ -167,25 +166,65 @@ export function bulkTemplateFor(
 }
 
 // ---------------------------------------------------------------------------
-// Mixed-mode media (Round 53). Client twin of validateItemMedia in
-// lib/admin/bulk-validate.ts — same rules, same message keys, so a row is
-// flagged identically before upload and on the server.
+// Mixed-mode media. Images live in the uploaded ZIP and are referenced by a
+// relative path, so the rules here are PATH rules; the bytes are checked by
+// the upload phase (magic-byte sniff) and re-checked server-side.
 // ---------------------------------------------------------------------------
-const CLIENT_MEDIA_MAX_BYTES = 5 * 1024 * 1024;
-const CLIENT_DATA_URL_HEAD = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+);base64,/i;
-const CLIENT_ALLOWED_DECLARED = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-]);
 
-/** Decoded length without allocating — never materialize an oversized paste. */
-function clientB64Bytes(b64: string): number {
-  const clean = b64.replace(/\s/g, "");
-  if (clean.length === 0) return 0;
-  const pad = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
-  return Math.floor((clean.length * 3) / 4) - pad;
+/** Whole-ZIP cap — the SAME budget the upload phase and the reader spend, so a
+ *  file that passes this check cannot fail on a different number later. It is
+ *  per ARCHIVE: the olympiad create form submits one ZIP per grade. */
+export const BULK_MAX_ZIP_BYTES = BULK_MEDIA_TOTAL_MAX_BYTES;
+
+/** The member a mixed ZIP must contain. Defined here, beside the template that
+ *  writes it, so zip-bulk.ts can import it without a cycle. */
+export const ZIP_JSON_NAME = "questions.json";
+
+/** Extensions the import treats as image references. The real type always
+ *  comes from the bytes; this only decides what LOOKS like an image, for the
+ *  reference check and the unreferenced-file report. */
+export const ZIP_IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif)$/i;
+
+export type ZipRefState = "ok" | "missing" | "ambiguous";
+
+export type MediaTarget =
+  | { kind: "question" }
+  | { kind: "option"; opt: number; locale: string };
+export type MediaRef = { i: number; ref: string; target: MediaTarget };
+
+/**
+ * Every image reference in a parsed file: the QUESTION's own picture
+ * (meta.image) and each OPTION's per-locale picture (options[n].image.<locale>).
+ *
+ * ONE definition of "which strings are image references", shared by the upload
+ * phase and the unreferenced-image report — if they disagreed, an image could
+ * be uploaded and still be reported as unused, or vice versa.
+ */
+export function collectMediaRefs(items: unknown[]): MediaRef[] {
+  const refs: MediaRef[] = [];
+  items.forEach((it, i) => {
+    if (!it || typeof it !== "object" || Array.isArray(it)) return;
+    const row = it as Record<string, unknown>;
+
+    const meta = row.meta as Record<string, unknown> | undefined;
+    const q = meta?.image;
+    if (typeof q === "string" && q.trim() !== "") {
+      refs.push({ i, ref: q.trim(), target: { kind: "question" } });
+    }
+
+    const opts = Array.isArray(row.options) ? (row.options as unknown[]) : [];
+    opts.forEach((o, oi) => {
+      if (!o || typeof o !== "object" || Array.isArray(o)) return;
+      const img = (o as Record<string, unknown>).image;
+      if (!img || typeof img !== "object" || Array.isArray(img)) return;
+      for (const [locale, v] of Object.entries(img as Record<string, unknown>)) {
+        if (typeof v === "string" && v.trim() !== "") {
+          refs.push({ i, ref: v.trim(), target: { kind: "option", opt: oi, locale } });
+        }
+      }
+    });
+  });
+  return refs;
 }
 
 /**
@@ -199,6 +238,9 @@ export function validateClientOptionMedia(
   tt: (k: string) => string,
   mixed: boolean,
   index: number,
+  // Optional ZIP lookup — resolves a path against the chosen archive so a
+  // typo'd filename is a row error before anything is uploaded.
+  has?: (ref: string) => ZipRefState,
 ): string | null {
   const o =
     opt && typeof opt === "object" && !Array.isArray(opt)
@@ -212,9 +254,8 @@ export function validateClientOptionMedia(
   const azText = typeof textObj.az === "string" ? textObj.az.trim() : "";
 
   const hasImageField = img != null && typeof img === "object" && !Array.isArray(img);
-  const azImage = hasImageField
-    ? String((img as Record<string, unknown>).az ?? "").trim()
-    : "";
+  const imageMap = hasImageField ? (img as Record<string, unknown>) : {};
+  const azImage = hasImageField ? String(imageMap.az ?? "").trim() : "";
 
   if (hasImageField && !mixed) return tt("bulk.err.mediaNotAllowed");
 
@@ -224,8 +265,14 @@ export function validateClientOptionMedia(
     return tt("bulk.err.optionText").replace("{i}", String(index + 1));
   }
 
-  if (azImage) {
-    const res = validateClientItemMedia({ meta: { image: azImage } }, tt, mixed);
+  // EVERY locale, not just az — the same rule the server applies
+  // (validateOptionMedia). collectMediaRefs queues every locale for upload, so
+  // a typo in options[n].image.ru used to survive this pre-check and fail
+  // inside the ZIP resolver mid-upload, forcing the whole batch down the
+  // discard path instead of showing a row error before a byte moved.
+  for (const value of Object.values(imageMap)) {
+    if (value == null || (typeof value === "string" && value.trim() === "")) continue;
+    const res = validateClientItemMedia({ meta: { image: value } }, tt, mixed, has);
     if (res) return res;
   }
   return null;
@@ -235,6 +282,7 @@ export function validateClientItemMedia(
   item: unknown,
   tt: (k: string) => string,
   mixed: boolean,
+  has?: (ref: string) => ZipRefState,
 ): string | null {
   if (!item || typeof item !== "object" || Array.isArray(item)) return null;
   const meta = (item as { meta?: unknown }).meta;
@@ -248,18 +296,18 @@ export function validateClientItemMedia(
   if (raw == null || (typeof raw === "string" && raw.trim() === "")) return null;
 
   if (!mixed) return tt("bulk.err.mediaNotAllowed");
-  if (typeof raw !== "string") return tt("bulk.err.badImage");
+  if (typeof raw !== "string") return tt("bulk.err.badImagePath");
 
-  const head = CLIENT_DATA_URL_HEAD.exec(raw.trim());
-  if (!head) return tt("bulk.err.badImage");
-  if (!CLIENT_ALLOWED_DECLARED.has(head[1].toLowerCase())) {
-    return tt("bulk.err.imageType");
-  }
-  const payload = raw.trim().slice(head[0].length);
-  if (payload.length === 0) return tt("bulk.err.badImage");
-  if (clientB64Bytes(payload) > CLIENT_MEDIA_MAX_BYTES) {
-    return tt("bulk.err.imageTooLarge");
-  }
+  const ref = raw.trim();
+  // Same normalization the reader applies, so "what the file may say" and
+  // "what the archive can resolve" are one rule: no absolute path, no drive
+  // letter, no ".." segment, no backslash.
+  if (normalizeZipPath(ref) === null) return tt("bulk.err.badImagePath");
+  if (!ZIP_IMAGE_EXT_RE.test(ref)) return tt("bulk.err.imageType");
+
+  const state = has?.(ref);
+  if (state === "missing") return tt("bulk.err.imageMissing").replace("{file}", ref);
+  if (state === "ambiguous") return tt("bulk.err.imageAmbiguous").replace("{file}", ref);
   return null;
 }
 
@@ -269,16 +317,44 @@ export function normClientTypeName(v: string): string {
   return v.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
-// Serializes the mode's template for download in the browser.
+// A real 1x1 PNG, kept as a base64 LITERAL because it is a template ASSET —
+// the only bytes this module ships. It is not a base64 import path: nothing in
+// the import flow accepts base64 any more, and imitating this line for image
+// DATA would reintroduce exactly what the ZIP format replaced.
+const TEMPLATE_PIXEL_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+function templatePixel(): Uint8Array {
+  const bin = atob(TEMPLATE_PIXEL_PNG);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// Serializes the mode's template for download in the browser. TEXT mode
+// downloads the JSON exactly as before; MIXED downloads a ready-to-edit ZIP
+// with the JSON and the two images it references, so the admin sees the layout
+// instead of having to infer it from a sentence.
 export function downloadBulkTemplate(
   filename: string,
   mode: BulkClientMode = "general",
   questionMode: "text" | "mixed" = "text",
 ): void {
   const template = bulkTemplateFor(mode, questionMode);
-  const blob = new Blob([JSON.stringify(template, null, 2)], {
-    type: "application/json",
-  });
+  const json = JSON.stringify(template, null, 2);
+  const blob =
+    questionMode === "mixed"
+      ? new Blob(
+          [
+            buildStoredZip([
+              { path: ZIP_JSON_NAME, bytes: new TextEncoder().encode(json) },
+              { path: TEMPLATE_IMAGE, bytes: templatePixel() },
+              { path: TEMPLATE_OPTION_IMAGE, bytes: templatePixel() },
+            ]),
+          ],
+          { type: "application/zip" },
+        )
+      : new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -372,10 +448,12 @@ export function validateBulkRowsClient(
   mode: BulkClientMode = "general",
   // Round 52 §6 — optional curriculum for the chosen (subject, grade).
   curriculum?: ClientCurriculumIndex | null,
-  // Round 53 — mixed mode allows `meta.image` (a base64 data URL). Text-only
+  // Mixed mode allows `meta.image` (a path inside the chosen ZIP). Text-only
   // mode REPORTS an image rather than ignoring it: a file with images imported
   // as text-only would drop every one of them and still look successful.
-  mediaOpts?: { mixed?: boolean },
+  // `zipHas` resolves a path against the archive so a typo is a row error
+  // before any upload; callers that pass nothing keep today's behaviour.
+  mediaOpts?: { mixed?: boolean; zipHas?: (ref: string) => ZipRefState },
 ): RowIssue[] {
   const activeByNorm = new Map<string, ClientTypeRule>();
   for (const r of rules) activeByNorm.set(normClientTypeName(r.name), r);
@@ -397,22 +475,15 @@ export function validateBulkRowsClient(
       options?: unknown;
     };
 
-    // Per-OPTION media and the text-or-image rule.
-    if (Array.isArray((item as { options?: unknown }).options)) {
-      const opts = (item as { options: unknown[] }).options;
-      for (let oi = 0; oi < opts.length; oi++) {
-        const om = validateClientOptionMedia(opts[oi], tt, mediaOpts?.mixed === true, oi);
-        if (om) {
-          issues.push({ row, message: om });
-          break;
-        }
-      }
-    }
-
-    // Embedded media, checked on the same bytes the server will decode. The
-    // declared mime is only an early filter — the authoritative check is the
-    // server-side magic-byte sniff, which is what rejects an SVG labelled PNG.
-    const mediaMsg = validateClientItemMedia(item, tt, mediaOpts?.mixed === true);
+    // Referenced media. The path shape and the ZIP lookup are checked here; the
+    // real type is decided later by the magic-byte sniff, which is what rejects
+    // an SVG named .png.
+    const mediaMsg = validateClientItemMedia(
+      item,
+      tt,
+      mediaOpts?.mixed === true,
+      mediaOpts?.zipHas,
+    );
     if (mediaMsg) issues.push({ row, message: mediaMsg });
 
     // Required primary-locale body (defaults to az).
@@ -503,14 +574,22 @@ export function validateBulkRowsClient(
         });
       }
     }
-    // Each option needs a non-empty az text.
+    // Per-OPTION media AND the "an option must carry text or an image" rule —
+    // ONE emission site. The rule briefly had two: validateClientOptionMedia
+    // plus a separate az-text loop, so a single empty option produced the same
+    // numbered error TWICE on every text-only file — the mode the ZIP change
+    // was required to leave untouched. It now lives only in the helper, which
+    // is also the server validator's twin.
     for (let k = 0; k < opts.length; k++) {
-      const az = opts[k]?.text?.az;
-      if (typeof az !== "string" || az.trim() === "") {
-        issues.push({
-          row,
-          message: tt("bulk.err.optionText").replace("{i}", String(k + 1)),
-        });
+      const om = validateClientOptionMedia(
+        opts[k],
+        tt,
+        mediaOpts?.mixed === true,
+        k,
+        mediaOpts?.zipHas,
+      );
+      if (om) {
+        issues.push({ row, message: om });
         break;
       }
     }

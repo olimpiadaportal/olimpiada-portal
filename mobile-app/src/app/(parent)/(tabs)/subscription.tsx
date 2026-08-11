@@ -130,21 +130,38 @@ export default function ParentSubscription() {
       </View>
       {liveSub ? (
         <>
+          {/* Migration 109: one row PER SUBJECT — each carries its own cycle,
+              so a single "Ödəniş dövrü" value would be wrong for a mixed plan. */}
           <KeyRow
             icon={<RefreshCw size={16} color={tokens.muted} strokeWidth={2} />}
-            label={t("subscription.interval")}
-            value={intervalName(liveSub.billing_interval)}
+            label={t("plan.cycle")}
+            value={
+              liveSub.subjects.length > 0
+                ? liveSub.subjects
+                    .map(
+                      (s) =>
+                        `${subjectLabel(t, s.code, s.name)} · ${intervalName(
+                          s.interval ?? liveSub.billing_interval,
+                        )}`,
+                    )
+                    .join("\n")
+                : intervalName(liveSub.billing_interval)
+            }
           />
+          {/* next_renewal_at is the NEXT CHARGE (the MIN of the subject period
+              ends); current_period_end is now only when coverage ends. */}
           <KeyRow
             icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
             label={t("billing.row.next")}
-            value={fmtDate(liveSub.current_period_end, locale)}
+            value={fmtDate(liveSub.next_renewal_at ?? liveSub.current_period_end, locale)}
           />
           <KeyRow
             icon={<Wallet size={16} color={tokens.muted} strokeWidth={2} />}
             label={t("billing.totalLabel")}
             value={fmtMoney(liveSub.total_amount ?? 0, liveSub.currency, locale)}
           />
+          {/* total_amount is the NEXT INVOICE, not a monthly figure. */}
+          <AppText variant="muted">{t("plan.dueTodayNote")}</AppText>
           <KeyRow
             icon={<FileText size={16} color={tokens.muted} strokeWidth={2} />}
             label={t("subscription.subjects")}
@@ -171,13 +188,13 @@ export default function ParentSubscription() {
         <ManageSubjectsEditor
           studentId={selected.profile_id}
           subjects={subjects.data ?? []}
-          coveredIds={liveSub.subjects
-            .filter((s) => !s.remove_at)
-            .map((s) => s.subject_id)}
-          endingIds={liveSub.subjects
-            .filter((s) => s.remove_at)
-            .map((s) => s.subject_id)}
-          interval={liveSub.billing_interval}
+          covered={liveSub.subjects.map((s) => ({
+            subjectId: s.subject_id,
+            interval: s.interval,
+            pendingInterval: s.pending_interval,
+            removeAt: s.remove_at,
+          }))}
+          defaultInterval={liveSub.billing_interval}
           posture={posture}
           addsDisabled={addsDisabled}
           onSaved={invalidate}

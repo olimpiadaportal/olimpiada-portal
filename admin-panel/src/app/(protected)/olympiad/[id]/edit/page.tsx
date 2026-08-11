@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
-import { getT, getLocale } from "@/i18n/server";
+import { getDict, getT, getLocale } from "@/i18n/server";
 import { OlympiadForm } from "@/components/OlympiadForm";
 import { OlympiadCoverUploader } from "@/components/OlympiadCoverUploader";
 import { OlympiadGradesManager } from "@/components/OlympiadGradesManager";
@@ -19,6 +19,7 @@ import {
   lifecyclePillClass,
 } from "@/lib/admin/olympiad-lifecycle";
 import { formatBakuDateTime } from "@/lib/admin/datetime";
+import { mergeLocalDict } from "@/lib/admin/question-flow-labels";
 import { localDict } from "../../labels";
 
 const FORM_KEYS = [
@@ -30,12 +31,14 @@ const FORM_KEYS = [
   "oly2.duration", "oly2.durationHelp",
 ];
 
-// NOTE (Round 20): BULK upload is CREATION-ONLY — the bulk-upload section
-// (button + modal) was removed from this edit page and the DB RPC rejects
-// imports into a package that already has questions.
-// Round 21 item 2: AFTER creation the pool is managed question by question
-// below (add/edit/archive/delete via OlympiadQuestionManager); the count shown
-// is the real pool row count.
+// NOTE (migration 108, owner 2026-08-11): a target grade's pool is APPENDABLE.
+// Bulk upload lives per grade inside Grades & Pools (OlympiadGradeBulkAppend) —
+// including the package's OWN grade, which the add-grade form can never offer
+// because it is already a target. A row whose content is already in that pool
+// is reported and skipped, so re-uploading a file is safe.
+// Round 21 item 2: single questions are still managed one by one below
+// (add/edit/archive/delete via OlympiadQuestionManager); the count shown is the
+// real pool row count.
 // Round 49: an attempt serves exactly questions_per_attempt questions, drawn
 // per student on a non-repeating cycle over that grade's pool — so the pool
 // total and the per-attempt count are two different numbers on this page.
@@ -122,6 +125,7 @@ export default async function EditOlympiadPage({
     { data: otypes },
     { data: qtypeRows },
     { data: pkgGradeRows },
+    fullDict,
   ] =
     await Promise.all([
       supabase.from("subjects").select("id, name").order("name"),
@@ -156,6 +160,7 @@ export default async function EditOlympiadPage({
         // duration_minutes (NULL = inherit the package's).
         .select("grade_id, questions_per_attempt, duration_minutes, grades(id, name, level)")
         .eq("olympiad_package_id", id),
+      getDict(),
     ]);
 
   // Round 34: target grades (sorted by level) + per-grade published counts.
@@ -242,7 +247,8 @@ export default async function EditOlympiadPage({
   const addableGrades = ((grades ?? []) as any[])
     .filter((g) => !targetGradeIds.has(String(g.id)))
     .map((g) => ({ value: String(g.id), label: String(g.name) }));
-  // Client-side row-validation rules for the add-grade upload (UX mirror).
+  // Client-side row-validation rules for the add-grade and per-grade append
+  // uploads (UX mirror — the server stays the authority).
   const activeTypeRules = ((qtypeRows ?? []) as any[]).map((r) => ({
     code: String(r.code ?? ""),
     name: String(r.name),
@@ -301,7 +307,12 @@ export default async function EditOlympiadPage({
       </section>
       <section className="card" style={{ marginTop: 16 }}>
         <OlympiadGradesManager
-          dict={{ ...poolDict, ...olympiadLocalDict(locale), "oly2.grade": t("oly2.grade"), "manage.select": t("manage.select"), "bulk.fileLabel": t("bulk.fileLabel"), "bulk.fileProblems": t("bulk.fileProblems"), "bulk.fixFile": t("bulk.fixFile"), "bulk.row": t("bulk.row") }}
+          // The FULL dict, not a hand-picked list: the per-grade append panel
+          // shares the whole bulk.* / bulk.err.* family with BulkUploadModal, and
+          // every key it forgot would render as a bare key string.
+          // mergeLocalDict puts messages.ts on top of the local strings, so no
+          // existing label changes.
+          dict={{ ...mergeLocalDict(fullDict, locale), ...olympiadLocalDict(locale), ...poolDict }}
           packageId={(pkg as any).id}
           targetGrades={gradesWithCounts}
           addableGrades={addableGrades}
@@ -328,8 +339,8 @@ export default async function EditOlympiadPage({
         <p className="muted">
           {t("olybulk.count")}: <b>{poolRows.length}</b>
         </p>
-        {/* Attempts use the FULL published pool; bulk upload is creation-only,
-            but individual questions are managed right here (Round 21). */}
+        {/* Attempts draw from the FULL published pool; whole files go in through
+            the per-grade bulk append above, single questions right here. */}
         <p className="hint">{lt("oly2.allQuestionsNote")}</p>
         <p className="hint">{poolDict["olyq.manageNote"]}</p>
         <p className="hint">{poolDict["olyq.archivedNote"]}</p>

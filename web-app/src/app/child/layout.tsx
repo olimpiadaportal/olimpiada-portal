@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
@@ -12,6 +13,7 @@ import { StickerDecorations } from "@/components/StickerDecorations";
 import { NotificationBell } from "@/components/NotificationBell";
 import { getInboxSnapshot } from "@/lib/notifications/inbox";
 import { NOTIF_KEYS, BELL_LIMIT } from "@/lib/notifications/types";
+import { PALETTE_SLUGS } from "@/lib/theme/palettes";
 
 // Giveaway-banner strings resolved server-side (GiveawayBanner is a client
 // component and must never touch i18n or the server-only payment-mode module).
@@ -63,7 +65,7 @@ export default async function ChildLayout({
     getPaymentModeInfo(),
     supabase
       .from("students")
-      .select("first_name, palette, avatar_kind, avatar_key, avatar_media_path")
+      .select("first_name, palette, theme_pref, avatar_kind, avatar_key, avatar_media_path")
       .eq("profile_id", child.profileId)
       .maybeSingle(),
     // Streak source (L1): the real leaderboard engine RPC — students.current_
@@ -100,12 +102,46 @@ export default async function ChildLayout({
   // change; leaving it would only ever resolve a deleted object.
   const avatarUrl = await resolveChildAvatarUrl(supabase, student as any);
 
-  // Round 12: the child's chosen LIGHT-MODE palette (data-palette drives the
-  // [data-theme="light"] .arena[data-palette] overrides in globals.css). Only a
-  // whitelisted slug is applied; anything else = the default look (no attribute).
-  const PALETTES = ["sky", "bubblegum", "mint", "sunset", "rainbow"] as const;
+  // The child's chosen palette (data-palette drives the [data-theme="light"]
+  // .arena[data-palette] rules in palettes.generated.css). Only a whitelisted
+  // slug is applied; anything else = the default look (no attribute). The
+  // whitelist is the shared catalogue, so it can never drift from the CSS.
+  //
+  // The attribute is rendered in BOTH themes ON PURPOSE: only the light rules
+  // match it, so enabling dark overrides the palette visually while leaving it
+  // in place — and disabling dark restores it with no restore logic at all.
   const rawPalette = (student as any)?.palette;
-  const palette = PALETTES.includes(rawPalette) ? (rawPalette as string) : null;
+  const palette =
+    typeof rawPalette === "string" && PALETTE_SLUGS.has(rawPalette)
+      ? rawPalette
+      : null;
+
+  // COOKIE vs COLUMN RECONCILIATION.
+  //
+  // The root layout paints <html data-theme> from the `theme` cookie alone, and
+  // that cookie is the only theme input on an authenticated render — students.
+  // theme_pref was read exactly once in the whole product, at child login. The
+  // cookie is also rewritten from JavaScript (ThemeToggle, PalettePicker), and
+  // Safari/iOS caps a script-written cookie at 7 days while the server-set
+  // Supabase session cookies outlive it by far. So a child who stays signed in
+  // loses the cookie, the arena repaints DARK, and the palette they saved
+  // becomes invisible until they log in again — the durable preference is right
+  // in the database the whole time.
+  //
+  // The comparison is server-side, on data this layout already fetches. Only
+  // the correction has to run in the browser: a Server Component cannot set a
+  // cookie or re-render <html>. Writing data-theme from outside React is the
+  // same documented pattern the root layout's boot script uses (hence
+  // suppressHydrationWarning on <html>), and re-setting the cookie means the
+  // NEXT request is server-painted correctly with no script at all.
+  const rawPref = (student as any)?.theme_pref;
+  const themePref = rawPref === "light" || rawPref === "dark" ? rawPref : null;
+  const cookieTheme =
+    (await cookies()).get("theme")?.value === "light" ? "light" : "dark";
+  const themeFix =
+    themePref && themePref !== cookieTheme
+      ? `(function(){try{document.documentElement.dataset.theme='${themePref}';document.cookie='theme=${themePref}; path=/; max-age=31536000; samesite=lax'+(location.protocol==='https:'?'; secure':'');}catch(e){}})();`
+      : null;
 
   // Streak: the engine's real consecutive-day streak (0 when none/on error —
   // never fabricated).
@@ -130,6 +166,10 @@ export default async function ChildLayout({
 
   return (
     <>
+      {/* Runs before the arena paints when the cookie and students.theme_pref
+          disagree — see the reconciliation note above. Absent (not an empty
+          script) whenever they already agree, which is the normal case. */}
+      {themeFix && <script dangerouslySetInnerHTML={{ __html: themeFix }} />}
       {/* R8: body text now uses the global Azerbaijani-safe Arial stack (Chivo
           dropped — poor ə/Ə). JetBrains Mono remains for numeric accents. */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />

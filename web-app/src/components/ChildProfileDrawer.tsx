@@ -9,7 +9,10 @@
 //                the CSS ::after — no inline chevron SVG)
 //   LANGUAGE   → segmented [AZ][EN][RU] on desktop, <LanguageDropdown/> on
 //                mobile (CSS display switch inside .drawer2-lang)
-//   APPEARANCE → <ThemeToggle variant="segmented"/> ([Light][Dark] buttons)
+//   APPEARANCE → <ThemeToggle variant="segmented"/> ([Light][Dark] buttons).
+//                For a child the choice is ALSO persisted server-side
+//                (students.theme_pref), so it follows them to a new device
+//                where the SSR theme cookie does not exist yet.
 //   SESSION    → .drawer-logout row (childLogoutAction), calm danger
 //
 // The child has NO email / delete-account here; the full editable profile
@@ -31,6 +34,7 @@ import {
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTFirst } from "@/i18n/I18nProvider";
 import { childLogoutAction } from "@/lib/auth/childActions";
+import { setChildThemePref } from "@/lib/auth/childProfileActions";
 import type { Locale } from "@/i18n/config";
 
 // Static last-resort fallback for the Session section title (used only until
@@ -318,6 +322,12 @@ export function ChildProfileDrawer({
             locale={locale}
             variant="segmented"
             labels={{ light: drawer.themeLight, dark: drawer.themeDark }}
+            // Fire-and-forget: the attribute and the cookie already applied
+            // optimistically, so a failed write degrades to device-local
+            // persistence instead of blocking the toggle.
+            onPersist={(t) => {
+              void setChildThemePref(t);
+            }}
           />
         </div>
 

@@ -28,14 +28,7 @@ import {
   type ActiveTypeRule,
   type CurriculumIndex,
 } from "@/lib/admin/bulk-validate";
-import {
-  BULK_MEDIA_TOTAL_MAX_BYTES,
-  rejectUnclaimableMedia,
-  decodeImageDataUrl,
-  removeIngestedMedia,
-  uploadIngestedImage,
-  type IngestedMedia,
-} from "@/lib/admin/bulk-media";
+import { rejectUnclaimableMedia } from "@/lib/admin/bulk-media";
 
 // `ok` is set only on the modal ("stay") path: the create-question modal needs
 // a success result instead of a redirect so it can close and refresh in place.
@@ -700,7 +693,8 @@ export async function bulkImportQuestions(
   _prev: BulkImportState,
   formData: FormData,
 ): Promise<BulkImportState> {
-  // ctx is needed for media_assets.owner_profile_id on the mixed-mode path.
+  // ctx is needed for the media claim gate: a supplied uuid is only attachable
+  // when THIS admin owns the asset.
   const ctx = await requirePermission("content.create");
   const t = withLocalStrings(await getT(), await getLocale());
 
@@ -809,8 +803,8 @@ export async function bulkImportQuestions(
       errors.push({ index: i + 1, error: msg });
       return;
     }
-    // Media shape/size/type, on the same bytes the server will decode. Checked
-    // here so a bad image is a numbered row error before anything is uploaded.
+    // Refuses anything the browser media phase did not already turn into a
+    // verified uuid — a surviving meta.image means this request bypassed the UI.
     const mediaMsg = validateItemMedia(item, t, mixed);
     if (mediaMsg) {
       errors.push({ index: i + 1, error: mediaMsg });
@@ -858,70 +852,11 @@ export async function bulkImportQuestions(
     validFileIndex,
   }, t);
 
-  // ---- Mixed mode: base64 -> storage, BEFORE the import RPC ---------------
-  //
-  // The images must exist first: bulk question ids are generated inside the
-  // RPC, so there is nothing to attach an image to afterwards. That ordering
-  // creates the only orphan window in this path — objects uploaded here have no
-  // question row yet — so every uploaded asset is tracked and removed if any
-  // later step fails. See lib/admin/bulk-media.ts.
-  const uploaded: IngestedMedia[] = [];
-  if (mixed && validItems.length > 0) {
-    let totalBytes = 0;
-    for (let i = 0; i < validItems.length; i++) {
-      const meta = (validItems[i].meta ?? {}) as Record<string, unknown>;
-      const raw = meta.image;
-      if (raw == null || (typeof raw === "string" && raw.trim() === "")) continue;
-
-      const decoded = decodeImageDataUrl(raw);
-      if (!decoded.ok) {
-        // Re-running the same rules server-side: the client check above already
-        // covers shape and size, but the SNIFF only happens here, so this is
-        // where an SVG wearing a PNG label is caught.
-        await removeIngestedMedia(supabase, uploaded);
-        return {
-          ok: false,
-          error: t(
-            decoded.reason === "tooLarge"
-              ? "bulk.err.imageTooLarge"
-              : decoded.reason === "unsupportedType"
-                ? "bulk.err.imageType"
-                : "bulk.err.badImage",
-          ),
-        };
-      }
-
-      totalBytes += decoded.bytes.length;
-      if (totalBytes > BULK_MEDIA_TOTAL_MAX_BYTES) {
-        await removeIngestedMedia(supabase, uploaded);
-        return { ok: false, error: t("bulk.err.imageTotal") };
-      }
-
-      const up = await uploadIngestedImage(
-        supabase,
-        ctx.profileId,
-        decoded.bytes,
-        decoded.mime,
-      );
-      if (!up.ok) {
-        await removeIngestedMedia(supabase, uploaded);
-        return { ok: false, error: t("bulk.err.imageUpload") };
-      }
-      uploaded.push(up.media);
-
-      // Hand the RPC the uuid through the field it ALREADY understands, and
-      // DELETE the payload so no base64 can reach the database. Deleted, not
-      // set to undefined: `undefined` survives in the object and only vanishes
-      // because JSON.stringify happens to drop it — too subtle to rely on for
-      // the one guarantee that keeps megabytes of base64 out of Postgres.
-      const patched = overrideItemMeta(validItems[i], {
-        media_asset_id: up.media.mediaAssetId,
-      });
-      delete (patched.meta as Record<string, unknown>).image;
-      validItems[i] = patched;
-    }
-  }
-
+  // NO bytes path here on purpose. In mixed mode the browser has already read
+  // each image out of the uploaded ZIP, uploaded it on its own request and had
+  // it verified against its stored bytes (lib/admin/import-media.ts), so this
+  // action only ever sees uuids and the import request stays O(question count).
+  // validateItemMedia above is what refuses anything that skipped that phase.
   let successful = 0;
   if (validItems.length > 0) {
     const { data, error } = await supabase.rpc("bulk_insert_questions", {
@@ -930,7 +865,6 @@ export async function bulkImportQuestions(
     });
     if (error) {
       console.error("[admin] question bulk import failed", error.message);
-      await removeIngestedMedia(supabase, uploaded);
       return { ok: false, error: t("err.server") };
     }
     const rpc = data as {

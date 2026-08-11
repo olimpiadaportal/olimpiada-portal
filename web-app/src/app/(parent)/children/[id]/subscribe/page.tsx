@@ -6,7 +6,7 @@ import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { SubscribeForm } from "@/components/SubscribeForm";
-import { ManageSubjects } from "@/components/ManageSubjects";
+import { ManageSubjects, type CoveredSubject } from "@/components/ManageSubjects";
 import { FreeActivation } from "@/components/FreeActivation";
 
 const KEYS = [
@@ -27,10 +27,26 @@ const KEYS = [
   "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",
   "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing",
   "pay.subtotal", "pay.discount", "pay.total",
-  // Round 32 — mid-cycle proration (add now/prorated top-up, remove at period end):
+  // Round 32 — mid-cycle change (add now, remove at the subject's period end):
   "subjedit.dueNow", "subjedit.nextBilling", "subjedit.nextBillingLine",
-  "subjedit.noteLabel", "subjedit.noteText",
+  // subjedit.noteText is NOT here: the editor prints one dated line per removed
+  // subject (subjedit.noteLine) plus the no-refund rule, so the single-date
+  // sentence has no reader left on the web. Mobile still keeps it as the
+  // fallback for a server that returns no per-subject list.
+  "subjedit.noteLabel",
+  "subjedit.noteLine", "subjedit.noteNoRefund", "subjedit.pendingChip",
   "subjedit.noChargeNow", "pay.confirmNoCharge",
+  // Migration 109 — per-subject billing cycles (cards + grouped summary):
+  "plan.cycle", "plan.cycleAria", "plan.cycleChangedAria",
+  "plan.group.weekly", "plan.group.monthly", "plan.group.yearly",
+  "plan.group.subtotal", "plan.dueToday", "plan.dueTodayNote",
+  "plan.renewals", "plan.renewalLine.weekly", "plan.renewalLine.monthly",
+  "plan.renewalLine.yearly", "plan.mixedNote", "plan.fromPrice",
+  "plan.removeAria", "plan.perSubjectHint",
+  "subjedit.pendingPlanChange", "subjedit.planChangeLine", "subjedit.planChangeNote",
+  "cfg.add", "cfg.addAria", "cfg.allAdded", "cfg.unpriced", "cfg.emptySelection",
+  "cfg.warnAllUnpriced", "cfg.warnSomeUnpriced",
+  "billing.perWeek", "billing.perMonth", "billing.perYear",
   // H8 — free-window login-ID activation callout:
   "freeact.note", "freeact.cta", "freeact.activating", "freeact.done",
   // Round 51 (audit F7) — removal-only editor tooltip while payments are off:
@@ -93,19 +109,26 @@ export default async function SubscribePage({
     .maybeSingle();
 
   // Migration 078: a subject scheduled for removal keeps its row (access runs to
-  // remove_at = the period end) but is NO LONGER part of the go-forward plan, so
-  // it must render UNCHECKED — otherwise a completed removal looks like it
-  // failed, and the parent could not re-tick it to cancel the removal.
-  let coveredIds: string[] = [];
-  let endingIds: string[] = [];
+  // remove_at = its own period end) but is NO LONGER part of the go-forward
+  // plan, so the editor lists it as available again — otherwise a completed
+  // removal looks like it failed, and the parent could not undo it.
+  //
+  // Migration 109: every row carries its own cycle and period. `interval` is
+  // nullable on legacy rows and inherits the subscription's, so it is resolved
+  // here once rather than in the client component.
+  let covered: CoveredSubject[] = [];
   if (sub?.id) {
-    const { data: covered } = await supabase
+    const { data: rows } = await supabase
       .from("subscription_subjects")
-      .select("subject_id, remove_at")
+      .select("subject_id, interval, pending_interval, current_period_end, remove_at")
       .eq("child_subscription_id", (sub as any).id);
-    const rows = (covered ?? []) as { subject_id: string; remove_at: string | null }[];
-    coveredIds = rows.filter((r) => !r.remove_at).map((r) => r.subject_id);
-    endingIds = rows.filter((r) => r.remove_at).map((r) => r.subject_id);
+    covered = ((rows ?? []) as any[]).map((r) => ({
+      subjectId: r.subject_id as string,
+      interval: (r.interval ?? (sub as any).interval ?? "month") as string,
+      pendingInterval: (r.pending_interval ?? null) as string | null,
+      periodEnd: (r.current_period_end ?? null) as string | null,
+      removeAt: (r.remove_at ?? null) as string | null,
+    }));
   }
 
   const dict: Record<string, string> = {};
@@ -143,9 +166,7 @@ export default async function SubscribePage({
             <ManageSubjects
               studentId={id}
               subjects={subjects}
-              coveredIds={coveredIds}
-              endingIds={endingIds}
-              interval={(sub as any).interval ?? "month"}
+              covered={covered}
               paymentMode={mode}
               dict={dict}
             />
@@ -170,9 +191,7 @@ export default async function SubscribePage({
         <ManageSubjects
           studentId={id}
           subjects={subjects}
-          coveredIds={coveredIds}
-          endingIds={endingIds}
-          interval={(sub as any).interval ?? "month"}
+          covered={covered}
           paymentMode={mode}
           dict={dict}
         />

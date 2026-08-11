@@ -1,7 +1,7 @@
 {
   "name": "olympiq-mobile",
   "main": "expo-router/entry",
-  "version": "1.6.0",
+  "version": "1.8.1",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -11,7 +11,9 @@
     "test": "jest",
     "audit": "npm audit --audit-level=low",
     "sync-i18n": "node ./scripts/sync-i18n.mjs",
-    "check-i18n": "node ./scripts/check-i18n-keys.mjs"
+    "check-i18n": "node ./scripts/check-i18n-keys.mjs",
+    "sync-palettes": "node ./scripts/sync-palettes.mjs",
+    "check-palettes": "node ./scripts/sync-palettes.mjs --check"
   },
   "jest": {
     "preset": "jest-expo",

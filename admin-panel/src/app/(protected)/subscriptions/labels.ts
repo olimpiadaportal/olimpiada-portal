@@ -35,6 +35,14 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.col.source": "Mənbə",
     "subs.col.trialEnd": "Sınaq bitir",
     "subs.col.periodEnd": "Dövr bitir",
+    // Migration 109 — per-subject cycles. total_amount is now the NEXT
+    // invoice, current_period_end is when COVERAGE ends and next_renewal_at is
+    // the next charge, so the columns say which is which.
+    "subs.col.nextInvoice": "Növbəti hesab",
+    "subs.col.nextCharge": "Növbəti ödəniş",
+    "subs.mixedCycles": "qarışıq",
+    "subs.plan.pendingCycle": "Planlaşdırılmış dövr",
+    "subs.plan.scheduledRemoval": "Silinmə tarixi",
     "subs.col.updated": "Yenilənib",
     "subs.col.actions": "",
 
@@ -78,6 +86,8 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.detail.trialEnd": "Sınaq bitir",
     "subs.detail.periodStart": "Cari dövr başlayıb",
     "subs.detail.periodEnd": "Cari dövr bitir",
+    "subs.detail.coverageEnds": "Giriş bitir (bütün fənlər)",
+    "subs.detail.nextCharge": "Növbəti ödəniş",
     "subs.detail.created": "Yaradılıb",
     "subs.detail.updated": "Son yenilənmə",
     "subs.detail.provider": "Ödəniş mənbəyi",
@@ -161,6 +171,14 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.col.source": "Source",
     "subs.col.trialEnd": "Trial ends",
     "subs.col.periodEnd": "Period ends",
+    // Migration 109 — per-subject cycles. total_amount is now the NEXT
+    // invoice, current_period_end is when COVERAGE ends and next_renewal_at is
+    // the next charge, so the columns say which is which.
+    "subs.col.nextInvoice": "Next invoice",
+    "subs.col.nextCharge": "Next charge",
+    "subs.mixedCycles": "mixed",
+    "subs.plan.pendingCycle": "Scheduled cycle",
+    "subs.plan.scheduledRemoval": "Scheduled removal",
     "subs.col.updated": "Updated",
     "subs.col.actions": "",
 
@@ -200,6 +218,8 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.detail.trialEnd": "Trial ends",
     "subs.detail.periodStart": "Current period started",
     "subs.detail.periodEnd": "Current period ends",
+    "subs.detail.coverageEnds": "Coverage ends (all subjects)",
+    "subs.detail.nextCharge": "Next charge",
     "subs.detail.created": "Created",
     "subs.detail.updated": "Last updated",
     "subs.detail.provider": "Payment source",
@@ -281,6 +301,14 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.col.source": "Источник",
     "subs.col.trialEnd": "Пробный период до",
     "subs.col.periodEnd": "Период до",
+    // Migration 109 — per-subject cycles. total_amount is now the NEXT
+    // invoice, current_period_end is when COVERAGE ends and next_renewal_at is
+    // the next charge, so the columns say which is which.
+    "subs.col.nextInvoice": "Следующий счёт",
+    "subs.col.nextCharge": "Следующее списание",
+    "subs.mixedCycles": "смешанный",
+    "subs.plan.pendingCycle": "Запланированный период",
+    "subs.plan.scheduledRemoval": "Удаление запланировано",
     "subs.col.updated": "Обновлено",
     "subs.col.actions": "",
 
@@ -320,6 +348,8 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.detail.trialEnd": "Пробный период заканчивается",
     "subs.detail.periodStart": "Текущий период начался",
     "subs.detail.periodEnd": "Текущий период заканчивается",
+    "subs.detail.coverageEnds": "Доступ заканчивается (все предметы)",
+    "subs.detail.nextCharge": "Следующее списание",
     "subs.detail.created": "Создано",
     "subs.detail.updated": "Последнее обновление",
     "subs.detail.provider": "Источник оплаты",

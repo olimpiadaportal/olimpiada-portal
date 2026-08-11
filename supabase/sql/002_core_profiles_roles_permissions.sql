@@ -133,10 +133,18 @@ create table if not exists public.students (
   class_grade        text,
   access_status      public.child_access_status not null default 'inactive',
   graduated          boolean not null default false, -- true once grade 11 is finished; promotion stops (advance_student_grades, 011)
-  -- Round 12 (migration 030): chosen child-friendly LIGHT-MODE palette slug (or
-  -- NULL for the default look). Applied via data-palette on .arena; dark mode
-  -- unaffected. CHECK is the server-side whitelist (palettes are CSS-only).
-  palette            text constraint students_palette_chk check (palette is null or palette in ('sky','bubblegum','mint','sunset','rainbow')),
+  -- Two INDEPENDENT appearance preferences (migrations 030, 110):
+  --   palette    — the chosen light-mode palette slug, NULL = the default look.
+  --                Applied via data-palette on .arena in BOTH themes; only the
+  --                light CSS matches it. The whitelist below is derived from
+  --                web-app/src/lib/theme/palettes.ts (the palettes are CSS, so
+  --                there is no catalogue table) and palettes.test.ts parses THIS
+  --                line to prove the two lists agree.
+  --   theme_pref — the child's own dark/light choice. Separate on purpose:
+  --                enabling dark overrides the palette visually but never clears
+  --                it, and disabling dark restores it with no restore logic.
+  palette            text constraint students_palette_chk check (palette is null or palette in ('sky','ocean','cyan','aqua','teal','arctic','navy','indigo','violet','lavender','rainbow','aurora','bubblegum','sakura','rose','berry','coral','peach','sunset','amber','sand','lime','mint','emerald','forest','graphite')),
+  theme_pref         text not null default 'dark' constraint students_theme_pref_chk check (theme_pref in ('light','dark')),
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );

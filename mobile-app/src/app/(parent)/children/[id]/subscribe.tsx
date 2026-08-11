@@ -21,6 +21,7 @@ import { subjectLabel } from "@/lib/subjectLabel";
 import { bffActivateFree } from "@/lib/api";
 import {
   extractChildUniqueId,
+  fmtDate,
   fmtMoney,
   groupChildId,
   isCancellable,
@@ -68,7 +69,7 @@ function IdReveal({ id }: { id: string }) {
 
 export default function ChildSubscribeScreen() {
   const { tokens } = useTheme();
-  const { t } = useT();
+  const { t, locale } = useT();
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const id = typeof params.id === "string" ? params.id : "";
@@ -153,30 +154,42 @@ export default function ChildSubscribeScreen() {
   const childName = childDisplayName(child);
   const knownId = revealedId ?? child.child_unique_id;
 
-  // Compact live-subscription summary (status/interval/total/subjects).
+  // A subject's OWN cycle, named. NULL inherits the subscription default.
+  const cycleName = (iv: string | null) =>
+    iv === "week" ? t("pricing.weekly") : iv === "year" ? t("pricing.yearly") : t("pricing.monthly");
+
+  // Compact live-subscription summary (status/per-subject cycles/total).
   const liveSubCard = liveSub ? (
     <Card style={{ gap: spacing.sm }}>
       <Pill label={t(subStatusKey(liveSub.status))} tone="ok" />
+      {/* Migration 109: one line PER SUBJECT — each carries its own cycle, so a
+          single "Odenis dovru" value would be wrong for a mixed plan. */}
       <KeyRow
-        label={t("subscription.interval")}
+        label={t("plan.cycle")}
         value={
-          liveSub.billing_interval === "week"
-            ? t("pricing.weekly")
-            : liveSub.billing_interval === "year"
-              ? t("pricing.yearly")
-              : t("pricing.monthly")
+          liveSub.subjects.length > 0
+            ? liveSub.subjects
+                .map(
+                  (s) =>
+                    subjectLabel(t, s.code, s.name) +
+                    " · " +
+                    cycleName(s.interval ?? liveSub.billing_interval),
+                )
+                .join("\n")
+            : cycleName(liveSub.billing_interval)
         }
+      />
+      {/* next_renewal_at is the NEXT CHARGE; current_period_end is only when
+          coverage ends (the MAX of the subject periods). */}
+      <KeyRow
+        label={t("billing.row.next")}
+        value={fmtDate(liveSub.next_renewal_at ?? liveSub.current_period_end, locale)}
       />
       <KeyRow
         label={t("billing.totalLabel")}
         value={fmtMoney(liveSub.total_amount ?? 0, liveSub.currency)}
       />
-      {liveSub.subjects.length > 0 ? (
-        <KeyRow
-          label={t("subscription.subjects")}
-          value={liveSub.subjects.map((s) => subjectLabel(t, s.code, s.name)).join(", ")}
-        />
-      ) : null}
+      <AppText variant="muted">{t("plan.dueTodayNote")}</AppText>
     </Card>
   ) : null;
 
@@ -249,9 +262,13 @@ export default function ChildSubscribeScreen() {
             <ManageSubjectsEditor
               studentId={id}
               subjects={subjects.data ?? []}
-              coveredIds={liveSub.subjects.filter((s) => !s.remove_at).map((s) => s.subject_id)}
-              endingIds={liveSub.subjects.filter((s) => s.remove_at).map((s) => s.subject_id)}
-              interval={liveSub.billing_interval}
+              covered={liveSub.subjects.map((s) => ({
+                subjectId: s.subject_id,
+                interval: s.interval,
+                pendingInterval: s.pending_interval,
+                removeAt: s.remove_at,
+              }))}
+              defaultInterval={liveSub.billing_interval}
               posture={posture}
               onSaved={invalidate}
             />
@@ -270,9 +287,13 @@ export default function ChildSubscribeScreen() {
           <ManageSubjectsEditor
             studentId={id}
             subjects={subjects.data ?? []}
-            coveredIds={liveSub.subjects.filter((s) => !s.remove_at).map((s) => s.subject_id)}
-            endingIds={liveSub.subjects.filter((s) => s.remove_at).map((s) => s.subject_id)}
-            interval={liveSub.billing_interval}
+            covered={liveSub.subjects.map((s) => ({
+              subjectId: s.subject_id,
+              interval: s.interval,
+              pendingInterval: s.pending_interval,
+              removeAt: s.remove_at,
+            }))}
+            defaultInterval={liveSub.billing_interval}
             posture={posture}
             onSaved={invalidate}
           />

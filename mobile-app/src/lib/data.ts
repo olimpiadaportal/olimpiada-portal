@@ -408,17 +408,31 @@ export type ChildSubscriptionRow = {
   id: string;
   student_profile_id: string;
   status: string;
+  /** Migration 109: this is now only the DEFAULT cycle for newly added
+   *  subjects — each subject below carries its own. Kept under the historical
+   *  name so already-shipped screens keep compiling. */
   billing_interval: string | null;
+  /** MAX of the subject period ends: when COVERAGE ends, not the next charge. */
   current_period_end: string | null;
+  /** MIN of the subject period ends: the NEXT charge date (migration 109). */
+  next_renewal_at: string | null;
+  /** The NEXT invoice — the subjects renewing at `next_renewal_at`, not a
+   *  monthly figure. */
   total_amount: number | null;
   currency: string | null;
   /** Migration 078: `remove_at` non-null = scheduled removal. The subject stays
-   *  usable until then (= the period end) but is no longer part of the
-   *  go-forward plan, so editors must render it UNCHECKED (web parity). */
+   *  usable until then (= ITS OWN period end) but is no longer part of the
+   *  go-forward plan, so editors must render it UNCHECKED (web parity).
+   *  Migration 109: `interval` / `current_period_end` are this subject's own
+   *  (NULL inherits the subscription's), and `pending_interval` is a cycle
+   *  change already scheduled for its next renewal. */
   subjects: {
     subject_id: string;
     code: string | null;
     name: string;
+    interval: string | null;
+    pending_interval: string | null;
+    current_period_end: string | null;
     remove_at: string | null;
   }[];
 };
@@ -427,7 +441,7 @@ export async function fetchChildSubscriptions(): Promise<ChildSubscriptionRow[]>
   const { data, error } = await supabase
     .from("child_subscriptions")
     .select(
-      "id, student_profile_id, status, billing_interval:interval, current_period_end, total_amount, currency, subscription_subjects(subject_id, remove_at, subject:subject_id(code, name))",
+      "id, student_profile_id, status, billing_interval:interval, current_period_end, next_renewal_at, total_amount, currency, subscription_subjects(subject_id, interval, pending_interval, current_period_end, remove_at, subject:subject_id(code, name))",
     )
     .in("status", ["trialing", "active", "canceled", "past_due"])
     .order("created_at", { ascending: false });
@@ -438,12 +452,17 @@ export async function fetchChildSubscriptions(): Promise<ChildSubscriptionRow[]>
     status: s.status,
     billing_interval: s.billing_interval,
     current_period_end: s.current_period_end,
+    next_renewal_at: s.next_renewal_at ?? null,
     total_amount: s.total_amount,
     currency: s.currency,
     subjects: (s.subscription_subjects ?? []).map((x: any) => ({
       subject_id: x.subject_id,
       code: x.subject?.code ?? null,
       name: x.subject?.name ?? "",
+      // A legacy row has no cycle of its own and inherits the subscription's.
+      interval: x.interval ?? s.billing_interval ?? null,
+      pending_interval: x.pending_interval ?? null,
+      current_period_end: x.current_period_end ?? null,
       remove_at: x.remove_at ?? null,
     })),
   }));

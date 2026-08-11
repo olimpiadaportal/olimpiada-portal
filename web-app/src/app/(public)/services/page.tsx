@@ -5,7 +5,7 @@ import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { getChildResolution, getParent, maySeePurchaseUi } from "@/lib/auth/session";
 import { getPublicSubjectPricing } from "@/lib/pricing";
-import { parseSelectionParams } from "@/lib/pricingConfigurator";
+import { parsePlanParams } from "@/lib/pricingConfigurator";
 import { PricingConfigurator } from "@/components/PricingConfigurator";
 import { PublicOlympiadPackages } from "@/components/PublicOlympiadPackages";
 import { Skeleton, SkeletonCard, skeletonStyles as s } from "@/components/skeletons";
@@ -57,7 +57,11 @@ function ConfiguratorSkeleton() {
 async function ConfiguratorSection({
   search,
 }: {
-  search: { subjects?: string | string[]; interval?: string | string[] };
+  search: {
+    plan?: string | string[];
+    subjects?: string | string[];
+    interval?: string | string[];
+  };
 }) {
   const t = await getT();
   const catalog = await getPublicSubjectPricing();
@@ -74,7 +78,10 @@ async function ConfiguratorSection({
   // A shared/bookmarked link may carry a selection. It is USER INPUT: every id
   // is UUID-shape-checked, de-duplicated, capped, and whitelisted against the
   // live catalog — unknown or archived subjects are dropped silently.
-  const { subjectIds, interval } = parseSelectionParams(search, catalog.subjects);
+  // Migration 109: the hand-off now carries a cycle PER SUBJECT
+  // (`?plan=<uuid>:week,…`); parsePlanParams still accepts the older
+  // `?subjects=…&interval=…` pair so every shared link keeps preselecting.
+  const { plan } = parsePlanParams(search, catalog.subjects);
 
   // Who is looking? A signed-in CHILD gets no purchase CTA at all (children
   // never purchase — hard product rule). A signed-in parent goes straight into
@@ -98,8 +105,7 @@ async function ConfiguratorSection({
   return (
     <PricingConfigurator
       subjects={catalog.subjects}
-      initialSelected={subjectIds}
-      initialInterval={interval}
+      initialPlan={plan}
       ctaBasePath={ctaBasePath}
       ctaNoteKey={paymentsOff && mayPurchase ? "gate.paymentsOff" : undefined}
     />
@@ -109,7 +115,11 @@ async function ConfiguratorSection({
 export default async function ServicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ subjects?: string | string[]; interval?: string | string[] }>;
+  searchParams: Promise<{
+    plan?: string | string[];
+    subjects?: string | string[];
+    interval?: string | string[];
+  }>;
 }) {
   // Round 51 (audit F12): a signed-in CHILD is redirected off the pricing
   // surface entirely — mobile already hard-blocks students from its pricing

@@ -102,10 +102,36 @@ export default async function SubscriptionDetailPage({
 
         <section className="card">
           <h3>{lt("subs.detail.subjectsSection")}</h3>
-          {sub.subjectNames.length === 0 ? (
+          {sub.subjectPlans.length === 0 ? (
             <p className="muted">{lt("subs.detail.noSubjects")}</p>
           ) : (
-            <p style={{ margin: "4px 0" }}>{sub.subjectNames.join(", ")}</p>
+            /* Migration 109: every subject owns its cycle and its period, so a
+               flat name list hides what the family is actually paying and when.
+               Whoever supports a parent needs this table, not a comma list. */
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{lt("subs.col.subjects")}</th>
+                  <th>{lt("subs.col.interval")}</th>
+                  <th>{lt("subs.plan.pendingCycle")}</th>
+                  <th>{lt("subs.col.periodEnd")}</th>
+                  <th>{lt("subs.plan.scheduledRemoval")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sub.subjectPlans.map((p, i) => (
+                  <tr key={`${p.name}-${i}`}>
+                    <td>{p.name}</td>
+                    <td className="nowrap">{lt(`subs.interval.${p.interval}`)}</td>
+                    <td className="nowrap muted">
+                      {p.pendingInterval ? lt(`subs.interval.${p.pendingInterval}`) : "—"}
+                    </td>
+                    <td className="nowrap muted">{fmt(p.periodEnd)}</td>
+                    <td className="nowrap muted">{fmt(p.removeAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </section>
       </div>
@@ -148,7 +174,12 @@ export default async function SubscriptionDetailPage({
             {fmt(sub.currentPeriodStart)}
           </p>
           <p>
-            <strong>{lt("subs.detail.periodEnd")}:</strong> {fmt(sub.currentPeriodEnd)}
+            {/* Split since migration 109: coverage ends is the MAX of the
+                subject periods, the next charge is the MIN. */}
+            <strong>{lt("subs.detail.coverageEnds")}:</strong> {fmt(sub.currentPeriodEnd)}
+          </p>
+          <p>
+            <strong>{lt("subs.detail.nextCharge")}:</strong> {fmt(sub.nextRenewalAt)}
           </p>
           <p>
             <strong>{lt("subs.detail.created")}:</strong> {fmt(sub.createdAt)}

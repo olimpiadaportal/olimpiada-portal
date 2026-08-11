@@ -1,10 +1,11 @@
-// BROWSER-side media phase for bulk import: turn every `meta.image` base64 data
-// URL in a parsed file into a verified `meta.media_asset_id`, uploading each
-// image as its OWN request.
+// BROWSER-side media phase for bulk import: turn every image REFERENCE in a
+// parsed file into a verified `meta.media_asset_id`, uploading each image as
+// its OWN request. The bytes come from a caller-supplied resolver — today the
+// uploaded ZIP (lib/zip-bulk.ts).
 //
 // WHY THIS EXISTS
 // ---------------
-// Sending base64 inside the import request makes request size O(image bytes).
+// Carrying the images inside the import request makes its size O(image bytes).
 // A package with several image-heavy grades exceeds any body limit we could
 // pick, and it fails at the framework layer — before the server action's first
 // statement — so nothing is logged and no translated message reaches the admin.
@@ -18,7 +19,7 @@
 // THE SNIFF HERE IS NOT DUPLICATED SECURITY — IT PREVENTS ORPHANS
 // ---------------------------------------------------------------
 // The server verifier rejects an object whose stored content-type contradicts
-// its bytes. If the browser uploaded with the data URL's DECLARED type, a
+// its bytes. If the browser uploaded with the type implied by the file's NAME, a
 // mislabelled image would upload successfully and then fail verification,
 // leaving bytes in the bucket that nothing references. Typing it here first
 // means we upload with the true type, or do not upload at all.
@@ -26,16 +27,29 @@ import { createClient } from "@/lib/supabase/client";
 // Relative on purpose: this module is unit-tested and the vitest config has no
 // "@/" alias for the pure helpers it shares with the server side.
 import { EXT_BY_SNIFFED, sniffImageMime } from "./imageSniffCore";
+import { collectMediaRefs, type MediaRef } from "./bulk-client";
+// The SAME constants the server verifier re-checks the stored object against,
+// not a copy of them (see bulk-media-shared.ts).
+import {
+  BULK_MEDIA_MAX_BYTES as MAX_BYTES_PER_IMAGE,
+  BULK_MEDIA_TOTAL_MAX_BYTES as MAX_BYTES_TOTAL,
+} from "./bulk-media-shared";
 
-/** Mirrors BULK_MEDIA_MAX_BYTES / BULK_MEDIA_TOTAL_MAX_BYTES on the server. */
-const MAX_BYTES_PER_IMAGE = 5 * 1024 * 1024;
-const MAX_BYTES_TOTAL = 40 * 1024 * 1024;
 const BUCKET = "question-media";
 /** Kept small: parallel uploads help, but a wide fan-out just trades one
  *  timeout for many and makes a partial failure harder to clean up. */
 const CONCURRENCY = 4;
 
-export type MediaUploadFailure = { row: number; messageKey: string };
+/** Where the bytes for one reference come from. Returning a message key rather
+ *  than throwing keeps a single missing image a numbered row error. */
+export type MediaSource =
+  | { ok: true; bytes: Uint8Array }
+  | { ok: false; messageKey: string; file?: string };
+export type MediaResolver = (ref: string) => MediaSource | Promise<MediaSource>;
+
+/** `file` names the exact reference that failed ("images/q1.png"), so a row
+ *  error points at a filename instead of at a generic sentence. */
+export type MediaUploadFailure = { row: number; messageKey: string; file?: string };
 
 export type MediaUploadOutcome = {
   /** The items with `meta.image` replaced by `meta.media_asset_id`. */
@@ -48,99 +62,68 @@ export type MediaUploadOutcome = {
   batchId: string;
 };
 
-function decode(dataUrl: string): Uint8Array | null {
-  const comma = dataUrl.indexOf(",");
-  if (comma < 0) return null;
-  try {
-    const bin = atob(dataUrl.slice(comma + 1).replace(/\s/g, ""));
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Upload and verify every embedded image, returning rewritten items.
+ * Upload and verify every referenced image, returning rewritten items.
  *
- * `verify` is injected rather than imported so this module stays free of any
- * server-action import and remains unit-testable without a network.
+ * `verify` and `resolve` are injected rather than imported so this module stays
+ * free of any server-action import and remains unit-testable without a network.
  */
 export async function uploadEmbeddedMedia(
   items: unknown[],
   batchId: string,
   buildPath: (ext: string) => string,
   verify: (batchId: string, path: string) => Promise<{ ok: true; mediaAssetId: string } | { ok: false; error: string }>,
+  resolve: MediaResolver,
 ): Promise<MediaUploadOutcome> {
   const supabase = createClient();
   const failures: MediaUploadFailure[] = [];
   const uploaded: { path: string; mediaAssetId: string }[] = [];
   const out = items.map((it) => it);
 
-  // Index every image in the file: the QUESTION's own picture (meta.image) and
-  // each OPTION's per-locale picture (options[n].image.<locale>). Both travel
-  // the same upload+verify path; only where the resulting uuid is written back
-  // differs, which is what `target` records.
-  type Job =
-    | { i: number; dataUrl: string; target: { kind: "question" } }
-    | { i: number; dataUrl: string; target: { kind: "option"; opt: number; locale: string } };
-  const jobs: Job[] = [];
-
-  items.forEach((it, i) => {
-    if (!it || typeof it !== "object" || Array.isArray(it)) return;
-    const row = it as Record<string, unknown>;
-
-    const meta = row.meta as Record<string, unknown> | undefined;
-    const q = meta?.image;
-    if (typeof q === "string" && q.trim() !== "") {
-      jobs.push({ i, dataUrl: q.trim(), target: { kind: "question" } });
-    }
-
-    const opts = Array.isArray(row.options) ? (row.options as unknown[]) : [];
-    opts.forEach((o, oi) => {
-      if (!o || typeof o !== "object" || Array.isArray(o)) return;
-      const img = (o as Record<string, unknown>).image;
-      if (!img || typeof img !== "object" || Array.isArray(img)) return;
-      for (const [locale, v] of Object.entries(img as Record<string, unknown>)) {
-        if (typeof v === "string" && v.trim() !== "") {
-          jobs.push({ i, dataUrl: v.trim(), target: { kind: "option", opt: oi, locale } });
-        }
-      }
-    });
-  });
+  // Every image in the file: the QUESTION's own picture (meta.image) and each
+  // OPTION's per-locale picture (options[n].image.<locale>). Both travel the
+  // same upload+verify path; only where the resulting uuid is written back
+  // differs, which is what `target` records. The scan lives in bulk-client so
+  // the unreferenced-image report cannot disagree with it about what counts as
+  // a reference.
+  const jobs: MediaRef[] = collectMediaRefs(items);
   if (jobs.length === 0) return { items: out, failures, uploaded, batchId };
 
   let totalBytes = 0;
   let stopped = false;
 
-  async function runOne(job: Job): Promise<void> {
+  async function runOne(job: MediaRef): Promise<void> {
     if (stopped) return;
     const row = job.i + 1;
 
-    const bytes = decode(job.dataUrl);
+    const source = await resolve(job.ref);
+    if (!source.ok) {
+      failures.push({ row, messageKey: source.messageKey, file: source.file ?? job.ref });
+      return;
+    }
+    const bytes = source.bytes;
     if (!bytes || bytes.length === 0) {
-      failures.push({ row, messageKey: "bulk.err.badImage" });
+      failures.push({ row, messageKey: "bulk.err.badImage", file: job.ref });
       return;
     }
     if (bytes.length > MAX_BYTES_PER_IMAGE) {
-      failures.push({ row, messageKey: "bulk.err.imageTooLarge" });
+      failures.push({ row, messageKey: "bulk.err.imageTooLarge", file: job.ref });
       return;
     }
-    // Running total is checked here rather than up front because the decoded
-    // size is only known now; crossing it stops the whole batch, since the
-    // remaining uploads would be wasted work either way.
+    // Running total is checked here rather than up front because the real size
+    // is only known now; crossing it stops the whole batch, since the remaining
+    // uploads would be wasted work either way.
     totalBytes += bytes.length;
     if (totalBytes > MAX_BYTES_TOTAL) {
       stopped = true;
-      failures.push({ row, messageKey: "bulk.err.imageTotal" });
+      failures.push({ row, messageKey: "bulk.err.imageTotal", file: job.ref });
       return;
     }
 
-    // Type from the bytes, never from the data URL's label — see the header.
+    // Type from the bytes, never from the file extension — see the header.
     const sniffed = sniffImageMime(bytes);
     if (!sniffed) {
-      failures.push({ row, messageKey: "bulk.err.imageType" });
+      failures.push({ row, messageKey: "bulk.err.imageType", file: job.ref });
       return;
     }
 
@@ -152,7 +135,7 @@ export async function uploadEmbeddedMedia(
       upsert: false,
     });
     if (upErr) {
-      failures.push({ row, messageKey: "bulk.err.imageUpload" });
+      failures.push({ row, messageKey: "bulk.err.imageUpload", file: job.ref });
       return;
     }
 
@@ -161,14 +144,15 @@ export async function uploadEmbeddedMedia(
       // The object exists but has no row — remove it now rather than leaving
       // bytes nothing references.
       await supabase.storage.from(BUCKET).remove([path]);
-      failures.push({ row, messageKey: "bulk.err.imageUpload" });
+      failures.push({ row, messageKey: "bulk.err.imageUpload", file: job.ref });
       return;
     }
 
     uploaded.push({ path, mediaAssetId: res.mediaAssetId });
 
-    // Rewrite: the uuid the server will re-check replaces the payload, and the
-    // payload is DELETED so no base64 can travel in the import request.
+    // Rewrite: the uuid the server will re-check replaces the reference, and
+    // the reference is DELETED so the import request carries no ZIP path the
+    // server would have to interpret.
     const src = out[job.i] as Record<string, unknown>;
 
     if (job.target.kind === "question") {
@@ -179,7 +163,7 @@ export async function uploadEmbeddedMedia(
       return;
     }
 
-    // Option image: the uuid replaces the data URL IN PLACE, keeping the
+    // Option image: the uuid replaces the path IN PLACE, keeping the
     // per-locale map shape the importer expects (options[n].image.<locale>).
     // Rebuilt rather than mutated because several option images on the same row
     // are uploaded concurrently and would otherwise race on one shared object.

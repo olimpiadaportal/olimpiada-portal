@@ -95,9 +95,11 @@ cd web-app     && npm install && npm run dev   # http://localhost:3000
 ### 1.7 Olympiad packages (Administrator only) — no code + PRIVATE bulk pool
 - **Olympiad → New package:** there is **NO "Code" field** (auto-generated). Set Subject, optional grade,
   Price, **Status = Public**, az Title → Save.
-- On the edit page: use **Bulk upload** to add this package's **private** questions (download the
-  template, fill az body+options, import). **Expect:** a live "private questions: N" count; these
-  questions are **NOT** in the general Questions list (verify: they don't appear under §1.3 Questions).
+- On the edit page, under **Siniflər**: each target grade row has its own **Toplu yüklə** panel — pick
+  the import type, open **JSON formatı — <sinif>** or press **Şablonu yüklə** for the exact shape, fill
+  az body+options, then upload. Its questions are **appended** to that grade's pool. **Expect:** a live
+  "private questions: N" count; these questions are **NOT** in the general Questions list (verify: they
+  don't appear under §1.3 Questions).
 
 ### 1.8 Operations — Accounts / Audit / Settings (new)
 - **Accounts:** lists parents and their children (name, **8-digit ID**, access status). For a child,
@@ -1245,8 +1247,8 @@ If anything doesn't match, tell me the **M3-#** + what you saw.
 ## KK14. Landing page public leaderboard
 - Logged OUT on `/`: right under the hero — "Ümumi Reytinq Cədvəli": top-10, names ONLY as "Şagird XXXX" (last 4 ID digits), columns incl. Rayon, numeric ranks, first ~5 rows visible + internal scroll with sticky header; dark+light themes; empty state degrades gracefully. No real names/ids anywhere in the network response.
 
-## KK15. Olympiad edit — no more bulk upload
-- An existing package's edit page has NO "Toplu idxal" section (questions upload only during creation); direct API attempts are rejected with the friendly creation-only message; existing questions and the rest of the edit page (duration/price/status/cover/archive) unchanged.
+## KK15. Olympiad edit — bulk upload is PER GRADE
+- **Superseded 2026-08-11 (migration 108).** The edit page no longer has a package-wide "Toplu idxal" section, but every TARGET grade row under "Siniflər" has its own **Toplu yüklə** panel, and its questions are APPENDED to that grade's pool. See TT1 below for the current test.
 
 ## KK16. Site typography (Sayt şrifti)
 - Admin → Sayt məzmunu → "Sayt şrifti": searchable 20-font library — every option previews the Azerbaijani alphabet (ə Ə ğ Ğ ş Ş …); pick e.g. Mulish + sizes → live preview → Save.
@@ -1267,7 +1269,7 @@ If anything doesn't match, tell me the **KK-#** + what you saw.
 - **Add**: "Yeni sual" → modal: subject/grade fixed from the package, optional olympiad-scoped topic/subtopic, trilingual body/prompt/explanation (az required), fixed 5 options A–E with one correct radio, optional image — all in ONE submission; the list refreshes without a page reload.
 - **Edit**: prefills everything (incl. per-language texts + image); legacy 4-option questions gain option E on save; saving keeps historical reviews intact (option ids are stable).
 - **Delete**: confirm dialog; a question that was EVER answered is refused with the trilingual "has attempt history — archive it instead" message; **Archive/Restore** row actions cover that case (archived questions drop out of future attempts; history stays readable).
-- Bulk upload stays creation-only; Content Managers still see none of this.
+- Bulk upload is per grade (migration 108 — see TT1); Content Managers still see none of this.
 
 ## LL3. Real question counts everywhere (was "25 Questions")
 - Parent Olympiads page + detail modal, and the child Olympiads tab: every card shows the **actual published pool count** (your 50-question package shows 50). Counts follow creates/edits/deletes/archives automatically. A package with an empty pool shows 0.
@@ -2019,3 +2021,22 @@ Do this for **a practice/topic test, a daily round, AND a purchased olympiad** �
 - Resuming an in-progress attempt (leave and re-enter) still restores your answers.
 
 If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-# / AG-# / AH-# / AI-# / AJ-# / AK-# / AL-# / AM-# / AN-# / AO-# / AP-# / AQ-# / AR-#** + what you saw.
+
+---
+
+# 2026-08-11 — olympiad bulk upload works for a package's OWN grade (migration 108)
+
+## TT1. Append questions into an existing grade's pool
+- Admin → **Olimpiada** → open a package that already has questions (e.g. a Grade 3 package) → edit page → **Siniflər**.
+- **Every** target grade row — including the package's own Grade 3, which the "Sinif əlavə et" form can never offer — now shows a **Toplu yüklə** button. Open it.
+- Choose the import type (**Yalnız yazılı sual** = .json, **Qarışıq sual** = .zip). Until you choose one, no file input appears.
+- The panel then shows **JSON formatı — <sinif>** (collapsed; copy the exact shape) and **Şablonu yüklə** (downloads a ready .json / .zip). Both follow the import type you chose — switch to **Qarışıq sual** and the format gains `meta.image` plus the ZIP layout.
+- Upload a valid file with N questions. **Expect:** "N sual hovuza əlavə edildi." and the grade row's question count grows by exactly N (the page refreshes itself).
+- **Re-upload the SAME file.** Expect every row reported as a duplicate ("bu sual artıq bu sinfin hovuzundadır…") and the count **unchanged**.
+- Upload a file that contains the SAME question **twice** into an empty-for-that-content pool: **both** land. Duplicates are only ever compared against what was already in the pool, never against rows earlier in the same file — otherwise a package creation with a duplicated row (all-or-nothing) would be destroyed.
+- Upload a file with one bad row and one good row: the good row lands, the bad one is listed with its row number — an append is allowed to be partial (unlike Sinif əlavə et, which rolls the whole grade back).
+- Manual **Yeni sual** / edit / archive in the pool section below still work exactly as before.
+- The "Sinif əlavə et" form (a grade NOT yet targeted) is unchanged: the grade is still added together with its file, all-or-nothing.
+- Sign in as a **Content Manager**: the whole Olimpiada module stays invisible, and there is no way to reach the append.
+
+If anything doesn't match, tell me the **TT-#** + what you saw.

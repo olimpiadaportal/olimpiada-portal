@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import "./globals.css";
+// Generated from src/lib/theme/palettes.ts — the child light-mode palettes.
+// Imported after globals so the rules land later in the sheet; specificity
+// ([data-theme="light"] .arena[data-palette=…] = 0,3,1) beats the base light
+// arena block (0,2,0) either way.
+import "./palettes.generated.css";
 import { getLocale, getT } from "@/i18n/server";
 import { PATHNAME_HEADER } from "@/lib/supabase/middleware";
 import {
@@ -21,15 +26,31 @@ export const metadata: Metadata = {
   description: "OlympIQ — olympiad preparation web app for students and parents.",
 };
 
-// No-flash theme script: runs before first paint. Reads localStorage "theme"
-// (falls back to "dark", the reference default) and sets it on <html> so the
-// SSR default never visibly flips. Mechanism mirrored by ThemeToggle + globals.css.
-const NO_FLASH_THEME = `(function(){try{var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark')t='dark';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='dark';}})();`;
+// The `theme` cookie is authoritative and is rendered onto <html> below, so
+// there is nothing left for a boot script to fix. This one is a MIGRATION: a
+// visitor whose preference still lives only in localStorage (the pre-cookie
+// mechanism) gets it promoted to the cookie and applied before first paint, so
+// their very next request is server-painted like everyone else's. It never
+// overrides an existing cookie — the server already used it.
+//
+// Palette needs no boot script at all: data-palette is SSR'd onto .arena from
+// students.palette, and the palette CSS only matches once the theme attribute
+// says light — which the server also renders. Both halves arrive in the HTML.
+const NO_FLASH_THEME = `(function(){try{if(/(^|;\\s*)theme=(light|dark)/.test(document.cookie))return;var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark')return;document.cookie='theme='+t+'; path=/; max-age=31536000; samesite=lax'+(location.protocol==='https:'?'; secure':'');document.documentElement.dataset.theme=t;}catch(e){}})();`;
 
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const locale = await getLocale();
+
+  // Theme is server-rendered from the `theme` cookie (same transport as
+  // `locale`). Anything that is not exactly "light" is dark — the reference
+  // default — so a hand-crafted cookie can only ever select one of the two
+  // shipped stylesheets. For a CHILD the durable truth is students.theme_pref;
+  // the cookie is how it reaches SSR, seeded at login and rewritten whenever
+  // the child changes the theme or picks a palette.
+  const theme =
+    (await cookies()).get("theme")?.value === "light" ? "light" : "dark";
 
   // M21: build the SINGLE-locale client dictionary on the server — the bundled
   // catalog for the current locale (over the default-locale fallback) merged
@@ -122,13 +143,13 @@ export default async function RootLayout({
     }
   }
 
-  // suppressHydrationWarning: data-theme is intentionally rewritten by the
-  // no-flash script BEFORE hydration (server can't know localStorage), so the
-  // server "dark" vs client "light" attribute diff is expected — this is the
-  // documented Next.js pattern for pre-hydration theme attributes. It only
-  // suppresses attribute mismatches on <html> itself, nothing deeper.
+  // suppressHydrationWarning: data-theme can still be rewritten before
+  // hydration — by the localStorage migration script above, and by the palette
+  // picker, which flips the attribute optimistically so the choice is visible
+  // before the server action resolves. It only suppresses attribute mismatches
+  // on <html> itself, nothing deeper.
   return (
-    <html lang={locale} data-theme="dark" suppressHydrationWarning>
+    <html lang={locale} data-theme={theme} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME }} />
         {fontHref && (

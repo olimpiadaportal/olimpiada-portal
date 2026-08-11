@@ -60,7 +60,7 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.badMedia":
       "meta.media_asset_id düzgün sual şəklinə istinad etmir",
     "bulk.err.badImage":
-      "meta.image düzgün base64 data URL deyil (data:image/png;base64,… formatında olmalıdır)",
+      "şəkil faylı oxunmadı — ZIP-dəki faylı yoxlayın",
     "bulk.err.imageType":
       "şəkil formatı dəstəklənmir — yalnız PNG, JPEG, WEBP və ya GIF",
     "bulk.err.imageTooLarge": "şəkil çox böyükdür — hər şəkil ən çox 5 MB",
@@ -70,6 +70,32 @@ const STRINGS: Record<Locale, Dict> = {
       "fayldakı şəkillərin ümumi həcmi hədi aşır — ən çox 40 MB",
     "bulk.err.imageUpload":
       "şəkil yüklənə bilmədi — yenidən cəhd edin",
+    "bulk.err.needZip": "Qarışıq suallar üçün ZIP faylı yükləyin.",
+    "bulk.err.zipUnreadable": "ZIP faylı oxunmadı — fayl zədələnib və ya ZIP deyil.",
+    "bulk.err.zipUnsupported":
+      "Bu ZIP dəstəklənmir (şifrələnmiş, ZIP64 və ya naməlum sıxılma). Adi ZIP kimi yenidən yığın.",
+    "bulk.err.zipTooLarge": "ZIP faylı çox böyükdür — maksimum 40 MB.",
+    "bulk.err.zipEntries": "ZIP-də həddindən çox fayl var — maksimum 600.",
+    "bulk.err.zipBadPath":
+      "ZIP-də yolu düzgün olmayan fayl var — qovluq adlarında «..» və mütləq yol ola bilməz.",
+    "bulk.err.zipNoJson": "ZIP faylında questions.json tapılmadı.",
+    "bulk.err.zipManyJson": "ZIP-də bir neçə questions.json var — yalnız biri olmalıdır.",
+    "bulk.err.badImagePath":
+      "şəkil yolu düzgün deyil — questions.json-un yanındakı fayla nisbi yol olmalıdır (məsələn images/q1.png)",
+    "bulk.err.imageMissing": "{file} ZIP faylında tapılmadı",
+    "bulk.err.imageAmbiguous":
+      "ZIP-də {file} adına uyğun bir neçə fayl var — fayl adlarını dəqiqləşdirin",
+    "bulk.err.zipUnusedImages":
+      "ZIP-də istifadə olunmayan şəkillər var: {files}. Hər şəkil questions.json-dan istinad edilməlidir.",
+    "bulk.err.imageNotUploaded":
+      "şəkil yüklənməyib — faylı yenidən seçib idxalı təkrarlayın",
+    "bulk.err.duplicate":
+      "bu sual artıq bu sinfin hovuzundadır (mətn və variantlar eynidir) — təkrar əlavə edilmədi",
+    "bulk.fileLabelZip": "Suallar ZIP faylı",
+    "bulk.fileHintZip":
+      ".zip fayl yükləyin: questions.json + images/ qovluğu. Hər ZIP üçün maksimum 40 MB, hər şəkil 5 MB (hər sinif öz ZIP faylını yükləyir).",
+    "bulk.zipLayout":
+      "ZIP-in daxili quruluşu belə olmalıdır:\nmixed_questions.zip\n  questions.json\n  images/q1.png\n  images/q1_option_1.png",
     "bulk.uploadingMedia": "Şəkillər yüklənir…",
     "bulk.mode.label": "İdxal növü",
     "bulk.mode.required":
@@ -78,13 +104,11 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.mode.textHint": "Suallar və cavab variantları yalnız mətndən ibarətdir.",
     "bulk.mode.mixed": "Qarışıq sual",
     "bulk.mode.mixedHint":
-      "Bəzi suallarda və ya cavab variantlarında şəkil var. Şəkillər JSON-un içində base64 kimi göndərilir.",
+      "Bəzi suallarda və ya cavab variantlarında şəkil var. Şəkilli suallar ZIP faylı ilə idxal olunur.",
     "bulk.mode.mixedNote":
-      "Şəkilləri ayrıca yükləmək lazım deyil: JSON faylındakı base64 şəkillər idxal zamanı avtomatik olaraq yaddaşa köçürülür.",
+      "Şəkilli suallar ZIP faylı ilə idxal olunur. ZIP daxilində questions.json və images/ qovluğu olmalıdır.",
     "olybulk.optionalMeta":
       "Olimpiada idxalında meta.topic / meta.subtopic / meta.term istəyə bağlıdır.",
-    "olybulk.err.creationOnly":
-      "Bu paketdə artıq suallar var — toplu yükləmə yalnız paket yaradılarkən mümkündür.",
     // trg_question_delete_guard (migration 063): answered questions can never
     // be hard-deleted — grading history would vanish.
     "qdel.hasAttempts":
@@ -143,7 +167,7 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.badMedia":
       "meta.media_asset_id does not reference a valid question image",
     "bulk.err.badImage":
-      "meta.image is not a valid base64 data URL (expected data:image/png;base64,…)",
+      "the image file could not be read — check the file in the ZIP",
     "bulk.err.imageType":
       "unsupported image format — only PNG, JPEG, WEBP or GIF",
     "bulk.err.imageTooLarge": "image too large — 5 MB maximum per image",
@@ -152,6 +176,34 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.imageTotal":
       "the images in this file exceed the total limit — 40 MB maximum",
     "bulk.err.imageUpload": "the image could not be uploaded — please try again",
+    "bulk.err.needZip": "Upload a ZIP file for mixed questions.",
+    "bulk.err.zipUnreadable":
+      "The ZIP file could not be read — it is damaged or not a ZIP.",
+    "bulk.err.zipUnsupported":
+      "This ZIP is not supported (encrypted, ZIP64 or an unknown compression method). Re-create it as a plain ZIP.",
+    "bulk.err.zipTooLarge": "The ZIP file is too large — 40 MB maximum.",
+    "bulk.err.zipEntries": "The ZIP contains too many files — 600 maximum.",
+    "bulk.err.zipBadPath":
+      "The ZIP contains a file with an invalid path — folder names cannot contain “..” or an absolute path.",
+    "bulk.err.zipNoJson": "No questions.json was found in the ZIP.",
+    "bulk.err.zipManyJson":
+      "The ZIP contains several questions.json files — there must be exactly one.",
+    "bulk.err.badImagePath":
+      "invalid image path — it must be a relative path from the folder holding questions.json (for example images/q1.png)",
+    "bulk.err.imageMissing": "{file} is not in the ZIP",
+    "bulk.err.imageAmbiguous":
+      "several files in the ZIP match {file} — make the file names distinct",
+    "bulk.err.zipUnusedImages":
+      "The ZIP contains unused images: {files}. Every image must be referenced from questions.json.",
+    "bulk.err.imageNotUploaded":
+      "the image was not uploaded — choose the file again and repeat the import",
+    "bulk.err.duplicate":
+      "this question is already in this grade's pool (same text and options) — it was not added again",
+    "bulk.fileLabelZip": "Questions ZIP file",
+    "bulk.fileHintZip":
+      "Upload a .zip file: questions.json plus an images/ folder. Max 40 MB per ZIP (each grade uploads its own), 5 MB per image.",
+    "bulk.zipLayout":
+      "The ZIP must be laid out like this:\nmixed_questions.zip\n  questions.json\n  images/q1.png\n  images/q1_option_1.png",
     "bulk.uploadingMedia": "Uploading images…",
     "bulk.mode.label": "Import type",
     "bulk.mode.required":
@@ -160,13 +212,11 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.mode.textHint": "Questions and answer options contain text only.",
     "bulk.mode.mixed": "Mixed questions",
     "bulk.mode.mixedHint":
-      "Some questions or answer options contain images. Images travel inside the JSON as base64.",
+      "Some questions or answer options contain images. Mixed questions are imported as a ZIP file.",
     "bulk.mode.mixedNote":
-      "No separate image upload is needed: base64 images in the JSON are moved into storage automatically during import.",
+      "Mixed questions are imported as a ZIP file. The ZIP must contain questions.json and an images/ folder.",
     "olybulk.optionalMeta":
       "In olympiad imports meta.topic / meta.subtopic / meta.term are optional.",
-    "olybulk.err.creationOnly":
-      "This package already has questions — bulk upload is only possible while creating a package.",
     "qdel.hasAttempts":
       "This question already has answer history, so it cannot be deleted — archive or withdraw it instead.",
     // Round 22 — edit-in-modal on /questions.
@@ -224,7 +274,7 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.badMedia":
       "meta.media_asset_id не ссылается на корректное изображение вопроса",
     "bulk.err.badImage":
-      "meta.image не является корректным base64 data URL (ожидается data:image/png;base64,…)",
+      "не удалось прочитать изображение — проверьте файл в ZIP",
     "bulk.err.imageType":
       "формат изображения не поддерживается — только PNG, JPEG, WEBP или GIF",
     "bulk.err.imageTooLarge": "изображение слишком большое — максимум 5 МБ на изображение",
@@ -233,6 +283,34 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.imageTotal":
       "суммарный объём изображений в файле превышает лимит — максимум 40 МБ",
     "bulk.err.imageUpload": "не удалось загрузить изображение — попробуйте ещё раз",
+    "bulk.err.needZip": "Для смешанных вопросов загрузите ZIP-файл.",
+    "bulk.err.zipUnreadable":
+      "Не удалось прочитать ZIP-файл — он повреждён или это не ZIP.",
+    "bulk.err.zipUnsupported":
+      "Этот ZIP не поддерживается (зашифрован, ZIP64 или неизвестный метод сжатия). Создайте обычный ZIP заново.",
+    "bulk.err.zipTooLarge": "ZIP-файл слишком большой — максимум 40 МБ.",
+    "bulk.err.zipEntries": "В ZIP слишком много файлов — максимум 600.",
+    "bulk.err.zipBadPath":
+      "В ZIP есть файл с некорректным путём — в именах папок недопустимы «..» и абсолютный путь.",
+    "bulk.err.zipNoJson": "В ZIP-файле не найден questions.json.",
+    "bulk.err.zipManyJson":
+      "В ZIP несколько файлов questions.json — должен быть ровно один.",
+    "bulk.err.badImagePath":
+      "некорректный путь к изображению — нужен относительный путь от папки с questions.json (например images/q1.png)",
+    "bulk.err.imageMissing": "{file} отсутствует в ZIP",
+    "bulk.err.imageAmbiguous":
+      "в ZIP несколько файлов совпадают с {file} — сделайте имена файлов различимыми",
+    "bulk.err.zipUnusedImages":
+      "В ZIP есть неиспользуемые изображения: {files}. На каждое изображение должна быть ссылка в questions.json.",
+    "bulk.err.imageNotUploaded":
+      "изображение не загружено — выберите файл заново и повторите импорт",
+    "bulk.err.duplicate":
+      "этот вопрос уже есть в пуле этого класса (тот же текст и варианты) — повторно не добавлен",
+    "bulk.fileLabelZip": "ZIP-файл вопросов",
+    "bulk.fileHintZip":
+      "Загрузите файл .zip: questions.json и папка images/. Максимум 40 МБ на один ZIP (каждый класс загружает свой), 5 МБ на изображение.",
+    "bulk.zipLayout":
+      "Структура ZIP должна быть такой:\nmixed_questions.zip\n  questions.json\n  images/q1.png\n  images/q1_option_1.png",
     "bulk.uploadingMedia": "Загрузка изображений…",
     "bulk.mode.label": "Тип импорта",
     "bulk.mode.required":
@@ -241,13 +319,11 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.mode.textHint": "Вопросы и варианты ответов содержат только текст.",
     "bulk.mode.mixed": "Смешанные вопросы",
     "bulk.mode.mixedHint":
-      "В некоторых вопросах или вариантах ответа есть изображения. Изображения передаются внутри JSON в виде base64.",
+      "В некоторых вопросах или вариантах ответа есть изображения. Смешанные вопросы импортируются ZIP-файлом.",
     "bulk.mode.mixedNote":
-      "Отдельная загрузка изображений не нужна: base64-изображения из JSON автоматически переносятся в хранилище при импорте.",
+      "Смешанные вопросы импортируются ZIP-файлом. Внутри ZIP должны быть questions.json и папка images/.",
     "olybulk.optionalMeta":
       "В олимпиадном импорте meta.topic / meta.subtopic / meta.term необязательны.",
-    "olybulk.err.creationOnly":
-      "В этом пакете уже есть вопросы — массовая загрузка возможна только при создании пакета.",
     "qdel.hasAttempts":
       "На этот вопрос уже отвечали, поэтому его нельзя удалить — вместо этого отправьте его в архив или выведите из оборота.",
     // Round 22 — edit-in-modal on /questions.

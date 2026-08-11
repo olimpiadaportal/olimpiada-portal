@@ -102,3 +102,28 @@ export function bodyStrArray(
   if (!Array.isArray(v)) return [];
   return v.slice(0, maxItems).filter((x): x is string => typeof x === "string");
 }
+
+/**
+ * Per-subject plan basket (migration 109): `items: [{subject_id, interval}]`.
+ * Shape only — the subscription cores enforce the UUID shape, the plan_interval
+ * whitelist and the cap exactly like the web actions do, and the DB's
+ * plan_items_normalize enforces them a third time. Returns [] when the field is
+ * absent, which is what keeps the legacy `{interval, subject_ids}` body (still
+ * posted by already-shipped binaries) on its historical path.
+ */
+export function bodyPlanItems(
+  body: Record<string, unknown>,
+  key = "items",
+  maxItems = 20,
+): { subjectId: string; interval: string }[] {
+  const v = body[key];
+  if (!Array.isArray(v)) return [];
+  const out: { subjectId: string; interval: string }[] = [];
+  for (const raw of v.slice(0, maxItems)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row.subject_id !== "string" || typeof row.interval !== "string") continue;
+    out.push({ subjectId: row.subject_id, interval: row.interval });
+  }
+  return out;
+}

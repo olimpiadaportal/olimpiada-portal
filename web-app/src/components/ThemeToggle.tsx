@@ -10,7 +10,15 @@ import { Segmented } from "@/components/Segmented";
 
 type Theme = "dark" | "light";
 
-const STORAGE_KEY = "theme";
+// Same transport the locale uses (LanguageDropdown): a plain readable cookie,
+// so the ROOT LAYOUT can paint <html data-theme> server-side. localStorage
+// cannot do that — it is why the theme used to flash and, more importantly, why
+// a preference could never follow a child to a second device.
+function writeThemeCookie(t: Theme) {
+  document.cookie = `theme=${t}; path=/; max-age=31536000; samesite=lax${
+    location.protocol === "https:" ? "; secure" : ""
+  }`;
+}
 
 function getInitialTheme(): Theme {
   if (typeof document !== "undefined") {
@@ -74,10 +82,13 @@ function CheckIcon() {
 /**
  * Theme control for the web-app.
  *
- * Mechanism (must match the no-flash script in layout.tsx and globals.css):
- *  - source of truth: `data-theme` attribute on <html> ("dark" | "light")
- *  - persisted in localStorage under key "theme"
+ * Mechanism (must match layout.tsx and globals.css):
+ *  - source of truth: the `theme` cookie, which the root layout renders onto
+ *    the `data-theme` attribute of <html> ("dark" | "light")
  *  - DARK is the default (the reference design is dark)
+ *  - for a CHILD the durable, cross-device truth is students.theme_pref and the
+ *    cookie is only its transport — the child shell passes `onPersist` to write
+ *    the column as well
  *
  * Variants:
  *  - "icon" (default) — the original compact round toggle button. Used by the
@@ -88,6 +99,7 @@ function CheckIcon() {
 export function ThemeToggle({
   variant = "icon",
   labels,
+  onPersist,
 }: {
   /** Accepted for caller compatibility; translation now uses the I18nProvider. */
   locale?: Locale;
@@ -95,6 +107,8 @@ export function ThemeToggle({
   variant?: "icon" | "segmented";
   /** Pre-translated labels for the segmented variant (server-resolved). */
   labels?: { light?: string; dark?: string };
+  /** Extra durable persistence (the child shell writes students.theme_pref). */
+  onPersist?: (t: Theme) => void;
 }) {
   const t = useT();
   const tf = useTFirst();
@@ -109,11 +123,12 @@ export function ThemeToggle({
   function apply(next: Theme) {
     document.documentElement.dataset.theme = next;
     try {
-      window.localStorage.setItem(STORAGE_KEY, next);
+      writeThemeCookie(next);
     } catch {
-      // localStorage may be unavailable (private mode); attribute still applies.
+      // Cookies may be blocked; the attribute still applies for this page.
     }
     setTheme(next);
+    onPersist?.(next);
   }
 
   function toggle() {

@@ -7,10 +7,11 @@ import { olympiadLocalDict } from "@/lib/admin/olympiad-strings";
 import { mergeLocalDict } from "@/lib/admin/question-flow-labels";
 
 // New Package = one workspace: package fields + the MANDATORY question bulk
-// upload submit together (a package is never created with zero questions —
-// and, per the creation-only pool rule, never gains questions afterwards).
-// The full dict is passed because the inline bulk section shares the bulk.*
-// strings with the BulkUploadModal.
+// upload submit together, so a package is never created with zero questions.
+// Since migration 108 a grade pool is APPENDABLE afterwards from the edit
+// page's per-grade panel (OlympiadGradeBulkAppend) — the creation-only pool
+// rule is gone. The full dict is passed because the inline bulk section shares
+// the bulk.* strings with the other import surfaces.
 export default async function NewOlympiadPage() {
   await requireAdmin();
   const t = await getT();

@@ -58,6 +58,86 @@ export async function paidMutationGateKey(
   return null;
 }
 
+// ---- Per-subject plan baskets (migration 109) --------------------------------
+// One subject, one cycle. The client sends ids and cycles ONLY — never a price
+// — and every amount is re-read from subjects_pricing by the RPCs.
+
+/** One basket entry as it arrives from a form post or a BFF body. */
+export type PlanItemInput = { subjectId: string; interval: string };
+
+const PLAN_INTERVALS = ["week", "month", "year"] as const;
+
+/**
+ * Server-side gate for a client-supplied basket, mirroring the DB's own
+ * `plan_items_normalize`: UUID-shaped ids, the interval ENUM whitelist, the
+ * hard cap, and one entry per subject (last wins). Rejecting here means a bad
+ * payload never reaches the RPC — the segmented control in the browser is UX,
+ * this is the rule.
+ *
+ * Returns `null` when the basket is unusable, so callers map it to the same
+ * generic `sub.err.invalid` key every other malformed input gets.
+ */
+function validatePlanItems(
+  raw: readonly PlanItemInput[] | undefined,
+  max = 20,
+): { subject_id: string; interval: string }[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > max) return null;
+  const bySubject = new Map<string, string>();
+  for (const item of raw) {
+    const id = typeof item?.subjectId === "string" ? item.subjectId : "";
+    const interval = typeof item?.interval === "string" ? item.interval : "";
+    if (!isUuid(id)) return null;
+    if (!(PLAN_INTERVALS as readonly string[]).includes(interval)) return null;
+    bySubject.set(id, interval);
+  }
+  if (bySubject.size === 0 || bySubject.size > max) return null;
+  return [...bySubject.entries()].map(([subject_id, interval]) => ({
+    subject_id,
+    interval,
+  }));
+}
+
+/** Expand the legacy `(interval, subjectIds)` shape into a uniform basket. */
+function uniformPlanItems(interval: string, subjectIds: string[]): PlanItemInput[] {
+  return subjectIds.map((subjectId) => ({ subjectId, interval }));
+}
+
+/** The `groups` / `items` blocks the plan RPCs return, copied defensively. */
+function readPlanShape(r: Record<string, unknown>): {
+  items: { subject_id: string; interval: string; price: number | null }[];
+  groups: Record<string, { count: number; base: number; discount: number; total: number }>;
+  mixed: boolean;
+} {
+  const items: { subject_id: string; interval: string; price: number | null }[] = [];
+  if (Array.isArray(r.items)) {
+    for (const raw of r.items) {
+      const row = (raw ?? {}) as Record<string, unknown>;
+      if (typeof row.subject_id !== "string" || typeof row.interval !== "string") continue;
+      items.push({
+        subject_id: row.subject_id,
+        interval: row.interval,
+        price: row.price == null ? null : Number(row.price),
+      });
+    }
+  }
+  const groups: Record<
+    string,
+    { count: number; base: number; discount: number; total: number }
+  > = {};
+  if (r.groups && typeof r.groups === "object" && !Array.isArray(r.groups)) {
+    for (const [key, raw] of Object.entries(r.groups as Record<string, unknown>)) {
+      const row = (raw ?? {}) as Record<string, unknown>;
+      groups[key] = {
+        count: Number(row.count ?? 0),
+        base: Number(row.base ?? 0),
+        discount: Number(row.discount ?? 0),
+        total: Number(row.total ?? 0),
+      };
+    }
+  }
+  return { items, groups, mixed: r.mixed === true };
+}
+
 /** True when the parent created this child (the ownership rule every paid action uses). */
 export async function ownsChildCore(
   parentProfileId: string,
@@ -85,6 +165,11 @@ export type SubscribeCoreResult =
         trial_days: number;
         currency: string;
         childUniqueId: string | null;
+        items: { subject_id: string; interval: string; price: number | null }[];
+        groups: Record<
+          string,
+          { count: number; base: number; discount: number; total: number }
+        >;
       };
     }
   | { ok: false; errorKey: string };
@@ -92,8 +177,15 @@ export type SubscribeCoreResult =
 export async function subscribeChildCore(params: {
   parentProfileId: string;
   studentId: string;
+  /** Legacy uniform basket. Ignored when `items` is supplied. */
   interval: string;
   subjectIds: string[];
+  /**
+   * Per-subject basket (migration 109). When absent the `(interval,
+   * subjectIds)` pair above is expanded into a uniform one, so already-shipped
+   * mobile binaries and the legacy web form keep working unchanged.
+   */
+  items?: PlanItemInput[];
   isFreeAccessActive: FreeAccessChecker;
 }): Promise<SubscribeCoreResult> {
   const { parentProfileId, studentId, interval } = params;
@@ -104,11 +196,23 @@ export async function subscribeChildCore(params: {
   if (gateKey) return { ok: false, errorKey: gateKey };
   // L4: only UUID-shaped subject ids, hard cap 20 (mirrors updateSubscriptionSubjectsCore).
   const subjectIds = params.subjectIds.filter(isUuid);
+  const usingItems = Array.isArray(params.items) && params.items.length > 0;
 
-  if (!studentId || !["week", "month", "year"].includes(interval) || subjectIds.length > 20) {
+  if (!studentId) return { ok: false, errorKey: "sub.err.invalid" };
+  if (
+    !usingItems &&
+    (!["week", "month", "year"].includes(interval) || subjectIds.length > 20)
+  ) {
     return { ok: false, errorKey: "sub.err.invalid" };
   }
-  if (subjectIds.length === 0) return { ok: false, errorKey: "sub.err.noSubjects" };
+  if (!usingItems && subjectIds.length === 0) {
+    return { ok: false, errorKey: "sub.err.noSubjects" };
+  }
+
+  const planItems = validatePlanItems(
+    usingItems ? params.items : uniformPlanItems(interval, subjectIds),
+  );
+  if (!planItems) return { ok: false, errorKey: "sub.err.invalid" };
 
   // Authorize: the parent must own this child.
   if (!(await ownsChildCore(parentProfileId, studentId))) {
@@ -116,10 +220,9 @@ export async function subscribeChildCore(params: {
   }
 
   const admin = getAdminClient();
-  const { data, error } = await admin.rpc("create_child_subscription", {
+  const { data, error } = await admin.rpc("create_child_plan", {
     p_student_profile_id: studentId,
-    p_interval: interval,
-    p_subject_ids: subjectIds,
+    p_items: planItems,
   });
   // R7 security: never surface raw Postgres error text (schema/constraint
   // details) to the client — generic message only.
@@ -146,10 +249,16 @@ export async function subscribeChildCore(params: {
   }
 
   const total = Number(result.total ?? 0);
+  const shape = readPlanShape(result);
   await writeAuditLog(parentProfileId, "parent.subscription_create", {
     targetTable: "students",
     targetId: studentId,
-    metadata: { interval, subjects: subjectIds.length, total },
+    metadata: {
+      interval: String(result.interval ?? interval),
+      subjects: planItems.length,
+      intervals: new Set(planItems.map((i) => i.interval)).size,
+      total,
+    },
   });
 
   revalidatePath("/dashboard");
@@ -165,6 +274,8 @@ export async function subscribeChildCore(params: {
       trial_days: Number(result.trial_days ?? 0),
       currency: String(result.currency ?? "AZN"),
       childUniqueId,
+      items: shape.items,
+      groups: shape.groups,
     },
   };
 }
@@ -180,6 +291,12 @@ export type QuoteCoreResult =
       total: number;
       trial_days: number;
       currency: string;
+      items: { subject_id: string; interval: string; price: number | null }[];
+      groups: Record<
+        string,
+        { count: number; base: number; discount: number; total: number }
+      >;
+      mixed: boolean;
     }
   | { ok: false; errorKey: string };
 
@@ -192,28 +309,39 @@ export async function quoteSubscriptionCore(params: {
   studentId: string;
   interval: string;
   subjectIds: string[];
+  /** Per-subject basket; falls back to the uniform `(interval, subjectIds)` pair. */
+  items?: PlanItemInput[];
 }): Promise<QuoteCoreResult> {
   const { studentId, interval } = params;
   // L4: only UUID-shaped subject ids, hard cap 20 (mirrors updateSubscriptionSubjectsCore).
   const subjectIds = (params.subjectIds ?? []).filter(isUuid);
-  if (!studentId || !["week", "month", "year"].includes(interval) || subjectIds.length > 20) {
+  const usingItems = Array.isArray(params.items) && params.items.length > 0;
+  if (!studentId) return { ok: false, errorKey: "sub.err.invalid" };
+  if (
+    !usingItems &&
+    (!["week", "month", "year"].includes(interval) || subjectIds.length > 20)
+  ) {
     return { ok: false, errorKey: "sub.err.invalid" };
   }
-  if (subjectIds.length === 0) {
+  if (!usingItems && subjectIds.length === 0) {
     return { ok: false, errorKey: "sub.err.noSubjects" };
   }
+  const planItems = validatePlanItems(
+    usingItems ? params.items : uniformPlanItems(interval, subjectIds),
+  );
+  if (!planItems) return { ok: false, errorKey: "sub.err.invalid" };
   if (!(await ownsChildCore(await params.resolveParentProfileId(), studentId))) {
     return { ok: false, errorKey: "sub.err.notYourChild" };
   }
 
   const admin = getAdminClient();
-  const { data, error } = await admin.rpc("quote_child_subscription", {
+  const { data, error } = await admin.rpc("quote_child_plan", {
     p_student_profile_id: studentId,
-    p_interval: interval,
-    p_subject_ids: subjectIds,
+    p_items: planItems,
   });
   if (error) return { ok: false, errorKey: "sub.err.failed" };
   const r = (data ?? {}) as Record<string, unknown>;
+  const shape = readPlanShape(r);
   return {
     ok: true,
     base: Number(r.base ?? 0),
@@ -222,6 +350,9 @@ export async function quoteSubscriptionCore(params: {
     total: Number(r.total ?? 0),
     trial_days: Number(r.trial_days ?? 0),
     currency: String(r.currency ?? "AZN"),
+    items: shape.items,
+    groups: shape.groups,
+    mixed: shape.mixed,
   };
 }
 
@@ -326,6 +457,28 @@ export type SubjectChangeQuote = {
   /** When the new recurring rate (and any scheduled removal) takes effect. */
   effectiveFrom: string | null;
   removalsEffectiveAt: string | null;
+  // ---- migration 109, all OPTIONAL so no existing consumer breaks ----------
+  /** The desired basket, priced per subject at its own cycle. */
+  items?: { subject_id: string; interval: string; price: number | null }[];
+  /** Per-cycle subtotals of the desired basket. */
+  groups?: Record<
+    string,
+    { count: number; base: number; discount: number; total: number }
+  >;
+  /** One entry per cycle in use: when it renews and for how much. */
+  renewals?: { interval: string; next_at: string | null; total: number }[];
+  /**
+   * Per-subject removal dates. `removalsEffectiveAt` above is ONE scalar and
+   * cannot describe a plan whose subjects run to different dates — dropping a
+   * yearly subject from a plan that also holds a weekly one used to be reported
+   * as "access ends in 7 days" while the database granted a year. The UI reads
+   * these entries; the scalar stays only for already-shipped mobile binaries.
+   */
+  removals?: { subject_id: string; remove_at: string | null }[];
+  /** Cycle changes scheduled at each subject's own renewal (never charged now). */
+  planChanges?: { subject_id: string; from: string; to: string; effective_at: string | null }[];
+  /** More than one distinct cycle — no single periodic total is honest. */
+  mixed?: boolean;
 };
 
 export type SubjectChangeQuoteCoreResult =
@@ -337,25 +490,40 @@ export async function quoteSubjectChangeCore(params: {
   studentId: string;
   add: string[];
   remove: string[];
+  /**
+   * The DESIRED FULL set with per-subject cycles (migration 109). When present
+   * the server diffs it itself through quote_plan_change — the client never
+   * computes a diff and never sends a price. Absent = the historical
+   * add/remove path, kept for already-shipped mobile binaries.
+   */
+  items?: PlanItemInput[];
 }): Promise<SubjectChangeQuoteCoreResult> {
   const { parentProfileId, studentId } = params;
   // L4: only UUID-shaped ids, same hard cap as the batch editor.
   const add = (params.add ?? []).filter(isUuid).slice(0, 20);
   const remove = (params.remove ?? []).filter(isUuid).slice(0, 20);
+  const usingItems = Array.isArray(params.items) && params.items.length > 0;
   if (!isUuid(studentId)) return { ok: false, errorKey: "sub.err.invalid" };
-  if (add.length === 0 && remove.length === 0) {
+  if (!usingItems && add.length === 0 && remove.length === 0) {
     return { ok: false, errorKey: "sub.err.invalid" };
   }
+  const planItems = usingItems ? validatePlanItems(params.items) : null;
+  if (usingItems && !planItems) return { ok: false, errorKey: "sub.err.invalid" };
   if (!(await ownsChildCore(parentProfileId, studentId))) {
     return { ok: false, errorKey: "sub.err.notYourChild" };
   }
 
   const admin = getAdminClient();
-  const { data, error } = await admin.rpc("quote_subject_change", {
-    p_student_profile_id: studentId,
-    p_add: add,
-    p_remove: remove,
-  });
+  const { data, error } = planItems
+    ? await admin.rpc("quote_plan_change", {
+        p_student_profile_id: studentId,
+        p_items: planItems,
+      })
+    : await admin.rpc("quote_subject_change", {
+        p_student_profile_id: studentId,
+        p_add: add,
+        p_remove: remove,
+      });
   if (error) {
     // no_data_found = no live subscription to change (should not normally
     // happen — the manage-subjects page only renders once one exists — but a
@@ -386,6 +554,29 @@ export async function quoteSubjectChangeCore(params: {
       effectiveFrom: typeof r.effective_from === "string" ? r.effective_from : null,
       removalsEffectiveAt:
         typeof r.removals_effective_at === "string" ? r.removals_effective_at : null,
+      ...readPlanShape(r),
+      renewals: Array.isArray(r.renewals)
+        ? (r.renewals as Record<string, unknown>[]).map((row) => ({
+            interval: String(row?.interval ?? ""),
+            next_at: typeof row?.next_at === "string" ? row.next_at : null,
+            total: Number(row?.total ?? 0),
+          }))
+        : [],
+      removals: Array.isArray(r.removals_effective)
+        ? (r.removals_effective as Record<string, unknown>[]).map((row) => ({
+            subject_id: String(row?.subject_id ?? ""),
+            remove_at: typeof row?.remove_at === "string" ? row.remove_at : null,
+          }))
+        : [],
+      planChanges: Array.isArray(r.plan_changes)
+        ? (r.plan_changes as Record<string, unknown>[]).map((row) => ({
+            subject_id: String(row?.subject_id ?? ""),
+            from: String(row?.from ?? ""),
+            to: String(row?.to ?? ""),
+            effective_at:
+              typeof row?.effective_at === "string" ? row.effective_at : null,
+          }))
+        : [],
     },
   };
 }
@@ -401,13 +592,18 @@ function buildSubjectChangeIdempotencyKey(
   subscriptionId: string,
   toAdd: string[],
   toRemove: string[],
+  // Migration 109: the CYCLES are part of the change. Without them, switching a
+  // subject from monthly to yearly inside the same 5-minute bucket hashes to the
+  // key of the previous change and is swallowed as a replay — the parent's
+  // cycle change would silently never apply.
+  intervalKey = "",
 ): string {
   const BUCKET_MS = 5 * 60 * 1000;
   const bucket = Math.floor(Date.now() / BUCKET_MS);
   const addKey = [...toAdd].sort().join(",");
   const removeKey = [...toRemove].sort().join(",");
   return createHash("sha256")
-    .update(`${subscriptionId}|${addKey}|${removeKey}|${bucket}`)
+    .update(`${subscriptionId}|${addKey}|${removeKey}|${intervalKey}|${bucket}`)
     .digest("hex");
 }
 
@@ -422,21 +618,32 @@ function buildSubjectChangeIdempotencyKey(
 // any other billing change applies.
 
 export type SubjectsUpdateCoreResult =
-  | { ok: true; added: number; removed: number }
+  | { ok: true; added: number; removed: number; planChanged: number }
   | { ok: false; errorKey: string };
 
 export async function updateSubscriptionSubjectsCore(params: {
   parentProfileId: string;
   studentId: string;
   subjectIds: string[];
+  /**
+   * The DESIRED FULL set with per-subject cycles (migration 109). The server
+   * computes adds / removes / cycle changes itself — the client never sends a
+   * diff and never a price. Absent = the historical subject-only path.
+   */
+  items?: PlanItemInput[];
   isFreeAccessActive: FreeAccessChecker;
 }): Promise<SubjectsUpdateCoreResult> {
   const { parentProfileId, studentId } = params;
-  const desired = params.subjectIds.filter(isUuid);
+  const usingItems = Array.isArray(params.items) && params.items.length > 0;
+  const desired = usingItems
+    ? params.items!.map((i) => i.subjectId).filter(isUuid)
+    : params.subjectIds.filter(isUuid);
   if (!isUuid(studentId) || desired.length > 20) {
     return { ok: false, errorKey: "sub.err.invalid" };
   }
   if (desired.length === 0) return { ok: false, errorKey: "subjedit.minOne" };
+  const planItems = usingItems ? validatePlanItems(params.items) : null;
+  if (usingItems && !planItems) return { ok: false, errorKey: "sub.err.invalid" };
   if (!(await ownsChildCore(parentProfileId, studentId))) {
     return { ok: false, errorKey: "sub.err.notYourChild" };
   }
@@ -451,7 +658,7 @@ export async function updateSubscriptionSubjectsCore(params: {
   // Current coverage of the child's live subscription.
   const { data: sub } = await admin
     .from("child_subscriptions")
-    .select("id")
+    .select("id, interval")
     .eq("student_profile_id", studentId)
     .in("status", ["trialing", "active", "past_due"])
     .order("created_at", { ascending: false })
@@ -459,31 +666,72 @@ export async function updateSubscriptionSubjectsCore(params: {
     .maybeSingle();
   if (!sub?.id) return { ok: false, errorKey: "subjedit.err.addFailed" };
   const subscriptionId = (sub as { id: string }).id;
+  const subInterval = (sub as { interval?: string | null }).interval ?? null;
 
   const { data: covered } = await admin
     .from("subscription_subjects")
-    .select("subject_id")
+    .select("subject_id, interval, pending_interval, remove_at")
     .eq("child_subscription_id", subscriptionId);
-  const current = new Set(
-    ((covered ?? []) as { subject_id: string }[]).map((r) => r.subject_id),
-  );
+  const coveredRows = (covered ?? []) as {
+    subject_id: string;
+    interval: string | null;
+    pending_interval: string | null;
+    remove_at: string | null;
+  }[];
+  // A row scheduled for removal is NOT current coverage: it keeps its row until
+  // its own period end, but the go-forward plan no longer contains it. Counting
+  // it as covered made re-adding it invisible to this diff — the request
+  // short-circuited with ok/0/0/0 and apply_plan_change (whose upsert is what
+  // clears remove_at) was never called, so "undo the removal" silently did
+  // nothing while the UI reported success.
+  const activeRows = coveredRows.filter((r) => !r.remove_at);
+  const current = new Set(activeRows.map((r) => r.subject_id));
   const want = new Set(desired);
+  // The cycle a subject is EFFECTIVELY on: a scheduled change first, then its
+  // own cycle, then the subscription default. Comparing against `interval`
+  // alone dropped two real changes — a row whose interval is still NULL (legal
+  // since 007) could never be moved, and re-selecting the original cycle could
+  // never cancel a scheduled change. Mirrors quote_plan_change exactly.
+  const effectiveInterval = (subjectId: string): string | null => {
+    const row = activeRows.find((r) => r.subject_id === subjectId);
+    return row?.pending_interval ?? row?.interval ?? subInterval;
+  };
 
   const toAdd = desired.filter((id) => !current.has(id));
   const toRemove = Array.from(current).filter((id) => !want.has(id));
+  // A cycle change on an already-covered subject is a real change even though
+  // the subject set is identical — without this the "no diff" short-circuit
+  // below would swallow it.
+  const toChangePlan = (planItems ?? []).filter(
+    (i) => current.has(i.subject_id) && effectiveInterval(i.subject_id) !== i.interval,
+  );
 
-  if (toAdd.length === 0 && toRemove.length === 0) {
-    return { ok: true, added: 0, removed: 0 };
+  if (toAdd.length === 0 && toRemove.length === 0 && toChangePlan.length === 0) {
+    return { ok: true, added: 0, removed: 0, planChanged: 0 };
   }
 
-  const idempotencyKey = buildSubjectChangeIdempotencyKey(subscriptionId, toAdd, toRemove);
+  const idempotencyKey = buildSubjectChangeIdempotencyKey(
+    subscriptionId,
+    toAdd,
+    toRemove,
+    (planItems ?? [])
+      .map((i) => `${i.subject_id}:${i.interval}`)
+      .sort()
+      .join(","),
+  );
 
-  const { error } = await admin.rpc("apply_subject_change", {
-    p_student_profile_id: studentId,
-    p_add: toAdd,
-    p_remove: toRemove,
-    p_idempotency_key: idempotencyKey,
-  });
+  const { error } = planItems
+    ? await admin.rpc("apply_plan_change", {
+        p_student_profile_id: studentId,
+        p_items: planItems,
+        p_idempotency_key: idempotencyKey,
+      })
+    : await admin.rpc("apply_subject_change", {
+        p_student_profile_id: studentId,
+        p_add: toAdd,
+        p_remove: toRemove,
+        p_idempotency_key: idempotencyKey,
+      });
   if (error) {
     const code = (error as { code?: string }).code;
     const hint = (error as { hint?: string | null }).hint ?? "";
@@ -498,6 +746,18 @@ export async function updateSubscriptionSubjectsCore(params: {
     // the generic "add failed".
     if (code === PG_CHECK_VIOLATION && hint === "payments_disabled") {
       return { ok: false, errorKey: "gate.paymentsOff" };
+    }
+    // Migration 109: plan_items_normalize rejected the basket. The web/BFF
+    // validator above already enforces the same rules, so reaching this means a
+    // hand-crafted payload — generic key, never the DB's own text.
+    if (
+      code === PG_CHECK_VIOLATION &&
+      (hint === "bad_interval" ||
+        hint === "too_many_subjects" ||
+        hint === "bad_items" ||
+        hint === "bad_subject")
+    ) {
+      return { ok: false, errorKey: "sub.err.invalid" };
     }
     // no_data_found = no live subscription (race: canceled between our SELECT
     // above and this call).
@@ -526,11 +786,23 @@ export async function updateSubscriptionSubjectsCore(params: {
       metadata: { op: "remove", subject_count: toRemove.length },
     });
   }
+  if (toChangePlan.length > 0) {
+    await writeAuditLog(parentProfileId, "parent.subscription_subjects_change", {
+      targetTable: "students",
+      targetId: studentId,
+      metadata: { op: "plan_change", subject_count: toChangePlan.length },
+    });
+  }
 
   revalidatePath(`/children/${studentId}/subscribe`);
   revalidatePath("/subscription");
   revalidatePath("/dashboard");
-  return { ok: true, added: toAdd.length, removed: toRemove.length };
+  return {
+    ok: true,
+    added: toAdd.length,
+    removed: toRemove.length,
+    planChanged: toChangePlan.length,
+  };
 }
 
 // ---- Round 11 (item 6): add-child during an active GIVEAWAY window -----------

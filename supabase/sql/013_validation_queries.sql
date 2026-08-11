@@ -569,15 +569,19 @@ select '38_schools_private_and_number' as check_name,
              and (select count(*) from public.schools where school_number is not null) >= 300
             then 'PASS' else 'FAIL' end as status;
 
--- 39) Round 12 (migration 030): students.palette exists with the 5-value CHECK
---     whitelist (server-side guard for the child light-mode palette picker).
+-- 39) Migration 110 (widened from 030): students.palette exists and its CHECK
+--     whitelist really carries the 26-slug catalogue. Both a NEW slug and an
+--     OLD one are probed, so a half-applied migration fails here instead of
+--     silently rejecting a palette the UI offers.
 select '39_student_palette' as check_name,
        case when exists (select 1 from information_schema.columns
                           where table_schema='public' and table_name='students'
                             and column_name='palette')
-             and exists (select 1 from pg_constraint
-                          where conname='students_palette_chk'
-                            and conrelid='public.students'::regclass)
+             and (select position('graphite' in pg_get_constraintdef(oid)) > 0
+                     and position('sky' in pg_get_constraintdef(oid)) > 0
+                    from pg_constraint
+                   where conname='students_palette_chk'
+                     and conrelid='public.students'::regclass)
             then 'PASS' else 'FAIL' end as status;
 
 -- 40) Round 12 (migration 031): admin-managed Site Content & Design — site_content
@@ -1532,7 +1536,9 @@ select '87_answer_payload_cap' as check_name,
 --     signal is a count that GROWS. The 24h floor keeps a concurrently-open
 --     import out of the numbers. Read-only — safe against either database.
 --
---     Every media_assets consumer is checked, not just question_translations:
+--     Every media_assets consumer is checked, not just question_translations
+--     (option images via answer_option_translations included since migration 102 —
+--     omitting them counted LIVE option images as orphans and failed on healthy data):
 --     the FKs are ON DELETE SET NULL, so treating a referenced row as an orphan
 --     would silently blank a live image rather than fail.
 select '88_import_media_orphans' as check_name,
@@ -1543,6 +1549,7 @@ select '88_import_media_orphans' as check_name,
                  and ma.created_at < now() - interval '24 hours'
                  and not exists (select 1 from public.question_translations x where x.media_asset_id = ma.id)
                  and not exists (select 1 from public.question_explanations x where x.media_asset_id = ma.id)
+                 and not exists (select 1 from public.answer_option_translations x where x.media_asset_id = ma.id)
                  and not exists (select 1 from public.profiles x where x.avatar_media_id = ma.id)
                  and not exists (select 1 from public.wallpapers x where x.media_asset_id = ma.id)
                  and not exists (select 1 from public.sticker_images x where x.media_asset_id = ma.id)
@@ -1565,6 +1572,7 @@ select '88_import_media_orphans' as check_name,
            and ma.created_at < now() - interval '24 hours'
            and not exists (select 1 from public.question_translations x where x.media_asset_id = ma.id)
            and not exists (select 1 from public.question_explanations x where x.media_asset_id = ma.id)
+           and not exists (select 1 from public.answer_option_translations x where x.media_asset_id = ma.id)
            and not exists (select 1 from public.profiles x where x.avatar_media_id = ma.id)
            and not exists (select 1 from public.wallpapers x where x.media_asset_id = ma.id)
            and not exists (select 1 from public.sticker_images x where x.media_asset_id = ma.id)
@@ -1642,6 +1650,265 @@ where p.status = 'active'
           and q.status = 'published'
           and q.grade_id = g.grade_id)
       < greatest(coalesce(g.questions_per_attempt, p.questions_per_attempt, 1), 1);
+
+-- 91. Per-subject billing (migration 109) — SCHEMA + WIRING.
+--
+--     Six things have to hold together here, and five of them have a specific
+--     way of going wrong:
+--
+--     a) the columns exist at all — everything else reads through them;
+--     b) subscription_changes accepts 'plan_change', or a scheduled cycle
+--        change fails at write time instead of at review time;
+--     c) trg_sync_subscription_period is armed. It is the SINGLE writer of
+--        child_subscriptions' current_period_end / next_renewal_at /
+--        base / discount / total_amount — unarmed, those five silently freeze;
+--     d) the four RPCs exist and are NOT reachable by anon/authenticated (they
+--        are service-role only; every caller authorizes the parent first);
+--     e) the four LEGACY signatures still exist. They are wrappers now, and
+--        checks 20/46/78/84 pin them — this is the guard that makes a future
+--        refactor which deletes them fail validation instead of production;
+--     f) the per-subject expiry is actually WIRED into the attempt gate. The
+--        subscription now outlives its shortest-cycle subject, so the
+--        subscription-level date alone over-grants.
+select '91_per_subject_billing_interval' as check_name,
+       case when (select count(*) from information_schema.columns
+                   where table_schema = 'public' and table_name = 'subscription_subjects'
+                     and column_name in ('interval','pending_interval','price_amount',
+                                         'current_period_start','current_period_end')) = 5
+             and exists (select 1 from information_schema.columns
+                          where table_schema = 'public' and table_name = 'child_subscriptions'
+                            and column_name = 'next_renewal_at')
+             and exists (select 1 from pg_constraint
+                          where conname = 'subscription_changes_change_type_check'
+                            and conrelid = 'public.subscription_changes'::regclass
+                            and position('plan_change' in pg_get_constraintdef(oid)) > 0)
+             and exists (select 1 from pg_trigger
+                          where tgname = 'trg_sync_subscription_period'
+                            and tgrelid = 'public.subscription_subjects'::regclass
+                            and not tgisinternal)
+             and to_regprocedure('public.quote_child_plan(uuid,jsonb)') is not null
+             and to_regprocedure('public.create_child_plan(uuid,jsonb)') is not null
+             and to_regprocedure('public.quote_plan_change(uuid,jsonb)') is not null
+             and to_regprocedure('public.apply_plan_change(uuid,jsonb,text)') is not null
+             and has_function_privilege('authenticated',
+                   'public.create_child_plan(uuid,jsonb)', 'EXECUTE') = false
+             and has_function_privilege('authenticated',
+                   'public.apply_plan_change(uuid,jsonb,text)', 'EXECUTE') = false
+             and has_function_privilege('anon',
+                   'public.quote_child_plan(uuid,jsonb)', 'EXECUTE') = false
+             and has_function_privilege('anon',
+                   'public.quote_plan_change(uuid,jsonb)', 'EXECUTE') = false
+             and to_regprocedure('public.quote_child_subscription(uuid,public.plan_interval,uuid[])') is not null
+             and to_regprocedure('public.create_child_subscription(uuid,public.plan_interval,uuid[])') is not null
+             and to_regprocedure('public.quote_subject_change(uuid,uuid[],uuid[])') is not null
+             and to_regprocedure('public.apply_subject_change(uuid,uuid[],uuid[],text)') is not null
+             and position('coalesce(ss.current_period_end' in
+                   replace(pg_get_functiondef(
+                     'public.start_practice_attempt(uuid,int)'::regprocedure), chr(13), '')) > 0
+            then 'PASS' else 'FAIL' end as status,
+       ((select count(*) from information_schema.columns
+          where table_schema = 'public' and table_name = 'subscription_subjects'
+            and column_name in ('interval','pending_interval','price_amount',
+                                'current_period_start','current_period_end')) = 5
+        and exists (select 1 from information_schema.columns
+                     where table_schema = 'public' and table_name = 'child_subscriptions'
+                       and column_name = 'next_renewal_at')) as columns_present,
+       exists (select 1 from pg_constraint
+                where conname = 'subscription_changes_change_type_check'
+                  and conrelid = 'public.subscription_changes'::regclass
+                  and position('plan_change' in pg_get_constraintdef(oid)) > 0)
+         as plan_change_allowed,
+       exists (select 1 from pg_trigger
+                where tgname = 'trg_sync_subscription_period'
+                  and tgrelid = 'public.subscription_subjects'::regclass
+                  and not tgisinternal) as period_trigger_armed,
+       (to_regprocedure('public.quote_child_plan(uuid,jsonb)') is not null
+        and to_regprocedure('public.create_child_plan(uuid,jsonb)') is not null
+        and to_regprocedure('public.quote_plan_change(uuid,jsonb)') is not null
+        and to_regprocedure('public.apply_plan_change(uuid,jsonb,text)') is not null
+        and has_function_privilege('authenticated',
+              'public.create_child_plan(uuid,jsonb)', 'EXECUTE') = false
+        and has_function_privilege('authenticated',
+              'public.apply_plan_change(uuid,jsonb,text)', 'EXECUTE') = false
+        and has_function_privilege('anon',
+              'public.quote_child_plan(uuid,jsonb)', 'EXECUTE') = false
+        and has_function_privilege('anon',
+              'public.quote_plan_change(uuid,jsonb)', 'EXECUTE') = false) as plan_rpcs_locked,
+       (to_regprocedure('public.quote_child_subscription(uuid,public.plan_interval,uuid[])') is not null
+        and to_regprocedure('public.create_child_subscription(uuid,public.plan_interval,uuid[])') is not null
+        and to_regprocedure('public.quote_subject_change(uuid,uuid[],uuid[])') is not null
+        and to_regprocedure('public.apply_subject_change(uuid,uuid[],uuid[],text)') is not null)
+         as legacy_wrappers_intact,
+       (position('coalesce(ss.current_period_end' in
+          replace(pg_get_functiondef(
+            'public.start_practice_attempt(uuid,int)'::regprocedure), chr(13), '')) > 0)
+         as per_subject_expiry_wired;
+
+-- 92. Per-subject period INTEGRITY (migration 109) — READ-ONLY data check, and
+--     the drift alarm for trg_sync_subscription_period.
+--
+--     Three ways this goes wrong, all silent:
+--       * a live subject row with NO period of its own while its subscription
+--         HAS one — it would inherit through coalesce and outlive its cycle;
+--       * child_subscriptions.current_period_end drifting off the MAX. If it
+--         ever became the MIN, recompute_child_access would expire a whole
+--         subscription — a paid yearly subject with it — the moment the
+--         shortest-cycle subject lapsed;
+--       * next_renewal_at drifting off the MIN, i.e. the wrong charge date and
+--         the wrong "next invoice" amount everywhere it is displayed.
+--     A subject cannot carry an interval outside the enum (the column IS the
+--     enum), so what is checked instead is the only remaining contradiction: a
+--     subject period reaching PAST its subscription's coverage end.
+select '92_subject_period_integrity' as check_name,
+       case when (select count(*) from public.subscription_subjects ss
+                   join public.child_subscriptions cs on cs.id = ss.child_subscription_id
+                  where cs.status in ('trialing','active','past_due')
+                    and cs.current_period_end is not null
+                    and ss.current_period_end is null) = 0
+             and (select count(*) from public.child_subscriptions cs
+                   where cs.status in ('trialing','active','past_due')
+                     and exists (select 1 from public.subscription_subjects ss
+                                  where ss.child_subscription_id = cs.id)
+                     and (cs.current_period_end is distinct from
+                            (select max(ss.current_period_end)
+                               from public.subscription_subjects ss
+                              where ss.child_subscription_id = cs.id)
+                          or cs.next_renewal_at is distinct from
+                            (select min(ss.current_period_end)
+                               from public.subscription_subjects ss
+                              where ss.child_subscription_id = cs.id
+                                and ss.remove_at is null))) = 0
+             and (select count(*) from public.subscription_subjects ss
+                   join public.child_subscriptions cs on cs.id = ss.child_subscription_id
+                  where ss.current_period_end > cs.current_period_end) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from public.subscription_subjects ss
+         join public.child_subscriptions cs on cs.id = ss.child_subscription_id
+        where cs.status in ('trialing','active','past_due')
+          and cs.current_period_end is not null
+          and ss.current_period_end is null) as live_rows_without_period,
+       (select count(*) from public.child_subscriptions cs
+         where cs.status in ('trialing','active','past_due')
+           and exists (select 1 from public.subscription_subjects ss
+                        where ss.child_subscription_id = cs.id)
+           and (cs.current_period_end is distinct from
+                  (select max(ss.current_period_end)
+                     from public.subscription_subjects ss
+                    where ss.child_subscription_id = cs.id)
+                or cs.next_renewal_at is distinct from
+                  (select min(ss.current_period_end)
+                     from public.subscription_subjects ss
+                    where ss.child_subscription_id = cs.id
+                      and ss.remove_at is null))) as trigger_drift,
+       (select count(*) from public.subscription_subjects ss
+         join public.child_subscriptions cs on cs.id = ss.child_subscription_id
+        where ss.current_period_end > cs.current_period_end) as subject_past_coverage;
+
+-- 93. Migration 108: an olympiad grade pool is APPENDABLE (the creation-only
+--     raise is gone) and the append is duplicate-guarded against the
+--     PRE-EXISTING pool only — the snapshot must never be extended inside the
+--     row loop, or two identical rows in one file would collide and roll back a
+--     package creation that used to succeed. norm_import_text is the key's text
+--     normalizer and must stay service-internal — Supabase's default privileges
+--     hand EXECUTE to anon/authenticated unless revoked.
+select '93_olympiad_bulk_append' as check_name,
+       case when position('can only be bulk uploaded once' in
+                 pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) = 0
+             and position('v_dup_keys' in
+                 pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) > 0
+             and position('v_dup_keys || v_key' in
+                 pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) = 0
+             and to_regprocedure('public.norm_import_text(text)') is not null
+             and has_function_privilege('anon','public.norm_import_text(text)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.norm_import_text(text)','EXECUTE') = false
+            then 'PASS' else 'FAIL' end as status;
+
+-- 94. Migration 110: the palette whitelist matches the shipped catalogue (26
+--     slugs), no student holds a palette outside it, and the SECOND appearance
+--     preference exists as its own NOT NULL, CHECK-guarded column. The two are
+--     deliberately independent: dark mode overrides a palette visually and must
+--     never clear it.
+--
+--     Note on the last column: it is REPORT-ONLY, not a PASS/FAIL input. It is 0
+--     immediately after the migration's intent backfill, but a child may
+--     legitimately re-enable dark afterwards while keeping their palette — a
+--     later non-zero value is normal, not a failure.
+with cat(slug) as (
+  select unnest(array[
+    'sky','ocean','cyan','aqua','teal','arctic','navy','indigo','violet',
+    'lavender','rainbow','aurora','bubblegum','sakura','rose','berry','coral',
+    'peach','sunset','amber','sand','lime','mint','emerald','forest','graphite'])
+), def(d) as (
+  select pg_get_constraintdef(oid)
+    from pg_constraint
+   where conname='students_palette_chk'
+     and conrelid='public.students'::regclass
+)
+select '94_palette_catalogue_and_theme_pref' as check_name,
+       case when (select count(*) from def) = 1
+             -- every catalogue slug is accepted …
+             and (select count(*) from cat, def where position(cat.slug in def.d) = 0) = 0
+             -- … and the whitelist is EXACTLY the catalogue size: each slug
+             -- contributes two single quotes to the rendered definition, so a
+             -- 26-slug whitelist renders exactly 52 of them. A stale extra slug
+             -- would pass the containment test above but fails here.
+             and (select (length(d) - length(replace(d, '''', ''))) from def) = 26 * 2
+             and (select count(*) from public.students s
+                   where s.palette is not null
+                     and not exists (select 1 from cat where cat.slug = s.palette)) = 0
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='theme_pref' and is_nullable='NO')
+             and exists (select 1 from pg_constraint
+                          where conname='students_theme_pref_chk'
+                            and conrelid='public.students'::regclass)
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from public.students
+         where palette is not null and theme_pref <> 'light') as palette_rows_now_dark;
+
+
+-- 95. Migration 109: a SCHEDULED cycle change is not write-only. pending_interval
+--     is written by apply_plan_change and promoted into subscription_subjects.
+--     interval by apply_due_plan_changes() at the subject's OWN period boundary;
+--     016 schedules it hourly. Without that function the column is stored and
+--     never applied, which is the single defect this check exists to catch.
+--
+--     Deliberately does NOT read cron.job — see check 28: a missing relation
+--     fails at PARSE time on databases without pg_cron, so the schedule itself
+--     is verified by hand there:
+--       select jobname, schedule from cron.job where jobname like 'olympiq_%';
+--
+--     The last two columns are REPORT-ONLY. A positive overdue_promotions with a
+--     live cron job simply means the job has not run since the boundary passed.
+select '95_pending_interval_rollover' as check_name,
+       case when to_regprocedure('public.apply_due_plan_changes()') is not null
+             and has_function_privilege('anon','public.apply_due_plan_changes()','EXECUTE') = false
+             and has_function_privilege('authenticated','public.apply_due_plan_changes()','EXECUTE') = false
+             -- The CANCEL branch: choosing the cycle a subject is already paid
+             -- on must CLEAR the schedule, never store a no-op — otherwise a
+             -- mis-clicked 'yearly' can never be undone.
+             and position('then null else v_row.to_iv end' in
+                   pg_get_functiondef('public.apply_plan_change(uuid,jsonb,text)'::regprocedure)) > 0
+             -- Renewal sentences must be priced from the DESIRED basket. The
+             -- left join onto the stored rows only supplies each subject's own
+             -- period end; reading those rows for the CYCLE is what quoted the
+             -- pre-change amount back to the parent.
+             and position('left join public.subscription_subjects ss' in
+                   pg_get_functiondef('public.quote_plan_change(uuid,jsonb)'::regprocedure)) > 0
+             -- Both legacy wrappers must carry a scheduled cycle through, or an
+             -- add/remove from the mobile editor silently cancels it.
+             and position('coalesce(ss.pending_interval, ss.interval, v_sub.interval) as iv' in
+                   pg_get_functiondef('public.apply_subject_change(uuid,uuid[],uuid[],text)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from public.subscription_subjects
+         where pending_interval is not null) as scheduled_changes,
+       (select count(*) from public.subscription_subjects ss
+         join public.child_subscriptions cs on cs.id = ss.child_subscription_id
+        where ss.pending_interval is not null
+          and ss.remove_at is null
+          and ss.current_period_end is not null
+          and ss.current_period_end <= now()
+          and cs.status in ('trialing','active','past_due')) as overdue_promotions;
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

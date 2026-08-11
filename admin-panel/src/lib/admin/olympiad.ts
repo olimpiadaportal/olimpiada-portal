@@ -672,20 +672,16 @@ export async function saveOlympiadPackage(
 // Bulk import of PRIVATE questions for one package. Each package owns its own
 // pool (questions.olympiad_package_id) — NOT shared with the general question
 // bank. Delegated to the SECURITY DEFINER bulk_insert_olympiad_package_questions
-// RPC (checks content.create internally; sets olympiad_package_id + published).
-export type OlympiadBulkState =
-  | {
-      ok: boolean;
-      result?: {
-        total: number;
-        successful: number;
-        failed: number;
-        errors: { index: number; error: string }[];
-      };
-      error?: string;
-    }
-  | null;
-
+// RPC (Administrator-only in-body; sets olympiad_package_id + published).
+//
+// There are exactly TWO entry points, both below: createOlympiadPackageWithQuestions
+// (one file per grade, at creation) and appendOlympiadGradeQuestions (one
+// already-targeted grade, afterwards). A third — `bulkImportOlympiadQuestions`,
+// driven by BulkUploadModal's olympiad branch — was deleted: nothing mounted
+// that modal with a package, yet every export of a "use server" module stays a
+// POST-able endpoint, and it called the RPC WITHOUT a grade id. Before migration
+// 108 the DB refused that; after 108 it would have appended into whatever legacy
+// olympiad_packages.grade_id a single-grade package happened to carry.
 type BulkResult = {
   total: number;
   successful: number;
@@ -786,15 +782,53 @@ function validateRows(
   return { total: payload.length, errors, validItems, validFileIndex };
 }
 
+// Reads the mandatory import type, the file, the active type rules and the
+// per-row validation in the one order every pool import needs them, so the
+// add-grade and append flows cannot drift apart. `rejectUnclaimableMedia` is
+// part of the pipeline, not an optional extra: the RPC only checks the bucket,
+// and RLS lets a panel user fabricate a media_assets row pointing anywhere.
+async function prepareGradePoolRows(
+  supabase: Db,
+  ownerProfileId: string | null,
+  fd: FormData,
+  tq: (key: string) => string,
+  gradeLevel: number,
+  mixed: boolean,
+  fileField = "file",
+): Promise<{ error: string } | { rows: ValidatedRows }> {
+  const parsed = await readBulkFile(fd, tq, fileField);
+  if ("error" in parsed) return { error: parsed.error };
+  const { activeByNorm, defaultType } = await loadActiveTypeRules(supabase);
+  const rows = validateRows(
+    parsed.payload,
+    tq,
+    activeByNorm,
+    defaultType,
+    gradeLevel,
+    mixed,
+  );
+  await rejectUnclaimableMedia(supabase, ownerProfileId, rows, tq);
+  return { rows };
+}
+
 // Runs the SECURITY DEFINER pool-import RPC and merges its per-row errors
 // (mapped back to original file row numbers) with the pre-validation errors.
-// Round 34: p_grade_id targets ONE grade pool (creation-only PER GRADE).
+// Round 34: p_grade_id targets ONE grade pool. Migration 108: that pool is
+// APPENDABLE — a row already in it comes back as a per-row duplicate error.
+// `t` must be a withLocalStrings-wrapped translator: several branches of
+// mapRpcRowError resolve keys that live in question-flow-labels.ts, not
+// messages.ts, and a raw getT() would render them as bare key strings.
+//
+// `gradeId` is REQUIRED, not defaulted to null: with a null the RPC falls back
+// to the legacy olympiad_packages.grade_id, which used to be harmless only
+// because the creation-only raise rejected the import anyway. Since migration
+// 108 that fallback would silently append into that legacy grade.
 async function runOlympiadPoolImport(
   supabase: Db,
-  t: T,
+  t: (key: string) => string,
   pkgId: string,
   rows: ValidatedRows,
-  gradeId: string | null = null,
+  gradeId: string,
 ): Promise<{ error: string } | { result: BulkResult }> {
   const errors = [...rows.errors];
   let successful = 0;
@@ -804,12 +838,13 @@ async function runOlympiadPoolImport(
       { p_package_id: pkgId, p_questions: rows.validItems, p_grade_id: gradeId },
     );
     if (error) {
-      // 23514 = the RPC's creation-only guard: the package already has
-      // questions, so a later import is rejected. Friendly trilingual message
-      // (local strings until messages.ts gains the key) — never the raw error.
-      if ((error as { code?: string }).code === "23514") {
+      // The RPC's two check_violations both mean the same thing to an admin:
+      // this import has no valid target grade. Keyed off the stable HINT, not
+      // the SQLSTATE — 23514 alone would also swallow a future constraint.
+      const hint = (error as { hint?: string }).hint ?? "";
+      if (hint === "pool_grade_missing" || hint === "pool_grade_not_targeted") {
         const lt = olympiadLocalStrings(await getLocale());
-        return { error: lt("oly2.err.creationOnly") };
+        return { error: lt("oly2.err.grades") };
       }
       console.error("[admin] olympiad bulk import failed", error.message);
       return { error: t("err.server") };
@@ -825,96 +860,6 @@ async function runOlympiadPoolImport(
   return {
     result: { total: rows.total, successful, failed: rows.total - successful, errors },
   };
-}
-
-// Resolves the grade LEVEL a package's imported rows must use. The package's
-// stored grade_id is authoritative; a legacy package saved without one cannot
-// bulk-import until the admin sets a grade on the package form.
-async function packageGradeLevel(
-  supabase: Db,
-  gradeId: string | null,
-): Promise<number | null> {
-  if (!gradeId) return null;
-  const { data: grade } = await supabase
-    .from("grades")
-    .select("id, level")
-    .eq("id", gradeId)
-    .maybeSingle();
-  return grade && grade.level != null ? (grade.level as number) : null;
-}
-
-export async function bulkImportOlympiadQuestions(
-  _prev: OlympiadBulkState,
-  fd: FormData,
-): Promise<OlympiadBulkState> {
-  const ctx = await requireAdmin();
-  const t = await getT();
-  const pkgId = s(fd, "__id");
-  if (!pkgId || !UUID_RE.test(pkgId)) {
-    return { ok: false, error: t("err.server") };
-  }
-
-  // Subject AND Grade are inherited from the PACKAGE row (the upload UI no
-  // longer asks for them): the RPC scopes subject by package; the package's
-  // grade level is injected into every row here. Any meta.subject /
-  // meta.grade_level left in a legacy file is ignored in favor of these.
-  const supabase = await createClient();
-  const { data: pkg } = await supabase
-    .from("olympiad_packages")
-    .select("id, grade_id")
-    .eq("id", pkgId)
-    .maybeSingle();
-  if (!pkg) return { ok: false, error: t("err.server") };
-  const gradeLevel = await packageGradeLevel(supabase, (pkg as any).grade_id ?? null);
-  if (gradeLevel == null) {
-    return { ok: false, error: t("olybulk.err.pkgGrade") };
-  }
-
-  const parsedFile = await readBulkFile(fd, t);
-  if ("error" in parsedFile) return { ok: false, error: parsedFile.error };
-
-  // Mandatory import type, same contract as the general bank. Refused rather
-  // than defaulted: defaulting to "text" would import a mixed file with every
-  // image silently dropped and still report success.
-  const qMode = s(fd, "question_mode");
-  const tq = withLocalStrings(t, await getLocale());
-  if (qMode !== "text" && qMode !== "mixed") {
-    return { ok: false, error: tq("bulk.mode.required") };
-  }
-
-  const { activeByNorm, defaultType } = await loadActiveTypeRules(supabase);
-  const rows = validateRows(
-    parsedFile.payload,
-    tq,
-    activeByNorm,
-    defaultType,
-    gradeLevel,
-    qMode === "mixed",
-  );
-
-  // Client-supplied media uuids must be claimable by THIS admin — see
-  // claimableMediaIds. The RPC only checks the bucket, and RLS lets a panel
-  // user fabricate a media_assets row pointing anywhere.
-  await rejectUnclaimableMedia(supabase, ctx.profileId, rows, tq);
-
-  const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows);
-  if ("error" in imp) return { ok: false, error: imp.error };
-  const result = imp.result;
-
-  await writeAuditLog({
-    actorProfileId: ctx.profileId,
-    action: "admin.olympiad.bulk_import",
-    targetTable: "olympiad_packages",
-    targetId: pkgId,
-    metadata: {
-      total: result.total,
-      successful: result.successful,
-      failed: result.failed,
-    },
-  });
-
-  revalidatePath(`/olympiad/${pkgId}/edit`);
-  return { ok: true, result };
 }
 
 // ---------------------------------------------------------------------------
@@ -1022,7 +967,7 @@ export async function createOlympiadPackageWithQuestions(
   const badGrades: string[] = [];
   const allErrors: { index: number; error: string }[] = [];
   for (const grade of grades) {
-    const parsed = await readBulkFile(fd, t, `file_${grade.id}`);
+    const parsed = await readBulkFile(fd, tq, `file_${grade.id}`);
     if ("error" in parsed) {
       badGrades.push(grade.name);
       continue;
@@ -1138,7 +1083,7 @@ export async function createOlympiadPackageWithQuestions(
   // with a hole in one grade's pool.
   const combined: BulkResult = { total: 0, successful: 0, failed: 0, errors: [] };
   for (const { grade, rows } of perGrade) {
-    const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows, grade.id);
+    const imp = await runOlympiadPoolImport(supabase, tq, pkgId, rows, grade.id);
     if ("error" in imp) {
       await rollbackNewPackage(supabase, pkgId);
       return { error: lt("oly2.err.gradeImport").replace("{grade}", grade.name) };
@@ -1219,6 +1164,9 @@ export async function createOlympiadPackageWithQuestions(
 // together with its question file (no grade can exist with an empty pool),
 // and only REMOVED through the guarded RPC (blocked while purchased; pool
 // archived, never deleted).
+// Migration 108: an ALREADY-targeted grade's pool can also be APPENDED to
+// (appendOlympiadGradeQuestions below) — that is the live bulk path after
+// creation, and the only one that reaches the package's own grade.
 // ---------------------------------------------------------------------------
 
 export type OlympiadGradeState =
@@ -1258,11 +1206,20 @@ export async function addOlympiadPackageGrade(
     .maybeSingle();
   if (already) return { error: lt("oly2.err.gradeExists") };
 
-  // The new grade's pool file — validated fully BEFORE any write.
-  const parsed = await readBulkFile(fd, t, "file");
-  if ("error" in parsed) return { error: parsed.error };
-  const { activeByNorm, defaultType } = await loadActiveTypeRules(supabase);
-  const rows = validateRows(parsed.payload, t, activeByNorm, defaultType, Number(grade.level));
+  // The new grade's pool file — validated fully BEFORE any write. This surface
+  // has no import-type selector, so it stays TEXT-ONLY: a file carrying images
+  // is reported (bulk.err.mediaNotAllowed) rather than imported without them.
+  const tq = withLocalStrings(t, locale);
+  const prepared = await prepareGradePoolRows(
+    supabase,
+    ctx.profileId,
+    fd,
+    tq,
+    Number(grade.level),
+    false,
+  );
+  if ("error" in prepared) return { error: prepared.error };
+  const rows = prepared.rows;
   if (rows.validItems.length === 0 || rows.errors.length > 0) {
     return {
       error: lt("oly2.err.gradeFiles").replace("{grades}", String(grade.name)),
@@ -1295,7 +1252,7 @@ export async function addOlympiadPackageGrade(
     return { error: t("err.server") };
   }
 
-  const imp = await runOlympiadPoolImport(supabase, t, pkgId, rows, gradeId);
+  const imp = await runOlympiadPoolImport(supabase, tq, pkgId, rows, gradeId);
   const failed =
     "error" in imp || imp.result.successful === 0 || imp.result.failed > 0;
   if (failed) {
@@ -1328,6 +1285,95 @@ export async function addOlympiadPackageGrade(
     targetId: pkgId,
     metadata: { grade: grade.name, questions: imp.result.successful },
   });
+  revalidatePath(`/olympiad/${pkgId}/edit`);
+  return { ok: true, result: imp.result };
+}
+
+/**
+ * Migration 108 — bulk-append into an ALREADY-targeted grade's pool.
+ *
+ * This is what finally makes bulk upload reachable for a package's OWN grade:
+ * that grade is targeted at creation together with its file, so it never
+ * appears in the add-grade form above, and before 108 the DB rejected every
+ * later import into a non-empty pool.
+ *
+ * Unlike addOlympiadPackageGrade this allows PARTIAL success — there is no
+ * half-created grade to unwind, and re-running the corrected file is safe
+ * because the DB skips the rows that already landed as duplicates.
+ */
+export async function appendOlympiadGradeQuestions(
+  _prev: OlympiadGradeState,
+  fd: FormData,
+): Promise<OlympiadGradeState> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+  const locale = await getLocale();
+  const lt = olympiadLocalStrings(locale);
+  const tq = withLocalStrings(t, locale);
+  const pkgId = s(fd, "__id");
+  const gradeId = s(fd, "grade_id");
+  if (!UUID_RE.test(pkgId) || !UUID_RE.test(gradeId)) return { error: t("err.server") };
+
+  const supabase = await createClient();
+  // Status is deliberately NOT a gate: an ARCHIVED package still entitles its
+  // lifetime purchasers, so topping up its pool stays a legitimate action.
+  const { data: pkg } = await supabase
+    .from("olympiad_packages")
+    .select("id")
+    .eq("id", pkgId)
+    .maybeSingle();
+  if (!pkg) return { error: t("err.server") };
+
+  // The posted grade is re-verified against THIS package's target rows before
+  // anything is read from the file. The RPC checks it again, but a rejection
+  // there arrives as a generic server error instead of a nameable one.
+  const target = (await packageGradeRows(supabase, pkgId)).find((g) => g.id === gradeId);
+  if (!target) return { error: lt("oly2.err.grades") };
+  if (!(target.level > 0)) return { error: t("olybulk.err.pkgGrade") };
+
+  // Mandatory import type — never defaulted, for the same reason as everywhere
+  // else: "text" applied to a mixed file drops every image and still succeeds.
+  const qMode = s(fd, "question_mode");
+  if (qMode !== "text" && qMode !== "mixed") return { error: tq("bulk.mode.required") };
+
+  const prepared = await prepareGradePoolRows(
+    supabase,
+    ctx.profileId,
+    fd,
+    tq,
+    target.level,
+    qMode === "mixed",
+  );
+  if ("error" in prepared) return { error: prepared.error };
+  const rows = prepared.rows;
+  if (rows.validItems.length === 0) {
+    return {
+      error: lt("oly2.err.gradeFiles").replace("{grades}", target.name),
+      result: { total: rows.total, successful: 0, failed: rows.total, errors: rows.errors },
+    };
+  }
+
+  // gradeId is passed explicitly so the package's own/primary grade takes the
+  // same path as every other grade instead of relying on the RPC's legacy
+  // olympiad_packages.grade_id fallback.
+  const imp = await runOlympiadPoolImport(supabase, tq, pkgId, rows, gradeId);
+  if ("error" in imp) return { error: imp.error };
+
+  // No activation re-check: an append only GROWS a published pool, and
+  // assert_olympiad_pool_meets_per_attempt can only ever block pool < required.
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.grade_bulk_append",
+    targetTable: "olympiad_packages",
+    targetId: pkgId,
+    metadata: {
+      grade_id: gradeId,
+      total: imp.result.total,
+      successful: imp.result.successful,
+      failed: imp.result.failed,
+    },
+  });
+
   revalidatePath(`/olympiad/${pkgId}/edit`);
   return { ok: true, result: imp.result };
 }
@@ -1507,8 +1553,9 @@ export async function detachOlympiadCover(formData: FormData): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // Round 21 item 2 — per-question management of a package's PRIVATE pool.
-// Bulk upload stays creation-only (DB-enforced); AFTER creation admins manage
-// the pool question by question here. All actions: requireAdmin() FIRST, then
+// Complements the per-grade bulk append (migration 108): whole files go through
+// appendOlympiadGradeQuestions, single questions through the actions here.
+// All actions: requireAdmin() FIRST, then
 // re-verify that the posted question actually belongs to the posted package
 // before mutating anything (even though RLS would also block outsiders).
 //

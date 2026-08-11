@@ -90,17 +90,27 @@ between City and School SHIPPED in Round 22.
 | 400 | `{"error":"<first key>","retryable":false,"errors":[...]}` — all keys: `auth.child.err.firstNameRequired\|lastNameRequired\|nameTooLong\|passwordTooShort`, `addchild.err.cityRequired\|schoolRequired\|gradeRequired`, `auth.child.err.createFailed` |
 | 500 | `{"error":"auth.child.err.createFailed","retryable":true}` |
 
-## POST /api/mobile/v1/children/:id/quote  (added M2)
+## POST /api/mobile/v1/children/:id/quote  (added M2; per-subject since 109)
+
+**Per-subject cycles (migration 109).** Every endpoint below accepts an
+optional `items: [{"subject_id":"<uuid>","interval":"week"|"month"|"year"}]`
+carrying ONE cycle per subject, and prefers it when present. The legacy
+`{"interval", "subject_ids"}` body (and `{"add","remove"}` on the change quote)
+remains fully supported and is expanded server-side into a uniform basket — an
+already-shipped binary cannot be reached by an OTA (`runtimeVersion:
+appVersion`), so its body and every response field it parses must keep working.
+All new response fields are strictly additive.
 
 Server-side price preview (web `quoteSubscription` parity): authoritative
-`quote_child_subscription` RPC — sibling discount is never computed
-client-side. Read-only; no payment-mode gate.
+`quote_child_plan` RPC — sibling discount is never computed client-side, and
+each subject is priced on ITS OWN cycle. Read-only; no payment-mode gate.
 
-Request: `{"interval":"week"|"month"|"year","subject_ids":["<uuid>",...]}` (1–20 subjects)
+Request: `{"items":[{"subject_id","interval"},...]}` (1–20 subjects)
+or, legacy, `{"interval":"week"|"month"|"year","subject_ids":["<uuid>",...]}`
 
 | Status | Body |
 |---|---|
-| 200 | `{"ok":true,"data":{"base","discount_percent","discount","total","trial_days","currency"}}` |
+| 200 | `{"ok":true,"data":{"base","discount_percent","discount","total","trial_days","currency","items":[{"subject_id","interval","price"}],"groups":{"<interval>":{"count","base","discount","total"}},"mixed":bool}}` |
 | 400 | `{"error":"sub.err.invalid"\|"sub.err.noSubjects"\|"sub.err.failed","retryable":false}` |
 | 403 | `{"error":"sub.err.notYourChild","retryable":false}` |
 | 500 | `{"error":"sub.err.failed","retryable":true}` |
@@ -113,11 +123,15 @@ price/discount/trial) → allocates the deferred 8-digit login ID + sets the
 child's synthetic auth email. `child_unique_id` is revealed HERE (null when a
 previous plan already allocated it) — show it to the parent once.
 
-Request: `{"interval":"week"|"month"|"year","subject_ids":["<uuid>",...]}`
+Request: `{"items":[{"subject_id","interval"},...]}` or, legacy,
+`{"interval":"week"|"month"|"year","subject_ids":["<uuid>",...]}`
+
+Each subject opens its OWN cycle (or the trial period while trialing);
+`total` is what is charged NOW across all cycles — it carries no period.
 
 | Status | Body |
 |---|---|
-| 200 | `{"ok":true,"data":{"child_unique_id":"12345678"\|null,"base","discount_percent","discount","total","trial_days","currency"}}` |
+| 200 | `{"ok":true,"data":{"child_unique_id":"12345678"\|null,"base","discount_percent","discount","total","trial_days","currency","items":[...],"groups":{...}}}` |
 | 400 | `{"error":"sub.err.invalid"\|"sub.err.noSubjects"\|"sub.err.failed"\|"sub.err.idFailed","retryable":false}` |
 | 403 | `{"error":"sub.err.notYourChild","retryable":false}` |
 | 409 | `{"error":"gate.paymentsOff"\|"gate.giveawayFree"\|"gate.freeAccess","retryable":false}` |
@@ -130,13 +144,20 @@ DESIRED full set; the server diffs against the live subscription and applies
 adds/removes via the re-pricing RPCs (≥1 subject must remain; additions first
 so coverage never drops to 0). Server semantics identical to the web — in
 REAL payment mode the mobile CLIENT enforces its read-only posture; the
-server-side gate handles modes as usual. `interval` is accepted and ignored.
+server-side gate handles modes as usual.
 
-Request: `{"subject_ids":["<uuid>",...],"interval"?}`
+Migration 109: the per-subject cycle is REAL here. `items` posts the DESIRED
+full set with each subject's cycle; the server derives adds, removes AND cycle
+changes. A cycle change on an already-paid subject is SCHEDULED for that
+subject's own renewal (never refunded, never charged now) and is blocked with
+adds while payments are off — removals stay legal.
+
+Request: `{"items":[{"subject_id","interval"},...]}` or, legacy,
+`{"subject_ids":["<uuid>",...]}`
 
 | Status | Body |
 |---|---|
-| 200 | `{"ok":true,"data":{"added":n,"removed":n}}` |
+| 200 | `{"ok":true,"data":{"added":n,"removed":n,"plan_changed":n}}` |
 | 400 | `{"error":"sub.err.invalid"\|"subjedit.minOne"\|"subjedit.err.addFailed"\|"subjedit.err.removeFailed","retryable":false}` |
 | 403 | `{"error":"sub.err.notYourChild","retryable":false}` |
 | 409 | `{"error":"gate.paymentsOff"\|"gate.giveawayFree"\|"gate.freeAccess","retryable":false}` |
@@ -147,17 +168,20 @@ Request: `{"subject_ids":["<uuid>",...],"interval"?}`
 Read-only diff-based price preview for ManageSubjectsEditor (web ManageSubjects
 parity): quotes the effect of adding/removing subjects on the LIVE
 subscription — additions get an immediate prorated top-up for the days left
-in the current period (the recurring rate rises from now on); removals never
-refund (access + the old rate continue until `removals_effective_at`, the
-rate drops at the next renewal). No proration during a trial or on WEEKLY
-plans; amounts under 0.50 AZN are waived to 0 (`due_now`). Never applies
-anything — the apply step is still `POST .../subjects`.
+parity). Migration 109 RETIRED proration for additions: with per-subject
+periods there is no shared period to prorate into, so an added subject buys its
+own FULL first cycle (`due_now`) and receives it. `prorated` and
+`proration_waived` are therefore always false and `remaining_ratio` is always 1
+— both stay in the payload for contract compatibility. Removals never refund
+(access runs to THAT subject's own period end). Never applies anything — the
+apply step is still `POST .../subjects`.
 
-Request: `{"add":["<uuid>",...],"remove":["<uuid>",...]}`
+Request: `{"items":[{"subject_id","interval"},...]}` (the DESIRED full set) or,
+legacy, `{"add":["<uuid>",...],"remove":["<uuid>",...]}`
 
 | Status | Body |
 |---|---|
-| 200 | `{"ok":true,"data":{"subscription_id","status","interval","currency","discount_percent","current_recurring_total","new_recurring_total","due_now","prorated","proration_waived","added_base","remaining_ratio","days_remaining","period_days","effective_from","removals_effective_at"}}` |
+| 200 | `{"ok":true,"data":{"subscription_id","status","interval","currency","discount_percent","current_recurring_total","new_recurring_total","due_now","prorated","proration_waived","added_base","remaining_ratio","days_remaining","period_days","effective_from","removals_effective_at","items":[...],"groups":{...},"renewals":[{"interval","next_at","total"}],"plan_changes":[{"subject_id","from","to","effective_at"}],"mixed":bool}}` |
 | 400 | `{"error":"sub.err.invalid"\|"sub.err.failed","retryable":false}` |
 | 403 | `{"error":"sub.err.notYourChild","retryable":false}` |
 | 500 | `{"error":"sub.err.failed","retryable":true}` |

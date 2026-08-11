@@ -19,8 +19,25 @@ import {
   updateSubscriptionSubjectsCore,
   type SubjectChangeQuote,
 } from "@/lib/auth/subscriptionCore";
+import type { PlanItemInput } from "@/lib/auth/subscriptionCore";
 import { getT } from "@/i18n/server";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
+
+// Migration 109 — the per-subject basket travels as one repeated `plan` field,
+// each value `"<subjectUuid>:<interval>"`. Reading it here (rather than a JSON
+// blob) keeps the form a plain progressively-enhanced POST. Shape only: the
+// core re-validates the UUID and the interval whitelist server-side.
+function readPlanItems(formData: FormData): PlanItemInput[] {
+  return formData
+    .getAll("plan")
+    .map(String)
+    .slice(0, 20)
+    .map((raw) => {
+      const [subjectId, interval] = raw.split(":");
+      return { subjectId: subjectId ?? "", interval: interval ?? "" };
+    })
+    .filter((i) => i.subjectId !== "" && i.interval !== "");
+}
 
 export type SubscribeState =
   | {
@@ -34,6 +51,11 @@ export type SubscribeState =
         currency: string;
         // Batch H: the 8-digit login ID is allocated on subscribe — reveal it here.
         childUniqueId?: string | null;
+        items?: { subject_id: string; interval: string; price: number | null }[];
+        groups?: Record<
+          string,
+          { count: number; base: number; discount: number; total: number }
+        >;
       };
       error?: string;
     }
@@ -46,14 +68,18 @@ export async function subscribeChild(
   const parent = await requireParent();
   const t = await getT();
   const studentId = String(formData.get("student_id") ?? "");
+  // `interval` + repeated `subject` stay as the fallback so an older cached
+  // form still submits successfully.
   const interval = String(formData.get("interval") ?? "");
   const subjectIds = formData.getAll("subject").map(String);
+  const items = readPlanItems(formData);
 
   const res = await subscribeChildCore({
     parentProfileId: parent.profileId,
     studentId,
     interval,
     subjectIds,
+    items: items.length > 0 ? items : undefined,
     // Web free-access probe: caller-scoped RPC via the cookie client.
     isFreeAccessActive: isChildFreeAccessActive,
   });
@@ -73,13 +99,21 @@ export type QuoteResult =
       total: number;
       trial_days: number;
       currency: string;
+      items: { subject_id: string; interval: string; price: number | null }[];
+      groups: Record<
+        string,
+        { count: number; base: number; discount: number; total: number }
+      >;
+      mixed: boolean;
     }
   | { ok: false; error?: string };
 
 export async function quoteSubscription(args: {
   studentId: string;
-  interval: string;
-  subjectIds: string[];
+  interval?: string;
+  subjectIds?: string[];
+  /** Per-subject basket; falls back to the uniform pair above when absent. */
+  items?: PlanItemInput[];
 }): Promise<QuoteResult> {
   const t = await getT();
   const res = await quoteSubscriptionCore({
@@ -87,8 +121,9 @@ export async function quoteSubscription(args: {
     // redirects) only at the ownership check, AFTER input validation.
     resolveParentProfileId: async () => (await requireParent()).profileId,
     studentId: args.studentId,
-    interval: args.interval,
-    subjectIds: args.subjectIds,
+    interval: args.interval ?? "",
+    subjectIds: args.subjectIds ?? [],
+    items: args.items,
   });
   if (!res.ok) return { ok: false, error: t(res.errorKey) };
   const { ok: _ok, ...quote } = res;
@@ -103,7 +138,7 @@ export async function quoteSubscription(args: {
 // charge (one RPC is the source of truth for both).
 // Re-exported so client components (ManageSubjects) can import the quote shape
 // from this "use server" surface instead of reaching into the server-only core.
-export type { SubjectChangeQuote };
+export type { SubjectChangeQuote, PlanItemInput };
 
 export type SubjectChangeQuoteResult =
   | { ok: true; quote: SubjectChangeQuote }
@@ -111,8 +146,10 @@ export type SubjectChangeQuoteResult =
 
 export async function quoteSubjectChange(args: {
   studentId: string;
-  add: string[];
-  remove: string[];
+  add?: string[];
+  remove?: string[];
+  /** The DESIRED FULL set with per-subject cycles (migration 109). */
+  items?: PlanItemInput[];
 }): Promise<SubjectChangeQuoteResult> {
   // M7: authorize FIRST.
   const parent = await requireParent();
@@ -120,8 +157,9 @@ export async function quoteSubjectChange(args: {
   const res = await quoteSubjectChangeCore({
     parentProfileId: parent.profileId,
     studentId: args.studentId,
-    add: args.add,
-    remove: args.remove,
+    add: args.add ?? [],
+    remove: args.remove ?? [],
+    items: args.items,
   });
   if (!res.ok) return { ok: false, error: t(res.errorKey) };
   return { ok: true, quote: res.quote };
@@ -158,7 +196,7 @@ export async function cancelChildSubscription(
 // The Manage-Subjects UI posts the DESIRED full subject set (checkboxes); the
 // core computes the diff and applies it through the existing re-pricing RPCs.
 export type SubjectsUpdateState =
-  | { ok: true; added: number; removed: number }
+  | { ok: true; added: number; removed: number; planChanged: number }
   | { ok: false; error: string }
   | null;
 
@@ -172,11 +210,13 @@ export async function updateSubscriptionSubjectsAction(
   const t = await getT();
   const studentId = String(formData.get("student_id") ?? "");
   const subjectIds = formData.getAll("subject").map(String);
+  const items = readPlanItems(formData);
 
   const res = await updateSubscriptionSubjectsCore({
     parentProfileId: parent.profileId,
     studentId,
     subjectIds,
+    items: items.length > 0 ? items : undefined,
     isFreeAccessActive: isChildFreeAccessActive,
   });
   if (!res.ok) return { ok: false, error: t(res.errorKey) };

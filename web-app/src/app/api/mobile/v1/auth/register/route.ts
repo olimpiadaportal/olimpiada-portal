@@ -18,6 +18,7 @@ import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
 import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { validateParentRegistration } from "@/lib/auth/parentValidation";
 import { isExistingAccountSignUp } from "@/lib/auth/signUpOutcome";
+import { classifyAccount, mayRegister } from "@/lib/auth/accountState";
 import { rateLimitAllow } from "@/lib/rateLimit";
 import { writeAuditLog } from "@/lib/audit";
 
@@ -92,16 +93,12 @@ export async function POST(request: Request): Promise<Response> {
     // sign-up, so the response alone cannot be trusted. One indexed probe
     // (migration 099). A failed CHECK falls through rather than failing the
     // registration: signUp still refuses duplicates, just less precisely.
+    // The SHARED classifier — the same answer the web register action and the
+    // login screen give for this address. Two separate existence queries are
+    // what produced "already registered" on one screen and "no account" on
+    // another.
     const admin = getAdminClient();
-    const { data: taken, error: takenError } = await admin.rpc("email_is_registered", {
-      p_email: email,
-    });
-    if (takenError) {
-      console.error(
-        "mobile register: email_is_registered failed",
-        takenError.code ?? "unknown",
-      );
-    } else if (taken === true) {
+    if (!mayRegister(await classifyAccount(email))) {
       return json({ error: "parent.err.emailExists", retryable: false }, 409);
     }
 

@@ -50,7 +50,7 @@ import {
   startOlympiadAttempt,
   type OwnedOlympiad,
 } from "./data";
-import { buildOlympiadDetailRows } from "./details";
+import { buildOlympiadDetailRows, sharedGradeValue } from "./details";
 import { TypeMarquee } from "./TypeMarquee";
 
 // Photo-scrim overlay: sits ON TOP of arbitrary cover images, so it cannot
@@ -321,7 +321,16 @@ export function OlympiadsScreen() {
                           {pkg.title}
                         </AppText>
                         <AppText color={SCRIM_INK} style={{ fontSize: 12, opacity: 0.9 }}>
-                          {`${catalogCountOf(pkg)} ${t("oly4.questions")} · ${pkg.duration_minutes} ${t("mob.unit.min")}`}
+                          {[
+                            `${catalogCountOf(pkg)} ${t("oly4.questions")}`,
+                            // Migration 106: only when every target grade agrees.
+                            sharedGradeValue(pkg.grades, pkg.duration_minutes, "duration_minutes"),
+                          ]
+                            .filter(Boolean)
+                            .map((part, i) =>
+                              i === 0 ? part : `${part} ${t("mob.unit.min")}`,
+                            )
+                            .join(" · ")}
                         </AppText>
                       </LinearGradient>
                     </View>

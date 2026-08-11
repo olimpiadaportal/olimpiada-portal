@@ -240,8 +240,19 @@ export type OlympiadPackageRow = {
   typeName: string | null;
   /** Single-grade legacy view (null for multi-grade packages). */
   grade: { level: number; name: string } | null;
-  /** Round 34: the FULL target set with per-grade published pool counts. */
-  grades: { grade_id: string; level: number; name: string; question_count: number }[];
+  /**
+   * Round 34: the FULL target set with per-grade published pool counts.
+   * Migration 106 adds each grade's own attempt config; null = no override, so
+   * the package-level questions_per_attempt / duration_minutes applies.
+   */
+  grades: {
+    grade_id: string;
+    level: number;
+    name: string;
+    question_count: number;
+    questions_per_attempt: number | null;
+    duration_minutes: number | null;
+  }[];
   /** Published questions the CALLER's family actually receives (server-computed). */
   my_question_count: number;
   cover: { bucket: string; path: string } | null;
@@ -273,28 +284,43 @@ export async function fetchOlympiadCatalog(
   // already shows the caller these exact rows) and stitch it in; a failed read
   // degrades to 0, which simply hides the "per attempt" detail row.
   const perAttemptById = new Map<string, number>();
+  // Migration 106: the same two numbers can differ PER TARGET GRADE, and the
+  // catalog RPC does not return them either. Keyed "<packageId>:<gradeId>";
+  // an absent key means that grade inherits the package value.
+  const gradeCfg = new Map<string, { per: number | null; dur: number | null }>();
   if (raw.length > 0) {
-    const { data: extra } = await supabase
-      .from("olympiad_packages")
-      .select("id, questions_per_attempt")
-      .in(
-        "id",
-        raw.map((p: any) => p.id).filter(Boolean),
-      );
+    const ids = raw.map((p: any) => p.id).filter(Boolean);
+    const [{ data: extra }, { data: gradeRows }] = await Promise.all([
+      supabase.from("olympiad_packages").select("id, questions_per_attempt").in("id", ids),
+      supabase
+        .from("olympiad_package_grades")
+        .select("olympiad_package_id, grade_id, questions_per_attempt, duration_minutes")
+        .in("olympiad_package_id", ids),
+    ]);
     for (const e of (extra ?? []) as any[]) {
       const n = Number(e.questions_per_attempt ?? 0);
       if (e.id && Number.isFinite(n) && n > 0) perAttemptById.set(String(e.id), n);
+    }
+    for (const g of (gradeRows ?? []) as any[]) {
+      const per = g.questions_per_attempt == null ? null : Number(g.questions_per_attempt);
+      const dur = g.duration_minutes == null ? null : Number(g.duration_minutes);
+      gradeCfg.set(`${g.olympiad_package_id}:${g.grade_id}`, { per, dur });
     }
   }
   return raw.map((p: any) => {
     const grades = Array.isArray(p.grades)
       ? (p.grades as any[])
-          .map((g) => ({
-            grade_id: String(g.grade_id ?? ""),
-            level: Number(g.level ?? 0),
-            name: String(g.name ?? ""),
-            question_count: Number(g.question_count ?? 0) || 0,
-          }))
+          .map((g) => {
+            const cfg = gradeCfg.get(`${p.id}:${g.grade_id}`);
+            return {
+              grade_id: String(g.grade_id ?? ""),
+              level: Number(g.level ?? 0),
+              name: String(g.name ?? ""),
+              question_count: Number(g.question_count ?? 0) || 0,
+              questions_per_attempt: cfg?.per ?? null,
+              duration_minutes: cfg?.dur ?? null,
+            };
+          })
           .filter((g) => g.grade_id)
       : [];
     const pick = (az: unknown, loc: unknown) =>

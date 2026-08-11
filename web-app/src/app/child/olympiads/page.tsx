@@ -262,6 +262,30 @@ export default async function ChildOlympiadsPage({
   // olympiads; start_olympiad_attempt enforces the same server-side).
   // Round 21: each row shows the package's REAL published pool count.
   type Playable = { id: string; title: string; questions: number; perAttempt: number };
+  // Migration 106: questions-per-attempt is stored PER GRADE. Resolve it for
+  // each purchase's ENTITLED grade (the purchase snapshot, so a promoted
+  // student still sees what they bought), falling back to the package value
+  // exactly as the DB does — so the card matches what Start actually serves.
+  const perAttemptByPkgGrade = new Map<string, number>();
+  {
+    const pkgIds = Array.from(new Set(owned.map((p) => String(p.olympiad_package_id))))
+      .filter(Boolean)
+      .slice(0, 100);
+    if (pkgIds.length > 0) {
+      const { data: cfgRows } = await supabase
+        .from("olympiad_package_grades")
+        .select("olympiad_package_id, grade_id, questions_per_attempt")
+        .in("olympiad_package_id", pkgIds);
+      for (const r of (cfgRows ?? []) as any[]) {
+        if (r.questions_per_attempt == null) continue;
+        perAttemptByPkgGrade.set(
+          `${r.olympiad_package_id}:${r.grade_id}`,
+          Number(r.questions_per_attempt),
+        );
+      }
+    }
+  }
+
   const playable: Playable[] = owned.map((p) => ({
     id: p.olympiad_package_id,
     title: ownedTitle(p),
@@ -271,7 +295,11 @@ export default async function ChildOlympiadsPage({
       0,
     // Round 51 rotation: what one Start actually serves. Shown only when it is
     // a real subset of the pool (equal/greater = the attempt IS the pool).
-    perAttempt: Number(p.olympiad_packages?.questions_per_attempt ?? 0) || 0,
+    perAttempt:
+      perAttemptByPkgGrade.get(
+        `${p.olympiad_package_id}:${(p.grade_id as string | null) ?? myGradeId}`,
+      ) ??
+      (Number(p.olympiad_packages?.questions_per_attempt ?? 0) || 0),
   }));
 
   return (

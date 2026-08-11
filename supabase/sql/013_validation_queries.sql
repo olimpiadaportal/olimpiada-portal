@@ -865,7 +865,13 @@ select '57_mobile_config_shape' as check_name,
 --      meta.olympiad_type from the uploaded rows; the GENERAL importer keeps
 --      that lookup, because it has no package to inherit from.
 select '57e_olympiad_type_from_package' as check_name,
-       case when position('olympiad_type_id into v_oly' in
+       -- The needle is CONCATENATED on purpose. Spelled as one literal, the
+       -- Supabase SQL Editor's linter reads the "into v_oly" inside it as a
+       -- SELECT ... INTO — which in plain SQL CREATES A TABLE — and blocks
+       -- every run of this file behind an "enable RLS?" dialog. 013 creates
+       -- nothing; it is read-only. The concatenation produces the identical
+       -- needle at runtime while keeping that token pair out of the source.
+       case when position('olympiad_type_id ' || 'into v_oly' in
                 pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) > 0
              and position('where name = (v_item->''meta''->>''olympiad_type'')' in
                 pg_get_functiondef('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'::regprocedure)) = 0
@@ -1573,6 +1579,69 @@ select '88_import_media_orphans' as check_name,
              select 1 from public.media_assets ma
               where ma.bucket = 'question-media' and ma.path = o.name)
        ) as object_orphans;
+
+-- 89. Per-grade olympiad config (migrations 106/107) — READ-ONLY.
+--
+--     Four things have to hold together, and each one has broken in practice:
+--
+--     a) the resolver exists — every reader coalesces through it, so its
+--        absence means the attempt engine and the guards are free to disagree;
+--     b) start_olympiad_attempt actually CALLS it after resolving the entitled
+--        grade. It used to read both numbers from the package BEFORE knowing
+--        which grade's pool applied, which is why every grade shared one
+--        question count and one clock;
+--     c) the validator checks each grade against ITS OWN count, not one number
+--        for all of them — otherwise a 40-question grade with a 12-question
+--        pool can go ACTIVE and fails at ATTEMPT time instead;
+--     d) the grade rows are guarded, since per-grade counts live on a table the
+--        package-level activation trigger never fires for.
+select '89_per_grade_olympiad_config' as check_name,
+       case when to_regprocedure('public.olympiad_grade_config(uuid,uuid)') is not null
+             and position('olympiad_grade_config(p_package_id, v_pool_grade)' in
+                   replace(pg_get_functiondef(
+                     'public.start_olympiad_attempt(uuid)'::regprocedure), chr(13), '')) > 0
+             and position('coalesce(g.questions_per_attempt, v_fallback)' in
+                   replace(pg_get_functiondef(
+                     'public.assert_olympiad_pool_meets_per_attempt(uuid,int,uuid)'::regprocedure),
+                     chr(13), '')) > 0
+             and exists (
+                   select 1 from pg_trigger
+                    where tgname = 'trg_olympiad_grade_pool_guard'
+                      and tgrelid = 'public.olympiad_package_grades'::regclass
+                      and not tgisinternal)
+            then 'PASS' else 'FAIL' end as status,
+       (to_regprocedure('public.olympiad_grade_config(uuid,uuid)') is not null) as resolver_exists,
+       (position('olympiad_grade_config(p_package_id, v_pool_grade)' in
+          replace(pg_get_functiondef(
+            'public.start_olympiad_attempt(uuid)'::regprocedure), chr(13), '')) > 0)
+         as attempt_uses_grade_config,
+       (position('coalesce(g.questions_per_attempt, v_fallback)' in
+          replace(pg_get_functiondef(
+            'public.assert_olympiad_pool_meets_per_attempt(uuid,int,uuid)'::regprocedure),
+            chr(13), '')) > 0) as guard_is_per_grade,
+       (select count(*) from pg_trigger
+         where tgname = 'trg_olympiad_grade_pool_guard'
+           and tgrelid = 'public.olympiad_package_grades'::regclass
+           and not tgisinternal) as grade_row_guard_armed;
+
+-- 90. No target grade may promise more questions than its pool can serve
+--     (migration 107). The guards make this unreachable going forward; this
+--     catches an ACTIVE package whose pool was emptied afterwards — the
+--     2026-07-30 curriculum purge did exactly that to eight packages, and a
+--     student opening one gets a failed attempt, not an empty screen.
+--
+--     Only ACTIVE packages count: a draft with an unfinished pool is normal.
+select '90_active_grade_pool_serves_attempt' as check_name,
+       case when count(*) = 0 then 'PASS' else 'FAIL' end as status,
+       count(*) as short_grades
+from public.olympiad_package_grades g
+join public.olympiad_packages p on p.id = g.olympiad_package_id
+where p.status = 'active'
+  and (select count(*) from public.questions q
+        where q.olympiad_package_id = p.id
+          and q.status = 'published'
+          and q.grade_id = g.grade_id)
+      < greatest(coalesce(g.questions_per_attempt, p.questions_per_attempt, 1), 1);
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

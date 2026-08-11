@@ -51,7 +51,7 @@ import {
   SheetShell,
   childDisplayName,
 } from "@/features/parent/ui";
-import { buildOlympiadDetailRows } from "@/features/olympiads/details";
+import { buildOlympiadDetailRows, sharedGradeValue } from "@/features/olympiads/details";
 import { TypeMarquee } from "@/features/olympiads/TypeMarquee";
 
 function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
@@ -299,6 +299,12 @@ export default function ParentOlympiads() {
   const questionCount = (pkg: OlympiadPackageRow) =>
     pkg.my_question_count > 0 ? pkg.my_question_count : poolCounts.data?.get(pkg.id) ?? 0;
 
+  // Migration 106: duration is stored per target grade. A parent's catalog
+  // spans every child's grade, so when those grades disagree there is no single
+  // honest number and the chip is dropped rather than showing one of them.
+  const durationOf = (pkg: OlympiadPackageRow) =>
+    sharedGradeValue(pkg.grades, pkg.duration_minutes, "duration_minutes");
+
   return (
     <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
       <AppText variant="muted">{t("poly.subtitle")}</AppText>
@@ -413,10 +419,12 @@ export default function ParentOlympiads() {
                           icon={<CircleHelp size={13} color={tokens.chipText} strokeWidth={2} />}
                           label={`${questionCount(pkg)} ${t("poly.questions")}`}
                         />
-                        <Chip
-                          icon={<Clock3 size={13} color={tokens.chipText} strokeWidth={2} />}
-                          label={`${pkg.duration_minutes} ${t("mob.unit.min")}`}
-                        />
+                        {durationOf(pkg) !== null ? (
+                          <Chip
+                            icon={<Clock3 size={13} color={tokens.chipText} strokeWidth={2} />}
+                            label={`${durationOf(pkg)} ${t("mob.unit.min")}`}
+                          />
+                        ) : null}
                       </View>
                       <KeyRow
                         icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}

@@ -55,6 +55,13 @@ export type PolyPackage = {
   questionsPerAttempt: number;
   /** Attempt time limit in minutes (null = not set → row hidden). */
   durationMinutes: number | null;
+  /**
+   * Migration 106 — per-grade overrides of the two values above. A grade with
+   * no entry inherits the package value, so a single-grade package (and every
+   * package created before 106) simply has an empty record here.
+   */
+  perAttemptByGrade: Record<string, number>;
+  durationByGrade: Record<string, number>;
   /** Localized sale-window start / end (null = not set → row hidden). */
   saleStartText: string | null;
   saleEndText: string | null;
@@ -176,11 +183,16 @@ function TypeMarquee({ text }: { text: string }) {
 function DetailsDialogBody({
   pkg,
   count,
+  perAttempt,
+  duration,
   dict,
   onClose,
 }: {
   pkg: PolyPackage;
   count: number;
+  /** Migration 106: resolved for the SELECTED child's grade, not the package. */
+  perAttempt: number;
+  duration: number | null;
   dict: PolyDict;
   onClose: () => void;
 }) {
@@ -194,14 +206,11 @@ function DetailsDialogBody({
       // Round 51 rotation: shown only when it is a real subset of the selected
       // child's pool — equal/greater means an attempt serves the whole pool.
       label: dict.detPerAttempt,
-      value:
-        pkg.questionsPerAttempt > 0 && pkg.questionsPerAttempt < count
-          ? String(pkg.questionsPerAttempt)
-          : null,
+      value: perAttempt > 0 && perAttempt < count ? String(perAttempt) : null,
     },
     {
       label: dict.detDuration,
-      value: pkg.durationMinutes ? `${pkg.durationMinutes} ${dict.detMinutes}` : null,
+      value: duration ? `${duration} ${dict.detMinutes}` : null,
     },
     { label: dict.detEventAt, value: pkg.dateText },
     { label: dict.detSaleStart, value: pkg.saleStartText },
@@ -421,6 +430,16 @@ export function OlympiadPurchase({
     (child?.gradeId != null ? pkg.countByGrade[child.gradeId] : undefined) ??
     pkg.fallbackCount;
 
+  // Migration 106: what THIS child's grade actually serves. Falls back to the
+  // package value, which is what the DB does too — so the number shown here is
+  // the number start_olympiad_attempt will use.
+  const perAttemptFor = (pkg: PolyPackage): number =>
+    (child?.gradeId != null ? pkg.perAttemptByGrade[child.gradeId] : undefined) ??
+    pkg.questionsPerAttempt;
+  const durationFor = (pkg: PolyPackage): number | null =>
+    (child?.gradeId != null ? pkg.durationByGrade[child.gradeId] : undefined) ??
+    pkg.durationMinutes;
+
   return (
     <>
       {/* Child selector */}
@@ -543,6 +562,8 @@ export function OlympiadPurchase({
           <DetailsDialogBody
             pkg={details}
             count={countFor(details)}
+            perAttempt={perAttemptFor(details)}
+            duration={durationFor(details)}
             dict={dict}
             onClose={() => setDetails(null)}
           />

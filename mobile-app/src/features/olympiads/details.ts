@@ -13,6 +13,28 @@ import type { OlympiadPackageRow } from "@/lib/data";
 
 export type OlympiadDetailRow = { key: string; label: string; value: string };
 
+/**
+ * Migration 106 — the value that applies across a package's target grades, or
+ * null when they DISAGREE.
+ *
+ * The app has no grade context here (a parent's catalog spans every child's
+ * grade, and the student RPC does not return which grade matched), so when a
+ * package serves 20 questions to grade 5 and 40 to grade 11 there is no honest
+ * single number. Returning null drops the row entirely — better than showing
+ * one grade's figure to everyone. Packages whose grades all inherit — every
+ * package before 106, and every single-grade one — resolve to one value and
+ * render exactly as before.
+ */
+export function sharedGradeValue(
+  grades: { questions_per_attempt: number | null; duration_minutes: number | null }[],
+  packageValue: number,
+  field: "questions_per_attempt" | "duration_minutes",
+): number | null {
+  if (grades.length === 0) return packageValue;
+  const values = new Set(grades.map((g) => g[field] ?? packageValue));
+  return values.size === 1 ? (values.values().next().value ?? null) : null;
+}
+
 export function buildOlympiadDetailRows(
   pkg: OlympiadPackageRow,
   count: number,
@@ -67,17 +89,22 @@ export function buildOlympiadDetailRows(
   // Round 51 rotation: what one attempt actually serves. Shown only when it is
   // a real SUBSET of this caller's pool — equal/greater means an attempt serves
   // the whole pool and the questions row above already says it.
+  // Migration 106: resolved across the target grades (null when they differ).
+  const perAttempt = sharedGradeValue(
+    pkg.grades,
+    pkg.questions_per_attempt,
+    "questions_per_attempt",
+  );
+  const duration = sharedGradeValue(pkg.grades, pkg.duration_minutes, "duration_minutes");
   push(
     "perAttempt",
     t("poly.det.perAttempt"),
-    pkg.questions_per_attempt > 0 && pkg.questions_per_attempt < count
-      ? String(pkg.questions_per_attempt)
-      : null,
+    perAttempt !== null && perAttempt > 0 && perAttempt < count ? String(perAttempt) : null,
   );
   push(
     "duration",
     t("poly.det.duration"),
-    pkg.duration_minutes ? `${pkg.duration_minutes} ${t("poly.det.minutes")}` : null,
+    duration ? `${duration} ${t("poly.det.minutes")}` : null,
   );
   push("eventAt", t("poly.det.eventAt"), dateOf(pkg.event_starts_at));
   push("saleStart", t("poly.det.saleStart"), dateOf(pkg.sale_starts_at));

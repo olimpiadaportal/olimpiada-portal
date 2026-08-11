@@ -192,8 +192,27 @@ create table if not exists public.olympiad_package_grades (
   olympiad_package_id uuid not null references public.olympiad_packages (id) on delete cascade,
   grade_id            uuid not null references public.grades (id) on delete restrict,
   created_at          timestamptz not null default now(),
+  -- Migration 106: how many questions an attempt serves for THIS grade, and how
+  -- long it runs. NULL = inherit the package-level value; the CHECKs mirror the
+  -- package-level ranges exactly, so a per-grade value can never be something
+  -- the package level would have rejected.
+  questions_per_attempt integer
+    constraint ck_opg_questions_per_attempt
+    check (questions_per_attempt is null
+           or (questions_per_attempt >= 1 and questions_per_attempt <= 500)),
+  duration_minutes integer
+    constraint ck_opg_duration_minutes
+    check (duration_minutes is null
+           or (duration_minutes >= 5 and duration_minutes <= 240)),
   primary key (olympiad_package_id, grade_id)
 );
+
+comment on column public.olympiad_package_grades.questions_per_attempt is
+  'Migration 106: questions served per attempt for THIS grade. NULL = inherit '
+  'olympiad_packages.questions_per_attempt.';
+comment on column public.olympiad_package_grades.duration_minutes is
+  'Migration 106: attempt time limit for THIS grade, in minutes. NULL = inherit '
+  'olympiad_packages.duration_minutes.';
 
 comment on table public.olympiad_package_grades is
   'Grades an olympiad package targets (Round 34 multi-grade). Each targeted '
@@ -627,6 +646,54 @@ drop trigger if exists trg_olympiad_activation_pool_guard on public.olympiad_pac
 create trigger trg_olympiad_activation_pool_guard
   before insert or update on public.olympiad_packages
   for each row execute function public.olympiad_activation_pool_guard();
+
+-- -----------------------------------------------------------------------------
+-- Migration 106 — the ONE definition of "what applies to this (package, grade)".
+--
+-- Every reader goes through this: the attempt engine, the activation guards and
+-- the admin surfaces. A second coalesce written out by hand somewhere else is
+-- how the grade and the package start disagreeing.
+--
+-- p_grade_id NULL = a legacy grade-less package → the package row's values.
+-- A SQL-language function, so it lives HERE rather than in 011: its body is validated at
+-- CREATE time and olympiad_package_grades must already exist.
+-- -----------------------------------------------------------------------------
+create or replace function public.olympiad_grade_config(
+  p_package_id uuid,
+  p_grade_id   uuid
+)
+returns table (questions_per_attempt int, duration_minutes int)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $
+  select
+    greatest(least(coalesce(g.questions_per_attempt, p.questions_per_attempt, 25), 500), 1),
+    greatest(least(coalesce(g.duration_minutes, p.duration_minutes, 25), 240), 5)
+  from public.olympiad_packages p
+  left join public.olympiad_package_grades g
+    on g.olympiad_package_id = p.id
+   and g.grade_id = p_grade_id
+  where p.id = p_package_id;
+$;
+
+comment on function public.olympiad_grade_config(uuid, uuid) is
+  'Migration 106: resolves questions-per-attempt + duration for one (package, '
+  'grade), falling back to the package-level values. The single definition used '
+  'by the attempt engine, the activation guards and the admin surfaces.';
+
+revoke all on function public.olympiad_grade_config(uuid, uuid) from public, anon;
+grant execute on function public.olympiad_grade_config(uuid, uuid) to authenticated, service_role;
+
+-- Migration 107: the activation guard above fires on olympiad_packages, but the
+-- per-grade counts live on olympiad_package_grades — so adding a target grade
+-- to an ACTIVE package, or raising one grade's count, used to skip validation
+-- entirely. This arms the guard on the grade rows themselves.
+drop trigger if exists trg_olympiad_grade_pool_guard on public.olympiad_package_grades;
+create trigger trg_olympiad_grade_pool_guard
+  before insert or update on public.olympiad_package_grades
+  for each row execute function public.olympiad_grade_pool_guard();
 
 -- -----------------------------------------------------------------------------
 -- get_olympiad_pool_counts (Round 21) : the REAL published-question count per

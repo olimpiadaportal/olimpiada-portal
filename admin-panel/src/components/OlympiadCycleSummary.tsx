@@ -27,6 +27,12 @@ export type CycleGrade = {
   level: number;
   /** Published (edit) or uploaded-and-valid (create) pool size. */
   pool: number;
+  /**
+   * Migration 106 — THIS grade's questions-per-attempt, raw from its field.
+   * Undefined means "inherit the package value" (`perAttemptRaw` below), which
+   * is what a single-grade package and every pre-106 caller pass.
+   */
+  perAttemptRaw?: string;
 };
 
 export function OlympiadCycleSummary({
@@ -42,12 +48,18 @@ export function OlympiadCycleSummary({
   grades: CycleGrade[];
 }) {
   const tt = (k: string) => dict[k] ?? k;
-  const perAttempt = parsePerAttempt(perAttemptRaw);
+  // The package-level fallback. Each grade may override it (migration 106), so
+  // this is no longer THE count — it is the one used when a grade has none.
+  const fallback = parsePerAttempt(perAttemptRaw);
+  // Nothing to estimate only when NO grade can resolve a count at all.
+  const anyResolvable =
+    fallback !== null ||
+    grades.some((g) => parsePerAttempt(g.perAttemptRaw ?? "") !== null);
 
   return (
     <div className="field oly-cycle">
       <span className="field-label">{tt("oly2.cycleTitle")}</span>
-      {grades.length === 0 || perAttempt === null ? (
+      {grades.length === 0 || !anyResolvable ? (
         <p className="hint">{tt("oly2.cycleEmpty")}</p>
       ) : (
         <ul className="oly-cycle-list">
@@ -56,6 +68,15 @@ export function OlympiadCycleSummary({
             // A grade whose pool is still empty is simply "awaiting its file" —
             // not an error yet (the create flow uploads it a few fields below).
             if (g.pool <= 0) {
+              return (
+                <li key={g.key} className="muted">
+                  {fillTemplate(tt("oly2.cycleAwaiting"), { grade: label })}
+                </li>
+              );
+            }
+            // This grade's own count wins; the package value is the fallback.
+            const perAttempt = parsePerAttempt(g.perAttemptRaw ?? "") ?? fallback;
+            if (perAttempt === null) {
               return (
                 <li key={g.key} className="muted">
                   {fillTemplate(tt("oly2.cycleAwaiting"), { grade: label })}

@@ -1526,6 +1526,22 @@ begin
       using errcode = 'no_data_found';
   end if;
 
+  -- Migration 105: a STAFF profile must never be turned into a parent either.
+  -- Login SELF-HEALS a missing parents row after a correct password (web
+  -- parentLogin, and the mobile /auth/heal BFF), so without this an
+  -- administrator signing in to the parent app would silently gain a parent
+  -- account beside their staff role.
+  if exists (
+    select 1
+      from public.profile_roles pr
+      join public.roles r on r.id = pr.role_id
+     where pr.profile_id = v_profile
+       and r.code in ('administrator', 'content_manager')
+  ) then
+    raise exception 'setup_parent: profile % holds a staff role', v_profile
+      using errcode = 'check_violation';
+  end if;
+
   -- A child profile must never be turned into a parent.
   if exists (select 1 from public.students s where s.profile_id = v_profile) then
     raise exception 'setup_parent: profile % is a student', v_profile using errcode = 'check_violation';
@@ -2812,6 +2828,8 @@ declare
   -- table (015), and a declared composite type must exist at compile time.
   v_rot        record;
   v_tries      int := 0;
+  -- Migration 106: the per-grade config, resolved after grade entitlement.
+  v_gcfg       record;
   v_pool       uuid[];
   v_seen       uuid[];
   v_pick1      uuid[] := '{}';
@@ -2840,6 +2858,10 @@ begin
   if v_pkg.id is null then
     raise exception 'olympiad: package not found' using errcode = 'no_data_found';
   end if;
+  -- Migration 106: the package values above are only the FALLBACK. What
+  -- actually applies depends on the entitled grade and is resolved below, once
+  -- v_pool_grade is known — this is why every grade used to share one question
+  -- count and one clock.
   v_duration := v_pkg.dur_min * 60;
 
   -- Round 34: resolve WHICH grade's pool this child is entitled to.
@@ -2861,6 +2883,17 @@ begin
       raise exception 'olympiad: package does not cover your grade'
         using errcode = 'check_violation', hint = 'package_not_for_grade';
     end if;
+  end if;
+
+  -- Migration 106: the entitled grade is known now — take THAT grade's
+  -- question count and duration (falling back to the package's when the grade
+  -- carries no override). The draw size and the deadline below both use these.
+  select c.questions_per_attempt, c.duration_minutes
+    into v_gcfg
+  from public.olympiad_grade_config(p_package_id, v_pool_grade) c;
+  if v_gcfg.questions_per_attempt is not null then
+    v_pkg.n_per := v_gcfg.questions_per_attempt;
+    v_duration  := v_gcfg.duration_minutes * 60;
   end if;
 
   -- Round 49 — ROTATION LOCK. Get-or-create this student's rotation row for
@@ -3049,7 +3082,10 @@ stable
 set search_path = public, pg_temp
 as $$
 declare
-  v_need  int := greatest(coalesce(p_per_attempt, 1), 1);
+  -- Migration 107: the package-level number is only the FALLBACK now — each
+  -- target grade may carry its own questions_per_attempt.
+  v_fallback int := greatest(coalesce(p_per_attempt, 1), 1);
+  v_need  int;
   v_pool  int;
   v_sfx   text;
   r       record;
@@ -3062,14 +3098,14 @@ begin
     from public.questions q
     where q.olympiad_package_id = p_package_id
       and q.status = 'published';
-    if v_pool < v_need then
+    if v_pool < v_fallback then
       raise exception
         'Paketə % sual yüklənib. Paket üzrə sual sayı % olduğu üçün ən azı % sual tələb olunur.',
-        v_pool, v_need, v_need
+        v_pool, v_fallback, v_fallback
         using errcode = 'check_violation',
               hint    = 'olympiad_pool_below_per_attempt',
               detail  = jsonb_build_object('grade_level', null, 'grade_id', null,
-                                           'pool', v_pool, 'required', v_need)::text;
+                                           'pool', v_pool, 'required', v_fallback)::text;
     end if;
     return;
   end if;
@@ -3077,6 +3113,8 @@ begin
   for r in
     select g.grade_id                    as grade_id,
            gr.level::int                 as level,
+           -- Migration 107: THIS grade's requirement, not the package's.
+           greatest(coalesce(g.questions_per_attempt, v_fallback), 1) as need,
            (select count(*)::int
               from public.questions q
              where q.olympiad_package_id = p_package_id
@@ -3088,6 +3126,7 @@ begin
       and (p_grade_id is null or g.grade_id = p_grade_id)
     order by gr.level
   loop
+    v_need := r.need;
     if r.pool < v_need then
       -- Azerbaijani ordinal suffix by vowel harmony of the spoken numeral:
       -- üç/dörd -> cü, altı -> cı, doqquz/on -> cu, everything else -> ci.
@@ -3113,10 +3152,11 @@ end;
 $$;
 
 comment on function public.assert_olympiad_pool_meets_per_attempt(uuid, int, uuid) is
-  'Round 49: raises check_violation (hint olympiad_pool_below_per_attempt, '
-  'DETAIL = JSON {grade_level, grade_id, pool, required}) when a target grade''s '
-  'published pool cannot fill one attempt of p_per_attempt questions. '
-  'service-internal: reached only through olympiad_activation_pool_guard().';
+  'Round 49 + migration 107: raises check_violation (hint '
+  'olympiad_pool_below_per_attempt, DETAIL = JSON {grade_level, grade_id, pool, '
+  'required}) when a target grade''s published pool cannot fill one attempt. '
+  'Each grade is checked against ITS OWN questions_per_attempt, falling back to '
+  'p_per_attempt. service-internal: reached through the activation guards only.';
 
 revoke all on function public.assert_olympiad_pool_meets_per_attempt(uuid, int, uuid)
   from public, anon, authenticated;
@@ -3158,6 +3198,52 @@ comment on function public.olympiad_activation_pool_guard() is
   'Round 49: blocks activating (or raising questions_per_attempt on) an '
   'olympiad package whose target-grade pool cannot fill one attempt. Unrelated '
   'edits to an already-active package pass through untouched.';
+
+-- Migration 107: the same rule for the GRADE rows. The guard above fires on
+-- olympiad_packages, but per-grade counts live on olympiad_package_grades — so
+-- adding a target grade to an ACTIVE package, or raising one grade's count,
+-- reached no validation at all. Same philosophy as above: only a change that
+-- could make an ACTIVE package unservable is checked; everything else passes.
+-- SECURITY DEFINER for the same reason (questions is RLS-protected and the
+-- guard must never pass because rows were hidden from the caller).
+create or replace function public.olympiad_grade_pool_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $
+declare
+  v_status  public.catalog_status;
+  v_pkg_per int;
+begin
+  select p.status, p.questions_per_attempt
+    into v_status, v_pkg_per
+  from public.olympiad_packages p
+  where p.id = new.olympiad_package_id;
+
+  -- Not active → the package-level guard validates the whole set at activation.
+  if v_status is distinct from 'active'::public.catalog_status then
+    return new;
+  end if;
+
+  -- A RAISE is the only update that can newly break servability; lowering the
+  -- count (or editing the duration) is always safe.
+  if tg_op = 'UPDATE'
+     and coalesce(new.questions_per_attempt, v_pkg_per, 1)
+         <= coalesce(old.questions_per_attempt, v_pkg_per, 1) then
+    return new;
+  end if;
+
+  perform public.assert_olympiad_pool_meets_per_attempt(
+    new.olympiad_package_id, v_pkg_per, new.grade_id);
+  return new;
+end;
+$;
+
+comment on function public.olympiad_grade_pool_guard() is
+  'Migration 107: blocks adding a target grade to — or raising a grade''s '
+  'questions_per_attempt on — an ACTIVE olympiad package whose published pool '
+  'for that grade cannot fill one attempt. The trigger is ARMED IN 015.';
 
 -- The trigger itself is ARMED IN 015 (after olympiad_packages exists —
 -- canonical run order: 011 functions first, 015 tables later).

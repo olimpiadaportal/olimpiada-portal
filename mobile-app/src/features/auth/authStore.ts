@@ -5,7 +5,12 @@
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase";
 import { queryClient } from "@/lib/queryClient";
-import { bffChildLogin, bffRegisterParent, type SessionTokens } from "@/lib/api";
+import {
+  bffChildLogin,
+  bffHealParentAccount,
+  bffRegisterParent,
+  type SessionTokens,
+} from "@/lib/api";
 import { clearPendingLink } from "@/lib/deeplink";
 import { deregisterPushToken } from "@/features/push/registration";
 import { clearAllDrafts } from "@/features/tests/draft";
@@ -101,7 +106,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       return { error: "parent.err.invalid" };
     }
-    const [role, profileId] = await Promise.all([serverRole(), serverProfileId()]);
+    let [role, profileId] = await Promise.all([serverRole(), serverProfileId()]);
+
+    // The password was correct, so the account EXISTS — "unknown" here means
+    // either a transient RLS/network failure or an account whose parent
+    // provisioning never finished (signUp succeeded, setup_parent did not).
+    // The second case is permanent and used to strand the user on the boot
+    // gate's retry button forever, while registration insisted the address was
+    // already taken. The BFF re-checks and repairs; a caller that was already
+    // fine comes back healed:false and the role is simply re-read.
+    if (role === "unknown") {
+      const healed = await bffHealParentAccount();
+      if (!healed.ok && healed.error === "parent.err.staffAccount") {
+        // A staff address must never become a parent account (migration 105).
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          // local state is cleared by the caller's error path
+        }
+        return { error: "parent.err.staffAccount" };
+      }
+      [role, profileId] = await Promise.all([serverRole(), serverProfileId()]);
+    }
+
     set({ status: "signedIn", role, userId: data.session.user.id, profileId });
     return {};
   },

@@ -871,6 +871,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "parent.err.emailExists":
       "Bu e-poçt artıq qeydiyyatdadır. Daxil olun və ya şifrəni sıfırlayın.",
     "parent.err.noAccount": "Bu e-poçtla hesab tapılmadı. Əvvəlcə qeydiyyatdan keçin.",
+    "parent.err.incompleteAccount":
+      "Hesabınız tam qurulmayıb. Bir az sonra yenidən cəhd edin; problem davam edərsə, dəstəyə yazın.",
+    "parent.err.staffAccount":
+      "Bu e-poçt idarəetmə hesabına aiddir. Valideyn paneli üçün ayrı hesab yaradın.",
     "parent.err.wrongPassword": "Şifrə yanlışdır. Yenidən cəhd edin.",
 
     // — Round3 D — Add-child wizard (used by D2) —
@@ -2526,6 +2530,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "parent.err.emailExists":
       "This email is already registered. Log in or reset your password.",
     "parent.err.noAccount": "No account found for this email. Register first.",
+    "parent.err.incompleteAccount":
+      "Your account is not fully set up. Please try again in a moment; if it persists, contact support.",
+    "parent.err.staffAccount":
+      "This email belongs to an administration account. Please create a separate account for the parent panel.",
     "parent.err.wrongPassword": "Incorrect password. Please try again.",
 
     // — Round3 D — Add-child wizard (used by D2) —
@@ -4165,6 +4173,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "parent.err.emailExists":
       "Эта эл. почта уже зарегистрирована. Войдите или сбросьте пароль.",
     "parent.err.noAccount": "Аккаунт с этой эл. почтой не найден. Сначала зарегистрируйтесь.",
+    "parent.err.incompleteAccount":
+      "Аккаунт настроен не полностью. Попробуйте ещё раз через минуту; если проблема повторяется, напишите в поддержку.",
+    "parent.err.staffAccount":
+      "Этот адрес принадлежит административному аккаунту. Для родительской панели создайте отдельный аккаунт.",
     "parent.err.wrongPassword": "Неверный пароль. Попробуйте снова.",
 
     // — Round3 D — Add-child wizard (used by D2) —

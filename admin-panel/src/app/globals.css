@@ -723,6 +723,47 @@ a {
   margin-top: 10px;
 }
 
+/* ---- Migration 106: per-grade question count + duration ------------------
+   One compact row per selected grade, shown only for multi-grade packages.
+   The rows wrap on narrow screens rather than forcing a horizontal scroll,
+   because the admin panel is used on laptops at half-width. */
+.oly-grade-cfg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.oly-grade-cfg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.oly-grade-cfg-name {
+  flex: 0 0 auto;
+  min-width: 92px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.oly-grade-cfg-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.oly-grade-cfg-field input {
+  width: 84px;
+  padding: 4px 6px;
+}
+
 /* Collapsible "JSON format" block inside each grade's upload slot. Collapsed by
    default (see OlympiadJsonFormat) — many selected grades would otherwise bury
    the upload fields under repeated copies of the same block. */

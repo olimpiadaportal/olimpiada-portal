@@ -32,6 +32,7 @@ import {
   gradeLabel,
   gradePoolShortfalls,
   parsePerAttempt,
+  parsePerGradeConfig,
 } from "@/lib/admin/olympiad-per-attempt";
 import { localeNames, type Locale } from "@/i18n/config";
 import { localStrings as poolStrings } from "@/app/(protected)/olympiad/labels";
@@ -264,16 +265,18 @@ async function resolveOlympiadTypeId(
 async function packageGradeRows(
   supabase: Db,
   pkgId: string,
-): Promise<{ id: string; name: string; level: number }[]> {
+): Promise<{ id: string; name: string; level: number; need: number | null }[]> {
   const { data } = await supabase
     .from("olympiad_package_grades")
-    .select("grade_id, grades(id, name, level)")
+    // Migration 106: the grade's OWN questions_per_attempt (null = inherit).
+    .select("grade_id, questions_per_attempt, grades(id, name, level)")
     .eq("olympiad_package_id", pkgId);
   return ((data ?? []) as any[])
     .map((r) => ({
       id: String(r.grade_id),
       name: String(r.grades?.name ?? ""),
       level: Number(r.grades?.level ?? 0),
+      need: r.questions_per_attempt == null ? null : Number(r.questions_per_attempt),
     }))
     .sort((a, b) => a.level - b.level);
 }
@@ -297,6 +300,89 @@ async function publishedPoolCount(
 
 // Round 49 ACTIVATION GATE. A package may only go ACTIVE when every grade it
 // targets has a published pool that can actually fill one attempt — i.e.
+
+/**
+ * Persist per-grade question count + duration on EDIT (migration 106).
+ *
+ * The grade set comes from the DATABASE, never from the posted field names: a
+ * forged `qpa_<uuid>` for someone else's grade must not write anything. Every
+ * target grade is then resolved from the form:
+ *
+ *   value present + valid  -> store the override
+ *   value present + empty  -> store NULL (inherit the package value)
+ *   field absent entirely  -> store NULL
+ *
+ * The last case is what keeps a SINGLE-grade package honest. Its form renders
+ * no per-grade panel, so nothing is posted — and if the grade row kept an
+ * explicit number, editing the package-level count would silently do nothing
+ * because the grade value shadows it. Clearing it makes the package field mean
+ * what it says.
+ *
+ * `__per_grade_cfg` is the form's marker that it owns these fields. Without it
+ * this function does nothing at all, so a future caller that does not render
+ * the panel can never wipe an admin's overrides by omission.
+ *
+ * Returns "invalid" for a bad value, "error" for a write failure, null on
+ * success.
+ */
+async function savePerGradeConfig(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  packageId: string,
+  fd: FormData,
+): Promise<"invalid" | "error" | null> {
+  if (String(fd.get("__per_grade_cfg") ?? "") !== "1") return null;
+
+  const { data: rows, error: readErr } = await supabase
+    .from("olympiad_package_grades")
+    .select("grade_id, questions_per_attempt, duration_minutes")
+    .eq("olympiad_package_id", packageId);
+  if (readErr) {
+    console.error("[admin] per-grade config read failed", readErr.message);
+    return "error";
+  }
+
+  for (const row of (rows ?? []) as {
+    grade_id: string;
+    questions_per_attempt: number | null;
+    duration_minutes: number | null;
+  }[]) {
+    const gid = String(row.grade_id);
+    const rawQ = String(fd.get(`qpa_${gid}`) ?? "").trim();
+    const rawD = String(fd.get(`dur_${gid}`) ?? "").trim();
+
+    let qpa: number | null = null;
+    if (rawQ !== "") {
+      qpa = parsePerAttempt(rawQ);
+      if (qpa === null) return "invalid";
+    }
+    let dur: number | null = null;
+    if (rawD !== "") {
+      const n = Number(rawD);
+      if (!Number.isInteger(n) || n < DURATION_MIN || n > DURATION_MAX) return "invalid";
+      dur = n;
+    }
+
+    // Nothing changed for this grade — skip the write so an unrelated package
+    // edit does not touch every grade row (and does not re-fire the DB pool
+    // guard on rows that did not move).
+    if (qpa === row.questions_per_attempt && dur === row.duration_minutes) continue;
+
+    const { error } = await supabase
+      .from("olympiad_package_grades")
+      .update({ questions_per_attempt: qpa, duration_minutes: dur })
+      .eq("olympiad_package_id", packageId)
+      .eq("grade_id", gid);
+    if (error) {
+      // The DB guard (migration 107) blocks raising a grade's count above what
+      // its published pool can serve. Re-render that in the admin's locale
+      // rather than leaking the raw Postgres message.
+      console.error("[admin] per-grade config write failed", error.message);
+      return "error";
+    }
+  }
+  return null;
+}
+
 // pool >= questions_per_attempt. Returns the trilingual blocking message
 // (naming each short grade, its pool and the required count), or null when
 // activation is allowed. Legacy grade-less packages are checked against the
@@ -327,6 +413,9 @@ async function activationPoolBlock(
       pool: await publishedPoolCount(supabase, pkgId, g.id),
     })),
   );
+  // Migration 106/107: each grade is measured against ITS OWN count, matching
+  // the DB guard exactly — a mirror that used one number would either block an
+  // activation the database allows or let one through that it refuses.
   const short = gradePoolShortfalls(withPools, perAttempt);
   if (short.length === 0) return null;
   return short
@@ -334,7 +423,7 @@ async function activationPoolBlock(
       fill("oly2.err.poolBelowPerAttempt", {
         grade: gradeLabel(locale, g.level, g.name),
         pool: g.pool,
-        count: perAttempt,
+        count: g.need ?? perAttempt,
       }),
     )
     .join(" ");
@@ -453,6 +542,13 @@ export async function saveOlympiadPackage(
   const fields = parsePackageFields(fd, t, lt, { requireGrades: !id });
   if ("error" in fields) return { error: fields.error };
 
+  // Migration 106: per-grade question count + duration. On EDIT the grade set
+  // comes from the posted rows (the form renders one per target grade); on the
+  // metadata-only CREATE path it comes from the grade checkboxes. Validated
+  // before anything is written either way.
+  const metaGradeCfg = parsePerGradeConfig(fd, fields.gradeIds);
+  if (!metaGradeCfg.ok) return { error: lt(metaGradeCfg.errorKey) };
+
   const supabase = await createClient();
   // Round 34: the olympiad type is mandatory; "Other" creates/reuses a type.
   const typeRes = await resolveOlympiadTypeId(supabase, fields, t);
@@ -520,7 +616,14 @@ export async function saveOlympiadPackage(
     pkgId = inserted;
     const { error: gErr } = await supabase
       .from("olympiad_package_grades")
-      .insert(fields.gradeIds.map((g) => ({ olympiad_package_id: pkgId, grade_id: g })));
+      .insert(
+        (metaGradeCfg.ok ? metaGradeCfg.rows : []).map((r) => ({
+          olympiad_package_id: pkgId,
+          grade_id: r.grade_id,
+          questions_per_attempt: r.questions_per_attempt,
+          duration_minutes: r.duration_minutes,
+        })),
+      );
     if (gErr) {
       console.error("[admin] olympiad grade rows insert failed", gErr.message);
       await rollbackNewPackage(supabase, pkgId);
@@ -535,6 +638,15 @@ export async function saveOlympiadPackage(
       console.error("[admin] olympiad package update failed", error.message);
       return { error: guarded ?? t("err.server") };
     }
+  }
+
+  // Migration 106: persist each target grade's own count + duration. EDIT
+  // only — on create the values went in with the grade rows above. Grades are
+  // added/removed by their own actions, so this updates existing rows and never
+  // inserts: a posted grade id that is not a target is simply a no-op.
+  if (id) {
+    const cfgErr = await savePerGradeConfig(supabase, pkgId, fd);
+    if (cfgErr) return { error: cfgErr === "invalid" ? lt("oly2.err.perAttempt") : t("err.server") };
   }
 
   const trErr = await upsertPackageTranslations(supabase, fd, pkgId, Boolean(id));
@@ -892,6 +1004,12 @@ export async function createOlympiadPackageWithQuestions(
   }
   const mixed = qMode === "mixed";
 
+  // Migration 106: per-grade question count + duration. Parsed and validated
+  // HERE — before insertPackageRow — so an invalid value fails cleanly instead
+  // of leaving a package that then has to be rolled back.
+  const gradeConfig = parsePerGradeConfig(fd, fields.gradeIds);
+  if (!gradeConfig.ok) return { error: lt(gradeConfig.errorKey) };
+
   // Round 34: validate EVERY grade's file BEFORE creating anything. The
   // package must not be creatable while any selected grade lacks a valid
   // pool — a bad file in one grade blocks the whole creation, and the admin
@@ -936,8 +1054,18 @@ export async function createOlympiadPackageWithQuestions(
   // may only be created ACTIVE when every grade's uploaded pool can fill one
   // attempt (pool >= questions_per_attempt).
   if (fields.status === "active") {
+    // Migration 106: each grade is measured against ITS OWN count, matching the
+    // DB guard. A 40-question grade and a 10-question grade have different
+    // thresholds against the same uploaded pool.
+    const needByGrade = new Map(
+      gradeConfig.rows.map((r) => [r.grade_id, r.questions_per_attempt]),
+    );
     const short = gradePoolShortfalls(
-      perGrade.map(({ grade, rows }) => ({ ...grade, pool: rows.validItems.length })),
+      perGrade.map(({ grade, rows }) => ({
+        ...grade,
+        pool: rows.validItems.length,
+        need: needByGrade.get(grade.id) ?? null,
+      })),
       fields.questionsPerAttempt,
     );
     if (short.length > 0) {
@@ -947,7 +1075,7 @@ export async function createOlympiadPackageWithQuestions(
             fillTemplate(lt("oly2.err.poolBelowPerAttempt"), {
               grade: gradeLabel(locale, g.level, g.name),
               pool: g.pool,
-              count: fields.questionsPerAttempt,
+              count: g.need ?? fields.questionsPerAttempt,
             }),
           )
           .join(" "),
@@ -979,9 +1107,19 @@ export async function createOlympiadPackageWithQuestions(
   if (!pkgId) return { error: t("err.server") };
 
   // Target grades BEFORE the imports (the pool guard trigger checks them).
+  // Migration 106: each grade carries its OWN question count and duration.
+  // Validated before the package row was created, so a bad value never leaves a
+  // half-built package behind.
   const { error: gErr } = await supabase
     .from("olympiad_package_grades")
-    .insert(fields.gradeIds.map((g) => ({ olympiad_package_id: pkgId, grade_id: g })));
+    .insert(
+      gradeConfig.rows.map((r) => ({
+        olympiad_package_id: pkgId,
+        grade_id: r.grade_id,
+        questions_per_attempt: r.questions_per_attempt,
+        duration_minutes: r.duration_minutes,
+      })),
+    );
   if (gErr) {
     console.error("[admin] olympiad grade rows insert failed", gErr.message);
     await rollbackNewPackage(supabase, pkgId);

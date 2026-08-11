@@ -149,6 +149,37 @@ const loadPublicOlympiads = cache(
           "id",
           rows.map((r) => r.id),
         );
+      // Migration 106: these two numbers are stored PER GRADE. A public
+      // visitor has no grade context, so when a package's grades DISAGREE
+      // there is no honest single value — the row is dropped rather than
+      // showing one grade's number to everyone. Packages whose grades all
+      // inherit (the normal case) are unaffected.
+      const conflicting = new Set<string>();
+      const durationConflicting = new Set<string>();
+      {
+        const seenPer = new Map<string, Set<number>>();
+        const seenDur = new Map<string, Set<number>>();
+        const { data: cfgRows } = await supabase
+          .from("olympiad_package_grades")
+          .select("olympiad_package_id, questions_per_attempt, duration_minutes")
+          .in(
+            "olympiad_package_id",
+            rows.map((r) => r.id),
+          );
+        for (const c of (cfgRows ?? []) as Record<string, unknown>[]) {
+          const id = String(c.olympiad_package_id ?? "");
+          if (!id) continue;
+          // NULL means "inherit", so it is counted as its own value: a package
+          // where one grade overrides and another inherits still disagrees.
+          const per = c.questions_per_attempt == null ? -1 : Number(c.questions_per_attempt);
+          const dur = c.duration_minutes == null ? -1 : Number(c.duration_minutes);
+          (seenPer.get(id) ?? seenPer.set(id, new Set()).get(id)!).add(per);
+          (seenDur.get(id) ?? seenDur.set(id, new Set()).get(id)!).add(dur);
+        }
+        for (const [id, set] of seenPer) if (set.size > 1) conflicting.add(id);
+        for (const [id, set] of seenDur) if (set.size > 1) durationConflicting.add(id);
+      }
+
       for (const e of (extraRows ?? []) as Record<string, unknown>[]) {
         const id = typeof e.id === "string" ? e.id : null;
         if (!id) continue;
@@ -162,12 +193,18 @@ const loadPublicOlympiads = cache(
         const minutes = Number(e.duration_minutes);
         const perAttempt = Number(e.questions_per_attempt);
         extras.set(id, {
-          durationMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : null,
+          durationMinutes:
+            durationConflicting.has(id) || !Number.isFinite(minutes) || minutes <= 0
+              ? null
+              : minutes,
           saleStartsAt:
             typeof e.sale_starts_at === "string" ? e.sale_starts_at : null,
           coverUrl,
+          // 0 hides the row downstream, same as an unset value.
           questionsPerAttempt:
-            Number.isFinite(perAttempt) && perAttempt > 0 ? perAttempt : 0,
+            conflicting.has(id) || !Number.isFinite(perAttempt) || perAttempt <= 0
+              ? 0
+              : perAttempt,
         });
       }
 

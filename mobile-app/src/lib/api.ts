@@ -269,6 +269,28 @@ export function bffAuthedPost<T>(
   return bffJsonPost<T>(path, body, fallbackErrorKey, true, extraHeaders);
 }
 
+/**
+ * Repair a parent account whose provisioning never finished.
+ *
+ * Registration is signUp THEN setup_parent, so a failure between the two leaves
+ * an auth user with no roles: the password works, but every role check says the
+ * caller is nobody, and the app lands on "unknown" with only a retry button.
+ * The web self-heals this inside its login action; mobile cannot, because it
+ * signs in against Supabase directly and holds no service-role key.
+ *
+ * Called ONLY after a password has already verified — the endpoint re-verifies
+ * the token itself and repairs the account that token belongs to, so there is
+ * nothing to pass. `healed:false` means the account was already fine (the role
+ * lookup simply failed), which is not an error.
+ */
+export function bffHealParentAccount() {
+  return bffAuthedPost<{ healed: boolean }>(
+    "/api/mobile/v1/auth/heal",
+    {},
+    "parent.err.incompleteAccount",
+  );
+}
+
 export type AddChildFields = {
   first_name: string;
   last_name: string;

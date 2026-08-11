@@ -46,6 +46,15 @@ const STRINGS: Record<Locale, Dict> = {
       "Dövrə HƏR ŞAGİRD üçün ayrıca izlənir: şagird hovuz bitənə qədər eyni sualı təkrar görmür; hovuz bitəndə yalnız həmin şagirdin dövrəsi sıfırlanır və yenidən başlayır.",
     "oly2.cycleEmpty": "Sinif seçin və sual faylını yükləyin — dövrə burada hesablanacaq.",
     "oly2.cycleAwaiting": "{grade}: sual faylı hələ yüklənməyib.",
+    // ---- Migration 106: per-grade question count + duration ----
+    "oly2.perGradeTitle": "Sinif üzrə sual sayı və müddət",
+    "oly2.perGradeCfgHint":
+      "Hər sinif üçün ayrıca təyin edin. Boş saxlasanız, yuxarıdakı ümumi dəyər tətbiq olunur.",
+    "oly2.perGradeCount": "Sual sayı",
+    "oly2.perGradeDuration": "Müddət (dəq)",
+    "oly2.perGradeDefaultNote":
+      "Bir neçə sinif seçilib — yuxarıdakı dəyərlər ümumi (defolt) sayılır; aşağıda hər sinif üçün ayrıca dəyişə bilərsiniz.",
+    "oly2.perGradeVaries": "Sinifdən sinfə dəyişir",
     "oly2.addGrade": "Sinif əlavə et",
     "oly2.addGradeHint": "Yeni sinif yalnız sual faylı ilə birlikdə əlavə olunur — boş hovuzlu sinif yaranmır.",
     "oly2.addGradeBtn": "Sinfi və sualları əlavə et",
@@ -129,6 +138,15 @@ const STRINGS: Record<Locale, Dict> = {
       "The cycle is tracked separately for EACH student: a student never sees the same question twice until that pool is used up, and only that student's cycle then resets and starts over.",
     "oly2.cycleEmpty": "Pick a grade and upload its question file — the cycle is calculated here.",
     "oly2.cycleAwaiting": "{grade}: no question file uploaded yet.",
+    // ---- Migration 106: per-grade question count + duration ----
+    "oly2.perGradeTitle": "Questions & duration per grade",
+    "oly2.perGradeCfgHint":
+      "Set these separately for each grade. Leave a field empty to use the package value above.",
+    "oly2.perGradeCount": "Questions",
+    "oly2.perGradeDuration": "Duration (min)",
+    "oly2.perGradeDefaultNote":
+      "More than one grade is selected — the values above act as the package default; override them per grade below.",
+    "oly2.perGradeVaries": "Varies by grade",
     "oly2.addGrade": "Add a grade",
     "oly2.addGradeHint": "A new grade is only added together with its question file — no grade ever starts with an empty pool.",
     "oly2.addGradeBtn": "Add grade with questions",
@@ -206,6 +224,15 @@ const STRINGS: Record<Locale, Dict> = {
       "Цикл отслеживается ОТДЕЛЬНО для КАЖДОГО ученика: ученик не увидит один и тот же вопрос повторно, пока пул не закончится; после этого сбрасывается и начинается заново только его цикл.",
     "oly2.cycleEmpty": "Выберите класс и загрузите файл вопросов — цикл будет рассчитан здесь.",
     "oly2.cycleAwaiting": "{grade}: файл вопросов ещё не загружен.",
+    // ---- Migration 106: per-grade question count + duration ----
+    "oly2.perGradeTitle": "Вопросы и длительность по классам",
+    "oly2.perGradeCfgHint":
+      "Задайте отдельно для каждого класса. Оставьте поле пустым — применится значение пакета выше.",
+    "oly2.perGradeCount": "Вопросов",
+    "oly2.perGradeDuration": "Длительность (мин)",
+    "oly2.perGradeDefaultNote":
+      "Выбрано несколько классов — значения выше считаются значениями пакета по умолчанию; ниже их можно переопределить для каждого класса.",
+    "oly2.perGradeVaries": "Зависит от класса",
     "oly2.addGrade": "Добавить класс",
     "oly2.addGradeHint": "Новый класс добавляется только вместе с файлом вопросов — класс с пустым пулом не возникает.",
     "oly2.addGradeBtn": "Добавить класс с вопросами",

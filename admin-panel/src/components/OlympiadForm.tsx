@@ -43,8 +43,19 @@ export function OlympiadForm({
   locale: Locale;
   subjects: Opt[];
   olympiadTypes: Opt[];
-  /** Target grades with their REAL published pool size (edit page). */
-  gradePools?: { id: string; name: string; level: number; questions: number }[];
+  /**
+   * Target grades with their REAL published pool size (edit page).
+   * Migration 106: each also carries its stored per-grade config, where ""
+   * means "no override — inherit the package value".
+   */
+  gradePools?: {
+    id: string;
+    name: string;
+    level: number;
+    questions: number;
+    perAttempt?: string;
+    duration?: string;
+  }[];
   defaults?: Defaults;
   id?: string;
   submitLabel: string;
@@ -69,6 +80,20 @@ export function OlympiadForm({
     return o;
   });
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  // Migration 106 — per-grade overrides, seeded from what is stored. Grades are
+  // not added or removed here (that is the Grades & Pools manager below), so
+  // this map is fixed for the life of the form.
+  const [perGrade, setPerGrade] = useState<Record<string, { q: string; d: string }>>(() => {
+    const o: Record<string, { q: string; d: string }> = {};
+    for (const g of gradePools) o[g.id] = { q: g.perAttempt ?? "", d: g.duration ?? "" };
+    return o;
+  });
+  const setPG = (id: string, k: "q" | "d", v: string) =>
+    setPerGrade((p) => ({ ...p, [id]: { ...(p[id] ?? { q: "", d: "" }), [k]: v } }));
+  // Only worth showing for 2+ grades: with one grade the fields above ARE the
+  // configuration and a second identical pair would just invite disagreement.
+  const multiGrade = gradePools.length > 1;
 
   return (
     <form action={action} className="form">
@@ -137,6 +162,7 @@ export function OlympiadForm({
         locale={locale}
         perAttemptRaw={f.perAttempt}
         grades={gradePools.map((g) => ({
+          perAttemptRaw: perGrade[g.id]?.q ?? "",
           key: g.id,
           name: g.name,
           level: g.level,
@@ -157,6 +183,57 @@ export function OlympiadForm({
         />
         <span className="hint">{tt("oly2.durationHelp")}</span>
       </label>
+
+      {/* ---- Migration 106: per-grade question count + duration -------------
+          The marker tells the save action this form owns these fields, so a
+          blank means "inherit" rather than "the caller forgot to render them".
+          It is posted even for a single grade — that is exactly the case where
+          the grade row must be cleared so the package fields above apply. */}
+      <input type="hidden" name="__per_grade_cfg" value="1" />
+      {multiGrade && (
+        <div className="field">
+          <span className="field-label">{tt("oly2.perGradeTitle")}</span>
+          <span className="hint">{tt("oly2.perGradeDefaultNote")}</span>
+          <span className="hint">{tt("oly2.perGradeCfgHint")}</span>
+          <div className="oly-grade-cfg">
+            {gradePools.map((g) => (
+              <div key={g.id} className="oly-grade-cfg-row">
+                <span className="oly-grade-cfg-name">{g.name}</span>
+                <label className="oly-grade-cfg-field">
+                  <span>{tt("oly2.perGradeCount")}</span>
+                  <input
+                    name={`qpa_${g.id}`}
+                    type="number"
+                    min={PER_ATTEMPT_MIN}
+                    max={PER_ATTEMPT_MAX}
+                    step={1}
+                    inputMode="numeric"
+                    placeholder={f.perAttempt}
+                    value={perGrade[g.id]?.q ?? ""}
+                    disabled={pending}
+                    onChange={(e) => setPG(g.id, "q", e.target.value)}
+                  />
+                </label>
+                <label className="oly-grade-cfg-field">
+                  <span>{tt("oly2.perGradeDuration")}</span>
+                  <input
+                    name={`dur_${g.id}`}
+                    type="number"
+                    min={5}
+                    max={240}
+                    step={1}
+                    inputMode="numeric"
+                    placeholder={f.duration}
+                    value={perGrade[g.id]?.d ?? ""}
+                    disabled={pending}
+                    onChange={(e) => setPG(g.id, "d", e.target.value)}
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <label className="field">
         <span className="field-label">{tt("oly2.statusLabel")}</span>
         <select name="status" value={f.status} onChange={(e) => set("status", e.target.value)}>

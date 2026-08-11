@@ -10,7 +10,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
-import { getAdminClient } from "@/lib/supabase/admin";
+import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { getParent, requireParent } from "@/lib/auth/session";
 import {
   createChild,
@@ -32,6 +32,11 @@ import { getT } from "@/i18n/server";
 import { rateLimitAllow } from "@/lib/rateLimit";
 import { isExistingAccountSignUp } from "@/lib/auth/signUpOutcome";
 import { setPendingVerifyEmail } from "@/lib/auth/pendingVerifyEmail";
+import {
+  classifyAccount,
+  loginShouldSayNoAccount,
+  mayRegister,
+} from "@/lib/auth/accountState";
 import {
   allowResendAttempt,
   isMailInfrastructureFailure,
@@ -106,15 +111,11 @@ export async function registerParent(
   // One indexed equality probe on auth.users (migration 099), on a path already
   // limited to 5 attempts per address per 15 minutes.
   const admin = getAdminClient();
-  const { data: taken, error: takenError } = await admin.rpc("email_is_registered", {
-    p_email: email,
-  });
-  // A failed CHECK must not become a failed registration: if the RPC is
-  // unavailable we fall through to signUp, which still refuses duplicates —
-  // just with a less precise message. Fail open on the check, never on the ban.
-  if (takenError) {
-    console.error("registerParent: email_is_registered failed", takenError.code ?? "unknown");
-  } else if (taken === true) {
+  // The SHARED classifier — the same answer login will give for this address.
+  // Two separate existence queries are what produced "already registered" on
+  // one screen and "no account" on the other.
+  const state = await classifyAccount(email);
+  if (!mayRegister(state)) {
     return {
       error: t("parent.err.emailExists"),
       code: "email_exists",
@@ -228,20 +229,56 @@ export async function parentLogin(
     return { error: t("parent.err.tooMany") };
   }
   const supabase = await createServerSupabase();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data: signIn, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
   if (error) {
     // Keep the unverified-email branch first (a real user who hasn't confirmed).
     if (/confirm/i.test(error.message)) return { error: t("parent.err.unverified") };
     // signInWithPassword returns the SAME generic error for "no such user" and
-    // "wrong password". Per the requested UX, disambiguate by checking — with
-    // the service-role admin client — whether a parent account with this email
-    // exists, so the form can say "no account" vs "wrong password".
+    // "wrong password". Per the requested UX, disambiguate — but through the
+    // SHARED classifier, so this can never disagree with what registration
+    // told the same person about the same address.
     // NOTE: this trades a small account-enumeration signal for clearer UX.
-    if (await parentAccountExists(email)) {
-      return { error: t("parent.err.wrongPassword") };
-    }
-    return { error: t("parent.err.noAccount") };
+    const state = await classifyAccount(email);
+    if (loginShouldSayNoAccount(state)) return { error: t("parent.err.noAccount") };
+    return { error: t("parent.err.wrongPassword") };
   }
+
+  // ---- Self-heal an incomplete account -------------------------------------
+  //
+  // The password was correct, so this really is the account's owner. If the
+  // parent rows are missing (a signUp that never reached setup_parent, or a
+  // profile reconstructed by disaster recovery), finish the provisioning now
+  // instead of sending them to /dashboard, where requireParent would bounce
+  // them straight back to /login with no message at all — an endless loop that
+  // looked like "login does nothing".
+  //
+  // Only AFTER authentication: this writes rows, so it must never run for
+  // someone who merely typed an address. setup_parent itself refuses staff and
+  // student profiles (migration 105), so an administrator signing in here can
+  // never acquire a parent account.
+  const authUserId = signIn?.user?.id;
+  if (authUserId) {
+    const state = await classifyAccount(email);
+    if (state === "incomplete" && isServiceRoleConfigured) {
+      const { error: healErr } = await getAdminClient().rpc("setup_parent", {
+        p_auth_user_id: authUserId,
+        p_display_name: null,
+      });
+      if (healErr) {
+        // Do not strand them on a blank redirect loop — say something true.
+        console.error("parentLogin: self-heal failed", healErr.code ?? "unknown");
+        return { error: t("parent.err.incompleteAccount") };
+      }
+    } else if (state === "staff") {
+      // A staff address is not a parent account. Without this they would sign
+      // in successfully and then bounce off requireParent forever.
+      return { error: t("parent.err.staffAccount") };
+    }
+  }
+
   redirect("/dashboard");
 }
 
@@ -250,20 +287,6 @@ export async function parentLogin(
 // joined to the parents table so synthesized child emails never match. Falls
 // back to "exists" on any lookup failure to avoid blocking a legitimate login
 // behind a misleading "no account" message.
-async function parentAccountExists(email: string): Promise<boolean> {
-  try {
-    const admin = getAdminClient();
-    const { data, error } = await admin
-      .from("profiles")
-      .select("id, parents!inner(profile_id)")
-      .eq("email", email)
-      .limit(1);
-    if (error) return true;
-    return (data?.length ?? 0) > 0;
-  } catch {
-    return true;
-  }
-}
 
 export async function parentLogout(): Promise<void> {
   const supabase = await createServerSupabase();

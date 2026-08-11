@@ -103,17 +103,37 @@ export default async function ParentOlympiadCatalogPage() {
     ((children ?? []) as any[]).map((c) => c.grade_id).filter(Boolean),
   );
   const targeted = new Map<string, string[]>();
+  // Migration 106: a package's question count and duration are PER GRADE, so
+  // one number can no longer describe a multi-grade package. These maps let the
+  // client show what the SELECTED child would actually get — the same shape
+  // countByGrade already uses for pool sizes. A missing entry means that grade
+  // stores no override and the package-level value applies.
+  const perAttemptByPkgGrade = new Map<string, Record<string, number>>();
+  const durationByPkgGrade = new Map<string, Record<string, number>>();
   {
     const ids = ((packages ?? []) as any[]).map((p) => p.id);
     if (ids.length > 0) {
       const { data: gradeRows } = await supabase
         .from("olympiad_package_grades")
-        .select("olympiad_package_id, grade_id")
+        .select("olympiad_package_id, grade_id, questions_per_attempt, duration_minutes")
         .in("olympiad_package_id", ids.slice(0, 100));
       for (const r of (gradeRows ?? []) as any[]) {
-        const list = targeted.get(r.olympiad_package_id) ?? [];
-        list.push(String(r.grade_id));
-        targeted.set(r.olympiad_package_id, list);
+        const pkgId = String(r.olympiad_package_id);
+        const gradeId = String(r.grade_id);
+        const list = targeted.get(pkgId) ?? [];
+        list.push(gradeId);
+        targeted.set(pkgId, list);
+
+        if (r.questions_per_attempt != null) {
+          const m = perAttemptByPkgGrade.get(pkgId) ?? {};
+          m[gradeId] = Number(r.questions_per_attempt);
+          perAttemptByPkgGrade.set(pkgId, m);
+        }
+        if (r.duration_minutes != null) {
+          const m = durationByPkgGrade.get(pkgId) ?? {};
+          m[gradeId] = Number(r.duration_minutes);
+          durationByPkgGrade.set(pkgId, m);
+        }
       }
     }
     const visible = (p: any): boolean => {
@@ -238,6 +258,10 @@ export default async function ParentOlympiadCatalogPage() {
       fallbackCount: legacyCounts.get(p.id) ?? 0,
       questionsPerAttempt: Number(p.questions_per_attempt ?? 0) || 0,
       durationMinutes,
+      // Migration 106: per-grade overrides; the two values above are the
+      // package-level fallback for a grade that has none.
+      perAttemptByGrade: perAttemptByPkgGrade.get(p.id) ?? {},
+      durationByGrade: durationByPkgGrade.get(p.id) ?? {},
       saleStartText: Number.isFinite(saleStart) ? fmt(saleStart) : null,
       saleEndText: Number.isFinite(saleEnd) ? fmt(saleEnd) : null,
       // Round 51 (audit): ONE money format everywhere — this page printed

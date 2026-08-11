@@ -52,15 +52,19 @@ export function poolMeetsPerAttempt(pool: number, perAttempt: number): boolean {
 }
 
 /**
- * The grades whose published pool is smaller than the configured per-attempt
- * count — these block ACTIVATION (a live package must always be able to fill
- * an attempt for every grade it targets). Order is preserved.
+ * The grades whose published pool is smaller than the count they must serve —
+ * these block ACTIVATION (a live package must always be able to fill an attempt
+ * for every grade it targets). Order is preserved.
+ *
+ * Migration 106: a grade may carry its OWN questions_per_attempt, so `need` on
+ * a row wins over the package-level `perAttempt` argument. Rows without it —
+ * every caller before 106 — behave exactly as they did.
  */
-export function gradePoolShortfalls<T extends { pool: number }>(
+export function gradePoolShortfalls<T extends { pool: number; need?: number | null }>(
   grades: readonly T[],
   perAttempt: number,
 ): T[] {
-  return grades.filter((g) => !poolMeetsPerAttempt(g.pool, perAttempt));
+  return grades.filter((g) => !poolMeetsPerAttempt(g.pool, g.need ?? perAttempt));
 }
 
 // Azerbaijani ordinal suffix by numeral vowel harmony ("6-cı sinif"). Grades
@@ -109,4 +113,64 @@ export function gradeLabel(locale: Locale, level: number, fallback = ""): string
   if (locale === "en") return `Grade ${level}`;
   if (locale === "ru") return `${level}-й класс`;
   return `${level}-${azOrdinalSuffix(level)} sinif`;
+}
+
+// ---- Migration 106: per-grade question count + duration --------------------
+// Attempt duration bounds, mirroring the DB CHECKs on both olympiad_packages
+// and olympiad_package_grades.
+const DURATION_MIN = 5;
+const DURATION_MAX = 240;
+
+/**
+ * Per-grade question count + duration (migration 106).
+ *
+ * The form posts `qpa_<gradeId>` / `dur_<gradeId>` for every selected grade.
+ * With ONE grade the form keeps its single shared pair of fields, so the
+ * per-grade names are absent and this falls back to the package values — which
+ * is exactly what "one grade behaves as before" means.
+ *
+ * Returns an error KEY for the first invalid grade rather than silently
+ * substituting a default: a package created with the wrong question count is a
+ * bug the admin cannot see until a student sits the attempt.
+ */
+export type PerGradeConfigRow = {
+  grade_id: string;
+  /** null = no override; the package value applies (DB coalesces). */
+  questions_per_attempt: number | null;
+  duration_minutes: number | null;
+};
+
+export function parsePerGradeConfig(
+  fd: FormData,
+  gradeIds: string[],
+): { ok: true; rows: PerGradeConfigRow[] } | { ok: false; errorKey: string } {
+  const rows: PerGradeConfigRow[] = [];
+  for (const gid of gradeIds) {
+    const rawQ = String(fd.get(`qpa_${gid}`) ?? "").trim();
+    const rawD = String(fd.get(`dur_${gid}`) ?? "").trim();
+
+    // Empty or absent → NULL, i.e. inherit. Storing the package's number
+    // instead would SHADOW it: later editing the package-level count would
+    // silently do nothing, because the grade value always wins.
+    let qpa: number | null = null;
+    if (rawQ !== "") {
+      qpa = parsePerAttempt(rawQ);
+      // Present but unparseable is an error, never a silent fallback — a
+      // package created with the wrong count is invisible until a student
+      // sits the attempt.
+      if (qpa === null) return { ok: false, errorKey: "oly2.err.perAttempt" };
+    }
+
+    let dur: number | null = null;
+    if (rawD !== "") {
+      const n = Number(rawD);
+      if (!Number.isInteger(n) || n < DURATION_MIN || n > DURATION_MAX) {
+        return { ok: false, errorKey: "oly2.err.duration" };
+      }
+      dur = n;
+    }
+
+    rows.push({ grade_id: gid, questions_per_attempt: qpa, duration_minutes: dur });
+  }
+  return { ok: true, rows };
 }

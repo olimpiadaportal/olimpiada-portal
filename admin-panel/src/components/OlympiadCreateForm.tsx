@@ -98,6 +98,16 @@ export function OlympiadCreateForm({
     perAttempt: String(PER_ATTEMPT_DEFAULT),
   });
   const [selectedGrades, setSelectedGrades] = useState<Set<string>>(() => new Set());
+  // Migration 106 — per-grade overrides, keyed by grade id.
+  //
+  // Deliberately EMPTY until the admin types something: an empty field posts
+  // nothing and the server inherits the package value. Seeding these with the
+  // package default instead would freeze whatever the default happened to be
+  // when the grade was ticked, so later editing the default above would
+  // silently not apply — the exact surprise "leave empty to inherit" avoids.
+  const [perGrade, setPerGrade] = useState<Record<string, { q: string; d: string }>>({});
+  const setPG = (id: string, k: "q" | "d", v: string) =>
+    setPerGrade((p) => ({ ...p, [id]: { ...(p[id] ?? { q: "", d: "" }), [k]: v } }));
   const [tr, setTr] = useState<Record<string, { title: string; desc: string }>>(() => {
     const o: Record<string, { title: string; desc: string }> = {};
     for (const l of locales) o[l] = { title: "", desc: "" };
@@ -122,6 +132,13 @@ export function OlympiadCreateForm({
       if (next.has(id)) {
         next.delete(id);
         setFiles((p) => {
+          const q = { ...p };
+          delete q[id];
+          return q;
+        });
+        // Drop its per-grade config too, or a re-tick would resurrect values
+        // the admin never sees (the inputs only render for selected grades).
+        setPerGrade((p) => {
           const q = { ...p };
           delete q[id];
           return q;
@@ -186,15 +203,45 @@ export function OlympiadCreateForm({
   // uploaded pool to be able to fill one attempt (server-enforced; mirrored
   // here so the admin sees the blocker before submitting).
   const perAttemptNum = parsePerAttempt(f.perAttempt);
+
+  // Migration 106: the per-grade panel only appears for 2+ grades. With one
+  // grade the single pair of fields above IS the configuration, so there is
+  // nothing to override and no second set of inputs to explain.
+  const multiGrade = selectedGrades.size > 1;
+
+  /** The count that will actually apply to a grade: its own, else the package's. */
+  const gradeCount = (id: string): number | null =>
+    parsePerAttempt(perGrade[id]?.q ?? "") ?? perAttemptNum;
+
+  /** Same for the clock. Returns null when the typed value is out of range. */
+  const gradeDuration = (id: string): number | null => {
+    const raw = (perGrade[id]?.d ?? "").trim();
+    if (raw === "") return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 5 && n <= 240 ? n : null;
+  };
+
+  // Every override the admin HAS typed must be valid — an unparseable one is
+  // rejected server-side, so blocking here keeps the failure visible early.
+  const overridesValid = Array.from(selectedGrades).every((id) => {
+    const q = (perGrade[id]?.q ?? "").trim();
+    const d = (perGrade[id]?.d ?? "").trim();
+    return (q === "" || parsePerAttempt(q) !== null) && (d === "" || gradeDuration(id) !== null);
+  });
+
+  // Round 49 + 106: activating requires every grade's pool to fill one attempt
+  // OF THAT GRADE'S SIZE — a 40-question grade and a 10-question grade have
+  // different thresholds against the same package.
   const activeReady =
     f.status !== "active" ||
-    (perAttemptNum !== null &&
-      Array.from(selectedGrades).every((id) =>
-        poolMeetsPerAttempt(files[id]?.itemCount ?? 0, perAttemptNum),
-      ));
+    Array.from(selectedGrades).every((id) => {
+      const need = gradeCount(id);
+      return need !== null && poolMeetsPerAttempt(files[id]?.itemCount ?? 0, need);
+    });
   const canSubmit =
     modeChosen &&
-    !pending && targetsChosen && allReady && perAttemptNum !== null && activeReady;
+    !pending && targetsChosen && allReady && perAttemptNum !== null &&
+    overridesValid && activeReady;
 
   const codesHint = tt("bulk.codesHint").replace(
     "{types}",
@@ -335,6 +382,56 @@ export function OlympiadCreateForm({
         />
         <span className="hint">{tt("oly2.durationHelp")}</span>
       </label>
+
+      {/* ---- Migration 106: per-grade question count + duration -------------
+          Only for 2+ grades. Each row posts qpa_<gradeId> / dur_<gradeId>;
+          an empty field posts "" and the server falls back to the package
+          value above, which is what the hint promises. */}
+      {multiGrade && (
+        <div className="field">
+          <span className="field-label">{tt("oly2.perGradeTitle")}</span>
+          <span className="hint">{tt("oly2.perGradeDefaultNote")}</span>
+          <span className="hint">{tt("oly2.perGradeCfgHint")}</span>
+          <div className="oly-grade-cfg">
+            {orderedSelected.map((g) => (
+              <div key={g.value} className="oly-grade-cfg-row">
+                <span className="oly-grade-cfg-name">{g.label}</span>
+                <label className="oly-grade-cfg-field">
+                  <span>{tt("oly2.perGradeCount")}</span>
+                  <input
+                    name={`qpa_${g.value}`}
+                    type="number"
+                    min={PER_ATTEMPT_MIN}
+                    max={PER_ATTEMPT_MAX}
+                    step={1}
+                    inputMode="numeric"
+                    placeholder={f.perAttempt}
+                    value={perGrade[g.value]?.q ?? ""}
+                    disabled={pending}
+                    onChange={(e) => setPG(g.value, "q", e.target.value)}
+                  />
+                </label>
+                <label className="oly-grade-cfg-field">
+                  <span>{tt("oly2.perGradeDuration")}</span>
+                  <input
+                    name={`dur_${g.value}`}
+                    type="number"
+                    min={5}
+                    max={240}
+                    step={1}
+                    inputMode="numeric"
+                    placeholder={f.duration}
+                    value={perGrade[g.value]?.d ?? ""}
+                    disabled={pending}
+                    onChange={(e) => setPG(g.value, "d", e.target.value)}
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <label className="field">
         <span className="field-label">{tt("oly2.statusLabel")}</span>
         <select name="status" value={f.status} onChange={(e) => set("status", e.target.value)}>
@@ -473,6 +570,8 @@ export function OlympiadCreateForm({
             name: g.label,
             level: g.level,
             pool: gradeState(g.value) === "ready" ? files[g.value]?.itemCount ?? 0 : 0,
+            // Migration 106: estimate each grade's cycle from ITS count.
+            perAttemptRaw: perGrade[g.value]?.q ?? "",
           }))}
         />
 

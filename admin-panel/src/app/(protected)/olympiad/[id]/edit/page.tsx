@@ -152,7 +152,9 @@ export default async function EditOlympiadPage({
       // Round 34: the package's TARGET grades — each owns a separate pool.
       supabase
         .from("olympiad_package_grades")
-        .select("grade_id, grades(id, name, level)")
+        // Migration 106: each grade carries its own questions_per_attempt and
+        // duration_minutes (NULL = inherit the package's).
+        .select("grade_id, questions_per_attempt, duration_minutes, grades(id, name, level)")
         .eq("olympiad_package_id", id),
     ]);
 
@@ -162,6 +164,10 @@ export default async function EditOlympiadPage({
       id: String(r.grade_id),
       name: String(r.grades?.name ?? ""),
       level: Number(r.grades?.level ?? 0),
+      // Empty string = no override stored; the form shows the package value as
+      // a placeholder and posts nothing, so the DB keeps inheriting.
+      perAttempt: r.questions_per_attempt == null ? "" : String(r.questions_per_attempt),
+      duration: r.duration_minutes == null ? "" : String(r.duration_minutes),
     }))
     .sort((a, b) => a.level - b.level);
   const targetGradeIds = new Set(targetGrades.map((g) => g.id));

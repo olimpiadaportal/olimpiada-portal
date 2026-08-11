@@ -99,6 +99,49 @@ Listing copy, keywords and the asset inventory now live in **`docs/STORE_LISTING
 
 **Live validation: 91/91 PASS, 0 FAIL.** Canonical backport: `011` + `013`.
 
+## PINNED — PER-GRADE OLYMPIAD CONFIG + AUTH-STATE UNIFICATION (2026-08-10)
+
+### 1. Question count and duration are now PER TARGET GRADE (migrations 106 + 107)
+
+An olympiad package targeting grades 5 and 11 had to serve both the same number of questions on the same clock. Both settings moved onto `olympiad_package_grades`, which already IS the package↔grade relationship (each grade owns a separate pool and a separate per-student rotation) — no new table.
+
+**NULL means inherit.** Both columns are nullable and every reader coalesces to the package value through ONE resolver, `olympiad_grade_config(package, grade)`. That is deliberate, and 107 UNDOES 106's backfill: 106 wrote the package's numbers into every grade row so the admin would "see real numbers", but an explicit grade value SHADOWS the package value — editing the package-level count on a single-grade package would then silently do nothing. The admin forms show the package value as a **placeholder** instead, so a blank field is just as informative and inheritance actually works.
+
+**What 106 fixed:** `start_olympiad_attempt` read both numbers from the package BEFORE resolving which grade's pool the child was entitled to. The read moved after that resolution. The per-student rotation is untouched and asserted intact.
+
+**What 107 fixed (106 was half-done):**
+- `assert_olympiad_pool_meets_per_attempt` looped over every target grade but compared each against ONE number. A grade serving 40 questions with a 12-question pool could go ACTIVE and failed at ATTEMPT time — exactly what the Round-49 guard exists to prevent. Each grade is now checked against its own count (package value as fallback). The AZ message, the stable `olympiad_pool_below_per_attempt` HINT and the DETAIL JSON shape are byte-identical — admin-panel parses that DETAIL to render en/ru.
+- The activation guard fires on `olympiad_packages`, but per-grade counts live on a different table, so adding a target grade to an ACTIVE package (or raising one grade's count) reached NO validation. New trigger `trg_olympiad_grade_pool_guard` on `olympiad_package_grades` closes it; only a change that could newly break servability is checked.
+
+**Admin UI:** one grade → unchanged (the single pair of fields IS the config). Two or more → a compact per-grade row each, posting `qpa_<gradeId>` / `dur_<gradeId>`. Present on BOTH the create form and the edit form. `__per_grade_cfg` is the edit form's ownership marker: without it `savePerGradeConfig` does nothing, so a future caller that does not render the panel can never wipe overrides by omission. The grade set for writes comes from the DATABASE, never from posted field names — a forged `qpa_<uuid>` writes nothing.
+
+**Student-facing surfaces** (one number can no longer describe a multi-grade package):
+- Parent web catalog → resolves against the SELECTED child's grade, same shape `countByGrade` already used.
+- Child web list → resolves against the purchase's ENTITLED grade snapshot, so a promoted student still sees what they bought.
+- Public landing + both mobile surfaces → have no grade context, so they show the value only when every target grade AGREES and drop the row when they disagree. Showing one grade's figure to everyone is the bug being avoided.
+
+**Tests:** `per-grade-config.test.ts` in admin (18 cases: NULL-means-inherit, per-grade independence, bounds, hostile input) and in mobile (8 cases for `sharedGradeValue`, including an override that merely EQUALS the package value).
+
+### 2. Register-says-exists / login-says-no-account (migration 105)
+
+Registration and login answered "does this account exist" from DIFFERENT tables — `auth.users` vs `profiles JOIN parents` — so an auth user with incomplete parent provisioning got BOTH answers at once. **Five real accounts were in that state**, residue of the 2026-07-29 incident: recovery rebuilt `profiles` the way `handle_new_user()` does (PENDING, role-less) but never re-ran parent provisioning. This also explains the earlier "login redirects to landing with no error" report.
+
+- `web-app/src/lib/auth/accountState.ts` is now the ONE classifier — `none | parent | incomplete | staff` — used by web register, web login, the mobile register BFF and the new heal route. It fails CLOSED to `incomplete`: answering `none` on an error is what both creates a duplicate on a taken address and tells a real user their account is missing.
+- Web login SELF-HEALS after the password verifies. Migration 105 hardened `setup_parent` to refuse a STAFF profile so an administrator signing into the parent app cannot silently gain a parent account.
+- **Mobile had the same bug with no fix path** — it signs in against Supabase directly, holds no service-role key, and landed on role `unknown` with only a retry button, forever. New BFF `POST /api/mobile/v1/auth/heal` verifies the token against GoTrue directly (it cannot use `resolveBearerParent`: the whole point is the role is missing), classifies, and repairs. `authStore.parentLogin` calls it only when the role fails to resolve; `healed:false` is not an error.
+
+### Validation
+
+typecheck + tests + production build PASS in all three apps — admin **134** tests, web **103**, mobile **339**. Canonical backport done: **105 → 011**, **106/107 → 011 + 015**, new checks **89** + **90** in `013`. CRLF preserved per file (011/013 are CRLF, 015 is LF).
+
+**Mobile version bumped 1.5.0 → 1.6.0** (minor — new feature surface).
+
+**Live validation (2026-08-11): 94/94 PASS, 0 FAIL.** Migrations 105, 106 and 107 are all applied. New check `89` confirms all four moving parts at once — the resolver exists, `start_olympiad_attempt` calls it after grade entitlement, the pool validator is per-grade, and `trg_olympiad_grade_pool_guard` is armed; check `90` confirms no ACTIVE grade promises more questions than its pool holds.
+
+> **Supabase SQL Editor false positive on 013 — do not "fix" it by removing the check.** Running `013` in the dashboard used to pop *"This query creates a table without enabling Row Level Security … `v_oly`"*. `013` creates nothing; it is read-only. The trigger was check `57e`, which passes the literal `'olympiad_type_id into v_oly'` to `position()` as a SEARCH NEEDLE against a function body — the editor's linter scans raw text, sees `into v_oly`, and reads it as `SELECT … INTO` (which in plain SQL does create a table). The needle is now CONCATENATED (`'olympiad_type_id ' || 'into v_oly'`), so it resolves to the identical string at runtime while keeping that token pair out of the source. 57e still PASSes, which is the proof the needle is unchanged.
+
+> **⚠️ From-zero rebuild NOT run.** `OLIMPIADA_STAGING_DB_URL` is unset in this shell and the rebuild is staging-only — per CLAUDE.md a skipped proof is a tracked gap, a rebuild against production is unrecoverable. The MIGRATIONS are proven against the live database (94/94), but the CANONICAL files are verified statically only (anchors matched, dollar-quotes balanced, no self-transacting `begin;/commit;` introduced) — a from-zero rebuild is what would prove 011/015 actually build a working database in order, and that proof is still owed. `olympiad_grade_config` was deliberately placed in **015, not 011**: it is a SQL-language function whose body Postgres validates at CREATE time, and `olympiad_package_grades` does not exist when 011 runs.
+
 ## PINNED — REGISTRATION HARDENING ROUND 2 (2026-08-05) — supersedes parts of the 08-04 entry below
 
 **Why a second round:** both 08-04 fixes were incomplete in the same way — they relied on GoTrue's RESPONSE shape, which only tells the truth in one of the two duplicate cases.

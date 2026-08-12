@@ -6,6 +6,22 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — MIXED ZIP IMPORT: 1x1 IMAGES AND REFUSED WINDOWS ARCHIVES (2026-08-12)
+
+Reported as "images import but the exam shows nothing"; the stored object was a valid PNG of ~70 bytes at 1x1. TWO INDEPENDENT defects, neither of which corrupts bytes — the reader was proven byte-exact against a real 153 KB PNG before anything was changed.
+
+**1. Windows-native archives were refused outright.** PowerShell `Compress-Archive` and older .NET ZipArchive write member names with BACKSLASHES (`images\q1.png`), and `normalizeZipPath` rejected any backslash, so `openZip` returned `badPath` and the whole archive was refused — the archive an admin makes by right-clicking a folder. A backslash is now TRANSLATED to a forward slash BEFORE the segment checks, so traversal is still rejected. APPNOTE 4.4.17.1 requires forward slashes, so a backslash cannot legitimately mean "a filename containing a backslash", and unzip / 7-Zip / Windows all translate it too.
+
+**2. A 1x1 placeholder imported cleanly — this is what produced the reported bug.** The mixed template ships `images/q1.png` and `images/q1_option_1.png` as 70-byte 1x1 transparent PNGs. They carry genuine PNG magic, sit under every size cap and upload with HTTP 200, so nothing in the pipeline could tell them from a real picture; an admin who edits the template's JSON but keeps its pictures ships blank questions. Byte length alone cannot separate a placeholder from a small icon, so `imageDimensions()` now reads the real pixel size (PNG / GIF / WEBP / JPEG) and `isDegenerateImage()` refuses anything under 2px in either direction, 1xN strips included. Unknown dimensions PASS, deliberately: unknown must never mean invalid, or a future encoder silently stops importing. Enforced in the browser as an actionable row error naming the file, AND in `verifyImportImage` — the only place a `media_assets` row is created, so the browser is not the authority.
+
+**Also added:** the browser passes the uploaded byte length to `verifyImportImage`, which compares it against the size Storage reports and refuses a mismatch. A truncated or re-encoded upload can no longer surface later as a broken image inside an exam.
+
+**Admin preview and the exam page were never different sources.** Both resolve the same `media_assets(bucket, path)` through `getPublicUrl` — admin at `lib/admin/questions.ts:162`, students via the payload's bucket+path. Both showed nothing because the stored object ITSELF was the placeholder.
+
+**DATA ALREADY AFFECTED — needs an owner decision.** 100 `media_assets` rows under `imports/` are under 200 bytes: 50 question images and 50 option images, all referenced, all in package `test-test` grade 3. Those questions must be re-imported with real pictures. The new guards stop this recurring; they do not retroactively repair stored rows.
+
+Regression test: `admin-panel/src/lib/__tests__/zip-windows-paths.test.ts` (13 cases) covers backslash translation, traversal still refused, byte-exact reads through the real `zip-bulk` resolver, the exact template-pixel bytes being flagged, and unknown-dimension passthrough. Two pre-existing tests asserted the OLD backslash rejection and were corrected — every genuine traversal case in them was kept.
+
 ## PINNED — 2026-08-11 ROUND: APPLIED AND VALIDATED (read this before the four entries below)
 
 **Database state: migrations 108, 109 and 110 are APPLIED to production. Validation `013` = 99/99 PASS, 0 FAIL.**

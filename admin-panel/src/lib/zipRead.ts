@@ -110,12 +110,22 @@ export function normalizeZipPath(
   maxLength: number = DEFAULT_MAX_PATH_LENGTH,
 ): string | null {
   if (typeof raw !== "string") return null;
-  const p = raw.startsWith("./") ? raw.slice(2) : raw;
+  // A BACKSLASH IS A SEPARATOR, not a rejection.
+  //
+  // This used to return null, which refused the whole archive — and the archive
+  // it refused was the one a Windows admin actually makes. PowerShell
+  // `Compress-Archive` and older .NET ZipArchive write `images\q1.png`, so
+  // "right-click → compress the folder" produced a hard "bad path" error on a
+  // perfectly good ZIP.
+  //
+  // APPNOTE 4.4.17.1 requires forward slashes, so a literal backslash in a name
+  // is already non-conformant and cannot legitimately mean "a file whose name
+  // contains a backslash". Translating is also what unzip, 7-Zip and Windows
+  // itself do. Traversal safety is unaffected: the translation happens BEFORE
+  // the segment checks below, so `..\..\etc` is still rejected as `../../etc`.
+  const p = (raw.startsWith("./") ? raw.slice(2) : raw).replace(/\\/g, "/");
   if (p === "") return null;
-  // A backslash is rejected rather than translated: on Windows "a\b" is a
-  // nested path and on POSIX it is a filename, so guessing which one the
-  // archive meant is exactly how a reference resolves to the wrong file.
-  if (p.includes("\0") || p.includes("\\")) return null;
+  if (p.includes("\0")) return null;
   if (p.startsWith("/")) return null;
   // No colon ANYWHERE. It covers the Windows drive letter ("C:/x"), and it also
   // means a value that is really a URL or a data: URL fails as a bad PATH

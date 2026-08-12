@@ -83,6 +83,7 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.badImagePath":
       "şəkil yolu düzgün deyil — questions.json-un yanındakı fayla nisbi yol olmalıdır (məsələn images/q1.png)",
     "bulk.err.imageMissing": "{file} ZIP faylında tapılmadı",
+    "bulk.err.imagePlaceholder": "{file} 1x1 ölçüdədir — bu, şablondakı nümunə şəkildir. ZIP-də həmin faylı öz şəklinizlə əvəz edin",
     "bulk.err.imageAmbiguous":
       "ZIP-də {file} adına uyğun bir neçə fayl var — fayl adlarını dəqiqləşdirin",
     "bulk.err.zipUnusedImages":
@@ -191,6 +192,7 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.badImagePath":
       "invalid image path — it must be a relative path from the folder holding questions.json (for example images/q1.png)",
     "bulk.err.imageMissing": "{file} is not in the ZIP",
+    "bulk.err.imagePlaceholder": "{file} is 1x1 pixels — that is the template placeholder. Replace that file in the ZIP with your real picture",
     "bulk.err.imageAmbiguous":
       "several files in the ZIP match {file} — make the file names distinct",
     "bulk.err.zipUnusedImages":
@@ -298,6 +300,7 @@ const STRINGS: Record<Locale, Dict> = {
     "bulk.err.badImagePath":
       "некорректный путь к изображению — нужен относительный путь от папки с questions.json (например images/q1.png)",
     "bulk.err.imageMissing": "{file} отсутствует в ZIP",
+    "bulk.err.imagePlaceholder": "{file} размером 1x1 — это заглушка из шаблона. Замените этот файл в ZIP на своё изображение",
     "bulk.err.imageAmbiguous":
       "в ZIP несколько файлов совпадают с {file} — сделайте имена файлов различимыми",
     "bulk.err.zipUnusedImages":

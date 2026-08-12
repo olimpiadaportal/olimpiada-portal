@@ -26,7 +26,7 @@
 import { createClient } from "@/lib/supabase/client";
 // Relative on purpose: this module is unit-tested and the vitest config has no
 // "@/" alias for the pure helpers it shares with the server side.
-import { EXT_BY_SNIFFED, sniffImageMime } from "./imageSniffCore";
+import { EXT_BY_SNIFFED, isDegenerateImage, sniffImageMime } from "./imageSniffCore";
 import { collectMediaRefs, type MediaRef } from "./bulk-client";
 // The SAME constants the server verifier re-checks the stored object against,
 // not a copy of them (see bulk-media-shared.ts).
@@ -72,7 +72,11 @@ export async function uploadEmbeddedMedia(
   items: unknown[],
   batchId: string,
   buildPath: (ext: string) => string,
-  verify: (batchId: string, path: string) => Promise<{ ok: true; mediaAssetId: string } | { ok: false; error: string }>,
+  verify: (
+    batchId: string,
+    path: string,
+    expectedBytes: number,
+  ) => Promise<{ ok: true; mediaAssetId: string } | { ok: false; error: string }>,
   resolve: MediaResolver,
 ): Promise<MediaUploadOutcome> {
   const supabase = createClient();
@@ -127,6 +131,16 @@ export async function uploadEmbeddedMedia(
       return;
     }
 
+    // A 1x1 is a PLACEHOLDER, and it used to import perfectly: real PNG magic,
+    // under every cap, HTTP 200 from storage — and invisible in the exam. The
+    // template's own images/q1.png is exactly this, so an admin who edited the
+    // template's JSON and kept its pictures shipped blank questions and got no
+    // warning anywhere. Refusing here names the file, so the fix is obvious.
+    if (isDegenerateImage(bytes, sniffed)) {
+      failures.push({ row, messageKey: "bulk.err.imagePlaceholder", file: job.ref });
+      return;
+    }
+
     const path = buildPath(EXT_BY_SNIFFED[sniffed]);
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, {
       contentType: sniffed,
@@ -139,7 +153,11 @@ export async function uploadEmbeddedMedia(
       return;
     }
 
-    const res = await verify(batchId, path);
+    // The stored object is re-measured against the bytes we sent. Storage
+    // reporting a different length means the upload was truncated or re-encoded
+    // in transit, which would otherwise surface much later as a broken image in
+    // an exam rather than as a failed import.
+    const res = await verify(batchId, path, bytes.length);
     if (!res.ok) {
       // The object exists but has no row — remove it now rather than leaving
       // bytes nothing references.

@@ -118,13 +118,22 @@ describe("normalizeZipPath", () => {
       "c:\\x",
       "data:image/png;base64,AAAA",
       "https://example.com/q1.png",
-      "a\\b",
       "a//b",
       "a/./b",
       "with\0nul",
     ]) {
       expect(normalizeZipPath(bad), bad).toBeNull();
     }
+  });
+
+  // A backslash is a SEPARATOR, not an escape hatch. PowerShell Compress-Archive
+  // writes "images\\q1.png", and rejecting that refused the archive a Windows
+  // admin actually produces. The traversal cases above still fail once
+  // translated, which is why the translation happens before the segment checks.
+  it("translates Windows separators instead of rejecting them", () => {
+    expect(normalizeZipPath("a\\b")).toBe("a/b");
+    expect(normalizeZipPath("images\\q1.png")).toBe("images/q1.png");
+    expect(normalizeZipPath("a\\b\\c\\d.png")).toBe("a/b/c/d.png");
   });
 
   it("rejects an over-long path", () => {
@@ -183,7 +192,7 @@ describe("openZip — refusals", () => {
   });
 
   it("refuses the WHOLE archive when any path is hostile", async () => {
-    for (const bad of ["../secret.png", "/etc/x.png", "C:\\x.png", "a\\b.png"]) {
+    for (const bad of ["../secret.png", "/etc/x.png", "C:\\x.png", "..\\..\\x.png"]) {
       const zipBytes = buildZip([
         { path: "questions.json", data: enc("[]") },
         { path: bad, data: enc("x") },

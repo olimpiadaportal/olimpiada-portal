@@ -35,6 +35,7 @@ import {
   splitStoragePath,
   verifyStorageObject,
 } from "@/lib/admin/media-verify";
+import { isDegenerateImage } from "@/lib/imageSniffCore";
 import {
   BULK_MEDIA_BUCKET,
   BULK_MEDIA_MAX_BYTES,
@@ -62,6 +63,13 @@ export type VerifyImportImageState =
 export async function verifyImportImage(
   batchId: string,
   path: string,
+  /**
+   * Byte length the browser says it uploaded. Storage reporting a different
+   * size means the object was truncated or re-encoded in transit, which would
+   * otherwise only surface as a broken image inside an exam. 0 or omitted skips
+   * the comparison, so an older caller keeps working.
+   */
+  expectedBytes = 0,
 ): Promise<VerifyImportImageState> {
   // Authorize FIRST — before touching storage or reading any input.
   const ctx = await requirePermission("content.create");
@@ -89,9 +97,31 @@ export async function verifyImportImage(
     return { ok: false, error: t("bulk.err.imageTooLarge") };
   }
 
+  // Size equality with what the browser sent. Checked BEFORE the download so a
+  // truncated object is refused without pulling it.
+  if (expectedBytes > 0 && obj.size !== expectedBytes) {
+    console.error(
+      "[admin] import media size mismatch",
+      `expected=${expectedBytes} stored=${obj.size}`,
+    );
+    return { ok: false, error: t("bulk.err.imageUpload") };
+  }
+
   const supabase = await createClient();
   const sniffed = await sniffVerifiedImage(supabase, BULK_MEDIA_BUCKET, path, obj.mime);
   if (!sniffed) return { ok: false, error: t("bulk.err.imageType") };
+
+  // The 1x1-placeholder rule again, server-side. The browser already refuses
+  // one, but the browser is not the authority: this is the only place a
+  // media_assets row is created, so it is the only place that can guarantee no
+  // question ever points at an invisible image.
+  const raw = await supabase.storage.from(BULK_MEDIA_BUCKET).download(path);
+  if (raw.data) {
+    const bytes = new Uint8Array(await raw.data.arrayBuffer());
+    if (isDegenerateImage(bytes, sniffed)) {
+      return { ok: false, error: t("bulk.err.imagePlaceholder") };
+    }
+  }
 
   const { data: media, error } = await supabase
     .from("media_assets")

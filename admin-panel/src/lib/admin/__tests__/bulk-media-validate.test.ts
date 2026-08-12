@@ -31,10 +31,16 @@ describe("validateClientItemMedia — mixed mode takes ZIP PATHS", () => {
     expect(validateClientItemMedia(item(DATA_URL), tt, true)).toBe("bulk.err.badImagePath");
   });
 
-  it("rejects traversal, absolute and Windows paths", () => {
-    for (const bad of ["../secret.png", "/etc/x.png", "C:\\images\\q1.png", "a\\b.png"]) {
+  it("rejects traversal and absolute paths, including drive letters", () => {
+    for (const bad of ["../secret.png", "/etc/x.png", "C:\\images\\q1.png", "..\\..\\x.png"]) {
       expect(validateClientItemMedia(item(bad), tt, true)).toBe("bulk.err.badImagePath");
     }
+  });
+
+  // A reference written with Windows separators resolves to the same entry the
+  // reader normalized, so refusing it would reject a correct file.
+  it("accepts a reference written with backslashes", () => {
+    expect(validateClientItemMedia(item("images\\q1.png"), tt, true)).toBeNull();
   });
 
   it("rejects a non-string reference", () => {

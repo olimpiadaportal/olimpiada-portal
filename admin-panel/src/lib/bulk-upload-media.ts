@@ -40,6 +40,28 @@ const BUCKET = "question-media";
  *  timeout for many and makes a partial failure harder to clean up. */
 const CONCURRENCY = 4;
 
+/**
+ * Cache lifetime for an imported question image, in seconds (one year).
+ *
+ * WHY SO LONG, AND WHY IT IS SAFE
+ * -------------------------------
+ * These objects are IMMUTABLE by construction: the key is
+ * `imports/<batchId>/<uuid>.<ext>` and every upload passes `upsert: false`, so a
+ * given URL can never return different bytes. Replacing a question's picture
+ * mints a new uuid and therefore a new URL. That is exactly the condition a long
+ * max-age requires — there is no stale-content risk to trade against.
+ *
+ * WHAT IT BUYS
+ * ------------
+ * Supabase defaults to `max-age=3600`. At one hour, a student revisiting an
+ * exam an hour later re-downloads every image, so egress scales with ATTEMPTS.
+ * At a year it scales with DISTINCT IMAGES PER DEVICE instead: the second view
+ * is served from the browser cache and issues no request at all. Storage is not
+ * the constraint on any Supabase plan — egress is — so this is the one number
+ * that decides whether an image-heavy olympiad is cheap or expensive to serve.
+ */
+const IMAGE_CACHE_SECONDS = 31_536_000;
+
 /** Where the bytes for one reference come from. Returning a message key rather
  *  than throwing keeps a single missing image a numbered row error. */
 export type MediaSource =
@@ -144,9 +166,12 @@ export async function uploadEmbeddedMedia(
     const path = buildPath(EXT_BY_SNIFFED[sniffed]);
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, {
       contentType: sniffed,
+      // `upsert: false` is what makes IMAGE_CACHE_SECONDS safe: together with
+      // the uuid in the key it guarantees this URL's bytes never change.
       // Never overwrite: a collision means something is wrong, and silently
       // replacing another import's image is worse than failing.
       upsert: false,
+      cacheControl: String(IMAGE_CACHE_SECONDS),
     });
     if (upErr) {
       failures.push({ row, messageKey: "bulk.err.imageUpload", file: job.ref });

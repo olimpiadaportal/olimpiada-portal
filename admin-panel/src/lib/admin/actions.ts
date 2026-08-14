@@ -226,6 +226,18 @@ export async function saveRow(
   }
 }
 
+// Resources whose delete is NOT generic. `subjects` is here because the cascade
+// behind one row is a paid subscription line (subscription_subjects is CASCADE,
+// and a cancelled row is the receipt for money already taken), the whole
+// curriculum tree, and a SET NULL across the question bank, the attempts and the
+// points ledger — none of which a bare `.delete()` can show, confirm or count.
+// Migration 111 gives it a previewed, code-confirmed RPC;
+// lib/admin/subject-deletion.ts is the only route. Refused HERE and not merely
+// hidden in the UI, because a hand-crafted POST carrying __slug=subjects would
+// otherwise still reach the table (the DB trigger would then refuse it, but
+// with an error this function used to throw away).
+const NON_GENERIC_DELETE = new Set(["subjects"]);
+
 export async function deleteRow(formData: FormData): Promise<void> {
   // L8: guard FIRST — panel access before any FormData is read; escalate to
   // admin once the registry flag is known (memoized context, no extra lookup).
@@ -235,6 +247,10 @@ export async function deleteRow(formData: FormData): Promise<void> {
   const res = getResource(slug);
   if (!res || !id) return;
   if (res.adminOnly) await requireAdmin();
+  if (NON_GENERIC_DELETE.has(res.slug)) {
+    console.error("[admin] generic delete refused for guarded resource", res.slug);
+    return;
+  }
 
   const supabase = await createClient();
   // Module separation: olympiad-scoped taxonomy can never be deleted from the
@@ -242,17 +258,32 @@ export async function deleteRow(formData: FormData): Promise<void> {
   if (!(await rowIsExamScoped(supabase, res.slug, id))) return;
   const { error } = await supabase.from(res.table).delete().eq("id", id);
 
-  if (!error) {
-    // M5: best-effort audit trail (never fails the mutation — handled inside).
-    await writeAuditLog({
-      actorProfileId: ctx.profileId,
-      action: "admin.resource.delete",
-      targetTable: res.table,
-      targetId: id,
-      metadata: { resource: slug, id },
-      severity: "warning",
-    });
+  if (error) {
+    // The error used to be DISCARDED, so a delete refused by a database guard
+    // looked exactly like a delete that worked: the row stayed, the page
+    // reloaded, nothing was said. Migration 111 adds BEFORE DELETE guards that
+    // make refusals routine, so silence is no longer survivable. The raw
+    // Postgres text stays server-side (never leak internals); the page renders
+    // the failure from the query flag.
+    console.error(
+      "[admin] resource delete failed",
+      slug,
+      (error as { code?: string }).code ?? "unknown",
+      error.message,
+    );
+    revalidatePath(`/manage/${slug}`);
+    redirect(`/manage/${slug}?deleteFailed=1`);
   }
+
+  // M5: best-effort audit trail (never fails the mutation — handled inside).
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.resource.delete",
+    targetTable: res.table,
+    targetId: id,
+    metadata: { resource: slug, id },
+    severity: "warning",
+  });
 
   revalidatePath(`/manage/${slug}`);
 }

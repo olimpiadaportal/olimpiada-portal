@@ -27,6 +27,14 @@ import { parseIsoTimestamp } from "@/lib/admin/datetime";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import { withLocalStrings } from "@/lib/admin/question-flow-labels";
 import { rejectUnclaimableMedia } from "@/lib/admin/bulk-media";
+import { removeMediaAssets } from "@/lib/admin/media-sweep";
+import { confirmationTokenMatches } from "@/lib/admin/deletion-confirm";
+import {
+  deletionBlockText,
+  parseDeletionBlocks,
+  type DeletionBlock,
+  type DestructiveState,
+} from "@/lib/admin/deletion-hints";
 import {
   fillTemplate,
   gradeLabel,
@@ -1636,14 +1644,10 @@ async function getPoolQuestion(
 
 // Deletes a media_assets row together with its storage object (PostgreSQL
 // never keeps binaries; storage objects must never be orphaned either).
+// One-asset wrapper over the shared sweep, so the guarded-deletion RPCs and the
+// pool editor cannot drift into two different definitions of "remove an asset".
 async function removePoolMediaAsset(supabase: Db, mediaId: string): Promise<void> {
-  const { data: m } = await supabase
-    .from("media_assets")
-    .select("bucket, path")
-    .eq("id", mediaId)
-    .maybeSingle();
-  if (m) await supabase.storage.from(m.bucket).remove([m.path]);
-  await supabase.from("media_assets").delete().eq("id", mediaId);
+  await removeMediaAssets(supabase, [mediaId]);
 }
 
 // On-demand load of one pool question for the edit modal. Admin-only; returns
@@ -2262,4 +2266,456 @@ export async function archiveOlympiadPackage(fd: FormData): Promise<void> {
 
   revalidatePath("/olympiad");
   redirect("/olympiad");
+}
+
+// =============================================================================
+// Guarded olympiad deletion — the panel half of migration 111.
+//
+// Archiving stays the FIRST answer the UI offers, and the non-negotiable rule
+// that a purchased package is never deleted is enforced in the database, not
+// here: olympiad_package_deletion_blocks refuses any package with a purchase
+// row in any status, and olympiad_grade_pool_blocks refuses a grade whose pool
+// somebody paid for. What these actions add is the operation the panel simply
+// did not have — removing a package or a grade pool that was created by mistake
+// — with the blast radius counted on screen before the click, and every reason
+// for a refusal named.
+//
+// SECURITY: requireAdmin() is the FIRST statement of every export (olympiad is
+// Admin-only — a Content Manager must never reach it), every id is UUID-shape
+// checked before it is sent anywhere, the confirmation token is compared here
+// AND again inside the database under its own lock, no raw Postgres message
+// reaches the client, and every destructive call writes a `warning` audit row.
+// =============================================================================
+
+/** Confirmation-token cap. Package codes are short slugs; the DB compares. */
+const CODE_MAX = 80;
+
+export type OlympiadDeletionState = DestructiveState;
+
+/** The delete/archive split the database will apply to a pool. */
+export type OlympiadQuestionSplit = {
+  total: number;
+  deletable: number;
+  archivedInstead: number;
+  alreadyArchived: number;
+};
+
+export type OlympiadPackageDeletionPreview = {
+  id: string;
+  /** Typed by the admin to confirm; also shown, since `code` is not a UI field. */
+  code: string;
+  titleAz: string;
+  status: string;
+  ok: boolean;
+  /** Finished sentences, already localized — never raw hints. */
+  blockedBy: string[];
+  /** Which branch the mutation will ACTUALLY take, decided by the same rule. */
+  outcome: "delete" | "archive";
+  questions: OlympiadQuestionSplit;
+  /** Rows removed on the DELETE branch. */
+  deleteCascade: {
+    grades: number;
+    translations: number;
+    poolLinks: number;
+    rotations: number;
+    questionTranslations: number;
+    answerOptions: number;
+  };
+  /** Rows removed on the ARCHIVE branch — a much smaller, honest number. */
+  archiveCascade: {
+    rotations: number;
+    questionTranslations: number;
+    answerOptions: number;
+  };
+  orphanMedia: number;
+};
+
+export type OlympiadGradePoolDeletionPreview = {
+  packageId: string;
+  /** The PACKAGE code: what admin_delete_olympiad_grade_pool compares against. */
+  code: string;
+  packageTitleAz: string;
+  packageStatus: string;
+  gradeId: string;
+  gradeName: string;
+  questions: OlympiadQuestionSplit;
+  /** Detach the grade AND delete its pool. */
+  dropGrade: { ok: boolean; blockedBy: string[] };
+  /** Empty the pool, keep the grade targeted. */
+  keepGrade: { ok: boolean; blockedBy: string[] };
+  isLastGrade: boolean;
+  questionsPerAttempt: number;
+  /**
+   * Only meaningful on the KEEP-the-grade branch: emptying a targeted grade's
+   * pool leaves an ACTIVE package unable to fill an attempt, so the mutation
+   * demotes it to inactive. Detaching the grade removes it from that check
+   * entirely, and the activation guard already proved the survivors are big
+   * enough — so the dialog must not render this on the drop branch.
+   */
+  packageBecomesUnservable: boolean;
+  orphanMedia: number;
+};
+
+function num(v: unknown): number {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+}
+
+// Localizes a blocked_by[] array from a preview payload. Unknown hints are
+// dropped rather than printed: an unknown hint means the SQL moved without its
+// copy, and the raw string is both untranslated and internal.
+function localizeBlocks(raw: unknown, lt: (key: string) => string): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const b of raw) {
+    const text = deletionBlockText(b as DeletionBlock, lt);
+    if (text) out.push(text);
+  }
+  return out;
+}
+
+function splitOf(raw: unknown): OlympiadQuestionSplit {
+  const q = (raw ?? {}) as Record<string, unknown>;
+  return {
+    total: num(q.total),
+    deletable: num(q.deletable),
+    archivedInstead: num(q.archived_instead),
+    alreadyArchived: num(q.already_archived),
+  };
+}
+
+// Shared failure translation. A guarded-deletion error carries every reason in
+// DETAIL, so the admin sees all of them at once instead of clearing one,
+// re-clicking, and meeting the next. Raw Postgres text is logged, never shown.
+async function toDeletionFailure(
+  error: { code?: string | null; hint?: string | null; details?: string | null } | null,
+  where: string,
+): Promise<{ ok: false; error: string; blocks: string[] }> {
+  const t = await getT();
+  const blocks = parseDeletionBlocks(error).map((b) => deletionBlockText(b, t) ?? "");
+  console.error(`[admin] ${where} failed`, error?.code ?? "unknown", error?.hint ?? "");
+  return {
+    ok: false,
+    error: blocks.length > 0 ? t("del.err.blocked") : t("err.server"),
+    blocks: blocks.filter(Boolean),
+  };
+}
+
+// Refusal for a token that never had a chance of matching. Rendered from the
+// same hint the RPC would have raised, so the sentence is identical whichever
+// layer catches it.
+async function tokenRefusal(): Promise<{ ok: false; error: string; blocks: string[] }> {
+  const t = await getT();
+  return {
+    ok: false,
+    error: t("del.err.blocked"),
+    blocks: [deletionBlockText({ hint: "confirmation_mismatch" }, t) ?? t("err.server")],
+  };
+}
+
+// Every destructive olympiad mutation ends the same way: sweep the media the
+// transaction orphaned, audit, revalidate. Kept in one place so the package and
+// grade paths cannot drift into auditing different things.
+async function afterOlympiadDestructiveCall(opts: {
+  actorProfileId: string | null;
+  action: string;
+  packageId: string;
+  metadata: Record<string, unknown>;
+  orphanedMediaIds: unknown;
+}): Promise<void> {
+  const supabase = await createClient();
+  const ids = Array.isArray(opts.orphanedMediaIds)
+    ? opts.orphanedMediaIds.map((x) => String(x))
+    : [];
+  // Same one-definition sweep removePoolMediaAsset wraps: the bucket objects
+  // go first, then the rows — the DB already proved nothing references them.
+  const swept = await removeMediaAssets(supabase, ids);
+
+  // Small metadata only: counts and ids. Never the deleted content — an audit
+  // row is a record that it happened, not a backup of what was lost.
+  await writeAuditLog({
+    actorProfileId: opts.actorProfileId,
+    action: opts.action,
+    targetTable: "olympiad_packages",
+    targetId: opts.packageId,
+    metadata: { ...opts.metadata, swept_media: swept },
+    severity: "warning",
+  });
+
+  revalidatePath("/olympiad");
+  revalidatePath(`/olympiad/${opts.packageId}/edit`);
+}
+
+/**
+ * Side-effect free. Drives the package confirmation dialog: what is blocking,
+ * which outcome will actually happen, and the code the admin has to type.
+ */
+export async function loadOlympiadPackageDeletionPreview(
+  packageId: string,
+): Promise<OlympiadPackageDeletionPreview | null> {
+  await requireAdmin();
+  if (typeof packageId !== "string" || !UUID_RE.test(packageId)) return null;
+
+  const supabase = await createClient();
+  const t = await getT();
+  const { data, error } = await supabase.rpc("admin_preview_olympiad_package_deletion", {
+    p_package_id: packageId,
+  });
+  if (error || !data) {
+    console.error("[admin] olympiad package deletion preview failed", error?.code ?? "unknown");
+    return null;
+  }
+
+  const p = data as Record<string, any>;
+  return {
+    id: String(p.package?.id ?? packageId),
+    code: String(p.package?.code ?? ""),
+    titleAz: String(p.package?.title_az ?? ""),
+    status: String(p.package?.status ?? ""),
+    ok: Boolean(p.ok),
+    blockedBy: localizeBlocks(p.blocked_by, t),
+    outcome: p.outcome === "archive" ? "archive" : "delete",
+    questions: splitOf(p.questions),
+    deleteCascade: {
+      grades: num(p.delete_cascade?.olympiad_package_grades),
+      translations: num(p.delete_cascade?.olympiad_package_translations),
+      poolLinks: num(p.delete_cascade?.olympiad_package_questions),
+      rotations: num(p.delete_cascade?.olympiad_question_rotations),
+      questionTranslations: num(p.delete_cascade?.question_translations),
+      answerOptions: num(p.delete_cascade?.answer_options),
+    },
+    archiveCascade: {
+      rotations: num(p.archive_cascade?.olympiad_question_rotations),
+      questionTranslations: num(p.archive_cascade?.question_translations),
+      answerOptions: num(p.archive_cascade?.answer_options),
+    },
+    orphanMedia: num(p.orphans?.media_assets),
+  };
+}
+
+/**
+ * Side-effect free. Serves BOTH grade dialogs from one round trip: detaching
+ * the grade and merely emptying its pool have different blocking rules, so both
+ * sets of reasons are reported and the dialog renders each branch's own.
+ */
+export async function loadOlympiadGradePoolDeletionPreview(
+  packageId: string,
+  gradeId: string,
+): Promise<OlympiadGradePoolDeletionPreview | null> {
+  await requireAdmin();
+  if (typeof packageId !== "string" || !UUID_RE.test(packageId)) return null;
+  if (typeof gradeId !== "string" || !UUID_RE.test(gradeId)) return null;
+
+  const supabase = await createClient();
+  const t = await getT();
+  const { data, error } = await supabase.rpc(
+    "admin_preview_olympiad_grade_pool_deletion",
+    { p_package_id: packageId, p_grade_id: gradeId },
+  );
+  if (error || !data) {
+    console.error("[admin] olympiad grade pool preview failed", error?.code ?? "unknown");
+    return null;
+  }
+
+  const p = data as Record<string, any>;
+  return {
+    packageId: String(p.package?.id ?? packageId),
+    code: String(p.package?.code ?? ""),
+    packageTitleAz: String(p.package?.title_az ?? ""),
+    packageStatus: String(p.package?.status ?? ""),
+    gradeId: String(p.grade?.id ?? gradeId),
+    gradeName: String(p.grade?.name ?? ""),
+    questions: splitOf(p.questions),
+    dropGrade: {
+      ok: Boolean(p.drop_grade?.ok),
+      blockedBy: localizeBlocks(p.drop_grade?.blocked_by, t),
+    },
+    keepGrade: {
+      ok: Boolean(p.keep_grade?.ok),
+      blockedBy: localizeBlocks(p.keep_grade?.blocked_by, t),
+    },
+    isLastGrade: Boolean(p.is_last_grade),
+    questionsPerAttempt: num(p.questions_per_attempt),
+    packageBecomesUnservable: Boolean(p.package_becomes_unservable),
+    orphanMedia: num(p.orphans?.media_assets),
+  };
+}
+
+/**
+ * Deletes an olympiad package and its entire pool. When answered questions
+ * survive anywhere in that pool the PACKAGE IS ARCHIVED instead — the database
+ * decides that before it destroys anything, and the message says which of the
+ * two happened, because a button that silently did the other thing reads as
+ * broken.
+ */
+export async function deleteOlympiadPackageAction(
+  _prev: OlympiadDeletionState,
+  fd: FormData,
+): Promise<OlympiadDeletionState> {
+  // Guard FIRST — before any client-supplied FormData is read.
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const id = s(fd, "__id");
+  const code = s(fd, "__code").slice(0, CODE_MAX);
+  if (!UUID_RE.test(id)) return { ok: false, error: t("err.server"), blocks: [] };
+
+  const supabase = await createClient();
+  // Refused BEFORE the RPC so an unconfirmed delete never reaches the function
+  // that takes the lock and reads the scope. The database compares the token
+  // again inside that transaction — that comparison is the control.
+  if ((await confirmationTokenMatches(supabase, "olympiad_packages", id, code)) === false) {
+    return await tokenRefusal();
+  }
+
+  const { data, error } = await supabase.rpc("admin_delete_olympiad_package", {
+    p_package_id: id,
+    p_expected_code: code,
+  });
+  if (error || !data) return await toDeletionFailure(error, "olympiad package delete");
+
+  const r = data as Record<string, any>;
+  const archived = Boolean(r.package_archived);
+  await afterOlympiadDestructiveCall({
+    actorProfileId: ctx.profileId,
+    action: archived
+      ? "admin.olympiad.archive_instead_of_delete"
+      : "admin.olympiad.package_delete",
+    packageId: id,
+    metadata: {
+      archived,
+      reason: typeof r.reason === "string" ? r.reason : undefined,
+      deleted: num(r.deleted_questions),
+      archived_questions: num(r.archived_questions),
+      retained: num(r.retained_questions),
+      media_truncated: Boolean(r.media_truncated),
+    },
+    orphanedMediaIds: r.orphaned_media_ids,
+  });
+
+  if (archived) {
+    return { ok: true, message: t("del.done.packageArchived") };
+  }
+  // The edit page this dialog sits on now describes a row that is gone. A fixed
+  // literal, never anything derived from the request.
+  return {
+    ok: true,
+    message: t("del.done.packageDeleted"),
+    redirectTo: "/olympiad",
+  };
+}
+
+/**
+ * ONE grade's pool: emptied, and with `drop_grade` also detached from the
+ * package. Unanswered questions are deleted, answered ones ARCHIVED — the
+ * database decides that split inside the DELETE, never here.
+ *
+ * remove_olympiad_package_grade (removeOlympiadPackageGradeAction above) stays
+ * the SAFE archive-only path the UI offers first; this is the hard one, and it
+ * is why the package code has to be typed even though the dialog already knows
+ * which grade it is showing.
+ */
+export async function deleteOlympiadGradePoolAction(
+  _prev: OlympiadDeletionState,
+  fd: FormData,
+): Promise<OlympiadDeletionState> {
+  // Guard FIRST — before any client-supplied FormData is read.
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const pkgId = s(fd, "__id");
+  const gradeId = s(fd, "grade_id");
+  const code = s(fd, "__code").slice(0, CODE_MAX);
+  // The posted flag decides between two operations with DIFFERENT blocking
+  // rules, so it is read as a strict literal rather than coerced: any other
+  // value means "keep the grade", the less destructive of the two.
+  const dropGrade = s(fd, "drop_grade") === "1";
+  if (!UUID_RE.test(pkgId) || !UUID_RE.test(gradeId)) {
+    return { ok: false, error: t("err.server"), blocks: [] };
+  }
+
+  const supabase = await createClient();
+  if ((await confirmationTokenMatches(supabase, "olympiad_packages", pkgId, code)) === false) {
+    return await tokenRefusal();
+  }
+
+  const { data, error } = await supabase.rpc("admin_delete_olympiad_grade_pool", {
+    p_package_id: pkgId,
+    p_grade_id: gradeId,
+    p_expected_code: code,
+    p_drop_grade: dropGrade,
+  });
+  if (error || !data) return await toDeletionFailure(error, "olympiad grade pool delete");
+
+  const r = data as Record<string, any>;
+  const dropped = Boolean(r.grade_dropped);
+  const demoted = Boolean(r.package_demoted);
+  await afterOlympiadDestructiveCall({
+    actorProfileId: ctx.profileId,
+    action: dropped
+      ? "admin.olympiad.grade_pool_delete"
+      : "admin.olympiad.grade_pool_purge",
+    packageId: pkgId,
+    metadata: {
+      grade_id: gradeId,
+      grade_dropped: dropped,
+      deleted: num(r.deleted_questions),
+      archived_questions: num(r.archived_questions),
+      retained: num(r.retained_questions),
+      reset_rotations: num(r.reset_rotations),
+      package_demoted: demoted,
+      media_truncated: Boolean(r.media_truncated),
+    },
+    orphanedMediaIds: r.orphaned_media_ids,
+  });
+
+  // The auto-demotion is a change the admin did not ask for, so it is stated
+  // rather than left to be discovered on the listing.
+  const base = fillTemplate(t(dropped ? "del.done.gradeDropped" : "del.done.gradePurged"), {
+    deleted: num(r.deleted_questions),
+    archived: num(r.archived_questions),
+  });
+  return {
+    ok: true,
+    message: demoted ? `${base} ${t("del.done.demoted")}` : base,
+  };
+}
+
+/**
+ * Restores an ARCHIVED package to INACTIVE. The one non-destructive operation
+ * in this family, and the reason it lands on `inactive` rather than `active` is
+ * in the RPC comment: restoring to active re-fires the activation pool guard —
+ * which most archived packages would fail — and it would put the package back
+ * on sale instantly under a sale window that may be long expired.
+ */
+export async function unarchiveOlympiadPackageAction(
+  _prev: OlympiadDeletionState,
+  fd: FormData,
+): Promise<OlympiadDeletionState> {
+  // Guard FIRST — before any client-supplied FormData is read.
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const id = s(fd, "__id");
+  if (!UUID_RE.test(id)) return { ok: false, error: t("err.server"), blocks: [] };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_unarchive_olympiad_package", {
+    p_package_id: id,
+  });
+  if (error || !data) return await toDeletionFailure(error, "olympiad package unarchive");
+
+  // Not destructive: `info`, unlike everything else in this section.
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.unarchive",
+    targetTable: "olympiad_packages",
+    targetId: id,
+    metadata: { status: String((data as Record<string, any>).status ?? "inactive") },
+    severity: "info",
+  });
+
+  revalidatePath("/olympiad");
+  revalidatePath(`/olympiad/${id}/edit`);
+  return { ok: true, message: t("del.done.restored") };
 }

@@ -17,6 +17,10 @@ import {
 import { ActionButton } from "@/components/ActionButton";
 import { OlympiadGradeBulkAppend } from "@/components/OlympiadGradeBulkAppend";
 import {
+  OlympiadGradeDeleteButton,
+  type OlympiadGradeDeleteStrings,
+} from "@/components/OlympiadGradeDeleteButton";
+import {
   parseBulkFile,
   validateBulkRowsClient,
   type ClientTypeRule,
@@ -79,6 +83,33 @@ export function OlympiadGradesManager({
   const fileReady = fileName !== "" && fileError === "" && rowIssues.length === 0 && itemCount > 0;
   const canAdd = !addPending && addGrade !== "" && fileReady;
 
+  // Resolved once from the same dict every other label uses; the destructive
+  // dialog never reaches the i18n layer itself.
+  const deleteStrings: OlympiadGradeDeleteStrings = {
+    open: tt("del.grade.open"),
+    title: tt("del.grade.title"),
+    loading: tt("del.loading"),
+    loadFailed: tt("del.loadFailed"),
+    blockedTitle: tt("del.grade.blockedTitle"),
+    warnTitle: tt("del.warnTitle"),
+    irreversible: tt("del.irreversible"),
+    codeLabel: tt("del.codeLabel"),
+    codeHint: tt("del.grade.codeHint"),
+    ackLabel: tt("del.ackLabel"),
+    cancel: tt("action.cancel"),
+    close: tt("modal.close"),
+    working: tt("pend.deleting"),
+    questions: tt("del.questions"),
+    perAttempt: tt("oly2.perAttempt"),
+    dropTitle: tt("del.grade.dropTitle"),
+    dropDesc: tt("del.grade.dropDesc"),
+    dropAction: tt("del.grade.dropAction"),
+    purgeTitle: tt("del.grade.purgeTitle"),
+    purgeDesc: tt("del.grade.purgeDesc"),
+    purgeAction: tt("del.grade.purgeAction"),
+    demoteWarn: tt("del.grade.demoteWarn"),
+  };
+
   return (
     <div>
       <h3>{tt("oly2.grades")}</h3>
@@ -110,6 +141,17 @@ export function OlympiadGradesManager({
                   {tt("oly2.removeGrade")}
                 </ActionButton>
               </form>
+              {/* The hard path, one step further than the safe one above:
+                  "remove grade" archives this pool, this deletes it. Not
+                  disabled on the last grade — the dialog explains WHY the last
+                  grade cannot be detached and still offers the branch that only
+                  empties the pool. */}
+              <OlympiadGradeDeleteButton
+                packageId={packageId}
+                gradeId={g.id}
+                gradeName={g.name}
+                strings={deleteStrings}
+              />
             </div>
             <OlympiadGradeBulkAppend
               dict={dict}

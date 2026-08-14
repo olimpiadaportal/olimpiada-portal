@@ -278,6 +278,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "manage.back": "Geri",
     "manage.subtitle": "Qeydləri əlavə et, dəyiş və sil.",
     "manage.noRecords": "Hələ qeyd yoxdur.",
+    "manage.deleteFailed":
+      "Silmək mümkün olmadı — bazadakı qoruyucu buna icazə vermədi. Səbəb server loglarındadır.",
     "manage.select": "— seçin —",
     "action.save": "Yadda saxla",
     "action.cancel": "Ləğv et",
@@ -1280,6 +1282,121 @@ export const messages: Record<Locale, Record<string, string>> = {
     "audit.details.none": "Əlavə məlumat yoxdur.",
     "audit.details.noChanges": "Dəyişiklik aşkarlanmadı.",
     "audit.page.showing": "{from}–{to} arası göstərilir",
+    // ---- Migration 111: guarded deletion (fənn + olimpiada paketi) ----
+    // Hər cümlə həm SƏBƏBİ, həm də ALTERNATİVİ (adətən arxivləmə) deyir —
+    // yoxsa admin yalnız "olmaz" görür və nə edəcəyini bilmir.
+    "del.hint.packageHasPurchases":
+      "Bu paketi {n} nəfər alıb — paket silinmir. Alıcıların girişi ömürlükdür; əvəzinə paketi arxivləyin.",
+    "del.hint.packageIsActive":
+      "Paket hazırda aktivdir. Əvvəlcə arxivləyin, sonra silin — aktiv paket baxan valideynin gözü qarşısında yoxa çıxmamalıdır.",
+    "del.hint.packageNotDeletable":
+      "Bu paket silinə bilməz — aşağıdakı səbəblərin hamısı aradan qalxmalıdır. Arxivləmək həmişə mümkündür.",
+    "del.hint.notArchived": "Yalnız arxivlənmiş paket bərpa oluna bilər. Bu paket arxivdə deyil.",
+    "del.hint.gradePoolNotDeletable":
+      "Bu sinfin sual hovuzu silinə bilməz — aşağıdakı səbəblər aradan qalxmalıdır. Sualları arxivləmək alternativdir.",
+    "del.hint.lastGrade":
+      "Paketdə ən azı bir sinif qalmalıdır. Son sinfi çıxarmaq əvəzinə paketin özünü arxivləyin.",
+    "del.hint.gradeHasPurchases":
+      "Bu sinif üçün {n} alış var (statusundan asılı olmayaraq) — sinif çıxarıla bilməz. Alıcıların girişi ömürlükdür; əvəzinə sualları arxivləyin.",
+    "del.hint.gradeHasPurchasesPurge":
+      "Bu sinif üçün {n} alış var — hovuzu boşaltmaq ödənilmiş girişi səssizcə ləğv edərdi. Sualları arxivləyin və ya əvəzinə yenilərini yükləyin.",
+    "del.hint.subjectNotDeletable":
+      "Bu fənn silinə bilməz — aşağıdakı səbəblərin hamısı aradan qalxmalıdır. Silmək əvəzinə fənni arxivləyin.",
+    "del.hint.subjectInSubscriptions":
+      "Fənn {n} abunə sətrində keçir (ləğv olunmuşlar da daxil) — bu sətir alınmış ödənişin qeydidir və silinmir. Fənni arxivləyin.",
+    "del.hint.subjectHasBillingHistory":
+      "Fənn üzrə {n} ödəniş tarixçəsi qeydi var. Bu jurnal dəyişdirilə bilməz — fənni arxivləyin.",
+    "del.hint.subjectHasAttempts":
+      "Fənn üzrə {n} cəhd var. Fənn silinsə, reytinq hesablanması pozulardı — fənni arxivləyin.",
+    "del.hint.subjectHasPoints":
+      "Fənn üzrə {n} bal qeydi var. Bal jurnalına yalnız əlavə olunur, ondan silinmir — fənni arxivləyin.",
+    "del.hint.subjectInOlympiadPackages":
+      "{n} olimpiada paketi bu fənnə bağlıdır. Əvvəlcə həmin paketləri başqa fənnə keçirin və ya arxivləyin.",
+    "del.hint.subjectHasTopics":
+      "Fənndə hələ {n} mövzu var. Fənn silinsə, bütün mövzu və alt mövzular da gedər — əvvəlcə onları «Kurikulum» səhifəsində silin, ya da fənni arxivləyin.",
+    "del.hint.subjectHasQuestions":
+      "Fənnin ümumi bankında {n} sual var. Fənn silinsə, suallar qalar, amma hansı fənnə aid olduqlarını itirər — əvvəlcə bankı təmizləyin, ya da fənni arxivləyin.",
+    "del.hint.subjectHasRoundAttempts":
+      "Fənnin günlük turlarına bağlı {n} cəhd var. Bu nəticələr saxlanılır — fənni arxivləyin.",
+    "del.hint.liveAttempts":
+      "Hazırda {n} cəhd davam edir. Onlar bitənə qədər gözləyin — bu müddətdə məzmunu arxivləyə bilərsiniz.",
+    "del.hint.confirmationMismatch":
+      "Təsdiq kodu uyğun gəlmir. Silinəcək sətrin kodunu olduğu kimi yazın.",
+    "del.hint.answeredQuestionsRetained":
+      "Cavablandırılmış suallar var, ona görə obyekt silinmədi, ARXİVLƏNDİ. Cavab tarixçəsi toxunulmaz qalır.",
+    "del.hint.activeSubscribers":
+      "DİQQƏT: bu fənnə hazırda {n} şagird abunədir. Bank boşalarsa, onların günlük turu başlaya bilməyəcək — əvvəlcə yeni sualları hazırlayın.",
+    // Dialoq mətnləri
+    "del.subject.title": "Fənni sil",
+    "del.loading": "Yoxlanılır…",
+    "del.loadFailed": "Məlumatı yükləmək mümkün olmadı. Səhifəni yeniləyin.",
+    "del.blockedTitle": "Bu fənn indi silinə bilməz:",
+    "del.warnTitle": "Diqqət:",
+    "del.questions": "Suallar (silinəcək / arxivlənəcək)",
+    "del.cascade": "Mövzu / alt mövzu / günlük tur",
+    "del.codeLabel": "Təsdiq kodu",
+    "del.codeHint": "Davam etmək üçün bu kodu yazın:",
+    "del.purgeTitle": "Sual bankını təmizlə",
+    "del.purgeDesc":
+      "Fənnin ümumi sualları silinir (cavablandırılmışlar arxivlənir). Fənn, mövzular və alt mövzular yerində qalır.",
+    "del.purgeAction": "Sualları sil",
+    "del.subject.deleteTitle": "Fənni tamamilə sil",
+    "del.subject.deleteDesc":
+      "Yalnız boş fənn silinə bilər: əvvəlcə mövzular və suallar getməlidir. Cavablandırılmış sual varsa, fənn silinmir, arxivlənir.",
+    "del.subject.deleteAction": "Fənni sil",
+    "del.err.blocked": "Əməliyyat baş tutmadı:",
+    "del.done.deleted": "Fənn silindi.",
+    "del.done.archived":
+      "Cavablandırılmış suallar olduğu üçün fənn silinmədi, arxivləndi.",
+    "del.done.purged": "{deleted} sual silindi, {archived} sual arxivləndi.",
+    // Hər dialoqda görünən ümumi mətnlər
+    "del.irreversible":
+      "Bu əməliyyat geri qaytarıla bilməz. Silinən suallar və şəkillər bərpa olunmur.",
+    "del.ackLabel":
+      "Başa düşürəm: bu məzmun həmişəlik silinir və geri qaytarmaq mümkün deyil.",
+    "del.media": "Silinəcək şəkillər (təxmini)",
+    // ---- Olimpiada paketi ----
+    "del.package.heading": "Paketin ləğvi",
+    "del.package.open": "Paketi sil…",
+    "del.package.title": "Paketi sil",
+    "del.package.blockedTitle": "Bu paket indi silinə bilməz:",
+    "del.package.outcomeDelete":
+      "Nəticə: paket və bütün sual hovuzu tamamilə silinəcək.",
+    "del.package.outcomeArchive":
+      "Nəticə: hovuzda cavablandırılmış suallar var, ona görə paket SİLİNMƏYƏCƏK — arxivlənəcək, cavabsız suallar isə silinəcək.",
+    "del.package.cascade": "Silinəcək əlaqəli sətirlər",
+    "del.package.deleteTitle": "Paketi və hovuzu sil",
+    "del.package.deleteDesc":
+      "Yalnız arxivlənmiş və heç kim tərəfindən alınmamış paket silinə bilər. Cavablandırılmış sual varsa, paket silinmir, arxivlənir.",
+    "del.package.deleteAction": "Paketi sil",
+    "del.done.packageDeleted": "Paket və sual hovuzu silindi.",
+    "del.done.packageArchived":
+      "Cavablandırılmış suallar olduğu üçün paket silinmədi, arxivləndi.",
+    // ---- Arxivdən qaytarma ----
+    "del.restore": "Paketi bərpa et",
+    "del.restoreHint":
+      "Bərpa edilən paket «Deaktiv» vəziyyətinə qayıdır və dərhal satışa çıxmır. Hovuz hazır olandan sonra onu yuxarıdakı formadan özünüz «Aktiv» edin.",
+    "del.done.restored": "Paket bərpa olundu və «Deaktiv» vəziyyətinə keçdi.",
+    // ---- Sinif hovuzu ----
+    "del.grade.open": "Hovuzu sil…",
+    "del.grade.title": "{grade} — sual hovuzu",
+    "del.grade.blockedTitle": "Bu əməliyyat indi mümkün deyil:",
+    "del.grade.codeHint": "Davam etmək üçün paketin kodunu yazın:",
+    "del.grade.dropTitle": "Sinfi çıxar və hovuzunu sil",
+    "del.grade.dropDesc":
+      "Sinif paketdən çıxarılır, onun sualları isə silinir (cavablandırılmışlar arxivlənir).",
+    "del.grade.dropAction": "Sinfi və sualları sil",
+    "del.grade.purgeTitle": "Yalnız sualları sil",
+    "del.grade.purgeDesc":
+      "Sinif paketdə qalır, sual hovuzu boşalır (cavablandırılmış suallar arxivlənir). Yeni faylı sonra yükləyə bilərsiniz.",
+    "del.grade.purgeAction": "Sualları sil",
+    "del.grade.demoteWarn":
+      "Diqqət: hovuz boşalacağı üçün aktiv paket avtomatik «Deaktiv» olacaq.",
+    "del.done.gradeDropped":
+      "Sinif çıxarıldı: {deleted} sual silindi, {archived} sual arxivləndi.",
+    "del.done.gradePurged":
+      "Hovuz boşaldıldı: {deleted} sual silindi, {archived} sual arxivləndi.",
+    "del.done.demoted": "Paket «Deaktiv» vəziyyətinə keçdi.",
   },
   en: {
     // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
@@ -1553,6 +1670,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "manage.back": "Back",
     "manage.subtitle": "Add, edit and remove records.",
     "manage.noRecords": "No records yet.",
+    "manage.deleteFailed":
+      "The delete did not go through — a database guard refused it. The reason is in the server log.",
     "manage.select": "— select —",
     "action.save": "Save",
     "action.cancel": "Cancel",
@@ -2545,6 +2664,121 @@ export const messages: Record<Locale, Record<string, string>> = {
     "audit.details.none": "No additional details.",
     "audit.details.noChanges": "No changes detected.",
     "audit.page.showing": "Showing {from}–{to}",
+    // ---- Migration 111: guarded deletion (subjects + olympiad packages) ----
+    // Every sentence names the REASON and the ALTERNATIVE (usually archiving) —
+    // otherwise the admin is told "no" and left with nowhere to go.
+    "del.hint.packageHasPurchases":
+      "{n} purchase(s) exist for this package, so it cannot be deleted. Buyers keep lifetime access — archive the package instead.",
+    "del.hint.packageIsActive":
+      "The package is still active. Archive it first, then delete — a live listing must not vanish while a parent is browsing it.",
+    "del.hint.packageNotDeletable":
+      "This package cannot be deleted — every reason below has to be cleared first. Archiving is always available instead.",
+    "del.hint.notArchived": "Only an archived package can be restored. This one is not archived.",
+    "del.hint.gradePoolNotDeletable":
+      "This grade's question pool cannot be deleted — the reasons below have to be cleared first. Archiving the questions is the alternative.",
+    "del.hint.lastGrade":
+      "A package must keep at least one grade. Archive the package itself rather than removing its last grade.",
+    "del.hint.gradeHasPurchases":
+      "This grade has {n} purchase(s) in any status, so it cannot be detached. Buyers keep lifetime access — archive the questions instead.",
+    "del.hint.gradeHasPurchasesPurge":
+      "This grade has {n} purchase(s). Emptying the pool would silently revoke access somebody paid for — archive the questions or upload replacements instead.",
+    "del.hint.subjectNotDeletable":
+      "This subject cannot be deleted — every reason below has to be cleared first. Archive the subject instead.",
+    "del.hint.subjectInSubscriptions":
+      "The subject appears in {n} subscription line(s), cancelled ones included — that row is the receipt for money already taken. Archive the subject instead.",
+    "del.hint.subjectHasBillingHistory":
+      "The subject has {n} billing-history record(s). That ledger cannot be altered — archive the subject instead.",
+    "del.hint.subjectHasAttempts":
+      "The subject has {n} attempt(s). Deleting it would corrupt the ranking rather than simply lose data — archive the subject instead.",
+    "del.hint.subjectHasPoints":
+      "The subject has {n} points-ledger entr(ies). That ledger is append-only — archive the subject instead.",
+    "del.hint.subjectInOlympiadPackages":
+      "{n} olympiad package(s) point at this subject. Re-point or archive those packages first.",
+    "del.hint.subjectHasTopics":
+      "The subject still has {n} topic(s). Deleting it would take every topic and subtopic with it — remove them on the Curriculum screen first, or archive the subject.",
+    "del.hint.subjectHasQuestions":
+      "The subject's general bank still holds {n} question(s). Deleting it would keep the questions but strip the column that says what they teach — clear the bank first, or archive the subject.",
+    "del.hint.subjectHasRoundAttempts":
+      "{n} attempt(s) are tied to this subject's daily rounds. Those results are kept — archive the subject instead.",
+    "del.hint.liveAttempts":
+      "{n} attempt(s) are in progress right now. Wait until they finish — you can archive the content in the meantime.",
+    "del.hint.confirmationMismatch":
+      "The confirmation code does not match. Type the code of the row you are deleting exactly as shown.",
+    "del.hint.answeredQuestionsRetained":
+      "Answered questions exist, so the item was ARCHIVED rather than deleted. The answer history stays intact.",
+    "del.hint.activeSubscribers":
+      "WARNING: {n} child(ren) are subscribed to this subject right now. With an empty bank their daily round cannot start — have the replacement questions ready first.",
+    // Dialog copy
+    "del.subject.title": "Delete subject",
+    "del.loading": "Checking…",
+    "del.loadFailed": "Could not load the details. Refresh the page.",
+    "del.blockedTitle": "This subject cannot be deleted yet:",
+    "del.warnTitle": "Careful:",
+    "del.questions": "Questions (to delete / to archive)",
+    "del.cascade": "Topics / subtopics / daily rounds",
+    "del.codeLabel": "Confirmation code",
+    "del.codeHint": "Type this code to continue:",
+    "del.purgeTitle": "Clear the question bank",
+    "del.purgeDesc":
+      "Deletes the subject's general questions (answered ones are archived). The subject, its topics and its subtopics stay exactly as they are.",
+    "del.purgeAction": "Delete the questions",
+    "del.subject.deleteTitle": "Delete the subject itself",
+    "del.subject.deleteDesc":
+      "Only an empty subject can be deleted: its topics and questions have to go first. If any question has been answered, the subject is archived instead of deleted.",
+    "del.subject.deleteAction": "Delete subject",
+    "del.err.blocked": "The operation did not go through:",
+    "del.done.deleted": "The subject was deleted.",
+    "del.done.archived":
+      "Answered questions exist, so the subject was archived instead of deleted.",
+    "del.done.purged": "{deleted} question(s) deleted, {archived} archived.",
+    // Copy shared by every deletion dialog
+    "del.irreversible":
+      "This cannot be undone. Deleted questions and images are not recoverable.",
+    "del.ackLabel":
+      "I understand that this content is removed permanently and cannot be brought back.",
+    "del.media": "Images to be removed (estimate)",
+    // ---- Olympiad package ----
+    "del.package.heading": "Removing this package",
+    "del.package.open": "Delete package…",
+    "del.package.title": "Delete package",
+    "del.package.blockedTitle": "This package cannot be deleted yet:",
+    "del.package.outcomeDelete":
+      "Outcome: the package and its entire question pool will be deleted.",
+    "del.package.outcomeArchive":
+      "Outcome: the pool contains answered questions, so the package will NOT be deleted — it will be archived, and only the unanswered questions go.",
+    "del.package.cascade": "Related rows to be removed",
+    "del.package.deleteTitle": "Delete the package and its pool",
+    "del.package.deleteDesc":
+      "Only an archived package that nobody has purchased can be deleted. If any question has been answered, the package is archived instead of deleted.",
+    "del.package.deleteAction": "Delete package",
+    "del.done.packageDeleted": "The package and its question pool were deleted.",
+    "del.done.packageArchived":
+      "Answered questions exist, so the package was archived instead of deleted.",
+    // ---- Restore from archive ----
+    "del.restore": "Restore package",
+    "del.restoreHint":
+      "A restored package comes back as Inactive and does not go on sale again by itself. Set it to Active yourself in the form above once the pool is ready.",
+    "del.done.restored": "The package was restored and is now Inactive.",
+    // ---- Grade pool ----
+    "del.grade.open": "Delete pool…",
+    "del.grade.title": "{grade} — question pool",
+    "del.grade.blockedTitle": "This is not possible right now:",
+    "del.grade.codeHint": "Type the package code to continue:",
+    "del.grade.dropTitle": "Remove the grade and delete its pool",
+    "del.grade.dropDesc":
+      "The grade is detached from the package and its questions are deleted (answered ones are archived).",
+    "del.grade.dropAction": "Delete grade and questions",
+    "del.grade.purgeTitle": "Delete the questions only",
+    "del.grade.purgeDesc":
+      "The grade stays targeted and its pool is emptied (answered questions are archived). You can upload a replacement file afterwards.",
+    "del.grade.purgeAction": "Delete the questions",
+    "del.grade.demoteWarn":
+      "Careful: with an empty pool this active package is automatically set to Inactive.",
+    "del.done.gradeDropped":
+      "Grade removed: {deleted} question(s) deleted, {archived} archived.",
+    "del.done.gradePurged":
+      "Pool emptied: {deleted} question(s) deleted, {archived} archived.",
+    "del.done.demoted": "The package was set to Inactive.",
   },
   ru: {
     // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
@@ -2819,6 +3053,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "manage.back": "Назад",
     "manage.subtitle": "Добавляйте, изменяйте и удаляйте записи.",
     "manage.noRecords": "Записей пока нет.",
+    "manage.deleteFailed":
+      "Удалить не удалось — защита базы данных отклонила операцию. Причина есть в журнале сервера.",
     "manage.select": "— выберите —",
     "action.save": "Сохранить",
     "action.cancel": "Отмена",
@@ -3824,5 +4060,121 @@ export const messages: Record<Locale, Record<string, string>> = {
     "audit.details.none": "Дополнительных данных нет.",
     "audit.details.noChanges": "Изменения не обнаружены.",
     "audit.page.showing": "Показано {from}–{to}",
+    // ---- Миграция 111: защищённое удаление (предметы + пакеты олимпиад) ----
+    // В каждой фразе есть и ПРИЧИНА, и АЛЬТЕРНАТИВА (обычно архивирование) —
+    // иначе администратору говорят «нельзя» и не говорят, что делать.
+    "del.hint.packageHasPurchases":
+      "Пакет уже купили ({n}), поэтому удалить его нельзя. Доступ покупателей пожизненный — вместо удаления архивируйте пакет.",
+    "del.hint.packageIsActive":
+      "Пакет ещё активен. Сначала архивируйте его, потом удаляйте — активная позиция не должна исчезать прямо во время просмотра родителем.",
+    "del.hint.packageNotDeletable":
+      "Этот пакет нельзя удалить — сначала нужно устранить все причины ниже. Архивирование доступно всегда.",
+    "del.hint.notArchived":
+      "Восстановить можно только архивированный пакет. Этот пакет не в архиве.",
+    "del.hint.gradePoolNotDeletable":
+      "Пул вопросов этого класса удалить нельзя — сначала устраните причины ниже. Альтернатива — архивировать вопросы.",
+    "del.hint.lastGrade":
+      "В пакете должен остаться хотя бы один класс. Вместо удаления последнего класса архивируйте сам пакет.",
+    "del.hint.gradeHasPurchases":
+      "Для этого класса есть покупки ({n}) в любом статусе, поэтому открепить его нельзя. Доступ покупателей пожизненный — вместо этого архивируйте вопросы.",
+    "del.hint.gradeHasPurchasesPurge":
+      "Для этого класса есть покупки ({n}). Очистка пула молча лишила бы оплаченного доступа — архивируйте вопросы или загрузите новые взамен.",
+    "del.hint.subjectNotDeletable":
+      "Этот предмет нельзя удалить — сначала нужно устранить все причины ниже. Вместо удаления архивируйте предмет.",
+    "del.hint.subjectInSubscriptions":
+      "Предмет входит в строки подписок ({n}), включая отменённые, — такая строка подтверждает уже полученную оплату. Вместо удаления архивируйте предмет.",
+    "del.hint.subjectHasBillingHistory":
+      "По предмету есть записи истории оплат ({n}). Этот журнал изменять нельзя — архивируйте предмет.",
+    "del.hint.subjectHasAttempts":
+      "По предмету есть попытки ({n}). Удаление не просто потеряло бы данные, а исказило бы рейтинг — архивируйте предмет.",
+    "del.hint.subjectHasPoints":
+      "По предмету есть записи баллов ({n}). Журнал баллов только пополняется — архивируйте предмет.",
+    "del.hint.subjectInOlympiadPackages":
+      "На этот предмет ссылаются пакеты олимпиад ({n}). Сначала переназначьте или архивируйте эти пакеты.",
+    "del.hint.subjectHasTopics":
+      "У предмета ещё есть темы ({n}). Удаление забрало бы все темы и подтемы — сначала удалите их на странице «Учебный план» или архивируйте предмет.",
+    "del.hint.subjectHasQuestions":
+      "В общем банке предмета ещё есть вопросы ({n}). Удаление их не сотрёт, но лишит указания на предмет — сначала очистите банк или архивируйте предмет.",
+    "del.hint.subjectHasRoundAttempts":
+      "К ежедневным раундам предмета привязаны попытки ({n}). Эти результаты сохраняются — архивируйте предмет.",
+    "del.hint.liveAttempts":
+      "Прямо сейчас выполняется попыток: {n}. Дождитесь их завершения — а пока содержимое можно архивировать.",
+    "del.hint.confirmationMismatch":
+      "Код подтверждения не совпадает. Введите код удаляемой записи в точности так, как он показан.",
+    "del.hint.answeredQuestionsRetained":
+      "Есть отвеченные вопросы, поэтому объект не удалён, а АРХИВИРОВАН. История ответов сохранена.",
+    "del.hint.activeSubscribers":
+      "ВНИМАНИЕ: на этот предмет сейчас подписаны ученики ({n}). С пустым банком их ежедневный раунд не запустится — сначала подготовьте новые вопросы.",
+    // Тексты диалога
+    "del.subject.title": "Удаление предмета",
+    "del.loading": "Проверяем…",
+    "del.loadFailed": "Не удалось загрузить данные. Обновите страницу.",
+    "del.blockedTitle": "Пока этот предмет удалить нельзя:",
+    "del.warnTitle": "Внимание:",
+    "del.questions": "Вопросы (удалить / архивировать)",
+    "del.cascade": "Темы / подтемы / ежедневные раунды",
+    "del.codeLabel": "Код подтверждения",
+    "del.codeHint": "Введите этот код, чтобы продолжить:",
+    "del.purgeTitle": "Очистить банк вопросов",
+    "del.purgeDesc":
+      "Удаляет общие вопросы предмета (отвеченные архивируются). Сам предмет, его темы и подтемы остаются на месте.",
+    "del.purgeAction": "Удалить вопросы",
+    "del.subject.deleteTitle": "Удалить сам предмет",
+    "del.subject.deleteDesc":
+      "Удалить можно только пустой предмет: сначала должны исчезнуть темы и вопросы. Если хотя бы на один вопрос отвечали, предмет будет архивирован, а не удалён.",
+    "del.subject.deleteAction": "Удалить предмет",
+    "del.err.blocked": "Операция не выполнена:",
+    "del.done.deleted": "Предмет удалён.",
+    "del.done.archived":
+      "Есть отвеченные вопросы, поэтому предмет архивирован, а не удалён.",
+    "del.done.purged": "Удалено вопросов: {deleted}, архивировано: {archived}.",
+    // Тексты, общие для всех диалогов удаления
+    "del.irreversible":
+      "Отменить это действие нельзя. Удалённые вопросы и изображения не восстанавливаются.",
+    "del.ackLabel":
+      "Я понимаю, что этот материал удаляется навсегда и вернуть его не получится.",
+    "del.media": "Изображений будет удалено (примерно)",
+    // ---- Пакет олимпиады ----
+    "del.package.heading": "Удаление пакета",
+    "del.package.open": "Удалить пакет…",
+    "del.package.title": "Удаление пакета",
+    "del.package.blockedTitle": "Пока этот пакет удалить нельзя:",
+    "del.package.outcomeDelete":
+      "Итог: пакет и весь его банк вопросов будут удалены.",
+    "del.package.outcomeArchive":
+      "Итог: в пуле есть отвеченные вопросы, поэтому пакет НЕ будет удалён — он будет архивирован, удалятся только вопросы без ответов.",
+    "del.package.cascade": "Связанных строк будет удалено",
+    "del.package.deleteTitle": "Удалить пакет вместе с пулом",
+    "del.package.deleteDesc":
+      "Удалить можно только архивированный пакет, который никто не покупал. Если хотя бы на один вопрос отвечали, пакет будет архивирован, а не удалён.",
+    "del.package.deleteAction": "Удалить пакет",
+    "del.done.packageDeleted": "Пакет и его банк вопросов удалены.",
+    "del.done.packageArchived":
+      "Есть отвеченные вопросы, поэтому пакет архивирован, а не удалён.",
+    // ---- Возврат из архива ----
+    "del.restore": "Восстановить пакет",
+    "del.restoreHint":
+      "Восстановленный пакет возвращается в статус «Неактивен» и сам в продажу не выходит. Когда пул будет готов, переведите его в «Активен» в форме выше.",
+    "del.done.restored": "Пакет восстановлен и переведён в статус «Неактивен».",
+    // ---- Пул класса ----
+    "del.grade.open": "Удалить пул…",
+    "del.grade.title": "{grade} — банк вопросов",
+    "del.grade.blockedTitle": "Сейчас это невозможно:",
+    "del.grade.codeHint": "Введите код пакета, чтобы продолжить:",
+    "del.grade.dropTitle": "Открепить класс и удалить его пул",
+    "del.grade.dropDesc":
+      "Класс убирается из пакета, а его вопросы удаляются (отвеченные архивируются).",
+    "del.grade.dropAction": "Удалить класс и вопросы",
+    "del.grade.purgeTitle": "Удалить только вопросы",
+    "del.grade.purgeDesc":
+      "Класс остаётся в пакете, а его пул очищается (отвеченные вопросы архивируются). Новый файл можно загрузить позже.",
+    "del.grade.purgeAction": "Удалить вопросы",
+    "del.grade.demoteWarn":
+      "Внимание: с пустым пулом активный пакет автоматически станет неактивным.",
+    "del.done.gradeDropped":
+      "Класс откреплён. Удалено вопросов: {deleted}, архивировано: {archived}.",
+    "del.done.gradePurged":
+      "Пул очищен. Удалено вопросов: {deleted}, архивировано: {archived}.",
+    "del.done.demoted": "Пакет переведён в статус «Неактивен».",
   },
 };

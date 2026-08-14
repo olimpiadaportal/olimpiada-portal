@@ -10,8 +10,7 @@ import {
   OlympiadQuestionManager,
   type OlympiadPoolRow,
 } from "@/components/OlympiadQuestionManager";
-import { archiveOlympiadPackage } from "@/lib/admin/olympiad";
-import { SubmitButton } from "@/components/ActionButton";
+import { OlympiadPackageDangerZone } from "@/components/OlympiadPackageDangerZone";
 import { olympiadLocalDict, olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import { PER_ATTEMPT_DEFAULT } from "@/lib/admin/olympiad-per-attempt";
 import {
@@ -355,12 +354,41 @@ export default async function EditOlympiadPage({
         />
       </section>
       <section className="card" style={{ marginTop: 16 }}>
-        <form action={archiveOlympiadPackage}>
-          <input type="hidden" name="__id" value={(pkg as any).id} />
-          <SubmitButton className="link-danger" pendingLabel={t("pend.processing")}>
-            {t("oly2.archive")}
-          </SubmitButton>
-        </form>
+        {/* Archive / restore / delete together — see the component header for
+            why restore lands on INACTIVE rather than back on active. */}
+        <OlympiadPackageDangerZone
+          packageId={(pkg as any).id}
+          isArchived={String((pkg as any).status) === "archived"}
+          strings={{
+            heading: t("del.package.heading"),
+            archive: t("oly2.archive"),
+            archiving: t("pend.processing"),
+            restore: t("del.restore"),
+            restoring: t("pend.processing"),
+            restoreHint: t("del.restoreHint"),
+            open: t("del.package.open"),
+            title: t("del.package.title"),
+            loading: t("del.loading"),
+            loadFailed: t("del.loadFailed"),
+            blockedTitle: t("del.package.blockedTitle"),
+            warnTitle: t("del.warnTitle"),
+            irreversible: t("del.irreversible"),
+            codeLabel: t("del.codeLabel"),
+            codeHint: t("del.codeHint"),
+            ackLabel: t("del.ackLabel"),
+            cancel: t("action.cancel"),
+            close: t("modal.close"),
+            working: t("pend.deleting"),
+            questions: t("del.questions"),
+            outcomeDelete: t("del.package.outcomeDelete"),
+            outcomeArchive: t("del.package.outcomeArchive"),
+            cascade: t("del.package.cascade"),
+            media: t("del.media"),
+            deleteTitle: t("del.package.deleteTitle"),
+            deleteDesc: t("del.package.deleteDesc"),
+            deleteAction: t("del.package.deleteAction"),
+          }}
+        />
       </section>
     </div>
   );

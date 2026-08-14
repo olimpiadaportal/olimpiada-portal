@@ -1910,6 +1910,242 @@ select '95_pending_interval_rollover' as check_name,
           and ss.current_period_end <= now()
           and cs.status in ('trialing','active','past_due')) as overdue_promotions;
 
+-- 96. Migration 111: the guarded-deletion surface exists, is shaped the way the
+--     panel assumes, and still enforces every finding the review raised.
+--
+--     PART ONE — CONFIGURATION, for each of the twelve functions:
+--       * SECURITY DEFINER — questions, test_attempts and subscription_subjects
+--         are RLS-protected, so a blocking count taken as the caller could come
+--         back 0 because rows were HIDDEN. A silent 0 here deletes a subject
+--         somebody is paying for;
+--       * a pinned search_path — on a definer function an unpinned one is
+--         privilege escalation, not a style preference;
+--       * anon reaches none of them;
+--       * the split between the eight admin RPCs (called AS the signed-in
+--         admin, so 'authenticated' is required and is_admin() inside is the
+--         real gate) and the four service-internal helpers ('authenticated'
+--         must NOT reach those — purge_question_set deletes questions).
+--
+--     PART TWO — BEHAVIOUR, probed inside the SHIPPED body with
+--     pg_get_functiondef, so a later hand-edit in the Dashboard SQL editor
+--     cannot quietly undo a review finding while leaving the signature intact.
+--     Each probe is one sentence a data query cannot catch until after the
+--     damage is done:
+--       * the two operations that destroy the MOST rows — a subject's entire
+--         general question bank, and a whole olympiad grade pool — demand the
+--         row's own code, exactly like the two container deletes. Both are
+--         granted to 'authenticated', i.e. both are PostgREST endpoints an
+--         admin session can POST directly, so the dialog is not the control;
+--       * the subject preview reports how many children are actively
+--         subscribed. The purge is deliberately NOT blocked by a subscription
+--         (curriculum replacement is its legitimate use), but an emptied bank
+--         leaves draw_daily_questions unable to assemble a set and
+--         start_daily_round_attempt raising no_data_found for every one of
+--         those children — so the number has to reach the admin;
+--       * subject deletion blocks on TOPICS and on GENERAL-BANK QUESTIONS.
+--         These are the only two blocks that also fire for a seeded,
+--         never-played subject — precisely the state in which the CASCADE would
+--         otherwise take the whole curriculum tree and SET NULL the bank;
+--       * an attempt pinned to one of the subject's daily rounds is a COUNTED
+--         reason. daily_rounds.subject_id is CASCADE while
+--         test_attempts.daily_round_id is RESTRICT, so without the block the
+--         delete aborts on a bare 23503 with no hint — the generic "server
+--         error" migration 111 exists to remove;
+--       * the orphaned-media list considers EVERY media_assets consumer. The
+--         caller hands that array to a Storage delete and every one of those
+--         columns is ON DELETE SET NULL, so a missing consumer does not fail —
+--         it sweeps a live avatar, wallpaper, sticker or news cover out of the
+--         bucket;
+--       * the DESTRUCTIVE grade path counts purchases in ANY status while the
+--         restorable archive path keeps its active-only predicate. Asserted in
+--         BOTH directions, because "copy the safe path" is exactly what caused
+--         the bug: olympiad_purchases also allows 'pending' and 'refunded', and
+--         purchase_olympiad re-activates a refunded row IN PLACE keeping its
+--         grade_id — onto a pool that would no longer exist.
+with fns (sig, admin_facing) as (values
+  ('public.admin_preview_olympiad_package_deletion(uuid)', true),
+  ('public.admin_preview_olympiad_grade_pool_deletion(uuid,uuid)', true),
+  ('public.admin_preview_subject_deletion(uuid)', true),
+  ('public.admin_delete_olympiad_package(uuid,text)', true),
+  ('public.admin_delete_olympiad_grade_pool(uuid,uuid,text,boolean)', true),
+  ('public.admin_purge_subject_questions(uuid,text)', true),
+  ('public.admin_delete_subject(uuid,text)', true),
+  ('public.admin_unarchive_olympiad_package(uuid)', true),
+  ('public.purge_question_set(uuid[])', false),
+  ('public.subject_deletion_blocks(uuid)', false),
+  ('public.olympiad_package_deletion_blocks(uuid)', false),
+  ('public.olympiad_grade_pool_blocks(uuid,uuid,boolean)', false)
+), probes (sig, needle, must_exist) as (values
+  ('public.admin_purge_subject_questions(uuid,text)', 'confirmation_mismatch', true),
+  ('public.admin_delete_olympiad_grade_pool(uuid,uuid,text,boolean)', 'confirmation_mismatch', true),
+  ('public.admin_preview_subject_deletion(uuid)', 'subject_purge_active_subscribers', true),
+  ('public.subject_deletion_blocks(uuid)', 'subject_has_topics', true),
+  ('public.subject_deletion_blocks(uuid)', 'subject_has_questions', true),
+  ('public.subject_deletion_blocks(uuid)', 'subject_has_round_attempts', true),
+  ('public.purge_question_set(uuid[])', 'x.avatar_media_id = c.m', true),
+  ('public.purge_question_set(uuid[])', 'public.wallpapers', true),
+  ('public.purge_question_set(uuid[])', 'public.sticker_images', true),
+  ('public.purge_question_set(uuid[])', 'public.news', true),
+  ('public.olympiad_grade_pool_blocks(uuid,uuid,boolean)', 'pu.status = ''active''', false),
+  ('public.remove_olympiad_package_grade(uuid,uuid)', 'pu.status = ''active''', true),
+  -- The token-less arities must be GONE, not merely unused: an overload that
+  -- destroys the same rows without a confirmation is the bypass itself.
+  ('public.admin_purge_subject_questions(uuid)', '', false),
+  ('public.admin_delete_olympiad_grade_pool(uuid,uuid,boolean)', '', false)
+), fn_ok as (
+  select f.sig,
+         -- CASE, not AND: has_function_privilege() errors on a missing
+         -- function, and this check has to REPORT that, not abort the file.
+         case when to_regprocedure(f.sig) is null then false
+              else (select p.prosecdef
+                      and coalesce(p.proconfig, '{}'::text[])
+                            @> array['search_path=public, pg_temp']
+                      and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                      and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                          = f.admin_facing
+                    from pg_proc p where p.oid = to_regprocedure(f.sig))
+         end as ok
+  from fns f
+), probe_ok as (
+  select p.sig, p.needle,
+         -- An absent function makes a must_exist probe fail and an absent-arity
+         -- probe (needle '') pass, which is exactly the intent in both cases.
+         case when to_regprocedure(p.sig) is null then not p.must_exist
+              else (position(p.needle in
+                      pg_get_functiondef(to_regprocedure(p.sig))) > 0) = p.must_exist
+         end as ok
+  from probes p
+)
+select '96_guarded_deletion_functions' as check_name,
+       case when (select count(*) filter (where ok) from fn_ok) = 12
+             and (select count(*) filter (where not ok) from probe_ok) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) filter (where to_regprocedure(sig) is null) from fns)
+         as missing_functions,
+       (select count(*) filter (where not ok) from fn_ok) as misconfigured,
+       (select count(*) filter (where not ok) from probe_ok) as failed_invariants;
+
+-- 97. The three BEFORE DELETE guards are ARMED (migration 111 + Round 21).
+--
+--     tgenabled is checked, not just existence: 'D' (disabled) leaves the
+--     trigger in the catalog while it stops firing, which is exactly what a
+--     hurried `alter table … disable trigger` during a data fix leaves behind.
+--     CLAUDE.md bans that manoeuvre precisely because it also suspends FK
+--     enforcement — this check is how a forgotten re-enable gets caught.
+--
+--     trg_question_delete_guard is the load-bearing one: every destructive path
+--     in migration 111 hard-deletes only the UNANSWERED questions of a set and
+--     archives the rest, and it is this guard that turns a mistake in that split
+--     into an aborted transaction instead of silently destroyed graded history.
+--     The function-body probe catches a rewrite that keeps the trigger but drops
+--     the raise.
+select '97_deletion_guard_triggers_armed' as check_name,
+       case when count(*) filter (where armed) = 3
+             and position('question_has_attempts' in
+                   pg_get_functiondef('public.question_delete_guard()'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       count(*) filter (where not armed) as missing_or_disabled,
+       (position('question_has_attempts' in
+          pg_get_functiondef('public.question_delete_guard()'::regprocedure)) > 0)
+         as answered_questions_still_protected
+from (values
+  ('trg_question_delete_guard', 'public.questions'),
+  ('trg_subject_delete_guard', 'public.subjects'),
+  ('trg_olympiad_package_delete_guard', 'public.olympiad_packages')
+) as t(tg, tbl)
+cross join lateral (
+  select exists (select 1 from pg_trigger g
+                  where g.tgname = t.tg
+                    and g.tgrelid = t.tbl::regclass
+                    and not g.tgisinternal
+                    and g.tgenabled = 'O') as armed
+) a;
+
+-- 98. Orphaned question references — REPORT-ONLY except for the last column.
+--
+--     questions.subject_id is ON DELETE SET NULL, so a subject deleted around
+--     the guards leaves the bank silently untagged rather than failing loudly.
+--     admin_delete_subject purges the general bank itself so this stays 0 by
+--     construction; a non-zero count means something deleted a subject another
+--     way. It is reported, not FAILed, because a subject-less question is a
+--     legitimate transient state during import repair.
+--
+--     The last column IS a failure: olympiad_package_questions rows whose
+--     question is gone would make a pool count questions that cannot be served.
+select '98_no_orphaned_questions' as check_name,
+       case when (select count(*) from public.olympiad_package_questions opq
+                   where not exists (select 1 from public.questions q
+                                      where q.id = opq.question_id)) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from public.questions
+         where subject_id is null and olympiad_package_id is null)
+         as general_bank_without_subject,
+       (select count(*) from public.questions
+         where topic_id is null and olympiad_package_id is null)
+         as general_bank_without_topic,
+       (select count(*) from public.olympiad_package_questions opq
+         where not exists (select 1 from public.questions q
+                            where q.id = opq.question_id)) as pool_rows_without_question;
+
+-- 99. Lifetime access survived (CLAUDE.md, non-negotiable). Every purchase must
+--     still resolve to a package row.
+--
+--     olympiad_purchases.olympiad_package_id is ON DELETE RESTRICT and migration
+--     111 adds trg_olympiad_package_delete_guard in front of it, so this is
+--     doubly unreachable by design — which is exactly why it is worth asserting:
+--     the failure it would catch (a purchaser whose package evaporated) is
+--     invisible until that parent opens the app.
+--
+--     The second column is the GRADE-level version of the same harm and is
+--     REPORT-ONLY. admin_delete_olympiad_grade_pool can detach a grade, and it
+--     now blocks on a purchase entitled to that grade in ANY status — because
+--     purchase_olympiad re-activates a refunded row IN PLACE, keeping its
+--     grade_id, so a dormant purchase becomes a live entitlement onto a pool
+--     that must therefore still exist. It is reported rather than FAILed
+--     because remove_olympiad_package_grade (the older, archive-only path)
+--     only ever blocked on ACTIVE purchases, so a pre-111 estate can hold rows
+--     this column counts and none of them is a new defect. A number that GROWS
+--     after 111 is.
+select '99_purchased_packages_intact' as check_name,
+       case when count(*) = 0 then 'PASS' else 'FAIL' end as status,
+       count(*) as purchases_without_package,
+       (select count(*) from public.olympiad_purchases pu
+         where pu.grade_id is not null
+           and exists (select 1 from public.olympiad_packages p
+                        where p.id = pu.olympiad_package_id)
+           and not exists (select 1 from public.olympiad_package_grades pg
+                            where pg.olympiad_package_id = pu.olympiad_package_id
+                              and pg.grade_id = pu.grade_id)) as purchases_off_target_grade
+from public.olympiad_purchases pu
+where not exists (select 1 from public.olympiad_packages p
+                   where p.id = pu.olympiad_package_id);
+
+-- 100. Subscription baskets are intact — the exact corruption a CASCADEd
+--      subject delete produces (migration 111).
+--
+--      subscription_subjects.subject_id is ON DELETE CASCADE, so deleting a
+--      subject removes the paid line item and leaves the subscription itself
+--      behind. The result is a LIVE subscription covering nothing: the parent
+--      keeps being billed, the child sees no subject, and nothing errors.
+--      Only trialing/active/past_due count — an ended subscription legitimately
+--      keeps no rows.
+select '100_subscription_subjects_intact' as check_name,
+       case when (select count(*) from public.subscription_subjects ss
+                   where not exists (select 1 from public.subjects s
+                                      where s.id = ss.subject_id)) = 0
+             and (select count(*) from public.child_subscriptions cs
+                   where cs.status in ('trialing', 'active', 'past_due')
+                     and not exists (select 1 from public.subscription_subjects ss
+                                      where ss.child_subscription_id = cs.id)) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from public.subscription_subjects ss
+         where not exists (select 1 from public.subjects s
+                            where s.id = ss.subject_id)) as lines_without_subject,
+       (select count(*) from public.child_subscriptions cs
+         where cs.status in ('trialing', 'active', 'past_due')
+           and not exists (select 1 from public.subscription_subjects ss
+                            where ss.child_subscription_id = cs.id)) as live_subs_without_subjects;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

@@ -667,7 +667,7 @@ language sql
 stable
 security definer
 set search_path = public, pg_temp
-as $
+as $$
   select
     greatest(least(coalesce(g.questions_per_attempt, p.questions_per_attempt, 25), 500), 1),
     greatest(least(coalesce(g.duration_minutes, p.duration_minutes, 25), 240), 5)
@@ -676,7 +676,7 @@ as $
     on g.olympiad_package_id = p.id
    and g.grade_id = p_grade_id
   where p.id = p_package_id;
-$;
+$$;
 
 comment on function public.olympiad_grade_config(uuid, uuid) is
   'Migration 106: resolves questions-per-attempt + duration for one (package, '
@@ -1101,6 +1101,828 @@ comment on function public.remove_olympiad_package_grade(uuid, uuid) is
 revoke all on function public.remove_olympiad_package_grade(uuid, uuid) from public, anon;
 grant execute on function public.remove_olympiad_package_grade(uuid, uuid) to authenticated, service_role;
 
+
+-- -----------------------------------------------------------------------------
+-- 13) GUARDED DELETION — the olympiad half (migration 111).
+--     remove_olympiad_package_grade above stays UNTOUCHED as the SAFE,
+--     archive-only path the UI offers first; these are the destructive ones.
+--     They live here and not in 011 because trg_olympiad_package_delete_guard
+--     needs a table this file creates. The shared question-purge helper
+--     (public.purge_question_set) is in 011, which runs first.
+-- -----------------------------------------------------------------------------
+
+-- -----------------------------------------------------------------------------
+-- olympiad_package_deletion_blocks : the three reasons a package may not be
+-- deleted. Shared by the preview, the RPC and trg_olympiad_package_delete_guard.
+-- -----------------------------------------------------------------------------
+create or replace function public.olympiad_package_deletion_blocks(p_package_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v      jsonb := '[]'::jsonb;
+  n      int;
+  v_pool uuid[];
+begin
+  -- 1. LIFETIME ACCESS. Any purchase row in any status. The FK is already
+  --    RESTRICT, but it raises a bare 23503; this raises a countable reason the
+  --    panel can turn into "N people bought this — archive it instead".
+  select count(*)::int into n
+  from public.olympiad_purchases where olympiad_package_id = p_package_id;
+  if n > 0 then
+    v := v || jsonb_build_object('hint', 'package_has_purchases', 'count', n);
+  end if;
+
+  -- 2. An ACTIVE listing must be archived first. Deleting a live catalog entry
+  --    in one click is how a package vanishes from under a browsing parent; an
+  --    irreversible destruction of a whole product gets two deliberate steps.
+  select count(*)::int into n
+  from public.olympiad_packages
+  where id = p_package_id and status = 'active';
+  if n > 0 then
+    v := v || jsonb_build_object('hint', 'package_is_active', 'count', n);
+  end if;
+
+  -- 3. An attempt in flight. Also the mitigation for the delete/answer race in
+  --    purge_question_set: an answer row can only appear through a submit RPC
+  --    on an in-progress attempt.
+  select coalesce(array_agg(q.id), '{}'::uuid[]) into v_pool
+  from public.questions q where q.olympiad_package_id = p_package_id;
+  select count(*)::int into n
+  from public.test_attempts ta
+  where ta.status = 'in_progress' and ta.kind = 'olympiad'
+    and ta.question_ids && v_pool;
+  if n > 0 then
+    v := v || jsonb_build_object('hint', 'live_attempts', 'count', n);
+  end if;
+
+  return v;
+end;
+$$;
+
+comment on function public.olympiad_package_deletion_blocks(uuid) is
+  'Service-internal (migration 111): the reasons an olympiad package may not be '
+  'deleted, as a jsonb array of {hint, count} — package_has_purchases, '
+  'package_is_active, live_attempts. Empty array = deletable.';
+revoke all on function public.olympiad_package_deletion_blocks(uuid) from public, anon, authenticated;
+grant execute on function public.olympiad_package_deletion_blocks(uuid) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- olympiad_grade_pool_blocks : the reasons one grade's pool may not be purged.
+-- p_drop_grade distinguishes the two operations that share the destructive core
+-- and therefore share this function:
+--   true  = detach the grade AND delete its pool
+--   false = empty the pool, keep the grade targeted
+-- The purchase block applies to BOTH, with a DIFFERENT hint each, because the
+-- two sentences an admin needs are different: detaching removes an entitlement,
+-- while emptying the pool leaves a lifetime purchaser with a package that
+-- raises "pool too small" on every attempt — a silent revocation of a paid
+-- entitlement dressed up as a content edit.
+-- -----------------------------------------------------------------------------
+create or replace function public.olympiad_grade_pool_blocks(
+  p_package_id uuid,
+  p_grade_id   uuid,
+  p_drop_grade boolean
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v      jsonb := '[]'::jsonb;
+  n      int;
+  v_pool uuid[];
+begin
+  if coalesce(p_drop_grade, false) then
+    -- A grade-less package is a legacy state, never a state an edit may
+    -- produce. Same spelling as remove_olympiad_package_grade so the shipped
+    -- oly2.err.lastGrade copy still applies.
+    select count(*)::int into n
+    from public.olympiad_package_grades where olympiad_package_id = p_package_id;
+    if n <= 1 then
+      v := v || jsonb_build_object('hint', 'last_grade', 'count', n);
+    end if;
+  end if;
+
+  -- The legacy grade_id-is-null branch is copied from
+  -- remove_olympiad_package_grade (015): a snapshot-less purchase plays
+  -- whichever pool matches the child's CURRENT grade, so such a child is
+  -- entitled to this grade too. Re-deriving that would be how the two paths
+  -- start disagreeing.
+  --
+  -- The STATUS filter, however, is DELIBERATELY NOT copied, and the difference
+  -- is the whole point. remove_olympiad_package_grade counts only
+  -- status = 'active' because its consequence is a restorable ARCHIVE; both
+  -- callers here HARD-DELETE the pool. olympiad_purchases.status also allows
+  -- 'pending' and 'refunded', and purchase_olympiad re-activates a refunded row
+  -- IN PLACE, keeping its grade_id — so a purchase that is merely dormant today
+  -- becomes an active lifetime entitlement tomorrow, onto a grade whose pool
+  -- no longer exists. Counting only the live ones would let exactly that
+  -- through, irreversibly. Any status blocks; this is the same rule
+  -- olympiad_package_deletion_blocks already applies to the package itself.
+  if exists (select 1 from public.olympiad_purchases pu
+              where pu.olympiad_package_id = p_package_id
+                and (pu.grade_id = p_grade_id
+                     or (pu.grade_id is null and exists (
+                           select 1 from public.students st
+                           where st.profile_id = pu.student_profile_id
+                             and st.grade_id = p_grade_id)))) then
+    select count(*)::int into n
+    from public.olympiad_purchases pu
+    where pu.olympiad_package_id = p_package_id
+      and (pu.grade_id = p_grade_id
+           or (pu.grade_id is null and exists (
+                 select 1 from public.students st
+                 where st.profile_id = pu.student_profile_id
+                   and st.grade_id = p_grade_id)));
+    v := v || jsonb_build_object(
+           'hint',
+           case when coalesce(p_drop_grade, false)
+                then 'grade_has_purchases' else 'grade_has_purchases_purge' end,
+           'count', n);
+  end if;
+
+  select coalesce(array_agg(q.id), '{}'::uuid[]) into v_pool
+  from public.questions q
+  where q.olympiad_package_id = p_package_id and q.grade_id = p_grade_id;
+  select count(*)::int into n
+  from public.test_attempts ta
+  where ta.status = 'in_progress' and ta.kind = 'olympiad'
+    and ta.question_ids && v_pool;
+  if n > 0 then
+    v := v || jsonb_build_object('hint', 'live_attempts', 'count', n);
+  end if;
+
+  return v;
+end;
+$$;
+
+comment on function public.olympiad_grade_pool_blocks(uuid, uuid, boolean) is
+  'Service-internal (migration 111): the reasons one (package, grade) pool may '
+  'not be purged, as a jsonb array of {hint, count}. p_drop_grade = true adds '
+  'the last_grade check and reports the purchase block as grade_has_purchases; '
+  'false (keep the grade, empty the pool) reports it as '
+  'grade_has_purchases_purge, because emptying a purchased grade''s pool '
+  'silently revokes a lifetime entitlement. Counts purchases in ANY status — '
+  'unlike remove_olympiad_package_grade, whose active-only predicate is correct '
+  'for a restorable ARCHIVE but not for a hard delete a refunded purchase can '
+  'be re-activated onto.';
+revoke all on function public.olympiad_grade_pool_blocks(uuid, uuid, boolean)
+  from public, anon, authenticated;
+grant execute on function public.olympiad_grade_pool_blocks(uuid, uuid, boolean) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- 14) olympiad_package_delete_guard — enforcement for the bare `.delete()`
+--     path, not just for the RPC below it.
+-- -----------------------------------------------------------------------------
+create or replace function public.olympiad_package_delete_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_blocks jsonb;
+begin
+  v_blocks := public.olympiad_package_deletion_blocks(old.id);
+  if jsonb_array_length(v_blocks) > 0 then
+    raise exception 'olympiad package % cannot be deleted: % blocking reference(s)',
+      old.id, jsonb_array_length(v_blocks)
+      using errcode = 'check_violation',
+            hint    = case when jsonb_array_length(v_blocks) = 1
+                           then v_blocks->0->>'hint' else 'package_not_deletable' end,
+            detail  = jsonb_build_object('blocks', v_blocks)::text;
+  end if;
+  return old;
+end;
+$$;
+
+comment on function public.olympiad_package_delete_guard() is
+  'Migration 111: refuses to delete an olympiad package that has ANY purchase '
+  'row, is still ACTIVE, or has an attempt in flight. It fires BEFORE the '
+  'olympiad_purchases RESTRICT foreign key, so from now on that FK is the '
+  'SECOND line of defence, not the first — do not drop this trigger on the '
+  'grounds that "the FK already does it": the error would regress to a bare '
+  '23503 with no hint and the panel could only show a generic server error.';
+drop trigger if exists trg_olympiad_package_delete_guard on public.olympiad_packages;
+create trigger trg_olympiad_package_delete_guard
+  before delete on public.olympiad_packages
+  for each row execute function public.olympiad_package_delete_guard();
+
+-- -----------------------------------------------------------------------------
+-- 15) Deletion PREVIEWS — side-effect free, no locks; they drive the
+--     confirmation dialog and every number they report is re-checked by the
+--     mutation before anything is destroyed.
+-- -----------------------------------------------------------------------------
+create or replace function public.admin_preview_olympiad_package_deletion(p_package_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_pkg     record;
+  v_blocks  jsonb;
+  v_total   int; v_deletable int; v_answered int; v_archived int;
+  v_media   int;
+begin
+  if not public.is_admin() then
+    raise exception 'admin_preview_olympiad_package_deletion: forbidden'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  select p.id, p.code, p.status, p.cover_media_id,
+         coalesce(t.title, p.code) as title_az
+    into v_pkg
+  from public.olympiad_packages p
+  left join public.olympiad_package_translations t
+    on t.olympiad_package_id = p.id and t.locale = 'az'
+  where p.id = p_package_id;
+  if not found then
+    raise exception 'admin_preview_olympiad_package_deletion: package not found'
+      using errcode = 'no_data_found';
+  end if;
+
+  v_blocks := public.olympiad_package_deletion_blocks(p_package_id);
+
+  select count(*)::int,
+         coalesce(sum(case when a.answered then 0 else 1 end), 0)::int,
+         coalesce(sum(case when a.answered then 1 else 0 end), 0)::int,
+         coalesce(sum(case when q.status = 'archived' then 1 else 0 end), 0)::int
+    into v_total, v_deletable, v_answered, v_archived
+  from public.questions q
+  cross join lateral (
+    select exists (select 1 from public.test_attempt_answers x
+                    where x.question_id = q.id) as answered
+  ) a
+  where q.olympiad_package_id = p_package_id;
+
+  -- An ESTIMATE, and honestly so: the exact orphan set is only decidable after
+  -- the delete (purge_question_set computes it there). Counting the media of
+  -- the DELETABLE questions plus the cover is the closest side-effect-free
+  -- answer, and it can only over-count.
+  select count(distinct s.m)::int into v_media
+  from (
+    select qt.media_asset_id as m
+      from public.question_translations qt
+      join public.questions q on q.id = qt.question_id
+     where q.olympiad_package_id = p_package_id and qt.media_asset_id is not null
+       and not exists (select 1 from public.test_attempt_answers a
+                        where a.question_id = q.id)
+    union
+    select qe.media_asset_id
+      from public.question_explanations qe
+      join public.questions q on q.id = qe.question_id
+     where q.olympiad_package_id = p_package_id and qe.media_asset_id is not null
+       and not exists (select 1 from public.test_attempt_answers a
+                        where a.question_id = q.id)
+    union
+    select aot.media_asset_id
+      from public.answer_option_translations aot
+      join public.answer_options ao on ao.id = aot.option_id
+      join public.questions q on q.id = ao.question_id
+     where q.olympiad_package_id = p_package_id and aot.media_asset_id is not null
+       and not exists (select 1 from public.test_attempt_answers a
+                        where a.question_id = q.id)
+  ) s;
+
+  -- The cover is counted separately rather than as a fourth UNION branch: a
+  -- package cover never doubles as a question image, and keeping the plpgsql
+  -- variable out of the query removes any doubt about how it resolves there.
+  if v_pkg.cover_media_id is not null then
+    v_media := v_media + 1;
+  end if;
+
+  return jsonb_build_object(
+    'ok', jsonb_array_length(v_blocks) = 0,
+    'package', jsonb_build_object('id', v_pkg.id, 'code', v_pkg.code,
+                                  'title_az', v_pkg.title_az,
+                                  'status', v_pkg.status),
+    'blocked_by', v_blocks,
+    'questions', jsonb_build_object('total', v_total, 'deletable', v_deletable,
+                                    'archived_instead', v_answered,
+                                    'already_archived', v_archived),
+    -- WHICH of the two outcomes will actually happen, decided by the same rule
+    -- the mutation uses (answered questions surviving ⇒ archive). The two
+    -- cascades are reported SEPARATELY, the way the grade preview already
+    -- splits drop_grade from keep_grade, because they are not the same
+    -- operation: the ARCHIVE branch — which is the branch that runs whenever a
+    -- pool has ever been played, i.e. most of the time — keeps the grades, the
+    -- translations and the pool rows and deletes only the rotation cache. The
+    -- previous payload listed the full delete cascade in both branches, so the
+    -- dialog overstated its own blast radius; a confirmation screen an admin
+    -- learns to disbelieve is worse than none.
+    'outcome', case when v_answered > 0 then 'archive' else 'delete' end,
+    'delete_cascade', jsonb_build_object(
+      'olympiad_package_grades', (select count(*)::int from public.olympiad_package_grades
+                                   where olympiad_package_id = p_package_id),
+      'olympiad_package_translations', (select count(*)::int from public.olympiad_package_translations
+                                         where olympiad_package_id = p_package_id),
+      'olympiad_package_questions', (select count(*)::int from public.olympiad_package_questions
+                                      where olympiad_package_id = p_package_id),
+      'olympiad_question_rotations', (select count(*)::int from public.olympiad_question_rotations
+                                       where olympiad_package_id = p_package_id),
+      'question_translations', (select count(*)::int from public.question_translations qt
+                                 join public.questions q on q.id = qt.question_id
+                                where q.olympiad_package_id = p_package_id),
+      'answer_options', (select count(*)::int from public.answer_options ao
+                          join public.questions q on q.id = ao.question_id
+                         where q.olympiad_package_id = p_package_id)),
+    -- The archive branch's real footprint. The rotation rows go because the
+    -- package SURVIVES holding seen_question_ids that name rows the purge
+    -- removed; everything else stays exactly where it is.
+    'archive_cascade', jsonb_build_object(
+      'package_archived', true,
+      'olympiad_question_rotations', (select count(*)::int from public.olympiad_question_rotations
+                                       where olympiad_package_id = p_package_id),
+      'question_translations', (select count(*)::int from public.question_translations qt
+                                 join public.questions q on q.id = qt.question_id
+                                where q.olympiad_package_id = p_package_id
+                                  and not exists (select 1 from public.test_attempt_answers a
+                                                   where a.question_id = q.id)),
+      'answer_options', (select count(*)::int from public.answer_options ao
+                          join public.questions q on q.id = ao.question_id
+                         where q.olympiad_package_id = p_package_id
+                           and not exists (select 1 from public.test_attempt_answers a
+                                            where a.question_id = q.id))),
+    'orphans', jsonb_build_object('media_assets', v_media));
+end;
+$$;
+
+comment on function public.admin_preview_olympiad_package_deletion(uuid) is
+  'Admin-only, side-effect free (migration 111): what deleting this olympiad '
+  'package would destroy — blocked_by[], the delete/archive question split, and '
+  'the row counts for the outcome that will ACTUALLY happen (`outcome` picks '
+  'between delete_cascade and archive_cascade; the archive branch keeps grades, '
+  'translations and pool rows and drops only the rotation cache) plus the '
+  'orphaned-media estimate. Drives the confirmation dialog; the mutation '
+  're-checks everything it reports.';
+revoke all on function public.admin_preview_olympiad_package_deletion(uuid) from public, anon;
+grant execute on function public.admin_preview_olympiad_package_deletion(uuid)
+  to authenticated, service_role;
+
+create or replace function public.admin_preview_olympiad_grade_pool_deletion(
+  p_package_id uuid,
+  p_grade_id   uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_pkg      record;
+  v_grade    record;
+  v_total    int; v_deletable int; v_answered int; v_archived int;
+  v_media    int;
+  v_grades   int;
+  v_per      int;
+  v_drop     jsonb;
+  v_keep     jsonb;
+begin
+  if not public.is_admin() then
+    raise exception 'admin_preview_olympiad_grade_pool_deletion: forbidden'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  select p.id, p.code, p.status, coalesce(t.title, p.code) as title_az
+    into v_pkg
+  from public.olympiad_packages p
+  left join public.olympiad_package_translations t
+    on t.olympiad_package_id = p.id and t.locale = 'az'
+  where p.id = p_package_id;
+  if not found then
+    raise exception 'admin_preview_olympiad_grade_pool_deletion: package not found'
+      using errcode = 'no_data_found';
+  end if;
+
+  select g.id, g.level::int as level, g.name into v_grade
+  from public.grades g
+  join public.olympiad_package_grades pg
+    on pg.grade_id = g.id and pg.olympiad_package_id = p_package_id
+  where g.id = p_grade_id;
+  if not found then
+    raise exception 'admin_preview_olympiad_grade_pool_deletion: grade is not a package target'
+      using errcode = 'no_data_found';
+  end if;
+
+  select count(*)::int into v_grades
+  from public.olympiad_package_grades where olympiad_package_id = p_package_id;
+
+  select c.questions_per_attempt into v_per
+  from public.olympiad_grade_config(p_package_id, p_grade_id) c;
+
+  v_drop := public.olympiad_grade_pool_blocks(p_package_id, p_grade_id, true);
+  v_keep := public.olympiad_grade_pool_blocks(p_package_id, p_grade_id, false);
+
+  select count(*)::int,
+         coalesce(sum(case when a.answered then 0 else 1 end), 0)::int,
+         coalesce(sum(case when a.answered then 1 else 0 end), 0)::int,
+         coalesce(sum(case when q.status = 'archived' then 1 else 0 end), 0)::int
+    into v_total, v_deletable, v_answered, v_archived
+  from public.questions q
+  cross join lateral (
+    select exists (select 1 from public.test_attempt_answers x
+                    where x.question_id = q.id) as answered
+  ) a
+  where q.olympiad_package_id = p_package_id and q.grade_id = p_grade_id;
+
+  select count(distinct s.m)::int into v_media
+  from (
+    select qt.media_asset_id as m
+      from public.question_translations qt
+      join public.questions q on q.id = qt.question_id
+     where q.olympiad_package_id = p_package_id and q.grade_id = p_grade_id
+       and qt.media_asset_id is not null
+       and not exists (select 1 from public.test_attempt_answers a
+                        where a.question_id = q.id)
+    union
+    select qe.media_asset_id
+      from public.question_explanations qe
+      join public.questions q on q.id = qe.question_id
+     where q.olympiad_package_id = p_package_id and q.grade_id = p_grade_id
+       and qe.media_asset_id is not null
+       and not exists (select 1 from public.test_attempt_answers a
+                        where a.question_id = q.id)
+    union
+    select aot.media_asset_id
+      from public.answer_option_translations aot
+      join public.answer_options ao on ao.id = aot.option_id
+      join public.questions q on q.id = ao.question_id
+     where q.olympiad_package_id = p_package_id and q.grade_id = p_grade_id
+       and aot.media_asset_id is not null
+       and not exists (select 1 from public.test_attempt_answers a
+                        where a.question_id = q.id)
+  ) s;
+
+  return jsonb_build_object(
+    'package', jsonb_build_object('id', v_pkg.id, 'code', v_pkg.code,
+                                  'title_az', v_pkg.title_az,
+                                  'status', v_pkg.status),
+    'grade', jsonb_build_object('id', v_grade.id, 'level', v_grade.level,
+                                'name', v_grade.name),
+    'questions', jsonb_build_object('total', v_total, 'deletable', v_deletable,
+                                    'archived_instead', v_answered,
+                                    'already_archived', v_archived),
+    -- Both dialogs from one round trip: (b) detaches the grade, (c) empties the
+    -- pool and keeps it. Their blocking rules differ, so both are reported.
+    'drop_grade', jsonb_build_object('ok', jsonb_array_length(v_drop) = 0,
+                                     'blocked_by', v_drop),
+    'keep_grade', jsonb_build_object('ok', jsonb_array_length(v_keep) = 0,
+                                     'blocked_by', v_keep),
+    'is_last_grade', v_grades <= 1,
+    'questions_per_attempt', v_per,
+    'package_status', v_pkg.status,
+    -- Only the KEEP-the-grade path can do this: it leaves the grade targeted
+    -- with zero published questions, so an ACTIVE package can no longer serve
+    -- it and the mutation demotes the package to 'inactive'. Detaching the
+    -- grade removes it from the check entirely.
+    'package_becomes_unservable', v_pkg.status = 'active',
+    'orphans', jsonb_build_object('media_assets', v_media));
+end;
+$$;
+
+comment on function public.admin_preview_olympiad_grade_pool_deletion(uuid, uuid) is
+  'Admin-only, side-effect free (migration 111): serves BOTH grade dialogs from '
+  'one round trip — drop_grade (detach + delete the pool) and keep_grade (empty '
+  'the pool, keep the grade targeted) each with their own blocked_by[], plus the '
+  'delete/archive split, the per-grade questions_per_attempt and whether an '
+  'ACTIVE package would be auto-demoted.';
+revoke all on function public.admin_preview_olympiad_grade_pool_deletion(uuid, uuid)
+  from public, anon;
+grant execute on function public.admin_preview_olympiad_grade_pool_deletion(uuid, uuid)
+  to authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
+-- 16) Destructive MUTATIONS (Admin-only).
+-- -----------------------------------------------------------------------------
+create or replace function public.admin_delete_olympiad_package(
+  p_package_id    uuid,
+  p_expected_code text
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_pkg    record;
+  v_blocks jsonb;
+  v_ids    uuid[];
+  v_purge  jsonb;
+  v_media  uuid[];
+begin
+  if not public.is_admin() then
+    raise exception 'admin_delete_olympiad_package: forbidden'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  -- FOR UPDATE serialises two tabs acting on the same package: the second waits
+  -- and then re-reads a status the first may have changed.
+  select p.id, p.code, p.status, p.cover_media_id, p.questions_per_attempt
+    into v_pkg
+  from public.olympiad_packages p where p.id = p_package_id
+  for update;
+  if not found then
+    raise exception 'admin_delete_olympiad_package: package not found'
+      using errcode = 'no_data_found';
+  end if;
+
+  -- The realistic failure is two packages open in two tabs. Typing the code
+  -- makes an id mix-up impossible to commit even if the dialog is restyled.
+  if p_expected_code is null or p_expected_code <> v_pkg.code then
+    raise exception 'admin_delete_olympiad_package: confirmation code mismatch'
+      using errcode = 'check_violation', hint = 'confirmation_mismatch';
+  end if;
+
+  v_blocks := public.olympiad_package_deletion_blocks(p_package_id);
+  if jsonb_array_length(v_blocks) > 0 then
+    raise exception 'admin_delete_olympiad_package: % blocking reference(s)',
+      jsonb_array_length(v_blocks)
+      using errcode = 'check_violation',
+            hint    = case when jsonb_array_length(v_blocks) = 1
+                           then v_blocks->0->>'hint' else 'package_not_deletable' end,
+            detail  = jsonb_build_object('blocks', v_blocks)::text;
+  end if;
+
+  select coalesce(array_agg(q.id), '{}'::uuid[]) into v_ids
+  from public.questions q where q.olympiad_package_id = p_package_id;
+
+  v_purge := public.purge_question_set(v_ids);
+
+  if (v_purge->>'retained')::int > 0 then
+    -- questions.olympiad_package_id is ON DELETE CASCADE, so deleting the
+    -- package would try to delete the very rows just archived and
+    -- trg_question_delete_guard would abort the whole transaction. Archiving
+    -- the package is the only outcome that keeps both promises — and it is the
+    -- same rule subjects follow: if anything answered survives, the CONTAINER
+    -- is archived, not deleted. The success message must say so, or the button
+    -- reads as broken.
+    update public.olympiad_packages
+       set status = 'archived', updated_at = now()
+     where id = p_package_id and status <> 'archived';
+
+    -- Only this branch needs it: the delete branch below takes the rotation
+    -- rows with the package (CASCADE), but here the package SURVIVES holding
+    -- seen_question_ids that name rows the purge just removed. Left alone, a
+    -- re-uploaded pool would look partly consumed to that student and hand
+    -- them a short attempt; the row is pure cache, so resetting it is free.
+    delete from public.olympiad_question_rotations
+     where olympiad_package_id = p_package_id;
+
+    return jsonb_build_object(
+      'package_id', p_package_id,
+      'package_deleted', false,
+      'package_archived', true,
+      'reason', 'answered_questions_retained',
+      'deleted_questions', (v_purge->>'deleted')::int,
+      'archived_questions', (v_purge->>'archived')::int,
+      'retained_questions', (v_purge->>'retained')::int,
+      'orphaned_media_ids', v_purge->'orphaned_media_ids',
+      'media_truncated', (v_purge->>'media_truncated')::boolean);
+  end if;
+
+  delete from public.olympiad_packages where id = p_package_id;
+
+  -- cover_media_id is SET NULL, so nothing ever reclaims the cover asset. It is
+  -- an orphan only once no OTHER package points at it.
+  select coalesce(array_agg(e.x::uuid), '{}'::uuid[]) into v_media
+  from jsonb_array_elements_text(v_purge->'orphaned_media_ids') as e(x);
+  if v_pkg.cover_media_id is not null
+     and not exists (select 1 from public.olympiad_packages p
+                      where p.cover_media_id = v_pkg.cover_media_id) then
+    v_media := v_media || v_pkg.cover_media_id;
+  end if;
+
+  return jsonb_build_object(
+    'package_id', p_package_id,
+    'package_deleted', true,
+    'package_archived', false,
+    'deleted_questions', (v_purge->>'deleted')::int,
+    'archived_questions', 0,
+    'retained_questions', 0,
+    'orphaned_media_ids', to_jsonb(v_media),
+    'media_truncated', (v_purge->>'media_truncated')::boolean);
+end;
+$$;
+
+comment on function public.admin_delete_olympiad_package(uuid, text) is
+  'Admin-only (migration 111): deletes an olympiad package and its entire pool '
+  'after purging the questions (unanswered deleted, answered ARCHIVED). Blocked '
+  'by any purchase row (hint package_has_purchases), by status = active '
+  '(package_is_active) and by an attempt in flight (live_attempts); '
+  'p_expected_code must equal the package code (confirmation_mismatch). When '
+  'answered questions survive, the PACKAGE IS ARCHIVED instead of deleted '
+  '(reason answered_questions_retained). Returns the counts plus '
+  'orphaned_media_ids for the caller to sweep from Storage.';
+revoke all on function public.admin_delete_olympiad_package(uuid, text) from public, anon;
+grant execute on function public.admin_delete_olympiad_package(uuid, text)
+  to authenticated, service_role;
+
+create or replace function public.admin_delete_olympiad_grade_pool(
+  p_package_id    uuid,
+  p_grade_id      uuid,
+  p_expected_code text,
+  p_drop_grade    boolean default false
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_pkg      record;
+  v_blocks   jsonb;
+  v_ids      uuid[];
+  v_purge    jsonb;
+  v_rot      int := 0;
+  v_demote   boolean := false;
+begin
+  if not public.is_admin() then
+    raise exception 'admin_delete_olympiad_grade_pool: forbidden'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  select p.id, p.code, p.status, p.questions_per_attempt into v_pkg
+  from public.olympiad_packages p where p.id = p_package_id
+  for update;
+  if not found then
+    raise exception 'admin_delete_olympiad_grade_pool: package not found'
+      using errcode = 'no_data_found';
+  end if;
+
+  -- The SAME confirmation token the two container deletes demand, and for a
+  -- stronger reason: this function hard-deletes a whole grade pool from a bare
+  -- (package_id, grade_id) pair, it is granted to `authenticated`, and it is
+  -- therefore a PostgREST endpoint any admin session can POST directly. The
+  -- dialog is not a control — the token is. It is checked BEFORE the target
+  -- grade is validated so a wrong-tab mix-up fails on the cheap test.
+  if p_expected_code is null or p_expected_code <> v_pkg.code then
+    raise exception 'admin_delete_olympiad_grade_pool: confirmation code mismatch'
+      using errcode = 'check_violation', hint = 'confirmation_mismatch';
+  end if;
+
+  if not exists (select 1 from public.olympiad_package_grades
+                  where olympiad_package_id = p_package_id and grade_id = p_grade_id) then
+    raise exception 'admin_delete_olympiad_grade_pool: grade is not a package target'
+      using errcode = 'no_data_found';
+  end if;
+
+  v_blocks := public.olympiad_grade_pool_blocks(p_package_id, p_grade_id,
+                                                coalesce(p_drop_grade, false));
+  if jsonb_array_length(v_blocks) > 0 then
+    raise exception 'admin_delete_olympiad_grade_pool: % blocking reference(s)',
+      jsonb_array_length(v_blocks)
+      using errcode = 'check_violation',
+            hint    = case when jsonb_array_length(v_blocks) = 1
+                           then v_blocks->0->>'hint' else 'grade_pool_not_deletable' end,
+            detail  = jsonb_build_object('blocks', v_blocks)::text;
+  end if;
+
+  select coalesce(array_agg(q.id), '{}'::uuid[]) into v_ids
+  from public.questions q
+  where q.olympiad_package_id = p_package_id and q.grade_id = p_grade_id;
+
+  v_purge := public.purge_question_set(v_ids);
+
+  -- olympiad_question_rotations.seen_question_ids holds ids that no longer
+  -- exist. Leaving them makes a freshly re-uploaded pool look partly consumed
+  -- to that student and can hand them a short attempt; the row is pure cache,
+  -- so resetting it is free.
+  delete from public.olympiad_question_rotations
+   where olympiad_package_id = p_package_id and grade_id = p_grade_id;
+  get diagnostics v_rot = row_count;
+
+  if coalesce(p_drop_grade, false) then
+    delete from public.olympiad_package_grades
+     where olympiad_package_id = p_package_id and grade_id = p_grade_id;
+  end if;
+
+  if v_pkg.status = 'active' then
+    begin
+      perform public.assert_olympiad_pool_meets_per_attempt(
+                p_package_id, v_pkg.questions_per_attempt);
+    exception when check_violation then
+      v_demote := true;
+    end;
+    if v_demote then
+      -- Leaving it ACTIVE means the next child to open it gets a runtime
+      -- failure at attempt start instead of a closed listing.
+      update public.olympiad_packages
+         set status = 'inactive', updated_at = now()
+       where id = p_package_id;
+      -- This UPDATE re-fires trg_olympiad_activation_pool_guard, which looks
+      -- like it must fail the very assertion that just failed. It does not:
+      -- the guard returns early for any row whose new.status is not 'active'.
+      -- The whole auto-demotion design rests on that early return — do not
+      -- "simplify" it by suppressing the trigger.
+    end if;
+  end if;
+
+  return jsonb_build_object(
+    'package_id', p_package_id,
+    'grade_id', p_grade_id,
+    'grade_dropped', coalesce(p_drop_grade, false),
+    'deleted_questions', (v_purge->>'deleted')::int,
+    'archived_questions', (v_purge->>'archived')::int,
+    'retained_questions', (v_purge->>'retained')::int,
+    'reset_rotations', v_rot,
+    'package_demoted', v_demote,
+    'orphaned_media_ids', v_purge->'orphaned_media_ids',
+    'media_truncated', (v_purge->>'media_truncated')::boolean);
+end;
+$$;
+
+comment on function public.admin_delete_olympiad_grade_pool(uuid, uuid, text, boolean) is
+  'Admin-only (migration 111): purges ONE grade''s olympiad pool (unanswered '
+  'deleted, answered ARCHIVED) and, with p_drop_grade = true, detaches the '
+  'grade as well. p_expected_code must equal the package code '
+  '(confirmation_mismatch). remove_olympiad_package_grade is deliberately left '
+  'untouched as the SAFE archive-only path the UI offers first. Blocked by '
+  'last_grade, by purchases IN ANY STATUS (grade_has_purchases when detaching, '
+  'grade_has_purchases_purge when only emptying — emptying a purchased pool '
+  'silently revokes a lifetime entitlement) and by live_attempts. Auto-demotes '
+  'an ACTIVE package that can no longer fill an attempt (package_demoted).';
+revoke all on function public.admin_delete_olympiad_grade_pool(uuid, uuid, text, boolean)
+  from public, anon;
+grant execute on function public.admin_delete_olympiad_grade_pool(uuid, uuid, text, boolean)
+  to authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
+-- 17) admin_unarchive_olympiad_package — the missing inverse of the archive
+--     action. The one operation added here that destroys nothing.
+-- -----------------------------------------------------------------------------
+create or replace function public.admin_unarchive_olympiad_package(p_package_id uuid)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_status public.catalog_status;
+begin
+  if not public.is_admin() then
+    raise exception 'admin_unarchive_olympiad_package: forbidden'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  -- FOR UPDATE makes the check atomic with the write. A read-then-update in the
+  -- server action would be a TOCTOU that lets two tabs both "restore" and one
+  -- of them demote a package the other just activated.
+  select status into v_status
+  from public.olympiad_packages where id = p_package_id
+  for update;
+  if not found then
+    raise exception 'admin_unarchive_olympiad_package: package not found'
+      using errcode = 'no_data_found';
+  end if;
+
+  if v_status is distinct from 'archived'::public.catalog_status then
+    raise exception 'admin_unarchive_olympiad_package: package is not archived'
+      using errcode = 'check_violation', hint = 'not_archived';
+  end if;
+
+  -- 'inactive', never 'active', for three reasons:
+  --   (i) restoring to active re-fires trg_olympiad_activation_pool_guard, and
+  --       since migration 094 emptied eight packages' pools most archived
+  --       packages would answer a "restore" click with
+  --       olympiad_pool_below_per_attempt, which reads as a bug, not a rule;
+  --  (ii) olympiad_package_on_sale() gates the public catalog on status, so
+  --       'active' puts the package back ON SALE instantly, reusing a
+  --       sale_starts_at/sale_ends_at window that may be long expired or, worse,
+  --       still open. Restoring must never be a selling action;
+  -- (iii) `status` is the ONLY record that the package was archived — there is
+  --       no archived_at and no previous_status column, so "restore to whatever
+  --       it was" is not computable. 'inactive' is also where a newly created
+  --       package starts, so it is the one honest answer.
+  update public.olympiad_packages
+     set status = 'inactive', updated_at = now()
+   where id = p_package_id;
+
+  return jsonb_build_object('package_id', p_package_id, 'status', 'inactive');
+end;
+$$;
+
+comment on function public.admin_unarchive_olympiad_package(uuid) is
+  'Admin-only (migration 111): the missing inverse of archiveOlympiadPackage. '
+  'Restores an ARCHIVED package to INACTIVE (never straight to active — that '
+  'would re-fire the pool guard and put the package back on sale under a '
+  'possibly expired window). Refuses a package that is not archived (hint '
+  'not_archived); the FOR UPDATE makes that check atomic with the write. The '
+  'one new operation here that is not destructive.';
+revoke all on function public.admin_unarchive_olympiad_package(uuid) from public, anon;
+grant execute on function public.admin_unarchive_olympiad_package(uuid)
+  to authenticated, service_role;
 
 -- =============================================================================
 -- End of 015_olympiad_preparation.sql

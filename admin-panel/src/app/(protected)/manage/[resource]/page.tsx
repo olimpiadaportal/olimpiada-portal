@@ -5,6 +5,10 @@ import { getResource, type Resource } from "@/lib/admin/resources";
 import { requireAdmin, requirePanelAccess } from "@/lib/admin/guards";
 import { ResourceForm } from "@/components/ResourceForm";
 import { DeleteButton } from "@/components/DeleteButton";
+import {
+  SubjectDeleteButton,
+  type SubjectDeleteStrings,
+} from "@/components/SubjectDeleteButton";
 import { getT, type T } from "@/i18n/server";
 import { localizeFields, resourceTitle } from "@/i18n/resources-i18n";
 import { FilterBar, type FilterBarSelect } from "@/components/FilterBar";
@@ -30,6 +34,34 @@ function first(sp: SearchParams, key: string): string {
   if (typeof v === "string") return v;
   if (Array.isArray(v)) return v[0] ?? "";
   return "";
+}
+
+// The subject-deletion dialog is a client component, so its copy is resolved
+// here and passed down (same contract as LeaderboardResetControls).
+function subjectDeleteStrings(t: T): SubjectDeleteStrings {
+  return {
+    open: t("action.delete"),
+    title: t("del.subject.title"),
+    loading: t("del.loading"),
+    loadFailed: t("del.loadFailed"),
+    blockedTitle: t("del.blockedTitle"),
+    warnTitle: t("del.warnTitle"),
+    irreversible: t("del.irreversible"),
+    questions: t("del.questions"),
+    cascade: t("del.cascade"),
+    codeLabel: t("del.codeLabel"),
+    codeHint: t("del.codeHint"),
+    ackLabel: t("del.ackLabel"),
+    purgeTitle: t("del.purgeTitle"),
+    purgeDesc: t("del.purgeDesc"),
+    purgeAction: t("del.purgeAction"),
+    deleteTitle: t("del.subject.deleteTitle"),
+    deleteDesc: t("del.subject.deleteDesc"),
+    deleteAction: t("del.subject.deleteAction"),
+    cancel: t("action.cancel"),
+    close: t("modal.close"),
+    working: t("pend.deleting"),
+  };
 }
 
 function renderCell(t: T, res: Resource, row: any, col: string): React.ReactNode {
@@ -123,6 +155,16 @@ export default async function ManageResourcePage({
         <p className="muted">{t("manage.subtitle")}</p>
       </div>
 
+      {/* deleteRow() used to discard its error, so a delete a database guard
+          refused was indistinguishable from one that worked. It now redirects
+          here with a flag; the reason itself stays in the server log (never
+          leak a raw Postgres message). */}
+      {first(sp, "deleteFailed") === "1" && (
+        <p className="form-error" role="alert">
+          {t("manage.deleteFailed")}
+        </p>
+      )}
+
       <section className="card" style={{ marginBottom: 20 }}>
         <h3>{t("manage.addHeading")}</h3>
         <ResourceForm
@@ -172,13 +214,24 @@ export default async function ManageResourcePage({
                     <Link href={`/manage/${res.slug}/${row.id}/edit`}>
                       {t("action.edit")}
                     </Link>
-                    <DeleteButton
-                      slug={res.slug}
-                      id={row.id}
-                      label={t("action.delete")}
-                      confirmText={t("action.confirmDelete")}
-                      pendingLabel={t("pend.deleting")}
-                    />
+                    {/* Subjects do NOT use the generic delete. deleteRow() is a
+                        bare `.delete()` and the cascade behind a subject is a
+                        paid subscription line, a curriculum tree and a SET NULL
+                        across the question bank — it needs the previewed,
+                        code-confirmed flow of migration 111. deleteRow() also
+                        refuses the slug server-side, so this is a matching UI,
+                        not the control itself. */}
+                    {res.slug === "subjects" ? (
+                      <SubjectDeleteButton id={row.id} strings={subjectDeleteStrings(t)} />
+                    ) : (
+                      <DeleteButton
+                        slug={res.slug}
+                        id={row.id}
+                        label={t("action.delete")}
+                        confirmText={t("action.confirmDelete")}
+                        pendingLabel={t("pend.deleting")}
+                      />
+                    )}
                   </td>
                 </tr>
               ))}

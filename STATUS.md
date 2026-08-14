@@ -6,6 +6,70 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — GUARDED DELETION + UNARCHIVE (migration 111, 2026-08-14)
+
+**Applied to production. Validation `013` = 104/104 PASS. admin-panel: typecheck + 364 tests + build green.**
+
+Adds what the owner asked for — delete a whole olympiad package, per-grade delete, per-grade and per-subject "delete all questions", subject delete, and Unarchive — but every one of them behind a guard, because three of these operations can destroy data that must never be destroyed.
+
+### The rule this change did NOT break
+
+CLAUDE.md forbids deleting purchased olympiad packages, and forbids hard-deleting a question any attempt has answered. Both still hold. `olympiad_purchases` is FK RESTRICT and `trg_question_delete_guard` still fires on cascade, so a package with purchases and a question with history are both undeletable. What the feature adds is a NAMED REFUSAL with counts instead of a bare FK error, plus an honest mixed outcome: unanswered questions are deleted, answered ones are ARCHIVED, and both counts are reported. **No admin button ever deletes `test_attempt_answers`** — that stays reviewed-migration-only territory.
+
+### It closed a pre-existing hole rather than opening one
+
+`/manage/subjects` already had a working Delete that ran a bare `.delete()` with no dependency check, and `subscription_subjects.subject_id` is ON DELETE CASCADE. Deleting a subject would have silently stripped it from paying parents' subscriptions, wiped its pricing rows and cascaded away its whole topic tree — and `deleteRow()` DISCARDED the error, so it would have looked like nothing happened. Subjects are now refused server-side by `NON_GENERIC_DELETE` (not merely hidden in the UI, so a hand-crafted POST cannot reach the table), and `deleteRow` surfaces failures for every resource.
+
+### Proven, not assumed — three live guard tests, each rolled back
+
+    subject WITH subscriptions   -> BLOCKED  {subject_in_subscriptions:2, subject_has_attempts:7,
+                                              subject_in_olympiad_packages:5, subject_has_topics:51}
+    subject with NO subs, 64 topics -> BLOCKED  {subject_has_attempts:3, subject_in_olympiad_packages:2,
+                                                 subject_has_topics:64}
+    package with 1 purchase      -> BLOCKED  {package_has_purchases:1}
+
+The middle case is the one that matters most: without the `subject_has_topics` block, a freshly seeded never-played subject passes every subscription/billing check and the cascade takes the curriculum tree. Row counts were identical before and after all three probes.
+
+### What the adversarial review caught (verdict went UNSAFE -> SAFE)
+
+Nine findings, all closed. The three that mattered:
+
+1. **The most destructive operations had the least protection.** Both container deletes required a typed confirmation code; the two PURGES — which destroy the most rows — required none, and both were granted to `authenticated`, so they were POSTable straight through PostgREST with the dialog bypassed. Both now demand the row's own code, and the token-less arities are unconditionally dropped so Postgres cannot keep them as bypass overloads.
+2. **A purchase predicate was promoted past its blast radius.** The grade purge copied `status = 'active'` verbatim from `remove_olympiad_package_grade`, where the consequence was a restorable ARCHIVE. Here it is a hard delete — and `purchase_olympiad` re-activates a refunded row IN PLACE keeping its `grade_id`, so a dormant purchase could later go live onto a destroyed pool. The destructive path now counts purchases in ANY status; the archive-only path deliberately keeps the narrow predicate, and the divergence is pinned in both directions by the migration's verify block, 013 check 96 and the parity suite.
+3. **The new trigger did not close the hole it was written for** — finding H3 above.
+
+### A pre-existing bug at HEAD, found and repaired
+
+`015_olympiad_preparation.sql` had `as # STATUS.md
+
+## Purpose
+
+This is the live implementation tracker for the OlympIQ project.
+
+Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
+
+ … `$;` on `olympiad_grade_config` instead of `as $` … `$;`, so **a from-zero rebuild was broken at HEAD and nobody had noticed.** Cause: a scripted backport used JavaScript `String.replace()` with `$` in the REPLACEMENT string, which JS treats as an escape for one literal `# STATUS.md
+
+## Purpose
+
+This is the live implementation tracker for the OlympIQ project.
+
+Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
+
+. **Never use a replacement string containing `$` when writing SQL — use a function replacer, `s.replace(a, () => b)`, and grep for truncated delimiters afterwards.** The migration file itself was intact; only the canonical copy was damaged.
+
+### Expectation to set before using this
+
+The subject blocks are strict enough that **most or all of the 6 live subjects are undeletable today** — verified above. The realistic use for "delete a subject" is a mistyped one created and never used, not clearing out a subject with history. That is the correct outcome, not a defect.
+
+### Known gaps
+
+- **Nobody has clicked these dialogs.** Everything is covered by 364 unit tests, typecheck and build, but the confirmation flow, the token gate, the acknowledge checkbox and the post-delete redirect have had no manual pass.
+- Acting a second time on a row the dialog already deleted yields a generic `err.server` rather than a named message: the RPCs raise `no_data_found`, which is not in `HINT_KEYS`. Fails closed and the database refuses regardless — cosmetic, deliberately left.
+- The from-zero rebuild proof is still owed (staging-only; `OLIMPIADA_STAGING_DB_URL` remains unset). The canonical backports are pinned byte-for-byte against the migration by the parity suite, which catches drift but cannot catch an ordering problem.
+
+Audit actions added: `admin.subject.purge_questions`, `admin.subject.delete`, `admin.subject.archive_instead_of_delete`, `admin.olympiad.package_delete`, `admin.olympiad.grade_pool_delete`, `admin.olympiad.grade_pool_purge`, `admin.olympiad.archive_instead_of_delete`, `admin.olympiad.unarchive` (the last is severity `info` — it destroys nothing).
+
 ## PINNED — MIXED ZIP IMPORT: 1x1 IMAGES AND REFUSED WINDOWS ARCHIVES (2026-08-12)
 
 Reported as "images import but the exam shows nothing"; the stored object was a valid PNG of ~70 bytes at 1x1. TWO INDEPENDENT defects, neither of which corrupts bytes — the reader was proven byte-exact against a real 153 KB PNG before anything was changed.

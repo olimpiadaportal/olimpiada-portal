@@ -2146,6 +2146,114 @@ select '100_subscription_subjects_intact' as check_name,
            and not exists (select 1 from public.subscription_subjects ss
                             where ss.child_subscription_id = cs.id)) as live_subs_without_subjects;
 
+-- 101. The olympiad BULK question purge is scoped, confirmed, and still
+--      delegates (migration 112).
+--
+--      admin_delete_olympiad_questions exists for exactly one reason:
+--      purge_question_set applies the answered-question policy to ANY question
+--      in the platform, takes a bare uuid[] and knows nothing about packages or
+--      callers. The wrapper is what binds an admin-supplied id list to ONE
+--      olympiad package. Five things have to hold, and none of them is visible
+--      in a browser click-through:
+--
+--        * purge_question_set must stay unreachable by `authenticated`. The
+--          moment a signed-in session can call it, the scope check above it is
+--          decoration and any admin session can POST an arbitrary array straight
+--          at PostgREST. It is asserted here as well as in check 96 so this
+--          check stands on its own;
+--        * the wrapper must still CALL it. A body that inlined the split would
+--          be a SECOND definition of the one policy CLAUDE.md pins — and the
+--          copy is the one that quietly starts hard-deleting answered questions.
+--          The negative probe is the same claim from the other side: the only
+--          rows this function may remove itself are rotation cache rows, so a
+--          question delete in its own body is the drift, not an optimisation;
+--        * THE TOKEN-LESS ARITY MUST BE GONE, not merely unused. Adding
+--          p_expected_code created a new OVERLOAD rather than replacing the
+--          signature, and the old one destroys the same 500 rows with no
+--          confirmation at all — the bypass, sitting next to the control;
+--        * THE PURCHASED-POOL RULE MUST STILL BE APPLIED, and it must be applied
+--          from the SHARED predicate. CLAUDE.md: purchasers keep lifetime
+--          access, and emptying a purchased grade's pool revokes it silently.
+--          olympiad_grade_pool_blocks refuses that for a whole pool; this
+--          function must refuse the selection that reaches the same end state.
+--          Check 96 probes olympiad_grade_pool_blocks for the active-only
+--          purchase predicate it must NOT carry — a probe that now passes
+--          trivially because the predicate MOVED into
+--          olympiad_grade_purchase_count. So the delegation is asserted from
+--          both sides here, and the any-status rule is re-asserted on the
+--          helper that now owns it;
+--        * the per-row Delete button must go through the same body. A guarded
+--          bulk path next to an unguarded single-row path is not a guard.
+--
+--      is_admin() is probed too: olympiad pools are an Admin-only module, and a
+--      body that lost its gate would still work for every admin who tested it.
+with fns (sig, admin_facing) as (values
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', true),
+  ('public.admin_delete_olympiad_pool_question(uuid,uuid)', true),
+  ('public.purge_question_set(uuid[])', false),
+  ('public.olympiad_grade_purchase_count(uuid,uuid)', false),
+  ('public.olympiad_pool_purchase_blocks(uuid,uuid[])', false)
+), probes (sig, needle, must_exist) as (values
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', 'public.is_admin()', true),
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', 'public.purge_question_set(', true),
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', 'question_not_in_package', true),
+  -- A stale id and a foreign id are different accidents; conflating them sends
+  -- the admin hunting a selection bug that does not exist.
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', 'question_gone', true),
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', 'too_many_questions', true),
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', 'confirmation_mismatch', true),
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', 'public.olympiad_pool_purchase_blocks(', true),
+  ('public.admin_delete_olympiad_questions(uuid,uuid[],text,boolean)', 'delete from public.questions', false),
+  -- The per-row button is a wrapper, never a second implementation.
+  ('public.admin_delete_olympiad_pool_question(uuid,uuid)', 'public.admin_delete_olympiad_questions(', true),
+  ('public.admin_delete_olympiad_pool_question(uuid,uuid)', 'delete from public.questions', false),
+  -- ONE definition of "what counts as a purchase", asserted from both callers…
+  ('public.olympiad_grade_pool_blocks(uuid,uuid,boolean)', 'public.olympiad_grade_purchase_count(', true),
+  ('public.olympiad_pool_purchase_blocks(uuid,uuid[])', 'public.olympiad_grade_purchase_count(', true),
+  -- …and ANY status still counts, now that the predicate lives in the helper.
+  ('public.olympiad_grade_purchase_count(uuid,uuid)', 'pu.status', false),
+  -- ONE definition of the per-grade requirement too: migration 106's override
+  -- is resolved by olympiad_grade_config, and a hand-rolled coalesce would
+  -- silently ignore it.
+  ('public.olympiad_pool_purchase_blocks(uuid,uuid[])', 'public.olympiad_grade_config(', true),
+  -- The token-less arity must be GONE. Empty needle: an existing function
+  -- trivially contains '' and therefore FAILS this must_exist = false probe,
+  -- while an absent one is reported as missing by the CASE below.
+  ('public.admin_delete_olympiad_questions(uuid,uuid[])', '', false)
+), fn_ok as (
+  select f.sig,
+         -- CASE, not AND: has_function_privilege() errors on a missing function,
+         -- and this check has to REPORT that, not abort the file.
+         case when to_regprocedure(f.sig) is null then false
+              else (select p.prosecdef
+                      and coalesce(p.proconfig, '{}'::text[])
+                            @> array['search_path=public, pg_temp']
+                      and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                      and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                          = f.admin_facing
+                    from pg_proc p where p.oid = to_regprocedure(f.sig))
+         end as ok
+  from fns f
+), probe_ok as (
+  select p.sig, p.needle,
+         -- A missing function fails every POSITIVE probe — an absent wrapper is
+         -- not a passing result — but SATISFIES a negative one, which is how the
+         -- token-less-arity row above reports "correctly gone".
+         case when to_regprocedure(p.sig) is null then not p.must_exist
+              else (position(p.needle in
+                      pg_get_functiondef(to_regprocedure(p.sig))) > 0) = p.must_exist
+         end as ok
+  from probes p
+)
+select '101_olympiad_bulk_purge_scoped' as check_name,
+       case when (select count(*) filter (where ok) from fn_ok) = 5
+             and (select count(*) filter (where not ok) from probe_ok) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) filter (where to_regprocedure(sig) is null) from fns)
+         as missing_functions,
+       (select count(*) filter (where not ok) from fn_ok) as misconfigured,
+       (select count(*) filter (where not ok) from probe_ok) as failed_invariants;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

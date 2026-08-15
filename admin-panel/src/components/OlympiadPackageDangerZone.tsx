@@ -17,34 +17,25 @@
 import { useActionState } from "react";
 import {
   archiveOlympiadPackage,
-  deleteOlympiadPackageAction,
-  loadOlympiadPackageDeletionPreview,
   unarchiveOlympiadPackageAction,
   type OlympiadDeletionState,
-  type OlympiadPackageDeletionPreview,
 } from "@/lib/admin/olympiad";
 import { ActionButton, SubmitButton } from "@/components/ActionButton";
 import {
-  DestructiveActionForm,
-  DestructiveConfirmDialog,
-  type DestructiveConfirmStrings,
-} from "@/components/DestructiveConfirm";
+  OlympiadPackageDeleteButton,
+  type OlympiadPackageDeleteStrings,
+} from "@/components/OlympiadPackageDeleteButton";
 
-export type OlympiadPackageDangerStrings = DestructiveConfirmStrings & {
+// The delete dialog itself lives in OlympiadPackageDeleteButton — the package
+// list renders the same one from its rows, and a second copy here would be a
+// second place for the outcome/blocking copy to drift.
+export type OlympiadPackageDangerStrings = OlympiadPackageDeleteStrings & {
   heading: string;
   archive: string;
   archiving: string;
   restore: string;
   restoring: string;
   restoreHint: string;
-  questions: string;
-  outcomeDelete: string;
-  outcomeArchive: string;
-  cascade: string;
-  media: string;
-  deleteTitle: string;
-  deleteDesc: string;
-  deleteAction: string;
 };
 
 export function OlympiadPackageDangerZone({
@@ -86,56 +77,9 @@ export function OlympiadPackageDangerZone({
           </form>
         )}
 
-        <DestructiveConfirmDialog<OlympiadPackageDeletionPreview>
-          strings={strings}
-          loadPreview={() => loadOlympiadPackageDeletionPreview(packageId)}
-          code={(p) => p.code}
-          details={(p) => (
-            <>
-              <p style={{ marginTop: 0 }}>
-                <strong>{p.titleAz}</strong>
-              </p>
-              {/* WHICH of the two outcomes will happen, stated before the
-                  click. The archive branch runs whenever anything in the pool
-                  has ever been answered — i.e. most of the time — and it keeps
-                  the grades, the translations and the pool rows. Reporting the
-                  full delete cascade in both branches would overstate the blast
-                  radius, and a confirmation screen an admin learns to
-                  disbelieve is worse than none. */}
-              <p className="muted">
-                {p.outcome === "archive" ? strings.outcomeArchive : strings.outcomeDelete}
-              </p>
-              <p className="muted">
-                {strings.questions}: {p.questions.total} ({p.questions.deletable} /{" "}
-                {p.questions.archivedInstead})
-              </p>
-              <p className="muted">
-                {strings.cascade}:{" "}
-                {p.outcome === "archive"
-                  ? `${p.archiveCascade.rotations} / ${p.archiveCascade.questionTranslations} / ${p.archiveCascade.answerOptions}`
-                  : `${p.deleteCascade.grades} / ${p.deleteCascade.poolLinks} / ${p.deleteCascade.rotations} / ${p.deleteCascade.questionTranslations} / ${p.deleteCascade.answerOptions}`}
-              </p>
-              <p className="muted">
-                {strings.media}: {p.orphanMedia}
-              </p>
-            </>
-          )}
-        >
-          {(p, gate) => (
-            <DestructiveActionForm
-              gate={gate}
-              actionKey="delete"
-              action={deleteOlympiadPackageAction}
-              fields={{ __id: p.id }}
-              title={strings.deleteTitle}
-              description={strings.deleteDesc}
-              label={strings.deleteAction}
-              // Purchases, an active listing and a live attempt each render as
-              // their own sentence naming the alternative — archiving.
-              blockedBy={p.blockedBy}
-            />
-          )}
-        </DestructiveConfirmDialog>
+        {/* No `staysOnPage`: THIS page is the one the deletion destroys, so the
+            action's fixed /olympiad redirect is the right ending here. */}
+        <OlympiadPackageDeleteButton packageId={packageId} strings={strings} />
       </div>
 
       {isArchived && <p className="hint">{strings.restoreHint}</p>}

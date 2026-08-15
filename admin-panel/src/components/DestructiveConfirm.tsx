@@ -2,10 +2,11 @@
 
 // THE confirmation dialog for every guarded deletion (migration 111).
 //
-// One implementation, three callers (subject, olympiad package, olympiad grade
-// pool) — and that is a correctness property, not tidiness. Each of these
-// operations is either REFUSED for a set of counted reasons, or it destroys
-// rows that no backup in this system can return. The screen that has to say so
+// One implementation, four callers (subject; olympiad package, from both the
+// package list and the package edit page; olympiad grade pool; and a selection
+// of pool questions) — and that is a correctness property, not tidiness. Each of
+// these operations is either REFUSED for a set of counted reasons, or it
+// destroys rows that no backup in this system can return. The screen that says so
 // must say it the same way every time: the same place for the blocks, the same
 // place for the irreversible warning, the same friction. A second dialog is a
 // second chance to forget one of them.
@@ -17,10 +18,24 @@
 //   - the blocking reasons are rendered as finished sentences that each name a
 //     reason and an alternative — a blocked action is never a bare failure;
 //   - "this cannot be undone" is always on screen, not implied by a red button;
-//   - friction scales with blast radius: every branch requires the row's own
-//     `code` typed out (the database demands it too, and re-checks it under a
-//     lock), and a branch that empties a pool or a bank additionally requires an
-//     acknowledgement checkbox — the LeaderboardResetControls precedent.
+//   - friction scales with blast radius: a branch that names ONE row requires
+//     that row's own `code` typed out (the database demands it too, and
+//     re-checks it under a lock), and a branch that empties a pool or a bank
+//     additionally requires an acknowledgement checkbox — the
+//     LeaderboardResetControls precedent. Friction never reaches zero: a dialog
+//     opened without a `code` (see below) has the checkbox forced on.
+//
+// THE TOKEN-FREE MODE. `code` is optional, and a dialog opened without one gets
+// the acknowledgement checkbox forced on. It is a SAFE DEFAULT, not a design
+// anybody should reach for: every caller in the panel passes a `code` today,
+// including the olympiad pool's bulk delete, because the argument that a
+// selection "names its own targets" does not survive the way these RPCs are
+// reachable. They are granted to `authenticated`, so each one is a PostgREST
+// endpoint an admin session can POST directly with an id list of its own
+// choosing — the dialog is not a control, and only a value the DATABASE
+// re-checks (admin_delete_olympiad_questions.p_expected_code, compared under
+// the package's row lock) is. The mode stays because a future caller that
+// genuinely has no row code must still meet some friction rather than none.
 //
 // The strings arrive already translated from the server page (same contract as
 // LeaderboardResetControls): this component never calls the i18n layer.
@@ -44,12 +59,19 @@ export type DestructiveConfirmStrings = {
   title: string;
   loading: string;
   loadFailed: string;
-  blockedTitle: string;
+  /**
+   * Heading above a branch's PRE-COMPUTED blocking reasons. Only dialogs whose
+   * preview RPC reports blocks up front pass it; the bulk pool delete has no
+   * preview (the delete/archive split is decided inside the delete itself), so
+   * its refusals arrive with the action result and carry their own heading.
+   */
+  blockedTitle?: string;
   warnTitle: string;
   /** The plain statement that the action cannot be undone. Always rendered. */
   irreversible: string;
-  codeLabel: string;
-  codeHint: string;
+  /** Required whenever the dialog is given a `code`; unused without one. */
+  codeLabel?: string;
+  codeHint?: string;
   ackLabel: string;
   cancel: string;
   close: string;
@@ -63,6 +85,13 @@ export type DestructiveGate = {
   /** Token equals the row's code. UX only — the RPC re-checks under lock. */
   codeOk: boolean;
   acknowledged: boolean;
+  /**
+   * The dialog runs without a typed token, so EVERY branch inside it needs the
+   * checkbox regardless of its own `needsAck`. Carried on the gate rather than
+   * left to each call site: a branch that forgot the flag would otherwise ship
+   * a one-click destructive button.
+   */
+  ackRequired: boolean;
   /** Any branch in flight: locks the modal and every other button. */
   busy: boolean;
   strings: DestructiveConfirmStrings;
@@ -79,12 +108,18 @@ export function DestructiveConfirmDialog<P>({
   children,
   needsAck = false,
   triggerClassName = "link-danger",
+  open: openProp,
+  onOpenChange,
 }: {
   strings: DestructiveConfirmStrings;
   /** Side-effect-free preview server action. Returns null when it fails. */
   loadPreview: () => Promise<P | null>;
-  /** The row's confirmation code, read out of the preview. */
-  code: (preview: P) => string;
+  /**
+   * The row's confirmation code, read out of the preview. OMIT IT for a
+   * selection the admin assembled themselves — see THE TOKEN-FREE MODE in the
+   * file header; the acknowledgement checkbox is then forced on.
+   */
+  code?: (preview: P) => string;
   /** The real counts, rendered by the caller from its own payload. */
   details: (preview: P) => ReactNode;
   /** The destructive branches. */
@@ -92,8 +127,29 @@ export function DestructiveConfirmDialog<P>({
   /** Render the acknowledgement checkbox (any branch that empties a pool). */
   needsAck?: boolean;
   triggerClassName?: string;
+  /**
+   * CONTROLLED MODE. Passing `open` hands the dialog's visibility to the
+   * caller and suppresses the built-in trigger button.
+   *
+   * It exists for a specific failure it prevents. A dialog rendered INSIDE the
+   * thing it deletes — a package list row, a toolbar that only appears while
+   * rows are selected — is unmounted by its own success: the server action
+   * revalidates the page, the row (or the toolbar) goes, and the result message
+   * goes with it, so the admin is told nothing about the operation that just
+   * ran. Mounting the ONE dialog above that boundary and opening it from a row
+   * button is what makes the outcome survive long enough to be read. Same
+   * one-modal-serves-every-row shape EditQuestionModal already uses.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [selfOpen, setSelfOpen] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : selfOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setSelfOpen(next);
+    onOpenChange?.(next);
+  };
   const [preview, setPreview] = useState<P | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [loading, startLoading] = useTransition();
@@ -131,29 +187,44 @@ export function DestructiveConfirmDialog<P>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, refreshKey]);
 
-  const expected = preview ? code(preview) : "";
-  const codeOk = expected !== "" && typed === expected;
+  const expected = preview && code ? code(preview) : "";
+  // No `code` prop = no token to satisfy, so this gate is open and the
+  // acknowledgement below carries the whole confirmation.
+  const codeOk = code ? expected !== "" && typed === expected : true;
+  const ackRequired = needsAck || !code;
 
   const gate = useMemo<DestructiveGate>(
-    () => ({ token: typed, codeOk, acknowledged: ack, busy, strings, setPending, refresh }),
-    [typed, codeOk, ack, busy, strings, setPending, refresh],
+    () => ({
+      token: typed,
+      codeOk,
+      acknowledged: ack,
+      ackRequired,
+      busy,
+      strings,
+      setPending,
+      refresh,
+    }),
+    [typed, codeOk, ack, ackRequired, busy, strings, setPending, refresh],
   );
 
   return (
     <>
-      <button
-        type="button"
-        className={triggerClassName}
-        onClick={() => {
-          // Both frictions reset on every open: a token still sitting in the
-          // box from the previous package is not a confirmation of this one.
-          setTyped("");
-          setAck(false);
-          setOpen(true);
-        }}
-      >
-        {strings.open}
-      </button>
+      {/* Controlled mode brings its own trigger — see the `open` prop. */}
+      {!controlled && (
+        <button
+          type="button"
+          className={triggerClassName}
+          onClick={() => {
+            // Both frictions reset on every open: a token still sitting in the
+            // box from the previous package is not a confirmation of this one.
+            setTyped("");
+            setAck(false);
+            setOpen(true);
+          }}
+        >
+          {strings.open}
+        </button>
+      )}
 
       <Modal
         isOpen={open}
@@ -181,22 +252,24 @@ export function DestructiveConfirmDialog<P>({
                 not an input anywhere else, so it cannot be typed from memory —
                 which is exactly the property that makes it a confirmation, and
                 what makes a two-tabs-open mix-up impossible to commit. */}
-            <label className="field">
-              <span className="field-label">{strings.codeLabel}</span>
-              <input
-                type="text"
-                value={typed}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={busy}
-                onChange={(e) => setTyped(e.target.value)}
-              />
-              <small className="muted">
-                {strings.codeHint} <code>{expected}</code>
-              </small>
-            </label>
+            {code && (
+              <label className="field">
+                <span className="field-label">{strings.codeLabel}</span>
+                <input
+                  type="text"
+                  value={typed}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={busy}
+                  onChange={(e) => setTyped(e.target.value)}
+                />
+                <small className="muted">
+                  {strings.codeHint} <code>{expected}</code>
+                </small>
+              </label>
+            )}
 
-            {needsAck && (
+            {ackRequired && (
               <label
                 className="field"
                 style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, cursor: "pointer" }}
@@ -249,6 +322,7 @@ export function DestructiveActionForm({
   blockedBy = [],
   needsAck = false,
   disabled = false,
+  onSuccess,
 }: {
   gate: DestructiveGate;
   /** Stable key identifying this branch in the dialog's pending map. */
@@ -264,6 +338,18 @@ export function DestructiveActionForm({
   /** This branch empties a pool or a bank: require the checkbox too. */
   needsAck?: boolean;
   disabled?: boolean;
+  /**
+   * Replaces the default "follow `redirectTo`, otherwise re-read the preview"
+   * when this branch succeeds. Pass it when the dialog lives on a page that
+   * SURVIVES the mutation — a list row, or a toolbar over a table. Both
+   * defaults are wrong there: navigating would throw away the admin's filters,
+   * and re-reading a preview of a row that no longer exists renders nothing but
+   * "load failed".
+   *
+   * MUST be referentially stable (useCallback): it runs from an effect whose
+   * dependency list contains it.
+   */
+  onSuccess?: (state: { ok: true; message: string; redirectTo?: string }) => void;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState<DestructiveState, FormData>(
@@ -278,6 +364,11 @@ export function DestructiveActionForm({
 
   useEffect(() => {
     if (!state?.ok) return;
+    // The caller owns what happens next — see the prop's doc comment.
+    if (onSuccess) {
+      onSuccess(state);
+      return;
+    }
     // The page this dialog sits on describes a row that no longer exists, so
     // staying would leave the admin on a 404-in-waiting. The target is a fixed
     // literal chosen by the server action — never a value from the client.
@@ -288,10 +379,13 @@ export function DestructiveActionForm({
     // Otherwise re-read the counts: the second branch must not be offered on
     // the numbers that were true before the first one ran.
     refresh();
-  }, [state, refresh, router]);
+  }, [state, refresh, router, onSuccess]);
 
   const blocked = blockedBy.length > 0;
-  const ready = gate.codeOk && (!needsAck || gate.acknowledged);
+  // gate.ackRequired is the dialog-wide floor (a token-free dialog), needsAck
+  // this branch's own extra demand — either one arms the checkbox.
+  const mustAck = needsAck || gate.ackRequired;
+  const ready = gate.codeOk && (!mustAck || gate.acknowledged);
 
   return (
     <form action={formAction} className="form">
@@ -309,7 +403,9 @@ export function DestructiveActionForm({
 
       {blocked && (
         <div role="alert">
-          <p className="form-error">{gate.strings.blockedTitle}</p>
+          {gate.strings.blockedTitle && (
+            <p className="form-error">{gate.strings.blockedTitle}</p>
+          )}
           <ul>
             {blockedBy.map((b, i) => (
               <li key={i} className="form-error">

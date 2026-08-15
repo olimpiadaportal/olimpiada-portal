@@ -12,7 +12,26 @@
 // olympiad-strings.ts.
 import { fillTemplate } from "@/lib/admin/olympiad-per-attempt";
 
-export type DeletionBlock = { hint: string; count?: number };
+/**
+ * One machine-readable reason, as the SQL reports it.
+ *
+ * `count` is the number every hint carries. The three optional fields belong to
+ * `grade_purchased_pool_below_attempt` (migration 112), whose sentence is
+ * useless without them: "this grade is purchased" does not tell the admin WHICH
+ * grade, how many questions the pool would be left with, or how many it has to
+ * serve — and those three numbers are the whole difference between a refusal
+ * the admin can act on and one they can only be annoyed by.
+ */
+export type DeletionBlock = {
+  hint: string;
+  count?: number;
+  /** The grade's name, exactly as the panel shows it everywhere else. */
+  grade?: string;
+  /** Published questions the grade's pool would be left with. */
+  remaining?: number;
+  /** …and the number one attempt needs (migration 106's per-grade value). */
+  required?: number;
+};
 
 /**
  * What every guarded-deletion server action returns, and what the shared
@@ -40,6 +59,18 @@ const HINT_KEYS: Record<string, string> = {
   package_is_active: "del.hint.packageIsActive",
   package_not_deletable: "del.hint.packageNotDeletable",
   not_archived: "del.hint.notArchived",
+  // Olympiad pool — delete of a SELECTION, and of one row (migration 112).
+  // empty_selection / too_many_questions are also refused in the server action
+  // before the RPC, so the sentence is identical whichever layer catches it.
+  question_not_in_package: "del.hint.questionNotInPackage",
+  // A stale id is NOT a foreign id: the row simply went away between the dialog
+  // opening and the click, usually because a second admin got there first.
+  question_gone: "del.hint.questionGone",
+  too_many_questions: "del.hint.tooManySelected",
+  empty_selection: "del.hint.emptySelection",
+  // The purchased-pool rule: emptying a paid grade's pool below one attempt
+  // silently revokes a lifetime entitlement (CLAUDE.md).
+  grade_purchased_pool_below_attempt: "del.hint.gradePurchasedPool",
   // Olympiad grade pool
   grade_pool_not_deletable: "del.hint.gradePoolNotDeletable",
   last_grade: "del.hint.lastGrade",
@@ -79,7 +110,18 @@ export function deletionBlockText(
 ): string | null {
   const key = deletionHintKey(block.hint);
   if (!key) return null;
-  return fillTemplate(lt(key), { n: block.count ?? 0 });
+  return fillTemplate(lt(key), {
+    n: block.count ?? 0,
+    grade: block.grade ?? "",
+    remaining: block.remaining ?? 0,
+    required: block.required ?? 0,
+  });
+}
+
+/** A finite number from the DETAIL payload, or nothing at all. */
+function num(v: unknown): number | undefined {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 // Cap on the DETAIL payload we will parse. It is server-generated, but a size
@@ -105,10 +147,19 @@ export function parseDeletionBlocks(
     const parsed = raw ? (JSON.parse(raw) as { blocks?: unknown }) : {};
     if (Array.isArray(parsed.blocks)) {
       for (const b of parsed.blocks) {
-        const hint = (b as DeletionBlock)?.hint;
+        const raw = b as DeletionBlock;
+        const hint = raw?.hint;
         if (typeof hint !== "string" || !HINT_KEYS[hint]) continue;
-        const n = Number((b as DeletionBlock)?.count);
-        out.push({ hint, count: Number.isFinite(n) ? n : undefined });
+        out.push({
+          hint,
+          count: num(raw?.count),
+          // The grade NAME comes out of the database and lands in the DOM.
+          // React escapes it, but it is still capped: nothing this payload
+          // carries needs more than a label's worth of characters.
+          grade: typeof raw?.grade === "string" ? raw.grade.slice(0, 80) : undefined,
+          remaining: num(raw?.remaining),
+          required: num(raw?.required),
+        });
       }
     }
   } catch {

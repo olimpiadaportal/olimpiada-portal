@@ -1267,6 +1267,14 @@ export async function addOlympiadPackageGrade(
     // Undo the half-added grade so no empty/partial pool is left behind. Its
     // few just-imported questions (if any) go with it via the RPC's archive…
     // they cannot: bulk rows are fresh and unanswered — delete them directly.
+    //
+    // This bare delete is NOT a way around migration 112's purchased-pool rule,
+    // and must not be routed through the guarded RPC. The grade was targeted a
+    // few lines above (an already-targeted grade never reaches this function),
+    // so every row it removes is one THIS request just inserted — there is no
+    // entitlement to protect, and refusing the undo would strand a half-added
+    // grade instead. The rule guards the two paths that remove pool questions
+    // an admin CHOSE: the per-row button and the bulk selection.
     await supabase
       .from("questions")
       .delete()
@@ -2133,9 +2141,23 @@ export async function saveOlympiadPackageQuestion(
   return { ok: true };
 }
 
-// Hard delete of ONE pool question. The DB trg_question_delete_guard
-// (migration 063) blocks deleting any question with attempt history — that
-// error is mapped to a friendly "archive it instead" message.
+/**
+ * Hard delete of ONE pool question.
+ *
+ * It goes through admin_delete_olympiad_pool_question (migration 112), which is
+ * a thin wrapper over the SAME guarded body the bulk delete uses. That is the
+ * point of it: until 112 this action was a bare `.delete()`, so while the bulk
+ * path answered to the scope, live-attempt and PURCHASED-POOL rules, forty
+ * single clicks reached exactly the state those rules exist to prevent —
+ * a lifetime purchaser holding a package whose pool can no longer fill an
+ * attempt. A guard the row next to it can walk around is not a guard.
+ *
+ * The one behaviour kept from the old path is the refusal: a question with
+ * answer history is REFUSED here ("archive it instead") rather than silently
+ * archived, because this button names a single row the admin is looking at and
+ * a row that stays on screen after a Delete click reads as broken. The RPC's
+ * p_refuse_answered flag is what preserves it.
+ */
 export async function deleteOlympiadPackageQuestion(
   fd: FormData,
 ): Promise<OlympiadPoolActionResult> {
@@ -2148,37 +2170,35 @@ export async function deleteOlympiadPackageQuestion(
   if (!UUID_RE.test(pkgId) || !UUID_RE.test(qId)) return { error: t("err.server") };
 
   const supabase = await createClient();
-  const q = await getPoolQuestion(supabase, pkgId, qId);
-  if (!q) return { error: t("err.server") };
-
-  // Collect linked media BEFORE the delete (the FK cascade removes only the
-  // DB rows; storage objects + media_assets are cleaned up after success).
-  const { data: trs } = await supabase
-    .from("question_translations")
-    .select("media_asset_id")
-    .eq("question_id", qId);
-  const mediaIds = ((trs ?? []) as any[])
-    .map((x) => x.media_asset_id)
-    .filter(Boolean)
-    .map(String);
-
-  const { error } = await supabase
-    .from("questions")
-    .delete()
-    .eq("id", qId)
-    // Defence-in-depth: re-assert the package scope on the DELETE itself.
-    .eq("olympiad_package_id", pkgId);
-  if (error) {
-    if (
-      error.code === "23514" &&
-      (error.hint === "question_has_attempts" ||
-        /attempt history/i.test(error.message ?? ""))
-    ) {
+  const { data, error } = await supabase.rpc("admin_delete_olympiad_pool_question", {
+    p_package_id: pkgId,
+    p_question_id: qId,
+  });
+  if (error || !data) {
+    // The shipped sentence for the one case the admin can act on directly.
+    if (error?.hint === "question_has_attempts") {
       return { error: lt("olyq.err.hasAttempts") };
     }
-    console.error("[admin] olympiad pool question delete failed", error.message);
-    return { error: t("err.server") };
+    // Everything else is rendered from the SAME hint map the dialog uses, so a
+    // purchased-pool refusal explains itself here too instead of collapsing
+    // into "server error". A raw Postgres message never reaches the client.
+    const blocks = parseDeletionBlocks(error)
+      .map((b) => deletionBlockText(b, t))
+      .filter((x): x is string => Boolean(x));
+    console.error(
+      "[admin] olympiad pool question delete failed",
+      error?.code ?? "unknown",
+      error?.hint ?? "",
+    );
+    return { error: blocks[0] ?? t("err.server") };
   }
+
+  const r = data as Record<string, any>;
+  // The RPC's orphan list, not a pre-collected one: it also covers option and
+  // explanation images, and it excludes anything still referenced elsewhere.
+  const mediaIds = Array.isArray(r.orphaned_media_ids)
+    ? (r.orphaned_media_ids as unknown[]).map(String)
+    : [];
   for (const mid of mediaIds) await removePoolMediaAsset(supabase, mid);
 
   await writeAuditLog({
@@ -2186,10 +2206,13 @@ export async function deleteOlympiadPackageQuestion(
     action: "admin.olympiad.question.delete",
     targetTable: "questions",
     targetId: qId,
-    metadata: { package_id: pkgId },
+    metadata: { package_id: pkgId, package_demoted: Boolean(r.package_demoted) },
     severity: "warning",
   });
 
+  // The pool count on the listing card changes with this row, and an
+  // auto-demotion would change the package's status there too.
+  revalidatePath("/olympiad");
   revalidatePath(`/olympiad/${pkgId}/edit`);
   return null;
 }
@@ -2679,6 +2702,118 @@ export async function deleteOlympiadGradePoolAction(
     ok: true,
     message: demoted ? `${base} ${t("del.done.demoted")}` : base,
   };
+}
+
+/**
+ * Cap on ONE bulk selection. Mirrors the RPC's own ceiling (which mirrors
+ * questions_per_attempt's 1–500 range) so the panel refuses the same set the
+ * database would, with a sentence instead of a stack trace.
+ */
+const BULK_MAX = 500;
+
+/** A refusal rendered from a hint the RPC would have raised itself. */
+async function hintRefusal(
+  hint: string,
+  count: number,
+): Promise<{ ok: false; error: string; blocks: string[] }> {
+  const t = await getT();
+  return {
+    ok: false,
+    error: t("del.err.blocked"),
+    blocks: [deletionBlockText({ hint, count }, t) ?? t("err.server")],
+  };
+}
+
+/**
+ * Deletes a SELECTION of questions inside ONE olympiad package: unanswered rows
+ * go, answered rows are ARCHIVED. The database decides that split (migration
+ * 112 delegates it to purge_question_set), and the database — not this action —
+ * is what proves every id belongs to the package.
+ *
+ * ALL-OR-NOTHING, on both sides. A malformed or foreign id refuses the whole
+ * call rather than being quietly dropped: the admin ticked N boxes, and getting
+ * N-1 back with no way to tell which one was skipped is how a selection bug
+ * stays invisible. That is why this does NOT reuse questions.ts's `idList`,
+ * whose `.filter(UUID_RE)` is exactly the silent drop this operation must not
+ * do.
+ *
+ * The package's own code travels as the confirmation token and the DATABASE
+ * compares it, under the package's row lock — the same control every sibling
+ * destructive RPC takes. The dialog's checkbox is UX; this endpoint is a
+ * PostgREST function granted to `authenticated`, so only a value the database
+ * re-checks can stand between an admin session and 500 destroyed rows.
+ */
+export async function deleteOlympiadQuestionsAction(
+  _prev: OlympiadDeletionState,
+  fd: FormData,
+): Promise<OlympiadDeletionState> {
+  // Guard FIRST — before any client-supplied FormData is read.
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const pkgId = s(fd, "__package_id");
+  // Same wire shape the general question table already posts (QuestionsTable's
+  // hidden `ids` input), so the pool table can reuse the shipped bulk bar.
+  const raw = s(fd, "ids");
+  const code = s(fd, "__code").slice(0, CODE_MAX);
+  if (!UUID_RE.test(pkgId)) return { ok: false, error: t("err.server"), blocks: [] };
+  // An empty box never had a chance of matching; the RPC would say the same
+  // thing after a round trip and a lock.
+  if (code.length === 0) return await tokenRefusal();
+
+  const parts = raw
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+  if (parts.length === 0) return await hintRefusal("empty_selection", 0);
+  // Checked BEFORE the shape loop and before any query: an unbounded list is a
+  // denial-of-service shape, and the number the admin needs to read is how many
+  // they selected, not how many survived a filter.
+  if (parts.length > BULK_MAX) return await hintRefusal("too_many_questions", parts.length);
+  if (parts.some((x) => !UUID_RE.test(x))) {
+    return { ok: false, error: t("err.server"), blocks: [] };
+  }
+  const ids = Array.from(new Set(parts));
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_delete_olympiad_questions", {
+    p_package_id: pkgId,
+    p_question_ids: ids,
+    p_expected_code: code,
+    // Answered rows are ARCHIVED here. Refusing a 40-row selection because one
+    // of them was answered is the dead end purge_question_set's split exists to
+    // avoid; only the per-row button asks for the refusal.
+    p_refuse_answered: false,
+  });
+  if (error || !data) return await toDeletionFailure(error, "olympiad pool bulk delete");
+
+  const r = data as Record<string, any>;
+  const demoted = Boolean(r.package_demoted);
+  await afterOlympiadDestructiveCall({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.questions_purge",
+    packageId: pkgId,
+    metadata: {
+      requested: num(r.requested),
+      deleted: num(r.deleted),
+      archived_questions: num(r.archived),
+      retained: num(r.retained),
+      reset_rotations: num(r.reset_rotations),
+      package_demoted: demoted,
+      media_truncated: Boolean(r.media_truncated),
+    },
+    orphanedMediaIds: r.orphaned_media_ids,
+  });
+
+  // Says which of the two things happened to how many rows: a button that
+  // reported "deleted" for questions it archived reads as broken. The
+  // auto-demotion is a change the admin did not ask for, so it is stated rather
+  // than left to be discovered on the listing.
+  const base = fillTemplate(t("del.done.questionsPurged"), {
+    deleted: num(r.deleted),
+    archived: num(r.archived),
+  });
+  return { ok: true, message: demoted ? `${base} ${t("del.done.demoted")}` : base };
 }
 
 /**

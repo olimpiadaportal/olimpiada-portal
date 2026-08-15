@@ -2844,11 +2844,28 @@ a.qpage-link:hover {
    1120px (columns are narrower but fully functional).
    Round 22: the questions list (8 columns + row actions) gets the same full
    width so the table stops feeling squeezed on desktop.
-   Round 33: the subscriptions list (10 columns + row actions) joins them. */
+   Round 33: the subscriptions list (10 columns + row actions) joins them.
+   Round 53: the olympiad screens join them. The package list row gained a
+   second action, and the package edit page carries the pool table — 9 columns
+   once the selection checkbox is in — which at 1120px had nowhere to go but
+   sideways. Same opt-in, same mechanism: a class on the page root. */
 .admin-content:has(.locations-page),
 .admin-content:has(.questions-page),
-.admin-content:has(.subscriptions-page) {
+.admin-content:has(.subscriptions-page),
+.admin-content:has(.olympiad-page) {
   max-width: 1560px;
+}
+
+/* The extra width belongs to the TABLES, not to the forms: a 1450px-wide price
+   field is not more usable than a 1000px one, just harder to scan. This cap is
+   the measure those forms already had at the 1120px page width, so widening the
+   page moves the tables and leaves every field exactly where it was. Both
+   olympiad screens that carry a full-width single-column form opt in — New and
+   Edit — so the three olympiad screens agree on their chrome instead of the
+   header jumping width as the admin moves between them. (Modals are portalled
+   into <body>, so the editor dialogs are untouched.) */
+.olympiad-form-page .form {
+  max-width: 1032px;
 }
 
 .loc-grid {

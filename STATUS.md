@@ -6,6 +6,59 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — OLYMPIAD LIST DELETE + POOL BULK DELETE (migration 112, 2026-08-15)
+
+**Applied to production. Validation `013` = 105/105 PASS. admin-panel: typecheck + 454 tests + build green.**
+
+Adds a Delete action to each Olympiad Packages row, checkbox selection with Select-All and bulk delete inside a package's question pool, and the wider page width the other data-table pages already use.
+
+### THE PRODUCTION BUG THIS ROUND UNCOVERED — read this first
+
+`Modal.tsx` held `onClose` in its open/close effect's dependency array. Callers pass an inline arrow, so the identity changed on every render of the parent — the effect re-ran on EVERY KEYSTROKE, cleanup restored focus to the trigger, setup moved it to the panel, and the input lost focus after the FIRST character.
+
+**Every typed-confirmation dialog shipped by migration 111 was therefore impossible to confirm in production**: subject delete, olympiad package delete, grade-pool delete. The SQL guards behind them were real and tested; the dialogs in front of them could not be typed into. No test caught it because jsdom does not reproduce the focus race, and no human had exercised those dialogs. `onClose` is now read through a ref, like `busy` already was. **Lesson: a confirmation flow that has never been clicked is not verified, whatever the suite says.**
+
+### The high-severity defect caught BEFORE the migration was applied
+
+The first build of `admin_delete_olympiad_questions` never queried `olympiad_purchases` — zero occurrences in the file. Migration 111 REFUSES the identical operation (`grade_has_purchases_purge`) precisely because emptying a purchased grade's pool leaves a lifetime purchaser with a package that raises "pool too small" on every attempt: a silent revocation of a paid entitlement dressed up as a content edit, and a CLAUDE.md non-negotiable. The bulk button reached it in one click — grade-filter, tick the header checkbox, Delete selected, 500 rows a call.
+
+Closed by EXTRACTION, not duplication: the purchase predicate moved out of `olympiad_grade_pool_blocks` into `olympiad_grade_purchase_count(uuid,uuid)`, and both guards now read that one definition. A second hand-written copy of "what counts as a purchased grade" is exactly how the gap appeared.
+
+**The rule is a POSTCONDITION**, which is what lets it cover an operation whose effect varies with the selection: for every grade the selection touches, the published pool AFTER the delete must still satisfy that grade's `questions_per_attempt` (resolved through `olympiad_grade_config`, so migration 106's per-grade override is honoured). This cannot disagree with 111 — 111's operation always lands on zero, and zero is below every legal count — and it strictly ADDS the partial-selection case 111 never faced.
+
+Proven live against `test-test` grade 3 (50 published, per-attempt 25, 1 purchase):
+
+    delete 20 of 50  -> []                      (leaves 30, allowed)
+    delete 30 of 50  -> grade_purchased_pool_below_attempt {grade "3. sinif", required 25, remaining 20}
+    delete ALL 50    -> grade_purchased_pool_below_attempt {grade "3. sinif", required 25, remaining 0}
+
+**The per-row delete shared the same gap** and was the bypass; it now routes through `admin_delete_olympiad_pool_question`, a thin wrapper over the same guarded body. One scope check, one purchase rule, one delete/archive policy for both buttons.
+
+### The regression the remediation itself introduced
+
+Extracting the predicate re-created `olympiad_grade_pool_blocks` **without re-issuing its revoke/grant**. `create or replace` PRESERVES the existing ACL, so every database that had already run 111 was unaffected and all 159 tests passed — the opening existed **only on a from-zero bootstrap**, where a SECURITY DEFINER function reading `olympiad_purchases`, `students` and `test_attempts` would have landed EXECUTE-able by anon over PostgREST. Since the from-zero proof has never been runnable here (no staging), nothing would have caught it.
+
+Restored in both 015 and the migration, and now asserted for the CANONICAL file — the copy a new database is actually built from. The assertion was mutation-tested: removing the grant makes it fail, and 015 was restored byte-identical (sha256 verified). **A grant belongs beside every create, not once.**
+
+### Also in this round
+
+- **Confirmation token.** The bulk RPC takes `p_expected_code`, re-checked in the DATABASE under the row lock, and the token-less arity is dropped unconditionally so PostgREST cannot reach one. It is granted to `authenticated` like its siblings, so the dialog was never the control — the token is.
+- **Honest acknowledgement copy.** The mandatory checkbox claimed content "cannot be brought back", which is false for the answered half (archived, restorable) — and in token-free mode it was the ONLY gate. Reworded in az/en/ru; the other dialogs sharing the label were audited and run the same semantics.
+- **Stale vs foreign id** are now separate hints; a concurrent delete by another admin no longer reads as a selection bug.
+- **Layout:** the olympiad pages join the `1560px` opt-in the questions/subscriptions/locations pages already use — the real inconsistency was width, not top margin (the list page's vertical structure is byte-identical to the news page). A panel-wide `.page` rule added mid-round was removed: 62 route roots of unverified blast radius for zero benefit here.
+
+### Consequence to expect, so it is not a surprise
+
+On a purchased grade whose published pool is already at or below `questions_per_attempt` (the migration-094 packages with emptied pools), **no published pool question can be hard-deleted at all**. The escape hatch is the one CLAUDE.md prescribes and 111 already relies on: archive the question — never blocked, reversible — after which it leaves the published pool and can be deleted freely.
+
+### Known gaps
+
+- **Nobody has clicked any of this.** Given the Modal bug above, that is the gap that matters most.
+- No BEFORE DELETE trigger on `public.questions`, deliberately: it would also fire on the panel's two rollback deletes (add-grade undo, create-question undo) and strand half-created content, and Postgres hides a statement's own prior deletes from BEFORE-ROW triggers, so it would under-count exactly where the blast radius is largest. Enforcement lives where the operation is named; both admin paths now go through it.
+- The from-zero rebuild proof is still owed (staging-only; `OLIMPIADA_STAGING_DB_URL` unset) — which is precisely how the grant regression above stayed invisible.
+
+Audit action added: `admin.olympiad.questions_purge` (severity warning, counts only).
+
 ## PINNED — GUARDED DELETION + UNARCHIVE (migration 111, 2026-08-14)
 
 **Applied to production. Validation `013` = 104/104 PASS. admin-panel: typecheck + 364 tests + build green.**

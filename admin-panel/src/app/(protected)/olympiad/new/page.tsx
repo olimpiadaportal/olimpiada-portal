@@ -41,7 +41,10 @@ export default async function NewOlympiadPage() {
   }));
 
   return (
-    <div className="page">
+    // Same width opt-in as the olympiad list and the edit page, so the three
+    // screens do not disagree about how wide the panel is; olympiad-form-page
+    // holds this page's single-column form at its original measure.
+    <div className="page olympiad-page olympiad-form-page">
       <div className="page-head">
         <div className="head-row">
           <div><h1>{t("oly2.new")}</h1></div>

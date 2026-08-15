@@ -55,7 +55,9 @@ export default async function EditOlympiadPage({
 
   const { data: pkg } = await supabase
     .from("olympiad_packages")
-    .select("id, subject_id, grade_id, olympiad_type_id, price_amount, status, event_starts_at, sale_starts_at, sale_ends_at, duration_minutes, questions_per_attempt, cover_media_id")
+    // `code` is not an editable field; it is read here because the pool's bulk
+    // delete makes the admin type it as the confirmation the RPC re-checks.
+    .select("id, code, subject_id, grade_id, olympiad_type_id, price_amount, status, event_starts_at, sale_starts_at, sale_ends_at, duration_minutes, questions_per_attempt, cover_media_id")
     .eq("id", id)
     .maybeSingle();
   if (!pkg) notFound();
@@ -260,7 +262,10 @@ export default async function EditOlympiadPage({
   for (const k of FORM_KEYS) formDict[k] = t(k);
 
   return (
-    <div className="page">
+    // olympiad-page: the 1560px opt-in shared with the other data-table pages;
+    // olympiad-form-page caps the forms at the measure they had before, so the
+    // extra room goes to the pool table and nothing else moves (globals.css).
+    <div className="page olympiad-page olympiad-form-page">
       <div className="page-head">
         <div className="head-row">
           <div>
@@ -345,7 +350,40 @@ export default async function EditOlympiadPage({
         <p className="hint">{poolDict["olyq.archivedNote"]}</p>
         <OlympiadQuestionManager
           dict={{ ...poolDict, "pend.loading": t("pend.loading"), "pend.processing": t("pend.processing"), "pend.deleting": t("pend.deleting") }}
+          // Selection + bulk delete (migration 112). The package code IS asked
+          // for — admin_delete_olympiad_questions compares it under the
+          // package's row lock — and the acknowledgement is demanded on top,
+          // the same friction the grade-pool dialog uses. No `blockedTitle`:
+          // this dialog has no preview RPC to report blocks up front, so a
+          // refusal arrives with the action result under its own heading.
+          bulkStrings={{
+            open: t("del.bulk.open"),
+            title: t("del.bulk.title"),
+            loading: t("del.loading"),
+            loadFailed: t("del.loadFailed"),
+            warnTitle: t("del.warnTitle"),
+            irreversible: t("del.irreversible"),
+            codeLabel: t("del.codeLabel"),
+            // The package's code, exactly like the grade-pool dialog above it.
+            codeHint: t("del.grade.codeHint"),
+            ackLabel: t("del.ackLabel"),
+            cancel: t("action.cancel"),
+            close: t("modal.close"),
+            working: t("pend.deleting"),
+            selected: t("del.bulk.selected"),
+            // Not the generic qbulk.selectAll: this box selects the VISIBLE
+            // rows, and the label has to say so or it over-promises.
+            selectAll: t("del.bulk.selectAll"),
+            selectRow: t("del.bulk.selectRow"),
+            clear: t("del.bulk.clear"),
+            count: t("del.bulk.count"),
+            grades: t("del.bulk.grades"),
+            deleteTitle: t("del.bulk.deleteTitle"),
+            deleteDesc: t("del.bulk.deleteDesc"),
+            deleteAction: t("del.bulk.deleteAction"),
+          }}
           packageId={(pkg as any).id}
+          packageCode={String((pkg as any).code ?? "")}
           subjectName={subjectName}
           packageGrades={targetGrades.map((g) => ({ value: g.id, label: g.name }))}
           topics={poolTopics}

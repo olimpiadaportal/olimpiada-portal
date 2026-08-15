@@ -48,9 +48,17 @@ const SUBJECT_HALF = [
   "admin_purge_subject_questions",
   "admin_delete_subject",
 ];
+// Superseded by a LATER migration, so 015 no longer matches THIS file's copy.
+// olympiad_grade_pool_blocks kept its behaviour but had its purchase predicate
+// extracted into olympiad_grade_purchase_count by migration 112, which needed
+// the same predicate for a selection rather than a whole pool. The byte-for-byte
+// backport of the current body is asserted by that migration's own suite
+// (olympiad-bulk-purge.test.ts); everything else here still applies to it,
+// including that it stays out of 011 and that this migration's version never
+// filtered purchases to status = 'active'.
+const SUPERSEDED = ["olympiad_grade_pool_blocks"];
 const OLYMPIAD_HALF = [
   "olympiad_package_deletion_blocks",
-  "olympiad_grade_pool_blocks",
   "olympiad_package_delete_guard",
   "admin_preview_olympiad_package_deletion",
   "admin_preview_olympiad_grade_pool_deletion",
@@ -74,9 +82,16 @@ describe("the canonical backport is the migration, character for character", () 
     for (const name of SUBJECT_HALF) {
       expect(SQL_015).not.toContain(`create or replace function public.${name}(`);
     }
-    for (const name of OLYMPIAD_HALF) {
+    for (const name of [...OLYMPIAD_HALF, ...SUPERSEDED]) {
       expect(SQL_011).not.toContain(`create or replace function public.${name}(`);
     }
+  });
+
+  it.each(SUPERSEDED)("015 still defines %s exactly once", (name) => {
+    // A later migration owns its body; what must not happen is a second copy
+    // appearing, because 015 runs after 011 and the last definition wins.
+    const decl = `create or replace function public.${name}(`;
+    expect(SQL_015.split(decl).length - 1).toBe(1);
   });
 
   it("puts no `language sql` body that reads an olympiad table into 011", () => {
@@ -91,7 +106,7 @@ describe("the canonical backport is the migration, character for character", () 
   });
 });
 
-const ALL = [...SUBJECT_HALF, ...OLYMPIAD_HALF];
+const ALL = [...SUBJECT_HALF, ...OLYMPIAD_HALF, ...SUPERSEDED];
 
 describe("every new function is admin-only, definer, and search_path-pinned", () => {
   it.each(ALL)("%s authorizes before it reads anything", (name) => {

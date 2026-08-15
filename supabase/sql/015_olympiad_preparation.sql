@@ -1171,16 +1171,64 @@ revoke all on function public.olympiad_package_deletion_blocks(uuid) from public
 grant execute on function public.olympiad_package_deletion_blocks(uuid) to service_role;
 
 -- -----------------------------------------------------------------------------
--- olympiad_grade_pool_blocks : the reasons one grade's pool may not be purged.
--- p_drop_grade distinguishes the two operations that share the destructive core
--- and therefore share this function:
---   true  = detach the grade AND delete its pool
---   false = empty the pool, keep the grade targeted
--- The purchase block applies to BOTH, with a DIFFERENT hint each, because the
--- two sentences an admin needs are different: detaching removes an entitlement,
--- while emptying the pool leaves a lifetime purchaser with a package that
--- raises "pool too small" on every attempt — a silent revocation of a paid
--- entitlement dressed up as a content edit.
+-- olympiad_grade_purchase_count : THE definition of "somebody paid for this
+-- (package, grade)".
+--
+-- Extracted verbatim out of olympiad_grade_pool_blocks, which now calls it. Two
+-- callers needed the same predicate and a second copy is how they start
+-- disagreeing — which is precisely the gap this migration was rejected for.
+--
+-- Two properties are deliberate and must not be "tidied":
+--   * ANY STATUS counts. olympiad_purchases also allows 'pending' and
+--     'refunded', and purchase_olympiad re-activates a refunded row IN PLACE,
+--     keeping its grade_id — so a purchase that is merely dormant today becomes
+--     an active lifetime entitlement tomorrow, onto a pool that would no longer
+--     be servable. remove_olympiad_package_grade's active-only predicate is
+--     correct for a restorable ARCHIVE and wrong for anything irreversible.
+--   * The grade_id-is-null branch is the legacy snapshot-less purchase: such a
+--     purchase plays whichever pool matches the child's CURRENT grade, so that
+--     child is entitled to this grade too.
+-- p_grade_id IS NULL means "the whole package" — the legacy grade-less package,
+-- whose questions carry no grade either.
+-- -----------------------------------------------------------------------------
+create or replace function public.olympiad_grade_purchase_count(
+  p_package_id uuid,
+  p_grade_id   uuid
+)
+returns int
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select count(*)::int
+  from public.olympiad_purchases pu
+  where pu.olympiad_package_id = p_package_id
+    and (p_grade_id is null
+         or pu.grade_id = p_grade_id
+         or (pu.grade_id is null and exists (
+               select 1 from public.students st
+               where st.profile_id = pu.student_profile_id
+                 and st.grade_id = p_grade_id)));
+$$;
+
+comment on function public.olympiad_grade_purchase_count(uuid, uuid) is
+  'Service-internal (migration 112): how many purchases entitle one (package, '
+  'grade) — counting EVERY status, and matching legacy grade-less purchases '
+  'through the student''s current grade. THE single definition of "somebody '
+  'paid for this pool": olympiad_grade_pool_blocks and '
+  'olympiad_pool_purchase_blocks both call it so the whole-pool and the '
+  'per-selection guard can never disagree. p_grade_id NULL = the whole package.';
+
+revoke all on function public.olympiad_grade_purchase_count(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.olympiad_grade_purchase_count(uuid, uuid) to service_role;
+
+
+-- -----------------------------------------------------------------------------
+-- olympiad_grade_pool_blocks : unchanged behaviour, ONE fewer copy of the
+-- purchase predicate. Migration 111 created this function with the predicate
+-- inline; the body below delegates it and is otherwise identical.
 -- -----------------------------------------------------------------------------
 create or replace function public.olympiad_grade_pool_blocks(
   p_package_id uuid,
@@ -1209,37 +1257,14 @@ begin
     end if;
   end if;
 
-  -- The legacy grade_id-is-null branch is copied from
-  -- remove_olympiad_package_grade (015): a snapshot-less purchase plays
-  -- whichever pool matches the child's CURRENT grade, so such a child is
-  -- entitled to this grade too. Re-deriving that would be how the two paths
-  -- start disagreeing.
-  --
-  -- The STATUS filter, however, is DELIBERATELY NOT copied, and the difference
-  -- is the whole point. remove_olympiad_package_grade counts only
-  -- status = 'active' because its consequence is a restorable ARCHIVE; both
-  -- callers here HARD-DELETE the pool. olympiad_purchases.status also allows
-  -- 'pending' and 'refunded', and purchase_olympiad re-activates a refunded row
-  -- IN PLACE, keeping its grade_id — so a purchase that is merely dormant today
-  -- becomes an active lifetime entitlement tomorrow, onto a grade whose pool
-  -- no longer exists. Counting only the live ones would let exactly that
-  -- through, irreversibly. Any status blocks; this is the same rule
-  -- olympiad_package_deletion_blocks already applies to the package itself.
-  if exists (select 1 from public.olympiad_purchases pu
-              where pu.olympiad_package_id = p_package_id
-                and (pu.grade_id = p_grade_id
-                     or (pu.grade_id is null and exists (
-                           select 1 from public.students st
-                           where st.profile_id = pu.student_profile_id
-                             and st.grade_id = p_grade_id)))) then
-    select count(*)::int into n
-    from public.olympiad_purchases pu
-    where pu.olympiad_package_id = p_package_id
-      and (pu.grade_id = p_grade_id
-           or (pu.grade_id is null and exists (
-                 select 1 from public.students st
-                 where st.profile_id = pu.student_profile_id
-                   and st.grade_id = p_grade_id)));
+  -- The purchase block. p_drop_grade only chooses which SENTENCE the admin
+  -- gets: detaching removes an entitlement, while emptying the pool leaves a
+  -- lifetime purchaser with a package that raises "pool too small" on every
+  -- attempt — a silent revocation of a paid entitlement dressed up as a content
+  -- edit. WHAT counts as a purchase is not decided here any more; that is
+  -- olympiad_grade_purchase_count's job, shared with the per-selection guard.
+  n := public.olympiad_grade_purchase_count(p_package_id, p_grade_id);
+  if n > 0 then
     v := v || jsonb_build_object(
            'hint',
            case when coalesce(p_drop_grade, false)
@@ -1263,18 +1288,117 @@ end;
 $$;
 
 comment on function public.olympiad_grade_pool_blocks(uuid, uuid, boolean) is
-  'Service-internal (migration 111): the reasons one (package, grade) pool may '
-  'not be purged, as a jsonb array of {hint, count}. p_drop_grade = true adds '
-  'the last_grade check and reports the purchase block as grade_has_purchases; '
-  'false (keep the grade, empty the pool) reports it as '
-  'grade_has_purchases_purge, because emptying a purchased grade''s pool '
-  'silently revokes a lifetime entitlement. Counts purchases in ANY status — '
-  'unlike remove_olympiad_package_grade, whose active-only predicate is correct '
-  'for a restorable ARCHIVE but not for a hard delete a refunded purchase can '
-  'be re-activated onto.';
+  'Service-internal (migration 111, purchase predicate extracted in 112): the '
+  'reasons one (package, grade) pool may not be purged, as a jsonb array of '
+  '{hint, count}. p_drop_grade = true adds the last_grade check and reports the '
+  'purchase block as grade_has_purchases; false (keep the grade, empty the '
+  'pool) reports it as grade_has_purchases_purge, because emptying a purchased '
+  'grade''s pool silently revokes a lifetime entitlement. The purchase count '
+  'comes from olympiad_grade_purchase_count — ANY status, unlike '
+  'remove_olympiad_package_grade, whose active-only predicate is correct for a '
+  'restorable ARCHIVE but not for a hard delete a refunded purchase can be '
+  're-activated onto.';
+
+-- Re-issued because 112 re-creates the function above. `create or replace`
+-- keeps the existing ACL, so dropping these two lines changed nothing on a
+-- database that had already run 111 — and silently opened the function to anon
+-- on a from-zero bootstrap. Grants belong next to every create, not once.
 revoke all on function public.olympiad_grade_pool_blocks(uuid, uuid, boolean)
   from public, anon, authenticated;
 grant execute on function public.olympiad_grade_pool_blocks(uuid, uuid, boolean) to service_role;
+
+
+-- -----------------------------------------------------------------------------
+-- olympiad_pool_purchase_blocks : the SAME rule, for an operation whose effect
+-- varies with the selection.
+--
+-- Returns one block per affected grade whose purchased pool would stop being
+-- able to fill an attempt, as {hint, count, grade, remaining, required} so the
+-- panel can name the grade and both numbers instead of printing "blocked".
+--
+-- Every selected PUBLISHED row is counted as leaving the pool, whether
+-- purge_question_set will delete it or archive it: start_olympiad_attempt draws
+-- status = 'published' only, so to the purchaser the two are the same absence.
+-- Selected rows that are already archived change nothing and are ignored.
+-- -----------------------------------------------------------------------------
+create or replace function public.olympiad_pool_purchase_blocks(
+  p_package_id   uuid,
+  p_question_ids uuid[]
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v      jsonb := '[]'::jsonb;
+  r      record;
+  v_buy  int;
+  v_need int;
+  v_pool int;
+  v_left int;
+  v_name text;
+begin
+  if p_question_ids is null or cardinality(p_question_ids) = 0 then
+    return v;
+  end if;
+
+  -- Per GRADE, because the rule is about a grade's pool becoming unservable and
+  -- one selection may span several of them. `is not distinct from` throughout,
+  -- so a legacy grade-less pool is one group rather than none.
+  for r in
+    select q.grade_id                                        as grade_id,
+           count(*) filter (where q.status = 'published')::int as leaving
+    from public.questions q
+    where q.id = any(p_question_ids)
+      and q.olympiad_package_id = p_package_id
+    group by q.grade_id
+  loop
+    continue when r.leaving = 0;
+
+    v_buy := public.olympiad_grade_purchase_count(p_package_id, r.grade_id);
+    continue when v_buy = 0;
+
+    select c.questions_per_attempt into v_need
+    from public.olympiad_grade_config(p_package_id, r.grade_id) c;
+    v_need := greatest(coalesce(v_need, 25), 1);
+
+    select count(*)::int into v_pool
+    from public.questions q
+    where q.olympiad_package_id = p_package_id
+      and q.grade_id is not distinct from r.grade_id
+      and q.status = 'published';
+    v_left := v_pool - r.leaving;
+
+    if v_left < v_need then
+      select g.name into v_name from public.grades g where g.id = r.grade_id;
+      v := v || jsonb_build_object(
+             'hint', 'grade_purchased_pool_below_attempt',
+             'count', v_buy,
+             'grade', coalesce(v_name, ''),
+             'remaining', v_left,
+             'required', v_need);
+    end if;
+  end loop;
+
+  return v;
+end;
+$$;
+
+comment on function public.olympiad_pool_purchase_blocks(uuid, uuid[]) is
+  'Service-internal (migration 112): the grades of a SELECTION whose purchased '
+  'pool would be left unable to fill one attempt, as a jsonb array of {hint '
+  'grade_purchased_pool_below_attempt, count = purchases, grade, remaining, '
+  'required}. The per-selection form of the rule olympiad_grade_pool_blocks '
+  'applies to a whole pool — same purchase predicate '
+  '(olympiad_grade_purchase_count), same per-grade requirement '
+  '(olympiad_grade_config), so the two can never disagree. An ARCHIVED-instead '
+  'of deleted row counts as leaving the pool: attempts draw published only.';
+
+revoke all on function public.olympiad_pool_purchase_blocks(uuid, uuid[])
+  from public, anon, authenticated;
+grant execute on function public.olympiad_pool_purchase_blocks(uuid, uuid[]) to service_role;
 
 -- -----------------------------------------------------------------------------
 -- 14) olympiad_package_delete_guard — enforcement for the bare `.delete()`

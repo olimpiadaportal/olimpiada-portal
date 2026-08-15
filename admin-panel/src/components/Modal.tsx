@@ -38,10 +38,24 @@ export function Modal({
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
 
-  // `busy` is read through a ref so toggling it never re-runs the open/close
-  // effect (which would re-lock scroll and steal focus mid-interaction).
+  // `busy` and `onClose` are read through refs so neither re-runs the
+  // open/close effect (which would re-lock scroll and steal focus
+  // mid-interaction).
+  //
+  // `onClose` HAS to be one of them, and the reason is a bug this cost us:
+  // callers pass an inline arrow, so its identity changes on every render of
+  // the parent. With it in the dependency array, any modal whose parent holds
+  // the state being edited re-ran this effect on every keystroke — cleanup
+  // restored focus to the trigger, setup moved it to the panel, and the field
+  // lost focus after the FIRST character. That is exactly what the guarded
+  // deletion dialog does with its confirmation-code box (the typed token lives
+  // in DestructiveConfirmDialog, the Modal's own parent), so the confirmation
+  // could not be typed at all. The effect is about opening and closing; the
+  // identity of the close callback is not part of that.
   const busyRef = useRef(busy);
   busyRef.current = busy;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   // Escape to close + focus management + body scroll lock.
   useEffect(() => {
@@ -50,7 +64,7 @@ export function Modal({
     panelRef.current?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !busyRef.current) onClose();
+      if (e.key === "Escape" && !busyRef.current) onCloseRef.current();
     }
     document.addEventListener("keydown", onKeyDown);
 
@@ -62,7 +76,7 @@ export function Modal({
       document.body.style.overflow = prevOverflow;
       restoreFocusRef.current?.focus?.();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
   if (typeof document === "undefined") return null; // SSR guard

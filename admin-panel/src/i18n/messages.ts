@@ -1292,6 +1292,18 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.hint.packageNotDeletable":
       "Bu paket silinə bilməz — aşağıdakı səbəblərin hamısı aradan qalxmalıdır. Arxivləmək həmişə mümkündür.",
     "del.hint.notArchived": "Yalnız arxivlənmiş paket bərpa oluna bilər. Bu paket arxivdə deyil.",
+    "del.hint.questionNotInPackage":
+      "Seçilmiş sualların {n} ədədi bu paketə aid deyil, ona görə heç biri silinmədi. Səhifəni yeniləyin və seçimi yenidən edin.",
+    // Köhnəlmiş seçim — seçimdə səhv yoxdur, sadəcə siyahı köhnəlib.
+    "del.hint.questionGone":
+      "Seçilmiş sualların {n} ədədi artıq mövcud deyil — çox güman ki, başqa bir admin onları sizdən əvvəl silib. Heç nə dəyişmədi: pəncərəni bağlayın, siyahını yeniləyin və seçimi təkrarlayın.",
+    // Ödənilmiş sinif hovuzu: alıcı ömürlük girişi itirməməlidir.
+    "del.hint.gradePurchasedPool":
+      "{grade} üzrə {n} alış var, seçim silinsə isə hovuzda cəmi {remaining} dərc olunmuş sual qalır — bir giriş üçün {required} sual lazımdır, yəni alıcı paketi bir daha aça bilməyəcək. Heç nə silinmədi. Sualları arxivləşdirin (bu geri qaytarıla bilər) və ya əvvəlcə hovuzu tamamlayın.",
+    "del.hint.tooManySelected":
+      "Bir dəfəyə ən çox 500 sual silinə bilər, siz isə {n} seçmisiniz. Seçimi hissələrə bölün.",
+    "del.hint.emptySelection":
+      "Heç bir sual seçilməyib. Silmək istədiyiniz sualların qarşısındakı xanaları işarələyin.",
     "del.hint.gradePoolNotDeletable":
       "Bu sinfin sual hovuzu silinə bilməz — aşağıdakı səbəblər aradan qalxmalıdır. Sualları arxivləmək alternativdir.",
     "del.hint.lastGrade":
@@ -1352,8 +1364,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Hər dialoqda görünən ümumi mətnlər
     "del.irreversible":
       "Bu əməliyyat geri qaytarıla bilməz. Silinən suallar və şəkillər bərpa olunmur.",
+    // Bu qutu bazanın HƏQİQƏTƏN etdiyini təsdiqləməlidir: cavabsız suallar
+    // silinir, cavablandırılmışlar isə arxivə keçir və bərpa oluna bilər.
+    // «Hər şey həmişəlik silinir» yazsaq, admin doğru olmayan bir cümləni
+    // təsdiqləmiş olardı — üstündəki abzas isə bunun əksini deyir.
     "del.ackLabel":
-      "Başa düşürəm: bu məzmun həmişəlik silinir və geri qaytarmaq mümkün deyil.",
+      "Başa düşürəm: cavabsız suallar həmişəlik silinir və bərpa olunmur, cavablandırılmışlar isə silinmir — arxivə keçir.",
     "del.media": "Silinəcək şəkillər (təxmini)",
     // ---- Olimpiada paketi ----
     "del.package.heading": "Paketin ləğvi",
@@ -1396,7 +1412,26 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Sinif çıxarıldı: {deleted} sual silindi, {archived} sual arxivləndi.",
     "del.done.gradePurged":
       "Hovuz boşaldıldı: {deleted} sual silindi, {archived} sual arxivləndi.",
+    "del.done.questionsPurged":
+      "Seçilmiş suallar emal olundu: {deleted} sual silindi, {archived} sual arxivləndi.",
     "del.done.demoted": "Paket «Deaktiv» vəziyyətinə keçdi.",
+    // ---- Paket siyahısındakı sil düyməsi ----
+    "del.package.rowOpen": "Sil…",
+    // ---- Hovuzdan seçilmiş sualların silinməsi (miqrasiya 112) ----
+    // Mətn bazanın həqiqətən etdiyini deyir: cavabsız suallar silinir,
+    // cavablandırılmışlar isə arxivlənir. Başqa cür yazsaq, admini aldadardıq.
+    "del.bulk.open": "Seçilmişləri sil",
+    "del.bulk.title": "Seçilmiş sualları sil",
+    "del.bulk.selected": "{n} sual seçilib",
+    "del.bulk.clear": "Seçimi ləğv et",
+    "del.bulk.selectAll": "Görünən sualların hamısını seç",
+    "del.bulk.selectRow": "Bu sualı seç",
+    "del.bulk.count": "Seçilmiş suallar",
+    "del.bulk.grades": "Siniflər",
+    "del.bulk.deleteTitle": "Seçilmiş sualları sil",
+    "del.bulk.deleteDesc":
+      "Cavabsız suallar həmişəlik silinir. Cavablandırılmış suallar isə silinmir — arxivlənir, şagirdlərin cavab tarixçəsi olduğu kimi qalır. Hansının hansı olduğunu baza əməliyyat anında müəyyən edir.",
+    "del.bulk.deleteAction": "Seçilmiş sualları sil",
   },
   en: {
     // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
@@ -2674,6 +2709,18 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.hint.packageNotDeletable":
       "This package cannot be deleted — every reason below has to be cleared first. Archiving is always available instead.",
     "del.hint.notArchived": "Only an archived package can be restored. This one is not archived.",
+    "del.hint.questionNotInPackage":
+      "{n} of the selected questions do not belong to this package, so nothing was deleted. Refresh the page and make the selection again.",
+    // A stale selection — nothing is wrong with it, the list is simply old.
+    "del.hint.questionGone":
+      "{n} of the selected questions no longer exist — another admin most likely deleted them first. Nothing was changed: close this dialog, refresh the list and select again.",
+    // A purchased grade pool: the buyer must not lose lifetime access.
+    "del.hint.gradePurchasedPool":
+      "Grade {grade} has {n} purchase(s), and deleting this selection would leave its pool with only {remaining} published question(s) — one attempt needs {required}, so the buyer could never open the package again. Nothing was deleted. Archive the questions instead (that is reversible), or top the pool up first.",
+    "del.hint.tooManySelected":
+      "At most 500 questions can be deleted at once, and you selected {n}. Split the selection into smaller batches.",
+    "del.hint.emptySelection":
+      "No questions are selected. Tick the checkboxes next to the questions you want to remove.",
     "del.hint.gradePoolNotDeletable":
       "This grade's question pool cannot be deleted — the reasons below have to be cleared first. Archiving the questions is the alternative.",
     "del.hint.lastGrade":
@@ -2734,8 +2781,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Copy shared by every deletion dialog
     "del.irreversible":
       "This cannot be undone. Deleted questions and images are not recoverable.",
+    // The checkbox has to acknowledge what the database ACTUALLY does:
+    // unanswered questions are deleted, answered ones are archived and can be
+    // restored. "Removed permanently" would ask the admin to tick a statement
+    // the paragraph above it contradicts.
     "del.ackLabel":
-      "I understand that this content is removed permanently and cannot be brought back.",
+      "I understand: unanswered questions are deleted for good and cannot be brought back, while answered ones are not deleted — they are archived.",
     "del.media": "Images to be removed (estimate)",
     // ---- Olympiad package ----
     "del.package.heading": "Removing this package",
@@ -2778,7 +2829,27 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Grade removed: {deleted} question(s) deleted, {archived} archived.",
     "del.done.gradePurged":
       "Pool emptied: {deleted} question(s) deleted, {archived} archived.",
+    "del.done.questionsPurged":
+      "Selection processed: {deleted} question(s) deleted, {archived} archived.",
     "del.done.demoted": "The package was set to Inactive.",
+    // ---- Delete button in the package list ----
+    "del.package.rowOpen": "Delete…",
+    // ---- Deleting a selection from the pool (migration 112) ----
+    // The copy says what the database actually does: unanswered questions are
+    // deleted, answered ones are archived. Promising anything else would be a
+    // lie the admin only discovers afterwards.
+    "del.bulk.open": "Delete selected",
+    "del.bulk.title": "Delete the selected questions",
+    "del.bulk.selected": "{n} selected",
+    "del.bulk.clear": "Clear selection",
+    "del.bulk.selectAll": "Select every question on screen",
+    "del.bulk.selectRow": "Select this question",
+    "del.bulk.count": "Selected questions",
+    "del.bulk.grades": "Grades",
+    "del.bulk.deleteTitle": "Delete the selected questions",
+    "del.bulk.deleteDesc":
+      "Unanswered questions are deleted for good. Answered ones are not deleted — they are archived, so the students' answer history stays exactly as it is. Which is which is decided by the database as it runs.",
+    "del.bulk.deleteAction": "Delete the selected questions",
   },
   ru: {
     // ---- #15: generic async-button pending labels (ActionButton/SubmitButton) ----
@@ -4071,6 +4142,18 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Этот пакет нельзя удалить — сначала нужно устранить все причины ниже. Архивирование доступно всегда.",
     "del.hint.notArchived":
       "Восстановить можно только архивированный пакет. Этот пакет не в архиве.",
+    "del.hint.questionNotInPackage":
+      "Часть выбранных вопросов ({n}) не относится к этому пакету, поэтому не удалён ни один. Обновите страницу и выберите вопросы заново.",
+    // Устаревший выбор — с самим выбором всё в порядке, просто список старый.
+    "del.hint.questionGone":
+      "Часть выбранных вопросов ({n}) уже не существует — скорее всего, их успел удалить другой администратор. Ничего не изменилось: закройте окно, обновите список и выберите вопросы заново.",
+    // Оплаченный пул класса: покупатель не должен потерять пожизненный доступ.
+    "del.hint.gradePurchasedPool":
+      "Для класса {grade} есть покупки ({n}), а после удаления выбранного в пуле останется всего {remaining} опубликованных вопросов — на одну попытку нужно {required}, то есть покупатель больше не сможет открыть пакет. Ничего не удалено. Отправьте вопросы в архив (это обратимо) или сначала пополните пул.",
+    "del.hint.tooManySelected":
+      "За один раз можно удалить не больше 500 вопросов, а выбрано {n}. Разбейте выбор на части.",
+    "del.hint.emptySelection":
+      "Не выбрано ни одного вопроса. Отметьте галочками те вопросы, которые нужно удалить.",
     "del.hint.gradePoolNotDeletable":
       "Пул вопросов этого класса удалить нельзя — сначала устраните причины ниже. Альтернатива — архивировать вопросы.",
     "del.hint.lastGrade":
@@ -4131,8 +4214,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Тексты, общие для всех диалогов удаления
     "del.irreversible":
       "Отменить это действие нельзя. Удалённые вопросы и изображения не восстанавливаются.",
+    // Галочка должна подтверждать то, что база делает НА САМОМ ДЕЛЕ: вопросы
+    // без ответов удаляются, отвеченные уходят в архив и восстановимы.
     "del.ackLabel":
-      "Я понимаю, что этот материал удаляется навсегда и вернуть его не получится.",
+      "Я понимаю: вопросы без ответов удаляются навсегда и вернуть их нельзя, а отвеченные не удаляются — они уходят в архив.",
     "del.media": "Изображений будет удалено (примерно)",
     // ---- Пакет олимпиады ----
     "del.package.heading": "Удаление пакета",
@@ -4175,6 +4260,26 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Класс откреплён. Удалено вопросов: {deleted}, архивировано: {archived}.",
     "del.done.gradePurged":
       "Пул очищен. Удалено вопросов: {deleted}, архивировано: {archived}.",
+    "del.done.questionsPurged":
+      "Выбранные вопросы обработаны. Удалено: {deleted}, архивировано: {archived}.",
     "del.done.demoted": "Пакет переведён в статус «Неактивен».",
+    // ---- Кнопка удаления в списке пакетов ----
+    "del.package.rowOpen": "Удалить…",
+    // ---- Удаление выбранных вопросов из пула (миграция 112) ----
+    // Формулировки описывают то, что база делает на самом деле: вопросы без
+    // ответов удаляются, отвеченные архивируются. Обещать иное — значит
+    // обмануть администратора, который узнает правду уже после нажатия.
+    "del.bulk.open": "Удалить выбранные",
+    "del.bulk.title": "Удаление выбранных вопросов",
+    "del.bulk.selected": "Выбрано: {n}",
+    "del.bulk.clear": "Снять выделение",
+    "del.bulk.selectAll": "Выбрать все вопросы на экране",
+    "del.bulk.selectRow": "Выбрать этот вопрос",
+    "del.bulk.count": "Выбрано вопросов",
+    "del.bulk.grades": "Классы",
+    "del.bulk.deleteTitle": "Удалить выбранные вопросы",
+    "del.bulk.deleteDesc":
+      "Вопросы без ответов удаляются безвозвратно. Отвеченные не удаляются — они уходят в архив, и история ответов учеников остаётся нетронутой. Что к чему относится, база определяет прямо во время операции.",
+    "del.bulk.deleteAction": "Удалить выбранные вопросы",
   },
 };

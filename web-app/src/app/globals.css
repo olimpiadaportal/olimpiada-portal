@@ -10691,6 +10691,101 @@ ul.clean li {
   background: color-mix(in srgb, var(--gold) 10%, transparent);
 }
 
+/* ---- "Report a problem" (migration 115). The trigger lives inside .arena
+   (question head + review card footer); the dialog's own fields do NOT — the
+   shared Modal portals to <body>, outside .arena, so those rules are unscoped
+   and paint from the root tokens like every other modal. ------------------- */
+.arena .tst-q-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.arena .tst-report {
+  /* Same pill as .tst-flag above — one visual language for the two controls
+     that sit side by side in the question head. */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  /* 36px, not the flag's 30: this one is destructive-ish and easy to hit by
+     accident, so it gets a full touch target rather than a tighter pill. */
+  min-height: 36px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: color 0.1s ease, border-color 0.1s ease;
+}
+.arena .tst-report:hover {
+  border-color: var(--red, #ef4444);
+  color: var(--red, #ef4444);
+}
+/* Review card: a quiet full-width footer under the explanation. */
+.arena .tst-report-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.arena .tst-report.block {
+  justify-content: center;
+}
+@media (max-width: 420px) {
+  /* Icon-only under 420px so the head never wraps onto two lines. The button
+     keeps its aria-label, so nothing is lost to a screen reader. */
+  .arena .tst-report .tst-report-label {
+    display: none;
+  }
+  .arena .tst-report {
+    padding: 5px 10px;
+  }
+  .arena .tst-report-row .tst-report {
+    width: 100%;
+  }
+  .arena .tst-report-row .tst-report .tst-report-label {
+    display: inline;
+  }
+}
+.tst-report-label-text {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 14px 0 6px;
+}
+.tst-report-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 110px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  padding: 10px 12px;
+}
+.tst-report-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.tst-report-count {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: right;
+}
+.tst-report-error {
+  margin: 8px 0 0;
+  font-size: 0.86rem;
+  color: var(--danger);
+}
+
 /* ---- player: question palette ---- */
 .arena .tst-side {
   display: grid;
@@ -10940,6 +11035,34 @@ ul.clean li {
 .arena .tst-explain p {
   margin: 6px 0 0;
   white-space: pre-wrap;
+}
+/* Honest fallback: the explanation exists only in Azerbaijani. The chip sits on
+   the label row and the note explains why, so a reader in EN/RU sees a known
+   content gap instead of a broken translation. */
+.arena .tst-explain-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.arena .tst-explain-lang {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  color: var(--gold);
+}
+/* Selector carries the tag so it outranks `.arena .tst-explain p` above. */
+.arena .tst-explain p.tst-explain-note {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: normal;
 }
 
 /* =====================  L1 Child leaderboard (.lb-*)  =====================
@@ -13371,4 +13494,214 @@ body[data-site-typography] .btn-ghost {
   align-items: flex-start;
   gap: 6px;
   min-width: 0;
+}
+
+/* ===========================================================================
+   RESPONSIVE PASS — phone/tablet fixes for the parent panel, the student arena
+   and the subject-plan cards.
+
+   Appended as ONE block on purpose: every rule below overrides an earlier
+   declaration by SOURCE ORDER at the same specificity, so no rule above had to
+   be edited and the whole responsive pass reads as one diff.
+
+   DESKTOP IS UNCHANGED BY CONSTRUCTION. Every rule is either inside a
+   `max-width` / `pointer: coarse` query, or is a continuous replacement
+   (clamp / auto-fit / minmax) that computes to today's value at desktop
+   widths. Two changes are deliberately global because the owner asked for
+   them: the labelled remove button on the subject card, and `.splan-subject`
+   wrapping instead of truncating.
+
+   New breakpoints use only the approved scale (480 / 640 / 768 / 1024 / 1280).
+   src/app/__tests__/breakpoints.test.ts fails the build on a sixth value.
+   --------------------------------------------------------------------------- */
+
+/* --- P1: the header must not eat a third of a phone screen -----------------
+   The parent nav renders EIGHT links plus the bell and avatar; the student
+   arena five to six. `.pnav-links` already WRAPS (and must keep wrapping —
+   `overflow-x: auto` here was the owner's own reported bug, see the note at
+   `.pnav`), but the links' padding and font size never shrank, so eight links
+   wrapped to four or five rows at 320-430px and pushed the page content below
+   the fold. The root cause is the link's own fixed geometry, so that is what
+   shrinks — not the layout mode. Shared by the parent shell and `.arena .pnav`,
+   which re-skins colours only. `<Segmented>` measures the real active element
+   (and observes container resizes), so the sliding pill follows the new
+   geometry and the new wrap positions on its own. */
+@media (max-width: 768px) {
+  .pnav {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .pnav-links {
+    gap: 4px;
+    row-gap: 4px;
+  }
+  .pnav-link {
+    padding: 7px 10px;
+    font-size: 0.86rem;
+  }
+  /* The brand slot is pure decoration; it gives back ~7px per row. */
+  .pnav-brand {
+    width: 14px;
+    height: 14px;
+    margin-right: 7px;
+  }
+  .pnav-brand::before,
+  .arena .pnav-brand::before {
+    width: 11px;
+    height: 11px;
+  }
+  .pnav-right {
+    gap: 8px;
+  }
+}
+
+/* --- P2: the student arena's side gutters -----------------------------------
+   `.arena-main` had a flat 26px side padding and NO override anywhere in this
+   file, so every student page lost 52px to gutters — 268px of usable width at
+   320px, which is what forced the `min(280px, 100%)` floors on the card grids
+   below. A clamp is the root-cause fix: it is continuous (no new breakpoint),
+   and 4vw reaches the full 26px at a 650px viewport, so every width that used
+   to get 26px still gets exactly 26px. The decorative sticker layer reserves
+   its gutters from the same 26px figure but is hidden below 1280px, so it is
+   unaffected. */
+.arena-main {
+  padding: 26px clamp(16px, 4vw, 26px) 64px;
+}
+
+/* --- P3 + P5: the subject-plan card ----------------------------------------
+   THE OWNER'S NAMED FIX. `.splan-remove` was a 28px glyph-only circle holding
+   a bare "×": unlabelled, ambiguous next to a subject name, and 16px under the
+   44px touch floor. It is now the danger-tinted mirror of the `.pcfg-add` pill
+   that sits opposite it on the same page, so Add and Remove read as one pair.
+   Editing this one component fixes all four consumers (ManageSubjects,
+   AddChildWizard, PricingConfigurator, SubscribeForm) at once — they all pass
+   `onRemove`, so they cannot drift apart later.
+
+   Wrapping is what makes the wider pill safe. `.splan-name` is
+   [subject][chip][remove]; the chip is `flex: none` and the pill now has real
+   width, so the subject name was the only thing left to shrink — and it
+   truncated, which is exactly the long-Azerbaijani-word failure. Letting the
+   row wrap (pill drops to its own line, still right-aligned) and letting the
+   name wrap instead of ellipsising costs nothing at desktop widths, where the
+   name column has room and the row still renders on one line. */
+.splan-name {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.splan-subject {
+  /* Was nowrap + ellipsis: it could truncate the subject to nothing between
+     768px and 900px, where the chip and the pill claim the whole row. */
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.splan-remove {
+  /* Overrides the 28px circle above; `font: inherit` first, then the size, so
+     the shorthand cannot reset it (same order as `.pcfg-add`). */
+  width: auto;
+  height: auto;
+  min-height: 40px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  color: var(--danger);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    filter 0.15s ease;
+}
+.splan-remove:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+.splan-remove-glyph {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+@media (max-width: 640px) {
+  /* Below the card's own multi-column breakpoint the row is narrow enough that
+     the pill is given its own full-width line unconditionally — deterministic
+     beats "wraps if it happens not to fit" on the smallest screens. */
+  .splan-remove {
+    width: 100%;
+    order: 3;
+    margin-left: 0;
+  }
+}
+
+/* --- P4: tap targets under the 44px floor ----------------------------------
+   Eleven controls in this file are sized 26-38px. Rather than eleven separate
+   edits, ONE `pointer: coarse` rule raises the floor for all of them; a desktop
+   browser never matches `pointer: coarse`, so desktop is provably untouched.
+   (The file already uses this idiom for `.prof2-input` and the modal overlay.)
+   Only the box grows — colour, radius and icon size are left alone, so nothing
+   is restyled, just made hittable. */
+@media (pointer: coarse) {
+  .splan-remove,
+  .splan-seg-item,
+  .pcfg-seg-item,
+  .theme-toggle,
+  .lang-btn,
+  .pw-eye,
+  .drawer-close,
+  .modal-close,
+  .oly4-close,
+  .ntf-toast-x,
+  .site-foot-social .social-icon {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* These three are not flex/grid containers by default, so an enlarged box
+     would leave their label sitting at the top edge. */
+  .lang-btn,
+  .ntf-toast-x,
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lang-btn {
+    padding: 0 12px;
+  }
+  /* The eye button is absolutely positioned inside the input's right gutter
+     (`right: 6px`). At 44px it would sit ON the text unless the gutter grows
+     with it: 6 + 44 + 4 clearance. */
+  .pw-field > input {
+    padding-right: 54px;
+  }
+}
+
+/* --- P6: the arena rank panel's three mini-stats ---------------------------
+   `repeat(3, 1fr)` cannot shrink below its content, so three mono values with
+   UPPERCASE letter-spaced labels were squeezed into ~72px columns inside the
+   24px-padded rank panel at 320px. `auto-fit` + a `min()` floor is continuous:
+   at any width that fits three 96px tracks it resolves to today's three equal
+   columns (desktop identical), and only below that does it fold to two. */
+.arena-ministats {
+  grid-template-columns: repeat(auto-fit, minmax(min(96px, 100%), 1fr));
+}
+.arena-ministat {
+  min-width: 0;
+}
+
+/* --- P7: the sticky "your rank" card ---------------------------------------
+   `position: sticky; bottom: 14px` permanently parks this card over the last
+   leaderboard rows on a short viewport, where the board is exactly what the
+   student came to read. On a phone the card is a few scroll-lengths away at
+   worst; the overlap is not. */
+@media (max-width: 640px) {
+  .lb-me-card {
+    position: static;
+  }
 }

@@ -5,6 +5,7 @@ import { getLocale, getT } from "@/i18n/server";
 import type { Locale } from "@/i18n/config";
 import { formatLongDate } from "@/lib/formatDate";
 import { isSupabaseConfigured } from "@/lib/env";
+import { pickTranslation } from "@/lib/localizedName";
 import { createClient } from "@/lib/supabase/server";
 import { NewsLikeButton } from "@/components/NewsLikeButton";
 import { ViewBeacon } from "@/components/ViewBeacon";
@@ -83,10 +84,10 @@ export async function NewsArticleView({
     title: string;
     body: string;
   }[];
-  const tr =
-    trs.find((x) => x.locale === locale) ??
-    trs.find((x) => x.locale === "az") ??
-    trs[0];
+  // trs[0] is a third fallback the shared picker deliberately does not have: an
+  // article whose AZ translation row is missing must still render SOMETHING
+  // rather than an empty page.
+  const tr = pickTranslation(trs, locale) ?? trs[0];
 
   const publishedAt = formatDate((n as any).published_at ?? null, locale);
 

@@ -23,13 +23,17 @@ export const TQK = {
   access: (profileId: string, giveaway: boolean) =>
     ["tests", "access", profileId, giveaway] as const,
   attempts: (profileId: string) => ["tests", "attempts", profileId] as const,
-  setup: (subjectId: string, profileId: string) =>
-    ["tests", "setup", subjectId, profileId] as const,
+  // locale is part of the key on purpose: setLocale() only mutates the zustand
+  // store and never touches the query cache, so a locale-less key would keep
+  // serving the previous language until staleTime expired (migration 114).
+  setup: (subjectId: string, profileId: string, locale: Locale) =>
+    ["tests", "setup", subjectId, profileId, locale] as const,
   attempt: (attemptId: string, locale: Locale) =>
     ["tests", "attempt", attemptId, locale] as const,
   attemptRow: (attemptId: string, profileId: string) =>
     ["tests", "attempt-row", attemptId, profileId] as const,
-  result: (attemptId: string) => ["tests", "result", attemptId] as const,
+  result: (attemptId: string, locale: Locale) =>
+    ["tests", "result", attemptId, locale] as const,
   review: (attemptId: string, locale: Locale) =>
     ["tests", "review", attemptId, locale] as const,
 };
@@ -71,11 +75,11 @@ export function useRecentAttempts() {
   });
 }
 
-export function useSetupTopics(subjectId: string) {
+export function useSetupTopics(subjectId: string, locale: Locale) {
   const profileId = useAuthStore((s) => s.profileId);
   return useQuery({
-    queryKey: TQK.setup(subjectId, profileId ?? "-"),
-    queryFn: () => fetchSetupTopics(subjectId, profileId as string),
+    queryKey: TQK.setup(subjectId, profileId ?? "-", locale),
+    queryFn: () => fetchSetupTopics(subjectId, profileId as string, locale),
     enabled: !!profileId && subjectId.length > 0,
     staleTime: 5 * 60_000,
   });
@@ -138,12 +142,12 @@ export function useAttemptRow(attemptId: string, enabled = true) {
  * stored result for a graded attempt / finalizes one past its deadline: the
  * web result-page contract) + the answered/skipped breakdown from own rows.
  */
-export function useTestResult(attemptId: string, enabled: boolean) {
+export function useTestResult(attemptId: string, locale: Locale, enabled: boolean) {
   return useQuery({
-    queryKey: TQK.result(attemptId),
+    queryKey: TQK.result(attemptId, locale),
     queryFn: async () => {
       const [result, rows] = await Promise.all([
-        submitTestAttempt(attemptId, null),
+        submitTestAttempt(attemptId, null, locale),
         fetchBreakdownRows(attemptId),
       ]);
       return { result, breakdown: resultBreakdown(rows) };

@@ -44,7 +44,13 @@ import { useT } from "@/i18n/useT";
 import { useAuthStore } from "@/features/auth/authStore";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { publicStorageUrl } from "@/lib/data";
-import { cancelTestAttempt, saveTestAnswers, submitTestAttempt } from "./api";
+import {
+  cancelTestAttempt,
+  saveTestAnswers,
+  submitQuestionReport,
+  submitTestAttempt,
+} from "./api";
+import { ReportQuestionSheet } from "./ReportQuestionSheet";
 import { TQK, useAttemptRow, useTestAttempt } from "./queries";
 import { clearDraft, ensureDraft, type AttemptDraft } from "./draft";
 import {
@@ -366,7 +372,7 @@ function RunnerActive({
   arena: ArenaTokens;
   pad: object;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const router = useRouter();
   const navigation = useNavigation();
   const queryClient = useQueryClient();
@@ -439,6 +445,7 @@ function RunnerActive({
   const [timeUp, setTimeUp] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [canceling, setCanceling] = useState(false);
@@ -540,7 +547,7 @@ function RunnerActive({
         // draft intact, so the same tap retries everything.
         if (!res.ok) break;
       }
-      await submitTestAttempt(attemptId, submit);
+      await submitTestAttempt(attemptId, submit, locale);
       // Server confirmed. Only now is it safe to drop the draft and stop
       // guarding the route.
       finishedRef.current = true;
@@ -560,7 +567,7 @@ function RunnerActive({
     submittingRef.current = false;
     setSubmitting(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attemptId, questions, buildItems, draft, publishStatus, router]);
+  }, [attemptId, questions, buildItems, draft, publishStatus, router, locale]);
   const doSubmitRef = useRef(doSubmit);
   doSubmitRef.current = doSubmit;
 
@@ -951,39 +958,65 @@ function RunnerActive({
             <AppText variant="mono" color={arena.dim} style={{ fontSize: 13 }}>
               Q{String(idx + 1).padStart(2, "0")}
             </AppText>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: flagged }}
-              accessibilityLabel={flagged ? t("test.run.unflag") : t("test.run.flag")}
-              onPress={() => toggleFlag(q.question_id)}
-              hitSlop={10}
-              style={({ pressed }) => ({
-                flexDirection: "row",
-                alignItems: "center",
-                gap: spacing.xs,
-                borderWidth: 1,
-                borderColor: flagged ? tint(arena.gold, 0.6) : arena.line,
-                backgroundColor: flagged ? tint(arena.gold, 0.14) : "transparent",
-                borderRadius: 999,
-                paddingVertical: spacing.xs,
-                paddingHorizontal: spacing.md,
-                minHeight: 32,
-                opacity: pressed ? 0.8 : 1,
-              })}
-            >
-              {flagged ? (
-                <BookmarkCheck size={14} color={arena.gold} strokeWidth={2.5} />
-              ) : (
-                <Bookmark size={14} color={arena.muted} strokeWidth={2} />
-              )}
-              <AppText
-                variant="label"
-                color={flagged ? arena.gold : arena.muted}
-                style={{ fontSize: 12 }}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: flagged }}
+                accessibilityLabel={flagged ? t("test.run.unflag") : t("test.run.flag")}
+                onPress={() => toggleFlag(q.question_id)}
+                hitSlop={10}
+                style={({ pressed }) => ({
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.xs,
+                  borderWidth: 1,
+                  borderColor: flagged ? tint(arena.gold, 0.6) : arena.line,
+                  backgroundColor: flagged ? tint(arena.gold, 0.14) : "transparent",
+                  borderRadius: 999,
+                  paddingVertical: spacing.xs,
+                  paddingHorizontal: spacing.md,
+                  minHeight: 32,
+                  opacity: pressed ? 0.8 : 1,
+                })}
               >
-                {flagged ? t("test.run.unflag") : t("test.run.flag")}
-              </AppText>
-            </Pressable>
+                {flagged ? (
+                  <BookmarkCheck size={14} color={arena.gold} strokeWidth={2.5} />
+                ) : (
+                  <Bookmark size={14} color={arena.muted} strokeWidth={2} />
+                )}
+                <AppText
+                  variant="label"
+                  color={flagged ? arena.gold : arena.muted}
+                  style={{ fontSize: 12 }}
+                >
+                  {flagged ? t("test.run.unflag") : t("test.run.flag")}
+                </AppText>
+              </Pressable>
+              {/* Report a problem — same pill language as the bookmark, sitting
+                  where a child is already looking when a question looks wrong. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("test.report.action")}
+                onPress={() => setReportOpen(true)}
+                hitSlop={10}
+                style={({ pressed }) => ({
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.xs,
+                  borderWidth: 1,
+                  borderColor: arena.line,
+                  borderRadius: 999,
+                  paddingVertical: spacing.xs,
+                  paddingHorizontal: spacing.md,
+                  // Same 32 as the bookmark beside it — two chips in one row
+                  // must share a height or the row reads as misaligned.
+                  minHeight: 32,
+                  opacity: pressed ? 0.8 : 1,
+                })}
+              >
+                <CircleAlert size={14} color={arena.muted} strokeWidth={2} />
+              </Pressable>
+            </View>
           </View>
 
           <AppText color={arena.ink} style={{ fontSize: 17, lineHeight: 24 }}>
@@ -1297,6 +1330,32 @@ function RunnerActive({
         onSecondary={confirmLeave}
         onDismiss={continueTest}
       />
+
+      {/* ---- Report a problem (migration 115) ----
+           The attempt id is passed as context; the database verifies it is the
+           reporter's own attempt AND that it drew this question, and silently
+           drops it otherwise rather than losing the report.
+
+           Mounted only WITH a question: the trigger lives inside the question
+           card, so there is no way to open this without one, and gating here
+           means the id can never be an empty-string placeholder that the
+           database would reject as malformed uuid. */}
+      {q ? (
+        <ReportQuestionSheet
+          arena={arena}
+          visible={reportOpen}
+          t={t}
+          onClose={() => setReportOpen(false)}
+          onSubmit={(message) =>
+            submitQuestionReport({
+              questionId: q.question_id,
+              attemptId,
+              message,
+              locale,
+            })
+          }
+        />
+      ) : null}
     </ScrollView>
   );
 }

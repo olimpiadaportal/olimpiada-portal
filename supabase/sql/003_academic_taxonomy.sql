@@ -202,6 +202,61 @@ comment on column public.subtopics.term is
   'Inherited from the parent topic (kept equal by trigger). NULL = legacy/unreviewed.';
 
 -- -----------------------------------------------------------------------------
+-- topic_translations / subtopic_translations : EN and RU names for the
+-- curriculum tree (migration 114). Same sibling-table shape as
+-- question_translations / olympiad_package_translations — keyed
+-- (parent_id, locale) over public.content_locale, ON DELETE CASCADE.
+--
+-- ONE deliberate divergence, enforced by ck_*_not_az: Azerbaijani is NOT stored
+-- here. topics.name / subtopics.name stay the AZ source of truth because both
+-- bulk importers CREATE topics BY NAME, migration 095's rerun match is
+-- `t.name = <source>`, and the admin duplicate guards fold on it. A mirrored az
+-- row would need a two-way sync trigger and could drift; keeping exactly one
+-- home per locale means nothing has to be kept in step.
+--
+-- Reads resolve with coalesce(tr.name, base.name), which can be neither NULL
+-- (base.name is not null) nor '' (ck_*_name_not_blank) — the admin action
+-- DELETES an emptied EN/RU field rather than storing a blank.
+--
+-- No extra index: uq_*_locale already provides the (parent_id, locale) b-tree
+-- every embed and join looks up on.
+-- -----------------------------------------------------------------------------
+create table if not exists public.topic_translations (
+  id         uuid primary key default gen_random_uuid(),
+  topic_id   uuid not null references public.topics (id) on delete cascade,
+  locale     public.content_locale not null,
+  name       text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint uq_topic_locale unique (topic_id, locale),
+  constraint ck_topic_tr_name_not_blank check (btrim(name) <> ''),
+  constraint ck_topic_tr_not_az check (locale <> 'az')
+);
+
+create table if not exists public.subtopic_translations (
+  id          uuid primary key default gen_random_uuid(),
+  subtopic_id uuid not null references public.subtopics (id) on delete cascade,
+  locale      public.content_locale not null,
+  name        text not null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint uq_subtopic_locale unique (subtopic_id, locale),
+  constraint ck_subtopic_tr_name_not_blank check (btrim(name) <> ''),
+  constraint ck_subtopic_tr_not_az check (locale <> 'az')
+);
+
+comment on table public.topic_translations is
+  'EN/RU topic names (migration 114). topics.name stays the AZ source of truth (both '
+  'bulk importers create topics by it and migration 095 matches on it), so this table '
+  'carries the OTHER locales only — ck_topic_tr_not_az enforces that. Reads resolve '
+  'with coalesce(tr.name, t.name).';
+
+comment on table public.subtopic_translations is
+  'EN/RU subtopic names (migration 114). subtopics.name stays the AZ source of truth; '
+  'this table carries the other locales only (ck_subtopic_tr_not_az). Reads resolve '
+  'with coalesce(tr.name, st.name).';
+
+-- -----------------------------------------------------------------------------
 -- wallpapers : predefined child-dashboard wallpaper catalog (no arbitrary colors).
 -- 'solid_color' uses a hex value; 'image' uses a media_asset (wallpaper-assets
 -- bucket). media_asset_id references media_assets (008); its FK is deferred to 011

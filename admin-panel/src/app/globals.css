@@ -2834,6 +2834,14 @@ a.qpage-link:hover {
   outline-offset: -1px;
 }
 
+/* Explanation-translation coverage line under the review chips: a sentence, so
+   it reads at body width instead of stretching across the widened table page. */
+.expl-coverage {
+  max-width: 78ch;
+  margin: -6px 0 14px;
+  font-size: 0.84rem;
+}
+
 /* =========================================================================
    Locations (/locations) — Cities → Rayons → Schools master-detail
    (Round 21 item 7). Additive, token-driven; first master-detail pattern.
@@ -3181,6 +3189,32 @@ a.qpage-link:hover {
 .loc-skel-row {
   height: 44px;
   flex-shrink: 0;
+}
+
+/* Skeleton sizes shared by the /question-reports, /questions and /olympiad
+   route skeletons — the only new geometry those three needed on top of the
+   .loc-skel primitives above. */
+.qrep-skel-card {
+  height: 66px;
+}
+
+.qrep-skel-filter {
+  width: 160px;
+  max-width: 100%;
+  height: 36px;
+}
+
+.qrep-skel-chip {
+  width: 190px;
+  height: 30px;
+  border-radius: 999px;
+}
+
+.qrep-skel-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
 }
 
 @keyframes loc-shimmer {
@@ -4087,6 +4121,22 @@ a.qpage-link:hover {
   color: var(--brand);
 }
 
+/* "Translation missing" (migration 114). The only place an admin can see that a
+   topic or subtopic will render Azerbaijani to an English/Russian reader. */
+.cur-pill-warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+/* EN/RU names sit on their own line under the AZ name — flex-basis 100% breaks
+   the wrapping row so they never compete with the grade/term/count badges. */
+.cur-row-tr {
+  flex: 1 0 100%;
+  color: var(--muted);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
 /* ---- Empty state + pager ------------------------------------------------ */
 .cur-empty {
   padding: 44px 20px;
@@ -4466,4 +4516,114 @@ a.qpage-link:hover {
 }
 .bulk-mode-opt-title {
   font-weight: 600;
+}
+
+/* ---- Question reports (migration 115) ------------------------------------ */
+
+/* The report body. USER-SUPPLIED free text, rendered as a React text child and
+   nothing else: pre-wrap keeps the reporter's line breaks without any markup,
+   and anywhere stops a 1000-character word from widening the card. */
+.qrep-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  line-height: 1.55;
+}
+
+/* List truncation is CSS, never a JS slice of markup. No title attribute: a
+   1000-character tooltip helps nobody — the detail page is the full view. */
+.qrep-cell-clip {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qrep-card {
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.qrep-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 20px;
+  margin: 0 0 16px;
+}
+.qrep-meta dt {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.qrep-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.qrep-taxonomy {
+  margin: 0 0 10px;
+}
+
+.qrep-body {
+  margin: 0 0 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* The requested locale had no row, so this is the az fallback. Naming it is the
+   point: otherwise an admin reading a Russian report cannot tell whether the
+   Azerbaijani text in front of them IS the complaint. */
+.qrep-fallback,
+.qrep-fallback-inline {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--warn, #c2610a);
+}
+.qrep-fallback {
+  display: block;
+  margin: 0 0 6px;
+}
+.qrep-fallback-inline {
+  margin-left: 8px;
+}
+
+.qrep-options {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.qrep-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+}
+.qrep-option.correct {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+  background: color-mix(in srgb, var(--brand) 6%, transparent);
+}
+.qrep-option-key {
+  flex: none;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.qrep-explain {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  line-height: 1.55;
+}
+.qrep-explain p {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
 }

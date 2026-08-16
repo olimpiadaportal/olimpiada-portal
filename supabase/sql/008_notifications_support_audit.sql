@@ -97,6 +97,74 @@ create table if not exists public.support_requests (
 );
 
 -- -----------------------------------------------------------------------------
+-- question_reports : user-filed "Report a problem" tickets against ONE question
+-- (migration 115). Structurally the support_requests pattern — uuid pk, nullable
+-- profile FK with ON DELETE SET NULL, status enum, message text, created/updated
+-- — plus the context an admin needs to reproduce the complaint.
+--
+-- The client sends only question_id, message and two enum-constrained hints
+-- (locale, platform). Reporter, status, package and attempt context are ALL
+-- derived by trg_question_report_derive (011), which is also where the
+-- authoritative 5/hour + 20/day throttle lives; the mobile app inserts through
+-- PostgREST directly, so an app-tier limiter would have covered the web only.
+-- -----------------------------------------------------------------------------
+create table if not exists public.question_reports (
+  id                  uuid primary key default gen_random_uuid(),
+  question_id         uuid not null references public.questions (id) on delete cascade,
+  -- Attempt context, kept only when it survives verification in the BEFORE
+  -- INSERT trigger. Nullable so a future non-attempt surface still works.
+  attempt_id          uuid references public.test_attempts (id) on delete set null,
+  attempt_kind        text check (attempt_kind in ('test','practice','daily','olympiad')),
+  -- SNAPSHOT of questions.olympiad_package_id at report time. Denormalised on
+  -- purpose: a pool question can later be archived or re-homed, and the admin
+  -- still has to know which package the child was sitting in.
+  -- NO inline FK: the canonical run order is 001-012,014,015,016,013, so
+  -- public.olympiad_packages does not exist yet. 015 adds the constraint.
+  olympiad_package_id uuid,
+  -- set null, not cascade (support_requests precedent): deleting a child must
+  -- not erase a still-valid report about a broken question.
+  reporter_profile_id uuid references public.profiles (id) on delete set null,
+  message             text not null,
+  -- The locale the reporter was READING. Most reports are about a specific
+  -- rendering ("the English text is wrong"), so an az-only row is useless.
+  locale              public.content_locale not null,
+  platform            public.report_platform not null,
+  app_version         text,
+  status              public.question_report_status not null default 'new',
+  admin_note          text,
+  handled_by          uuid references public.profiles (id) on delete set null,
+  handled_at          timestamptz,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint chk_question_reports_message
+    check (char_length(message) between 1 and 1000),
+  constraint chk_question_reports_app_version
+    check (app_version is null or app_version ~ '^[0-9A-Za-z._+-]{1,32}$'),
+  constraint chk_question_reports_admin_note
+    check (admin_note is null or char_length(admin_note) <= 2000)
+);
+
+comment on table public.question_reports is
+  'User-filed reports against a question. Every context column is derived '
+  'server-side by trg_question_report_derive; the client supplies only the '
+  'message plus two enum-constrained diagnostic hints (locale, platform).';
+
+comment on column public.question_reports.locale is
+  'CLIENT-SUPPLIED diagnostic: the UI language the reporter was reading. The '
+  'database cannot observe it. Enum-constrained, never an authorization input. '
+  'The web server action hardcodes it from its own getLocale() cookie '
+  'resolution; a mobile client self-reports.';
+
+comment on column public.question_reports.platform is
+  'CLIENT-SUPPLIED diagnostic (see locale). A tampered client could claim the '
+  'wrong platform; the consequence is a mislabelled admin row, nothing more.';
+
+comment on column public.question_reports.olympiad_package_id is
+  'Snapshot of questions.olympiad_package_id at report time, not a live join: '
+  'a pool question can later be archived or moved, and test_attempts carries no '
+  'package column, so the question row is the only source at insert time.';
+
+-- -----------------------------------------------------------------------------
 -- audit_logs : immutable, append-only trail of sensitive actions.
 -- No updates/deletes are permitted (RLS in 010; append-only intent).
 -- -----------------------------------------------------------------------------

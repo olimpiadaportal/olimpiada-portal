@@ -37,13 +37,13 @@ import { SelectField } from "./SelectField";
 import { ArenaButton, BackBar, Eyebrow, Notice, Panel, tint, useArena } from "./ui";
 
 export function TestSetupScreen({ subjectId }: { subjectId: string }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { arena } = useArena();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const accessQ = useSubjectAccess();
-  const topicsQ = useSetupTopics(subjectId);
+  const topicsQ = useSetupTopics(subjectId, locale);
 
   const [topicId, setTopicId] = useState("");
   const [subId, setSubId] = useState("");

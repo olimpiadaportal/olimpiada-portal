@@ -484,6 +484,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Hər fənnin öz ödəniş dövrü var. Bir fənnin dövrünü dəyişmək digərlərinə təsir etmir.",
     "plan.fromPrice": "{price}-dan / {cycle}",
     "plan.removeAria": "{subject} fənnini seçimdən çıxar",
+    "plan.removeSubject": "Fənni ləğv et",
     "plan.perSubjectHint": "Hər fənn üçün ayrıca ödəniş dövrü seçin.",
     "subjedit.pendingPlanChange": "Dövr dəyişikliyi",
     "subjedit.planChangeLine": "{subject}: {from} → {to} ({date} tarixindən)",
@@ -1709,11 +1710,34 @@ export const messages: Record<Locale, Record<string, string>> = {
     "test.review.your": "Sənin seçimin",
     "test.review.correctAnswer": "Düzgün cavab",
     "test.review.explanation": "İzah",
+    "test.review.explAzOnly": "Yalnız Azərbaycan dilində",
+    "test.review.explAzNote":
+      "Bu izah hələ tərcümə olunmayıb, ona görə orijinal Azərbaycan mətni göstərilir.",
     "test.review.backToResult": "Nəticəyə qayıt",
     "test.review.filterAll": "Hamısı",
     "test.review.filterCorrect": "Düzgün",
     "test.review.filterWrong": "Səhv",
     "test.review.filterSkipped": "Buraxılmış",
+    // Report a problem (migration 115) — shown on the runner and the review
+    // screen; the same dictionary feeds the mobile sheet.
+    "test.report.action": "Problem bildir",
+    "test.report.title": "Sualla bağlı problem bildir",
+    "test.report.intro":
+      "Bu sualda nə səhvdir? Qısaca yaz — məsələn, düzgün cavab səhvdir, yazı xətası var və ya şəkil görünmür.",
+    "test.report.label": "Problemi təsvir et",
+    "test.report.placeholder": "Məsələn: düzgün cavab B olmalıdır.",
+    "test.report.remaining": "{n} simvol qalıb",
+    "test.report.cancel": "Ləğv et",
+    "test.report.submit": "Göndər",
+    "test.report.sending": "Göndərilir…",
+    "test.report.emptyErr": "Zəhmət olmasa, problemi qısaca yaz.",
+    "test.report.successTitle": "Bildiriş göndərildi",
+    "test.report.successBody": "Təşəkkür edirik! Sualı yoxlayacağıq.",
+    "test.report.done": "Bağla",
+    "test.report.err.generic": "Bildiriş göndərilmədi. Bir azdan yenidən cəhd et.",
+    "test.report.err.duplicate": "Bu sualı artıq bildirmisən — baxılır.",
+    "test.report.err.tooMany":
+      "Çox sayda bildiriş göndərdin. Bir az sonra yenidən cəhd et.",
     // Child profile — read-only school details
     "prof2.schoolInfo": "Məktəb məlumatları",
     "prof2.schoolInfoHint": "Bu məlumatları yalnız valideynin dəyişə bilər.",
@@ -2203,6 +2227,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Every subject has its own billing cycle. Changing one never changes another.",
     "plan.fromPrice": "from {price} / {cycle}",
     "plan.removeAria": "Remove {subject} from your selection",
+    "plan.removeSubject": "Remove subject",
     "plan.perSubjectHint": "Pick a billing cycle for each subject.",
     "subjedit.pendingPlanChange": "Cycle change",
     "subjedit.planChangeLine": "{subject}: {from} → {to} (from {date})",
@@ -3409,11 +3434,36 @@ export const messages: Record<Locale, Record<string, string>> = {
     "test.review.your": "Your choice",
     "test.review.correctAnswer": "Correct answer",
     "test.review.explanation": "Explanation",
+    "test.review.explAzOnly": "Azerbaijani only",
+    "test.review.explAzNote":
+      "This explanation has not been translated yet, so the original Azerbaijani text is shown.",
     "test.review.backToResult": "Back to result",
     "test.review.filterAll": "All",
     "test.review.filterCorrect": "Correct",
     "test.review.filterWrong": "Wrong",
     "test.review.filterSkipped": "Skipped",
+    // Report a problem (migration 115) — shown on the runner and the review
+    // screen; the same dictionary feeds the mobile sheet.
+    "test.report.action": "Report a problem",
+    "test.report.title": "Report a problem with this question",
+    "test.report.intro":
+      "What is wrong with this question? A short note is enough — for example the answer key looks wrong, there is a typo, or the image does not load.",
+    "test.report.label": "Describe the problem",
+    "test.report.placeholder": "For example: the correct answer should be B.",
+    "test.report.remaining": "{n} characters left",
+    "test.report.cancel": "Cancel",
+    "test.report.submit": "Send",
+    "test.report.sending": "Sending…",
+    "test.report.emptyErr": "Please describe the problem first.",
+    "test.report.successTitle": "Report sent",
+    "test.report.successBody": "Thanks! We will check this question.",
+    "test.report.done": "Close",
+    "test.report.err.generic":
+      "The report could not be sent. Please try again in a moment.",
+    "test.report.err.duplicate":
+      "You have already reported this question; it is being reviewed.",
+    "test.report.err.tooMany":
+      "You have sent a lot of reports. Please try again a little later.",
     // Child profile — read-only school details
     "prof2.schoolInfo": "School details",
     "prof2.schoolInfoHint": "Only your parent can change these details.",
@@ -3906,6 +3956,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "У каждого предмета свой период оплаты. Изменение одного не влияет на другие.",
     "plan.fromPrice": "от {price} / {cycle}",
     "plan.removeAria": "Убрать предмет «{subject}» из выбора",
+    "plan.removeSubject": "Убрать предмет",
     "plan.perSubjectHint": "Выберите период оплаты для каждого предмета.",
     "subjedit.pendingPlanChange": "Смена периода",
     "subjedit.planChangeLine": "{subject}: {from} → {to} (с {date})",
@@ -5113,11 +5164,36 @@ export const messages: Record<Locale, Record<string, string>> = {
     "test.review.your": "Твой выбор",
     "test.review.correctAnswer": "Правильный ответ",
     "test.review.explanation": "Объяснение",
+    "test.review.explAzOnly": "Только на азербайджанском",
+    "test.review.explAzNote":
+      "Это объяснение ещё не переведено, поэтому показан оригинальный текст на азербайджанском.",
     "test.review.backToResult": "К результату",
     "test.review.filterAll": "Все",
     "test.review.filterCorrect": "Верные",
     "test.review.filterWrong": "Неверные",
     "test.review.filterSkipped": "Пропущенные",
+    // Report a problem (migration 115) — shown on the runner and the review
+    // screen; the same dictionary feeds the mobile sheet.
+    "test.report.action": "Сообщить о проблеме",
+    "test.report.title": "Сообщить о проблеме в вопросе",
+    "test.report.intro":
+      "Что не так с этим вопросом? Достаточно короткой заметки — например, неверный правильный ответ, опечатка или не загружается картинка.",
+    "test.report.label": "Опиши проблему",
+    "test.report.placeholder": "Например: правильный ответ должен быть B.",
+    "test.report.remaining": "Осталось символов: {n}",
+    "test.report.cancel": "Отмена",
+    "test.report.submit": "Отправить",
+    "test.report.sending": "Отправляем…",
+    "test.report.emptyErr": "Сначала опиши проблему.",
+    "test.report.successTitle": "Сообщение отправлено",
+    "test.report.successBody": "Спасибо! Мы проверим этот вопрос.",
+    "test.report.done": "Закрыть",
+    "test.report.err.generic":
+      "Не удалось отправить сообщение. Попробуй ещё раз через минуту.",
+    "test.report.err.duplicate":
+      "Ты уже сообщал об этом вопросе — он на рассмотрении.",
+    "test.report.err.tooMany":
+      "Слишком много сообщений. Попробуй немного позже.",
     // Child profile — read-only school details
     "prof2.schoolInfo": "Данные о школе",
     "prof2.schoolInfoHint": "Эти данные может изменить только родитель.",

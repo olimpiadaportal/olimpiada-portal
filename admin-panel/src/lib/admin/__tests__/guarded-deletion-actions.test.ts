@@ -297,24 +297,42 @@ describe("an unconfirmed deletion never becomes a destructive call", () => {
     blocks: ["del.hint.confirmationMismatch"],
   };
 
-  it("package delete refuses a missing token without querying at all", async () => {
+  // MIGRATION 113 (owner decision): the package delete is the ONE destructive
+  // action with no typed confirmation code. These cases pin that removal from
+  // both sides — the token is genuinely gone here, and it is genuinely still
+  // required everywhere else, so a future change cannot widen this quietly.
+  it("package delete needs no token at all", async () => {
     const { deleteOlympiadPackageAction } = await olympiad();
-    const res = await deleteOlympiadPackageAction(null, form({ __id: PKG, __code: "" }));
-    expect(res).toEqual(MISMATCH);
-    expect(rpcCalls).toHaveLength(0);
-    // An empty token is refused on its own terms — not even the code lookup runs.
-    expect(fromCalls).toHaveLength(0);
+    const res = await deleteOlympiadPackageAction(null, form({ __id: PKG }));
+    expect(res).toMatchObject({ ok: true, message: "del.done.packageDeleted" });
+    expect(rpcCalls).toHaveLength(1);
+    // No pre-flight CODE LOOKUP: with nothing to compare, reading the row for
+    // its code would be a request that decides nothing. (fromCalls also carries
+    // the post-delete media sweep, so this names the table rather than counting.)
+    expect(fromCalls).not.toContain("olympiad_packages");
   });
 
-  it("package delete refuses a wrong token before the RPC", async () => {
+  it("package delete ignores a token even when one is posted", async () => {
+    // The RPC arity no longer accepts it (113 dropped the two-argument form),
+    // so forwarding a stray __code would make the call fail to resolve.
     const { deleteOlympiadPackageAction } = await olympiad();
     const res = await deleteOlympiadPackageAction(
       null,
       form({ __id: PKG, __code: "riyaziyyat-olimpiada-2025" }),
     );
-    expect(res).toEqual(MISMATCH);
+    expect(res).toMatchObject({ ok: true });
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0].args).toEqual({ p_package_id: PKG });
+    expect(rpcCalls[0].args).not.toHaveProperty("p_expected_code");
+  });
+
+  it("still refuses a malformed package id without any call", async () => {
+    // Dropping the token must not drop the id check with it.
+    const { deleteOlympiadPackageAction } = await olympiad();
+    const res = await deleteOlympiadPackageAction(null, form({ __id: "not-a-uuid" }));
+    expect(res).toMatchObject({ ok: false });
     expect(rpcCalls).toHaveLength(0);
-    expect(fromCalls).toEqual(["olympiad_packages"]);
+    expect(fromCalls).toHaveLength(0);
   });
 
   it("grade pool delete refuses a wrong token on both branches", async () => {
@@ -339,22 +357,39 @@ describe("an unconfirmed deletion never becomes a destructive call", () => {
     expect(rpcCalls).toHaveLength(0);
   });
 
-  it("a correct token reaches the RPC, which is handed the token again", async () => {
-    const { deleteOlympiadPackageAction } = await olympiad();
-    const res = await deleteOlympiadPackageAction(null, form({ __id: PKG, __code: PKG_CODE }));
-    expect(res).toMatchObject({ ok: true, message: "del.done.packageDeleted" });
-    expect(rpcCalls).toHaveLength(1);
-    // The pre-check is a cheap refusal, NOT a replacement: the database still
-    // compares p_expected_code under its own lock.
-    expect(rpcCalls[0].args.p_expected_code).toBe(PKG_CODE);
-  });
+  // The siblings KEPT their tokens. If this ever fails, migration 113's narrow
+  // scope has been widened past what the owner asked for.
+  it("every sibling still refuses a wrong token before its RPC", async () => {
+    const {
+      deleteOlympiadGradePoolAction,
+      deleteOlympiadQuestionsAction,
+    } = await olympiad();
 
-  it("an unreadable code falls through to the RPC instead of blaming the typist", async () => {
-    // A package that no longer exists must answer "not found", not "wrong code".
-    codeRow = null;
-    const { deleteOlympiadPackageAction } = await olympiad();
-    await deleteOlympiadPackageAction(null, form({ __id: PKG, __code: PKG_CODE }));
-    expect(rpcCalls).toHaveLength(1);
+    const pool = await deleteOlympiadGradePoolAction(
+      null,
+      form({ __id: PKG, grade_id: GRADE, __code: "wrong", drop_grade: "0" }),
+    );
+    expect(pool).toEqual(MISMATCH);
+
+    // The grade-pool refusal above is the token gate on its own: same call,
+    // right token, would reach the RPC. Nothing was dispatched.
+    expect(rpcCalls).toHaveLength(0);
+
+    // The bulk purge keeps its token too — asserted on the SIGNATURE it sends,
+    // since its own input validation runs first and would mask a token bug.
+    const bulk = await deleteOlympiadQuestionsAction(
+      null,
+      form({ __package_id: PKG, ids: GRADE, __code: PKG_CODE }),
+    );
+    expect(bulk).toBeTruthy();
+    // The stub records `name`, not `fn`. Reading the wrong property made find()
+    // return undefined, and the `if (purge)` guard that used to wrap this then
+    // skipped the assertion entirely — green, and testing nothing. The lookup
+    // is asserted unconditionally now so a missing call fails instead of
+    // quietly passing.
+    const purge = rpcCalls.find((c) => c.name === "admin_delete_olympiad_questions");
+    expect(purge, "the bulk purge RPC was never called").toBeDefined();
+    expect(purge!.args).toHaveProperty("p_expected_code");
   });
 });
 

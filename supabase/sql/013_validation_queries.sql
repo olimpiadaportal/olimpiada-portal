@@ -24,6 +24,7 @@ with expected(name) as (
     ('profiles'),('roles'),('permissions'),('role_permissions'),('profile_roles'),
     ('parents'),('students'),('parent_student_links'),('child_login_attempts'),
     ('districts'),('city_districts'),('schools'),('grades'),('subjects'),('topics'),('subtopics'),
+    ('topic_translations'),('subtopic_translations'),
     ('question_types'),('difficulty_levels'),('olympiad_types'),('sources'),
     ('questions'),('question_translations'),('answer_options'),
     ('answer_option_translations'),('question_explanations'),('tests'),('test_questions'),
@@ -454,7 +455,7 @@ select '30_wallpapers_single_media_fk' as check_name,
 --     executable by anon.
 select '31_analytics_rpcs_secure' as check_name,
        case when has_function_privilege('anon',
-                   'public.get_child_subject_dashboard(uuid,uuid,int,text)', 'EXECUTE') = false
+                   'public.get_child_subject_dashboard(uuid,uuid,int,text,text)', 'EXECUTE') = false
              and has_function_privilege('anon',
                    'public.get_admin_platform_overview()', 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
@@ -705,12 +706,12 @@ select '49_test_engine_and_mcq_rules' as check_name,
        case when to_regprocedure('public.start_topic_test_attempt(uuid,uuid[],uuid[])') is not null
              and to_regprocedure('public.get_test_attempt(uuid,text)') is not null
              and to_regprocedure('public.save_test_answers(uuid,jsonb)') is not null
-             and to_regprocedure('public.submit_test_attempt(uuid,jsonb)') is not null
+             and to_regprocedure('public.submit_test_attempt(uuid,jsonb,text)') is not null
              and to_regprocedure('public.cancel_test_attempt(uuid)') is not null
              and to_regprocedure('public.get_test_review(uuid,text)') is not null
              and has_function_privilege('anon','public.start_topic_test_attempt(uuid,uuid[],uuid[])','EXECUTE') = false
              and has_function_privilege('authenticated','public.expire_stale_test_attempts()','EXECUTE') = false
-             and has_function_privilege('authenticated','public.test_attempt_result(uuid)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.test_attempt_result(uuid,text)','EXECUTE') = false
              and exists (select 1 from pg_indexes
                           where schemaname='public' and indexname='uq_test_attempts_open_test')
              and exists (select 1 from information_schema.columns
@@ -946,7 +947,7 @@ select '58_round18_engine_guarantees' as check_name,
              and exists (select 1 from information_schema.columns
                           where table_schema='public' and table_name='olympiad_packages'
                             and column_name='duration_minutes')
-             and position('skipped' in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
+             and position('skipped' in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text,text)'::regprocedure)) > 0
              and pg_get_function_result('public.get_leaderboard(text,text,uuid,text,int)'::regprocedure) not like '%anon_tag%'
              and pg_get_function_result('public.get_leaderboard(text,text,uuid,text,int)'::regprocedure) like '%grade_level%'
             then 'PASS' else 'FAIL' end as status;
@@ -980,11 +981,11 @@ select '60_analytics_module_scope' as check_name,
                    where n.nspname = 'public'
                      and p.proname = 'get_child_subject_dashboard') = 1
              and position('ta.kind = ''olympiad'''
-                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
+                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text,text)'::regprocedure)) > 0
              and position('ta.kind <> ''olympiad'''
-                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
+                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text,text)'::regprocedure)) > 0
              and position('per_package'
-                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text)'::regprocedure)) > 0
+                          in pg_get_functiondef('public.get_child_subject_dashboard(uuid,uuid,int,text,text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
 -- 61) Daily rounds engine (migrations 052/056/057/083): per-student rated
@@ -1511,11 +1512,11 @@ select '86_payment_mode_parity' as check_name,
 --     200 OK — is gone from both.
 select '87_answer_payload_cap' as check_name,
        case when position('v_n > 1000;' in
-                 pg_get_functiondef('public.submit_test_attempt(uuid,jsonb)'::regprocedure)) > 0
+                 pg_get_functiondef('public.submit_test_attempt(uuid,jsonb,text)'::regprocedure)) > 0
              and position('v_n > 1000;' in
                  pg_get_functiondef('public.save_test_answers(uuid,jsonb)'::regprocedure)) > 0
              and position('v_n > 100;' in
-                 pg_get_functiondef('public.submit_test_attempt(uuid,jsonb)'::regprocedure)) = 0
+                 pg_get_functiondef('public.submit_test_attempt(uuid,jsonb,text)'::regprocedure)) = 0
              and position('v_n > 100;' in
                  pg_get_functiondef('public.save_test_answers(uuid,jsonb)'::regprocedure)) = 0
             then 'PASS' else 'FAIL' end as status;
@@ -1966,7 +1967,7 @@ with fns (sig, admin_facing) as (values
   ('public.admin_preview_olympiad_package_deletion(uuid)', true),
   ('public.admin_preview_olympiad_grade_pool_deletion(uuid,uuid)', true),
   ('public.admin_preview_subject_deletion(uuid)', true),
-  ('public.admin_delete_olympiad_package(uuid,text)', true),
+  ('public.admin_delete_olympiad_package(uuid)', true),
   ('public.admin_delete_olympiad_grade_pool(uuid,uuid,text,boolean)', true),
   ('public.admin_purge_subject_questions(uuid,text)', true),
   ('public.admin_delete_subject(uuid,text)', true),
@@ -2254,6 +2255,233 @@ select '101_olympiad_bulk_purge_scoped' as check_name,
        (select count(*) filter (where not ok) from fn_ok) as misconfigured,
        (select count(*) filter (where not ok) from probe_ok) as failed_invariants;
 
+-- 102) Trilingual curriculum (migration 114). topics.name / subtopics.name stay
+--      the AZ source of truth; topic_translations / subtopic_translations carry
+--      EN and RU only. What each part of this check defends:
+--
+--        * the two tables must exist WITH RLS and the SAME public-read /
+--          admin-write posture as their parent tables — a narrower SELECT would
+--          make anon and public surfaces silently fall back to Azerbaijani,
+--          which is precisely the bug 114 exists to fix;
+--        * ck_*_not_az is the whole "one home per locale" design. An az row here
+--          would be a second, drifting copy of topics.name — and the fallback
+--          would then depend on which copy a reader happened to hit;
+--        * ck_*_name_not_blank is what makes coalesce(tr.name, base.name) unable
+--          to render an EMPTY label (the admin action deletes an emptied EN/RU
+--          field instead of storing '');
+--        * HALF a translation is worse than none: a node carrying en but no ru
+--          reads correctly in English and silently Azerbaijani in Russian, and
+--          nothing in the product reports it;
+--        * the three RPCs must exist at their NEW arities AND actually join the
+--          translations tables. A body that kept the signature but lost the join
+--          passes every signature probe and still returns Azerbaijani. The OLD
+--          arities must be gone: a defaulted parameter ADDS an overload, and
+--          every existing caller then fails with "function is not unique".
+with cons (c) as (values
+  ('uq_topic_locale'), ('ck_topic_tr_not_az'), ('ck_topic_tr_name_not_blank'),
+  ('uq_subtopic_locale'), ('ck_subtopic_tr_not_az'), ('ck_subtopic_tr_name_not_blank')
+), fns (sig, auth_exec) as (values
+  -- test_attempt_result stays service-role only; the other two are learner /
+  -- parent facing and are authorized in-body.
+  ('public.test_attempt_result(uuid,text)', false),
+  ('public.submit_test_attempt(uuid,jsonb,text)', true),
+  ('public.get_child_subject_dashboard(uuid,uuid,int,text,text)', true)
+), old_sigs (sig) as (values
+  ('public.test_attempt_result(uuid)'),
+  ('public.submit_test_attempt(uuid,jsonb)'),
+  ('public.get_child_subject_dashboard(uuid,uuid,int,text)')
+), probes (sig, needle) as (values
+  ('public.test_attempt_result(uuid,text)', 'topic_translations'),
+  ('public.get_child_subject_dashboard(uuid,uuid,int,text,text)', 'topic_translations'),
+  ('public.get_child_subject_dashboard(uuid,uuid,int,text,text)', 'subtopic_translations'),
+  -- The mistakes breakdown must group on IDS: a name-based key is
+  -- locale-dependent and merges two distinct same-named subtopics.
+  ('public.get_child_subject_dashboard(uuid,uuid,int,text,text)', 'group by t.id, st.id'),
+  -- submit does not join anything itself — it must PASS the locale on.
+  ('public.submit_test_attempt(uuid,jsonb,text)', 'test_attempt_result(p_attempt_id, p_locale)')
+), fn_ok as (
+  select f.sig,
+         -- CASE, not AND: has_function_privilege() errors on a missing function,
+         -- and this check has to REPORT that, not abort the file.
+         case when to_regprocedure(f.sig) is null then false
+              else (select not has_function_privilege('anon', p.oid, 'EXECUTE')
+                      and has_function_privilege('authenticated', p.oid, 'EXECUTE') = f.auth_exec
+                    from pg_proc p where p.oid = to_regprocedure(f.sig))
+         end as ok
+  from fns f
+), probe_ok as (
+  select p.sig, p.needle,
+         case when to_regprocedure(p.sig) is null then false
+              else position(p.needle in pg_get_functiondef(to_regprocedure(p.sig))) > 0
+         end as ok
+  from probes p
+)
+select '102_curriculum_translations' as check_name,
+       case when to_regclass('public.topic_translations') is not null
+             and to_regclass('public.subtopic_translations') is not null
+             and (select count(*) from pg_class c
+                    join pg_namespace ns on ns.oid = c.relnamespace
+                   where ns.nspname = 'public'
+                     and c.relname in ('topic_translations', 'subtopic_translations')
+                     and c.relrowsecurity) = 2
+             and (select count(*) from pg_policies
+                   where schemaname = 'public'
+                     and tablename in ('topic_translations', 'subtopic_translations')) = 4
+             and (select count(*) from cons
+                   where exists (select 1 from pg_constraint pc where pc.conname = cons.c)) = 6
+             -- az lives in topics.name / subtopics.name and nowhere else.
+             and not exists (select 1 from public.topic_translations where locale = 'az')
+             and not exists (select 1 from public.subtopic_translations where locale = 'az')
+             -- No empty label can reach a reader.
+             and not exists (select 1 from public.topic_translations where btrim(name) = '')
+             and not exists (select 1 from public.subtopic_translations where btrim(name) = '')
+             -- Every translated node carries BOTH en and ru.
+             and not exists (select 1 from public.topic_translations
+                              group by topic_id having count(distinct locale) <> 2)
+             and not exists (select 1 from public.subtopic_translations
+                              group by subtopic_id having count(distinct locale) <> 2)
+             -- Coverage of the 2026 curriculum tree (260 / 1077). Olympiad-scoped
+             -- topics are importer artefacts and are deliberately NOT counted.
+             and (select count(*) from public.topics t
+                   where t.scope = 'exam'
+                     and exists (select 1 from public.topic_translations tr
+                                  where tr.topic_id = t.id and tr.locale = 'en')
+                     and exists (select 1 from public.topic_translations tr
+                                  where tr.topic_id = t.id and tr.locale = 'ru')) >= 260
+             and (select count(*) from public.subtopics st
+                    join public.topics t on t.id = st.topic_id and t.scope = 'exam'
+                   where exists (select 1 from public.subtopic_translations sr
+                                  where sr.subtopic_id = st.id and sr.locale = 'en')
+                     and exists (select 1 from public.subtopic_translations sr
+                                  where sr.subtopic_id = st.id and sr.locale = 'ru')) >= 1077
+             and (select count(*) filter (where ok) from fn_ok) = 3
+             and (select count(*) filter (where not ok) from probe_ok) = 0
+             and (select count(*) from old_sigs
+                   where to_regprocedure(old_sigs.sig) is not null) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) filter (where not ok) from fn_ok)    as rpc_misconfigured,
+       (select count(*) filter (where not ok) from probe_ok) as failed_invariants,
+       (select count(*) from old_sigs
+         where to_regprocedure(old_sigs.sig) is not null)    as stale_overloads;
+
+
+-- 103) Question reports (migration 115). The feature's whole safety argument is
+--      that the CLIENT supplies only a question id, a message and two
+--      enum-constrained hints, so this check defends the machinery that makes
+--      that true:
+--
+--        * both enums must carry EXACTLY their label sets. Application code
+--          whitelists against these values and nothing else, so a widened enum
+--          is a widened trust boundary;
+--        * RLS must be on with EXACTLY three policies and NO delete policy, and
+--          `authenticated` must not hold the blanket DELETE grant 010 hands out
+--          — a report is evidence, and its subject is the person who filed it;
+--        * uq_question_reports_open_per_reporter must keep its
+--          status in ('new','in_review') PREDICATE. Without it the index still
+--          exists and still looks right, but it blocks a second report on the
+--          same question FOREVER, long after the first was resolved;
+--        * both triggers must be ATTACHED. A dropped derive trigger fails
+--          nothing visible: inserts keep succeeding and every context column
+--          becomes whatever the client sent, reporter_profile_id included;
+--        * question_report_derive and submit_question_report must stay SECURITY
+--          DEFINER with a pinned search_path and no anon EXECUTE (derive reads
+--          questions/test_attempts with RLS bypassed, which is exactly why).
+--          question_report_freeze is deliberately NOT definer — it touches no
+--          table — but its search_path is pinned all the same;
+--        * body probes, because a body can lose a guard while keeping its
+--          signature: current_profile_id( proves the reporter is still resolved
+--          server-side, 'rate limited' proves the throttle survived, and
+--          old.message proves an admin still cannot rewrite a report.
+with enums (typname, labels) as (values
+  ('question_report_status', 'dismissed,in_review,new,resolved'),
+  ('report_platform', 'android,ios,web')
+), enum_ok as (
+  select e.typname,
+         coalesce((select string_agg(l.enumlabel, ',' order by l.enumlabel)
+                     from pg_enum l
+                     join pg_type ty on ty.oid = l.enumtypid
+                     join pg_namespace ns on ns.oid = ty.typnamespace
+                    where ns.nspname = 'public' and ty.typname = e.typname), '')
+           = e.labels as ok
+  from enums e
+), fns (sig, definer) as (values
+  ('public.submit_question_report(uuid,uuid,text,text,text,text)', true),
+  ('public.question_report_derive()', true),
+  -- Least privilege: the freeze trigger reads no table, so it stays INVOKER.
+  ('public.question_report_freeze()', false)
+), fn_ok as (
+  select f.sig,
+         -- CASE, not AND: has_function_privilege() errors on a missing
+         -- function, and this check has to REPORT that, not abort the file.
+         case when to_regprocedure(f.sig) is null then false
+              else (select p.prosecdef = f.definer
+                      and coalesce(p.proconfig, '{}'::text[])
+                            @> array['search_path=public, pg_temp']
+                      and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                    from pg_proc p where p.oid = to_regprocedure(f.sig))
+         end as ok
+  from fns f
+), probes (sig, needle) as (values
+  ('public.question_report_derive()', 'current_profile_id('),
+  ('public.question_report_derive()', 'rate limited'),
+  ('public.question_report_freeze()', 'old.message')
+), probe_ok as (
+  select p.sig, p.needle,
+         case when to_regprocedure(p.sig) is null then false
+              else position(p.needle in pg_get_functiondef(to_regprocedure(p.sig))) > 0
+         end as ok
+  from probes p
+), tbl_ok as (
+  -- has_table_privilege() RAISES on a missing table, so it is guarded the
+  -- same way: a missing table has to FAIL this check, not abort the file.
+  select case when to_regclass('public.question_reports') is null then false
+              else not has_table_privilege('authenticated',
+                                           'public.question_reports', 'DELETE')
+         end as ok
+)
+select '103_question_reports_hardened' as check_name,
+       case when to_regclass('public.question_reports') is not null
+             and (select count(*) filter (where not ok) from enum_ok) = 0
+             and (select count(*) from pg_class c
+                    join pg_namespace ns on ns.oid = c.relnamespace
+                   where ns.nspname = 'public'
+                     and c.relname = 'question_reports'
+                     and c.relrowsecurity) = 1
+             and (select count(*) from pg_policies
+                   where schemaname = 'public' and tablename = 'question_reports') = 3
+             and (select count(*) from pg_policies
+                   where schemaname = 'public' and tablename = 'question_reports'
+                     and policyname in
+                         ('qreports_select','qreports_insert','qreports_update')) = 3
+             and not exists (select 1 from pg_policies
+                              where schemaname = 'public'
+                                and tablename = 'question_reports' and cmd = 'DELETE')
+             and (select ok from tbl_ok)
+             -- The partial predicate IS the duplicate rule.
+             and exists (select 1 from pg_indexes
+                          where schemaname = 'public'
+                            and indexname = 'uq_question_reports_open_per_reporter'
+                            and indexdef like '%in_review%')
+             and (select count(*) from pg_trigger
+                   where tgrelid = to_regclass('public.question_reports')
+                     and tgname in ('trg_question_report_derive',
+                                    'trg_question_report_freeze',
+                                    'trg_set_updated_at')) = 3
+             and (select count(*) filter (where not ok) from fn_ok) = 0
+             and (select count(*) filter (where not ok) from probe_ok) = 0
+             -- The one function an app is supposed to call.
+             and to_regprocedure(
+                   'public.submit_question_report(uuid,uuid,text,text,text,text)')
+                 is not null
+             and has_function_privilege('authenticated',
+                   'public.submit_question_report(uuid,uuid,text,text,text,text)',
+                   'EXECUTE')
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) filter (where not ok) from enum_ok)  as bad_enums,
+       (select count(*) filter (where not ok) from fn_ok)    as misconfigured_functions,
+       (select count(*) filter (where not ok) from probe_ok) as failed_invariants,
+       (select count(*) from pg_policies
+         where schemaname = 'public' and tablename = 'question_reports') as policy_count;
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

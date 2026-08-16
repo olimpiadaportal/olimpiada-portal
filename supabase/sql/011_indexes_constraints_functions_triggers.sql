@@ -211,6 +211,7 @@ begin
   foreach t in array array[
     'profiles','roles','permissions','parents','students','parent_student_links',
     'districts','city_districts','schools','grades','subjects','topics','subtopics',
+    'topic_translations','subtopic_translations',
     'question_types','difficulty_levels','olympiad_types','sources',
     'questions','question_translations','answer_options','answer_option_translations',
     'question_explanations','tests',
@@ -219,6 +220,7 @@ begin
     'achievements','question_analytics',
     'subscription_plans','subscriptions','payments','coupons',
     'notification_templates','notification_deliveries','support_requests',
+    'question_reports',
     'admin_actions','content_reviews','media_assets','system_settings','feature_flags'
   ]
   loop
@@ -4980,11 +4982,17 @@ grant execute on function public.bulk_insert_olympiad_package_questions(uuid, js
 -- authorization (service role / admin / linked parent / the child itself);
 -- EXECUTE revoked from anon.
 -- -----------------------------------------------------------------------------
+-- Migration 114 added p_locale. A defaulted parameter creates a SECOND
+-- overload rather than replacing the function, and every existing call at the
+-- old arity then fails 'function is not unique' — so the old signature is
+-- dropped first (a no-op on a from-zero build).
+drop function if exists public.get_child_subject_dashboard(uuid, uuid, int, text);
 create or replace function public.get_child_subject_dashboard(
   p_student_profile_id uuid,
   p_subject_id uuid default null,
   p_days int default 30,
-  p_scope text default 'tests'
+  p_scope text default 'tests',
+  p_locale text default 'az'
 )
 returns jsonb
 language plpgsql
@@ -4997,6 +5005,10 @@ declare
   -- Module scope (migration 051): 'tests' (default) or 'olympiads'; unknown
   -- values coerce to 'tests' so pre-051 callers keep working unchanged.
   v_scope text := case when p_scope = 'olympiads' then 'olympiads' else 'tests' end;
+  -- Same clamp the question-body RPCs use; an unknown tag reads as Azerbaijani
+  -- (migration 114).
+  v_loc public.content_locale :=
+    (case when p_locale in ('az', 'en', 'ru') then p_locale else 'az' end)::public.content_locale;
   v_result jsonb;
 begin
   -- Authorization: service role, admin, the linked parent, or the child itself.
@@ -5073,45 +5085,59 @@ begin
     ),
     'per_topic', (
       -- zero-answered topics excluded (046): strongest/weakest must never rank
-      -- a topic nobody actually answered.
+      -- a topic nobody actually answered. topic_id is part of the group key, so
+      -- localizing the label (114) cannot merge two distinct topics.
       select coalesce(jsonb_agg(jsonb_build_object(
                'topic_id', x.topic_id, 'topic', x.tname,
                'answered', x.answ, 'correct', x.cor,
                'wrong', x.answ - x.cor, 'skipped', x.skp,
                'accuracy', round(x.cor::numeric / nullif(x.answ, 0) * 100, 1))
                order by x.answ desc, x.tname), '[]'::jsonb)
-        from (select a.topic_id, t.name as tname,
+        from (select a.topic_id, coalesce(ttr.name, t.name) as tname,
                      count(*) filter (where a.answered) answ,
                      count(*) filter (where a.is_correct) cor,
                      count(*) filter (where not a.answered) skp
                 from ans a
                 join public.topics t on t.id = a.topic_id
-               group by a.topic_id, t.name
+                left join public.topic_translations ttr
+                       on ttr.topic_id = t.id and ttr.locale = v_loc
+               group by a.topic_id, coalesce(ttr.name, t.name)
               having count(*) filter (where a.answered) > 0) x
     ),
     'mistakes', (
+      -- Grouped by t.id / st.id, NOT by the names (114). A name-based key would
+      -- become locale-dependent — the same rows would merge differently in EN
+      -- than in AZ — and it already merged two genuinely distinct subtopics that
+      -- happen to share a name. The coalesced names ride along as extra group
+      -- keys only because they are functionally determined by the ids.
       select coalesce(jsonb_agg(jsonb_build_object(
                'topic', y.tname, 'subtopic', y.sname,
                'wrong', y.wrong,
                'accuracy', round(y.cor::numeric / nullif(y.answ, 0) * 100, 1))
                order by y.wrong desc), '[]'::jsonb)
-        from (select t.name as tname,
-                     coalesce(st.name, '—') as sname,
+        from (select coalesce(ttr.name, t.name) as tname,
+                     coalesce(str.name, st.name, '—') as sname,
                      count(*) filter (where a.answered) answ,
                      count(*) filter (where a.is_correct) cor,
                      count(*) filter (where a.answered and not a.is_correct) wrong
                 from ans a
                 join public.topics t on t.id = a.topic_id
+                left join public.topic_translations ttr
+                       on ttr.topic_id = t.id and ttr.locale = v_loc
                 left join public.subtopics st on st.id = a.subtopic_id
-               group by t.name, coalesce(st.name, '—')
+                left join public.subtopic_translations str
+                       on str.subtopic_id = st.id and str.locale = v_loc
+               group by t.id, st.id,
+                        coalesce(ttr.name, t.name),
+                        coalesce(str.name, st.name, '—')
               having count(*) filter (where a.answered and not a.is_correct) > 0
                order by count(*) filter (where a.answered and not a.is_correct) desc
                limit 10) y
     ),
     'per_package', (
       -- Olympiad scope only (051): per-package breakdown through the attempt
-      -- questions' private-pool link. Title is the az translation (the UI may
-      -- re-localize from its own catalog); '[]' under tests scope.
+      -- questions' private-pool link. Title in the reader's locale with an az
+      -- fallback (114; it used to be hardcoded to az); '[]' under tests scope.
       select coalesce(jsonb_agg(jsonb_build_object(
                'package_id', z.pkg, 'title', z.title,
                'attempts', z.att, 'answered', z.answ, 'correct', z.cor,
@@ -5119,9 +5145,14 @@ begin
                'accuracy', round(z.cor::numeric / nullif(z.answ, 0) * 100, 1))
                order by z.att desc, z.title), '[]'::jsonb)
         from (select a.olympiad_package_id as pkg,
-                     coalesce((select tr.title from public.olympiad_package_translations tr
-                                where tr.olympiad_package_id = a.olympiad_package_id
-                                  and tr.locale = 'az' limit 1), '—') as title,
+                     coalesce(
+                       (select tr.title from public.olympiad_package_translations tr
+                         where tr.olympiad_package_id = a.olympiad_package_id
+                           and tr.locale = v_loc limit 1),
+                       (select tr.title from public.olympiad_package_translations tr
+                         where tr.olympiad_package_id = a.olympiad_package_id
+                           and tr.locale = 'az' limit 1),
+                       '—') as title,
                      count(distinct a.attempt_id) att,
                      count(*) filter (where a.answered) answ,
                      count(*) filter (where a.is_correct) cor,
@@ -5136,16 +5167,17 @@ begin
 end;
 $$;
 
-comment on function public.get_child_subject_dashboard(uuid, uuid, int, text) is
+comment on function public.get_child_subject_dashboard(uuid, uuid, int, text, text) is
   'Per-child analytics over graded attempts in a rolling window, module-scoped '
   '(migration 051): p_scope tests (default; kind<>olympiad) or olympiads (kind=olympiad, '
   'adds per_package). Answer states separated (046): wrong counts only answered-and-'
   'incorrect; skipped is its own metric; accuracy uses answered as the denominator. '
+  'p_locale (az/en/ru, default az) localizes topic/subtopic names and package titles. '
   'Callable by admins, the linked parent, or the child.';
 
-revoke all on function public.get_child_subject_dashboard(uuid, uuid, int, text)
+revoke all on function public.get_child_subject_dashboard(uuid, uuid, int, text, text)
   from public, anon;
-grant execute on function public.get_child_subject_dashboard(uuid, uuid, int, text)
+grant execute on function public.get_child_subject_dashboard(uuid, uuid, int, text, text)
   to authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
@@ -5676,9 +5708,16 @@ $$;
 -- (never from the client array — audit-H5 posture). Idempotent when graded.
 -- Migration 057: daily-round attempts grade against the round's immutable
 -- SNAPSHOT correctness (bank edits after generation can never change history).
+-- Migration 114 added p_locale (passed straight through to the result payload
+-- so the per-topic breakdown comes back in the reader's language). The old
+-- arity is dropped first: a defaulted parameter ADDS an overload instead of
+-- replacing the function, and every 2-argument call would then fail as
+-- ambiguous.
+drop function if exists public.submit_test_attempt(uuid, jsonb);
 create or replace function public.submit_test_attempt(
   p_attempt_id uuid,
-  p_answers    jsonb default null
+  p_answers    jsonb default null,
+  p_locale     text  default 'az'
 )
 returns jsonb
 language plpgsql
@@ -5708,7 +5747,7 @@ begin
 
   -- Idempotent: an already-graded attempt returns its stored result.
   if v_att.status = 'graded' then
-    return public.test_attempt_result(p_attempt_id);
+    return public.test_attempt_result(p_attempt_id, p_locale);
   end if;
   if v_att.status <> 'in_progress' then
     raise exception 'submit: attempt is not in progress' using errcode = 'check_violation';
@@ -5789,13 +5828,24 @@ begin
     raise exception 'daily: already attempted today' using errcode = 'unique_violation';
   end;
 
-  return public.test_attempt_result(p_attempt_id);
+  return public.test_attempt_result(p_attempt_id, p_locale);
 end;
 $$;
 
+comment on function public.submit_test_attempt(uuid, jsonb, text) is
+  'Grades an attempt from the STORED answer rows and returns test_attempt_result. '
+  'Idempotent for a graded attempt. p_locale is passed straight through to the '
+  'result payload so the per-topic breakdown comes back in the reader''s language.';
+
 -- Shared result payload (score + per-question + per-topic breakdown). Internal
 -- helper for submit (and re-reads); owner check lives in the callers.
-create or replace function public.test_attempt_result(p_attempt_id uuid)
+-- Migration 114: p_locale localizes the per-topic names; the old arity is
+-- dropped first so the defaulted parameter cannot leave an ambiguous overload.
+drop function if exists public.test_attempt_result(uuid);
+create or replace function public.test_attempt_result(
+  p_attempt_id uuid,
+  p_locale     text default 'az'
+)
 returns jsonb
 language sql
 stable
@@ -5816,18 +5866,30 @@ as $$
       select coalesce(jsonb_agg(jsonb_build_object(
                'topic_id', b.tid, 'name', b.tname, 'total', b.total, 'correct', b.correct)), '[]'::jsonb)
       from (
-        select q.topic_id as tid, tp.name as tname,
+        select q.topic_id as tid,
+               coalesce(ttr.name, tp.name) as tname,
                count(*) as total,
                count(*) filter (where taa.is_correct) as correct
         from public.test_attempt_answers taa
         join public.questions q on q.id = taa.question_id
         left join public.topics tp on tp.id = q.topic_id
+        -- 'az' resolves to no row by construction (ck_topic_tr_not_az), so the
+        -- join misses and the base AZ name is used — no special case needed.
+        left join public.topic_translations ttr
+               on ttr.topic_id = tp.id
+              and ttr.locale = (case when p_locale in ('az', 'en', 'ru')
+                                     then p_locale else 'az' end)::public.content_locale
         where taa.attempt_id = ta.id
-        group by q.topic_id, tp.name
+        group by q.topic_id, coalesce(ttr.name, tp.name)
       ) b))
   from public.test_attempts ta
   where ta.id = p_attempt_id;
 $$;
+
+comment on function public.test_attempt_result(uuid, text) is
+  'Shared graded-attempt payload (score + per-question + per-topic). p_locale '
+  '(az/en/ru, default az) localizes the topic names through topic_translations '
+  'with an az fallback. Service-role only; owner checks live in the callers.';
 
 -- cancel_test_attempt: counts for NOTHING (no score, no points, no streak).
 create or replace function public.cancel_test_attempt(p_attempt_id uuid)
@@ -6031,14 +6093,14 @@ revoke all on function public.get_test_attempt(uuid, text) from public, anon;
 grant execute on function public.get_test_attempt(uuid, text) to authenticated, service_role;
 revoke all on function public.save_test_answers(uuid, jsonb) from public, anon;
 grant execute on function public.save_test_answers(uuid, jsonb) to authenticated, service_role;
-revoke all on function public.submit_test_attempt(uuid, jsonb) from public, anon;
-grant execute on function public.submit_test_attempt(uuid, jsonb) to authenticated, service_role;
+revoke all on function public.submit_test_attempt(uuid, jsonb, text) from public, anon;
+grant execute on function public.submit_test_attempt(uuid, jsonb, text) to authenticated, service_role;
 revoke all on function public.cancel_test_attempt(uuid) from public, anon;
 grant execute on function public.cancel_test_attempt(uuid) to authenticated, service_role;
 revoke all on function public.get_test_review(uuid, text) from public, anon;
 grant execute on function public.get_test_review(uuid, text) to authenticated, service_role;
-revoke all on function public.test_attempt_result(uuid) from public, anon, authenticated;
-grant execute on function public.test_attempt_result(uuid) to service_role;
+revoke all on function public.test_attempt_result(uuid, text) from public, anon, authenticated;
+grant execute on function public.test_attempt_result(uuid, text) to service_role;
 revoke all on function public.expire_stale_test_attempts() from public, anon, authenticated;
 grant execute on function public.expire_stale_test_attempts() to service_role;
 
@@ -8920,6 +8982,233 @@ comment on function public.email_is_registered(text) is
 
 revoke all on function public.email_is_registered(text) from public, anon, authenticated;
 grant execute on function public.email_is_registered(text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- QUESTION REPORTS ("Report a problem", migration 115).
+--
+-- The trust boundary in one paragraph: the client sends a question id, a
+-- message and two enum-constrained diagnostic hints. Reporter, status, package
+-- and attempt context are ALL derived by the BEFORE INSERT trigger below, which
+-- is also where the authoritative throttle lives. That is what makes the
+-- reporter-can-INSERT policy in 010 safe — WITH CHECK runs AFTER BEFORE
+-- triggers, so a hand-rolled PostgREST insert with a forged reporter, status or
+-- package produces exactly the row the RPC would. The mobile app reaches
+-- PostgREST directly (mobile-app/src/features/tests/api.ts), so a limiter in
+-- the RPC or in the web app would have guarded the web path only.
+-- -----------------------------------------------------------------------------
+create index if not exists idx_question_reports_status_created
+  on public.question_reports (status, created_at desc);
+create index if not exists idx_question_reports_created
+  on public.question_reports (created_at desc);
+create index if not exists idx_question_reports_question
+  on public.question_reports (question_id);
+-- Also covers the throttle count in the derive trigger.
+create index if not exists idx_question_reports_reporter
+  on public.question_reports (reporter_profile_id, created_at desc);
+create index if not exists idx_question_reports_package
+  on public.question_reports (olympiad_package_id)
+  where olympiad_package_id is not null;
+-- ONE OPEN report per (question, reporter): the real duplicate guard. A closed
+-- report frees the slot, so a genuinely new problem can still be filed later.
+create unique index if not exists uq_question_reports_open_per_reporter
+  on public.question_reports (question_id, reporter_profile_id)
+  where reporter_profile_id is not null and status in ('new','in_review');
+
+-- SECURITY DEFINER because it must resolve a question the reporter cannot
+-- SELECT (archived, or inside a private olympiad pool) and must count reports
+-- the reporter's own SELECT policy hides once they are closed. search_path is
+-- pinned; 013 check 103 asserts anon holds no EXECUTE.
+create or replace function public.question_report_derive()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_profile uuid := public.current_profile_id();
+  v_pkg     uuid;
+  v_kind    text;
+  v_hour    int;
+  v_day     int;
+begin
+  -- The reporter is WHOEVER IS CALLING, never what the payload claims. The
+  -- INSERT policy re-compares this same value, so a forged reporter_profile_id
+  -- is overwritten here and then fails nothing — it simply never existed.
+  if v_profile is not null then
+    new.reporter_profile_id := v_profile;
+  end if;
+
+  -- Server-owned lifecycle: a report is always born 'new' and unhandled.
+  new.status     := 'new';
+  new.handled_by := null;
+  new.handled_at := null;
+  new.admin_note := null;
+  new.created_at := now();
+  new.updated_at := now();
+  new.message    := btrim(new.message, ' ' || chr(9) || chr(10) || chr(13));
+
+  select q.olympiad_package_id into v_pkg
+    from public.questions q
+   where q.id = new.question_id;
+  if not found then
+    raise exception 'report: unknown question' using errcode = 'no_data_found';
+  end if;
+  new.olympiad_package_id := v_pkg;
+
+  -- An attempt id survives ONLY if it is the reporter's own attempt and that
+  -- attempt actually drew this question. A bogus one is DROPPED, not rejected:
+  -- the report is still worth having, the fake context is not.
+  new.attempt_kind := null;
+  if new.attempt_id is not null then
+    select a.kind into v_kind
+      from public.test_attempts a
+     where a.id = new.attempt_id
+       and a.student_profile_id = new.reporter_profile_id
+       and exists (
+             select 1
+               from public.test_attempt_answers ta
+              where ta.attempt_id = a.id
+                and ta.question_id = new.question_id);
+    if v_kind is null then
+      new.attempt_id := null;
+    else
+      new.attempt_kind := v_kind;
+    end if;
+  end if;
+
+  -- The authoritative rate limit: 5 per rolling hour, 20 per rolling day, per
+  -- reporter. One indexed count per insert (idx_question_reports_reporter); a
+  -- plain SELECT over a different row set, so there is no trigger recursion.
+  if new.reporter_profile_id is not null then
+    select count(*) filter (where created_at > now() - interval '1 hour'),
+           count(*) filter (where created_at > now() - interval '1 day')
+      into v_hour, v_day
+      from public.question_reports
+     where reporter_profile_id = new.reporter_profile_id
+       and created_at > now() - interval '1 day';
+    if v_hour >= 5 or v_day >= 20 then
+      raise exception 'report: rate limited' using errcode = 'check_violation';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.question_report_derive() is
+  'BEFORE INSERT on question_reports: derives reporter, status, package and '
+  'attempt context server-side and enforces the authoritative rate limit '
+  '(5/hour, 20/day per reporter). Every write path — the RPC and a direct '
+  'PostgREST insert alike — passes through it.';
+
+drop trigger if exists trg_question_report_derive on public.question_reports;
+create trigger trg_question_report_derive
+  before insert on public.question_reports
+  for each row execute function public.question_report_derive();
+
+-- A report is EVIDENCE: an admin may move its status and add a note, nothing
+-- more. A resolved report can never be a rewritten one.
+create or replace function public.question_report_freeze()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  new.question_id         := old.question_id;
+  new.attempt_id          := old.attempt_id;
+  new.attempt_kind        := old.attempt_kind;
+  new.olympiad_package_id := old.olympiad_package_id;
+  new.reporter_profile_id := old.reporter_profile_id;
+  new.message             := old.message;
+  new.locale              := old.locale;
+  new.platform            := old.platform;
+  new.app_version         := old.app_version;
+  new.created_at          := old.created_at;
+  if new.status is distinct from old.status then
+    new.handled_by := public.current_profile_id();
+    new.handled_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+comment on function public.question_report_freeze() is
+  'BEFORE UPDATE on question_reports: only status and admin_note may change, '
+  'and a status change stamps handled_by/handled_at.';
+
+drop trigger if exists trg_question_report_freeze on public.question_reports;
+create trigger trg_question_report_freeze
+  before update on public.question_reports
+  for each row execute function public.question_report_freeze();
+-- Name ordering matters: PostgreSQL fires BEFORE triggers alphabetically, and
+-- trg_question_report_freeze sorts before trg_set_updated_at, so the freeze runs
+-- first and updated_at is still stamped afterwards.
+
+-- The app entry point. Validation here is belt to the column CHECKs' braces —
+-- a 2 MB body is refused before it is written, not silently truncated.
+create or replace function public.submit_question_report(
+  p_question_id uuid,
+  p_attempt_id  uuid,
+  p_message     text,
+  p_locale      text,
+  p_platform    text,
+  p_app_version text default null)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_profile uuid := public.current_profile_id();
+  v_msg     text := btrim(coalesce(p_message, ''), ' ' || chr(9) || chr(10) || chr(13));
+  v_id      uuid;
+begin
+  if v_profile is null then
+    raise exception 'forbidden';
+  end if;
+  if v_msg = '' then
+    raise exception 'report: empty message' using errcode = 'check_violation';
+  end if;
+  if char_length(v_msg) > 1000 then
+    raise exception 'report: message too long' using errcode = 'check_violation';
+  end if;
+  if p_locale is null or p_locale not in ('az','en','ru') then
+    raise exception 'report: bad locale' using errcode = 'check_violation';
+  end if;
+  if p_platform is null or p_platform not in ('web','android','ios') then
+    raise exception 'report: bad platform' using errcode = 'check_violation';
+  end if;
+
+  insert into public.question_reports
+    (question_id, attempt_id, reporter_profile_id, message, locale, platform, app_version)
+  values
+    (p_question_id, p_attempt_id, v_profile, v_msg,
+     p_locale::public.content_locale, p_platform::public.report_platform,
+     nullif(btrim(coalesce(p_app_version, '')), ''))
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+comment on function public.submit_question_report(uuid,uuid,text,text,text,text) is
+  'Files one question report for the CALLING profile. Validates the message, '
+  'locale and platform; every context column (reporter, status, package, '
+  'attempt) is derived by trg_question_report_derive, which also enforces the '
+  'rate limit — so a direct PostgREST insert is exactly as constrained.';
+
+revoke all on function public.submit_question_report(uuid,uuid,text,text,text,text)
+  from public, anon;
+grant execute on function public.submit_question_report(uuid,uuid,text,text,text,text)
+  to authenticated, service_role;
+revoke all on function public.question_report_derive() from public, anon, authenticated;
+revoke all on function public.question_report_freeze() from public, anon, authenticated;
+
+-- Reports are operational history. 010 grants DELETE on every table to
+-- `authenticated`; take it back here (this file runs after 010), so the absent
+-- DELETE policy is not the only thing standing between a reporter and their own
+-- evidence.
+revoke delete on public.question_reports from anon, authenticated;
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

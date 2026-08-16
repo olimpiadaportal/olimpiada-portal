@@ -4,6 +4,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
+import { fallbackExplanationIds } from "@/lib/explanationFallback";
 import {
   TestReviewList,
   type ReviewListQuestion,
@@ -83,6 +84,45 @@ export default async function TestReviewPage({
   const score = Math.round(Number(review.score ?? 0));
   const max = Math.round(Number(review.max ?? 0));
 
+  // ---- Honest explanation fallback ---------------------------------------
+  // The RPC hands back one `explanation` string with no hint of which locale it
+  // came from. Ask question_explanations which of these questions actually has
+  // one in the reader's language; everything else is showing Azerbaijani and
+  // gets labelled. Only questions that HAVE an explanation are asked about, and
+  // az is fetched alongside so an RLS-hidden question stays unlabelled rather
+  // than being wrongly declared untranslated (see fallbackExplanationIds).
+  //
+  // Caveat, deliberate: a LEGACY daily-round attempt (daily_round_id set) reads
+  // its explanation from the round's frozen content_snapshot, so this live
+  // lookup is a proxy there. It errs the safe way — an explanation translated
+  // after the snapshot was taken goes unlabelled, which is today's behaviour.
+  const explainedIds = review.questions
+    .filter((q) => (q.explanation ?? "").trim() !== "")
+    .map((q) => q.question_id);
+  let fallbackIds = new Set<string>();
+  if (locale !== "az" && explainedIds.length > 0) {
+    // Chunked: an olympiad attempt may serve up to 500 questions
+    // (questions_per_attempt) and a 500-uuid .in() list would blow past the
+    // gateway's URL limit.
+    const chunks: string[][] = [];
+    for (let i = 0; i < explainedIds.length; i += 100) {
+      chunks.push(explainedIds.slice(i, i + 100));
+    }
+    const results = await Promise.all(
+      chunks.map((ids) =>
+        supabase
+          .from("question_explanations")
+          .select("question_id, locale")
+          .in("question_id", ids)
+          .in("locale", ["az", locale]),
+      ),
+    );
+    const rows = results.flatMap(
+      (r) => (r.data ?? []) as { question_id: string; locale: string }[],
+    );
+    fallbackIds = fallbackExplanationIds(rows, locale, explainedIds);
+  }
+
   // One resolver for every {bucket, path} in the payload — the question's
   // figure and, since Round 53, each option's. getPublicUrl is a pure URL
   // builder (no request), so calling it per option costs nothing.
@@ -106,6 +146,7 @@ export default async function TestReviewPage({
       image_url: publicUrl(q.image),
       state,
       explanation: q.explanation,
+      explanationIsFallback: fallbackIds.has(q.question_id),
       options: q.options.map((o) => ({
         option_id: o.option_id,
         text: o.text,
@@ -122,7 +163,15 @@ export default async function TestReviewPage({
     "test.review.your", "test.review.correctAnswer", "test.review.explanation",
     "test.review.filterAll", "test.review.filterCorrect",
     "test.review.filterWrong", "test.review.filterSkipped",
+    "test.review.explAzOnly", "test.review.explAzNote",
     "test.img.alt", "test.img.hint", "test.img.close",
+    // Report a problem — the dialog lives inside each review card.
+    "test.report.action", "test.report.title", "test.report.intro",
+    "test.report.label", "test.report.placeholder", "test.report.remaining",
+    "test.report.cancel", "test.report.submit", "test.report.sending",
+    "test.report.emptyErr", "test.report.successTitle", "test.report.successBody",
+    "test.report.done", "test.report.err.generic", "test.report.err.duplicate",
+    "test.report.err.tooMany",
   ]) {
     reviewDict[k] = t(k);
   }
@@ -141,7 +190,7 @@ export default async function TestReviewPage({
         </p>
       </section>
 
-      <TestReviewList questions={shaped} dict={reviewDict} />
+      <TestReviewList questions={shaped} dict={reviewDict} attemptId={attemptId} />
 
       <div style={{ marginTop: 24, display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Link className="arena-btn" href={`/child/test/result/${attemptId}`}>

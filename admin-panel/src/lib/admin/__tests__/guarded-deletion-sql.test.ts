@@ -21,6 +21,10 @@ const MIGRATION = read("supabase/sql/migrations/2026_08_12_111_guarded_deletion.
 const SQL_011 = read("supabase/sql/011_indexes_constraints_functions_triggers.sql");
 const SQL_013 = read("supabase/sql/013_validation_queries.sql");
 const SQL_015 = read("supabase/sql/015_olympiad_preparation.sql");
+// Migration 113 removed the confirmation token from admin_delete_olympiad_package,
+// so IT owns that function signature and its grants — 111 still carries the old
+// two-argument form and must not be searched for the new one.
+const MIGRATION_113 = read("supabase/sql/migrations/2026_08_15_113_package_delete_no_token.sql");
 
 /**
  * A function's plpgsql BODY (`as $$ … $$;`) — the part that must be identical in
@@ -56,16 +60,40 @@ const SUBJECT_HALF = [
 // (olympiad-bulk-purge.test.ts); everything else here still applies to it,
 // including that it stays out of 011 and that this migration's version never
 // filtered purchases to status = 'active'.
-const SUPERSEDED = ["olympiad_grade_pool_blocks"];
+//
+// admin_delete_olympiad_package was superseded by migration 113 (owner
+// decision): the typed confirmation code was removed, so 015 now carries a
+// one-argument function that migration 111's copy cannot match. 113 owns that
+// body and asserts it in its own verify block; what still matters here is that
+// the token is gone from this one function and PRESENT on every sibling, which
+// the signature assertions below pin.
+const SUPERSEDED = ["olympiad_grade_pool_blocks", "admin_delete_olympiad_package"];
 const OLYMPIAD_HALF = [
   "olympiad_package_deletion_blocks",
   "olympiad_package_delete_guard",
   "admin_preview_olympiad_package_deletion",
   "admin_preview_olympiad_grade_pool_deletion",
-  "admin_delete_olympiad_package",
   "admin_delete_olympiad_grade_pool",
   "admin_unarchive_olympiad_package",
 ];
+
+describe("migration 113 owns the token-free package delete", () => {
+  it("revokes and grants at the ONE-argument signature", () => {
+    expect(MIGRATION_113).toContain(
+      "revoke all on function public.admin_delete_olympiad_package(uuid) from public, anon;",
+    );
+    expect(MIGRATION_113).toContain(
+      "grant execute on function public.admin_delete_olympiad_package(uuid) to authenticated, service_role;",
+    );
+    // The removal must not have leaked into a sibling.
+    for (const sig of [
+      "public.admin_delete_subject(uuid,text)",
+      "public.admin_purge_subject_questions(uuid,text)",
+    ]) {
+      expect(MIGRATION_113).toContain(sig);
+    }
+  });
+});
 
 describe("the canonical backport is the migration, character for character", () => {
   it.each(SUBJECT_HALF)("011 carries %s unchanged", (name) => {
@@ -142,7 +170,8 @@ describe("every new function is admin-only, definer, and search_path-pinned", ()
     // be reachable that way.
     for (const sig of [
       "public.admin_delete_subject(uuid, text)",
-      "public.admin_delete_olympiad_package(uuid, text)",
+      // Migration 113 dropped this one's token; it is a single-argument
+      // function now. The siblings above and below keep theirs.
       "public.admin_unarchive_olympiad_package(uuid)",
     ]) {
       expect(MIGRATION).toContain(`revoke all on function ${sig} from public, anon;`);
@@ -536,7 +565,7 @@ describe("013 validation checks", () => {
   it("asserts every new function, both new triggers and the old one", () => {
     for (const sig of [
       "public.admin_delete_subject(uuid,text)",
-      "public.admin_delete_olympiad_package(uuid,text)",
+      "public.admin_delete_olympiad_package(uuid)",
       "public.purge_question_set(uuid[])",
       // The two signatures that gained a confirmation token.
       "public.admin_purge_subject_questions(uuid,text)",

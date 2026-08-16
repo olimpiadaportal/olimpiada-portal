@@ -116,6 +116,12 @@ export type ReviewQuestion = {
   is_correct: boolean | null;
   selected_option_ids: string[];
   explanation: string | null;
+  /**
+   * The explanation above is the Azerbaijani fallback, not the reader's
+   * language. Resolved in fetchTestReview (the RPC hands back one string with
+   * no hint of which locale produced it), never sent by the server.
+   */
+  explanationIsFallback?: boolean;
   options: ReviewOption[];
 };
 

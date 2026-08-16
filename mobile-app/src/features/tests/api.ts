@@ -8,8 +8,12 @@
 // Raw Postgres/Supabase error text NEVER reaches the UI — callers receive
 // i18n keys / typed flags only. Anti-cheat: nothing here ever selects
 // answer_options or any is_correct outside the graded review payload.
+import { Platform } from "react-native";
+import Constants from "expo-constants";
 import { supabase } from "@/lib/supabase";
 import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/coverage";
+import { fallbackExplanationIds } from "@/lib/explanationFallback";
+import { pickName } from "@/lib/localizedName";
 import type { Locale } from "@/i18n";
 import type {
   AnswerItem,
@@ -137,6 +141,7 @@ export async function fetchRecentAttempts(profileId: string): Promise<AttemptLis
 export async function fetchSetupTopics(
   subjectId: string,
   profileId: string,
+  locale: Locale,
 ): Promise<SetupTopic[]> {
   const { data: student } = await supabase
     .from("students")
@@ -147,7 +152,9 @@ export async function fetchSetupTopics(
 
   const { data: topicsRaw, error } = await supabase
     .from("topics")
-    .select("id, name, grade_id, order_index")
+    // Ordering stays on order_index + the AZ name: the curriculum teaching order
+    // must not shuffle when the child switches language (migration 114).
+    .select("id, name, grade_id, order_index, topic_translations(locale, name)")
     .eq("subject_id", subjectId)
     .eq("status", "active")
     .eq("scope", "exam")
@@ -162,7 +169,7 @@ export async function fetchSetupTopics(
 
   const { data: subsRaw, error: subsErr } = await supabase
     .from("subtopics")
-    .select("id, topic_id, name, order_index")
+    .select("id, topic_id, name, order_index, subtopic_translations(locale, name)")
     .in("topic_id", topics.map((tp) => tp.id))
     .eq("status", "active")
     .order("order_index", { ascending: true })
@@ -172,12 +179,12 @@ export async function fetchSetupTopics(
   const byTopic = new Map<string, SetupSubtopic[]>();
   for (const st of (subsRaw ?? []) as any[]) {
     const list = byTopic.get(st.topic_id) ?? [];
-    list.push({ id: st.id, name: st.name });
+    list.push({ id: st.id, name: pickName(st.subtopic_translations, locale, st.name) });
     byTopic.set(st.topic_id, list);
   }
   return topics.map((tp) => ({
     id: tp.id,
-    name: tp.name,
+    name: pickName(tp.topic_translations, locale, tp.name),
     subtopics: byTopic.get(tp.id) ?? [],
   }));
 }
@@ -332,12 +339,12 @@ async function fetchAttemptMeta(
       if (topicIds.length > 0) {
         const { data: topicsRes } = await supabase
           .from("topics")
-          .select("id, name")
+          .select("id, name, topic_translations(locale, name)")
           .in("id", topicIds);
         const nameById = new Map<string, string>(
-          (((topicsRes ?? []) as { id: string; name: string }[]) || []).map((r) => [
+          (((topicsRes ?? []) as any[]) || []).map((r) => [
             r.id,
-            r.name,
+            pickName(r.topic_translations, locale, r.name),
           ]),
         );
         const seen = new Set<string>();
@@ -411,10 +418,14 @@ export async function saveTestAnswers(
 export async function submitTestAttempt(
   attemptId: string,
   answers: AnswerItem[] | null,
+  locale: Locale,
 ): Promise<ResultPayload> {
   const { data, error } = await supabase.rpc("submit_test_attempt", {
     p_attempt_id: attemptId,
     p_answers: answers,
+    // Migration 114: the payload feeds the result screen per-topic bars, so the
+    // names have to come back in the reader's language, not always Azerbaijani.
+    p_locale: locale,
   });
   if (error || !data) throw error ?? new Error("empty submit payload");
   return data as ResultPayload;
@@ -456,7 +467,54 @@ export async function fetchTestReview(
   ) {
     throw new Error("malformed review payload");
   }
-  return payload as ReviewPayload;
+  const review = payload as ReviewPayload;
+
+  // ---- Honest explanation fallback (web review-page parity) ----------------
+  // The RPC coalesces the reader's locale onto az and hands back ONE string
+  // with no hint of which one produced it. Ask question_explanations which of
+  // these questions actually has one in `locale`; the rest are showing
+  // Azerbaijani and get labelled. az is fetched alongside on purpose — see
+  // fallbackExplanationIds: an RLS-hidden (archived) question returns no rows
+  // at all, and that must stay unlabelled rather than be declared untranslated.
+  //
+  // Failure here is deliberately NON-FATAL: a review that renders without the
+  // label is today's behaviour, whereas throwing would cost the child the whole
+  // graded review over a cosmetic disclosure.
+  const explainedIds = review.questions
+    .filter((q) => (q.explanation ?? "").trim() !== "")
+    .map((q) => q.question_id);
+  // The az guard only SKIPS the round-trip — fallbackExplanationIds would
+  // return an empty set for an az reader anyway, so the two can never disagree.
+  if (locale !== "az" && explainedIds.length > 0) {
+    try {
+      // Chunked: an olympiad attempt may serve up to 500 questions
+      // (questions_per_attempt) and a 500-uuid .in() list would blow past the
+      // gateway's URL limit.
+      const chunks: string[][] = [];
+      for (let i = 0; i < explainedIds.length; i += 100) {
+        chunks.push(explainedIds.slice(i, i + 100));
+      }
+      const results = await Promise.all(
+        chunks.map((ids) =>
+          supabase
+            .from("question_explanations")
+            .select("question_id, locale")
+            .in("question_id", ids)
+            .in("locale", ["az", locale]),
+        ),
+      );
+      const rows = results.flatMap(
+        (r) => (r.data ?? []) as { question_id: string; locale: string }[],
+      );
+      const fallbackIds = fallbackExplanationIds(rows, locale, explainedIds);
+      for (const q of review.questions) {
+        if (fallbackIds.has(q.question_id)) q.explanationIsFallback = true;
+      }
+    } catch {
+      // Label omitted, review intact.
+    }
+  }
+  return review;
 }
 
 // ---------------------------------------------------------------------------
@@ -502,4 +560,58 @@ export async function fetchBreakdownRows(attemptId: string): Promise<BreakdownRo
     .eq("attempt_id", attemptId);
   if (error) throw error;
   return (data ?? []) as BreakdownRow[];
+}
+
+// ---------------------------------------------------------------------------
+// submit_question_report — "Report a problem" (migration 115).
+//
+// Same posture as every other call in this file: the child JWT talks to the
+// SECURITY DEFINER RPC directly, and the DATABASE owns everything that matters.
+// Reporter, status, olympiad package and attempt context are derived by
+// trg_question_report_derive, which also carries the authoritative 5/hour +
+// 20/day throttle — precisely because this path never passes through a web
+// server where an app-tier limiter could sit.
+//
+// `platform` and `locale` are self-reported diagnostics: the database cannot
+// observe which UI language a phone was rendering. Both are enum-constrained
+// server-side and are never used for authorization.
+// ---------------------------------------------------------------------------
+export type ReportResult = { ok: true } | { ok: false; errorKey: string };
+
+export async function submitQuestionReport(input: {
+  questionId: string;
+  attemptId: string | null;
+  message: string;
+  locale: Locale;
+}): Promise<ReportResult> {
+  const message = input.message.trim();
+  if (message === "") return { ok: false, errorKey: "test.report.emptyErr" };
+  // Refused, never truncated — the same cap the column CHECK enforces.
+  if (message.length > 1000) return { ok: false, errorKey: "test.report.err.generic" };
+
+  const { error } = await supabase.rpc("submit_question_report", {
+    p_question_id: input.questionId,
+    p_attempt_id: input.attemptId,
+    p_message: message,
+    p_locale: input.locale,
+    p_platform: Platform.OS === "ios" ? "ios" : "android",
+    // Constants.expoConfig.version is expo.version from app.json — the single
+    // source AppVersion.tsx reads too. Never a hardcoded string.
+    p_app_version: Constants.expoConfig?.version ?? null,
+  });
+  if (!error) return { ok: true };
+
+  // The open-report unique index: not an error state, the report already exists.
+  if (error.code === PG_UNIQUE_VIOLATION) {
+    return { ok: false, errorKey: "test.report.err.duplicate" };
+  }
+  // 23514 here means the throttle: this caller supplies a valid locale and
+  // platform and has already trimmed and capped the body.
+  if (error.code === PG_CHECK_VIOLATION) {
+    return { ok: false, errorKey: "test.report.err.tooMany" };
+  }
+  if (error.code === PG_NO_DATA_FOUND) {
+    return { ok: false, errorKey: "test.report.err.generic" };
+  }
+  return { ok: false, errorKey: "test.report.err.generic" };
 }

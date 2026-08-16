@@ -44,6 +44,12 @@ const STRINGS: Record<Locale, Dict> = {
     "qimg.uploadFailed": "Şəkli yükləmək mümkün olmadı. Yenidən cəhd edin.",
     "qchip.needsOptionE": "E variantı çatışmır",
     "qchip.needsTerm": "Rüb təyin edilməyib",
+    "qfield.explTr": "İzah tərcüməsi",
+    "qexpl.none": "İzah yoxdur",
+    "qexpl.complete": "Tam",
+    "qexpl.missing": "{locales} çatışmır",
+    "qexpl.coverage":
+      "İzah tərcüməsi: izahı olan {az} sualdan {en}-i ingilis, {ru}-si rus dilinə tərcümə olunub. Tərcüməsi olmayan izah şagirdə Azərbaycan dilində göstərilir.",
     "bulk.fiveRule":
       "Hər sualda düz 5 cavab variantı (A–E) və düz 1 düzgün cavab olmalıdır.",
     "bulk.generalMeta":
@@ -152,6 +158,12 @@ const STRINGS: Record<Locale, Dict> = {
     "qimg.uploadFailed": "Could not upload the image. Try again.",
     "qchip.needsOptionE": "Needs option E",
     "qchip.needsTerm": "Needs term",
+    "qfield.explTr": "Explanation translation",
+    "qexpl.none": "No explanation",
+    "qexpl.complete": "Complete",
+    "qexpl.missing": "{locales} missing",
+    "qexpl.coverage":
+      "Explanation translations: of {az} questions with an explanation, {en} are translated into English and {ru} into Russian. An untranslated explanation is shown to students in Azerbaijani.",
     "bulk.fiveRule":
       "Each question needs exactly 5 answer options (A–E) with exactly 1 correct.",
     "bulk.generalMeta":
@@ -260,6 +272,12 @@ const STRINGS: Record<Locale, Dict> = {
     "qimg.uploadFailed": "Не удалось загрузить изображение. Попробуйте ещё раз.",
     "qchip.needsOptionE": "Не хватает варианта E",
     "qchip.needsTerm": "Не указана четверть",
+    "qfield.explTr": "Перевод объяснения",
+    "qexpl.none": "Нет объяснения",
+    "qexpl.complete": "Полностью",
+    "qexpl.missing": "нет {locales}",
+    "qexpl.coverage":
+      "Переводы объяснений: из {az} вопросов с объяснением на английский переведено {en}, на русский — {ru}. Непереведённое объяснение показывается ученику на азербайджанском.",
     "bulk.fiveRule":
       "У каждого вопроса должно быть ровно 5 вариантов ответа (A–E) и ровно 1 правильный.",
     "bulk.generalMeta":

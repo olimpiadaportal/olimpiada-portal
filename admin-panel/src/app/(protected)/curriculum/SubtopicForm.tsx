@@ -18,6 +18,7 @@ import {
   CURRICULUM_STATUSES,
   NAME_MAX,
   normalizeName,
+  parseLocalizedName,
   type GradeItem,
   type SubjectItem,
   type TopicOption,
@@ -27,10 +28,12 @@ export type SubtopicFormValues = {
   id?: string;
   topicId?: string;
   name?: string;
+  nameEn?: string | null;
+  nameRu?: string | null;
   status?: string;
 };
 
-type FieldErrors = { name?: string; topic?: string };
+type FieldErrors = { name?: string; nameEn?: string; nameRu?: string; topic?: string };
 
 function mapServerError(
   code: string | undefined,
@@ -39,6 +42,10 @@ function mapServerError(
   if (!code) return null;
   if (code === "missing.name") return { message: l("cur.errName"), field: "name" };
   if (code === "too.long") return { message: l("cur.errTooLong"), field: "name" };
+  // The server does not say WHICH translation was too long, so the message is
+  // shown at form level rather than pinned to the wrong field.
+  if (code === "too.long.tr") return { message: l("cur.errTooLongTr") };
+  if (code === "tr.failed") return { message: l("cur.errTrSave") };
   if (code === "missing.topic")
     return { message: l("cur.errTopic"), field: "topic" };
   if (code === "duplicate")
@@ -77,6 +84,8 @@ export function SubtopicForm({
   const [subjectFilter, setSubjectFilter] = useState(preselected?.subjectId ?? "");
   const [gradeFilter, setGradeFilter] = useState(preselected?.gradeId ?? "");
   const [name, setName] = useState(values.name ?? "");
+  const [nameEn, setNameEn] = useState(values.nameEn ?? "");
+  const [nameRu, setNameRu] = useState(values.nameRu ?? "");
   const [errors, setErrors] = useState<FieldErrors>({});
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -111,6 +120,10 @@ export function SubtopicForm({
     if (!normalizeName(name)) next.name = l("cur.errName");
     else if (normalizeName(name).length > NAME_MAX)
       next.name = l("cur.errTooLong");
+    // EN/RU are optional (blank = keep the AZ fallback); only the cap applies,
+    // and it is the same rule readLocalizedNames() enforces server-side.
+    if (parseLocalizedName(nameEn).tooLong) next.nameEn = l("cur.errTooLongTr");
+    if (parseLocalizedName(nameRu).tooLong) next.nameRu = l("cur.errTooLongTr");
     if (!topicId) next.topic = l("cur.errTopic");
     setErrors(next);
     if (Object.keys(next).length > 0) {
@@ -190,7 +203,7 @@ export function SubtopicForm({
 
         <label className="field cur-field-wide">
           <span className="field-label">
-            {l("cur.fName")}
+            {l("cur.fNameAz")}
             <span className="req"> *</span>
           </span>
           <input
@@ -206,8 +219,47 @@ export function SubtopicForm({
               setErrors((x) => ({ ...x, name: undefined }));
             }}
           />
+          <span className="cur-field-hint">{l("cur.nameAzHint")}</span>
           {errorFor("name") && (
             <span className="cur-field-error">{errorFor("name")}</span>
+          )}
+        </label>
+
+        <label className="field cur-field-wide">
+          <span className="field-label">{l("cur.fNameEn")}</span>
+          <input
+            type="text"
+            name="name_en"
+            value={nameEn}
+            maxLength={NAME_MAX}
+            autoComplete="off"
+            aria-invalid={errorFor("nameEn") ? true : undefined}
+            onChange={(e) => {
+              setNameEn(e.target.value);
+              setErrors((x) => ({ ...x, nameEn: undefined }));
+            }}
+          />
+          {errorFor("nameEn") && (
+            <span className="cur-field-error">{errorFor("nameEn")}</span>
+          )}
+        </label>
+
+        <label className="field cur-field-wide">
+          <span className="field-label">{l("cur.fNameRu")}</span>
+          <input
+            type="text"
+            name="name_ru"
+            value={nameRu}
+            maxLength={NAME_MAX}
+            autoComplete="off"
+            aria-invalid={errorFor("nameRu") ? true : undefined}
+            onChange={(e) => {
+              setNameRu(e.target.value);
+              setErrors((x) => ({ ...x, nameRu: undefined }));
+            }}
+          />
+          {errorFor("nameRu") && (
+            <span className="cur-field-error">{errorFor("nameRu")}</span>
           )}
         </label>
 

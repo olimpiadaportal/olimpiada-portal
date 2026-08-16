@@ -835,4 +835,17 @@ on conflict (platform) do nothing;
 -- the same tree — it is idempotent, so running it twice is a no-op.
 -- Source of truth for the data: docs/investor/Kurikulum_movzu_alt_movzu_rub_bolgusu_1-11.docx
 -- extracted to supabase/seed/curriculum_2026.json.
+--
+-- The EN/RU names of that same tree live in a second migration, referenced here
+-- for the same reason (another ~1100 generated VALUES lines):
+--
+--     supabase/sql/migrations/2026_08_15_114_curriculum_translations.sql
+--
+-- It fills public.topic_translations / public.subtopic_translations by matching
+-- (grade level, exact AZ name) on scope='exam' rows, and ABORTS unless all
+-- 260 topics and 1077 subtopics resolve — so it must run AFTER 095, never
+-- before. Order for a from-zero rebuild: 001-012, 014, 015, 016, 013, then 095,
+-- then 114. Both are idempotent.
+-- Source of truth for the trilingual data: docs/investor/Kurikulum_1-11_AZ_EN_RU.docx
+-- extracted to supabase/seed/curriculum_2026_translations.json.
 -- =============================================================================

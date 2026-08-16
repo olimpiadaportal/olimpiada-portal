@@ -299,6 +299,9 @@ export default async function ParentAnalytics({
           mode === "olympiads" || selectedSubject === "all" ? null : selectedSubject,
         p_days: 30,
         p_scope: mode === "olympiads" ? "olympiads" : "tests",
+        // Migration 114: per_topic / mistakes / per_package come back already
+        // localized, so AnalyticsDashboard renders the payload strings verbatim.
+        p_locale: locale,
       });
       if (!error && data && typeof data === "object") dash = data as DashPayload;
     } catch {

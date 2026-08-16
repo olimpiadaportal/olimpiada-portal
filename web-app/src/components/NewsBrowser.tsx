@@ -4,6 +4,7 @@ import { getLocale, getT } from "@/i18n/server";
 import type { Locale } from "@/i18n/config";
 import { formatShortDate } from "@/lib/formatDate";
 import { isSupabaseConfigured } from "@/lib/env";
+import { pickTranslation } from "@/lib/localizedName";
 import { createClient } from "@/lib/supabase/server";
 import { Segmented } from "@/components/Segmented";
 
@@ -94,10 +95,7 @@ export async function NewsBrowser({
     const { data, count } = await query.range(from, to);
     total = count ?? 0;
     items = ((data ?? []) as any[]).map((n) => {
-      const trs = n.news_translations ?? [];
-      const tr =
-        trs.find((x: any) => x.locale === locale) ??
-        trs.find((x: any) => x.locale === "az");
+      const tr = pickTranslation<any>(n.news_translations, locale);
       let cover: string | null = null;
       const m = n.media_assets;
       if (m?.bucket && m?.path) {

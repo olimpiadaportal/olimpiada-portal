@@ -6,6 +6,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { buyOlympiad } from "@/lib/auth/olympiadService";
+import { pickTranslation } from "@/lib/localizedName";
 
 export default async function ParentOlympiadsPage({
   params,
@@ -43,10 +44,11 @@ export default async function ParentOlympiadsPage({
   const owned = new Set(
     ((purchases ?? []) as any[]).filter((p) => p.status === "active").map((p) => p.olympiad_package_id),
   );
-  const title = (p: any): string => {
-    const trs = p.olympiad_package_translations ?? [];
-    return (trs.find((x: any) => x.locale === locale) ?? trs.find((x: any) => x.locale === "az"))?.title ?? "—";
-  };
+  const title = (p: any): string =>
+    pickTranslation<{ locale: string; title: string | null }>(
+      p.olympiad_package_translations,
+      locale,
+    )?.title ?? "—";
   // Round 34: only packages covering THIS child's grade (legacy grade-less
   // packages and already-owned ones stay visible). Server-rendered filter.
   const childGradeId: string | null = (child as any).grade_id ?? null;

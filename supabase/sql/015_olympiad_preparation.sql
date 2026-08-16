@@ -1728,8 +1728,7 @@ grant execute on function public.admin_preview_olympiad_grade_pool_deletion(uuid
 -- 16) Destructive MUTATIONS (Admin-only).
 -- -----------------------------------------------------------------------------
 create or replace function public.admin_delete_olympiad_package(
-  p_package_id    uuid,
-  p_expected_code text
+  p_package_id    uuid
 )
 returns jsonb
 language plpgsql
@@ -1760,12 +1759,9 @@ begin
       using errcode = 'no_data_found';
   end if;
 
-  -- The realistic failure is two packages open in two tabs. Typing the code
-  -- makes an id mix-up impossible to commit even if the dialog is restyled.
-  if p_expected_code is null or p_expected_code <> v_pkg.code then
-    raise exception 'admin_delete_olympiad_package: confirmation code mismatch'
-      using errcode = 'check_violation', hint = 'confirmation_mismatch';
-  end if;
+  -- NO CONFIRMATION TOKEN (migration 113, owner decision). Unlike every
+  -- sibling destructive RPC, a package delete asks only for the dialog's
+  -- acknowledgement. The guard below is what still protects paid content.
 
   v_blocks := public.olympiad_package_deletion_blocks(p_package_id);
   if jsonb_array_length(v_blocks) > 0 then
@@ -1838,7 +1834,7 @@ begin
 end;
 $$;
 
-comment on function public.admin_delete_olympiad_package(uuid, text) is
+comment on function public.admin_delete_olympiad_package(uuid) is
   'Admin-only (migration 111): deletes an olympiad package and its entire pool '
   'after purging the questions (unanswered deleted, answered ARCHIVED). Blocked '
   'by any purchase row (hint package_has_purchases), by status = active '
@@ -1847,8 +1843,8 @@ comment on function public.admin_delete_olympiad_package(uuid, text) is
   'answered questions survive, the PACKAGE IS ARCHIVED instead of deleted '
   '(reason answered_questions_retained). Returns the counts plus '
   'orphaned_media_ids for the caller to sweep from Storage.';
-revoke all on function public.admin_delete_olympiad_package(uuid, text) from public, anon;
-grant execute on function public.admin_delete_olympiad_package(uuid, text)
+revoke all on function public.admin_delete_olympiad_package(uuid) from public, anon;
+grant execute on function public.admin_delete_olympiad_package(uuid)
   to authenticated, service_role;
 
 create or replace function public.admin_delete_olympiad_grade_pool(
@@ -2047,6 +2043,21 @@ comment on function public.admin_unarchive_olympiad_package(uuid) is
 revoke all on function public.admin_unarchive_olympiad_package(uuid) from public, anon;
 grant execute on function public.admin_unarchive_olympiad_package(uuid)
   to authenticated, service_role;
+
+-- -----------------------------------------------------------------------------
+-- question_reports.olympiad_package_id -> olympiad_packages (migration 115).
+-- The column is declared in 008 (with the rest of the table) but WITHOUT this
+-- FK: the canonical run order is 001-012,014,015,016,013, so olympiad_packages
+-- does not exist yet at 008 and an inline reference would abort a from-zero
+-- rebuild. ON DELETE SET NULL, because the report itself must outlive a deleted
+-- package — it is about a question, not about the package.
+-- -----------------------------------------------------------------------------
+do $$ begin
+  alter table public.question_reports
+    add constraint question_reports_olympiad_package_id_fkey
+    foreign key (olympiad_package_id)
+    references public.olympiad_packages (id) on delete set null;
+exception when duplicate_object then null; end $$;
 
 -- =============================================================================
 -- End of 015_olympiad_preparation.sql

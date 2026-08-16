@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
 import { getChildSubjectAccess } from "@/lib/childSubjects";
+import { pickName } from "@/lib/localizedName";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { BackLink } from "@/components/BackLink";
 import { TestSetup, type SetupTopic } from "@/components/TestSetup";
@@ -40,8 +41,7 @@ export default async function TestSetupPage({
   const subject = subjects.find((s) => s.id === subjectId);
   if (!hasAccess || !subject) redirect("/child/test?err=noaccess");
 
-  const t = await getT();
-  const supabase = await createClient();
+  const [t, locale, supabase] = await Promise.all([getT(), getLocale(), createClient()]);
 
   // Child grade (topics are grade-filtered when BOTH sides have a grade).
   const { data: student } = await supabase
@@ -53,9 +53,11 @@ export default async function TestSetupPage({
 
   // Module separation (migration 050): only EXAM-scoped topics belong in this
   // picker — olympiad-package topics must never surface here.
+  // The ordering stays on order_index + the AZ name on purpose: the curriculum's
+  // teaching order must not shuffle when the child switches language.
   const { data: topicsRaw } = await supabase
     .from("topics")
-    .select("id, name, grade_id, order_index")
+    .select("id, name, grade_id, order_index, topic_translations(locale, name)")
     .eq("subject_id", subjectId)
     .eq("status", "active")
     .eq("scope", "exam")
@@ -71,21 +73,21 @@ export default async function TestSetupPage({
   if (topics.length > 0) {
     const { data: subsRaw } = await supabase
       .from("subtopics")
-      .select("id, topic_id, name, order_index")
+      .select("id, topic_id, name, order_index, subtopic_translations(locale, name)")
       .in("topic_id", topics.map((tp) => tp.id))
       .eq("status", "active")
       .order("order_index", { ascending: true })
       .order("name", { ascending: true });
     for (const st of (subsRaw ?? []) as any[]) {
       const list = subtopicsByTopic.get(st.topic_id) ?? [];
-      list.push({ id: st.id, name: st.name });
+      list.push({ id: st.id, name: pickName(st.subtopic_translations, locale, st.name) });
       subtopicsByTopic.set(st.topic_id, list);
     }
   }
 
   const pickerTopics: SetupTopic[] = topics.map((tp) => ({
     id: tp.id,
-    name: tp.name,
+    name: pickName(tp.topic_translations, locale, tp.name),
     subtopics: subtopicsByTopic.get(tp.id) ?? [],
   }));
 

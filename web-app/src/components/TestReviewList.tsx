@@ -8,6 +8,7 @@
 // original server markup (states, chosen/correct tags, explanation).
 import { useMemo, useState } from "react";
 import { QuestionImage } from "@/components/QuestionImage";
+import { ReportQuestionButton } from "@/components/ReportQuestionButton";
 import { Segmented } from "@/components/Segmented";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
@@ -31,6 +32,12 @@ export type ReviewListQuestion = {
   image_url?: string | null;
   state: ReviewState;
   explanation: string | null;
+  /**
+   * The explanation is the Azerbaijani fallback, not the reader's language
+   * (resolved server-side). Labelling it keeps a known content gap from reading
+   * as a broken translation.
+   */
+  explanationIsFallback?: boolean;
   options: ReviewListOption[];
 };
 
@@ -39,9 +46,12 @@ type Filter = "all" | ReviewState;
 export function TestReviewList({
   questions,
   dict,
+  attemptId,
 }: {
   questions: ReviewListQuestion[];
   dict: Record<string, string>;
+  /** Attempt context for a report filed from this screen (verified server-side). */
+  attemptId: string;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [filter, setFilter] = useState<Filter>("all");
@@ -152,10 +162,31 @@ export function TestReviewList({
             </div>
             {q.explanation && (
               <div className="tst-explain">
-                <b>{tt("test.review.explanation")}</b>
+                <span className="tst-explain-head">
+                  <b>{tt("test.review.explanation")}</b>
+                  {q.explanationIsFallback && (
+                    <span className="tst-explain-lang">
+                      {tt("test.review.explAzOnly")}
+                    </span>
+                  )}
+                </span>
                 <p>{q.explanation}</p>
+                {q.explanationIsFallback && (
+                  <p className="tst-explain-note">{tt("test.review.explAzNote")}</p>
+                )}
               </div>
             )}
+            {/* Below the explanation on purpose: this is the moment a child
+                realises the answer key looks wrong, so it is where the action
+                has to be. */}
+            <div className="tst-report-row">
+              <ReportQuestionButton
+                questionId={q.question_id}
+                attemptId={attemptId}
+                dict={dict}
+                block
+              />
+            </div>
           </div>
         ))}
       </div>

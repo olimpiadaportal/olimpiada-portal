@@ -45,14 +45,17 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
   CURRICULUM_KINDS,
+  LOCALIZED_NAME_LOCALES,
   NAME_MAX,
   foldName,
   isCurriculumStatus,
   isUuid,
   normalizeName,
+  parseLocalizedName,
   parseTerm,
   type CurriculumKind,
   type DeleteImpact,
+  type LocalizedNameLocale,
 } from "@/lib/admin/curriculum-shared";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
@@ -175,6 +178,64 @@ async function subtopicNameTaken(
 }
 
 // ---------------------------------------------------------------------------
+// EN/RU names (migration 114)
+// ---------------------------------------------------------------------------
+
+type LocalizedNames = Record<LocalizedNameLocale, string | null>;
+
+/** Read + normalize the two optional translation fields off the FormData. */
+function readLocalizedNames(
+  formData: FormData,
+): { names: LocalizedNames } | { error: string } {
+  const names = { en: null, ru: null } as LocalizedNames;
+  for (const loc of LOCALIZED_NAME_LOCALES) {
+    const parsed = parseLocalizedName(formData.get(`name_${loc}`));
+    // The client caps the inputs at NAME_MAX too, but maxLength is UX — this is
+    // the gate. Same cap as the AZ name; the DB has no length constraint.
+    if (parsed.tooLong) return { error: "too.long.tr" };
+    names[loc] = parsed.value;
+  }
+  return { names };
+}
+
+/**
+ * Write the EN/RU rows for a topic/subtopic.
+ *
+ * A CLEARED field DELETES that locale's row instead of storing '': reads
+ * resolve with coalesce(translation, base name), so a blank row would render an
+ * empty label — and the DB's ck_*_name_not_blank rejects it anyway.
+ *
+ * This runs AFTER the base row is written and outside any transaction
+ * (PostgREST has none), so a failure here leaves a saved topic with stale
+ * translations. That is reported honestly to the admin rather than being
+ * reframed as a total failure — the topic really did save.
+ */
+async function writeNameTranslations(
+  db: Db,
+  kind: CurriculumKind,
+  targetId: string,
+  names: LocalizedNames,
+): Promise<boolean> {
+  const table = kind === "topic" ? "topic_translations" : "subtopic_translations";
+  const fk = kind === "topic" ? "topic_id" : "subtopic_id";
+
+  for (const loc of LOCALIZED_NAME_LOCALES) {
+    const value = names[loc];
+    const { error } =
+      value === null
+        ? await db.from(table).delete().eq(fk, targetId).eq("locale", loc)
+        : await db
+            .from(table)
+            .upsert({ [fk]: targetId, locale: loc, name: value }, { onConflict: `${fk},locale` });
+    if (error) {
+      console.error(`[admin] ${table} ${loc} write failed`, error.message);
+      return false;
+    }
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // saveTopic
 // ---------------------------------------------------------------------------
 
@@ -199,6 +260,8 @@ export async function saveTopic(
   if (name.length > NAME_MAX) return { error: "too.long" };
   if (term === null) return { error: "missing.term" };
   if (!isCurriculumStatus(statusRaw)) return { error: "err.server" };
+  const tr = readLocalizedNames(formData);
+  if ("error" in tr) return { error: tr.error };
 
   const db = await createClient();
 
@@ -242,15 +305,26 @@ export async function saveTopic(
     targetId = (created as { id?: string } | null)?.id ?? null;
   }
 
+  const trOk = targetId ? await writeNameTranslations(db, "topic", targetId, tr.names) : false;
+
   await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: id ? "admin.topic.update" : "admin.topic.create",
     targetTable: "topics",
     targetId,
-    metadata: { name, term, status: statusRaw },
+    // Booleans only — the audit trail records THAT a translation was set, never
+    // the bodies.
+    metadata: {
+      name,
+      term,
+      status: statusRaw,
+      hasEn: tr.names.en !== null,
+      hasRu: tr.names.ru !== null,
+    },
   });
 
   revalidatePath("/curriculum");
+  if (!trOk) return { error: "tr.failed" };
   return { ok: true };
 }
 
@@ -274,6 +348,8 @@ export async function saveSubtopic(
   if (!name) return { error: "missing.name" };
   if (name.length > NAME_MAX) return { error: "too.long" };
   if (!isCurriculumStatus(statusRaw)) return { error: "err.server" };
+  const tr = readLocalizedNames(formData);
+  if ("error" in tr) return { error: tr.error };
 
   const db = await createClient();
 
@@ -314,15 +390,24 @@ export async function saveSubtopic(
     targetId = (created as { id?: string } | null)?.id ?? null;
   }
 
+  const trOk = targetId ? await writeNameTranslations(db, "subtopic", targetId, tr.names) : false;
+
   await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: id ? "admin.subtopic.update" : "admin.subtopic.create",
     targetTable: "subtopics",
     targetId,
-    metadata: { name, status: statusRaw, topicId },
+    metadata: {
+      name,
+      status: statusRaw,
+      topicId,
+      hasEn: tr.names.en !== null,
+      hasRu: tr.names.ru !== null,
+    },
   });
 
   revalidatePath("/curriculum");
+  if (!trOk) return { error: "tr.failed" };
   return { ok: true };
 }
 

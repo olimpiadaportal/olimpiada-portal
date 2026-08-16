@@ -40,6 +40,7 @@ begin
     'parents','students','parent_student_links',
     'child_unique_ids','child_credentials','child_login_attempts',
     'districts','city_districts','schools','grades','subjects','topics','subtopics',
+    'topic_translations','subtopic_translations',
     'wallpapers','child_wallpaper_selections',
     'sticker_themes','sticker_images','child_sticker_selections',
     'question_types','difficulty_levels','olympiad_types','sources',
@@ -54,7 +55,8 @@ begin
     'subjects_pricing','launch_promo_config','child_subscriptions',
     'subscription_subjects','checkout_sessions','sibling_discounts',
     'media_assets','notification_templates','notifications','notification_deliveries',
-    'support_requests','audit_logs','admin_actions','content_reviews',
+    'support_requests','question_reports',
+    'audit_logs','admin_actions','content_reviews',
     'system_settings','feature_flags','site_content','free_access_intervals',
     'mobile_app_versions'
   ]
@@ -217,7 +219,11 @@ create policy "psl_delete" on public.parent_student_links for delete to authenti
 do $$
 declare t text;
 begin
-  foreach t in array array['districts','schools','grades','subjects','topics','subtopics'] loop
+  -- topic_translations/subtopic_translations (migration 114) ride this loop on
+  -- purpose: a narrower SELECT than their parent tables would make anon and
+  -- public surfaces silently fall back to Azerbaijani.
+  foreach t in array array['districts','schools','grades','subjects','topics','subtopics',
+                           'topic_translations','subtopic_translations'] loop
     execute format('drop policy if exists "%1$s_select" on public.%1$I;', t);
     execute format(
       'create policy "%1$s_select" on public.%1$I for select using (true);', t);
@@ -733,6 +739,30 @@ create policy "support_insert" on public.support_requests for insert to authenti
 drop policy if exists "support_update" on public.support_requests;
 create policy "support_update" on public.support_requests for update to authenticated
   using (public.is_admin()) with check (public.is_admin());
+
+-- question_reports (migration 115): a reporter reads ONLY their own rows;
+-- admins read all and are the only ones who may move a report's status.
+-- The `is not null` guard is load-bearing: after a child account is deleted the
+-- column goes NULL, and it keeps a future coalesce() refactor from opening
+-- orphaned rows to everyone.
+drop policy if exists "qreports_select" on public.question_reports;
+create policy "qreports_select" on public.question_reports for select to authenticated
+  using (
+    public.is_admin()
+    or (reporter_profile_id is not null
+        and reporter_profile_id = public.current_profile_id())
+  );
+-- Safe even though the client picks the columns: WITH CHECK is evaluated AFTER
+-- the BEFORE INSERT trigger (011) has already overwritten reporter/status/
+-- context, so a hand-rolled PostgREST insert produces exactly the RPC's row.
+drop policy if exists "qreports_insert" on public.question_reports;
+create policy "qreports_insert" on public.question_reports for insert to authenticated
+  with check (reporter_profile_id = public.current_profile_id());
+drop policy if exists "qreports_update" on public.question_reports;
+create policy "qreports_update" on public.question_reports for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+-- Deliberately NO delete policy (audit_logs precedent): service role only.
+-- 011 also revokes the blanket DELETE grant this file hands to authenticated.
 
 -- audit_logs: admin read only. No client insert/update/delete policies → all
 -- non-admin writes denied. Writes happen via SECURITY DEFINER triggers (011) or

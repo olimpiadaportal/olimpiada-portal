@@ -6,6 +6,219 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — 2026-08-16 ROUND: APPLIED AND VALIDATED (read before the entries below)
+
+**Migrations 113, 114 and 115 are APPLIED to production. Validation `013` = 107/107 PASS.**
+Gates: web-app typecheck + 199 tests + build; admin-panel typecheck + 455 tests + build; mobile-app typecheck + 352 tests. Mobile is at **1.8.2**.
+
+### What the curriculum backfill actually did
+
+Matched **260 / 260 topics and 1077 / 1077 subtopics**, inserting 520 topic and 2154 subtopic translation rows. The base taxonomy was proven untouched by the migration itself: it captures a count + md5 id-digest before the backfill and recomputes both afterwards, raising if either moved. **No topic or subtopic id changed, and the migration never writes to `topics` or `subtopics` at all.**
+
+The key is **(grades.level, exact topics.name)** with `scope = 'exam'` on every join — a relational key, never array position. Byte-exact equality was chosen over `lower()` deliberately: PostgreSQL's `lower('İ')` yields `i` + U+0307 while the admin panel's `foldName` uses JS `toLocaleLowerCase('az')` and yields plain `i`, so a `lower()`-based key would disagree with the application.
+
+**The document was verified before it was trusted.** It holds 65 tables per language in the same order; alignment was proven by comparing table counts, per-table row counts and every row's language-independent № and quarter across all three sections — 1077 rows, zero disagreements — and the parser aborts if that ever fails. Offline, the AZ names matched the live database 260/260 and 1077/1077 before a single row was written.
+
+**AZ is NOT stored in the translation tables** (`check (locale <> 'az')`). `topics.name`/`subtopics.name` remain the AZ source of truth because they are `not null`, both bulk importers CREATE topics by name, migration 095's rerun key is `t.name = <source>`, and the admin duplicate guards fold on it. Mirroring AZ would need a two-way sync trigger and would break the first time an importer inserted a topic without the mirror row. The fallback is therefore STRUCTURAL: `coalesce(tr.name, base.name)` cannot be null and cannot be blank.
+
+**Known and expected:** 12 subtopics have no en/ru — all `scope = 'olympiad'`, a separate admin-created taxonomy the document does not cover. They fall back to their AZ name, never to an empty string.
+
+### §6 was NOT a retrieval bug — do not "fix" it again
+
+`question_explanations` already had `locale`; `get_test_review` already joined the requested locale with an az fallback; `bulk_insert_questions` already imported `translations.<loc>.explanation`. The data is the whole story:
+
+    question_translations : az 2897 / en 2896 / ru 2896
+    question_explanations : az 2897 / en    0 / ru    0
+
+Every question is trilingual; **no** question has a non-AZ explanation. An Azerbaijani explanation under an English question is the documented fallback working correctly on absent content. This round therefore LABELS the fallback so it reads as a known gap, and surfaces coverage to admins. Filling 2897 explanations is content authoring — deliberately not machine-translated.
+
+### Three defects found and fixed during application
+
+1. **A vacuous test of my own making.** The migration-113 round wrote `rpcCalls.find(c => c.fn === …)` while the stub records `name`. At runtime that returned `undefined` and the `if (purge)` guard SKIPPED the assertion — green, testing nothing — and it also failed typecheck, which went unnoticed because `tsc` was run BEFORE that edit and not after. The lookup is now unconditional. **Re-run typecheck after the last edit, not before it.**
+2. **An incomplete revoke.** Both question-report trigger functions revoked EXECUTE from `public, anon` only. `010_rls_policies.sql:88` runs `alter default privileges … grant execute on functions to anon, authenticated, service_role`, so `authenticated` kept EXECUTE on two SECURITY DEFINER trigger functions. Widened to include `authenticated` in both the migration and the 011 backport. **Revoking `public, anon` is never enough in this project.**
+3. **Migration 115 did not self-transact.** Its four `begin` tokens were plpgsql function bodies, not transaction control, so a mid-way failure would have left the feature half-created — table but no RLS, or policies but no grants. Wrapped before applying.
+
+### Migration 113 — package delete lost its confirmation code (owner decision)
+
+Deleting an olympiad package no longer asks for the typed slug; the dialog's acknowledgement is the only confirmation. Every data guard is untouched — `olympiad_package_deletion_blocks` still refuses a package with purchases or attempts, answered questions still force an ARCHIVE, and the cover asset is still reclaimed. Scope is narrow and ENFORCED: the verify block fails if `admin_delete_subject`, `admin_purge_subject_questions`, `admin_delete_olympiad_grade_pool` or `admin_delete_olympiad_questions` ever loses its token.
+
+The new body was derived from the shipped one by anchored surgery, not rewritten. A hand-written replacement was drafted first and silently dropped `cover_media_id` reclamation and the rotation cleanup — it would have leaked the cover asset on every delete. **Derive from the live body; do not retype it.**
+
+### Known gaps
+
+- **Nothing here has been clicked.** No browser or device pass: not the Report-a-problem modal, not the admin Question Reports section, not the responsive changes, not the trilingual rendering.
+- **No native Android or iOS build was run.** `mobile-app/` is a single Expo codebase serving both; Gradle/Xcode builds happen on EAS and are owner-run. Mobile typecheck and 352 Jest tests pass; that is all this environment can prove.
+- Admin-panel surfaces still render AZ topic/subtopic names regardless of the admin's UI language — deliberate (AZ is the row identity admins match imports against), but it is a real en/ru surface awaiting an owner ruling.
+- The from-zero rebuild proof is still owed (staging-only; `OLIMPIADA_STAGING_DB_URL` unset).
+- `web-app/src/app/globals.css` was normalised from mixed endings (13335 CRLF + 39 LF) to uniform CRLF, which widens its diff by ~39 untouched lines.
+
+## PINNED — TRILINGUAL CURRICULUM (migration 114, 2026-08-15)
+
+**Not yet applied — the orchestrator applies migrations. web-app + mobile-app typecheck clean; admin-panel typecheck has one PRE-EXISTING failure in another round's in-flight work (see Known gaps).**
+
+### The gap
+
+`public.topics` and `public.subtopics` carried a single bare `name`. Every question on those screens was already trilingual, but the topic and subtopic LABELS around them were Azerbaijani in all three languages: the test topic/subtopic picker, the run-page header, the "Results by topic" block (tests AND olympiads) and the parent analytics per-topic / mistakes rows.
+
+### The plan (executed)
+
+1. `topic_translations` / `subtopic_translations` — the repo's existing sibling-table shape (`question_translations`, `olympiad_package_translations`): uuid PK, `public.content_locale`, `unique (parent_id, locale)`, timestamps, `on delete cascade`, same RLS posture, same `trg_set_updated_at` registration.
+2. Backfill 260 topics + 1077 subtopics from the trilingual curriculum document.
+3. Thread the reader's locale through the three RPCs that return topic names, and through the PostgREST reads.
+4. Give admins EN/RU fields and a way to SEE what is still untranslated.
+
+### AZ is NOT stored in the translations tables — `check (locale <> 'az')`
+
+`topics.name` stays the AZ source of truth. It is `not null`, ~35 read sites key on it, BOTH bulk importers CREATE topics by it, migration 095's rerun match is `t.name = <source>`, and the admin duplicate guards fold on it. A mirrored `az` row would need a two-way sync trigger plus a loop guard and would still break the first time an importer inserted a topic without writing the mirror. One home per locale; nothing has to be kept in step.
+
+The fallback is therefore STRUCTURAL, not conventional: `coalesce(tr.name, base.name)` cannot be NULL (`base.name` is `not null`) and cannot be `''` (`ck_*_name_not_blank`; the admin action DELETES an emptied EN/RU field rather than storing a blank).
+
+### The backfill key, and the fan-out it avoids
+
+Keyed on `(grades.level, EXACT topics.name)` restricted to `scope = 'exam'` — migration 095's own rerun key. Measured under five normalisations (exact / NFC / +whitespace / +quote-folding / +lowercasing): all five give 260/260 and 1077/1077, so plain `=` is used with NO `lower()`. That is deliberate, not lazy — PostgreSQL `lower('İ')` yields `i`+U+0307 while the admin panel's `foldName` uses JS `toLocaleLowerCase("az")` which yields plain `i`, so a lower()-based key would silently disagree with the app.
+
+`scope = 'exam'` is on EVERY join. The live tree is NOT 260/1077 in total: grade-1 `math` topics with `term NULL` created by the OLYMPIAD package importer sit alongside it and several names collide. Without the scope filter the join fans out and writes curriculum English onto an olympiad pool topic. Guard E3 aborts rather than fanning out; those olympiad-scoped rows are deliberately left untranslated (importer artefacts, no source document).
+
+The migration FAILS LOUDLY below 260/1077 and prints the unmatched keys (capped at 20). A partial backfill is a silently half-Azerbaijani curriculum that surfaces months later; the fix is one edited VALUES line and a rerun.
+
+### Signature churn — the biggest risk in this round
+
+A defaulted parameter does not replace a function, it ADDS an overload, and every call at the old arity then fails `function ... is not unique`. All three are dropped at the OLD signature first and re-granted at the new one (a fresh function is EXECUTE-able by PUBLIC, so skipping the re-grant would expose the analytics RPC to `anon` and the result helper to every authenticated session):
+
+- `test_attempt_result(uuid)` → `(uuid, text)`
+- `submit_test_attempt(uuid, jsonb)` → `(uuid, jsonb, text)`
+- `get_child_subject_dashboard(uuid, uuid, int, text)` → `(uuid, uuid, int, text, text)`
+
+**Deploy the DB before the apps.** PostgREST reloads its schema cache on DDL, but there is a brief window where a call at the new arity 404s.
+
+### Deliberate behaviour change, named rather than slipped in
+
+`get_child_subject_dashboard`'s `mistakes` block grouped by `t.name` and `coalesce(st.name, '—')`. A name-based key becomes locale-dependent AND already merged two genuinely distinct same-named subtopics into one row. It now groups by `t.id, st.id`, which VISIBLY SPLITS rows that used to merge on existing data. `per_package` also stopped hardcoding the `az` package title.
+
+### Files
+
+- **created** `supabase/sql/migrations/2026_08_15_114_curriculum_translations.sql` (LF, self-transacting, 2060 lines: schema · RLS · updated_at · the three RPCs · 1077-row staged backfill with guards E2–E6 · verify block F)
+- **created** `supabase/seed/curriculum_2026_translations.json` (1077 rows, source of record beside `curriculum_2026.json`)
+- **created** `web-app/src/lib/localizedName.ts`, `mobile-app/src/lib/localizedName.ts` (`pickName`, kept in sync by hand — mobile cannot import from web-app)
+- **backported** `003` (both tables + comments) · `010` (enable-RLS array + academic-taxonomy policy loop) · `011` (trg_set_updated_at array + the three functions, re-verified byte-identical to the migration + grants + comments) · `012` (from-zero rebuild note: `001-012,014,015,016,013` then `095` then `114`) · `013`
+- **web-app** `child/test/[subjectId]` (both embeds) · `child/test/run/[attemptId]` (topic embed) · `child/test/result/[attemptId]` (`p_locale`) · `(parent)/analytics` (`p_locale`)
+- **admin-panel** `lib/admin/curriculum.ts` (EN/RU upsert-or-delete + `{hasEn,hasRu}` audit metadata) · `curriculum-shared.ts` (`LOCALIZED_NAME_LOCALES`, `parseLocalizedName`, `nameEn`/`nameRu` on the row types) · `curriculum/page.tsx` (embeds) · `CurriculumTree.tsx` (EN/RU second line + "translation missing" badge) · `TopicForm.tsx` / `SubtopicForm.tsx` (EN/RU inputs, name field relabelled "Ad (AZ)") · `labels.ts` (az/en/ru) · `globals.css` (`.cur-row-tr`, `.cur-pill-warn`) · the curriculum-shared test fixtures
+- **mobile-app** `features/tests/api.ts` · `queries.ts` · `TestSetupScreen` · `TestRunnerScreen` · `TestResultScreen` · `lib/data.ts` · `(parent)/(tabs)/analytics.tsx` · `app.json` + `package.json` **1.8.1 → 1.8.2** (patch)
+
+### Cache work: web needed NONE, mobile needed exactly three keys
+
+web-app DOES use `unstable_cache` — in `lib/flags.ts` and `lib/pricing.ts` (an earlier note in this file claimed otherwise; corrected after re-measuring). It does not matter here: those eight cached fetchers read only `feature_flags`, `system_settings`, `site_content` and `subjects_pricing`, never `topics`/`subtopics`/`question_explanations`, and the one that IS localized (`site-content-rows-v2`) caches all three languages in a single entry and picks the locale afterwards. No cache key needs a locale. Every affected page reads cookies through `@supabase/ssr` and is dynamic; the language switcher sets the cookie and calls `location.reload()`.
+
+Mobile's `useLocaleStore.setLocale` only mutates zustand and never touches the query cache, so `TQK.setup`, `TQK.result` and `["child-dashboard", …]` gained `locale` (matching the convention `["news", locale]` and `TQK.attempt/review` already use). Keying beats invalidating: the previous locale's data stays warm.
+
+### `sync-i18n` WAS run (second pass)
+
+The first pass added no shared keys. The second pass added `test.review.explAzOnly` / `test.review.explAzNote` to `web-app/src/i18n/messages.ts`, so `cd mobile-app && npm run sync-i18n` was run and `messages.generated.ts` regenerated (az/en/ru = 1374 each). It was never hand-edited.
+
+## Second pass — web read paths swept, and the explanation fallback made HONEST (2026-08-15)
+
+### The explanation gap is DATA, not retrieval — so the retrieval was not touched
+
+`get_test_review` already joins `question_explanations` at the requested locale and falls back to `az` (011: the `qe` / `qe_az` joins and `coalesce(qe.explanation_body, qe_az.explanation_body)`), and `bulk_insert_questions` already imports `translations.<loc>.explanation`. The measured content is `question_translations` az 2897 / en 2896 / ru 2896 but `question_explanations` az 2897 / **en 0 / ru 0**. Every question is trilingual; NO question has a non-AZ explanation. The Azerbaijani text under an English question is the documented fallback working correctly on absent content. Not one line of that SQL was changed, and no machine translation was produced.
+
+What changed is that the fallback now says so. `/child/test/review/[attemptId]` labels an explanation that is not in the reader's language with a chip ("Azerbaijani only" / "Yalnız Azərbaycan dilində" / "Только на азербайджанском") plus one muted sentence, so it reads as a known content gap instead of a broken translation.
+
+### How the label decides — and why it is silent when unsure
+
+The RPC returns a bare `explanation` string with no locale marker, and adding one would mean a THIRD migration in a round whose numbers are pre-assigned (114, 115). Instead the page asks `question_explanations` — indexed on `uq_explanation_locale (question_id, locale)` — which of the attempt's explained questions has a row in the reader's locale. Only the ids and locales are read; no bodies, no new exposure (RLS already lets a student read a published question's explanation).
+
+`fallbackExplanationIds` (pure, unit-tested, `web-app/src/lib/explanationFallback.ts`) requires a VISIBLE `az` row before it labels anything. `qexpl_select` hides an ARCHIVED question's explanations from a student, and "no rows came back" must never be read as "no translation exists" — that would stamp *Azerbaijani only* onto text that may well be translated. The label errs toward silence in both directions.
+
+One deliberate approximation, named: a LEGACY daily-round attempt (`daily_round_id` set) reads its explanation from the round's frozen `content_snapshot`, so the live lookup is a proxy there. It errs the safe way — an explanation translated after the snapshot was taken goes unlabelled, which is exactly today's behaviour. New rated rounds are per-student and do not use `daily_rounds` (011: "daily_rounds is LEGACY storage").
+
+The `.in()` list is chunked at 100: an olympiad attempt may serve up to 500 questions (`questions_per_attempt`) and a 500-uuid query string would blow past the gateway's URL limit.
+
+### Admin visibility of the gap — proportional, no new page
+
+`/questions` (the page that already lists questions) gains:
+
+- a per-row **İzah tərcüməsi** column: `EN · RU missing` (warn pill) / `Complete` / `No explanation`. It comes from one extra embed on the query the page already runs, so it costs nothing and is exact for the visible page. It uses the SAME honesty rule as the student label — with no visible `az` row it reports "no explanation" rather than guessing, because a Content Manager without `content.review` cannot see another author's in-review explanations;
+- an exact coverage sentence under the review chips: "of {az} questions with an explanation, {en} are translated into English and {ru} into Russian". Three head-only counts with an `!inner` embed excluding the private olympiad pool — `uq_explanation_locale` makes counting explanation rows the same as counting questions. No 2000-row sample, so the number cannot silently lie.
+
+No filter chip: filtering to "missing" would need a `NOT IN` over thousands of ids, and the capped-candidate-set pattern the `optionE` chip uses would truncate at 2000 against 2897 general-bank questions and report a wrong count.
+
+### The web sweep — every topic/subtopic surface, not just the screenshots
+
+Searched exhaustively (`from("topics"|"subtopics")`, every `.rpc(` call site, every file mentioning "topic"). The complete set of web-app surfaces that render a topic or subtopic name is the four the first pass already fixed: the test topic/subtopic picker, the run-page header, the result page's "Results by Topic" (tests AND olympiads, via `submit_test_attempt`'s payload) and parent analytics (`per_topic` / `mistakes`). `get_test_attempt` / `get_practice_attempt` / `get_test_review` return `topic_id` only. The mobile BFF routes (`/api/mobile/v1/*`) return no topic name at all. The parent per-child progress page and the public olympiad pages render none.
+
+### One locale helper, not seven
+
+`pickTranslation(rows, locale)` joined `pickName` in `web-app/src/lib/localizedName.ts` and replaced SIX hand-rolled copies of "find the locale row, else the az row": `(parent)/olympiads`, `child/olympiads` (twice), `(parent)/children/[id]/olympiads`, `child/test/run/[attemptId]`, `NewsArticleView`, `NewsBrowser`, `ParentNewsPanel`. `NewsArticleView` keeps its extra `?? trs[0]` third fallback at the call site (an article with no az row must still render). `lib/notifications/events.ts` was deliberately left alone — it prefers az then ANY non-empty title, because a stored notification is written in one language, which is different logic.
+
+### Files (second pass)
+
+- **created** `web-app/src/lib/explanationFallback.ts` + `web-app/src/lib/__tests__/explanationFallback.test.ts` (7 tests)
+- **web-app** `lib/localizedName.ts` (`pickTranslation`) · `child/test/review/[attemptId]/page.tsx` · `components/TestReviewList.tsx` · `components/NewsArticleView.tsx` · `components/NewsBrowser.tsx` · `components/ParentNewsPanel.tsx` · `(parent)/olympiads/page.tsx` · `child/olympiads/page.tsx` · `(parent)/children/[id]/olympiads/page.tsx` · `child/test/run/[attemptId]/page.tsx` · `i18n/messages.ts` (2 keys × az/en/ru) · `globals.css` (`.tst-explain-head`, `.tst-explain-lang`, `.tst-explain-note`)
+- **admin-panel** `(protected)/questions/page.tsx` · `components/QuestionsTable.tsx` · `lib/admin/question-flow-labels.ts` (5 keys × az/en/ru) · `globals.css` (`.expl-coverage`)
+- **mobile-app** `src/i18n/messages.generated.ts` (regenerated by `npm run sync-i18n`; version already bumped to 1.8.2 in the first pass, so no second bump)
+
+### Admin panel still shows the AZ topic name as the row identity — flagged, not silently kept
+
+The owner's criterion says every admin surface should render the selected locale. The first pass decided the opposite for the admin panel and that decision was KEPT here rather than re-litigated mid-feature, for a reason worth the owner's ruling: `loadQuestionTaxonomy` feeds the filter cascade, the bulk-assign picker AND the bulk-import AI prompt, and `meta.topic` in an import file must be the AZ name (both importers create topics by name; migration 095's rerun key is `t.name = <source>`). Localizing the tree would put an English label in front of a key the importer cannot resolve, and localizing only the display column would leave the list and the filter above it disagreeing. EN/RU are visible and editable in the curriculum tree, which is where they are authored. **If the owner wants localized admin display anyway, it is a one-file change to the questions list plus the same treatment for every picker — say so and it ships.**
+
+### Known gaps
+
+- **Migration 114 has not been applied anywhere** (no `psql` from either pass). The E5 match report (260/1077) and validation `013` checks 49 + 102 are therefore UNVERIFIED against a live database. Until it is applied, `topic_translations` does not exist and the PostgREST embeds added to the child test pages will error — **DB first, then the apps**.
+- **Mobile has not had the honest-fallback label yet.** The three trilingual strings are already in `messages.generated.ts`; the mobile review screen still renders the explanation unlabelled. Belongs to the mobile stage.
+- **Report system: BUILT** (migration 115, unapplied) — see the pinned entry above.
+- **`admin-panel` typecheck reports one PRE-EXISTING error** — `src/lib/admin/__tests__/guarded-deletion-actions.test.ts(385,42)`: `Property 'fn' does not exist on type '{ name: string; args: Record<string, unknown> }'`. That file is another round's uncommitted in-flight work (alongside `olympiad.ts`, `OlympiadPackageDeleteButton.tsx`, `015`, migration `113`) and was not touched here. Nothing in this round's files fails.
+- **Both bulk importers still create topics with NO translations**, so an imported topic renders AZ in every locale until an admin fills it in. That is correct fallback behaviour, and the CurriculumTree badge is the only place it is visible.
+- **Nobody has clicked the admin EN/RU forms**, and no native mobile build was produced — EAS/Gradle/Xcode are owner-run and cannot be executed here.
+
+## PINNED — REPORT A PROBLEM, END TO END (migration 115, 2026-08-15)
+
+**Not yet applied — the orchestrator applies migrations.** web-app: typecheck clean, 184 tests pass (was 170; +14 for the report action), build green. admin-panel: build green, typecheck + tests carry the SAME pre-existing failures as before this round (see Known gaps). mobile-app: typecheck clean, 339 tests pass, `expo.version` 1.8.2 → **1.9.0** (new feature).
+
+### The plan (written before coding, executed as written)
+
+A student can now flag a broken question (wrong answer key, typo, unreadable image, bad translation) from the two places a question is on screen — the test runner and the answer review — and an administrator gets a triage worklist. New table `public.question_reports`, following `support_requests`, not a new pattern.
+
+### Where the trust boundary sits
+
+The client sends a question id, a message and two enum-constrained diagnostic hints. **Everything else is derived by a BEFORE INSERT trigger** (`trg_question_report_derive`): reporter (from `current_profile_id()`), status (`'new'`), timestamps, the olympiad package snapshot, and the attempt context. That is what makes the reporter-can-INSERT policy safe — `WITH CHECK` is evaluated AFTER BEFORE triggers, so a hand-rolled PostgREST insert with a forged reporter, status or package produces exactly the row the RPC would.
+
+**The rate limit lives in the trigger, not in the RPC and not in the app** (5 per rolling hour, 20 per rolling day, per reporter). Mobile talks to PostgREST directly (`mobile-app/src/features/tests/api.ts` — there is no BFF hop for tests), so an app-tier limiter would have guarded the web path only. `web-app/src/lib/rateLimit.ts` is still reused as a cheap first line and is explicitly labelled non-authoritative — its buckets are per server instance.
+
+Other decisions worth keeping:
+
+- **`attempt_id` is VERIFIED and silently DROPPED when it fails** (reporter's own attempt AND that attempt actually drew the question, checked against `test_attempt_answers`). A bogus context must not cost us a legitimate report.
+- **`olympiad_package_id` is a SNAPSHOT**, not a read-time join: a pool question can later be archived or moved, and `test_attempts` has no package column.
+- **A BEFORE UPDATE freeze trigger** makes a filed report immutable except `status` and `admin_note`, and stamps `handled_by`/`handled_at`. Its name sorts before `trg_set_updated_at`, so `updated_at` is still stamped.
+- **Duplicate guard is a PARTIAL unique index** on `(question_id, reporter_profile_id) where status in ('new','in_review')` — closing a report frees the slot. 23505 surfaces to the child as a calm "already reported, being reviewed".
+- **Report text is rendered in exactly ONE place** (the admin panel) and always as a React text child with `pre-wrap`. Never `dangerouslySetInnerHTML`, never through `notif-markdown.ts`, never into audit metadata (audit rows carry ids + old/new status only), notifications, emails or exports.
+- **1000-char cap enforced four times**: textarea `maxLength`, the live counter, the RPC's `char_length`, and the column CHECK. Trimming is explicit on both sides — single-argument `btrim()` strips SPACES ONLY, so both SQL call sites pass `' ' || chr(9) || chr(10) || chr(13)` and a newline-only message is rejected rather than stored.
+- **Success is an IN-PLACE modal transition on both web and mobile**, never a toast: web has no toast infrastructure and adding one for this would be a parallel system.
+
+### The one placement that is NOT in the obvious canonical file
+
+`question_reports.olympiad_package_id` gets its FK in **`015`**, not in the `008` CREATE TABLE. The canonical run order is `001`–`012`,`014`,`015`,`016`,`013`, so `public.olympiad_packages` does not exist when `008` runs and an inline reference would abort a from-zero rebuild. The migration itself declares the FK inline (it runs against a live database where the table exists).
+
+### Files
+
+- **SQL** — `supabase/sql/migrations/2026_08_15_115_question_reports.sql` (LF, **no self-`begin;`/`commit;`**, idempotent); backported into `001` (two enums), `008` (table + column comments), `010` (enable-RLS array + `qreports_select`/`qreports_insert`/`qreports_update`, no delete policy), `011` (six indexes, `trg_set_updated_at` registration, both trigger functions, `submit_question_report()`, grants incl. `revoke delete … from anon, authenticated`), `015` (the package FK), `013` (new check **`103_question_reports_hardened`**). `migrations/README_MIGRATIONS.md` gained a migration log.
+- **web-app** — `lib/reportMessage.ts` (the shared cap + trim rule), `lib/auth/reportActions.ts`, `components/ReportQuestionButton.tsx`, mounted in `TestRunner.tsx` (question head, beside the flag) and `TestReviewList.tsx` (footer under the explanation); both test pages extended their dicts; `i18n/messages.ts` gained the `test.report.*` family in az/en/ru; `globals.css` gained the `.tst-report*` rules; `lib/auth/__tests__/reportActions.test.ts` (14 tests).
+- **mobile-app** — `features/tests/ReportQuestionSheet.tsx`, `submitQuestionReport()` in `features/tests/api.ts`, controls wired into `TestRunnerScreen.tsx` and `TestReviewScreen.tsx`, `messages.generated.ts` regenerated by `npm run sync-i18n` (never hand-edited), `app.json` + `package.json` at 1.9.0.
+- **admin-panel** — `/question-reports` list + `[id]` detail + both `loading.tsx`, `lib/admin/questionReports.ts`, `lib/admin/question-report-status.ts`, `components/QuestionReportStatus.tsx`, nav entry (`adminOnly`), `qrep.*` + `nav.questionReports` in az/en/ru, `.qrep-*` CSS, plus `?edit=<uuid>` deep-linking into the existing questions edit modal (`initialEditId`).
+- **Remaining loading-state work** — new `loading.tsx` for `/questions` and `/olympiad` (curriculum and locations already had theirs).
+
+### Known gaps / deliberate omissions
+
+- **Migration 115 has not been applied anywhere** (no `psql` from this pass). Check `103` is therefore UNVERIFIED against a live database, and until it runs the report button will fail with a generic error on both platforms — **DB first, then the apps**.
+- **`admin-panel/src/components/skeletons` DOES NOT EXIST.** The task asked to reuse it; there is no such directory and no skeleton component library in this repo. The four route skeletons are built from the existing `.loc-skel` shimmer primitive plus four new size modifiers (`.qrep-skel-card/-filter/-chip/-rows`). Stated plainly rather than pretended.
+- **No date-range filter on the admin list.** `FilterBar` builds its hrefs from its own search key + select keys only, so a `from`/`to` pair added beside it would be DROPPED the moment any select changed. Filters shipped: status (also the four stat cards), subject (via `questions!inner` — the resolve-ids-then-`.in()` pattern caps at 2000 and would truncate against ~2900 questions), platform, and full-text over the report body.
+- **No student-facing "my reports" screen.** The `qreports_select` reporter branch has no UI consumer in v1; it exists so ownership is enforced from day one and a future screen needs no policy change.
+- **No admin note editor.** The column and its 2000-char CHECK exist and the freeze trigger permits writing it, but v1 ships status transitions only.
+- **`question_id` is ON DELETE CASCADE**, so the owner-only curriculum-purge carve-out would take reports with it. The alternative (SET NULL) leaves a report about nothing. Flagged so the next purge migration counts the deletion instead of being surprised by it.
+- **`platform`, `locale` and `app_version` are CLIENT-SUPPLIED.** The web path removes the risk (the action hardcodes platform and reads locale from its own `getLocale()`); a tampered mobile client could mislabel a row. They are enum/regex-constrained and must never become authorization inputs.
+- **The admin detail page is an ANSWER-KEY surface.** `requireAdmin()` gates the page and the loader, and RLS gates the tables — but widening the route to content managers would leak keys.
+- **`admin-panel` pre-existing failures, unchanged by this round** — `npx tsc --noEmit`: one error, `src/lib/admin/__tests__/guarded-deletion-actions.test.ts(385,42)` TS2339. `npx vitest run`: 2 failures in `guarded-deletion-sql.test.ts` (it still expects `admin_delete_olympiad_package`'s confirmation token / `(uuid,text)` signature that `015` and `013` no longer carry). Identical counts before and after: 452 passed / 2 failed of 454.
+- **Nothing was clicked by a human**, and no native Android/iOS build was produced — `mobile-app/` is ONE Expo codebase and all EAS/Gradle/Xcode builds are owner-run.
+
 ## PINNED — OLYMPIAD LIST DELETE + POOL BULK DELETE (migration 112, 2026-08-15)
 
 **Applied to production. Validation `013` = 105/105 PASS. admin-panel: typecheck + 454 tests + build green.**

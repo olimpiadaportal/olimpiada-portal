@@ -14,6 +14,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { startOlympiad } from "@/lib/auth/childActions";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { pickTranslation } from "@/lib/localizedName";
 import { formatLongDate } from "@/lib/formatDate";
 import {
   OlympiadPlannedCard,
@@ -22,6 +23,9 @@ import {
 } from "@/components/OlympiadPlannedCard";
 
 type StatusKind = PlannedOlympiad["statusKind"];
+
+/** The olympiad_package_translations columns this page embeds. */
+type PackageTr = { locale: string; title: string | null; description: string | null };
 
 export default async function ChildOlympiadsPage({
   searchParams,
@@ -179,10 +183,6 @@ export default async function ChildOlympiadsPage({
     }
   }
 
-  const pickTr = (trs: any[]) =>
-    (trs ?? []).find((x: any) => x.locale === locale) ??
-    (trs ?? []).find((x: any) => x.locale === "az");
-
   // Round 46: the shared Baku formatter (a bare "az" tag here rendered the
   // CLDR root month placeholder — "2026 M08 22").
   const fmt = (ts: number) => formatLongDate(ts, locale, true);
@@ -193,7 +193,7 @@ export default async function ChildOlympiadsPage({
   const planned = ((packages ?? []) as any[])
     .filter((p) => !ownedIds.has(p.id) && coveredForMe.has(p.id))
     .map((p): { item: PlannedOlympiad; ts: number } => {
-      const tr = pickTr(p.olympiad_package_translations);
+      const tr = pickTranslation<PackageTr>(p.olympiad_package_translations, locale);
       const n = poolCounts.get(p.id) ?? 0;
       const questionsText = `${n} ${t("oly4.questions")}`;
       const subject: string | null = p.subjects?.name
@@ -249,13 +249,11 @@ export default async function ChildOlympiadsPage({
     qcount: t("oly4.qcount"),
   };
 
-  const ownedTitle = (p: any): string => {
-    const trs = p.olympiad_packages?.olympiad_package_translations ?? [];
-    return (
-      (trs.find((x: any) => x.locale === locale) ?? trs.find((x: any) => x.locale === "az"))
-        ?.title ?? "—"
-    );
-  };
+  const ownedTitle = (p: any): string =>
+    pickTranslation<PackageTr>(
+      p.olympiad_packages?.olympiad_package_translations,
+      locale,
+    )?.title ?? "—";
 
   // Playable list ("Olimpiadalarım"): owned purchases ONLY — packages are
   // purchase-only in every payment mode (free windows cover subjects, not

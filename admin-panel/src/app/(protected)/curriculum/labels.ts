@@ -64,6 +64,13 @@ const STRINGS: Record<Locale, Dict> = {
     "cur.fSubject": "Fənn",
     "cur.fGrade": "Sinif",
     "cur.fName": "Ad",
+    "cur.fNameAz": "Ad (AZ)",
+    "cur.fNameEn": "Ad (EN)",
+    "cur.fNameRu": "Ad (RU)",
+    "cur.nameAzHint":
+      "Azərbaycanca ad əsas addır: sual idxalı və kurikulum yeniləmələri məhz bu ada görə uyğunlaşdırılır. İngilis və rus adları yalnız şagirdə göstərilir; boş buraxsanız, həmin dildə azərbaycanca ad görünəcək.",
+    "cur.trMissing": "Tərcümə yoxdur: {langs}",
+    "cur.trMissingBoth": "EN və RU",
     "cur.fTerm": "Rüb",
     "cur.fStatus": "Status",
     "cur.fTopic": "Mövzu",
@@ -103,6 +110,9 @@ const STRINGS: Record<Locale, Dict> = {
     "cur.errDuplicateSubtopic":
       "Bu mövzuda eyni adlı alt mövzu artıq mövcuddur.",
     "cur.errTooLong": "Ad çox uzundur (maksimum 120 simvol).",
+    "cur.errTooLongTr": "Tərcümə çox uzundur (maksimum 120 simvol).",
+    "cur.errTrSave":
+      "Ad yadda saxlanıldı, lakin EN/RU tərcümələri yazılmadı. Yenidən açıb tərcümələri təkrar yadda saxlayın.",
     "cur.errGeneric": "Yadda saxlamaq mümkün olmadı. Yenidən cəhd edin.",
     "cur.errOp": "Əməliyyat alınmadı. Yenidən cəhd edin.",
 
@@ -158,6 +168,13 @@ const STRINGS: Record<Locale, Dict> = {
     "cur.fSubject": "Subject",
     "cur.fGrade": "Grade",
     "cur.fName": "Name",
+    "cur.fNameAz": "Name (AZ)",
+    "cur.fNameEn": "Name (EN)",
+    "cur.fNameRu": "Name (RU)",
+    "cur.nameAzHint":
+      "The Azerbaijani name is the canonical one: question imports and curriculum updates are matched against it. The English and Russian names are shown to students only; leave one blank and that language falls back to the Azerbaijani name.",
+    "cur.trMissing": "No translation: {langs}",
+    "cur.trMissingBoth": "EN and RU",
     "cur.fTerm": "Term",
     "cur.fStatus": "Status",
     "cur.fTopic": "Topic",
@@ -195,6 +212,9 @@ const STRINGS: Record<Locale, Dict> = {
     "cur.errDuplicateSubtopic":
       "A subtopic with this name already exists under this topic.",
     "cur.errTooLong": "The name is too long (120 characters maximum).",
+    "cur.errTooLongTr": "The translation is too long (120 characters maximum).",
+    "cur.errTrSave":
+      "The name was saved, but the EN/RU translations were not. Reopen the record and save the translations again.",
     "cur.errGeneric": "Could not save. Please try again.",
     "cur.errOp": "The operation failed. Please try again.",
 
@@ -249,6 +269,13 @@ const STRINGS: Record<Locale, Dict> = {
     "cur.fSubject": "Предмет",
     "cur.fGrade": "Класс",
     "cur.fName": "Название",
+    "cur.fNameAz": "Название (AZ)",
+    "cur.fNameEn": "Название (EN)",
+    "cur.fNameRu": "Название (RU)",
+    "cur.nameAzHint":
+      "Азербайджанское название — основное: именно по нему сопоставляются импорт вопросов и обновления учебной программы. Английское и русское названия видят только ученики; если оставить поле пустым, в этом языке покажется азербайджанское название.",
+    "cur.trMissing": "Нет перевода: {langs}",
+    "cur.trMissingBoth": "EN и RU",
     "cur.fTerm": "Четверть",
     "cur.fStatus": "Статус",
     "cur.fTopic": "Тема",
@@ -286,6 +313,9 @@ const STRINGS: Record<Locale, Dict> = {
     "cur.errDuplicateSubtopic":
       "Подтема с таким названием уже есть в этой теме.",
     "cur.errTooLong": "Название слишком длинное (максимум 120 символов).",
+    "cur.errTooLongTr": "Перевод слишком длинный (максимум 120 символов).",
+    "cur.errTrSave":
+      "Название сохранено, но переводы EN/RU записать не удалось. Откройте запись снова и сохраните переводы ещё раз.",
     "cur.errGeneric": "Не удалось сохранить. Попробуйте снова.",
     "cur.errOp": "Не удалось выполнить операцию. Попробуйте снова.",
 

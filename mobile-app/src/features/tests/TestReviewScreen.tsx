@@ -10,7 +10,7 @@ import React, { useMemo, useState } from "react";
 import { FlatList, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Check, CircleMinus, Lightbulb, X } from "lucide-react-native";
+import { Check, CircleMinus, Lightbulb, TriangleAlert, X } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
@@ -25,6 +25,8 @@ import {
 } from "./logic";
 import type { ReviewQuestion } from "./types";
 import { QuestionImage } from "./QuestionImage";
+import { ReportQuestionSheet } from "./ReportQuestionSheet";
+import { submitQuestionReport } from "./api";
 import { OptionImage } from "@/features/tests/OptionImage";
 import {
   ArenaButton,
@@ -241,14 +243,25 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
       ListHeaderComponent={header}
       ListFooterComponent={footer}
       ItemSeparatorComponent={() => <View style={{ height: spacing.lg }} />}
-      renderItem={({ item }) => <ReviewCard arena={arena} item={item} />}
+      renderItem={({ item }) => (
+        <ReviewCard arena={arena} item={item} attemptId={attemptId} />
+      )}
     />
   );
 }
 
-function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
-  const { t } = useT();
+function ReviewCard({
+  arena,
+  item,
+  attemptId,
+}: {
+  arena: ArenaTokens;
+  item: Shaped;
+  attemptId: string;
+}) {
+  const { t, locale } = useT();
   const { q, state, index } = item;
+  const [reportOpen, setReportOpen] = useState(false);
   const selected = new Set(q.selected_option_ids ?? []);
   const stateColor =
     state === "correct" ? arena.lime : state === "wrong" ? arena.red : arena.gold;
@@ -412,17 +425,98 @@ function ReviewCard({ arena, item }: { arena: ArenaTokens; item: Shaped }) {
             gap: spacing.xs,
           }}
         >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+          {/* flexWrap + shrinking label: the az/ru "Azerbaijani only" chip runs
+              long, and at 320pt it has to drop below the heading rather than
+              push it off the card. */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.xs,
+              flexWrap: "wrap",
+            }}
+          >
             <Lightbulb size={14} color={arena.gold} strokeWidth={2} />
-            <AppText variant="label" color={arena.ink} style={{ fontSize: 13 }}>
+            <AppText
+              variant="label"
+              color={arena.ink}
+              style={{ fontSize: 13, flexShrink: 1 }}
+            >
               {t("test.review.explanation")}
             </AppText>
+            {q.explanationIsFallback ? (
+              <View
+                style={{
+                  borderWidth: 1,
+                  borderColor: tint(arena.gold, 0.5),
+                  backgroundColor: tint(arena.gold, 0.12),
+                  borderRadius: 999,
+                  paddingVertical: 1,
+                  paddingHorizontal: spacing.sm,
+                  flexShrink: 1,
+                }}
+              >
+                <AppText variant="label" color={arena.gold} style={{ fontSize: 11 }}>
+                  {t("test.review.explAzOnly")}
+                </AppText>
+              </View>
+            ) : null}
           </View>
           <AppText color={arena.muted} style={{ fontSize: 14, lineHeight: 20 }}>
             {q.explanation}
           </AppText>
+          {/* Says WHY the text above is in another language, so a known content
+              gap does not read as a broken translation. */}
+          {q.explanationIsFallback ? (
+            <AppText color={arena.dim} style={{ fontSize: 12, lineHeight: 17 }}>
+              {t("test.review.explAzNote")}
+            </AppText>
+          ) : null}
         </View>
       ) : null}
+
+      {/* Report a problem — below the explanation on purpose: this is the
+          moment a child decides the answer key looks wrong. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("test.report.action")}
+        onPress={() => setReportOpen(true)}
+        hitSlop={8}
+        style={({ pressed }) => ({
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: spacing.xs,
+          borderWidth: 1,
+          borderColor: arena.line,
+          borderRadius: 999,
+          paddingVertical: spacing.xs,
+          paddingHorizontal: spacing.md,
+          minHeight: 36,
+          alignSelf: "flex-end",
+          opacity: pressed ? 0.8 : 1,
+        })}
+      >
+        <TriangleAlert size={14} color={arena.muted} strokeWidth={2} />
+        <AppText variant="label" color={arena.muted} style={{ fontSize: 12 }}>
+          {t("test.report.action")}
+        </AppText>
+      </Pressable>
+
+      <ReportQuestionSheet
+        arena={arena}
+        visible={reportOpen}
+        t={t}
+        onClose={() => setReportOpen(false)}
+        onSubmit={(message) =>
+          submitQuestionReport({
+            questionId: q.question_id,
+            attemptId,
+            message,
+            locale,
+          })
+        }
+      />
     </Panel>
   );
 }

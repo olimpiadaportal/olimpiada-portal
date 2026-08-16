@@ -493,6 +493,7 @@ export type DashboardScope = "tests" | "olympiads";
 export async function fetchChildDashboard(
   studentProfileId: string,
   subjectId: string | null,
+  locale: Locale,
   days = 30,
   scope: DashboardScope = "tests",
 ) {
@@ -501,6 +502,9 @@ export async function fetchChildDashboard(
     p_subject_id: scope === "olympiads" ? null : subjectId,
     p_days: days,
     p_scope: scope,
+    // Migration 114: per_topic / mistakes / per_package arrive already
+    // localized, so AnalyticsDashboard renders the payload strings verbatim.
+    p_locale: locale,
   });
   if (error) throw error;
   return data as Record<string, any>;

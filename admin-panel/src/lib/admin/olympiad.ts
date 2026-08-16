@@ -2580,20 +2580,18 @@ export async function deleteOlympiadPackageAction(
   const t = await getT();
 
   const id = s(fd, "__id");
-  const code = s(fd, "__code").slice(0, CODE_MAX);
   if (!UUID_RE.test(id)) return { ok: false, error: t("err.server"), blocks: [] };
 
   const supabase = await createClient();
-  // Refused BEFORE the RPC so an unconfirmed delete never reaches the function
-  // that takes the lock and reads the scope. The database compares the token
-  // again inside that transaction — that comparison is the control.
-  if ((await confirmationTokenMatches(supabase, "olympiad_packages", id, code)) === false) {
-    return await tokenRefusal();
-  }
-
+  // NO CONFIRMATION TOKEN HERE (owner decision, migration 113) — unlike every
+  // sibling in this file. The dialog's acknowledgement is the only confirmation
+  // a package delete asks for now. What still stops a destructive mistake is
+  // olympiad_package_deletion_blocks inside the RPC, which refuses a package
+  // carrying purchases or attempts; that guard is untouched, so paid content
+  // remains protected. Do not reintroduce __code here without also restoring
+  // the tokened arity — 113 dropped it, so the RPC would fail to resolve.
   const { data, error } = await supabase.rpc("admin_delete_olympiad_package", {
     p_package_id: id,
-    p_expected_code: code,
   });
   if (error || !data) return await toDeletionFailure(error, "olympiad package delete");
 

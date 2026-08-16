@@ -123,6 +123,10 @@ export default async function QuestionsPage({
   // redirects here when an olympiad-pool question id is opened directly).
   const noticeRaw = first(sp, "notice");
   const notice = noticeRaw === "olympiadScoped" ? noticeRaw : "";
+  // Deep link into the edit modal — used by a question report's "open question"
+  // link. Validated like every other id; the modal's own loader re-authorizes
+  // and refuses an olympiad-pool question regardless of what arrives here.
+  const editQuestionId = uuidParam("edit");
 
   // ---- Text search: resolve matching question ids first ------------------
   // supabase-js cannot filter the parent by an embedded table reliably without
@@ -165,7 +169,7 @@ export default async function QuestionsPage({
     let qb = supabase
       .from("questions")
       .select(
-        "id, status, primary_locale, term, created_at, subjects(name), grades(name), topics(name), question_translations(locale, body)",
+        "id, status, primary_locale, term, created_at, subjects(name), grades(name), topics(name), question_translations(locale, body), question_explanations(locale)",
         { count: "exact" },
       )
       // PRIVATE olympiad-package questions are excluded from the general list.
@@ -204,6 +208,23 @@ export default async function QuestionsPage({
     return qb;
   };
 
+  // Explanation-translation coverage. question_explanations is trilingual by
+  // SHAPE but currently holds `az` rows only, so a student reading in EN/RU is
+  // served the Azerbaijani explanation — the review screen now labels that as a
+  // known gap, and this is where an editor can see how big the gap is.
+  // uq_explanation_locale makes (question_id, locale) unique, so counting
+  // explanation rows for one locale counts QUESTIONS. head-only + an !inner
+  // embed keeps the private olympiad pool out, exactly like the cards above.
+  const explCoverage = (loc: string) =>
+    supabase
+      .from("question_explanations")
+      .select("question_id, questions!inner(olympiad_package_id)", {
+        count: "exact",
+        head: true,
+      })
+      .eq("locale", loc)
+      .is("questions.olympiad_package_id", null);
+
   const [
     main,
     { data: subjects },
@@ -214,6 +235,9 @@ export default async function QuestionsPage({
     { count: statPublished },
     { count: statRejected },
     { count: needsTermCount },
+    { count: explAzCount },
+    { count: explEnCount },
+    { count: explRuCount },
     // For the New-question and Bulk-import modals.
     rawDict,
     selectOptions,
@@ -236,6 +260,9 @@ export default async function QuestionsPage({
       .select("id", { count: "exact", head: true })
       .is("olympiad_package_id", null)
       .is("term", null),
+    explCoverage("az"),
+    explCoverage("en"),
+    explCoverage("ru"),
     getDict(),
     loadQuestionOptions(),
     loadQuestionTaxonomy(),
@@ -258,6 +285,20 @@ export default async function QuestionsPage({
     return b.length > 60 ? b.slice(0, 60) + "…" : b;
   };
 
+  // Which explanation translations a row is still missing. An empty result is
+  // reported as "no explanation" rather than "missing EN/RU": a Content Manager
+  // without content.review cannot SEE another author's in-review explanations
+  // (qexpl_select), and claiming those are untranslated would be a guess. Same
+  // rule the student-facing fallback label uses — never assert a gap we cannot
+  // observe.
+  const explMissing = (r: any): string[] => {
+    const have = new Set(
+      ((r.question_explanations ?? []) as { locale: string }[]).map((x) => x.locale),
+    );
+    if (!have.has("az")) return [];
+    return (["en", "ru"] as const).filter((l) => !have.has(l)).map((l) => l.toUpperCase());
+  };
+
   const display: QuestionRow[] = list.map((r) => ({
     id: r.id,
     subject: r.subjects?.name ?? "—",
@@ -270,6 +311,11 @@ export default async function QuestionsPage({
     termValue: r.term == null ? null : Number(r.term),
     needsTerm: r.term == null,
     body: bodySnippet(r),
+    // "" = nothing observable to report; otherwise the missing locale codes.
+    explHas: ((r.question_explanations ?? []) as { locale: string }[]).some(
+      (x) => x.locale === "az",
+    ),
+    explMissing: explMissing(r),
     status: r.status,
   }));
 
@@ -470,6 +516,17 @@ export default async function QuestionsPage({
         ))}
       </div>
 
+      {/* Explanation-translation coverage: the size of the gap the student
+          review screen labels per question. Exact counts, not a sample. */}
+      {(explAzCount ?? 0) > 0 && (
+        <p className="muted expl-coverage">
+          {t("qexpl.coverage")
+            .replace("{az}", String(explAzCount ?? 0))
+            .replace("{en}", String(explEnCount ?? 0))
+            .replace("{ru}", String(explRuCount ?? 0))}
+        </p>
+      )}
+
       <QuestionFilters
         taxonomy={taxonomy}
         grades={gradeOptions}
@@ -494,6 +551,7 @@ export default async function QuestionsPage({
         termSortDir={sort === "term_asc" ? "asc" : sort === "term_desc" ? "desc" : ""}
         filtered={anyFilter}
         clearHref={clearHref}
+        initialEditId={editQuestionId || null}
       />
 
       {/* Footer pager — server-rendered links preserving all searchParams. */}

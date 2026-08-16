@@ -36,6 +36,15 @@ export type QuestionRow = {
   termValue: number | null;
   needsTerm: boolean;
   body: string;
+  /** The question has an Azerbaijani explanation we can read. */
+  explHas: boolean;
+  /**
+   * Upper-case locale codes whose explanation translation is missing ("EN",
+   * "RU"). Empty when the question has no explanation at all, or when RLS hides
+   * its explanations from this user — the column says nothing rather than
+   * guessing. Students see the Azerbaijani text (labelled) for these.
+   */
+  explMissing: string[];
   status: string;
 };
 
@@ -67,6 +76,7 @@ export function QuestionsTable({
   termSortDir,
   filtered,
   clearHref,
+  initialEditId = null,
 }: {
   rows: QuestionRow[];
   taxonomy: Taxonomy;
@@ -83,13 +93,19 @@ export function QuestionsTable({
   // Empty state: distinguishes "nothing exists yet" from "nothing matches".
   filtered: boolean;
   clearHref: string;
+  /**
+   * Deep link into the edit modal (?edit=<uuid>, validated server-side). Lets a
+   * question report's "open question" link reuse the editor that already lives
+   * here instead of a second one being built for it.
+   */
+  initialEditId?: string | null;
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [action, setAction] = useState("");
   // Round 22: editing happens in a modal on this page (no edit route). One
   // modal instance serves every row; the Edit button sets the target id.
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(initialEditId);
   // Bulk transition returns { updated, skipped } so we can show real feedback
   // (the owner reported bulk actions felt like silent no-ops).
   const [bulkState, bulkAction] = useActionState(bulkTransitionQuestions, null);
@@ -291,6 +307,7 @@ export function QuestionsTable({
                 </Link>
               </th>
               <th>{tt("qfield.bodyAz")}</th>
+              <th className="col-narrow">{tt("qfield.explTr")}</th>
               <th className="col-narrow">{tt("qfield.status")}</th>
               <th aria-label="actions" />
             </tr>
@@ -298,7 +315,7 @@ export function QuestionsTable({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <div className="table-empty">
                     <p>
                       {filtered ? tt("questions.noneFiltered") : tt("questions.none")}
@@ -333,6 +350,17 @@ export function QuestionsTable({
                 </td>
                 <td className="cell-body" title={r.body}>
                   {r.body}
+                </td>
+                <td className="col-narrow">
+                  {r.explMissing.length > 0 ? (
+                    <span className="pill pill-sm pill-warn">
+                      {tt("qexpl.missing").replace("{locales}", r.explMissing.join(" · "))}
+                    </span>
+                  ) : r.explHas ? (
+                    <span className="pill pill-sm pill-ok">{tt("qexpl.complete")}</span>
+                  ) : (
+                    <span className="muted">{tt("qexpl.none")}</span>
+                  )}
                 </td>
                 <td className="col-narrow">
                   <span className={`pill pill-sm ${statusPill(r.status)}`}>

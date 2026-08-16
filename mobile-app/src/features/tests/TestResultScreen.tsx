@@ -42,7 +42,7 @@ const TESTS_TAB = "/(student)/(tabs)/tests" as const;
 const OLYMPIADS_TAB = "/(student)/(tabs)/olympiads" as const;
 
 export function TestResultScreen({ attemptId }: { attemptId: string }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { arena } = useArena();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -84,7 +84,7 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
     }
   }, [kindOk, live, attemptId, router]);
 
-  const resultQ = useTestResult(attemptId, settled);
+  const resultQ = useTestResult(attemptId, locale, settled);
 
   // Mirrors the result query's own gate: it probes the idempotent submit RPC,
   // so it must never be re-run for an attempt that is not settled.

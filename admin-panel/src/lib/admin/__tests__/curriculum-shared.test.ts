@@ -50,6 +50,8 @@ function topic(partial: Partial<TopicRow> & { id: string }): TopicRow {
     subjectId: SUBJECT_MATH,
     gradeId: GRADE_1,
     name: "T",
+    nameEn: null,
+    nameRu: null,
     term: 1,
     status: "active",
     orderIndex: 0,
@@ -65,6 +67,8 @@ function subtopic(
   return {
     topicId: "t",
     name: "S",
+    nameEn: null,
+    nameRu: null,
     term: 1,
     status: "active",
     orderIndex: 0,

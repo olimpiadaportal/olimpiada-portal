@@ -94,6 +94,10 @@ export const NAV: NavGroup[] = [
       // Local trilingual fallback (see the layout's navLabel chain) until
       // messages.ts gains the key.
       { label: "nav.alerts", href: "/alerts" },
+      // "Report a problem" triage (migration 115). Administrator-only: no
+      // `permission` field exists for it, so there is no code a content manager
+      // could be granted by accident — and the page reveals answer keys.
+      { label: "nav.questionReports", href: "/question-reports", adminOnly: true },
       { label: "nav.audit", href: "/audit", adminOnly: true },
       { label: "nav.settings", href: "/settings", adminOnly: true },
       { label: "nav.siteContent", href: "/site-content", adminOnly: true },

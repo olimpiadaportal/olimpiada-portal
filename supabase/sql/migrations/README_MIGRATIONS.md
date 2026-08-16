@@ -81,3 +81,12 @@ Required order:
 - Do not change production first.
 - Do not skip backporting.
 - Do not run destructive SQL without written approval in `STATUS.md`.
+
+## Migration Log
+
+Older migrations document themselves in their own file headers; this log starts
+where it was introduced.
+
+| # | Date | Purpose | Backported into |
+|---|------|---------|-----------------|
+| 115 | 2026-08-15 | "Report a problem": `question_reports` table, the BEFORE INSERT trigger that derives every context column and enforces the 5/hour + 20/day throttle, the freeze trigger that keeps a filed report immutable, `submit_question_report()`, RLS (reporter reads own / admin reads all and moves status, no delete policy). | `001` (enums), `008` (table), `010` (RLS + policies), `011` (indexes, triggers, RPC, grants), `015` (the olympiad-package FK, which cannot live in `008` — `olympiad_packages` does not exist yet at that point in the run order), `013` (check `103`) |

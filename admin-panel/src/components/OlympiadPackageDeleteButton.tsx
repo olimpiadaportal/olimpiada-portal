@@ -75,7 +75,11 @@ export function OlympiadPackageDeleteButton({
     <DestructiveConfirmDialog<OlympiadPackageDeletionPreview>
       strings={strings}
       loadPreview={() => loadOlympiadPackageDeletionPreview(packageId)}
-      code={(p) => p.code}
+      // No `code` prop, deliberately (owner decision, migration 113): a package
+      // delete no longer asks for the slug to be transcribed. Omitting it puts
+      // the dialog in token-free mode, which FORCES the acknowledgement
+      // checkbox on — so the action still needs a deliberate confirmation, it
+      // just no longer needs typing. Every sibling dialog keeps its token.
       triggerClassName={triggerClassName}
       open={open}
       onOpenChange={onOpenChange}

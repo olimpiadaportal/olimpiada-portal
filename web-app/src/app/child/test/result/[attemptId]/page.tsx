@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { ChildNavActive } from "@/components/ChildNav";
@@ -33,7 +33,7 @@ export default async function TestResultPage({
   const { attemptId } = await params;
   if (!isUuid(attemptId)) redirect("/child/test");
 
-  const [t, supabase] = await Promise.all([getT(), createClient()]);
+  const [t, locale, supabase] = await Promise.all([getT(), getLocale(), createClient()]);
 
   // Own row under RLS; also provides the time context the RPC payload lacks.
   const { data: att } = await supabase
@@ -61,9 +61,12 @@ export default async function TestResultPage({
     redirect(`${homeHref}?notice=closed`);
   }
 
+  // p_locale (migration 114) localizes the per-topic breakdown below; the RPC
+  // resolves each name through topic_translations with an az fallback.
   const { data, error } = await supabase.rpc("submit_test_attempt", {
     p_attempt_id: attemptId,
     p_answers: null,
+    p_locale: locale,
   });
   if (error || !data) redirect(`${homeHref}?err=1`);
   const result = data as ResultPayload;

@@ -14,6 +14,7 @@ import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { pickTranslation } from "@/lib/localizedName";
 import { formatLongDate } from "@/lib/formatDate";
 import { formatAzn } from "@/lib/pricingConfigurator";
 import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
@@ -23,6 +24,9 @@ import {
   type PolyDict,
   type PolyPackage,
 } from "@/components/OlympiadPurchase";
+
+/** The olympiad_package_translations columns this page embeds. */
+type PackageTr = { locale: string; title: string | null; description: string | null };
 
 export default async function ParentOlympiadCatalogPage() {
   const parent = await requireParent();
@@ -198,10 +202,6 @@ export default async function ParentOlympiadCatalogPage() {
     }
   }
 
-  const pickTr = (trs: any[]) =>
-    (trs ?? []).find((x: any) => x.locale === locale) ??
-    (trs ?? []).find((x: any) => x.locale === "az");
-
   // Round 46: the shared Baku formatter (a bare "az" tag here rendered the
   // CLDR root month placeholder — "2026 M08 22").
   const fmt = (ts: number) => formatLongDate(ts, locale, true);
@@ -209,7 +209,7 @@ export default async function ParentOlympiadCatalogPage() {
   // Serializable view models — the client component receives only translated,
   // display-ready strings (no locale logic in the browser).
   const items: PolyPackage[] = pkgRows.map((p) => {
-    const tr = pickTr(p.olympiad_package_translations);
+    const tr = pickTranslation<PackageTr>(p.olympiad_package_translations, locale);
     let coverUrl: string | null = null;
     const m = p.media_assets;
     if (m?.bucket && m?.path) {

@@ -485,6 +485,8 @@ export function CurriculumTree({
                     subjectId: modal.topic.subjectId,
                     gradeId: modal.topic.gradeId,
                     name: modal.topic.name,
+                    nameEn: modal.topic.nameEn,
+                    nameRu: modal.topic.nameRu,
                     term: modal.topic.term,
                     status: modal.topic.status,
                   }
@@ -517,6 +519,8 @@ export function CurriculumTree({
                     id: modal.subtopic.id,
                     topicId: modal.subtopic.topicId,
                     name: modal.subtopic.name,
+                    nameEn: modal.subtopic.nameEn,
+                    nameRu: modal.subtopic.nameRu,
                     status: modal.subtopic.status,
                   }
                 : { topicId: modal.topicId }
@@ -575,6 +579,46 @@ function TermPill({ term, l }: { term: number | null; l: (k: string) => string }
   );
 }
 
+/** The EN/RU names as a muted second line. The AZ name above stays the row's
+ *  identity — it is what both bulk importers and migration 095 match on. */
+function TranslationLine({
+  nameEn,
+  nameRu,
+}: {
+  nameEn: string | null;
+  nameRu: string | null;
+}) {
+  if (!nameEn && !nameRu) return null;
+  return (
+    <span className="cur-row-tr">
+      {[nameEn && `EN · ${nameEn}`, nameRu && `RU · ${nameRu}`]
+        .filter(Boolean)
+        .join("   ")}
+    </span>
+  );
+}
+
+/** The ONLY place an admin can see that a node still renders Azerbaijani to an
+ *  English or Russian reader — both bulk importers create topics with no
+ *  translations at all, so without this badge the gap is invisible. */
+function MissingTrPill({
+  nameEn,
+  nameRu,
+  l,
+  fmt,
+}: {
+  nameEn: string | null;
+  nameRu: string | null;
+  l: (k: string) => string;
+  fmt: (k: string, vars: Record<string, string | number>) => string;
+}) {
+  if (nameEn && nameRu) return null;
+  const langs = !nameEn && !nameRu ? l("cur.trMissingBoth") : !nameEn ? "EN" : "RU";
+  return (
+    <span className="cur-pill cur-pill-warn">{fmt("cur.trMissing", { langs })}</span>
+  );
+}
+
 function TopicNode({
   topic,
   subtopics,
@@ -630,8 +674,10 @@ function TopicNode({
             {topic.questionCount > 0 && (
               <span>{fmt("cur.countQuestions", { n: topic.questionCount })}</span>
             )}
+            <MissingTrPill nameEn={topic.nameEn} nameRu={topic.nameRu} l={l} fmt={fmt} />
             <StatusPill status={topic.status} l={l} />
           </span>
+          <TranslationLine nameEn={topic.nameEn} nameRu={topic.nameRu} />
         </button>
 
         <span className="cur-row-actions">
@@ -684,8 +730,10 @@ function TopicNode({
                   {matchedSet.has(s.id) && (
                     <span className="cur-pill cur-pill-hit">{l("cur.searchHit")}</span>
                   )}
+                  <MissingTrPill nameEn={s.nameEn} nameRu={s.nameRu} l={l} fmt={fmt} />
                   <StatusPill status={s.status} l={l} />
                 </span>
+                <TranslationLine nameEn={s.nameEn} nameRu={s.nameRu} />
               </span>
               <span className="cur-row-actions">
                 <button

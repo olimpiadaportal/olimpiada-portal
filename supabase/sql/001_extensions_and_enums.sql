@@ -143,6 +143,19 @@ do $$ begin
     ('open', 'in_progress', 'resolved', 'closed');
 exception when duplicate_object then null; end $$;
 
+-- Question-report triage lifecycle (migration 115: "Report a problem").
+do $$ begin
+  create type public.question_report_status as enum
+    ('new', 'in_review', 'resolved', 'dismissed');
+exception when duplicate_object then null; end $$;
+
+-- Which client filed a report. A real enum, so 'Android' or 'web ' can never
+-- enter the column — the value is a CLIENT-SUPPLIED diagnostic hint and the
+-- database has no way to observe the truth of it.
+do $$ begin
+  create type public.report_platform as enum ('web', 'android', 'ios');
+exception when duplicate_object then null; end $$;
+
 -- Audit log severity.
 do $$ begin
   create type public.audit_severity as enum ('info', 'warning', 'critical');

@@ -82,6 +82,13 @@ export function SubjectPlanCard({
           <span className={`splan-chip splan-chip-${chip}`}>{chipText}</span>
         )}
         {onRemove && (
+          // Labelled, not a bare ×. The 28px glyph-only circle it replaces was
+          // both unreadable ("×" next to a subject name reads as decoration)
+          // and well under the 44px touch floor. It is now the danger-tinted
+          // mirror of the `.pcfg-add` pill sitting opposite it on the same
+          // page, so Add and Remove read as one pair. The subject-specific
+          // aria-label stays — the visible label cannot name the subject
+          // without making five stacked cards unreadably repetitive.
           <button
             type="button"
             className="splan-remove"
@@ -90,7 +97,10 @@ export function SubjectPlanCard({
             title={removeDisabled ? removeDisabledReason : undefined}
             aria-label={t("plan.removeAria").replace("{subject}", label)}
           >
-            <span aria-hidden="true">×</span>
+            <span aria-hidden="true" className="splan-remove-glyph">
+              −
+            </span>
+            {t("plan.removeSubject")}
           </button>
         )}
       </div>

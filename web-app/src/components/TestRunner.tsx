@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/Modal";
 import { QuestionImage } from "@/components/QuestionImage";
+import { ReportQuestionButton } from "@/components/ReportQuestionButton";
 import { cancelTest, saveTestAnswers, submitTest } from "@/lib/auth/testActions";
 import type { AnswerItem } from "@/lib/testAnswers";
 
@@ -562,15 +563,24 @@ export function TestRunner({
             <div className="arena-q-card">
               <div className="tst-q-head">
                 <div className="arena-q-code mono">Q{String(idx + 1).padStart(2, "0")}</div>
-                <button
-                  type="button"
-                  className={`tst-flag${flags.has(q.question_id) ? " on" : ""}`}
-                  aria-pressed={flags.has(q.question_id)}
-                  onClick={() => toggleFlag(q.question_id)}
-                >
-                  <BookmarkIcon filled={flags.has(q.question_id)} />
-                  {flags.has(q.question_id) ? tt("test.run.unflag") : tt("test.run.flag")}
-                </button>
+                <div className="tst-q-head-actions">
+                  <button
+                    type="button"
+                    className={`tst-flag${flags.has(q.question_id) ? " on" : ""}`}
+                    aria-pressed={flags.has(q.question_id)}
+                    onClick={() => toggleFlag(q.question_id)}
+                  >
+                    <BookmarkIcon filled={flags.has(q.question_id)} />
+                    {flags.has(q.question_id)
+                      ? tt("test.run.unflag")
+                      : tt("test.run.flag")}
+                  </button>
+                  <ReportQuestionButton
+                    questionId={q.question_id}
+                    attemptId={attemptId}
+                    dict={dict}
+                  />
+                </div>
               </div>
               <div className="arena-q-body">{q.body}</div>
               {q.image_url && (

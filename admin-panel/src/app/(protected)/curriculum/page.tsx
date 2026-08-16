@@ -116,6 +116,20 @@ function asTerm(value: unknown): Term | null {
   return Number.isInteger(n) && n >= 1 && n <= 4 ? (n as Term) : null;
 }
 
+/**
+ * One EN/RU name out of a topic_translations / subtopic_translations embed.
+ *
+ * Deliberately returns null rather than falling back to the AZ name: this
+ * screen is where an admin must SEE that a translation is missing, so the tree
+ * can badge it. Reader-facing surfaces use the coalescing resolver instead.
+ */
+function trName(value: unknown, locale: "en" | "ru"): string | null {
+  const rows = value as { locale?: string | null; name?: string | null }[] | null | undefined;
+  const hit = (rows ?? []).find((r) => r?.locale === locale);
+  const name = typeof hit?.name === "string" ? hit.name.trim() : "";
+  return name || null;
+}
+
 export default async function CurriculumPage({
   searchParams,
 }: {
@@ -168,7 +182,7 @@ export default async function CurriculumPage({
       db
         .from("topics")
         .select(
-          "id, subject_id, grade_id, name, term, status, order_index, subtopics(count), questions(count)",
+          "id, subject_id, grade_id, name, term, status, order_index, subtopics(count), questions(count), topic_translations(locale, name)",
         )
         .eq("scope", "exam")
         .order("name")
@@ -181,6 +195,8 @@ export default async function CurriculumPage({
     subjectId: String(r.subject_id),
     gradeId: r.grade_id ? String(r.grade_id) : null,
     name: String(r.name),
+    nameEn: trName(r.topic_translations, "en"),
+    nameRu: trName(r.topic_translations, "ru"),
     term: asTerm(r.term),
     status: String(r.status),
     orderIndex: Number(r.order_index ?? 0),
@@ -255,7 +271,9 @@ export default async function CurriculumPage({
       () =>
         db
           .from("subtopics")
-          .select("id, topic_id, name, term, status, order_index")
+          .select(
+            "id, topic_id, name, term, status, order_index, subtopic_translations(locale, name)",
+          )
           .in("topic_id", pageTopicIds)
           .order("order_index")
           .order("id"),
@@ -268,6 +286,8 @@ export default async function CurriculumPage({
         id: String(r.id),
         topicId: String(r.topic_id),
         name: String(r.name),
+        nameEn: trName(r.subtopic_translations, "en"),
+        nameRu: trName(r.subtopic_translations, "ru"),
         term: asTerm(r.term),
         status: String(r.status),
         orderIndex: Number(r.order_index ?? 0),

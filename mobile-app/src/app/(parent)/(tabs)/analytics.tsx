@@ -140,9 +140,12 @@ export default function ParentAnalytics() {
   // entirely (packages aren't subject-gated — web wantDash parity).
   const wantDash = !!childId && (mode === "olympiads" || selectedSubject !== "");
   const dashQ = useQuery({
-    queryKey: ["child-dashboard", childId, mode, subjectParam ?? "all"],
+    // locale is part of the key: setLocale() only mutates the zustand store and
+    // never touches the query cache, so a locale-less key would keep serving the
+    // previous language after a switch (migration 114).
+    queryKey: ["child-dashboard", childId, mode, subjectParam ?? "all", locale],
     enabled: wantDash,
-    queryFn: () => fetchChildDashboard(childId!, subjectParam, 30, scope),
+    queryFn: () => fetchChildDashboard(childId!, subjectParam, locale, 30, scope),
   });
 
   const leaderboardOn = config.data?.flags.leaderboard === true;

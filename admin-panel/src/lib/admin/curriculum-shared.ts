@@ -28,6 +28,33 @@ export const SUBTOPIC_MATCH_MAX = 1000;
 /** Server-side cap on taxonomy names (mirrors the generic registry's TEXT_MAX). */
 export const NAME_MAX = 120;
 
+/**
+ * Locales stored in topic_translations / subtopic_translations (migration 114).
+ *
+ * `az` is deliberately absent: topics.name / subtopics.name ARE the Azerbaijani
+ * name — both bulk importers create topics by it, migration 095 matches on it,
+ * and the duplicate guards below fold on it — so a mirrored `az` translation row
+ * would be a second copy that drifts. A DB CHECK rejects one.
+ */
+export const LOCALIZED_NAME_LOCALES = ["en", "ru"] as const;
+export type LocalizedNameLocale = (typeof LOCALIZED_NAME_LOCALES)[number];
+
+/**
+ * Normalize an optional EN/RU name the same way on the client and the server.
+ *
+ * `value: null` means the field was left blank, which DELETES that locale's row
+ * rather than storing '' — a blank translation would defeat
+ * coalesce(tr.name, base.name) and render an empty topic label.
+ */
+export function parseLocalizedName(raw: unknown): {
+  value: string | null;
+  tooLong: boolean;
+} {
+  const name = normalizeName(raw);
+  if (!name) return { value: null, tooLong: false };
+  return { value: name, tooLong: name.length > NAME_MAX };
+}
+
 export const TERM_VALUES = [1, 2, 3, 4] as const;
 export type Term = (typeof TERM_VALUES)[number];
 
@@ -113,7 +140,11 @@ export type TopicRow = {
   id: string;
   subjectId: string;
   gradeId: string | null;
+  /** The AZ name — the authoring identity every importer and guard keys on. */
   name: string;
+  /** topic_translations rows (114). null = not translated yet. */
+  nameEn: string | null;
+  nameRu: string | null;
   term: Term | null;
   status: string;
   orderIndex: number;
@@ -127,12 +158,16 @@ export type SubtopicRow = {
   id: string;
   topicId: string;
   name: string;
+  nameEn: string | null;
+  nameRu: string | null;
   term: Term | null;
   status: string;
   orderIndex: number;
 };
 
-/** Compact option for the subtopic form's parent-topic picker. */
+/** Compact option for the subtopic form's parent-topic picker. Deliberately
+ *  AZ-only: an admin picking a parent by an English label the importer cannot
+ *  resolve would be a real footgun. */
 export type TopicOption = {
   id: string;
   name: string;

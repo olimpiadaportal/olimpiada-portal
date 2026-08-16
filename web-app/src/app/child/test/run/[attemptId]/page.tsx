@@ -3,6 +3,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
+import { pickName, pickTranslation } from "@/lib/localizedName";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { TestRunner, type TestAttemptData } from "@/components/TestRunner";
 import { ChildNavActive } from "@/components/ChildNav";
@@ -18,7 +19,14 @@ const KEYS = [
   "test.run.cancelConfirm", "test.run.keepGoing", "test.run.timeUp",
   "test.run.leaveTitle", "test.run.leaveMsg", "test.run.leaveStay", "test.run.leaveConfirm",
   "test.run.noLimit", "test.run.ratedBadge", "test.run.practiceBadge",
-  "test.img.alt", "test.img.hint",
+  "test.img.alt", "test.img.hint", "test.img.close",
+  // Report a problem — the dialog sits in the question head next to the flag.
+  "test.report.action", "test.report.title", "test.report.intro",
+  "test.report.label", "test.report.placeholder", "test.report.remaining",
+  "test.report.cancel", "test.report.submit", "test.report.sending",
+  "test.report.emptyErr", "test.report.successTitle", "test.report.successBody",
+  "test.report.done", "test.report.err.generic", "test.report.err.duplicate",
+  "test.report.err.tooMany",
   "test.err.generic", "arena.quizPrev", "arena.quizQuestion", "arena.quizOf",
 ];
 
@@ -112,7 +120,10 @@ export default async function TestRunPage({
       .eq("id", attempt.subject_id)
       .maybeSingle(),
     topicIds.length > 0
-      ? supabase.from("topics").select("id, name").in("id", topicIds)
+      ? supabase
+          .from("topics")
+          .select("id, name, topic_translations(locale, name)")
+          .in("id", topicIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     // is_rated lives on the attempt row (own row under RLS), not in the RPC
     // payload — it drives the header badge ("counts for the rating" / practice).
@@ -138,7 +149,10 @@ export default async function TestRunPage({
   }
   // Preserve the questions' topic order; de-duplicate names.
   const nameById = new Map<string, string>(
-    (((topicsRes.data ?? []) as { id: string; name: string }[]) || []).map((r) => [r.id, r.name]),
+    (((topicsRes.data ?? []) as any[]) || []).map((r) => [
+      r.id,
+      pickName(r.topic_translations, locale, r.name),
+    ]),
   );
   const seen = new Set<string>();
   for (const id of topicIds) {
@@ -171,9 +185,7 @@ export default async function TestRunPage({
           .select("locale, title")
           .eq("olympiad_package_id", pkgId);
         const rows = (trs ?? []) as { locale: string; title: string | null }[];
-        const title = (
-          rows.find((x) => x.locale === locale) ?? rows.find((x) => x.locale === "az")
-        )?.title?.trim();
+        const title = pickTranslation(rows, locale)?.title?.trim();
         if (title) modeLabel = `${t("test.run.olympiad")}: ${title}`;
       }
     }

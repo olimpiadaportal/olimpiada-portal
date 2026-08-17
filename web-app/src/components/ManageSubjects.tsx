@@ -8,6 +8,14 @@
 // The old single subscription-level `interval` prop is gone — one cycle for the
 // whole plan is no longer true in the database and cannot be true here.
 //
+// PRORATION AND THE SHARED RENEWAL DATE ARE RETIRED (owner, 2026-08-17). An
+// added subject is not squeezed into a period the child already paid for: it
+// opens its OWN period today and is charged that period in full. So this screen
+// no longer prints one combined "next payment" line or explains a part-period
+// calculation. It prints, per subject, the three facts the parent actually
+// needs — its cycle, its price and WHEN IT RENEWS — with the dates read from
+// each subject's own `current_period_end`.
+//
 // PAYMENT-FIRST contract (owner requirement), now three-way:
 //   * ANY ADDITION (including a mixed diff) opens the payment sheet
 //     (DemoPaymentModal) BEFORE the apply, in BOTH 'demo' and 'real' modes —
@@ -20,7 +28,10 @@
 //
 // The SERVER receives the DESIRED FULL set (subject + cycle) and derives the
 // adds / removes / cycle changes itself — ownership recheck, payment-mode gate
-// and every amount are server-side; the client never sends a price.
+// and every amount are server-side; the client never sends a price. Every
+// amount shown here comes from the quote RPC (or, before any change is pending,
+// from the same list prices the server rendered the page with), so the preview
+// can never drift from what is charged.
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   quoteSubjectChange,
@@ -216,12 +227,16 @@ export function ManageSubjects({
     return () => clearTimeout(timer);
   }, [hasDiff, planKey, studentId]);
 
+  // dueNow === 0 with an addition pending means the adds ride a running trial —
+  // the sentence therefore names the FIRST CHARGE date, not an "effective from"
+  // date for a rate change that no longer exists.
   const noChargeSentence = (q: SubjectChangeQuote) =>
     tt("subjedit.noChargeNow").replace("{date}", fmtDate(q.effectiveFrom));
   // ONE LINE PER REMOVED SUBJECT, each with ITS OWN period end. The single
-  // `removalsEffectiveAt` scalar is the subscription minimum, so dropping a
-  // yearly subject from a plan that also holds a weekly one told the parent
-  // access ended in 7 days while the database granted a year.
+  // `removalsEffectiveAt` scalar cannot describe a plan whose subjects run to
+  // different dates — dropping a yearly subject from a plan that also held a
+  // weekly one told the parent access ended in 7 days while the database
+  // granted a year. That scalar survives only as the legacy mobile fallback.
   const removalLines = (q: SubjectChangeQuote): string[] =>
     (q.removals ?? []).map((r) => {
       const s = byId.get(r.subject_id);
@@ -231,18 +246,55 @@ export function ManageSubjects({
     });
   const cycleName = (iv: string) =>
     isPlanInterval(iv) ? tt(INTERVAL_LABEL_KEY[iv]) : iv;
-  // Per-cycle renewal sentences replace the single "{total} {currency} /
-  // {interval}" line — one sentence cannot express mixed cycles.
-  const renewalLines = (q: SubjectChangeQuote): string[] =>
-    (q.renewals ?? []).map((r) =>
-      tt(
-        `plan.renewalLine.${
-          r.interval === "week" ? "weekly" : r.interval === "year" ? "yearly" : "monthly"
-        }`,
-      )
-        .replace("{total}", String(r.total))
-        .replace("{currency}", q.currency),
-    );
+
+  // PER-SUBJECT BILLING. This replaces the per-cycle "your subjects renew at
+  // {total}" sentences AND the single next-payment line: with independent
+  // cycles the only honest renewal statement is made one subject at a time.
+  // Prices prefer the server quote's own per-subject figure and fall back to
+  // the list price the page was rendered with (identical source table, and the
+  // only thing available before a change is pending); the per-cycle DISCOUNTED
+  // subtotals stay in the PlanSummary breakdown below.
+  const quotePrice = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const it of quote?.items ?? []) m.set(it.subject_id, it.price);
+    return m;
+  }, [quote]);
+
+  const planRows = useMemo(
+    () =>
+      plan.map((item) => {
+        const s = byId.get(item.subjectId);
+        const cur = activeById.get(item.subjectId);
+        const price = quotePrice.has(item.subjectId)
+          ? (quotePrice.get(item.subjectId) ?? null)
+          : s
+            ? subjectPrice(s, item.interval)
+            : null;
+        const head = tt("subjedit.subjectPlanLine")
+          .replace("{subject}", s ? subjectLabel(t, s.code, s.name) : item.subjectId)
+          .replace("{cycle}", cycleName(item.interval))
+          .replace(
+            "{price}",
+            price === null ? tt("cfg.unpriced") : formatAzn(price, locale),
+          );
+        // A subject the child does not have yet starts TODAY and pays a full
+        // period; one that is moving cycle runs its paid period out first; every
+        // other one simply renews on its own date.
+        const when = !cur
+          ? tt("subjedit.startsToday")
+          : effectiveCycle(cur) !== item.interval
+            ? tt("subjedit.switchesOn")
+                .replace("{date}", fmtDate(cur.periodEnd))
+                .replace("{cycle}", cycleName(item.interval))
+            : tt("subjedit.renewsOn").replace("{date}", fmtDate(cur.periodEnd));
+        return { subjectId: item.subjectId, head, when };
+      }),
+    // tt/t/cycleName are derived from the props' dict and never change identity
+    // in a way that matters here; the data inputs are listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [plan, byId, activeById, quotePrice, effectiveCycle, fmtDate, locale],
+  );
+  const addedIds = useMemo(() => new Set(toAdd.map((p) => p.subjectId)), [toAdd]);
 
   const [state, formAction, saving] = useActionState<SubjectsUpdateState, FormData>(
     updateSubscriptionSubjectsAction,
@@ -272,6 +324,10 @@ export function ManageSubjects({
     <div className="form" style={{ maxWidth: 640 }}>
       <h2 style={{ marginBottom: 4 }}>{tt("subjedit.title")}</h2>
       <p className="subjedit-note">{tt("plan.perSubjectHint")}</p>
+      {/* HOW the billing works, in one sentence — this replaces the retired
+          proration explanation ("we charge you for the days left in the
+          period"), which described a model the platform no longer runs. */}
+      <p className="subjedit-note">{tt("subjedit.cycleNote")}</p>
 
       {subjects.length === 0 ? (
         <p className="muted">{tt("sub.noSubjectsAvailable")}</p>
@@ -450,23 +506,19 @@ export function ManageSubjects({
                   <div className="subjedit-sum-block">
                     <span className="subjedit-sum-label">{tt("subjedit.dueNow")}</span>
                     {quote.dueNow > 0 ? (
-                      <span className="subjedit-sum-amount mono">
-                        {quote.dueNow} {quote.currency}
-                      </span>
+                      <>
+                        <span className="subjedit-sum-amount mono">
+                          {quote.dueNow} {quote.currency}
+                        </span>
+                        {/* WHY this amount: a full first period per added
+                            subject, starting today — never a part period. */}
+                        <p className="subjedit-note">{tt("subjedit.dueNowNote")}</p>
+                      </>
                     ) : (
                       <p className="subjedit-note">{noChargeSentence(quote)}</p>
                     )}
                   </div>
                 )}
-                {/* Renewals: one sentence per cycle — no invented combined rate. */}
-                <div className="subjedit-sum-block">
-                  <span className="subjedit-sum-label">{tt("plan.renewals")}</span>
-                  {renewalLines(quote).map((line, i) => (
-                    <p className="subjedit-sum-line" key={i}>
-                      {line}
-                    </p>
-                  ))}
-                </div>
                 {toRemove.length > 0 && (
                   <div className="subjedit-sum-block">
                     <span className="subjedit-sum-label">{tt("subjedit.noteLabel")}</span>
@@ -480,6 +532,23 @@ export function ManageSubjects({
                 )}
               </>
             ) : null}
+
+            {/* Per subject: its cycle, its price and when IT renews. Rendered
+                whether or not a change is pending — with independent cycles
+                this list IS the billing schedule. */}
+            <div className="subjedit-sum-block">
+              <span className="subjedit-sum-label">
+                {tt("subjedit.perSubjectLabel")}
+              </span>
+              <ul className="subjedit-sum-list">
+                {planRows.map((row) => (
+                  <li key={row.subjectId}>
+                    {row.head}
+                    <span className="muted"> · {row.when}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
             {/* Breakdown only: the amounts above are the server's, so this must
                 not print a second, list-price "due today" beneath them. */}
@@ -550,14 +619,18 @@ export function ManageSubjects({
               !quoting && quote
                 ? {
                     dueNowLabel: `${quote.dueNow} ${quote.currency}`,
+                    // What the money buys, in one sentence: a full first period
+                    // per added subject, starting today.
                     thenLabel:
                       quote.dueNow > 0
-                        ? (renewalLines(quote)[0] ?? "")
+                        ? tt("subjedit.dueNowNote")
                         : noChargeSentence(quote),
-                    lines: renewalLines(quote).map((value) => ({
-                      label: tt("plan.renewals"),
-                      value,
-                    })),
+                    // One line per subject BEING PAID FOR — the subjects already
+                    // on the plan are untouched by this charge and listing their
+                    // renewals here would suggest otherwise.
+                    lines: planRows
+                      .filter((row) => addedIds.has(row.subjectId))
+                      .map((row) => ({ label: row.head, value: row.when })),
                     noCharge: quote.dueNow <= 0,
                   }
                 : null

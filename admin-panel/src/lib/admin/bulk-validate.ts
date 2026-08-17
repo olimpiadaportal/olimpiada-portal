@@ -28,6 +28,9 @@ import { type T } from "@/i18n/server";
 import { foldName } from "./curriculum-shared";
 
 // Length caps for bulk-import free text (mirror the manual form + the DB).
+// Applied PER LOCALE (az/en/ru), because the import templates carry a
+// translated explanation for each of them and the explanation column has no
+// length constraint in the schema.
 export const BULK_BODY_MAX = 8000; // body / prompt / explanation
 export const BULK_OPTION_MAX = 2000; // per answer-option text
 
@@ -187,12 +190,23 @@ export function validateBulkItem(
       : {};
   const body = typeof primaryTr.body === "string" ? primaryTr.body.trim() : "";
   if (!body) return t("bulk.err.noAzBody");
-  if (body.length > BULK_BODY_MAX) return t("bulk.err.tooLong");
-  const prompt = typeof primaryTr.prompt === "string" ? primaryTr.prompt : "";
-  const explanation =
-    typeof primaryTr.explanation === "string" ? primaryTr.explanation : "";
-  if (prompt.length > BULK_BODY_MAX || explanation.length > BULK_BODY_MAX) {
-    return t("bulk.err.tooLong");
+
+  // Length caps for EVERY locale the row carries, not only the primary one.
+  // This used to read primaryTr.prompt / primaryTr.explanation alone, so an
+  // `en`/`ru` explanation was never measured on either side — and
+  // question_explanations.explanation_body has no length constraint of its own,
+  // which made this check the ONLY bound. Now that all four templates teach an
+  // explanation per locale, that path carries real volume.
+  for (const loc of LOCALES3) {
+    const raw = translations[loc];
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const tr = raw as Record<string, unknown>;
+    for (const field of ["body", "prompt", "explanation"] as const) {
+      const v = tr[field];
+      if (typeof v === "string" && v.length > BULK_BODY_MAX) {
+        return t("bulk.err.tooLong");
+      }
+    }
   }
 
   const meta =

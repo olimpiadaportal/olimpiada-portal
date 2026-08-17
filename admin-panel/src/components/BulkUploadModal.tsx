@@ -344,6 +344,10 @@ export function BulkUploadModal({
               general bank additionally requires topic + subtopic + term and
               may reference a pre-uploaded image. */}
           <p className="hint">{tt("bulk.fiveRule")}</p>
+          {/* The explanation is per-locale in the template — say so here too,
+              or the only place teaching it is the file the admin already
+              generated. */}
+          <p className="hint">{tt("bulk.explanationRule")}</p>
           <p className="hint">{tt("bulk.generalMeta")}</p>
           <p className="hint">{tt("bulk.mediaHint")}</p>
           <p className="hint">{codesHint}</p>

@@ -2937,6 +2937,15 @@ ul.clean li {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Migration 117 removed the bug CTA from the technical block, which took ~60px
+     out of a card whose height is set by the 320px map beside it. Owning the
+     leftover height and CENTERING in it keeps the blocks together and splits the
+     slack evenly above and below, instead of pooling all of it in one band above
+     the response-time note. Where the card is naturally the taller column (long
+     address, phone + WhatsApp rows, or the stacked phone layout) there is no
+     free space and this is a no-op. */
+  flex: 1;
+  justify-content: center;
 }
 .contact-purpose + .contact-purpose {
   border-top: 1px solid var(--border);
@@ -2947,9 +2956,8 @@ ul.clean li {
   font-size: 1.02rem;
   font-weight: 700;
 }
-/* Direct children only: the CTA hint lives inside .contact-actions and must
-   keep its own smaller .hint sizing, which a descendant selector would win
-   against on specificity. */
+/* Direct children only, so a nested paragraph a future block adds keeps its own
+   sizing rather than inheriting the lead text's. */
 .contact-purpose > p {
   margin: 6px 0 0;
   color: var(--muted);
@@ -2967,24 +2975,11 @@ ul.clean li {
 .contact-mail a:hover {
   text-decoration: underline;
 }
-.contact-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-}
-/* The hint keeps the button company while there is room for it to read as a
-   sentence, and drops onto its own line below that. */
-.contact-actions .hint {
-  margin: 0;
-  flex: 1 1 190px;
-}
-/* Pins the response-time line to the bottom edge of the card, so the card
-   terminates level with the stretched map instead of leaving a gap.
+/* The response-time line sits on the card's bottom edge, under its own rule.
+   `.contact-purposes { flex: 1 }` above is what pushes it there; the auto top
+   margin is the fallback that keeps it pinned if that ever changes.
    Qualified by .info-card because the base `.info-card p { margin: 0 }` is a
-   (0,1,1) selector and would otherwise win over a bare class and kill the
-   `margin-top: auto` this whole layout depends on. */
+   (0,1,1) selector and would otherwise win over a bare class. */
 .info-card .contact-note {
   margin: auto 0 0;
   padding-top: 14px;
@@ -2994,23 +2989,9 @@ ul.clean li {
 }
 @media (max-width: 760px) {
   /* Stacked layout: the full-height map would otherwise push the support block
-     and its CTA more than a screen down. */
+     more than a screen down. */
   .contact-equal .map-frame {
     min-height: 240px;
-  }
-}
-@media (max-width: 420px) {
-  .contact-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .contact-actions .btn-ghost {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    /* A real tap target on the narrowest phone we support. */
-    min-height: 44px;
   }
 }
 
@@ -7045,12 +7026,11 @@ ul.clean li {
   box-shadow: 0 1px 2px var(--shadow);
   animation: splan-in 160ms ease-out both;
 }
-@media (min-width: 720px) {
-  .splan-card {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 14px;
-  }
-}
+/* The multi-column layouts moved to CONTAINER queries at the end of this
+   file (block P8). They were keyed on a VIEWPORT width of 720px —
+   but this card never gets the viewport's width, so it took the wide layout
+   inside a 520px column and its contents overlapped. Read P8 before adding
+   any column rule here. */
 .splan-card:hover {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
@@ -8114,60 +8094,6 @@ ul.clean li {
   .modal-panel { max-width: 100%; }
   .modal-actions { flex-direction: column-reverse; }
   .modal-actions > * { width: 100%; }
-}
-
-/* ---- report-a-bug dialog (ReportBugButton, migration 116) ----
-   Only the pieces the question-report dialog does not already have. Its
-   .tst-report-label-text / .tst-report-input / .tst-report-count /
-   .tst-report-error rules are reused verbatim for the labels, the textareas,
-   the counter and the error line; these add the single-line field, the
-   expected/actual pair and the honeypot. Tokens only — the dialog is portaled
-   to <body>, outside .arena, and Modal.tsx mirrors data-palette onto the
-   overlay so these same names resolve per palette. */
-.bug-input {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  line-height: 1.5;
-  padding: 10px 12px;
-}
-.bug-input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-/* The optional bodies stay short so the required ones dominate the dialog. */
-.bug-short {
-  min-height: 64px;
-}
-.bug-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-@media (max-width: 520px) {
-  .bug-grid { grid-template-columns: 1fr; gap: 0; }
-}
-.bug-hint {
-  margin: 6px 0 0;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-/* Honeypot: off-screen rather than display:none, because some bots skip fields
-   that are not rendered. Never focusable (tabindex -1 on the input). Offset to
-   the LEFT specifically: on a touch device .modal-overlay is overflow-y:auto,
-   which computes overflow-x to auto too, and only inline-END overflow is
-   scrollable in an LTR document — a `right` offset would add a horizontal
-   scrollbar to every modal on a phone. */
-.bug-hp {
-  position: absolute;
-  left: -9999px;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
 }
 
 /* TOUCH DEVICES ONLY — on-screen-keyboard fix for modals that contain a form
@@ -13770,16 +13696,9 @@ body[data-site-typography] .btn-ghost {
   font-weight: 700;
   line-height: 1;
 }
-@media (max-width: 640px) {
-  /* Below the card's own multi-column breakpoint the row is narrow enough that
-     the pill is given its own full-width line unconditionally — deterministic
-     beats "wraps if it happens not to fit" on the smallest screens. */
-  .splan-remove {
-    width: 100%;
-    order: 3;
-    margin-left: 0;
-  }
-}
+/* The full-width-pill rule moved to block P8 at the end of this file: it was
+   keyed on the VIEWPORT, so a 514px-wide card at a 600px viewport got a
+   514px-wide Remove button. It is now keyed on the CARD's own width. */
 
 /* --- P4: tap targets under the 44px floor ----------------------------------
    Eleven controls in this file are sized 26-38px. Rather than eleven separate
@@ -13845,4 +13764,150 @@ body[data-site-typography] .btn-ghost {
   .lb-me-card {
     position: static;
   }
+}
+
+/* --- P8: the subject plan card overlapped itself --------------------------
+   OWNER REPORT: "Parent Panel → Add a Child → Subjects — the subject cards
+   overlap."
+
+   ROOT CAUSE. `.splan-card` switched to its three-column row
+   (`minmax(0, 1fr) auto auto` = name | cycle rail | price) from a VIEWPORT
+   query, one keyed on a viewport width of 720px. A card is never as wide as the
+   viewport: every host puts it inside a fixed, much narrower column —
+
+     Add-Child wizard    .wiz-page .form    max-width 520px
+     Start-a-plan form   .form              max-width 560px
+     Manage subjects     .form              inside a 600px page
+     /services           .pcfg-col          left column of a 2-up grid
+
+   so on ANY desktop the card took the wide layout inside a ~520px box. The
+   two `auto` tracks are sized from their max-content and are served first;
+   the name track is `minmax(0, 1fr)`, whose minimum is 0, so it absorbs the
+   entire shortfall and collapses. `.splan-remove` inside it is `flex: none`
+   plus `white-space: nowrap` — it cannot shrink, so it spilled out of its own
+   column and painted across the cycle rail. That is the reported overlap.
+
+   THE TRIGGER IS LOCALE, which is why an English screenshot looks fine. The
+   rail's max-content is its widest label times three equal segments:
+   ~244px in az ("Həftəlik"), ~318px in ru ("Еженедельно"), ~200px in en.
+   With the 132px price cell and 28px of gaps, a 520px card leaves 86px for
+   the name in az and 14px in ru — against a ~98px Remove pill. It overlapped
+   by construction, on every desktop, in the default language.
+
+   FIX: the card sizes itself from ITS OWN width. `.splan-list` becomes an
+   inline-size query container and the card has three container-driven
+   layouts:
+
+     < 480px   stacked     name / rail / price   (the phone look, unchanged)
+     >= 480px  two rows    name, then rail + price on one line
+     >= 640px  single row  name | rail | price   (the original wide row)
+
+   The price stays beside the rail at every size above the phone, because it
+   is the rail that changes it (the cell is aria-live).
+
+   Every threshold is a width the card really has, so the wide row is only
+   used where its three tracks measurably fit. WORTH KNOWING: with today's
+   column caps (520/560/600px) no host is 640px wide, so every screen now
+   renders the two-row layout; the wide row is kept because it is the correct
+   rule for a host that IS that wide, not because something uses it. A host
+   with no query container (none today) keeps the stacked base, which cannot
+   overlap either.
+   NOTE for future edits: never re-introduce a viewport media query for this
+   card's columns — that is the whole bug.
+   --------------------------------------------------------------------------- */
+.splan-list {
+  container-type: inline-size;
+  container-name: splan;
+}
+
+/* Explicit areas, so the two-row layout can give the name the whole first
+   line and keep the rail and its price together on the second. */
+.splan-card {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "name"
+    "plan"
+    "price";
+}
+.splan-name {
+  grid-area: name;
+}
+.splan-plan {
+  grid-area: plan;
+}
+.splan-price {
+  grid-area: price;
+}
+
+/* Narrow card: the pill owns a full-width line (deterministic beats "wraps if
+   it happens not to fit").
+
+   The rail runs on NATURAL label widths below the wide row. `flex: 1 1 0`
+   sizes every segment to the widest one and can then only ever SHRINK, so a
+   rail short of room ellipsised — "Еженедельно" became "Еженеде…". With an
+   `auto` basis the labels keep their own widths and the rail wraps onto a
+   second line if it truly cannot fit, which never hides a word. */
+.splan-remove {
+  width: 100%;
+  order: 3;
+  margin-left: 0;
+}
+.splan-seg-item {
+  flex: 1 1 auto;
+}
+
+@container splan (min-width: 480px) {
+  .splan-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name  name"
+      "plan  price";
+    column-gap: 14px;
+  }
+  .splan-remove {
+    width: auto;
+    margin-left: auto;
+  }
+}
+
+@container splan (min-width: 640px) {
+  .splan-card {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "name plan price";
+  }
+  /* Three equal segments again — the original desktop rail. Only safe here:
+     `flex: 1 1 0` makes the rail 3x its WIDEST label (316px in ru), which
+     is most of a 520px card. */
+  .splan-seg-item {
+    flex: 1 1 0;
+  }
+}
+
+/* Belt and braces. Both of these are `flex: none` inside `.splan-name`, which
+   is exactly what let the pill escape its column; the cap makes an overflow
+   impossible even if a future translation is longer than any today. The chip
+   may break inside a word rather than push out ("Dövr dəyişikliyi"). */
+.splan-chip,
+.splan-remove {
+  max-width: 100%;
+}
+.splan-chip {
+  overflow-wrap: anywhere;
+}
+.splan-remove {
+  white-space: normal;
+  text-align: center;
+  line-height: 1.15;
+}
+
+/* The card's cycle rail never told the shared sliding pill what it looks like,
+   so `--seg-fill` fell back to `transparent` while `.seg-track[data-seg="on"]`
+   had already stripped `.splan-seg-item.is-on`'s own background: the moment
+   <Segmented> measured, the CHOSEN cycle lost its fill and only the accent
+   text colour was left. Same knobs as `.pcfg-seg`, the control this one is a
+   compact copy of. */
+.splan-seg[data-seg] {
+  --seg-radius: 999px;
+  --seg-fill: var(--lang-active-bg);
+  --seg-shadow: 0 1px 2px var(--shadow);
 }

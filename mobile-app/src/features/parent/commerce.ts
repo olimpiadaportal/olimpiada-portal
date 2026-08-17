@@ -314,8 +314,8 @@ const DECIMAL_SEPARATOR: Record<Locale, string> = {
 /** Bare numeric amount (no currency) — web formatAzn parity: ALWAYS exactly
  *  two decimals, with the locale's decimal separator (comma for az/ru, dot
  *  for en). Used to fill {total}-shaped i18n template slots that carry
- *  currency in a separate {currency} placeholder (subjedit.nextBillingLine
- *  and friends). */
+ *  currency in a separate {currency} placeholder (plan.renewalLine.* and
+ *  friends). */
 export function fmtAmount(amount: number | null | undefined, locale: Locale = "az"): string {
   const n = typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
   const separator = DECIMAL_SEPARATOR[locale] ?? DECIMAL_SEPARATOR.az;

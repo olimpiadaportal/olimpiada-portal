@@ -20,6 +20,13 @@
 // to the historical count / per-subject / subtotal / total layout, so nothing
 // regresses visually for the majority of parents.
 //
+// `plan.dueToday` is the ONLY aggregate, and it is an aggregate of TODAY, never
+// of a period: proration and the single shared renewal date per child are
+// retired (owner, 2026-08-17), so each subject's cycle starts the day it is
+// added and runs on its own dates. Do not reintroduce a combined "then X per
+// month" line here — with independent cycles there is no such number, and the
+// Manage-Subjects editor states each subject's renewal one subject at a time.
+//
 // The sibling discount comes ONLY from the server quote — the public
 // configurator has no parent context and therefore shows none, exactly as
 // before. Nothing here computes a discount.

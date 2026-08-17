@@ -130,12 +130,13 @@ export async function quoteSubscription(args: {
   return { ok: true, ...quote };
 }
 
-// ---- Round 32: mid-cycle subject-change preview (add/remove diff) -------------
-// The Manage-Subjects checkbox editor calls this for the PENDING diff (not the
-// full desired set — quote_child_subscription above stays for the initial
-// subscribe flow). Returns the prorated "due now" top-up + the new recurring
-// rate + when each takes effect — the SAME numbers apply_subject_change will
-// charge (one RPC is the source of truth for both).
+// ---- Mid-cycle plan-change preview ------------------------------------------
+// The Manage-Subjects editor calls this for the DESIRED FULL set
+// (quote_child_subscription above stays for the initial subscribe flow).
+// Returns what is charged TODAY — each added subject's FULL first period,
+// starting today, at the sibling rate; proration is retired — plus each
+// subject's own renewal and removal dates. The SAME numbers apply_plan_change
+// will charge (one RPC is the source of truth for both).
 // Re-exported so client components (ManageSubjects) can import the quote shape
 // from this "use server" surface instead of reaching into the server-only core.
 export type { SubjectChangeQuote, PlanItemInput };

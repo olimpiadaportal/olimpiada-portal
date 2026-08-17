@@ -15,8 +15,7 @@ export default async function ChildContactPage() {
         <p className="arena-eyebrow">{t("nav.help")}</p>
         <h1>{t("help.contactTitle")}</h1>
       </div>
-      {/* surface="child": the bug dialog must never ask a child for an email. */}
-      <ContactInfo surface="child" />
+      <ContactInfo />
     </section>
   );
 }

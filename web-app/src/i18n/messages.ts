@@ -58,24 +58,38 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.selectedCount": "Seçilmiş fənlər",
     "subjedit.pendingAdd": "Əlavə olunanlar",
     "subjedit.pendingRemove": "Silinənlər",
-    "subjedit.estTotal": "Təxmini yeni məbləğ",
     "subjedit.noChanges": "Dəyişiklik yoxdur",
-    // ---- Round 41 — structured change summary (single price mention) ----
+    // ---- Structured change summary. PRORATION IS RETIRED (owner,
+    // 2026-08-17): every subject is billed on ITS OWN cycle, starting the day
+    // it is added, so there is no child-wide renewal date and no part-period
+    // top-up left to describe. subjedit.estTotal ("estimated new total") and
+    // subjedit.nextBilling / .nextBillingLine ("from {date} your subscription
+    // will be {total} / {interval}") stated exactly that retired model in one
+    // sentence and are GONE; the sentences below explain the model we run. ----
     "subjedit.dueNow": "İndi ödəniləcək",
-    "subjedit.nextBilling": "Növbəti ödəniş",
-    "subjedit.nextBillingLine":
-      "{date} tarixindən etibarən abunəniz {total} {currency} / {interval} olacaq.",
+    "subjedit.dueNowNote":
+      "Əlavə etdiyiniz hər fənn üçün seçdiyiniz dövrün tam qiyməti indi ödənilir və həmin dövr bu gün başlayır. Ödəniş günlərə bölünmür.",
+    // The rule in one sentence, shown above the subject cards.
+    "subjedit.cycleNote":
+      "Hər fənn ayrıca ödənilir: fənni əlavə etdiyiniz gün onun öz dövrü başlayır və yalnız həmin dövrün sonunda yenilənir. Bir fənnə görə digərlərinin tarixi dəyişmir.",
+    // Per-subject billing block: cycle, price and WHEN each subject renews.
+    "subjedit.perSubjectLabel": "Fənlər üzrə ödəniş",
+    "subjedit.subjectPlanLine": "{subject} · {cycle} · {price}",
+    "subjedit.renewsOn": "{date} tarixində yenilənir",
+    "subjedit.switchesOn": "{date} tarixinədək cari dövr, sonra: {cycle}",
+    "subjedit.startsToday": "Bu gün başlayır — tam dövrün qiyməti indi ödənilir",
     "subjedit.noteLabel": "Qeyd",
     "subjedit.noteText":
-      "Silinən fənn(lər) {date} tarixinə qədər aktiv qalır. Həmin tarixdən abunəniz yenilənmiş fənlərlə avtomatik davam edəcək. Silinən fənlərə görə geri ödəniş edilmir.",
+      "Silinən fənlər öz ödənilmiş dövrlərinin sonuna qədər — ən gec {date} tarixinə qədər — aktiv qalır. Silinən fənlərə görə geri ödəniş edilmir.",
     "subjedit.noChargeNow":
-      "İndi heç nə ödəmirsiniz — dəyişiklik {date} tarixindən qüvvəyə minir.",
+      "İndi ödəniş alınmır — ilk ödəniş {date} tarixində olacaq.",
     // Per-subject removal terms: one dated line per removed subject (the single
-    // scalar the RPC still returns is the subscription minimum and understates
-    // a yearly subject's remaining access), then the no-refund rule once.
+    // scalar the RPC still returns is the LAST of those dates and cannot
+    // describe a plan whose subjects run to different ones), then the no-refund
+    // rule once.
     "subjedit.noteLine": "{subject} {date} tarixinə qədər aktiv qalır.",
     "subjedit.noteNoRefund":
-      "Həmin tarixdən sonra abunəniz yenilənmiş fənlərlə avtomatik davam edir. Silinən fənlərə görə geri ödəniş edilmir.",
+      "Silinən fənlərə görə geri ödəniş edilmir. Qalan fənlər öz dövrləri ilə davam edir.",
     // Chip on a subject card whose cycle change is scheduled — a bare cycle
     // name next to a differently-set radio reads as a bug.
     "subjedit.pendingChip": "Sonra: {cycle}",
@@ -484,7 +498,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Hər fənnin öz ödəniş dövrü var. Bir fənnin dövrünü dəyişmək digərlərinə təsir etmir.",
     "plan.fromPrice": "{price}-dan / {cycle}",
     "plan.removeAria": "{subject} fənnini seçimdən çıxar",
-    "plan.removeSubject": "Fənni ləğv et",
+    "plan.removeSubject": "Ləğv et",
     "plan.perSubjectHint": "Hər fənn üçün ayrıca ödəniş dövrü seçin.",
     "subjedit.pendingPlanChange": "Dövr dəyişikliyi",
     "subjedit.planChangeLine": "{subject}: {from} → {to} ({date} tarixindən)",
@@ -1070,52 +1084,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.supportDesc":
       "Platformada xəta, girişlə bağlı problem və ya ödənişdə çətinlik varsa buraya yazın.",
     "contact.responseTime": "İş günləri cavab veririk — adətən 24 saat ərzində.",
-    "contact.bugCta": "Xəta bildir",
-    "contact.bugCtaHint": "Qısa forma — nə baş verdiyini yazın, araşdıraq.",
-
-    // — Report a bug (dialog, migration 116) —
-    // The bug.emptyErr / bug.err.* keys are RETURNED BY THE SERVER
-    // (lib/support/bugReportCore.ts) — renaming one here silently turns a real
-    // error message into a raw key on screen.
-    "bug.title": "Xəta bildir",
-    "bug.intro":
-      "Nə baş verdiyini qısaca yazın. Nə qədər ətraflı yazsanız, o qədər tez düzəldə bilərik.",
-    "bug.f.title.label": "Başlıq",
-    "bug.f.title.ph": "Məsələn: test göndərilmir",
-    "bug.f.description.label": "Nə baş verdi?",
-    "bug.f.description.ph": "Xətanı mümkün qədər ətraflı təsvir edin.",
-    "bug.f.steps.label": "Necə təkrarlamaq olar? (istəyə bağlı)",
-    "bug.f.steps.ph": "1. …\n2. …\n3. …",
-    "bug.f.expected.label": "Gözlənilən nəticə (istəyə bağlı)",
-    "bug.f.expected.ph": "Nə baş verməli idi?",
-    "bug.f.actual.label": "Faktiki nəticə (istəyə bağlı)",
-    "bug.f.actual.ph": "Onun əvəzinə nə baş verdi?",
-    "bug.f.severity.label": "Nə qədər ciddidir?",
-    "bug.sev.low": "Az əhəmiyyətli",
-    "bug.sev.normal": "Normal",
-    "bug.sev.high": "Ciddi",
-    "bug.sev.critical": "Kritik",
-    "bug.f.email.label": "E-poçt (istəyə bağlı)",
-    "bug.f.email.ph": "siz@nümunə.az",
-    "bug.f.email.help": "Cavab istəyirsinizsə yazın. Boş qoya bilərsiniz.",
-    "bug.contextNote":
-      "Səhifənin ünvanı, dil və brauzer məlumatı avtomatik əlavə olunur.",
-    "bug.remaining": "{n} simvol qaldı",
-    "bug.cancel": "Ləğv et",
-    "bug.submit": "Göndər",
-    "bug.sending": "Göndərilir…",
-    "bug.close": "Bağla",
-    "bug.successTitle": "Bildiriş göndərildi",
-    "bug.successBody":
-      "Təşəkkür edirik. Komandamız bildirişinizi araşdıracaq və lazım olsa sizinlə əlaqə saxlayacaq.",
-    "bug.emptyErr":
-      "Başlıq ən azı 3, izah isə ən azı 10 simvol olmalıdır.",
-    "bug.err.tooLong": "Mətn həddindən artıq uzundur. Qısaldıb yenidən cəhd edin.",
-    "bug.err.tooMany":
-      "Qısa müddətdə çox bildiriş göndərdiniz. Bir azdan yenidən cəhd edin.",
-    "bug.err.duplicate": "Bu bildirişi artıq göndərmisiniz — üzərində işləyirik.",
-    "bug.err.retry": "Hesabınızı yoxlaya bilmədik. Bir az sonra yenidən cəhd edin.",
-    "bug.err.generic": "Bildiriş göndərilmədi. Bir azdan yenidən cəhd edin.",
 
     // — Footer —
     "footer.tagline": "1–11-ci siniflər üçün olimpiada hazırlığı portalı",
@@ -1863,21 +1831,26 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.selectedCount": "Selected subjects",
     "subjedit.pendingAdd": "Added",
     "subjedit.pendingRemove": "Removed",
-    "subjedit.estTotal": "Estimated new total",
     "subjedit.noChanges": "No changes yet",
-    // ---- Round 41 — structured change summary (single price mention) ----
+    // ---- Structured change summary; proration retired (see the az block). ----
     "subjedit.dueNow": "Pay now",
-    "subjedit.nextBilling": "Next billing",
-    "subjedit.nextBillingLine":
-      "Starting from {date}, your subscription will be {total} {currency} / {interval}.",
+    "subjedit.dueNowNote":
+      "For every subject you add you pay the full price of the cycle you picked, and that cycle starts today. Nothing is split by days.",
+    "subjedit.cycleNote":
+      "Each subject is billed on its own: its cycle starts the day you add it and renews only at the end of that cycle. Adding or dropping one subject never moves the other subjects' dates.",
+    "subjedit.perSubjectLabel": "Billing per subject",
+    "subjedit.subjectPlanLine": "{subject} · {cycle} · {price}",
+    "subjedit.renewsOn": "Renews on {date}",
+    "subjedit.switchesOn": "Current cycle runs to {date}, then: {cycle}",
+    "subjedit.startsToday": "Starts today — the full cycle is paid now",
     "subjedit.noteLabel": "Note",
     "subjedit.noteText":
-      "The removed subject(s) remain active until {date}. After that date, your subscription automatically continues with the updated subjects. No refund is issued for removed subjects.",
+      "Removed subjects stay active until the end of the period they are paid for — {date} at the latest. No refund is issued for removed subjects.",
     "subjedit.noChargeNow":
-      "Nothing to pay now — the change takes effect on {date}.",
+      "Nothing is charged now — the first payment is on {date}.",
     "subjedit.noteLine": "{subject} stays active until {date}.",
     "subjedit.noteNoRefund":
-      "After that your subscription continues automatically with the updated subjects. No refund is issued for removed subjects.",
+      "No refund is issued for removed subjects. The subjects you keep continue on their own cycles.",
     "subjedit.pendingChip": "Then: {cycle}",
     "pay.confirmNoCharge": "Confirm",
     "billing.giveawayNote": "During the free giveaway period access to all subjects is free — no subscription payment is required.",
@@ -2283,7 +2256,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Every subject has its own billing cycle. Changing one never changes another.",
     "plan.fromPrice": "from {price} / {cycle}",
     "plan.removeAria": "Remove {subject} from your selection",
-    "plan.removeSubject": "Remove subject",
+    "plan.removeSubject": "Remove",
     "plan.perSubjectHint": "Pick a billing cycle for each subject.",
     "subjedit.pendingPlanChange": "Cycle change",
     "subjedit.planChangeLine": "{subject}: {from} → {to} (from {date})",
@@ -2866,52 +2839,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.supportDesc":
       "Errors on the platform, sign-in problems, or trouble with a payment.",
     "contact.responseTime": "We reply on business days, usually within 24 hours.",
-    "contact.bugCta": "Report a bug",
-    "contact.bugCtaHint": "A short form — tell us what happened and we'll look into it.",
-
-    // — Report a bug (dialog, migration 116) —
-    // The bug.emptyErr / bug.err.* keys are RETURNED BY THE SERVER
-    // (lib/support/bugReportCore.ts) — renaming one here silently turns a real
-    // error message into a raw key on screen.
-    "bug.title": "Report a bug",
-    "bug.intro":
-      "Tell us briefly what went wrong. The more detail you give, the faster we can fix it.",
-    "bug.f.title.label": "Title",
-    "bug.f.title.ph": "For example: the test won't submit",
-    "bug.f.description.label": "What happened?",
-    "bug.f.description.ph": "Describe the problem in as much detail as you can.",
-    "bug.f.steps.label": "How can we reproduce it? (optional)",
-    "bug.f.steps.ph": "1. …\n2. …\n3. …",
-    "bug.f.expected.label": "What you expected (optional)",
-    "bug.f.expected.ph": "What should have happened?",
-    "bug.f.actual.label": "What actually happened (optional)",
-    "bug.f.actual.ph": "What happened instead?",
-    "bug.f.severity.label": "How serious is it?",
-    "bug.sev.low": "Minor",
-    "bug.sev.normal": "Normal",
-    "bug.sev.high": "Serious",
-    "bug.sev.critical": "Critical",
-    "bug.f.email.label": "Email (optional)",
-    "bug.f.email.ph": "you@example.com",
-    "bug.f.email.help": "Add it if you'd like a reply. You can leave it empty.",
-    "bug.contextNote":
-      "The page address, your language and browser details are attached automatically.",
-    "bug.remaining": "{n} characters left",
-    "bug.cancel": "Cancel",
-    "bug.submit": "Send report",
-    "bug.sending": "Sending…",
-    "bug.close": "Close",
-    "bug.successTitle": "Report sent",
-    "bug.successBody":
-      "Thank you. Our team will look into your report and get back to you if we need more details.",
-    "bug.emptyErr":
-      "The title needs at least 3 characters and the description at least 10.",
-    "bug.err.tooLong": "That text is too long. Please shorten it and try again.",
-    "bug.err.tooMany":
-      "You've sent too many reports in a short time. Please try again a little later.",
-    "bug.err.duplicate": "You've already sent this report — we're looking into it.",
-    "bug.err.retry": "We could not verify your account just now. Please try again in a moment.",
-    "bug.err.generic": "The report could not be sent. Please try again shortly.",
 
     // — Footer —
     "footer.tagline": "An olympiad preparation portal for grades 1–11",
@@ -3645,21 +3572,26 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.selectedCount": "Выбранные предметы",
     "subjedit.pendingAdd": "Добавлено",
     "subjedit.pendingRemove": "Удалено",
-    "subjedit.estTotal": "Примерная новая сумма",
     "subjedit.noChanges": "Изменений пока нет",
-    // ---- Round 41 — structured change summary (single price mention) ----
+    // ---- Structured change summary; proration retired (see the az block). ----
     "subjedit.dueNow": "К оплате сейчас",
-    "subjedit.nextBilling": "Следующий платёж",
-    "subjedit.nextBillingLine":
-      "С {date} ваша подписка составит {total} {currency} / {interval}.",
+    "subjedit.dueNowNote":
+      "За каждый добавленный предмет сейчас списывается полная стоимость выбранного периода, и период начинается сегодня. Оплата не делится по дням.",
+    "subjedit.cycleNote":
+      "Каждый предмет оплачивается отдельно: его период начинается в день добавления и продлевается только в конце этого периода. Добавление или удаление одного предмета не сдвигает даты остальных.",
+    "subjedit.perSubjectLabel": "Оплата по предметам",
+    "subjedit.subjectPlanLine": "{subject} · {cycle} · {price}",
+    "subjedit.renewsOn": "Продлевается {date}",
+    "subjedit.switchesOn": "Текущий период до {date}, затем: {cycle}",
+    "subjedit.startsToday": "Начинается сегодня — полный период оплачивается сейчас",
     "subjedit.noteLabel": "Примечание",
     "subjedit.noteText":
-      "Удалённые предметы остаются активными до {date}. После этой даты подписка автоматически продолжится с обновлёнными предметами. Возврат за удалённые предметы не производится.",
+      "Удалённые предметы остаются активными до конца оплаченного периода — не позднее {date}. Возврат за удалённые предметы не производится.",
     "subjedit.noChargeNow":
-      "Сейчас платить не нужно — изменение вступит в силу {date}.",
+      "Сейчас списаний нет — первый платёж {date}.",
     "subjedit.noteLine": "«{subject}» остаётся активным до {date}.",
     "subjedit.noteNoRefund":
-      "После этого подписка автоматически продолжится с обновлёнными предметами. Возврат за удалённые предметы не производится.",
+      "Возврат за удалённые предметы не производится. Оставшиеся предметы продолжают действовать по своим периодам.",
     "subjedit.pendingChip": "Затем: {cycle}",
     "pay.confirmNoCharge": "Подтвердить",
     "billing.giveawayNote": "В период бесплатной акции доступ ко всем предметам бесплатный — оплата подписки не требуется.",
@@ -4068,7 +4000,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "У каждого предмета свой период оплаты. Изменение одного не влияет на другие.",
     "plan.fromPrice": "от {price} / {cycle}",
     "plan.removeAria": "Убрать предмет «{subject}» из выбора",
-    "plan.removeSubject": "Убрать предмет",
+    "plan.removeSubject": "Убрать",
     "plan.perSubjectHint": "Выберите период оплаты для каждого предмета.",
     "subjedit.pendingPlanChange": "Смена периода",
     "subjedit.planChangeLine": "{subject}: {from} → {to} (с {date})",
@@ -4651,52 +4583,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.supportDesc":
       "Ошибки на платформе, проблемы со входом или с оплатой.",
     "contact.responseTime": "Отвечаем в рабочие дни, обычно в течение 24 часов.",
-    "contact.bugCta": "Сообщить об ошибке",
-    "contact.bugCtaHint": "Короткая форма — расскажите, что произошло, и мы разберёмся.",
-
-    // — Report a bug (dialog, migration 116) —
-    // The bug.emptyErr / bug.err.* keys are RETURNED BY THE SERVER
-    // (lib/support/bugReportCore.ts) — renaming one here silently turns a real
-    // error message into a raw key on screen.
-    "bug.title": "Сообщить об ошибке",
-    "bug.intro":
-      "Кратко опишите, что пошло не так. Чем больше подробностей, тем быстрее мы всё исправим.",
-    "bug.f.title.label": "Заголовок",
-    "bug.f.title.ph": "Например: тест не отправляется",
-    "bug.f.description.label": "Что произошло?",
-    "bug.f.description.ph": "Опишите проблему как можно подробнее.",
-    "bug.f.steps.label": "Как это повторить? (необязательно)",
-    "bug.f.steps.ph": "1. …\n2. …\n3. …",
-    "bug.f.expected.label": "Что вы ожидали (необязательно)",
-    "bug.f.expected.ph": "Что должно было произойти?",
-    "bug.f.actual.label": "Что произошло на самом деле (необязательно)",
-    "bug.f.actual.ph": "Что случилось вместо этого?",
-    "bug.f.severity.label": "Насколько это серьёзно?",
-    "bug.sev.low": "Незначительная",
-    "bug.sev.normal": "Обычная",
-    "bug.sev.high": "Серьёзная",
-    "bug.sev.critical": "Критическая",
-    "bug.f.email.label": "Эл. почта (необязательно)",
-    "bug.f.email.ph": "you@example.com",
-    "bug.f.email.help": "Укажите, если хотите получить ответ. Можно оставить пустым.",
-    "bug.contextNote":
-      "Адрес страницы, язык и данные браузера прикрепляются автоматически.",
-    "bug.remaining": "Осталось символов: {n}",
-    "bug.cancel": "Отмена",
-    "bug.submit": "Отправить",
-    "bug.sending": "Отправляем…",
-    "bug.close": "Закрыть",
-    "bug.successTitle": "Сообщение отправлено",
-    "bug.successBody":
-      "Спасибо. Наша команда изучит ваше сообщение и свяжется с вами, если понадобятся детали.",
-    "bug.emptyErr":
-      "В заголовке нужно минимум 3 символа, в описании — минимум 10.",
-    "bug.err.tooLong": "Текст слишком длинный. Сократите его и попробуйте снова.",
-    "bug.err.tooMany":
-      "Вы отправили слишком много сообщений за короткое время. Попробуйте чуть позже.",
-    "bug.err.duplicate": "Вы уже отправляли это сообщение — мы им занимаемся.",
-    "bug.err.retry": "Не удалось проверить вашу учётную запись. Повторите попытку чуть позже.",
-    "bug.err.generic": "Не удалось отправить сообщение. Попробуйте чуть позже.",
 
     // — Footer —
     "footer.tagline": "Портал подготовки к олимпиадам для 1–11 классов",

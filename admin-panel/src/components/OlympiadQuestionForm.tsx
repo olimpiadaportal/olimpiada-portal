@@ -216,10 +216,15 @@ export function OlympiadQuestionForm({
     for (const loc of locales) {
       if (loc === "az") continue;
       const d = drafts[loc];
+      // Mirrors the server rule in olympiad.ts: an EXPLANATION ALONE does not
+      // make a locale active. Explanations are keyed on (question, locale)
+      // independently of translations, and the bulk importers store an
+      // explanation-only locale on purpose — counting it here made every such
+      // imported question unsavable, and the only way out destroyed the
+      // explanation. Keep the two expressions identical.
       const active =
         d.body.trim() ||
         d.prompt.trim() ||
-        d.explanation.trim() ||
         d.options.some((x) => x.trim());
       if (active && (!d.body.trim() || d.options.some((x) => !x.trim()))) {
         return {

@@ -220,7 +220,7 @@ begin
     'achievements','question_analytics',
     'subscription_plans','subscriptions','payments','coupons',
     'notification_templates','notification_deliveries','support_requests',
-    'question_reports','bug_reports',
+    'question_reports',
     'admin_actions','content_reviews','media_assets','system_settings','feature_flags'
   ]
   loop
@@ -2499,6 +2499,9 @@ grant execute on function public.admin_delete_olympiad_pool_question(uuid, uuid)
 --   "meta": { "subject","grade_level","topic","subtopic","term",
 --             "type"?, "olympiad_type"?, "source"?, "media_asset_id"? },
 --   "translations": { "az": {"body","prompt"?,"explanation"?}, "en"?: {...}, "ru"?: {...} },
+--     Migration 119: "explanation" is PER LOCALE and INDEPENDENT of "body" --
+--     a locale may carry an explanation with no body and it still lands as
+--     its own question_explanations row.
 --   "options": [ { "is_correct": true, "order_index"?: 0, "text": {"az": "...","en"?:"...","ru"?:"..."} } ]
 -- }
 create or replace function public.bulk_insert_questions(
@@ -2630,11 +2633,24 @@ begin
 
       for v_loc in select jsonb_object_keys(v_item->'translations')
       loop
-        if v_loc in ('az','en','ru') and coalesce(v_item->'translations'->v_loc->>'body','') <> '' then
-          insert into public.question_translations (question_id, locale, body, prompt, media_asset_id)
-          values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'body',
-                  nullif(v_item->'translations'->v_loc->>'prompt',''),
-                  case when v_loc = v_pl then v_media end);
+        if v_loc in ('az','en','ru') then
+          -- Migration 119: the BODY guard wraps the TRANSLATION row only. It
+          -- used to wrap the explanation insert too, so a locale supplying an
+          -- explanation but no body had that explanation silently dropped --
+          -- no row, no error, nothing in the per-item errors array.
+          -- question_explanations has NO FK to question_translations and
+          -- get_test_review joins the two independently, so an
+          -- explanation-only locale is perfectly servable: that reader gets
+          -- their own explanation next to the az body.
+          -- BACKWARD COMPATIBLE: a legacy payload carrying only
+          -- translations.az.{body,explanation} still lands exactly one az
+          -- translation row and one az explanation row, unchanged.
+          if coalesce(v_item->'translations'->v_loc->>'body','') <> '' then
+            insert into public.question_translations (question_id, locale, body, prompt, media_asset_id)
+            values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'body',
+                    nullif(v_item->'translations'->v_loc->>'prompt',''),
+                    case when v_loc = v_pl then v_media end);
+          end if;
           if coalesce(v_item->'translations'->v_loc->>'explanation','') <> '' then
             insert into public.question_explanations (question_id, locale, explanation_body)
             values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'explanation');
@@ -3230,7 +3246,7 @@ comment on function public.assert_payments_enabled() is
   'Round 48/51: hard server-side payment kill switch. Raises check_violation '
   'with hint payments_disabled while current_payment_mode() = off; called '
   'first inside every paid RPC (create_child_subscription, purchase_olympiad, '
-  'add_subscription_subject, apply_subject_change adds).';
+  'add_subscription_subject, apply_plan_change adds and cycle changes).';
 
 revoke all on function public.assert_payments_enabled() from public, anon, authenticated;
 grant execute on function public.assert_payments_enabled() to service_role;
@@ -4901,11 +4917,24 @@ begin
 
       for v_loc in select jsonb_object_keys(v_item->'translations')
       loop
-        if v_loc in ('az','en','ru') and coalesce(v_item->'translations'->v_loc->>'body','') <> '' then
-          insert into public.question_translations (question_id, locale, body, prompt, media_asset_id)
-          values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'body',
-                  nullif(v_item->'translations'->v_loc->>'prompt',''),
-                  case when v_loc = v_pl then v_media end);
+        if v_loc in ('az','en','ru') then
+          -- Migration 119: the BODY guard wraps the TRANSLATION row only. It
+          -- used to wrap the explanation insert too, so a locale supplying an
+          -- explanation but no body had that explanation silently dropped --
+          -- no row, no error, nothing in the per-item errors array.
+          -- question_explanations has NO FK to question_translations and
+          -- get_test_review joins the two independently, so an
+          -- explanation-only locale is perfectly servable: that reader gets
+          -- their own explanation next to the az body.
+          -- BACKWARD COMPATIBLE: a legacy payload carrying only
+          -- translations.az.{body,explanation} still lands exactly one az
+          -- translation row and one az explanation row, unchanged.
+          if coalesce(v_item->'translations'->v_loc->>'body','') <> '' then
+            insert into public.question_translations (question_id, locale, body, prompt, media_asset_id)
+            values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'body',
+                    nullif(v_item->'translations'->v_loc->>'prompt',''),
+                    case when v_loc = v_pl then v_media end);
+          end if;
           if coalesce(v_item->'translations'->v_loc->>'explanation','') <> '' then
             insert into public.question_explanations (question_id, locale, explanation_body)
             values (v_qid, v_loc::public.content_locale, v_item->'translations'->v_loc->>'explanation');
@@ -5977,8 +6006,20 @@ begin
                                  s.q_el->'translations'->'az'->'image'),
                'is_correct', taa.is_correct,
                'selected_option_ids', coalesce(to_jsonb(taa.selected_option_ids), '[]'::jsonb),
-               'explanation', coalesce(s.q_el->'translations'->v_loc->>'explanation',
-                                       s.q_el->'translations'->'az'->>'explanation'),
+               'explanation', coalesce(e.loc_ex, e.az_ex),
+               -- Migration 119: WHICH locale produced the string above, and
+               -- whether it is the az fallback rather than the reader's
+               -- language. Additive keys: the shipped mobile binary ignores
+               -- unknown keys (it casts the payload, it does not validate it)
+               -- and keeps deriving the flag itself, so this cannot break it.
+               -- In THIS branch the server is strictly more correct than the
+               -- clients: they probe the LIVE question_explanations table,
+               -- which is only a proxy for a FROZEN content_snapshot.
+               'explanation_locale',
+                 case when e.loc_ex is not null then v_loc
+                      when e.az_ex  is not null then 'az' end,
+               'explanation_is_fallback',
+                 (v_loc <> 'az' and e.loc_ex is null and e.az_ex is not null),
                'options', (
                  select coalesce(jsonb_agg(
                    jsonb_build_object('option_id', (o->>'option_id')::uuid,
@@ -5991,6 +6032,13 @@ begin
       join public.test_attempt_answers taa
         on taa.attempt_id = p_attempt_id
        and taa.question_id = (s.q_el->>'question_id')::uuid
+      -- Migration 119: resolve each candidate ONCE. btrim/nullif treat a
+      -- blank explanation as absent so the served text and the disclosed
+      -- locale can never disagree (no write path produces a blank row).
+      cross join lateral (
+        select nullif(btrim(s.q_el->'translations'->v_loc->>'explanation'), '') as loc_ex,
+               nullif(btrim(s.q_el->'translations'->'az'->>'explanation'), '')  as az_ex
+      ) e
     ) s2;
     return v_result;
   end if;
@@ -6012,7 +6060,16 @@ begin
                       else jsonb_build_object('bucket', ma.bucket, 'path', ma.path) end,
         'is_correct', taa.is_correct,
         'selected_option_ids', coalesce(to_jsonb(taa.selected_option_ids), '[]'::jsonb),
-        'explanation', coalesce(qe.explanation_body, qe_az.explanation_body),
+        'explanation', coalesce(e.loc_ex, e.az_ex),
+        -- Migration 119: see the snapshot branch. SECURITY DEFINER means this
+        -- flag is authoritative where the client probe cannot be: qexpl_select
+        -- hides an ARCHIVED question's explanations from a student, so the
+        -- clients deliberately stay silent there rather than mislabel.
+        'explanation_locale',
+          case when e.loc_ex is not null then v_loc
+               when e.az_ex  is not null then 'az' end,
+        'explanation_is_fallback',
+          (v_loc <> 'az' and e.loc_ex is null and e.az_ex is not null),
         'options', (
           select coalesce(jsonb_agg(
             jsonb_build_object('option_id', ao.id,
@@ -6046,6 +6103,10 @@ begin
       on qe.question_id = taa.question_id and qe.locale = v_loc::public.content_locale
     left join public.question_explanations qe_az
       on qe_az.question_id = taa.question_id and qe_az.locale = 'az'
+    cross join lateral (
+      select nullif(btrim(qe.explanation_body), '')    as loc_ex,
+             nullif(btrim(qe_az.explanation_body), '') as az_ex
+    ) e
     where taa.attempt_id = p_attempt_id
   ) s;
 
@@ -8255,9 +8316,17 @@ grant execute on function public.admin_manage_child_subscription(uuid, text, int
 --                  One rule in both directions: no refund, no surprise charge.
 -- quote_plan_change() is the SINGLE source of the math and apply_plan_change()
 -- calls it, so the previewed price can never drift from the applied one (audit
--- H7). Amounts are never accepted from a client. quote_subject_change /
--- apply_subject_change stay as add/remove wrappers with their exact historical
--- signatures (013 pins them; the mobile BFF and shipped binaries call them).
+-- H7). Amounts are never accepted from a client.
+--
+-- Migration 118 DROPPED the quote_subject_change / apply_subject_change
+-- add/remove wrappers. They composed a per-subject basket in SQL — a second
+-- implementation of "which cycle does a kept subject keep?" that had to match
+-- quote_plan_change exactly and mis-billed silently when it drifted — and they
+-- were the last reachable route into the retired shared-cycle model. A caller
+-- that has only subject ids now has its basket derived SERVER-SIDE, once, in
+-- web-app/src/lib/auth/subscriptionCore.ts (readLivePlan / derivePlanItems),
+-- and reaches this same pair like every other caller. 013 check 105 asserts
+-- both wrappers stay gone.
 -- =============================================================================
 
 create or replace function public.quote_plan_change(
@@ -8752,111 +8821,9 @@ comment on function public.apply_due_plan_changes() is
 revoke all on function public.apply_due_plan_changes() from public, anon, authenticated;
 grant execute on function public.apply_due_plan_changes() to service_role;
 
-create or replace function public.quote_subject_change(
-  p_student_profile_id uuid,
-  p_add                uuid[] default '{}',
-  p_remove             uuid[] default '{}'
-)
-returns jsonb
-language plpgsql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_sub   public.child_subscriptions%rowtype;
-  v_items jsonb;
-begin
-  select * into v_sub
-  from public.child_subscriptions
-  where student_profile_id = p_student_profile_id
-    and status in ('trialing', 'active', 'past_due')
-  order by created_at desc
-  limit 1;
-  if not found then
-    raise exception 'subject_change: no active subscription' using errcode = 'no_data_found';
-  end if;
-
-  -- Compose the DESIRED full set from the live coverage + the add/remove diff,
-  -- keeping every kept subject on ITS OWN cycle so a mixed plan is not
-  -- flattened by an old caller.
-  select jsonb_agg(jsonb_build_object('subject_id', x.sid, 'interval', x.iv))
-    into v_items
-  from (
-    select ss.subject_id as sid,
-           coalesce(ss.pending_interval, ss.interval, v_sub.interval) as iv
-    from public.subscription_subjects ss
-    where ss.child_subscription_id = v_sub.id
-      and ss.remove_at is null
-      and not (ss.subject_id = any (coalesce(p_remove, '{}')))
-    union
-    select s.sid, v_sub.interval
-    from unnest(coalesce(p_add, '{}')) s(sid)
-  ) x;
-
-  return public.quote_plan_change(p_student_profile_id, coalesce(v_items, '[]'::jsonb));
-end;
-$$;
-revoke all on function public.quote_subject_change(uuid, uuid[], uuid[]) from public, anon, authenticated;
-grant execute on function public.quote_subject_change(uuid, uuid[], uuid[]) to service_role;
 revoke all on function public.quote_plan_change(uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.quote_plan_change(uuid, jsonb) to service_role;
 
--- ----------------------------------------------------------------------------
--- 4) apply_subject_change — atomic: adds get immediate access + a prorated
---    top-up, removals are SCHEDULED for the period end, the recurring rate is
---    recomputed, and every change is written to the ledger.
--- ----------------------------------------------------------------------------
-create or replace function public.apply_subject_change(
-  p_student_profile_id uuid,
-  p_add                uuid[] default '{}',
-  p_remove             uuid[] default '{}',
-  p_idempotency_key    text default null
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_sub   public.child_subscriptions%rowtype;
-  v_items jsonb;
-begin
-  -- Round 48 kill switch: adds are paid, removals stay legal.
-  if coalesce(array_length(p_add, 1), 0) > 0 then
-    perform public.assert_payments_enabled();
-  end if;
-
-  select * into v_sub
-  from public.child_subscriptions
-  where student_profile_id = p_student_profile_id
-    and status in ('trialing', 'active', 'past_due')
-  order by created_at desc
-  limit 1;
-  if not found then
-    raise exception 'subject_change: no active subscription' using errcode = 'no_data_found';
-  end if;
-
-  select jsonb_agg(jsonb_build_object('subject_id', x.sid, 'interval', x.iv))
-    into v_items
-  from (
-    select ss.subject_id as sid,
-           coalesce(ss.pending_interval, ss.interval, v_sub.interval) as iv
-    from public.subscription_subjects ss
-    where ss.child_subscription_id = v_sub.id
-      and ss.remove_at is null
-      and not (ss.subject_id = any (coalesce(p_remove, '{}')))
-    union
-    select s.sid, v_sub.interval
-    from unnest(coalesce(p_add, '{}')) s(sid)
-  ) x;
-
-  return public.apply_plan_change(
-    p_student_profile_id, coalesce(v_items, '[]'::jsonb), p_idempotency_key);
-end;
-$$;
-revoke all on function public.apply_subject_change(uuid, uuid[], uuid[], text) from public, anon, authenticated;
-grant execute on function public.apply_subject_change(uuid, uuid[], uuid[], text) to service_role;
 revoke all on function public.apply_plan_change(uuid, jsonb, text) from public, anon, authenticated;
 grant execute on function public.apply_plan_change(uuid, jsonb, text) to service_role;
 
@@ -9122,7 +9089,27 @@ begin
   new.attempt_id          := old.attempt_id;
   new.attempt_kind        := old.attempt_kind;
   new.olympiad_package_id := old.olympiad_package_id;
-  new.reporter_profile_id := old.reporter_profile_id;
+  -- The one frozen field that may NOT be restored blindly. reporter_profile_id
+  -- carries `on delete set null`, and a referential action is an ORDINARY
+  -- UPDATE, so this BEFORE UPDATE trigger fires on it too and — restoring
+  -- unconditionally — wrote the deleted id straight back. PostgreSQL does not
+  -- re-check the constraint against the row a trigger substituted, so the report
+  -- kept a DANGLING reporter. That was invisible while nothing read the column;
+  -- it stops being invisible now that trg_notify_question_report_status keys a
+  -- create_notification INSERT off it and would take an FK violation on every
+  -- triage of such a report — swallowed as a warning, so the admin would be
+  -- promised a delivery that never happens.
+  -- Only the cascade can produce this exact shape (new NULL, old set, profile
+  -- already gone); no client can delete a profile row. So honouring it closes
+  -- the hole without opening any way to detach a live report from its reporter.
+  new.reporter_profile_id := case
+    when new.reporter_profile_id is null
+         and old.reporter_profile_id is not null
+         and not exists (select 1 from public.profiles p
+                         where p.id = old.reporter_profile_id)
+      then null
+    else old.reporter_profile_id
+  end;
   new.message             := old.message;
   new.locale              := old.locale;
   new.platform            := old.platform;
@@ -9138,7 +9125,9 @@ $$;
 
 comment on function public.question_report_freeze() is
   'BEFORE UPDATE on question_reports: only status and admin_note may change, '
-  'and a status change stamps handled_by/handled_at.';
+  'and a status change stamps handled_by/handled_at. The reporter id is frozen '
+  'EXCEPT against its own `on delete set null` cascade, which would otherwise '
+  'be reverted into a dangling reference.';
 
 drop trigger if exists trg_question_report_freeze on public.question_reports;
 create trigger trg_question_report_freeze
@@ -9215,359 +9204,163 @@ revoke all on function public.question_report_freeze() from public, anon, authen
 revoke delete on public.question_reports from anon, authenticated;
 
 -- -----------------------------------------------------------------------------
--- bug_reports (migration 116) — indexes, triggers, RPC, grants
+-- question_reports (migration 117) — the reporter hears back
 -- -----------------------------------------------------------------------------
--- The PLATFORM-scoped sibling of question_reports above. Same discipline: a
--- BEFORE INSERT trigger is the single authority for every derived column and
--- for the throttle, and a BEFORE UPDATE trigger makes the report evidence that
--- an administrator may triage but never rewrite.
-create index if not exists idx_bug_reports_status_created
-  on public.bug_reports (status, created_at desc);
-create index if not exists idx_bug_reports_priority_created
-  on public.bug_reports (priority, created_at desc);
-create index if not exists idx_bug_reports_created
-  on public.bug_reports (created_at desc);
-create index if not exists idx_bug_reports_role_created
-  on public.bug_reports (reporter_role, created_at desc);
--- Also covers the per-reporter throttle count in the derive trigger.
-create index if not exists idx_bug_reports_reporter
-  on public.bug_reports (reporter_profile_id, created_at desc);
--- Covers the ANONYMOUS blast-radius count in the derive trigger.
-create index if not exists idx_bug_reports_anon_created
-  on public.bug_reports (created_at desc) where reporter_profile_id is null;
-
--- ONE OPEN report per (reporter, identical title+description): the real
--- double-submit / rage-click guard. Closing it frees the slot, so a genuinely
--- recurring bug can be re-filed. Scoped to authenticated reporters exactly like
--- uq_question_reports_open_per_reporter — two different anonymous visitors
--- hitting the same bug must both get through.
-create unique index if not exists uq_bug_reports_open_per_reporter
-  on public.bug_reports (reporter_profile_id, content_hash)
-  where reporter_profile_id is not null and status in ('new','in_review');
-
--- SECURITY DEFINER because it must read profile_roles and profiles for the
--- caller and count rows the reporter's own SELECT policy hides once closed.
--- search_path is pinned; 013 check 104 asserts anon holds no EXECUTE.
-create or replace function public.bug_report_derive()
+-- Fired from the DATABASE, on the transition itself, for the same reason
+-- trg_notify_attempt_graded lives here: the admin panel is not the only thing
+-- that can move a report (a PostgREST update, a psql session, a future admin RPC
+-- all can), and a notifier that lives in one client is a notifier the other
+-- paths silently skip.
+--
+-- SECURITY DEFINER is load-bearing, not decoration: create_notification is
+-- service_role-only by design (a user must never be able to forge an inbox row),
+-- and the admin whose UPDATE fires this trigger is an `authenticated` caller.
+-- Without DEFINER every notification would fail on EXECUTE. search_path pinned;
+-- 013 check 104 asserts the whole posture.
+--
+-- WHICH LANGUAGE: question_reports.locale — the UI language the reporter was
+-- actually READING when they filed. profiles.preferred_locale is deliberately
+-- NOT used, for the same reason web-app/src/lib/auth/reportActions.ts rejected
+-- it as the report's own locale source: nothing in web-app or mobile-app ever
+-- writes that column, so it is 'az' for everyone and localising by it would be
+-- a trilingual gesture that ships one language.
+create or replace function public.notify_question_report_status_tg()
 returns trigger
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_profile uuid := public.current_profile_id();
-  v_role    public.report_reporter_role;
-  v_email   citext;
-  v_ws      text := ' ' || chr(9) || chr(10) || chr(13);
-  v_hour    int;
-  v_day     int;
-  v_anon    int;
+  v_loc   text;
+  v_type  text;
+  v_title text;
+  v_body  text;
 begin
-  -- The reporter is WHOEVER IS CALLING, never what the payload claims. The
-  -- INSERT policy re-compares this same value, so a forged reporter_profile_id
-  -- is overwritten here and then fails nothing — it simply never existed.
-  new.reporter_profile_id := v_profile;
-
-  if v_profile is null then
-    -- Anonymous. Only reachable through the service-role client in the web
-    -- server action: anon holds no grant on this table and none on the RPC.
-    new.reporter_role           := 'anonymous';
-    new.reporter_email          :=
-      nullif(btrim(coalesce(new.reporter_email::text, ''), v_ws), '')::citext;
-    new.reporter_email_verified := false;
-  else
-    -- Most privileged role wins, so a staff member filing from their own
-    -- account is labelled as staff rather than as whatever else they hold.
-    select case
-             when bool_or(r.code = 'administrator')   then 'administrator'
-             when bool_or(r.code = 'content_manager') then 'content_manager'
-             when bool_or(r.code = 'parent')          then 'parent'
-             when bool_or(r.code = 'student')         then 'student'
-           end::public.report_reporter_role
-      into v_role
-      from public.profile_roles pr
-      join public.roles r on r.id = pr.role_id
-     where pr.profile_id = v_profile;
-    new.reporter_role := coalesce(v_role, 'unknown');
-    -- A signed-in reporter's contact address is the ACCOUNT's, never the
-    -- form's: otherwise a child could put a stranger's address on a report.
-    select p.email into v_email from public.profiles p where p.id = v_profile;
-    new.reporter_email          := v_email;
-    new.reporter_email_verified := v_email is not null;
+  -- No reporter profile = no inbox. This is not only the anonymous case: the
+  -- FK is ON DELETE SET NULL, so a report whose author deleted their account
+  -- survives with a NULL reporter and must never be "notified".
+  if new.reporter_profile_id is null then
+    return null;
   end if;
 
-  -- Server-owned lifecycle: born 'new' at 'normal', unhandled, unnoted.
-  new.status      := 'new';
-  new.priority    := 'normal';
-  new.handled_by  := null;
-  new.handled_at  := null;
-  new.resolved_at := null;
-  new.admin_note  := null;
-  new.created_at  := now();
-  new.updated_at  := now();
+  v_loc := case when new.locale::text in ('en','ru') then new.locale::text else 'az' end;
 
-  new.title              := btrim(new.title, v_ws);
-  new.description        := btrim(new.description, v_ws);
-  new.steps_to_reproduce := nullif(btrim(coalesce(new.steps_to_reproduce, ''), v_ws), '');
-  new.expected_behavior  := nullif(btrim(coalesce(new.expected_behavior,  ''), v_ws), '');
-  new.actual_behavior    := nullif(btrim(coalesce(new.actual_behavior,    ''), v_ws), '');
-
-  -- Route: PATH ONLY. split_part drops the query string and then the fragment
-  -- before anything is stored. A value that is not root-relative afterwards is
-  -- DROPPED, not rejected: the context is worth less than the report.
-  new.route_path := nullif(regexp_replace(
-                       split_part(split_part(coalesce(new.route_path, ''), '?', 1), '#', 1),
-                       '[[:cntrl:][:space:]]', '', 'g'), '');
-  if new.route_path is not null and left(new.route_path, 1) <> '/' then
-    new.route_path := null;
-  end if;
-  new.route_path := left(new.route_path, 500);
-  new.user_agent := nullif(left(regexp_replace(coalesce(new.user_agent, ''),
-                                               '[[:cntrl:]]', ' ', 'g'), 300), '');
-
-  -- Throttle in the DATABASE. The same numbers as question_report_derive, so
-  -- the two report features cannot drift into different abuse budgets. One
-  -- indexed count per insert (idx_bug_reports_reporter); a plain SELECT over a
-  -- different row set, so there is no trigger recursion.
-  if new.reporter_profile_id is not null then
-    select count(*) filter (where created_at > now() - interval '1 hour'),
-           count(*) filter (where created_at > now() - interval '1 day')
-      into v_hour, v_day
-      from public.bug_reports
-     where reporter_profile_id = new.reporter_profile_id
-       and created_at > now() - interval '1 day';
-    if v_hour >= 5 or v_day >= 20 then
-      raise exception 'bug report: rate limited' using errcode = 'check_violation';
+  if new.status = 'in_review' then
+    v_type := 'question_report_in_review';
+    if v_loc = 'en' then
+      v_title := 'Your report is being reviewed';
+      v_body  := 'We got your report about the question and we are looking into it.';
+    elsif v_loc = 'ru' then
+      v_title := 'Твоё сообщение на рассмотрении';
+      v_body  := 'Мы получили сообщение о вопросе и сейчас проверяем его.';
+    else
+      v_title := 'Bildirişin baxışdadır';
+      v_body  := 'Sualla bağlı bildirişini aldıq və hazırda yoxlayırıq.';
     end if;
-  else
-    -- An anonymous row carries NOTHING to key a per-reporter limit on, and this
-    -- repo deliberately stores no IP addresses. The per-IP limit therefore
-    -- lives in the web tier (rateLimitAllow); THIS is the blast-radius cap that
-    -- survives a compromised app tier or a leaked service key.
-    select count(*) into v_anon
-      from public.bug_reports
-     where reporter_profile_id is null
-       and created_at > now() - interval '1 hour';
-    if v_anon >= 20 then
-      raise exception 'bug report: rate limited' using errcode = 'check_violation';
+
+  elsif new.status = 'resolved' then
+    v_type := 'question_report_resolved';
+    if v_loc = 'en' then
+      v_title := 'Your report is resolved';
+      v_body  := 'We checked the question you reported and fixed the problem. Thank you!';
+    elsif v_loc = 'ru' then
+      v_title := 'Сообщение обработано';
+      v_body  := 'Мы проверили вопрос, о котором ты написал(а), и устранили проблему. Спасибо!';
+    else
+      v_title := 'Bildirişin həll olundu';
+      v_body  := 'Bildirdiyin sualı yoxladıq və problemi aradan qaldırdıq. Təşəkkür edirik!';
     end if;
+
+  elsif new.status = 'dismissed' then
+    -- A dismissal is told to the reporter too, and told HONESTLY: "we checked
+    -- it, nothing needed changing". Silence would be the cheaper option and the
+    -- worse one — a student who reports a question and never hears anything
+    -- concludes the report button does nothing and stops using it, which costs
+    -- us the broken questions nobody else will find. The wording deliberately
+    -- carries no blame: dismissed means the question was fine, not that the
+    -- report was wrong to file.
+    v_type := 'question_report_dismissed';
+    if v_loc = 'en' then
+      v_title := 'Your report was checked';
+      v_body  := 'We checked the question you reported — no change was needed. '
+              || 'Thanks for telling us all the same.';
+    elsif v_loc = 'ru' then
+      v_title := 'Мы проверили твоё сообщение';
+      v_body  := 'Мы проверили вопрос — изменения не потребовались. '
+              || 'Спасибо, что написал(а) нам.';
+    else
+      v_title := 'Bildirişin yoxlanıldı';
+      v_body  := 'Bildirdiyin sualı yoxladıq — dəyişiklik tələb olunmadı. '
+              || 'Yenə də bizə yazdığın üçün təşəkkür edirik.';
+    end if;
+
+  else
+    -- Reopening a report to 'new' is an internal correction, not news.
+    return null;
   end if;
 
-  return new;
+  begin
+    perform public.create_notification(
+      new.reporter_profile_id,
+      v_type,
+      v_title,
+      v_body,
+      -- Both keys end in _id, so the notification detail view drops them from
+      -- its scalar-pair list (opaque identifiers are noise to a reader) while
+      -- still carrying the context any future surface would need.
+      jsonb_build_object('question_report_id', new.id,
+                         'question_id',        new.question_id),
+      array['in_app'],
+      -- IDEMPOTENT per (report, status). The WHEN clause already suppresses a
+      -- re-save of the same status; this is what survives the other shape of
+      -- the mistake — in_review -> new -> in_review, which IS a transition and
+      -- would otherwise notify a second time for the same news. Deduped by
+      -- create_notification's on conflict (idempotency_key) do nothing.
+      'qreport:' || new.id::text || ':' || new.status::text,
+      4,
+      -- No action_url: the reporter has no screen that shows one report, and a
+      -- deep link into nothing is worse than none. The notification carries the
+      -- whole message.
+      null,
+      'announcement',
+      null);
+  exception when others then
+    -- Triage must never fail because the inbox did (award_attempt_points_tg /
+    -- notify_attempt_graded_tg precedent). An admin moving a report is the
+    -- important half; the courtesy note is not worth aborting it for.
+    raise warning 'notify_question_report_status failed for report %: %',
+      new.id, sqlerrm;
+  end;
+
+  return null;
 end;
 $$;
 
-comment on function public.bug_report_derive() is
-  'BEFORE INSERT on bug_reports: derives reporter, role, contact email, status, '
-  'priority and both stamps server-side, strips the query string and fragment '
-  'from route_path (credential hygiene), and enforces the authoritative rate '
-  'limit (5/hour + 20/day per reporter; 20/hour globally for anonymous rows). '
-  'Every write path passes through it, RPC and direct insert alike.';
+comment on function public.notify_question_report_status_tg() is
+  'AFTER UPDATE on question_reports: notifies the REPORTER, in the locale they '
+  'filed in, when an administrator takes their report into review, resolves it '
+  'or dismisses it. Idempotent per (report, status) via create_notification. '
+  'Skips anonymous and deleted reporters; failure-safe (warnings only) so a '
+  'notification can never abort triage.';
 
-drop trigger if exists trg_bug_report_derive on public.bug_reports;
-create trigger trg_bug_report_derive
-  before insert on public.bug_reports
-  for each row execute function public.bug_report_derive();
+drop trigger if exists trg_notify_question_report_status on public.question_reports;
+-- No `of status` column list, unlike trg_notify_attempt_graded. The WHEN clause
+-- is the real guard, and a column list would additionally require the STATEMENT
+-- to name status — which a BEFORE trigger writing new.status would not do. This
+-- is an administrator worklist, so evaluating one cheap WHEN per update costs
+-- nothing and removes a way for the notification to be silently skipped.
+create trigger trg_notify_question_report_status
+  after update on public.question_reports
+  for each row
+  when (new.status is distinct from old.status
+        and new.status in ('in_review','resolved','dismissed')
+        and new.reporter_profile_id is not null)
+  execute function public.notify_question_report_status_tg();
 
-create or replace function public.bug_report_freeze()
-returns trigger
-language plpgsql
-set search_path = public, pg_temp
-as $$
-begin
-  new.title                   := old.title;
-  new.description             := old.description;
-  new.steps_to_reproduce      := old.steps_to_reproduce;
-  new.expected_behavior       := old.expected_behavior;
-  new.actual_behavior         := old.actual_behavior;
-  new.reported_severity       := old.reported_severity;
-  new.reporter_role           := old.reporter_role;
-  new.reporter_email          := old.reporter_email;
-  new.reporter_email_verified := old.reporter_email_verified;
-  new.route_path              := old.route_path;
-  new.user_agent              := old.user_agent;
-  new.locale                  := old.locale;
-  new.platform                := old.platform;
-  new.app_version             := old.app_version;
-  new.created_at              := old.created_at;
-
-  -- reporter_profile_id is NOT frozen unconditionally. The FK's ON DELETE SET
-  -- NULL is itself an UPDATE: writing the old id back would leave a dangling
-  -- reference, because PostgreSQL skips the referential re-check when the key
-  -- value does not change. The ONLY legitimate change is null-ing a profile
-  -- that no longer exists. (question_report_freeze above does restore it
-  -- unconditionally and therefore has this hole; it is a separate fix.)
-  if new.reporter_profile_id is distinct from old.reporter_profile_id
-     and not (new.reporter_profile_id is null
-              and not exists (select 1 from public.profiles p
-                               where p.id = old.reporter_profile_id)) then
-    new.reporter_profile_id := old.reporter_profile_id;
-  end if;
-
-  -- handled_by is server-stamped, with the same referential carve-out.
-  if new.status is not distinct from old.status
-     and new.priority is not distinct from old.priority then
-    if new.handled_by is distinct from old.handled_by
-       and not (new.handled_by is null and old.handled_by is not null
-                and not exists (select 1 from public.profiles p
-                                 where p.id = old.handled_by)) then
-      new.handled_by := old.handled_by;
-      new.handled_at := old.handled_at;
-    end if;
-  else
-    new.handled_by := public.current_profile_id();
-    new.handled_at := now();
-  end if;
-
-  -- resolved_at is DERIVED, never a client value: stamped on the move into a
-  -- closed state, cleared on reopen, untouched by a note or a priority edit.
-  if new.status is distinct from old.status then
-    new.resolved_at := case when new.status in ('resolved','dismissed')
-                            then now() else null end;
-  else
-    new.resolved_at := old.resolved_at;
-  end if;
-
-  return new;
-end;
-$$;
-
-comment on function public.bug_report_freeze() is
-  'BEFORE UPDATE on bug_reports: only status, priority and admin_note may '
-  'change; a status or priority move stamps handled_by/handled_at and derives '
-  'resolved_at. A resolved report can never be a rewritten one.';
-
-drop trigger if exists trg_bug_report_freeze on public.bug_reports;
-create trigger trg_bug_report_freeze
-  before update on public.bug_reports
-  for each row execute function public.bug_report_freeze();
--- Name ordering matters: PostgreSQL fires BEFORE triggers alphabetically, and
--- trg_bug_report_freeze sorts before trg_set_updated_at, so the freeze runs
--- first and updated_at is still stamped afterwards.
-
-create or replace function public.submit_bug_report(
-  p_title         text,
-  p_description   text,
-  p_steps         text,
-  p_expected      text,
-  p_actual        text,
-  p_severity      text,
-  p_route_path    text,
-  p_user_agent    text,
-  p_locale        text,
-  p_platform      text,
-  p_app_version   text default null,
-  p_contact_email text default null)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_ws    text := ' ' || chr(9) || chr(10) || chr(13);
-  -- Populated by RETURNING below, after the BEFORE INSERT trigger derived them.
-  v_role     public.report_reporter_role;
-  v_email    citext;
-  v_verified boolean;
-  v_route    text;
-  v_ua       text;
-  v_title text := btrim(coalesce(p_title, ''), v_ws);
-  v_desc  text := btrim(coalesce(p_description, ''), v_ws);
-  v_id    uuid;
-begin
-  -- NO forbidden-when-anonymous guard here, unlike submit_question_report:
-  -- anonymous reports from the public contact page are a deliberate product
-  -- decision, because "I cannot register" and "the login page is blank" are
-  -- reports only a signed-out visitor can make. Its place is taken by the
-  -- GRANTS below — anon holds no EXECUTE on this function and no privilege on
-  -- the table, so the only unauthenticated caller is the web app's own
-  -- throttled server action running as service_role.
-  if char_length(v_title) < 3 or char_length(v_title) > 160 then
-    raise exception 'bug report: bad title' using errcode = 'check_violation';
-  end if;
-  if char_length(v_desc) < 10 or char_length(v_desc) > 4000 then
-    raise exception 'bug report: bad description' using errcode = 'check_violation';
-  end if;
-  -- Capped HERE as well as in the column CHECKs: a 2 MB body is refused before
-  -- it is written, not silently truncated.
-  if char_length(coalesce(p_steps, '')) > 2000
-     or char_length(coalesce(p_expected, '')) > 1000
-     or char_length(coalesce(p_actual, '')) > 1000 then
-    raise exception 'bug report: field too long' using errcode = 'check_violation';
-  end if;
-  if p_locale is null or p_locale not in ('az','en','ru') then
-    raise exception 'bug report: bad locale' using errcode = 'check_violation';
-  end if;
-  if p_platform is null or p_platform not in ('web','android','ios') then
-    raise exception 'bug report: bad platform' using errcode = 'check_violation';
-  end if;
-  if coalesce(p_severity, 'normal') not in ('low','normal','high','critical') then
-    raise exception 'bug report: bad severity' using errcode = 'check_violation';
-  end if;
-
-  insert into public.bug_reports
-    (title, description, steps_to_reproduce, expected_behavior, actual_behavior,
-     reported_severity, route_path, user_agent, locale, platform, app_version,
-     reporter_email)
-  values
-    (v_title, v_desc,
-     nullif(btrim(coalesce(p_steps,    ''), v_ws), ''),
-     nullif(btrim(coalesce(p_expected, ''), v_ws), ''),
-     nullif(btrim(coalesce(p_actual,   ''), v_ws), ''),
-     coalesce(p_severity, 'normal')::public.bug_report_priority,
-     nullif(btrim(coalesce(p_route_path,  ''), v_ws), ''),
-     nullif(btrim(coalesce(p_user_agent,  ''), v_ws), ''),
-     p_locale::public.content_locale,
-     p_platform::public.report_platform,
-     nullif(btrim(coalesce(p_app_version, ''), v_ws), ''),
-     nullif(btrim(coalesce(p_contact_email, ''), v_ws), '')::citext)
-  returning id, reporter_role, reporter_email, reporter_email_verified,
-            route_path, user_agent
-    into v_id, v_role, v_email, v_verified, v_route, v_ua;
-
-  -- The DERIVED values travel back with the id so the caller never has to read
-  -- the row again. The trigger has already overwritten reporter/role/email by
-  -- the time RETURNING evaluates, so these are exactly what an admin will see.
-  return jsonb_build_object(
-    'id',                      v_id,
-    'reporter_role',           v_role,
-    'reporter_email',          v_email,
-    'reporter_email_verified', v_verified,
-    'route_path',              v_route,
-    'user_agent',              v_ua);
-end;
-$$;
-
-comment on function public.submit_bug_report(
-  text,text,text,text,text,text,text,text,text,text,text,text) is
-  'Files one platform bug report for the CALLING profile, or anonymously when '
-  'invoked by the service role. Validates every field; reporter, role, contact '
-  'email, status, priority and the stamps are derived by trg_bug_report_derive, '
-  'which also enforces the rate limit — so a direct insert is exactly as '
-  'constrained. Returns the id so the caller can build the admin deep link.';
-
--- 010 line 88 runs `alter default privileges in schema public grant execute on
--- functions to anon, authenticated, service_role`, so EVERY new function is
--- EXECUTE-able by anon and authenticated unless explicitly taken back. Revoke
--- first, then grant only what is needed.
-revoke all on function public.submit_bug_report(
-  text,text,text,text,text,text,text,text,text,text,text,text)
+-- A trigger function is never called directly by anyone. Line 88 of 010 default-
+-- grants EXECUTE to anon AND authenticated, so all three are named here.
+revoke all on function public.notify_question_report_status_tg()
   from public, anon, authenticated;
-grant execute on function public.submit_bug_report(
-  text,text,text,text,text,text,text,text,text,text,text,text)
-  to authenticated, service_role;
--- Trigger functions are never called directly by anyone.
-revoke all on function public.bug_report_derive() from public, anon, authenticated;
-revoke all on function public.bug_report_freeze() from public, anon, authenticated;
-
--- Bug reports are operational history, and `anon` must hold NOTHING here: there
--- is no anon policy, and a surviving grant would be the one thing between a
--- scraper and every known defect in the platform if a policy were ever added
--- carelessly. Anonymous submission still works — it runs as service_role.
--- (A deliberate divergence from question_reports, which keeps a vestigial,
--- policy-less anon SELECT.)
-revoke all on public.bug_reports from anon;
-revoke delete on public.bug_reports from anon, authenticated;
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

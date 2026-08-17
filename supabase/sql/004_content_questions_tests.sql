@@ -162,6 +162,14 @@ create table if not exists public.answer_option_translations (
 -- -----------------------------------------------------------------------------
 -- question_explanations : localized solution/explanation. Visible after
 -- attempt/result only (RLS in 010). media_asset_id FK added in 011.
+--
+-- ONE ROW PER (question, locale) and the locales are INDEPENDENT: an
+-- explanation may exist in a locale that has no question_translations row, and
+-- there is deliberately no FK between the two. get_test_review joins them
+-- separately and resolves reader-locale-then-az, so a question can be
+-- explained in a language it is not itself translated into. Migration 119
+-- removed the last coupling (both bulk importers used to drop a translated
+-- explanation whose locale supplied no body).
 -- -----------------------------------------------------------------------------
 create table if not exists public.question_explanations (
   id               uuid primary key default gen_random_uuid(),
@@ -171,7 +179,16 @@ create table if not exists public.question_explanations (
   media_asset_id   uuid,                         -- FK added in 011
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now(),
-  constraint uq_explanation_locale unique (question_id, locale)
+  constraint uq_explanation_locale unique (question_id, locale),
+  -- Migration 119 ABUSE CEILING, not the product cap. The apps cap an
+  -- explanation at BULK_BODY_MAX (8000) before it reaches the database; this
+  -- only bounds a caller that goes around them. Nothing bounded it before:
+  -- the importer length-checked the PRIMARY locale only, so en/ru explanations
+  -- were never measured on either side. Inline and VALID here because a
+  -- from-zero build has no rows to scan; migration 119 adds the same rule to an
+  -- existing database as NOT VALID, so live legacy rows are never scanned and
+  -- an unrelated edit to one can never be blocked by it.
+  constraint ck_qexpl_body_len check (length(explanation_body) <= 20000)
 );
 
 -- -----------------------------------------------------------------------------

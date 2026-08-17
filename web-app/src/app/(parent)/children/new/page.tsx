@@ -35,6 +35,7 @@ const KEYS = [
   "billing.perWeek", "billing.perMonth", "billing.perYear",
   // Migration 109 — per-subject cycle cards + the grouped summary.
   "plan.cycle", "plan.cycleAria", "plan.cycleChangedAria",
+  "plan.removeSubject",
   "plan.group.weekly", "plan.group.monthly", "plan.group.yearly",
   "plan.group.subtotal", "plan.dueToday", "plan.dueTodayNote",
   "plan.renewals", "plan.renewalLine.weekly", "plan.renewalLine.monthly",

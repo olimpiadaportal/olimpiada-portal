@@ -29,6 +29,12 @@ import {
   type CurriculumIndex,
 } from "@/lib/admin/bulk-validate";
 import { rejectUnclaimableMedia } from "@/lib/admin/bulk-media";
+import {
+  collectQuestionMediaIds,
+  filterUnreferencedMedia,
+  removeMediaAssets,
+} from "@/lib/admin/media-sweep";
+import { writeAuditLog } from "@/lib/admin/audit";
 
 // `ok` is set only on the modal ("stay") path: the create-question modal needs
 // a success result instead of a redirect so it can close and refresh in place.
@@ -51,6 +57,19 @@ const MEDIA_MAX_SIZE = 5 * 1024 * 1024;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The explanation is per-locale (question_explanations is unique on
+// (question_id, locale) and has been since 004). The BODY of a general-bank
+// question stays single-locale — it is stored in the question's primary_locale
+// — but the explanation travels in all three, because the student review screen
+// resolves coalesce(<reader locale>, az) and labels the az fallback.
+const EXPLANATION_LOCALES = ["az", "en", "ru"] as const;
+export type ExplanationLocale = (typeof EXPLANATION_LOCALES)[number];
+export type ExplanationMap = Record<ExplanationLocale, string>;
+
+function emptyExplanations(): ExplanationMap {
+  return { az: "", en: "", ru: "" };
+}
 
 function s(formData: FormData, name: string): string {
   const v = formData.get(name);
@@ -102,7 +121,11 @@ export type EditQuestionData =
         primary_locale: string;
         body: string;
         prompt: string;
-        explanation: string;
+        /** az/en/ru — ALL THREE are returned, always. The editor must pre-fill
+         *  every box it can post: a form that rendered az empty because only
+         *  the primary locale was loaded would delete a live az explanation on
+         *  the next save. */
+        explanations: ExplanationMap;
         options: { text: string; is_correct: boolean }[];
       };
       media: { url: string; mime: string } | null;
@@ -148,7 +171,14 @@ export async function loadQuestionForEdit(
       .order("order_index"),
   ]);
   const tr = (trans ?? []).find((x: any) => x.locale === loc);
-  const exp = (expl ?? []).find((x: any) => x.locale === loc);
+  // Every locale's explanation, not just the primary one's — see the type note.
+  const explanations = emptyExplanations();
+  for (const row of (expl ?? []) as any[]) {
+    const l = String(row?.locale ?? "");
+    if ((EXPLANATION_LOCALES as readonly string[]).includes(l)) {
+      explanations[l as ExplanationLocale] = String(row?.explanation_body ?? "");
+    }
+  }
 
   // Current media, if attached to the primary-locale translation.
   let media: { url: string; mime: string } | null = null;
@@ -178,7 +208,7 @@ export async function loadQuestionForEdit(
       primary_locale: loc,
       body: tr?.body ?? "",
       prompt: tr?.prompt ?? "",
-      explanation: exp?.explanation_body ?? "",
+      explanations,
       options: ((aopts ?? []) as any[]).map((o: any) => ({
         text:
           (o.answer_option_translations ?? []).find(
@@ -267,13 +297,38 @@ export async function saveQuestion(
 
   const body = s(formData, "body");
   const prompt = s(formData, "prompt");
-  const explanation = s(formData, "explanation");
   if (!body) return { error: t("qerr.bodyRequired") };
   // Caps: body/prompt ≤ 8000, explanation ≤ 8000, option text ≤ 2000.
   if (body.length > BODY_MAX || prompt.length > BODY_MAX) {
     return { error: t("err.tooLong") };
   }
-  if (explanation.length > EXPLANATION_MAX) return { error: t("err.tooLong") };
+
+  // ---- Per-locale explanations (az/en/ru) ----------------------------------
+  //
+  // ONLY a locale whose field was actually SUBMITTED is written or cleared. An
+  // absent field leaves that locale's row untouched, which is what makes the
+  // widening safe: the delete branch below can never fire for a language the
+  // caller did not render, so a legacy/partial post can never destroy the live
+  // az explanations. `explanation` (the old single field) still works and lands
+  // on the question's primary locale, exactly as before.
+  const explanations: { locale: ExplanationLocale; value: string }[] = [];
+  for (const loc of EXPLANATION_LOCALES) {
+    const raw = formData.get(`explanation_${loc}`);
+    if (typeof raw !== "string") continue;
+    const value = raw.trim();
+    if (value.length > EXPLANATION_MAX) return { error: t("err.tooLong") };
+    explanations.push({ locale: loc, value });
+  }
+  if (explanations.length === 0) {
+    const legacy = formData.get("explanation");
+    if (typeof legacy === "string") {
+      const value = legacy.trim();
+      if (value.length > EXPLANATION_MAX) return { error: t("err.tooLong") };
+      if ((EXPLANATION_LOCALES as readonly string[]).includes(locale)) {
+        explanations.push({ locale: locale as ExplanationLocale, value });
+      }
+    }
+  }
 
   // ---- Exactly 5 options (A–E), exactly 1 correct (radio index) ------------
   const options: { text: string; is_correct: boolean; order_index: number }[] = [];
@@ -398,21 +453,25 @@ export async function saveQuestion(
     if (error) return cleanup("question translation upsert failed", error.message);
   }
 
-  // Primary-locale explanation (optional).
-  if (explanation) {
-    const { error } = await supabase
-      .from("question_explanations")
-      .upsert(
-        { question_id: questionId, locale, explanation_body: explanation },
-        { onConflict: "question_id,locale" },
-      );
-    if (error) return cleanup("question explanation upsert failed", error.message);
-  } else if (id) {
-    await supabase
-      .from("question_explanations")
-      .delete()
-      .eq("question_id", questionId)
-      .eq("locale", locale);
+  // Explanations, one row per submitted locale (all optional). The delete is
+  // ALWAYS scoped by .eq("locale", …) — never a bare question_id delete — so
+  // clearing the Russian box can only ever remove the Russian row.
+  for (const { locale: exLoc, value } of explanations) {
+    if (value) {
+      const { error } = await supabase
+        .from("question_explanations")
+        .upsert(
+          { question_id: questionId, locale: exLoc, explanation_body: value },
+          { onConflict: "question_id,locale" },
+        );
+      if (error) return cleanup("question explanation upsert failed", error.message);
+    } else if (id) {
+      await supabase
+        .from("question_explanations")
+        .delete()
+        .eq("question_id", questionId)
+        .eq("locale", exLoc);
+    }
   }
 
   // ---- Answer options: UPDATE IN PLACE, never delete + reinsert -------------
@@ -906,19 +965,140 @@ function idList(formData: FormData): string[] {
     .slice(0, 500);
 }
 
-export async function bulkDeleteQuestions(formData: FormData): Promise<void> {
-  await requireAdmin();
-  const ids = idList(formData);
-  if (ids.length === 0) return;
+/** Every uuid-shaped id the client posted, BEFORE the cap — so a truncated
+ *  selection can be reported instead of silently shrinking the delete. */
+function rawIdList(formData: FormData): string[] {
+  return String(formData.get("ids") ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => UUID_RE.test(x));
+}
+
+/**
+ * Outcome of a bulk delete, reported honestly.
+ *
+ * `blocked` is not a failure: a question any attempt has ever answered must
+ * never be hard-deleted (the answer rows ARE the grading history), so the right
+ * action for those is ARCHIVE. Reporting them separately is what tells the
+ * admin that, instead of leaving them to guess why the row is still there.
+ */
+export type BulkDeleteState = {
+  deleted: number;
+  /** Have answer history — archive them instead. */
+  blocked: number;
+  /** Not deletable from this surface (olympiad-pool, or already gone). */
+  skipped: number;
+  /** The selection exceeded MAX_BULK_IDS and the tail was not acted on. */
+  truncated: number;
+  error?: string;
+} | null;
+
+const MAX_BULK_IDS = 500;
+
+export async function bulkDeleteQuestions(
+  _prev: BulkDeleteState,
+  formData: FormData,
+): Promise<BulkDeleteState> {
+  // Guard FIRST — before touching any client-supplied FormData.
+  const ctx = await requireAdmin();
+  const raw = rawIdList(formData);
+  const ids = raw.slice(0, MAX_BULK_IDS);
+  const truncated = raw.length - ids.length;
+  const empty: BulkDeleteState = { deleted: 0, blocked: 0, skipped: 0, truncated };
+  if (ids.length === 0) return empty;
+
   const supabase = await createClient();
-  // Scope guard: forged/stale ids can never delete olympiad-pool questions
-  // from the general surface (those live and die with their package).
-  await supabase
+  const t = withLocalStrings(await getT(), await getLocale());
+  const fail = (where: string, code?: string): BulkDeleteState => {
+    console.error(`[admin] bulk delete failed (${where})`, code ?? "unknown");
+    return { ...empty, error: t("err.server") };
+  };
+
+  // 1. Narrow to rows this surface may delete at all. Scope guard: forged or
+  //    stale ids can never reach an olympiad-pool question (those live and die
+  //    with their package). Anything not returned is `skipped`.
+  const { data: scoped, error: scopeErr } = await supabase
     .from("questions")
-    .delete()
+    .select("id")
     .in("id", ids)
     .is("olympiad_package_id", null);
+  if (scopeErr) return fail("scope", scopeErr.code);
+  const deletable = (scoped ?? []).map((r: { id: string }) => r.id);
+  const skipped = ids.length - deletable.length;
+  if (deletable.length === 0) return { deleted: 0, blocked: 0, skipped, truncated };
+
+  // 2. Partition off the answered questions BEFORE deleting anything.
+  //    trg_question_delete_guard is a BEFORE DELETE **FOR EACH ROW** trigger
+  //    that RAISES, so a single answered question aborts the whole statement
+  //    and NOTHING is deleted. Filtering first is the difference between
+  //    "43 of 50 deleted, 7 need archiving" and a silent no-op.
+  const { data: answered, error: ansErr } = await supabase
+    .from("test_attempt_answers")
+    .select("question_id")
+    .in("question_id", deletable);
+  if (ansErr) return fail("answers", ansErr.code);
+  const blockedSet = new Set(
+    (answered ?? []).map((r: { question_id: string }) => r.question_id),
+  );
+  const toDelete = deletable.filter((id) => !blockedSet.has(id));
+  if (toDelete.length === 0) {
+    return { deleted: 0, blocked: blockedSet.size, skipped, truncated };
+  }
+
+  // 3. Collect the media these questions reference BEFORE the delete. The FK is
+  //    ON DELETE SET NULL, so once the questions are gone nothing points at the
+  //    assets any more and they become unreachable orphans — the row survives,
+  //    the Storage object survives, and the image stays publicly fetchable.
+  const candidateMedia = await collectQuestionMediaIds(supabase, toDelete);
+
+  const { error } = await supabase
+    .from("questions")
+    .delete()
+    .in("id", toDelete)
+    // Defence-in-depth: re-assert the scope on the DELETE itself.
+    .is("olympiad_package_id", null);
+  if (error) {
+    // A question can be answered between step 2 and here. Report it as blocked
+    // rather than as a server fault: nothing was deleted, and the admin's next
+    // action (archive) is the same either way.
+    if (
+      error.code === "23514" &&
+      (error.hint === "question_has_attempts" ||
+        /attempt history/i.test(error.message ?? ""))
+    ) {
+      return {
+        deleted: 0,
+        blocked: blockedSet.size + toDelete.length,
+        skipped,
+        truncated,
+      };
+    }
+    return fail("delete", error.code);
+  }
+
+  // 4. Sweep only what is genuinely unreferenced now. An asset shared with a
+  //    surviving question must not be removed, so this re-checks after the
+  //    delete rather than trusting the pre-delete list.
+  const orphans = await filterUnreferencedMedia(supabase, candidateMedia);
+  if (orphans.length > 0) await removeMediaAssets(supabase, orphans);
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.questions.bulk_delete",
+    targetTable: "questions",
+    metadata: {
+      requested: raw.length,
+      deleted: toDelete.length,
+      blocked: blockedSet.size,
+      skipped,
+      truncated,
+      media_removed: orphans.length,
+    },
+    severity: "warning",
+  });
+
   revalidatePath("/questions");
+  return { deleted: toDelete.length, blocked: blockedSet.size, skipped, truncated };
 }
 
 // useActionState result so the table can show "N updated, M skipped" feedback

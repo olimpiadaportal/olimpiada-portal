@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
 import { getDict, getLocale, getT } from "@/i18n/server";
@@ -132,17 +133,31 @@ export default async function QuestionsPage({
   // supabase-js cannot filter the parent by an embedded table reliably without
   // an inner join, so we query question_translations directly, then .in() on
   // the main query. Empty match list short-circuits to an empty result.
+  //
+  // Every id resolved here is sent back as a `.in()` list in the URL of the
+  // main query. A uuid costs ~37 bytes there, so 1000 matches is a ~37 KB URL —
+  // far past what the request line accepts. That is why a BROAD search used to
+  // render "0–0 of 0": the list query was rejected outright, the error was
+  // discarded, and an empty table looked like "this word appears nowhere".
+  // Capping to a URL-safe size makes the request succeed, and the cap is
+  // REPORTED rather than hidden — the old "of N" total was the count of the
+  // truncated id set, which is a number that describes nothing.
+  const MAX_IN_IDS = 200;
   let searchIds: string[] | null = null;
+  let searchCapped = false;
   const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
   if (escaped) {
-    const { data: trs } = await supabase
+    const { data: trs, error: trsErr } = await supabase
       .from("question_translations")
       .select("question_id")
       .ilike("body", `%${escaped}%`)
-      .limit(2000);
-    searchIds = Array.from(
+      .limit(MAX_IN_IDS + 1);
+    if (trsErr) console.error("[admin] question search failed", trsErr.code ?? "unknown");
+    const all = Array.from(
       new Set(((trs ?? []) as { question_id: string }[]).map((r) => r.question_id)),
     );
+    searchCapped = all.length > MAX_IN_IDS;
+    searchIds = all.slice(0, MAX_IN_IDS);
   }
   const emptySearch = searchIds !== null && searchIds.length === 0;
 
@@ -150,22 +165,38 @@ export default async function QuestionsPage({
   // "Needs option E" = in_review general-bank questions holding exactly 4
   // options (the migration-055 demotions). Computed via the embedded count so
   // the page never downloads option rows; capped at 2000 questions.
-  const { data: optRows } = await supabase
-    .from("questions")
-    .select("id, answer_options(count)")
-    .eq("status", "in_review")
-    .is("olympiad_package_id", null)
-    .limit(2000);
-  const optionEIds = ((optRows ?? []) as any[])
-    .filter((r) => Number(r.answer_options?.[0]?.count ?? 0) === 4)
-    .map((r) => String(r.id));
+  // Only scanned when the chip is actually in use. This used to run on EVERY
+  // page view — a full pass over the in_review bank with an aggregate embed,
+  // before the 25 visible rows could render — including when the chip was off.
+  // It is also `.in()`-bound like the search above, so it carries the same cap
+  // and reports it the same way.
+  let optionEIds: string[] = [];
+  let optionECapped = false;
+  if (review === "optionE") {
+    const { data: optRows, error: optErr } = await supabase
+      .from("questions")
+      .select("id, answer_options(count)")
+      .eq("status", "in_review")
+      .is("olympiad_package_id", null)
+      .limit(2000);
+    if (optErr) console.error("[admin] option-E scan failed", optErr.code ?? "unknown");
+    const all = ((optRows ?? []) as any[])
+      .filter((r) => Number(r.answer_options?.[0]?.count ?? 0) === 4)
+      .map((r) => String(r.id));
+    optionECapped = all.length > MAX_IN_IDS;
+    optionEIds = all.slice(0, MAX_IN_IDS);
+  }
   const emptyOptionE = review === "optionE" && optionEIds.length === 0;
 
   const from = (page - 1) * size;
   const to = from + size - 1;
 
-  const loadRows = async (): Promise<{ rows: any[]; count: number }> => {
-    if (emptySearch || emptyOptionE) return { rows: [], count: 0 };
+  const loadRows = async (): Promise<{
+    rows: any[];
+    count: number;
+    failed: boolean;
+  }> => {
+    if (emptySearch || emptyOptionE) return { rows: [], count: 0, failed: false };
     let qb = supabase
       .from("questions")
       .select(
@@ -186,16 +217,34 @@ export default async function QuestionsPage({
     if (term === "none") qb = qb.is("term", null);
     else if (term) qb = qb.eq("term", Number(term));
     // Sorting. NULL terms always sort LAST so a term-sorted list opens on real
-    // content; created_at stays the tiebreaker so paging is deterministic.
+    // content.
     if (sort === "term_asc") {
       qb = qb.order("term", { ascending: true, nullsFirst: false });
     } else if (sort === "term_desc") {
       qb = qb.order("term", { ascending: false, nullsFirst: false });
     }
-    const { data, count } = await qb
+    // `id` LAST, and it is not decoration. `created_at` was described here as
+    // "the tiebreaker so paging is deterministic", but it is not UNIQUE: a bulk
+    // import stamps one timestamp across the whole file, so thousands of rows
+    // tie. PostgreSQL may then order tied rows differently between the queries
+    // that serve page 3 and page 4 — the same question appears twice while
+    // another never appears at all. Reviewing a status page by page silently
+    // skipped questions forever, and no counter could reveal it. A unique final
+    // key makes the total order deterministic, which is what `.range()` needs
+    // to be a correct pager. Sorting by Rüb made it worse: a whole imported
+    // file ties on BOTH term and created_at.
+    const { data, count, error } = await qb
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(from, to);
-    return { rows: (data ?? []) as any[], count: count ?? 0 };
+    // A discarded error rendered as "there are no questions": an RLS denial, a
+    // statement timeout or a rejected oversized request all produced a calm,
+    // confident empty state, and the admin concluded the bank was empty.
+    if (error) {
+      console.error("[admin] questions list failed", error.code ?? "unknown");
+      return { rows: [], count: 0, failed: true };
+    }
+    return { rows: (data ?? []) as any[], count: count ?? 0, failed: false };
   };
 
   // Cheap head-only counts for the stat cards (same private-pool exclusion).
@@ -208,10 +257,12 @@ export default async function QuestionsPage({
     return qb;
   };
 
-  // Explanation-translation coverage. question_explanations is trilingual by
-  // SHAPE but currently holds `az` rows only, so a student reading in EN/RU is
-  // served the Azerbaijani explanation — the review screen now labels that as a
-  // known gap, and this is where an editor can see how big the gap is.
+  // Explanation-translation coverage. A question with no explanation in the
+  // reader's language falls back to the Azerbaijani one, and the student review
+  // screen labels that; this is where an editor sees how big the gap still is.
+  // Both write paths now produce EN/RU rows — the question editor posts one box
+  // per locale and all four bulk templates carry a translated explanation — so
+  // these three numbers should converge over time instead of staying at az-only.
   // uq_explanation_locale makes (question_id, locale) unique, so counting
   // explanation rows for one locale counts QUESTIONS. head-only + an !inner
   // embed keeps the private olympiad pool out, exactly like the cards above.
@@ -394,6 +445,12 @@ export default async function QuestionsPage({
 
   // ---- Pager numbers -------------------------------------------------------
   const totalPages = Math.max(1, Math.ceil(total / size));
+  // `page` was clamped at the BOTTOM (>= 1) but never at the top, so a bulk
+  // action that emptied the last page left the admin stranded: an empty table
+  // reading "Showing 0–2875 of 2875" with no page number highlighted, which
+  // reads as "the whole bank vanished". Send them to the last page that has
+  // rows instead — every other search param is preserved by href().
+  if (page > totalPages && total > 0) redirect(href({ page: String(totalPages) }));
   const items = pageItems(page, totalPages);
   const shownFrom = list.length === 0 ? 0 : from + 1;
   const shownTo = from + list.length;
@@ -415,16 +472,33 @@ export default async function QuestionsPage({
   const dict: Record<string, string> = {};
   for (const k of keys) dict[k] = t(k);
 
-  const statCards: { key: string; label: string; count: number; status: string }[] = [
-    { key: "total", label: t("qstat.total"), count: statTotal ?? 0, status: "" },
-    { key: "in_review", label: t("qstatus.in_review"), count: statReview ?? 0, status: "in_review" },
-    { key: "published", label: t("qstatus.published"), count: statPublished ?? 0, status: "published" },
-    { key: "rejected", label: t("qstatus.rejected"), count: statRejected ?? 0, status: "rejected" },
+  // `?? 0` used to turn a FAILED count into a confident zero — an RLS problem
+  // or a timeout was indistinguishable from an empty bank, on the very cards an
+  // admin reads to decide whether there is work to do. A null count now renders
+  // as an em dash: unknown, not none.
+  const statCards: { key: string; label: string; count: number | null; status: string }[] = [
+    { key: "total", label: t("qstat.total"), count: statTotal ?? null, status: "" },
+    { key: "in_review", label: t("qstatus.in_review"), count: statReview ?? null, status: "in_review" },
+    { key: "published", label: t("qstatus.published"), count: statPublished ?? null, status: "published" },
+    { key: "rejected", label: t("qstatus.rejected"), count: statRejected ?? null, status: "rejected" },
   ];
 
   // Review chips (toggle on click; combined with the other filters).
-  const chips: { key: string; label: string; count: number }[] = [
-    { key: "optionE", label: t("qchip.needsOptionE"), count: optionEIds.length },
+  // `count: null` renders the chip with NO number.
+  //
+  // "Needs option E" cannot be counted cheaply — it means "has exactly 4
+  // answer options", which is an aggregate over answer_options that PostgREST
+  // cannot express, so the old number was the length of a truncated in-memory
+  // scan: it plateaued below the real backlog and moved between refreshes. A
+  // number that is wrong in an unknown direction is worse than no number,
+  // especially on a chip whose whole job is to say "this queue is not finished
+  // yet". Selecting the chip runs the scan and shows what it found.
+  const chips: { key: string; label: string; count: number | null }[] = [
+    {
+      key: "optionE",
+      label: t("qchip.needsOptionE"),
+      count: review === "optionE" ? optionEIds.length : null,
+    },
     { key: "needsTerm", label: t("qchip.needsTerm"), count: needsTermCount ?? 0 },
   ];
 
@@ -490,7 +564,7 @@ export default async function QuestionsPage({
             href={href({ status: c.status || null, page: null })}
             aria-current={current.status === c.status ? "true" : undefined}
           >
-            <span className="qstat-value">{c.count}</span>
+            <span className="qstat-value">{c.count === null ? "—" : c.count}</span>
             <span className="qstat-label">{c.label}</span>
           </Link>
         ))}
@@ -511,7 +585,13 @@ export default async function QuestionsPage({
             })}
             aria-current={review === c.key ? "true" : undefined}
           >
-            {c.label} <b>{c.count}</b>
+            {c.label}
+            {c.count !== null && (
+              <>
+                {" "}
+                <b>{c.count}</b>
+              </>
+            )}
           </Link>
         ))}
       </div>
@@ -539,6 +619,24 @@ export default async function QuestionsPage({
       {/* fullDict (not the slim `dict`): the table hosts the edit modal, whose
           QuestionForm needs the complete question-flow dictionary — same one
           the create modal receives. */}
+      {/* A failed list query used to be indistinguishable from an empty bank.
+          Say so instead: an RLS denial, a statement timeout or a rejected
+          oversized request are all things the admin can act on or report, and
+          none of them mean "there are no questions". */}
+      {main.failed && (
+        <p className="form-error" role="alert">
+          {t("qpage.loadFailed")}
+        </p>
+      )}
+
+      {/* An honest cap beats a silent one. The admin now knows the list is a
+          first slice and that narrowing the search will reach the rest. */}
+      {(searchCapped || optionECapped) && !main.failed && (
+        <p className="form-hint" role="status">
+          {t("qpage.resultsCapped").replace("{n}", String(MAX_IN_IDS))}
+        </p>
+      )}
+
       <QuestionsTable
         rows={display}
         taxonomy={taxonomy}

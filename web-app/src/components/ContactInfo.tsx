@@ -1,26 +1,26 @@
 import { getT } from "@/i18n/server";
 import { getPublicSiteSettings } from "@/lib/flags";
-import { ReportBugButton } from "@/components/ReportBugButton";
-// The key list and the surface type come from the PLAIN shared module, not from
-// the client component: every export of a `"use client"` module is a client
-// reference, which this server component could not iterate.
-import { BUG_DIALOG_KEYS, type BugReportSurface } from "@/lib/support/bugReport";
 
 // Shared contact body — the equal-height info card + the keyless Google-Maps
 // embed. Rendered by the public /contact page and the in-app parent
 // (/help/contact) and student (/child/help/contact) pages from this single
-// source, which is also why the "Report a bug" dialog is mounted here exactly
-// once and still reaches all three surfaces.
+// source.
 //
 // The card is organised by PURPOSE, not by field: a general block
 // (contact.info_email — questions, suggestions, feedback) and a technical block
-// (contact.support_email + the optional phone/WhatsApp rows + the bug CTA),
-// then the optional address. Both addresses come from admin Settings and fall
-// back to the REAL mailboxes below rather than to a placeholder domain: a
-// blanked setting, a missing row, an unconfigured service-role key and an
-// unreachable database all still have to render an address a visitor can
-// actually write to. Phone, WhatsApp and address keep the "empty hides the row"
-// behaviour — they have no safe invented value.
+// (contact.support_email + the optional phone/WhatsApp rows), then the optional
+// address. Both addresses come from admin Settings and fall back to the REAL
+// mailboxes below rather than to a placeholder domain: a blanked setting, a
+// missing row, an unconfigured service-role key and an unreachable database all
+// still have to render an address a visitor can actually write to. Phone,
+// WhatsApp and address keep the "empty hides the row" behaviour — they have no
+// safe invented value.
+//
+// Migration 117 withdrew the "Report a bug" dialog this card used to mount:
+// the platform has ONE reports section (question reports, triaged in the admin
+// panel) and no report sends outbound mail. These mailto links are now the only
+// inbound channel here, which is exactly why the fallback addresses above are
+// real ones.
 //
 // The map always renders: it prefers the admin-configured precise pin
 // (contact.support_map_query — a "lat,lng" pair or place query), else the
@@ -30,12 +30,7 @@ const MAPS_FALLBACK_QUERY = "Government House of Baku, Baku, Azerbaijan";
 const DEFAULT_INFO_EMAIL = "info@olympiq.ai";
 const DEFAULT_SUPPORT_EMAIL = "support@olympiq.ai";
 
-export async function ContactInfo({
-  surface = "public",
-}: {
-  /** Decides what the bug dialog may ask for — a child is never asked for an email. */
-  surface?: BugReportSurface;
-}) {
+export async function ContactInfo() {
   const t = await getT();
   const site = await getPublicSiteSettings();
   const infoEmail = site.infoEmail || DEFAULT_INFO_EMAIL;
@@ -45,12 +40,6 @@ export async function ContactInfo({
   const whatsappDigits = site.whatsapp.replace(/\D/g, "");
   const mapQuery = site.mapQuery || site.address || MAPS_FALLBACK_QUERY;
   const mapsEmbed = `https://www.google.com/maps?q=${encodeURIComponent(mapQuery)}&output=embed`;
-
-  // The dialog is a client component and cannot call getT(); hand it a plain
-  // resolved dictionary, the same way the test runner hands one to
-  // ReportQuestionButton.
-  const dict: Record<string, string> = {};
-  for (const k of BUG_DIALOG_KEYS) dict[k] = t(k);
 
   return (
     <div className="contact-equal">
@@ -98,11 +87,6 @@ export async function ContactInfo({
                 </span>
               </div>
             )}
-
-            <div className="contact-actions">
-              <ReportBugButton dict={dict} surface={surface} />
-              <p className="hint">{t("contact.bugCtaHint")}</p>
-            </div>
           </section>
 
           {site.address && (

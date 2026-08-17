@@ -39,6 +39,17 @@ export type RowIssue = { row: number; message: string };
 
 export const BULK_MAX_FILE_BYTES = 2 * 1024 * 1024;
 
+/** Per-locale body / prompt / explanation cap — the MIRROR of BULK_BODY_MAX in
+ *  src/lib/admin/bulk-validate.ts (the two files cannot share code; see the
+ *  header). It applies to EVERY locale, not just the primary one: nothing in
+ *  the schema bounds `question_explanations.explanation_body`, so this check
+ *  and its server twin are the only limit on what an en/ru explanation may
+ *  carry — and the templates now teach an explanation in all three. */
+export const BULK_TEXT_MAX = 8000;
+
+/** The locales a row may carry content for (mirror of bulk-validate LOCALES3). */
+const CLIENT_LOCALES3 = ["az", "en", "ru"] as const;
+
 // Five A–E options (exactly one correct) — the single_choice shape enforced by
 // the DB since migration 055; both templates model exactly that.
 const TEMPLATE_OPTIONS = [
@@ -49,10 +60,33 @@ const TEMPLATE_OPTIONS = [
   { is_correct: false, order_index: 4, text: { az: "7", en: "7", ru: "7" } },
 ];
 
+// ONE object behind ALL FOUR templates (general|olympiad × text|mixed), which
+// is why the explanation gap was a single edit: every downloadable template an
+// admin got taught `explanation` on az ONLY, so every generated file arrived
+// az-only, and a student reading in EN/RU was served the Azerbaijani text with
+// a "not translated yet" label. `question_explanations` has been trilingual by
+// SHAPE since 004 (`unique (question_id, locale)`) — the template was the thing
+// teaching otherwise.
+//
+// The explanations are real sentences in each language, not the same string
+// three times: the template is documentation, and "2 + 2 = 4" would teach that
+// a translated explanation means copying the az one across.
 const TEMPLATE_TRANSLATIONS = {
-  az: { body: "2 + 2 = ?", prompt: "Düzgün cavabı seçin", explanation: "2 + 2 = 4" },
-  en: { body: "2 + 2 = ?", prompt: "Choose the correct answer" },
-  ru: { body: "2 + 2 = ?", prompt: "Выберите правильный ответ" },
+  az: {
+    body: "2 + 2 = ?",
+    prompt: "Düzgün cavabı seçin",
+    explanation: "2 + 2 = 4, ona görə düzgün cavab A variantıdır.",
+  },
+  en: {
+    body: "2 + 2 = ?",
+    prompt: "Choose the correct answer",
+    explanation: "2 + 2 = 4, so the correct answer is option A.",
+  },
+  ru: {
+    body: "2 + 2 = ?",
+    prompt: "Выберите правильный ответ",
+    explanation: "2 + 2 = 4, поэтому правильный ответ — вариант A.",
+  },
 };
 
 // GENERAL template: per-item meta has NO subject and NO grade_level — the
@@ -471,7 +505,10 @@ export function validateBulkRowsClient(
     const it = item as {
       primary_locale?: unknown;
       meta?: { type?: unknown; topic?: unknown; subtopic?: unknown; term?: unknown };
-      translations?: Record<string, { body?: unknown } | undefined>;
+      translations?: Record<
+        string,
+        { body?: unknown; prompt?: unknown; explanation?: unknown } | undefined
+      >;
       options?: unknown;
     };
 
@@ -492,6 +529,24 @@ export function validateBulkRowsClient(
     const body = it.translations?.[pl]?.body;
     if (typeof body !== "string" || body.trim() === "") {
       issues.push({ row, message: tt("bulk.err.noAzBody") });
+    }
+
+    // Length caps for EVERY present locale, not only the primary one. Before
+    // the templates taught a trilingual explanation, only the primary locale's
+    // text was ever measured — so an en/ru explanation was completely
+    // unbounded on both sides (there is no CHECK on
+    // question_explanations.explanation_body either). Reported once per row.
+    for (const loc of CLIENT_LOCALES3) {
+      const tr = it.translations?.[loc];
+      if (!tr || typeof tr !== "object") continue;
+      const tooLong = (["body", "prompt", "explanation"] as const).some((f) => {
+        const v = (tr as Record<string, unknown>)[f];
+        return typeof v === "string" && v.length > BULK_TEXT_MAX;
+      });
+      if (tooLong) {
+        issues.push({ row, message: tt("bulk.err.tooLong") });
+        break;
+      }
     }
 
     // GENERAL mode: topic + subtopic + term (1..4) are required per row and,

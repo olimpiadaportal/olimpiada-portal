@@ -12,9 +12,7 @@ export default async function ParentContactPage() {
   return (
     <section className="prose help-page">
       <h1>{t("help.contactTitle")}</h1>
-      {/* surface="parent": the account address is what the report is stamped
-          with server-side, so the dialog does not ask for one. */}
-      <ContactInfo surface="parent" />
+      <ContactInfo />
     </section>
   );
 }

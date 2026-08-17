@@ -237,6 +237,7 @@ export function OlympiadGradeBulkAppend({
               {tt(questionMode === "mixed" ? "bulk.fileHintZip" : "bulk.fileHint")}
             </p>
             <p className="hint">{tt("bulk.fiveRule")}</p>
+            <p className="hint">{tt("bulk.explanationRule")}</p>
             <p className="hint">{tt("olybulk.optionalMeta")}</p>
 
             <ActionButton

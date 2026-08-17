@@ -12,6 +12,12 @@
 // PRICE-FREE and only carry {date}. Amounts stay authoritative
 // (bffQuoteSubjectChange's due_now / renewals — never client-computed).
 //
+// PRORATION IS RETIRED (owner, 2026-08-17): a subject is billed on its OWN
+// cycle starting the day it is added, so `due_now` is the added subjects' FULL
+// first periods and subjedit.dueNowNote says so. There is no child-wide renewal
+// date left to print — subjedit.nextBilling / .nextBillingLine and .estTotal
+// were removed from the catalog with the model they described.
+//
 // Migration 109 — PER-SUBJECT CYCLES. Every covered subject carries its own
 // billing cycle, so this editor shows each subject's cycle and PRESERVES it
 // when the subject set changes (it posts the desired full set as `items`).
@@ -45,7 +51,7 @@ import { DemoPaySheet } from "./DemoPaySheet";
 import { SubjectCheckRow } from "./SubscribeFlow";
 import { KeyRow } from "./ui";
 
-/** Debounced (~400ms) diff-based proration quote (BFF /subjects/quote) — the
+/** Debounced (~400ms) diff-based plan-change quote (BFF /subjects/quote) — the
  *  useServerQuote (SubscribeFlow) twin, but keyed by the add/remove diff
  *  instead of the desired full set. Result is keyed by its input, so a stale
  *  response for an older diff simply never matches the current key. */
@@ -429,14 +435,18 @@ export function ManageSubjectsEditor({
           </AppText>
         ) : quote ? (
           <>
-            {/* Pay now: the prorated top-up as ONE prominent amount. A
-                waived/trial 0 top-up shows the price-free no-charge line. */}
+            {/* Pay now: the added subjects' FULL first periods as ONE prominent
+                amount, with the sentence that says exactly that. A trial (0)
+                shows the price-free no-charge line instead. */}
             {toAdd.length > 0 ? (
               <SumBlock label={t("subjedit.dueNow")}>
                 {quote.due_now > 0 ? (
-                  <AppText variant="mono" style={{ fontSize: 20, fontWeight: weight.bold }}>
-                    {fmtMoney(quote.due_now, quote.currency, locale)}
-                  </AppText>
+                  <>
+                    <AppText variant="mono" style={{ fontSize: 20, fontWeight: weight.bold }}>
+                      {fmtMoney(quote.due_now, quote.currency, locale)}
+                    </AppText>
+                    <AppText variant="muted">{t("subjedit.dueNowNote")}</AppText>
+                  </>
                 ) : (
                   <AppText variant="muted">{noChargeSentence(quote)}</AppText>
                 )}
@@ -512,10 +522,10 @@ export function ManageSubjectsEditor({
         ]}
         totalLabel={t("subjedit.dueNow")}
         totalValue={dueNowValueText()}
+        // What the amount buys — a full first period per added subject,
+        // starting today. Never a proration sentence.
         thenText={
-          !quoting && quote && quote.due_now > 0
-            ? (renewalSentences(quote)[0] ?? null)
-            : null
+          !quoting && quote && quote.due_now > 0 ? t("subjedit.dueNowNote") : null
         }
         note={t("pay.note")}
         confirmLabel={noChargeConfirm ? t("pay.confirmNoCharge") : t("pay.payNow")}

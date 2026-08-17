@@ -6,50 +6,177 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
-## PINNED — CONTACT ADDRESSES + BUG REPORTS (migration 116, 2026-08-17)
+## PINNED — QUEUE OF SIX (2026-08-17): APPLIED AND VALIDATED
 
-**Applied to production. Validation `013` = 108/108 PASS.** web-app typecheck + 229 tests + build; admin-panel typecheck + 455 tests + build; mobile-app typecheck + 353 tests. Mobile **1.10.0**.
+**Migrations 117, 118 and 119 applied to production. Validation `013` = 110/110 PASS.**
+admin-panel tsc + 511 tests + build; web-app tsc + 232 tests + build; mobile-app tsc + 353
+tests. Mobile **1.10.1** (app.json and package.json in sync).
 
-Live settings: `contact.info_email = info@olympiq.ai`, `contact.support_email = support@olympiq.ai`.
+Six owner prompts, built in the order the assistant chose (owner: "i will leave the build
+order to you").
 
-### Contact was already a setting — that shaped the whole fix
+### 1. `plan.removeSubject` rendered raw — and the cause was not the translation
 
-There was exactly ONE placeholder in the repo: `ContactInfo.tsx`'s `|| "info@olimpiada.example"`, a FALLBACK behind `contact.support_email`, which `012` seeded as `""`. That empty seed is why the placeholder was visible. The fix adds `contact.info_email` beside it and seeds BOTH — hardcoding either address into a component would have regressed an existing admin-configurable feature.
+The key WAS defined in all three locales and the component DID call `t()`. It rendered raw
+because the hosting pages build a FIXED `KEYS` array and pass `tt = (k) => dict[k] ?? k`, so
+a key the array omits falls through to itself however well translated. **That is the class of
+bug, not this one key.** A test now asserts the opt-in for every page that hosts the card.
+Copy is now az "Ləğv et" / en "Remove" / ru "Убрать".
 
-**Deliberately NOT changed:** `you@example.com` (auth + bug-form input placeholders) and `@example.invalid` (SQL validation probes). Those are not contact information; turning them into real addresses would be a bug, not a cleanup.
+### 2 + 5. Per-subject billing, and the Add-Child card overlap
 
-`ContactInfo.tsx` was already the single component behind the public, parent and child contact pages, so "reuse, don't duplicate" was the existing architecture.
+**Proration and the single shared renewal date are RETIRED** (owner, reversing the earlier
+"prorate on add; keep one shared renewal date per child"). The database already behaved
+correctly — migration 109's `apply_plan_change` writes a full period per subject at `now()`
+and `quote_plan_change` already returned `prorated = false`. The work was the leftovers:
 
-### There was no mail service; there is now
+- The reachable fallback is gone. A subject-ids-only caller now has its basket DERIVED
+  server-side (`lib/planBasket.ts`), so both cores always call the plan pair. Migration 118
+  then dropped `quote_subject_change` / `apply_subject_change`, the last route into the old
+  model.
+- **A billing bug found in review of our own change:** the derivation resolved a subject's
+  cycle from `activeRows`, which EXCLUDES rows scheduled for removal. Re-selecting a yearly
+  subject fell through to the subscription default, and `apply_plan_change` writes
+  `interval = excluded.interval` on conflict — so a yearly subject would have silently become
+  monthly. Membership and cycle are different questions and now read different sets
+  (`allRows`). Mutation-tested.
+- **The Add-Child overlap was a container bug, not a spacing bug.** `.splan-card` chose its
+  column count from a VIEWPORT media query while every host caps it at 520–600px, so the
+  name track (`minmax(0, 1fr)`, minimum 0) collapsed and the `flex: none` Remove pill
+  overflowed into the cycle rail. It only reproduced in az/ru: the rail's max-content is
+  ~200px in en, ~244px az, ~318px ru — an English screenshot looked fine. Now a container
+  query on `.splan-list`, so every host is fixed at once. A second defect surfaced while
+  checking the selected state: `.splan-seg` never declared `--seg-fill`, so the chosen cycle
+  had no fill at all.
 
-Auth emails are sent by Supabase Auth via Brevo SMTP configured in the SUPABASE DASHBOARD — outside application code, unreachable from a route handler. `web-app/src/lib/mail/brevo.ts` now calls Brevo's transactional REST API with plain `fetch` — **no new dependency** — behind `import "server-only"`. `lib/notifications/delivery.ts` was pointed at it so there is ONE transport.
+### 3. One reports section — see the 117 entry below for the full account
 
-**A notification failure can never lose a report:** the send happens after the row is committed, is wrapped, and its outcome never changes the result. A missing `BREVO_API_KEY` logs and skips.
+### 4. Explanations are trilingual end to end
 
-### Two review findings fixed before this touched the database
+**No schema change was needed** — `question_explanations` has been keyed on
+(question_id, locale) since 004, and its RLS is locale-agnostic. The gap was entirely in the
+write paths and the templates.
 
-1. **A reporter could read `admin_note` and `handled_by` on their own report.** The SELECT policy was row-level while the grant was table-wide, and PostgREST lets the caller pick columns. Column privileges could not help — an admin is also `authenticated`, so narrowing the grant would blind the admin panel. Since NOTHING user-facing reads this table, the reporter branch bought nothing and leaked triage notes: **SELECT is now admin-only.** If a "my reports" screen is ever wanted, add a SECURITY DEFINER function returning only safe columns — the pattern this schema uses everywhere else.
-2. **A transient role-resolution failure downgraded a signed-in reporter to anonymous** — storing the row unattributed, letting a client-typed address become the reporter email, and swapping the per-profile throttle for the shared global anonymous bucket. `getChildResolution()` returns `kind:'unknown'` for a FAILED lookup, which is not the same as "signed out". It now **fails closed** with `bug.err.retry`.
+- **All four bulk templates** (general | olympiad × text | mixed) share ONE constant whose
+  `en`/`ru` members carried no `explanation` key. That is why every downloadable template
+  taught an az-only explanation.
+- **Both importers silently DROPPED translated explanations.** The `question_explanations`
+  insert sat INSIDE the `… and coalesce(translations->loc->>'body','') <> ''` guard, so a row
+  supplying `{"en":{"explanation":"…"}}` with no `en` body lost it with no row, no error, and
+  no entry in the per-item errors array. Migration 119 hoists it out.
+- Legacy compatibility is explicit: a single-string explanation still imports as the az row,
+  and `loadQuestionForEdit` now returns ALL THREE locales so a first save cannot wipe a live
+  az explanation.
+- **A consequence caught in review:** 119 makes an explanation-only locale storable, but the
+  olympiad pool editor counted an explanation as "this locale is active" and then demanded a
+  full body plus five options — making such an imported question PERMANENTLY UNEDITABLE, with
+  the only escape destroying the explanation. Server and client mirror both fixed.
 
-Fixing (1) then exposed a design improvement: the ops mail needed the trigger-DERIVED `reporter_role`/`reporter_email`, which previously meant reading the row back — and with SELECT admin-only that read would have needed the service role, breaking the invariant "a signed-in reporter never touches the service role". So **`submit_bug_report` now returns those fields alongside the id** via RETURNING (the BEFORE INSERT trigger has already run). One round trip, no read-back, no service-role on the signed-in path, invariant intact.
+### 6. Admin → Questions: 31 confirmed defects, 12 high
 
-### Anonymous submission is allowed, with no anonymous database surface
+Audited before being touched (the five reported areas were all already implemented, so this
+was a defect report, not a build request). Every finding survived an independent attempt to
+refute it; 2 were refuted and dropped.
 
-The public contact page works signed out — "I cannot register" and "the login page is blank" are reports only a signed-out visitor can file. But `anon` holds **no** grant on `bug_reports`, no EXECUTE on `submit_bug_report`, and no policy names it; anonymous submissions go through the service-role client only AFTER the honeypot and a per-IP throttle. Check 104 asserts anon holds nothing.
+- **Bulk delete deleted ZERO and reported nothing.** `trg_question_delete_guard` is a BEFORE
+  DELETE **FOR EACH ROW** trigger that RAISES, so one answered question aborted the whole
+  statement. Now partitions answered questions first, deletes the rest, and names the blocked
+  ones with the action that applies (ARCHIVE) — the first time the UI has said so.
+- **Paging duplicated and dropped rows.** `created_at` was documented as the tiebreaker and
+  is not unique (a bulk import stamps one timestamp across a whole file), so reviewing a
+  status page by page silently skipped questions forever. `id` is now the final key.
+- **Silent lies, now honest:** a failed list query rendered as "heç bir sual tapılmadı"; a
+  failed count rendered as `0` (now an em dash); a broad search rendered "0 of 0" because
+  ~1000 uuids in a `.in()` is a ~37 KB URL that is rejected outright (now capped at 200 and
+  SAID); the option-E chip number was the length of a truncated scan (now shown only when the
+  chip is in use).
+- **Selection could destroy invisible rows** — it survived a page turn, a filter change and a
+  sort with no reconciliation. Now scoped to the rows on screen, which also clears it after a
+  delete.
+- **Deleting a question orphaned its image** (`media_asset_id` is `on delete set null`, so
+  the Storage object survived and stayed publicly fetchable). Now collected before the delete
+  and swept after re-checking that nothing surviving still references it.
+- Bulk delete now writes an audit row; it was the only Admin-only destructive action without
+  one.
+- **A bug in that very fix, caught by two independent reviewers:** the sweep filtered
+  `answer_option_translations` by `answer_option_id`; the column is `option_id`. supabase-js
+  RETURNS errors rather than throwing, so the wrong name produced `data: null` and every
+  per-option image would have leaked silently. Column names are now asserted against 004
+  itself, and every collect query checks its error.
 
-The throttle key is a **salted hash of the IP**, kept only in the in-memory bucket map — no IP is ever written to the database or a log.
+### Open decisions for the owner
 
-### Two report features now exist, and they are different on purpose
-
-`question_reports` (115) is question-scoped — "this question is wrong", reported from a question. `bug_reports` (116) is platform-scoped — title, steps, expected vs actual, route, browser, priority, reported from the contact/help area. Separate tables, separate admin sections, deliberately mirrored patterns so they read as one product.
+1. **Cancel-removal is billed as a new add** (pre-existing, migration 109). A parent who
+   schedules removal of a yearly subject with 8 months paid and then changes their mind is
+   charged a full new year today, and `apply_plan_change` resets the period to `now()` —
+   paying twice for overlapping access, which contradicts "a removal keeps access to period
+   end with no refund". Fix = make the RPC's add-detection distinguish "genuinely new" from
+   "removal being cancelled". NOT done: it changes what customers are charged. No real money
+   is at risk today (payments are demo mode).
+2. **The Questions stat cards ignore active filters** while sitting above a filtered list AND
+   doubling as the status filter. Both designs are defensible; silently mixing them is not.
+   Needs a decision, not a guess.
 
 ### Known gaps
 
-- **Nothing has been clicked.** No browser or device pass on the contact redesign, the bug modal, or the admin section.
-- **No email has actually been sent.** The Brevo path is code-complete but unexercised: it needs `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (a VERIFIED sender in the Brevo account) and `BUG_REPORT_NOTIFY_EMAIL` before a single notification goes out.
+- **Nothing has been clicked.** No browser or device pass on any of the six.
+- The Add-Child card fix rests on reading the cascade and doing the track-sizing arithmetic
+  per locale — there is no headless browser in this repo. Needs eyes in **az AND ru**, light
+  and dark, at ~1440 / ~600 / 320px.
+- Search is CAPPED, not uncapped. The proper fix is an inner-join embed
+  (`question_translations!inner`) replacing the two-step `.in()`; the pattern works elsewhere
+  in this codebase but could not be exercised from the session, and an unverifiable rewrite of
+  the main list query was not worth the risk.
+- A search term of only punctuation is still silently ignored (low).
+- The wide (≥640px) subject-card row is DORMANT: every host caps the card below 640px, so all
+  screens render the two-row layout. Kept because it is correct for a wider host.
+- **The from-zero rebuild proof is STILL PENDING.** `OLIMPIADA_STAGING_DB_URL` is unset, so it
+  was skipped rather than pointed at production. Migrations 117, 118 and 119 have now landed
+  on production without it.
 - No native Android or iOS build was run (EAS, owner-run).
-- The DB's global anonymous cap is 20 rows/hour platform-wide — a deliberate backstop, but it is also an availability lever if abused.
-- Every Postgres `check_violation` from the RPC is reported to the user as "too many reports", though the same SQLSTATE covers bad locale/platform/severity/over-length. Client-side validation makes those paths near-unreachable; low priority.
+
+## PINNED — ONE REPORTS SECTION (migration 117, 2026-08-17)
+
+**Applied to production. Validation `013` = 108/108 PASS.** web-app typecheck + tests + build; admin-panel typecheck + tests + build; mobile-app typecheck + 353 tests.
+
+**Owner decision (2026-08-17): there is ONE reports section — `Sual bildirişləri` — and no email anywhere.** Migration 116 had shipped a second, platform-wide `bug_reports` feature the day before; 117 withdraws it. `bug_reports` held **0 rows**, so nothing was lost.
+
+### What 117 dropped, and what it deliberately did not
+
+Dropped: the `bug_reports` table with its policies, indexes, derive/freeze triggers, `submit_bug_report()`, and the three enums that were exclusively its own (`bug_report_status`, `bug_report_priority`, `report_reporter_role`).
+
+**Kept on purpose:**
+- `report_platform` — `question_reports.platform` shares it. Dropping it would have taken the surviving feature with it.
+- `012`'s `contact.info_email` / `contact.support_email` — these are the real published addresses and are a separate, wanted feature. Untouched.
+- `web-app/src/lib/mail/brevo.ts` — `lib/notifications/delivery.ts` uses it. Only `bugReportMail.ts` went.
+
+No `CASCADE` on any drop, so an unexpected dependency aborts the migration loudly instead of quietly taking a neighbour with it.
+
+### The removal was not just a subtraction
+
+Withdrawing bug reports would have left the reporter with less than before, so triage now closes the loop itself: an AFTER UPDATE trigger on `question_reports` notifies the REPORTER when an admin takes their report into review, resolves it, or dismisses it — **in the language they filed in** (`question_reports.locale`, a real captured signal; `profiles.locale` is written by nothing and is `az` for everyone).
+
+Two idempotency layers so a re-save cannot double-notify: the trigger's `WHEN new.status is distinct from old.status`, and a `create_notification` idempotency key of `'qreport:<id>:<status>'`. The send is wrapped — a failed notification raises a warning and never aborts triage. Anonymous and deleted reporters are skipped. Reopening to `new` sends nothing.
+
+A dismissal notifies too, and honestly ("we checked it, nothing needed changing"). Silence is cheaper and worse: a student who reports a question and hears nothing concludes the button does nothing.
+
+### Two pre-existing `question_reports` defects fixed in the same migration
+
+Both were found by review because the new notifier depends on them:
+
+1. **The freeze trigger was reverting its own FK cascade.** `reporter_profile_id` carries `on delete set null`; a referential action is an ordinary UPDATE, so `question_report_freeze` fired on it and restored the deleted id. PostgreSQL does not re-check the constraint against a row a trigger substituted, so the report kept a **dangling** reporter — invisible until the notifier tried to insert against it and took an FK violation that the wrapper would have swallowed as a warning, promising the admin a delivery that could not happen. The freeze now honours exactly the cascade's shape (new NULL, old set, profile gone), which no client can forge. 0 existing rows needed repair.
+2. **A reporter could read `admin_note` and `handled_by` on their own report.** The policy was row-level while the grant is table-wide, and PostgREST lets the caller pick columns. Column privileges cannot fix it — an admin is also `authenticated`. Nothing in web-app or mobile-app reads this table (both only mention it in comments), so the reporter branch bought nothing and leaked triage notes: **SELECT is now admin-only.** The reporter learns their outcome from the notification instead.
+
+### Deliberate, not oversights
+
+- **`resolved` says "we fixed it"; `dismissed` says "no change was needed".** Nothing in the schema binds `resolved` to an actual edit — it is the ADMIN's assertion that action was taken, which is precisely what distinguishes it from `dismissed`. The admin-facing hint names what each button tells the student.
+- **A student with in-app notifications off gets nothing** (`create_notification` returns NULL above priority 1). The admin hint now says so in all three languages rather than promising delivery.
+
+### Known gaps
+
+- **Nothing has been clicked.** No browser or device pass on the admin reports section or the new student notification.
+- The reporter-facing notification has never been observed end-to-end against a real status change.
+- No native Android or iOS build was run (EAS, owner-run).
 
 ## PINNED — 2026-08-16 ROUND: APPLIED AND VALIDATED (read before the entries below)
 

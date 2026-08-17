@@ -233,8 +233,8 @@ export function FaqSkeleton({ rows = 8 }: { rows?: number }) {
 /**
  * Contact page body: info card + map frame (mirrors .contact-equal).
  * Shaped like the PURPOSE-organised card ContactInfo actually renders — two
- * headed blocks with a mail line each, the address block, the bug CTA and the
- * bottom response-time note — so the page does not visibly jump on hydration.
+ * headed blocks with a mail line each, the address block and the bottom
+ * response-time note — so the page does not visibly jump on hydration.
  */
 export function ContactSkeleton() {
   return (
@@ -250,12 +250,11 @@ export function ContactSkeleton() {
             <SkeletonText lines={2} size={12} lastWidth="70%" />
             <Skeleton w="45%" h={12} />
           </div>
-          {/* technical support purpose + the report-a-bug CTA */}
+          {/* technical support purpose */}
           <div className={s.stack} style={{ gap: 8 }}>
             <Skeleton w={130} h={15} />
             <SkeletonText lines={2} size={12} lastWidth="60%" />
             <Skeleton w="50%" h={12} />
-            <Skeleton w={120} h={38} r={8} style={{ marginTop: 6 }} />
           </div>
           {/* address */}
           <div className={s.stack} style={{ gap: 8 }}>

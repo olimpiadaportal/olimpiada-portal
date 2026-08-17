@@ -1,14 +1,13 @@
-// THE SHARED REPORT-STATUS VOCABULARY — used by BOTH report features: question
-// reports (migration 115) and platform bug reports (migration 116). Each drives
-// its list page (searchParam whitelist + stat cards), its detail page and its
-// client status controls.
+// The report-status vocabulary (public.question_report_status, migration 115).
+// Drives the list page (searchParam whitelist + stat cards), the detail page and
+// the client status controls. Adding a member here means adding it to the enum.
 //
-// public.question_report_status and public.bug_report_status are two SEPARATE
-// Postgres enums carrying identical members, so that a future bug-only member
-// cannot silently widen question_reports' domain. This module is the reason
-// that separation is safe: the behaviour — which values exist, which are
-// filterable, which pill each gets — is defined ONCE, so the two admin sections
-// cannot drift apart. Adding a member here means adding it to both enums.
+// THREE OF THE FOUR TRANSITIONS NOTIFY THE REPORTER. in_review / resolved /
+// dismissed each raise an in-app notification from the database
+// (trg_notify_question_report_status, migration 117) in the locale the report
+// was filed in; reopening to `new` deliberately does not. Renaming a value here
+// does nothing to that trigger — the copy lives in the migration, and the two
+// must be changed together.
 //
 // A PLAIN module (no "use server"): Next.js allows only async function exports
 // from a server-action file, so these constants cannot live in

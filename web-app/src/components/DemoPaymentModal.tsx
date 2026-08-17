@@ -1,9 +1,12 @@
 "use client";
 
 // Round 11 (item 2) — payment confirmation sheet for subject additions.
-// Round 32: re-priced around the mid-cycle proration model (quote_subject_change
-// / apply_subject_change) — the amount confirmed here is the prorated "due now"
-// top-up, never the full new recurring total.
+//
+// The amount confirmed here is what the change costs TODAY: each added subject's
+// FULL first period, starting today, at the sibling rate. Proration is retired
+// (owner, 2026-08-17), so this is never a part-period top-up and never the whole
+// plan's recurring total — the subjects already on the plan are untouched by
+// this charge and keep their own renewal dates.
 //
 // PAYMENT-FIRST contract: whenever the pending Manage-Subjects diff contains
 // ANY addition, this sheet opens BEFORE the server apply — in BOTH 'demo' and
@@ -11,28 +14,30 @@
 // IS the payment flow for now; when the provider lands, 'real' mode swaps this
 // modal for the provider's checkout at this exact seam, while the actual
 // charge/authorization seam stays SERVER-side (updateSubscriptionSubjectsAction
-// → apply_subject_change). Removal-only changes never show a payment dialog.
+// → apply_plan_change). Removal-only changes never show a payment dialog.
 //
 // The card fields are purely COSMETIC — never validated, never charged, never
 // stored, never sent anywhere. `quote` carries only ALREADY-FORMATTED,
 // locale-aware strings built by the caller (ManageSubjects) from the
-// AUTHORITATIVE server quote (quote_subject_change: prorated due-now top-up +
-// the new recurring rate + when it starts) — the client never computes or
+// AUTHORITATIVE server quote (quote_plan_change: the due-now total plus, per
+// added subject, its cycle, price and start) — the client never computes or
 // sends amounts. Confirm runs the provided onConfirm callback (submits the
-// server action); cancel/close applies NOTHING — the parent's checkbox
-// selection stays for a retry.
+// server action); cancel/close applies NOTHING — the parent's selection stays
+// for a retry.
 import { Modal } from "@/components/Modal";
 
 export type DemoPayQuote = {
   /** "12.50 AZN" — the amount due right now. Ignored when noCharge. */
   dueNowLabel: string;
-  /** Full sentence: either the renewal sentence or, when noCharge, the "no
-   *  charge now — the new rate starts on <date>" sentence. */
+  /** Full sentence: either what the amount buys (a full first period per added
+   *  subject, starting today) or, when noCharge, the "nothing is charged now —
+   *  the first payment is on <date>" sentence. */
   thenLabel: string;
   /**
-   * Migration 109: one PRE-FORMATTED renewal sentence per billing cycle. With
-   * per-subject cycles a single "then X / month" line cannot describe the plan,
-   * so the caller passes the group sentences it already built from the
+   * One PRE-FORMATTED row per subject being paid for: `label` is the subject
+   * with its cycle and price, `value` says when that subject renews. With
+   * independent per-subject cycles a single "then X / month" line cannot
+   * describe the plan, so the caller passes the rows it already built from the
    * authoritative server quote. Still strings only — this sheet never computes
    * an amount.
    */
@@ -100,10 +105,11 @@ export function DemoPaymentModal({
           </div>
         </div>
 
-        {/* Round 32: the prorated top-up due NOW (never the full new recurring
-            total) + the sentence explaining the new rate/date (never computed
-            client-side — both come pre-formatted from the authoritative
-            quote_subject_change quote). */}
+        {/* The amount due NOW (the added subjects' full first periods, never a
+            part period and never the whole plan's recurring total), the
+            sentence explaining what it buys, and one row per subject being paid
+            for — all pre-formatted from the authoritative quote_plan_change
+            quote, never computed client-side. */}
         <div className="wizard-summary dpay-total">
           {quote ? (
             quote.noCharge ? (
@@ -114,15 +120,16 @@ export function DemoPaymentModal({
                   <span className="q-label">{tt("subjedit.dueNow")}</span>
                   <span>{quote.dueNowLabel}</span>
                 </div>
-                {quote.lines && quote.lines.length > 0 ? (
-                  quote.lines.map((line, i) => (
-                    <p className="subjedit-note" key={i}>
-                      {line.value}
-                    </p>
-                  ))
-                ) : (
-                  <p className="subjedit-note">{quote.thenLabel}</p>
-                )}
+                <p className="subjedit-note">{quote.thenLabel}</p>
+                {/* Both halves are rendered: the subject + cycle + price label
+                    is the half that says WHAT is being bought, and dropping it
+                    left the sheet showing dates with nothing attached to them. */}
+                {quote.lines?.map((line, i) => (
+                  <p className="subjedit-note" key={i}>
+                    {line.label}
+                    <span className="muted"> · {line.value}</span>
+                  </p>
+                ))}
               </>
             )
           ) : (

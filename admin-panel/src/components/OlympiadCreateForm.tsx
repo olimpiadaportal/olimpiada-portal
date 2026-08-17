@@ -698,6 +698,7 @@ export function OlympiadCreateForm({
         )}
         {/* v3: five A–E options / exactly one correct (was 4 pre-055). */}
         <p className="hint">{tt("bulk.fiveRule")}</p>
+        <p className="hint">{tt("bulk.explanationRule")}</p>
         <p className="hint">{tt("olybulk.optionalMeta")}</p>
         <p className="hint">{codesHint}</p>
         {!allReady && selectedGrades.size > 0 && (

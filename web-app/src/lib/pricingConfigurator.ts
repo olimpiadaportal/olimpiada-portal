@@ -16,8 +16,8 @@
 // `subjects_pricing` rows the checkout RPCs price from (loaded server-side by
 // `lib/pricing.getPublicSubjectPricing`). The authoritative amount is ALWAYS
 // the one the server returns at purchase time:
-//   - starting a plan   → `create_child_subscription` (quote: `quote_child_subscription`)
-//   - changing subjects → `apply_subject_change`      (quote: `quote_subject_change`)
+//   - starting a plan   → `create_child_plan` (quote: `quote_child_plan`)
+//   - changing a plan   → `apply_plan_change` (quote: `quote_plan_change`)
 // Both re-price from the database and both apply the sibling discount. A
 // client-submitted total is never trusted anywhere in this codebase, and this
 // module must not become a way to smuggle one in — the hand-off query string
@@ -29,11 +29,16 @@
 // Since each subject carries its OWN billing cycle, the authoritative pair is
 //   starting a plan   → `create_child_plan` (quote: `quote_child_plan`)
 //   changing a plan   → `apply_plan_change` (quote: `quote_plan_change`)
-// and the single-interval RPCs above are wrappers over them. The `PlanItem`
-// half of this module mirrors that shape. The query string now carries a cycle
-// per subject (`?plan=<uuid>:week,<uuid>:year`) — still ids and cycles only,
-// still never a price, and still re-validated against the live catalog on
-// arrival.
+// which is why they are named above. The single-interval subscribe RPCs
+// (`create_child_subscription` / `quote_child_subscription`) are wrappers over
+// them; the subject-CHANGE wrappers were dropped by migration 118 with the
+// proration model they implemented — an added subject now opens its OWN period
+// today and is charged that period in full.
+//
+// The `PlanItem` half of this module mirrors that shape. The query string
+// carries a cycle per subject (`?plan=<uuid>:week,<uuid>:year`) — ids and
+// cycles only, never a price, and still re-validated against the live catalog
+// on arrival.
 //
 // NO SIBLING DISCOUNT HERE — DELIBERATE
 // -------------------------------------

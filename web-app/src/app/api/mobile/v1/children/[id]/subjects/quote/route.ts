@@ -1,25 +1,31 @@
-// Mobile BFF — mid-cycle subject-change preview (Round 32).
+// Mobile BFF — mid-cycle plan-change preview.
 //
 // Token twin of the web quoteSubjectChange server action: the SAME core
 // (subscriptionCore.quoteSubjectChangeCore) — Bearer auth first, ownership
-// re-verified, then the read-only quote_subject_change RPC (the single source
-// of the proration math; apply_subject_change on the sibling /subjects route
-// charges exactly what this previews). No payment-mode gate here — quoting is
-// informational, exactly like the initial-subscribe quote; the gate applies at
-// apply time.
+// re-verified, then the read-only quote_plan_change RPC (the single source of
+// the math; apply_plan_change on the sibling /subjects route charges exactly
+// what this previews). No payment-mode gate here — quoting is informational,
+// exactly like the initial-subscribe quote; the gate applies at apply time.
 //
 // Response `data` mirrors the RPC's own jsonb field names (snake_case) so the
 // mobile client's catalog matches the documented contract exactly:
 //   subscription_id, status, interval, currency, discount_percent,
-//   current_recurring_total, new_recurring_total, due_now, prorated,
-//   proration_waived, added_base, remaining_ratio, days_remaining,
-//   period_days, effective_from, removals_effective_at,
-// plus, since migration 109: items, groups, renewals, plan_changes, mixed.
+//   current_recurring_total, new_recurring_total, due_now, effective_from,
+//   removals_effective_at, items, groups, renewals, removals_effective,
+//   plan_changes, mixed.
+//
+// PRORATION IS RETIRED (owner, 2026-08-17) and migration 118 dropped the RPCs
+// that implemented it. The six proration fields this route used to echo
+// (prorated, proration_waived, added_base, remaining_ratio, days_remaining,
+// period_days) are GONE from the response — every one of them described a
+// shared child cycle that no longer exists, and no mobile screen read them.
+// `due_now` is now each ADDED subject's FULL first period at the sibling rate,
+// starting today; `renewals` carries the per-cycle renewal dates and amounts.
 //
 // `items: [{subject_id, interval}]` is the DESIRED FULL set and is preferred
-// when present; `add`/`remove` remain for already-shipped binaries. Proration
-// is retired — `prorated` is always false and `due_now` is the adds' full first
-// cycles at the sibling rate.
+// when present; `add`/`remove` remain for already-shipped binaries — the SERVER
+// composes the equivalent basket from the live plan, so both shapes reach the
+// same non-prorating RPC.
 import { resolveBearerParent } from "@/lib/auth/mobileBearer";
 import { quoteSubjectChangeCore } from "@/lib/auth/subscriptionCore";
 import { isUuid } from "@/lib/uuid";
@@ -69,13 +75,9 @@ export async function POST(
       discount_percent: q.discountPercent,
       current_recurring_total: q.currentRecurringTotal,
       new_recurring_total: q.newRecurringTotal,
+      // The adds' FULL first periods at the sibling rate — never a part-period
+      // top-up, and never client-computed.
       due_now: q.dueNow,
-      prorated: q.prorated,
-      proration_waived: q.prorationWaived,
-      added_base: q.addedBase,
-      remaining_ratio: q.remainingRatio,
-      days_remaining: q.daysRemaining,
-      period_days: q.periodDays,
       effective_from: q.effectiveFrom,
       removals_effective_at: q.removalsEffectiveAt,
       items: q.items ?? [],

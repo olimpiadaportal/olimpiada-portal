@@ -1323,10 +1323,15 @@ select '77_admin_subscription_lifecycle' as check_name,
              and position('audit_logs' in pg_get_functiondef('public.admin_manage_child_subscription(uuid,text,int)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
--- 78) Mid-cycle subject-change billing (migration 078): the scheduled-removal
---     column, the immutable change ledger (+ its self-scoped RLS and replay
---     guard) and BOTH proration RPCs exist and stay service-role only.
-select '78_subject_change_proration' as check_name,
+-- 78) Mid-cycle plan-change billing (migration 078, per-subject since 109):
+--     the scheduled-removal column and the immutable change ledger (+ its
+--     self-scoped RLS and replay guard).
+--
+--     The two RPCs this check used to pin — quote_subject_change and
+--     apply_subject_change — were DROPPED by migration 118 with the proration
+--     model they implemented. Check 105 now asserts they stay gone and that
+--     the plan pair which replaced them keeps its posture.
+select '78_subject_change_ledger' as check_name,
        case when exists (select 1 from information_schema.columns
                           where table_schema='public' and table_name='subscription_subjects'
                             and column_name='remove_at')
@@ -1334,10 +1339,6 @@ select '78_subject_change_proration' as check_name,
              and exists (select 1 from pg_policies where schemaname='public'
                           and tablename='subscription_changes' and policyname='sub_changes_select')
              and to_regclass('public.uq_sub_changes_idem') is not null
-             and to_regprocedure('public.quote_subject_change(uuid,uuid[],uuid[])') is not null
-             and to_regprocedure('public.apply_subject_change(uuid,uuid[],uuid[],text)') is not null
-             and has_function_privilege('authenticated','public.apply_subject_change(uuid,uuid[],uuid[],text)','EXECUTE') = false
-             and has_function_privilege('anon','public.quote_subject_change(uuid,uuid[],uuid[])','EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
 
@@ -1452,8 +1453,8 @@ select '83_olympiads_practice_only' as check_name,
 -- 84) Round 48 (migration 089): the PAYMENTS KILL SWITCH is enforced in the
 --     database, not only in TypeScript. current_payment_mode() exists and is
 --     not anon-callable, assert_payments_enabled() is service-role only, and
---     every paid mutation calls it. apply_subject_change guards ADDS only, so a
---     parent can always stop paying.
+--     every paid mutation calls it. apply_plan_change guards ADDS and CYCLE
+--     changes only — a removal stays legal, so a parent can always stop paying.
 select '84_payments_kill_switch' as check_name,
        case when has_function_privilege('anon', 'public.current_payment_mode()', 'EXECUTE') = false
              and has_function_privilege('authenticated', 'public.assert_payments_enabled()', 'EXECUTE') = false
@@ -1463,8 +1464,8 @@ select '84_payments_kill_switch' as check_name,
                    pg_get_functiondef('public.purchase_olympiad(uuid,uuid)'::regprocedure)) > 0
              and position('assert_payments_enabled' in
                    pg_get_functiondef('public.add_subscription_subject(uuid,uuid)'::regprocedure)) > 0
-             and position('array_length(p_add' in
-                   pg_get_functiondef('public.apply_subject_change(uuid,uuid[],uuid[],text)'::regprocedure)) > 0
+             and position('v_adds > 0 or v_changes > 0' in
+                   pg_get_functiondef('public.apply_plan_change(uuid,jsonb,text)'::regprocedure)) > 0
             then 'PASS' else 'FAIL' end as status;
 
 -- 85) Round 51 (migrations 090/092): olympiad question ROTATION. The rotation
@@ -1665,9 +1666,10 @@ where p.status = 'active'
 --        base / discount / total_amount — unarmed, those five silently freeze;
 --     d) the four RPCs exist and are NOT reachable by anon/authenticated (they
 --        are service-role only; every caller authorizes the parent first);
---     e) the four LEGACY signatures still exist. They are wrappers now, and
---        checks 20/46/78/84 pin them — this is the guard that makes a future
---        refactor which deletes them fail validation instead of production;
+--     e) the two SUBSCRIPTION-level legacy signatures still exist
+--        (quote_child_subscription / create_child_subscription, which checks
+--        20/46 pin). The subject-CHANGE wrappers are deliberately NOT here any
+--        more: migration 118 dropped them, and check 105 asserts their absence;
 --     f) the per-subject expiry is actually WIRED into the attempt gate. The
 --        subscription now outlives its shortest-cycle subject, so the
 --        subscription-level date alone over-grants.
@@ -1701,8 +1703,6 @@ select '91_per_subject_billing_interval' as check_name,
                    'public.quote_plan_change(uuid,jsonb)', 'EXECUTE') = false
              and to_regprocedure('public.quote_child_subscription(uuid,public.plan_interval,uuid[])') is not null
              and to_regprocedure('public.create_child_subscription(uuid,public.plan_interval,uuid[])') is not null
-             and to_regprocedure('public.quote_subject_change(uuid,uuid[],uuid[])') is not null
-             and to_regprocedure('public.apply_subject_change(uuid,uuid[],uuid[],text)') is not null
              and position('coalesce(ss.current_period_end' in
                    replace(pg_get_functiondef(
                      'public.start_practice_attempt(uuid,int)'::regprocedure), chr(13), '')) > 0
@@ -1736,10 +1736,8 @@ select '91_per_subject_billing_interval' as check_name,
         and has_function_privilege('anon',
               'public.quote_plan_change(uuid,jsonb)', 'EXECUTE') = false) as plan_rpcs_locked,
        (to_regprocedure('public.quote_child_subscription(uuid,public.plan_interval,uuid[])') is not null
-        and to_regprocedure('public.create_child_subscription(uuid,public.plan_interval,uuid[])') is not null
-        and to_regprocedure('public.quote_subject_change(uuid,uuid[],uuid[])') is not null
-        and to_regprocedure('public.apply_subject_change(uuid,uuid[],uuid[],text)') is not null)
-         as legacy_wrappers_intact,
+        and to_regprocedure('public.create_child_subscription(uuid,public.plan_interval,uuid[])') is not null)
+         as legacy_subscribe_wrappers_intact,
        (position('coalesce(ss.current_period_end' in
           replace(pg_get_functiondef(
             'public.start_practice_attempt(uuid,int)'::regprocedure), chr(13), '')) > 0)
@@ -1896,10 +1894,15 @@ select '95_pending_interval_rollover' as check_name,
              -- pre-change amount back to the parent.
              and position('left join public.subscription_subjects ss' in
                    pg_get_functiondef('public.quote_plan_change(uuid,jsonb)'::regprocedure)) > 0
-             -- Both legacy wrappers must carry a scheduled cycle through, or an
-             -- add/remove from the mobile editor silently cancels it.
-             and position('coalesce(ss.pending_interval, ss.interval, v_sub.interval) as iv' in
-                   pg_get_functiondef('public.apply_subject_change(uuid,uuid[],uuid[],text)'::regprocedure)) > 0
+             -- The clause that used to sit here probed apply_subject_change for
+             -- "coalesce(ss.pending_interval, ss.interval, v_sub.interval)" — the
+             -- rule that an add/remove must carry a SCHEDULED cycle through
+             -- instead of silently cancelling it. Migration 118 dropped that
+             -- wrapper (pg_get_functiondef on it now RAISES, which would fail
+             -- this whole file), and the rule moved into TypeScript, where it is
+             -- covered by subscriptionCore's derivation tests. What remains
+             -- database-side is quote_plan_change's own use of the scheduled
+             -- cycle as the comparison basis, asserted just above.
             then 'PASS' else 'FAIL' end as status,
        (select count(*) from public.subscription_subjects
          where pending_interval is not null) as scheduled_changes,
@@ -2484,157 +2487,308 @@ select '103_question_reports_hardened' as check_name,
          where schemaname = 'public' and tablename = 'question_reports') as policy_count;
 
 
--- 104) Bug reports + contact settings (migration 116). The PLATFORM-scoped
---      sibling of check 103, and the same safety argument: the client supplies
---      prose plus four diagnostics, and everything that matters is derived. It
---      adds the two things 103 has no equivalent of:
+-- 104) Bug reports WITHDRAWN + the question-report reply loop (migration 117).
+--      This check previously asserted that public.bug_reports existed and was
+--      hardened. The owner retired that feature on 2026-08-17 — the platform
+--      keeps ONE reports section, question reports ("Sual bildirişləri"), and a
+--      report never sends outbound email — so the check is INVERTED. It now
+--      proves three things:
 --
---        * this feature accepts ANONYMOUS submissions, so `anon` must hold
---          absolutely NO privilege on the table and no EXECUTE on the RPC. The
---          only unauthenticated writer is the web server action running as
---          service_role. 115 left `anon` a vestigial (policy-less) SELECT on
---          question_reports; here that is an outright failure, because a public
---          reader would be a scrapeable index of every known defect;
---        * bug_report_derive STRIPS the query string and the fragment from
---          route_path before the row is written. /auth/callback?code=... and
---          #access_token=... are where credentials live, so the split_part
---          probe below guards the single line that keeps a bug report from
---          becoming a credential leak — the invariant most likely to be
---          "simplified" away by a later editor who reads it as cosmetic;
---
---      plus the usual: exact enum label sets (application code whitelists
---      against these and nothing else), RLS on with EXACTLY three policies and
---      no DELETE policy, the open-report unique index keeping its
---      status in ('new','in_review') PREDICATE (without it a resolved report
---      blocks its own re-filing forever), all three triggers attached, and the
---      definer/search_path posture of each function.
---
---      The contact half is asserted here too, because a BLANK
---      contact.support_email is not a cosmetic default — it is the exact state
---      that made a placeholder address visible on the live contact page — and
---      because get_mobile_config() must carry info_email or the mobile contact
---      screen is structurally unable to ever show the general address.
-with enums (typname, labels) as (values
-  ('bug_report_status', 'dismissed,in_review,new,resolved'),
-  ('bug_report_priority', 'critical,high,low,normal'),
-  ('report_reporter_role',
-   'administrator,anonymous,content_manager,parent,student,unknown')
-), enum_ok as (
-  select e.typname,
-         coalesce((select string_agg(l.enumlabel, ',' order by l.enumlabel)
-                     from pg_enum l
-                     join pg_type ty on ty.oid = l.enumtypid
-                     join pg_namespace ns on ns.oid = ty.typnamespace
-                    where ns.nspname = 'public' and ty.typname = e.typname), '')
-           = e.labels as ok
-  from enums e
-), fns (sig, definer) as (values
-  ('public.submit_bug_report(text,text,text,text,text,text,text,text,text,text,text,text)',
-   true),
-  ('public.bug_report_derive()', true),
-  -- Least privilege: the freeze trigger reads no table, so it stays INVOKER.
-  ('public.bug_report_freeze()', false)
-), fn_ok as (
-  select f.sig,
-         -- CASE, not AND: has_function_privilege() errors on a missing
-         -- function, and this check has to REPORT that, not abort the file.
-         case when to_regprocedure(f.sig) is null then false
-              else (select p.prosecdef = f.definer
-                      and coalesce(p.proconfig, '{}'::text[])
-                            @> array['search_path=public, pg_temp']
-                      and not has_function_privilege('anon', p.oid, 'EXECUTE')
-                    from pg_proc p where p.oid = to_regprocedure(f.sig))
-         end as ok
-  from fns f
-), probes (sig, needle) as (values
-  ('public.bug_report_derive()', 'current_profile_id('),
-  ('public.bug_report_derive()', 'rate limited'),
-  -- The credential-stripping line, guarded by name.
-  ('public.bug_report_derive()', 'split_part'),
-  ('public.bug_report_freeze()', 'old.description')
-), probe_ok as (
-  select p.sig, p.needle,
-         case when to_regprocedure(p.sig) is null then false
-              else position(p.needle in pg_get_functiondef(to_regprocedure(p.sig))) > 0
-         end as ok
-  from probes p
-), tbl_ok as (
-  -- has_table_privilege() RAISES on a missing table, so it is guarded the
-  -- same way: a missing table has to FAIL this check, not abort the file.
-  select case when to_regclass('public.bug_reports') is null then false
-              else not has_table_privilege('authenticated',
-                                           'public.bug_reports', 'DELETE')
-         end as ok
-), anon_ok as (
-  -- anon must hold NOTHING at all on this table (see the header).
-  select case when to_regclass('public.bug_reports') is null then false
-              else not (has_table_privilege('anon', 'public.bug_reports', 'SELECT')
-                     or has_table_privilege('anon', 'public.bug_reports', 'INSERT')
-                     or has_table_privilege('anon', 'public.bug_reports', 'UPDATE')
-                     or has_table_privilege('anon', 'public.bug_reports', 'DELETE'))
-         end as ok
+--        * THE REMOVAL HAPPENED. A half-applied withdrawal is invisible: a
+--          surviving bug_report_derive() or a surviving bug_report_status enum
+--          breaks nothing at runtime and is therefore never noticed — until
+--          someone reads 001 or 008, finds the leftovers, and rebuilds a
+--          feature the owner deliberately removed;
+--        * IT TOOK NOTHING ELSE WITH IT. public.report_platform is the casualty
+--          this removal invites: migration 116's rollback notes name it as one
+--          of "its" types, but it belongs to migration 115 and
+--          question_reports.platform is defined on it — dropping it breaks the
+--          feature the withdrawal exists to keep. The two contact settings are
+--          asserted for the opposite reason: the website's mailto links are now
+--          the ONLY way to write in, so a blank address is worse after this
+--          change than it was before it, and get_mobile_config() must still
+--          carry info_email or the mobile contact screen can never show it;
+--        * THE REPLACEMENT IS ARMED. The in-app reply loop is the entire
+--          user-visible half of the change: taking a report into review,
+--          resolving it or dismissing it notifies the reporter. It must be
+--          attached to question_reports, go through create_notification (the
+--          single insert path), keep its per-(report, status) idempotency key
+--          so one transition is one notification, skip reports whose reporter
+--          profile is NULL (anonymous, or an account since deleted), and carry
+--          all three languages. Its posture matters as much as its presence:
+--          SECURITY DEFINER because create_notification is service-role only
+--          while the administrator firing the trigger is `authenticated`,
+--          search_path pinned, and NO end-user EXECUTE — a caller who could
+--          invoke a trigger function directly could forge its notification.
+with gone_types (typname) as (values
+  ('bug_report_status'), ('bug_report_priority'), ('report_reporter_role')
+), gone_fns (sig) as (values
+  ('public.submit_bug_report(text,text,text,text,text,text,text,text,text,text,text,text)'),
+  ('public.bug_report_derive()'),
+  ('public.bug_report_freeze()')
 ), settings (key) as (values
   ('contact.info_email'), ('contact.support_email')
 ), setting_ok as (
   -- Present AND non-blank. Migration 019 seeded support_email as '""', and that
-  -- blank is what the placeholder fallback was covering for.
+  -- blank is what the placeholder address on the live contact page was.
   select s.key,
          coalesce((select btrim(coalesce(ss.value_json->>0, ''))
                      from public.system_settings ss
                     where ss.key = s.key), '') <> '' as ok
   from settings s
+), notifier as (
+  select to_regprocedure('public.notify_question_report_status_tg()') as fn
+), notifier_ok as (
+  -- CASE, not AND: has_function_privilege() errors on a missing function, and
+  -- this check has to REPORT that, not abort the file.
+  select case when (select fn from notifier) is null then false
+              else (select p.prosecdef
+                      and coalesce(p.proconfig, '{}'::text[])
+                            @> array['search_path=public, pg_temp']
+                      and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                      and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                    from pg_proc p where p.oid = (select fn from notifier))
+         end as ok
+), probes (needle) as (values
+  -- The single insert path, never a second one.
+  ('create_notification'),
+  -- The idempotency key format IS the once-per-transition guarantee.
+  ('''qreport:'' || new.id::text'),
+  -- An anonymous or deleted reporter has no inbox to write to.
+  ('reporter_profile_id is null'),
+  -- One needle per language: copy that lost a branch is not trilingual copy.
+  ('Bildirişin'), ('Your report'), ('сообщение')
+), probe_ok as (
+  select p.needle,
+         case when (select fn from notifier) is null then false
+              else position(p.needle in
+                     pg_get_functiondef((select fn from notifier))) > 0
+         end as ok
+  from probes p
 )
-select '104_bug_reports_hardened' as check_name,
-       case when to_regclass('public.bug_reports') is not null
-             and (select count(*) filter (where not ok) from enum_ok) = 0
-             and (select count(*) from pg_class c
-                    join pg_namespace ns on ns.oid = c.relnamespace
-                   where ns.nspname = 'public'
-                     and c.relname = 'bug_reports'
-                     and c.relrowsecurity) = 1
-             and (select count(*) from pg_policies
-                   where schemaname = 'public' and tablename = 'bug_reports') = 3
-             and (select count(*) from pg_policies
-                   where schemaname = 'public' and tablename = 'bug_reports'
-                     and policyname in
-                         ('bugreports_select','bugreports_insert','bugreports_update')) = 3
+select '104_bug_reports_withdrawn' as check_name,
+       case when to_regclass('public.bug_reports') is null
+             and not exists (select 1 from pg_type t
+                               join pg_namespace n on n.oid = t.typnamespace
+                              where n.nspname = 'public'
+                                and t.typname in (select g.typname from gone_types g))
+             and (select count(*) from gone_fns g
+                   where to_regprocedure(g.sig) is not null) = 0
              and not exists (select 1 from pg_policies
-                              where schemaname = 'public'
-                                and tablename = 'bug_reports' and cmd = 'DELETE')
-             and (select ok from tbl_ok)
-             and (select ok from anon_ok)
-             -- The partial predicate IS the duplicate rule.
-             and exists (select 1 from pg_indexes
-                          where schemaname = 'public'
-                            and indexname = 'uq_bug_reports_open_per_reporter'
-                            and indexdef like '%in_review%')
-             and (select count(*) from pg_trigger
-                   where tgrelid = to_regclass('public.bug_reports')
-                     and tgname in ('trg_bug_report_derive',
-                                    'trg_bug_report_freeze',
-                                    'trg_set_updated_at')) = 3
-             and (select count(*) filter (where not ok) from fn_ok) = 0
-             and (select count(*) filter (where not ok) from probe_ok) = 0
-             -- The one function an app is supposed to call. The signature stays
-             -- on ONE line: these strings are parsed as function signatures, so
-             -- not wrapping them removes any dependence on how whitespace
-             -- inside an argument list is tolerated.
-             and to_regprocedure('public.submit_bug_report(text,text,text,text,text,text,text,text,text,text,text,text)')
+                              where schemaname = 'public' and tablename = 'bug_reports')
+             -- The survivor half.
+             and (select string_agg(l.enumlabel, ',' order by l.enumlabel)
+                    from pg_enum l
+                    join pg_type ty on ty.oid = l.enumtypid
+                    join pg_namespace ns on ns.oid = ty.typnamespace
+                   where ns.nspname = 'public' and ty.typname = 'report_platform')
+                 = 'android,ios,web'
+             and to_regclass('public.question_reports') is not null
+             and exists (select 1 from information_schema.columns
+                          where table_schema = 'public'
+                            and table_name = 'question_reports'
+                            and column_name = 'platform'
+                            and udt_name = 'report_platform')
+             and to_regprocedure(
+                   'public.submit_question_report(uuid,uuid,text,text,text,text)')
                  is not null
-             and has_function_privilege('authenticated',
-                   'public.submit_bug_report(text,text,text,text,text,text,text,text,text,text,text,text)',
-                   'EXECUTE')
              and (select count(*) filter (where not ok) from setting_ok) = 0
-             -- Without this key the mobile contact screen can never show the
-             -- general address, however well the setting is configured.
              and (public.get_mobile_config()->'contact' ? 'info_email')
+             -- The replacement half.
+             and exists (select 1 from pg_trigger
+                          where tgname = 'trg_notify_question_report_status'
+                            and tgrelid = to_regclass('public.question_reports')
+                            and tgfoid = (select fn from notifier)
+                            and not tgisinternal)
+             and (select ok from notifier_ok)
+             and (select count(*) filter (where not ok) from probe_ok) = 0
             then 'PASS' else 'FAIL' end as status,
-       (select count(*) filter (where not ok) from enum_ok)    as bad_enums,
-       (select count(*) filter (where not ok) from fn_ok)      as misconfigured_functions,
-       (select count(*) filter (where not ok) from probe_ok)   as failed_invariants,
-       (select count(*) filter (where not ok) from setting_ok) as blank_contact_settings,
-       (select count(*) from pg_policies
-         where schemaname = 'public' and tablename = 'bug_reports') as policy_count;
+       (select count(*) from pg_type t
+          join pg_namespace n on n.oid = t.typnamespace
+         where n.nspname = 'public'
+           and t.typname in (select g.typname from gone_types g)) as surviving_bug_enums,
+       (select count(*) from gone_fns g
+         where to_regprocedure(g.sig) is not null)                 as surviving_bug_functions,
+       (select count(*) filter (where not ok) from setting_ok)     as blank_contact_settings,
+       (select count(*) filter (where not ok) from probe_ok)       as failed_invariants;
+
+-- 105. PRORATION AND THE SHARED CHILD CYCLE ARE RETIRED (owner, 2026-08-17;
+--      migration 118). Every subject is billed on its OWN cycle, starting the
+--      day it is added.
+--
+--      This check exists because the retired model is easy to bring back by
+--      accident. Its two functions were thin wrappers, so re-creating either
+--      one looks harmless in review — and the moment it exists, a caller that
+--      omits the per-subject cycles reaches it again, composes a basket by a
+--      SECOND rule, and mis-bills silently. So: they must be gone, under any
+--      overload, and the pair that replaced them must still be locked down and
+--      still behave the way the parent-facing copy promises.
+--
+--      The three body probes are the promises the UI now prints:
+--        * adds and CYCLE CHANGES are gated by the payment kill switch while a
+--          removal stays legal (a parent can always stop paying);
+--        * an added subject opens a FULL period at now() — "the cycle starts
+--          today and is charged in full" is false if this ever changes;
+--        * the quote reports prorated = false, i.e. the preview and the charge
+--          agree that nothing is split by days.
+--
+--      prorated_add_rows is REPORT-ONLY: ledger rows written BEFORE this
+--      decision legitimately carry a fractional remaining_ratio and must stay
+--      readable exactly as they were. A rising count on a live database is the
+--      signal that a prorating writer came back.
+select '105_subject_change_proration_retired' as check_name,
+       case when to_regprocedure('public.quote_subject_change(uuid,uuid[],uuid[])') is null
+             and to_regprocedure('public.apply_subject_change(uuid,uuid[],uuid[],text)') is null
+             and not exists (select 1 from pg_proc p
+                               join pg_namespace n on n.oid = p.pronamespace
+                              where n.nspname = 'public'
+                                and p.proname in ('quote_subject_change',
+                                                  'apply_subject_change'))
+             and to_regprocedure('public.quote_plan_change(uuid,jsonb)') is not null
+             and to_regprocedure('public.apply_plan_change(uuid,jsonb,text)') is not null
+             and has_function_privilege('anon','public.quote_plan_change(uuid,jsonb)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.apply_plan_change(uuid,jsonb,text)','EXECUTE') = false
+             and position('v_adds > 0 or v_changes > 0' in
+                   pg_get_functiondef('public.apply_plan_change(uuid,jsonb,text)'::regprocedure)) > 0
+             and position('now() + case v_row.iv' in
+                   pg_get_functiondef('public.apply_plan_change(uuid,jsonb,text)'::regprocedure)) > 0
+             and position('''prorated'',               false' in
+                   pg_get_functiondef('public.quote_plan_change(uuid,jsonb)'::regprocedure)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public'
+           and p.proname in ('quote_subject_change','apply_subject_change'))
+         as surviving_wrappers,
+       (select count(*) from public.subscription_changes
+         where change_type = 'add'
+           and (remaining_ratio is distinct from 1 or period_days is not null))
+         as prorated_add_rows;
+
+
+-- 106) TRILINGUAL EXPLANATIONS (migration 119). question_explanations has been
+--      trilingual BY SHAPE since 004 -- per-locale rows, a unique (question,
+--      locale) key, locale-agnostic RLS. What was missing was a write path that
+--      preserved a translation and a read path that admitted when it had none.
+--
+--      This check pins three things that are individually invisible when they
+--      break:
+--
+--        * THE IMPORTER MUST NOT COUPLE EXPLANATION TO BODY. Both bulk RPCs
+--          used to nest the question_explanations insert inside the
+--          `... and translations->loc->>'body' <> ''` guard, so a row carrying
+--          an en explanation but no en body lost it with NO row and NO error --
+--          not even an entry in the per-item errors array. That is the failure
+--          mode worth pinning: a silent drop looks exactly like a successful
+--          import, and the loss is only discovered by a reader months later.
+--
+--        * get_test_review MUST DISCLOSE THE FALLBACK IN BOTH BRANCHES. It
+--          resolves reader-locale-then-az from the live tables AND from a
+--          daily round's frozen content_snapshot. One hit instead of two means
+--          half the readers are shown Azerbaijani text labelled as their own
+--          language. The az fallback itself is pinned too: 'fixing' the
+--          disclosure by serving only the reader's locale would blank the
+--          explanation for every en/ru reader.
+--
+--        * THE PAYLOAD SHAPE MUST NOT MOVE. `explanation` stays a nullable
+--          STRING. The shipped mobile binary casts this payload without
+--          validating it, and expo-updates cannot reach a build whose
+--          runtimeVersion differs from the app version -- reshaping the key
+--          into an object would strand every installed app with no way back.
+--          The new keys are additive for exactly that reason.
+--
+--      The az/en/ru counts are REPORT-ONLY and never gate PASS: on a from-zero
+--      rebuild they are all 0, and on a live database they are the coverage
+--      gap this work exists to close (they moved from 2897/0/0 the moment real
+--      translations landed). Read them from an ADMIN session -- qexpl_select
+--      hides another author's in-review explanations from a Content Manager
+--      without content.review, so a non-admin undercount is RLS doing its job,
+--      not missing data.
+with sigs(sig) as (
+  values ('public.bulk_insert_questions(jsonb,text)'),
+         ('public.bulk_insert_olympiad_package_questions(uuid,jsonb,uuid)'),
+         ('public.get_test_review(uuid,text)')
+),
+fn_ok as (
+  select sig,
+         to_regprocedure(sig) is not null as present,
+         -- Guarded exactly like checks 103/104: has_function_privilege raises
+         -- on a missing function, so a regression would abort 013 instead of
+         -- reporting FAIL.
+         case when to_regprocedure(sig) is null then false
+              else not has_function_privilege('anon', sig, 'EXECUTE') end as anon_blocked,
+         case when to_regprocedure(sig) is null then false
+              else has_function_privilege('authenticated', sig, 'EXECUTE')
+               and has_function_privilege('service_role', sig, 'EXECUTE') end as granted
+  from sigs
+),
+importers as (
+  select sig,
+         case when to_regprocedure(sig) is null then null
+              else pg_get_functiondef(sig::regprocedure) end as def
+  from sigs where sig <> 'public.get_test_review(uuid,text)'
+),
+importer_ok as (
+  select sig,
+         coalesce(
+           def is not null
+         -- the OLD coupled guard is gone ...
+         and position($p$'az','en','ru') and coalesce(v_item->'translations'->v_loc->>'body'$p$
+                      in def) = 0
+         -- ... the explanation is still written ...
+         and position('insert into public.question_explanations' in def) > 0
+         -- ... and the payload contract is unchanged, so legacy az-only files
+         -- still import exactly as they always did.
+         and position($p$->'translations'->v_loc->>'explanation'$p$ in def) > 0,
+           false) as ok
+  from importers
+),
+review as (
+  select case when to_regprocedure('public.get_test_review(uuid,text)') is null then null
+              else pg_get_functiondef('public.get_test_review(uuid,text)'::regprocedure)
+         end as def
+),
+review_ok as (
+  select coalesce(
+           def is not null
+         -- two branches: live tables + frozen daily-round snapshot
+         and (length(def) - length(replace(def, 'explanation_is_fallback', '')))
+             / length('explanation_is_fallback') = 2
+         and (length(def) - length(replace(def, 'explanation_locale', '')))
+             / length('explanation_locale') = 2
+         and position('e.loc_ex, e.az_ex' in def) > 0
+         and position($p$'explanation', coalesce(e.loc_ex, e.az_ex)$p$ in def) > 0,
+           false) as ok
+  from review
+),
+cov as (
+  select count(*) filter (where qe.locale = 'az') as az_rows,
+         count(*) filter (where qe.locale = 'en') as en_rows,
+         count(*) filter (where qe.locale = 'ru') as ru_rows
+    from public.question_explanations qe
+    join public.questions q on q.id = qe.question_id
+   where q.olympiad_package_id is null   -- general bank only, as the admin UI counts
+)
+select '106_trilingual_explanations' as check_name,
+       case when (select count(*) filter (where not present) from fn_ok) = 0
+             and (select count(*) filter (where not anon_blocked) from fn_ok) = 0
+             and (select count(*) filter (where not granted) from fn_ok) = 0
+             and (select count(*) filter (where not ok) from importer_ok) = 0
+             and (select ok from review_ok)
+             -- The abuse ceiling. Inline+VALID from 004 on a fresh build,
+             -- NOT VALID when migration 119 added it to a live database, so
+             -- convalidated deliberately is NOT asserted -- only that it exists.
+             and exists (select 1 from pg_constraint
+                          where conrelid = 'public.question_explanations'::regclass
+                            and conname = 'ck_qexpl_body_len')
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) filter (where not present or not anon_blocked or not granted)
+          from fn_ok)                                as misconfigured_functions,
+       (select count(*) filter (where not ok) from importer_ok) as coupled_importers,
+       (select az_rows from cov)                     as explanations_az,
+       (select en_rows from cov)                     as explanations_en,
+       (select ru_rows from cov)                     as explanations_ru;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

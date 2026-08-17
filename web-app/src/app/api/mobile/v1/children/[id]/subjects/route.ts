@@ -12,7 +12,12 @@
 // Migration 109: the cycle is now REAL and PER SUBJECT. `items:
 // [{subject_id, interval}]` posts the DESIRED FULL set with each subject's
 // cycle and the server derives adds / removes / cycle changes itself; the
-// legacy `subject_ids`-only body still works for already-shipped binaries.
+// legacy `subject_ids`-only body still works for already-shipped binaries —
+// since migration 118 it no longer selects a different RPC, the SERVER derives
+// each subject's cycle from the live plan (a kept subject keeps its own, a new
+// one takes the subscription default) and applies the same apply_plan_change.
+// A body with no cycles can therefore no longer reach the retired, PRORATING
+// apply_subject_change: there is nothing to reach.
 import { bearerFreeAccessChecker, createBearerClient, extractBearerToken, resolveBearerParent } from "@/lib/auth/mobileBearer";
 import { updateSubscriptionSubjectsCore } from "@/lib/auth/subscriptionCore";
 import { isUuid } from "@/lib/uuid";

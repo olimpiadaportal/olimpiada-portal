@@ -205,6 +205,14 @@ export async function loadQuestionReport(
 // action, write through the USER-SESSION client (qreports_update is the real
 // gate, and trg_question_report_freeze stamps handled_by/handled_at and
 // protects the evidence), then audit ids and statuses only.
+//
+// THE UPDATE IS ALSO WHAT NOTIFIES THE STUDENT. trg_notify_question_report_
+// status (migration 117) fires on the transition itself and writes the reporter
+// an in-app notification, once per (report, status), in the locale they filed
+// in. Do NOT add an emitter here: create_notification is documented as the
+// single insert path, and a second caller with a different idempotency key
+// would notify twice for one click. The early return on
+// `current.status === to` is therefore no longer only a wasted-write guard.
 export async function transitionQuestionReport(formData: FormData): Promise<void> {
   const ctx = await requireAdmin(); // authorize FIRST (before any FormData read)
 

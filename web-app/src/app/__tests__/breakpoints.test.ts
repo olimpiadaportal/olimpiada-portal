@@ -41,7 +41,12 @@ const LEGACY_MAX = [
   380, 420, 440, 460, 520, 560, 620, 680, 700, 720, 760, 780, 820, 860, 900, 940, 1020,
   1100, 1279,
 ] as const;
-const LEGACY_MIN = [681, 720, 860] as const;
+// `min-width: 720px` left the list when the subject plan card stopped laying
+// itself out from the VIEWPORT and started laying itself out from its own width
+// (`@container splan (...)`, block P8 in globals.css) — the card is never as
+// wide as the window, which is what made its columns overlap. Container queries
+// are not breakpoints and are deliberately not policed here.
+const LEGACY_MIN = [681, 860] as const;
 
 /** Marks the start of the responsive pass, which is token-only. */
 const RESPONSIVE_BLOCK_MARKER = "RESPONSIVE PASS";

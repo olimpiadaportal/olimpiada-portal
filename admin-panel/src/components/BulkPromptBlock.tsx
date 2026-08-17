@@ -81,14 +81,24 @@ function buildPrompt({
               image: "images/q1.png",
             }
           : { topic: exTopic, subtopic: exSubtopic, term: exTerm },
+        // Every language block carries its OWN explanation. This example is
+        // the shape admins actually copy, so an az-only explanation here is
+        // what produced an az-only bank: a student reading in EN/RU then sees
+        // the Azerbaijani text with a "not translated yet" label.
         translations: {
           az: {
             body: "2 + 2 neçə edir?",
             prompt: "Düzgün cavabı seçin",
-            explanation: "2 + 2 = 4",
+            explanation: "2 + 2 = 4, ona görə düzgün cavab A variantıdır.",
           },
-          en: { body: "What is 2 + 2?" },
-          ru: { body: "Сколько будет 2 + 2?" },
+          en: {
+            body: "What is 2 + 2?",
+            explanation: "2 + 2 = 4, so the correct answer is option A.",
+          },
+          ru: {
+            body: "Сколько будет 2 + 2?",
+            explanation: "2 + 2 = 4, поэтому правильный ответ — вариант A.",
+          },
         },
         options: [
           { is_correct: true, order_index: 0, text: { az: "4", en: "4", ru: "4" } },
@@ -192,8 +202,8 @@ OUTPUT
 ${metaSchema}
     "translations": {
       "az": { "body": "...", "prompt": "...", "explanation": "..." },
-      "en": { "body": "..." },
-      "ru": { "body": "..." }
+      "en": { "body": "...", "explanation": "..." },
+      "ru": { "body": "...", "explanation": "..." }
     },
 ${optionSchema}
   }
@@ -212,8 +222,12 @@ RULES — each one is enforced by the importer; a row that breaks it is rejected
   4. Do NOT add "meta.subject" or "meta.grade_level" — the importer applies the
      subject and grade selected on screen. Do not add "meta.type" either; the
      default (single choice) is what we want.
-  5. "translations" must contain a non-empty "${locale}"."body". "prompt" and
-     "explanation" are optional; "en"/"ru" blocks are optional.
+  5. "translations" must contain a non-empty "${locale}"."body". The "en" and
+     "ru" blocks are optional, but whenever you write one, give it BOTH a
+     "body" and an "explanation". Write the "explanation" for every language
+     block you include: a student reading in English or Russian is otherwise
+     shown the Azerbaijani explanation, marked as untranslated. "prompt" stays
+     optional.
 ${optionRule}
 ${plainTextRule}
   8. Spread the ${count} questions across the listed subtopics instead of

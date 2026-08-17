@@ -10,6 +10,12 @@
 //     requires the admin to pick 1..4 — saveQuestion then upgrades the TOPIC
 //     (the DB cascades it to its subtopics/questions).
 //   * Exactly 5 fixed options (A–E) with a radio group for the correct one.
+//   * The EXPLANATION is trilingual (az/en/ru) even though the body/prompt/
+//     options are single-locale: it is the one field the student reads after
+//     answering, and the review screen falls back to az and says so. Fields are
+//     named explanation_<locale>, matching the olympiad pool editor; saveQuestion
+//     writes/clears each locale independently and NEVER touches a locale whose
+//     field was not submitted.
 //   * Create-modal image: the file is kept locally (preview + remove) and only
 //     uploaded to a staging path on SUBMIT, so question + image save in ONE
 //     action (saveQuestion verifies, moves and links it — or cleans up).
@@ -44,7 +50,7 @@ import { ActionButton } from "@/components/ActionButton";
 import { saveQuestion, type QuestionState } from "@/lib/admin/questions";
 import type { QuestionTaxonomy } from "@/lib/admin/question-options";
 import { termClass } from "@/lib/termBadge";
-import { localeNames, locales } from "@/i18n/config";
+import { localeNames, locales, type Locale } from "@/i18n/config";
 
 type Opt = { value: string; label: string };
 type Options = Record<string, Opt[]>;
@@ -53,7 +59,9 @@ type Defaults = {
   primary_locale: string;
   body: string;
   prompt: string;
-  explanation: string;
+  /** az/en/ru. loadQuestionForEdit always returns all three (missing = ""), so
+   *  every box is pre-filled from the DB before it can be posted back. */
+  explanations: Record<string, string>;
   options: { text: string; is_correct: boolean }[];
 };
 
@@ -83,6 +91,15 @@ function uniqueId(): string {
     // fall through
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// az/en/ru explanation drafts, always all three (missing → ""). Mirrors
+// OlympiadQuestionForm.draftsFromDefaults — same per-locale draft shape, same
+// `explanation_<locale>` field names, so the two editors post one protocol.
+function explanationDrafts(defaults?: Defaults): Record<Locale, string> {
+  const out = {} as Record<Locale, string>;
+  for (const loc of locales) out[loc] = defaults?.explanations?.[loc] ?? "";
+  return out;
 }
 
 // Pads/truncates the option rows to exactly 5 (A–E).
@@ -156,7 +173,9 @@ export function QuestionForm({
   const [topicFilterTerm, setTopicFilterTerm] = useState("");
   const [body, setBody] = useState(defaults?.body ?? "");
   const [prompt, setPrompt] = useState(defaults?.prompt ?? "");
-  const [explanation, setExplanation] = useState(defaults?.explanation ?? "");
+  const [explanations, setExplanations] = useState<Record<Locale, string>>(() =>
+    explanationDrafts(defaults),
+  );
   const [optTexts, setOptTexts] = useState<string[]>(() => fiveTexts(defaults));
   const [correct, setCorrect] = useState<number>(() => {
     const i = (defaults?.options ?? []).findIndex((o) => o.is_correct);
@@ -509,15 +528,42 @@ export function QuestionForm({
           onChange={(e) => setPrompt(e.target.value)}
         />
       </label>
-      <label className="field">
-        <span className="field-label">{tt("qfield.explanationAz")}</span>
-        <textarea
-          name="explanation"
-          rows={2}
-          value={explanation}
-          onChange={(e) => setExplanation(e.target.value)}
-        />
-      </label>
+      {/* Explanation — the ONE per-locale field of a general-bank question.
+          The body/prompt/options are stored in the primary language selected
+          above (qform.localesNote), but the explanation is what a student reads
+          AFTER answering: the review screen resolves it as
+          coalesce(<reader locale>, az) and visibly labels the az fallback, so
+          leaving EN/RU empty is a gap the child sees. Same per-locale draft
+          shape and the same `explanation_<locale>` field names as the olympiad
+          pool editor — one protocol, two forms. */}
+      <p className="hint">{tt("qexpl.perLocaleNote")}</p>
+      {locales.map((loc) => {
+        const value = explanations[loc] ?? "";
+        // Honest fallback label, same rule the student review screen applies:
+        // only claim the az text will be shown when there IS az text.
+        const showsAzFallback =
+          loc !== "az" &&
+          value.trim() === "" &&
+          (explanations.az ?? "").trim() !== "";
+        return (
+          <label className="field" key={loc}>
+            <span className="field-label">
+              {tt("qfield.explanation")} ({localeNames[loc]})
+            </span>
+            <textarea
+              name={`explanation_${loc}`}
+              rows={2}
+              value={value}
+              onChange={(e) =>
+                setExplanations((p) => ({ ...p, [loc]: e.target.value }))
+              }
+            />
+            {showsAzFallback && (
+              <span className="hint">{tt("qexpl.emptyFallback")}</span>
+            )}
+          </label>
+        );
+      })}
 
       {/* Question image — deferred picker (create modal) or the edit modal's
           immediate-upload media box, in the owner's field position. */}

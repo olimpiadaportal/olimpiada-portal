@@ -21,14 +21,21 @@ const KEYS = [
   "subjedit.title", "subjedit.minOne",
   // Round 11 — checkbox editor + demo-payment modal:
   "pricing.perSubjectNote", "subjedit.activeChip", "subjedit.endingChip", "subjedit.selectedCount",
-  "subjedit.pendingAdd", "subjedit.pendingRemove", "subjedit.estTotal",
+  "subjedit.pendingAdd", "subjedit.pendingRemove",
   "subjedit.save", "subjedit.saving", "subjedit.saved", "subjedit.noChanges",
   "subjedit.demoModeNote", "dpay.cancel",
   "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",
   "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing",
   "pay.subtotal", "pay.discount", "pay.total",
-  // Round 32 — mid-cycle change (add now, remove at the subject's period end):
-  "subjedit.dueNow", "subjedit.nextBilling", "subjedit.nextBillingLine",
+  // Mid-cycle change: an added subject opens its OWN period today and is
+  // charged that period in full (proration retired, owner 2026-08-17), a
+  // removed one keeps access to its own period end.
+  // subjedit.nextBilling / .nextBillingLine and .estTotal are GONE from the
+  // catalog — each stated a single child-wide renewal and total, which is not
+  // how the plan is billed any more.
+  "subjedit.dueNow", "subjedit.dueNowNote", "subjedit.cycleNote",
+  "subjedit.perSubjectLabel", "subjedit.subjectPlanLine",
+  "subjedit.renewsOn", "subjedit.switchesOn", "subjedit.startsToday",
   // subjedit.noteText is NOT here: the editor prints one dated line per removed
   // subject (subjedit.noteLine) plus the no-refund rule, so the single-date
   // sentence has no reader left on the web. Mobile still keeps it as the
@@ -38,6 +45,7 @@ const KEYS = [
   "subjedit.noChargeNow", "pay.confirmNoCharge",
   // Migration 109 — per-subject billing cycles (cards + grouped summary):
   "plan.cycle", "plan.cycleAria", "plan.cycleChangedAria",
+  "plan.removeSubject",
   "plan.group.weekly", "plan.group.monthly", "plan.group.yearly",
   "plan.group.subtotal", "plan.dueToday", "plan.dueTodayNote",
   "plan.renewals", "plan.renewalLine.weekly", "plan.renewalLine.monthly",

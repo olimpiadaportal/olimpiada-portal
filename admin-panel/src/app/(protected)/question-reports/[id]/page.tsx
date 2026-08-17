@@ -35,6 +35,9 @@ export default async function QuestionReportDetailPage({
     "qrep.act.resolve",
     "qrep.act.dismiss",
     "qrep.act.reopen",
+    "qrep.detail.actionsHeading",
+    "qrep.notify.hint",
+    "qrep.notify.none",
   ]) {
     dict[k] = t(k);
   }
@@ -128,7 +131,15 @@ export default async function QuestionReportDetailPage({
           </div>
         </dl>
 
-        <QuestionReportStatus id={report.id} status={report.status} dict={dict} />
+        {/* The trigger behind the notification skips a NULL reporter, so the
+            control must say the same thing rather than promise a delivery that
+            silently does not happen. */}
+        <QuestionReportStatus
+          id={report.id}
+          status={report.status}
+          notifiesReporter={report.reporter_profile_id !== null}
+          dict={dict}
+        />
       </section>
 
       <section className="card qrep-card">

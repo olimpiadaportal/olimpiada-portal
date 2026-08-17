@@ -91,6 +91,15 @@ export function iconForType(type: string): string {
       return "\u{1F4F0}"; // newspaper
     case "admin_announcement":
       return "\u{1F4E3}"; // megaphone
+    // Migration 117: the reply loop on a question report. Three types, three
+    // stages of the same conversation — the glyph is what tells a student at a
+    // glance whether we are still looking or have finished.
+    case "question_report_in_review":
+      return "\u{1F50D}"; // magnifier — we are looking at it
+    case "question_report_resolved":
+      return "\u{2705}"; // check — fixed
+    case "question_report_dismissed":
+      return "\u{1F441}\u{FE0F}"; // eye — checked, nothing to change
     default:
       return "\u{1F514}"; // bell
   }

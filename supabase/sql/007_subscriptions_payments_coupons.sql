@@ -247,10 +247,13 @@ create table if not exists public.subscription_subjects (
 );
 
 -- -----------------------------------------------------------------------------
--- subscription_changes : immutable ledger of mid-cycle subject changes
--- (migration 078). Proration is a state machine, not a formula — several
--- changes inside one period must each be reconstructible for the next renewal
--- amount and for billing disputes. Written ONLY by apply_subject_change().
+-- subscription_changes : immutable ledger of mid-cycle plan changes
+-- (migration 078). Every add / remove / cycle change must stay reconstructible
+-- for the next renewal amount and for billing disputes. Written ONLY by
+-- apply_plan_change() (migration 118 dropped apply_subject_change, the wrapper
+-- that used to be named here). Proration is retired: remaining_ratio is 1 and
+-- period_days is null on new rows, and the columns are kept because rows
+-- written before that decision must stay readable exactly as they were.
 -- -----------------------------------------------------------------------------
 create table if not exists public.subscription_changes (
   id                      uuid primary key default gen_random_uuid(),

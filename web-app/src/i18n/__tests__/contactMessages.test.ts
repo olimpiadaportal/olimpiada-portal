@@ -6,27 +6,25 @@
 import { describe, expect, it } from "vitest";
 import { messages } from "@/i18n/messages";
 import { locales } from "@/i18n/config";
-import { BUG_DIALOG_KEYS } from "@/lib/support/bugReport";
 
-/** Everything ContactInfo resolves itself; the dialog's keys come from the shared list. */
+/** Every key ContactInfo resolves. */
 const CONTACT_KEYS = [
   "contact.generalTitle",
   "contact.generalDesc",
   "contact.supportTitle",
   "contact.supportDesc",
   "contact.responseTime",
-  "contact.bugCtaHint",
   "contact.address",
   "contact.phoneLabel",
   "contact.whatsappLabel",
   "contact.mapsCaption",
 ] as const;
 
-describe("contact + report-a-bug i18n", () => {
+describe("contact i18n", () => {
   for (const locale of locales) {
     it(`${locale}: every key the contact card renders resolves to real text`, () => {
       const dict = messages[locale] as Record<string, string | undefined>;
-      const missing = [...CONTACT_KEYS, ...BUG_DIALOG_KEYS].filter((k) => {
+      const missing = CONTACT_KEYS.filter((k) => {
         const v = dict[k];
         return typeof v !== "string" || v.trim() === "";
       });
@@ -42,19 +40,15 @@ describe("contact + report-a-bug i18n", () => {
     expect(Object.keys(messages.ru).sort()).toEqual(az);
   });
 
-  // The server returns these keys verbatim (lib/support/bugReportCore.ts); the
-  // dialog looks them up in `dict`. If the two lists drift, a real error turns
-  // into a raw key on screen at exactly the moment something is already wrong.
-  it("every error key the server can return is in the dialog's key list", () => {
-    const serverKeys = [
-      "bug.emptyErr",
-      "bug.err.tooLong",
-      "bug.err.tooMany",
-      "bug.err.duplicate",
-      "bug.err.generic",
-    ];
-    for (const k of serverKeys) {
-      expect(BUG_DIALOG_KEYS).toContain(k);
+  // Migration 117 withdrew the separate bug-report feature: the contact card is
+  // now mailto links only. A stray bug.* key would be a dead string nobody
+  // renders, and the next person to read the dictionary would look for the form.
+  it("no bug-report keys survive in any locale", () => {
+    for (const locale of locales) {
+      const stray = Object.keys(messages[locale]).filter((k) =>
+        k.startsWith("bug.") || k.startsWith("contact.bugCta"),
+      );
+      expect(stray).toEqual([]);
     }
   });
 });

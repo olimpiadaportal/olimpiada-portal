@@ -156,33 +156,6 @@ do $$ begin
   create type public.report_platform as enum ('web', 'android', 'ios');
 exception when duplicate_object then null; end $$;
 
--- Bug-report triage lifecycle (migration 116: platform-scoped "Report a bug").
--- Identical MEMBERS to question_report_status, deliberately a SEPARATE type:
--- same vocabulary = the same admin mental model and one shared TypeScript
--- helper, while a separate type means adding a bug-only member later cannot
--- silently widen the domain of public.question_reports.
-do $$ begin
-  create type public.bug_report_status as enum
-    ('new', 'in_review', 'resolved', 'dismissed');
-exception when duplicate_object then null; end $$;
-
--- ONE type for BOTH priority-shaped columns on bug_reports: the administrator's
--- triage `priority` and the reporter's `reported_severity` claim. Two columns,
--- one vocabulary, so they can never drift apart in meaning.
-do $$ begin
-  create type public.bug_report_priority as enum
-    ('low', 'normal', 'high', 'critical');
-exception when duplicate_object then null; end $$;
-
--- Who filed a bug report, DERIVED from profile_roles by trg_bug_report_derive
--- — never a client string. 'unknown' is the honest label for a signed-in
--- profile carrying no role row (should be impossible; recorded rather than
--- silently mislabelled as a student).
-do $$ begin
-  create type public.report_reporter_role as enum
-    ('anonymous', 'student', 'parent', 'content_manager', 'administrator', 'unknown');
-exception when duplicate_object then null; end $$;
-
 -- Audit log severity.
 do $$ begin
   create type public.audit_severity as enum ('info', 'warning', 'critical');

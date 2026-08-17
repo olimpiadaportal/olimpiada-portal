@@ -19,7 +19,6 @@
      silently running on its literal fallback. Declaring it here is a no-op
      visually and makes the colour editable in one place. */
   --danger-fg: #dc2626;
-  --danger-bg: #fef2f2;
 
   --sidebar-bg: #0f172a;
   --sidebar-fg: #cbd5e1;
@@ -574,14 +573,6 @@ a {
 .pill-muted {
   color: var(--muted);
   background: #f1f5f9;
-}
-
-/* Critical severity. The pill set was ok/warn/muted only, which left the top
-   two bug-report priorities ("high" and "critical") reading as the same amber —
-   the one distinction an admin triages on. */
-.pill-danger {
-  color: var(--danger-fg);
-  background: var(--danger-bg);
 }
 
 /* ---- Question media ----------------------------------------------------- */
@@ -4642,84 +4633,33 @@ a.qpage-link:hover {
   overflow-wrap: anywhere;
 }
 
-/* ---- Bug reports (migration 116) ------------------------------------------
-   Reuses the question-report card/meta/message rules above — only the pieces
-   this section adds are declared here. Every colour is a token. */
-
-/* Priority + status side by side in the detail header. flex:none because the
-   neighbouring cell is a reporter-supplied title of up to 160 characters, and
-   .head-row would otherwise let it squeeze the two pills to nothing. */
-.brep-pills {
+/* Triage block: the heading, the row of transition buttons, and the line that
+   says which of them writes to the student (migration 117). Separated from the
+   report metadata above by a rule, because it is the only part of the card that
+   leaves the panel. */
+.qrep-triage {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  flex: none;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
-
-/* The title is user text. It wraps inside its own cell (min-width:0 is what
-   actually lets a flex child shrink below its content) and breaks mid-word if
-   the reporter typed 160 characters without a space. */
-.brep-head-title {
-  min-width: 0;
-}
-.brep-head-title h2 {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-/* Sub-headings inside one report card (Description / Steps / Expected …).
-   Sized between the card's h2 and body text so the card reads as one report
-   rather than as several stacked sections. */
-.brep-section {
+.qrep-triage-label {
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
-  margin: 16px 0 0;
 }
-
-/* Expected vs actual, side by side where there is room and stacked where there
-   is not — they are only worth comparing when they sit together. */
-.brep-split {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 0 20px;
-}
-
-/* Route and user-agent are single unbroken strings that would otherwise widen
-   the metadata grid past the viewport. */
-.brep-wrap {
-  overflow-wrap: anywhere;
-}
-
-.brep-triage {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.brep-triage-row {
+.qrep-triage-row {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
-.brep-triage-label {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--muted);
-}
-.brep-triage-note {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-}
-.brep-triage-note textarea {
-  width: 100%;
-  min-height: 96px;
-  resize: vertical;
-  font: inherit;
-  line-height: 1.5;
+/* Overrides the base `.hint { margin-top: 10px }` — the flex gap already spaces
+   this line, and doubling the two reads as a detached sentence. */
+.qrep-triage .hint {
+  margin-top: 0;
 }

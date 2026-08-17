@@ -102,6 +102,24 @@ export function QuestionsTable({
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const [sel, setSel] = useState<Set<string>>(new Set());
+  // SELECTION IS SCOPED TO WHAT IS ON SCREEN.
+  //
+  // It used to be plain state that nothing ever reconciled against the rows, so
+  // it survived a page turn, a filter change and a sort invisibly: tick 25 rows
+  // on page 1, page forward to an empty checkbox column, and the bar still read
+  // "25 seçildi" over a live Delete button. Clicking it destroyed 25 questions
+  // the admin could no longer see. That is a data-loss defect, not a UX nit.
+  //
+  // Resetting when the row set changes is the React-endorsed "adjust state
+  // during render" pattern (no effect, no extra paint). It also clears the
+  // selection after a bulk action, which the old code never did — the bar used
+  // to keep advertising ids that had already been deleted.
+  const rowsKey = rows.map((r) => r.id).join(",");
+  const [seenRowsKey, setSeenRowsKey] = useState(rowsKey);
+  if (seenRowsKey !== rowsKey) {
+    setSeenRowsKey(rowsKey);
+    if (sel.size > 0) setSel(new Set());
+  }
   const [action, setAction] = useState("");
   // Round 22: editing happens in a modal on this page (no edit route). One
   // modal instance serves every row; the Edit button sets the target id.
@@ -109,6 +127,11 @@ export function QuestionsTable({
   // Bulk transition returns { updated, skipped } so we can show real feedback
   // (the owner reported bulk actions felt like silent no-ops).
   const [bulkState, bulkAction] = useActionState(bulkTransitionQuestions, null);
+  // Delete now reports its outcome for the same reason the transition does. It
+  // used to be a bare `action={bulkDeleteQuestions}` returning void, so a total
+  // success, a guard abort that deleted NOTHING, and a truncated selection all
+  // rendered the same screen: nothing at all.
+  const [delState, delAction] = useActionState(bulkDeleteQuestions, null);
   const [showAssign, setShowAssign] = useState(false);
   const [aSubject, setASubject] = useState("");
   const [aTopic, setATopic] = useState("");
@@ -177,9 +200,15 @@ export function QuestionsTable({
             <span className="bulk-spacer" />
             {isAdmin && (
               <form
-                action={bulkDeleteQuestions}
+                action={delAction}
                 onSubmit={(e) => {
-                  if (!confirm(tt("qbulk.confirmDelete"))) e.preventDefault();
+                  // Name the count. The old dialog said only "this cannot be
+                  // undone", which is the one thing the admin already knew.
+                  const msg = tt("qbulk.confirmDeleteN").replace(
+                    "{n}",
+                    String(sel.size),
+                  );
+                  if (!confirm(msg)) e.preventDefault();
                 }}
               >
                 <input type="hidden" name="ids" value={ids} />
@@ -267,6 +296,45 @@ export function QuestionsTable({
           {tt("qbulk.skipped").replace("{m}", String(bulkState.skipped))}
         </p>
       )}
+
+      {delState &&
+        (delState.error ? (
+          <p className="form-error" role="alert">
+            {delState.error}
+          </p>
+        ) : (
+          // Every non-zero outcome is named. `blocked` is the important one: it
+          // is not a failure but a redirection — those questions have answer
+          // history, so the grading record depends on them and ARCHIVE is the
+          // action that applies.
+          <p
+            className={delState.deleted > 0 ? "form-ok" : "form-error"}
+            role="status"
+          >
+            {tt("qbulk.del.deleted").replace("{n}", String(delState.deleted))}
+            {delState.blocked > 0 && (
+              <>
+                {" · "}
+                {tt("qbulk.del.blocked").replace("{n}", String(delState.blocked))}
+              </>
+            )}
+            {delState.skipped > 0 && (
+              <>
+                {" · "}
+                {tt("qbulk.del.skipped").replace("{n}", String(delState.skipped))}
+              </>
+            )}
+            {delState.truncated > 0 && (
+              <>
+                {" · "}
+                {tt("qbulk.del.truncated").replace(
+                  "{n}",
+                  String(delState.truncated),
+                )}
+              </>
+            )}
+          </p>
+        ))}
 
       <div className="table-wrap">
         <table className="table table-compact">

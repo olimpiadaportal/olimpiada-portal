@@ -190,6 +190,22 @@ describe("the downloadable mixed TEMPLATE imports as-is", () => {
     expect(issues).toEqual([]);
     expect(unreferencedZipImages(p, p.items)).toEqual([]);
   });
+
+  // The template is DOCUMENTATION: an admin copies it into a chat model and
+  // gets back whatever shape it demonstrated. An explanation on `az` only was
+  // therefore the reason the bank had no EN/RU explanations at all — every
+  // generated file was faithfully reproducing the template.
+  it.each(["general", "olympiad"] as const)(
+    "teaches an explanation in az, en AND ru (%s, mixed)",
+    async (mode) => {
+      const rows = bulkTemplateFor(mode, "mixed") as {
+        translations: Record<string, { explanation?: string }>;
+      }[];
+      for (const loc of ["az", "en", "ru"] as const) {
+        expect(rows[0].translations[loc].explanation?.trim()).toBeTruthy();
+      }
+    },
+  );
 });
 
 describe("unreferencedZipImages", () => {

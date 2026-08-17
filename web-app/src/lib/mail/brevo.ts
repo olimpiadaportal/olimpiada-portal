@@ -2,10 +2,12 @@ import "server-only";
 
 // The app's ONE transactional-mail transport (Brevo).
 //
-// Until now nothing in web-app, admin-panel or supabase sent mail: the auth
+// Nothing else in web-app, admin-panel or supabase sends mail: the auth
 // confirmation emails come from Supabase Auth via Brevo SMTP configured in the
 // Supabase DASHBOARD, which is outside application code and cannot be called
-// from a route handler. This module is the application-side path.
+// from a route handler. This module is the application-side path, and its only
+// caller is lib/notifications/delivery.ts — the email channel of the in-app
+// notification pipeline.
 //
 // NO NEW DEPENDENCY: Brevo's transactional API is plain HTTPS + an `api-key`
 // header, so this is a `fetch` — exactly how the Expo push path in
@@ -54,9 +56,9 @@ function isEmailish(value: string): boolean {
  *
  * NEVER THROWS. Every failure — missing config, a network error, a timeout, a
  * provider rejection — comes back as `{ok:false, error}` with a SHORT machine
- * reason. Callers are expected to treat mail as best-effort; the calling code
- * for bug reports depends on this, because losing a saved report to a
- * notification failure is exactly the outcome that must not happen.
+ * reason. Mail is best-effort by contract: the notification processor marks a
+ * delivery row failed and retries it, and no caller may lose the thing it
+ * already persisted because an outbound provider was down.
  *
  * TEXT ONLY, never `htmlContent`: every body this sends is assembled from
  * user-supplied free text, and plain text cannot execute in a mail client or

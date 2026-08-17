@@ -34,7 +34,9 @@ export function DemoPaySheet({
   totalLabel: string;
   totalValue: string;
   /** Optional sentence under the total (web DemoPaymentModal thenLabel):
-   *  e.g. the subjedit.nextBillingLine post-payment recurring rate. */
+   *  e.g. a plan.renewalLine.* renewal sentence, or subjedit.dueNowNote — what
+   *  the amount buys. Never a proration explanation: an addition is charged its
+   *  FULL first period, starting today (owner, 2026-08-17). */
   thenText?: string | null;
   /** Demo disclaimer (pay.note / poly.modal.mockNote). */
   note: string;

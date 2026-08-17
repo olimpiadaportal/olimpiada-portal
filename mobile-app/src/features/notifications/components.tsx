@@ -10,7 +10,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Bell,
   ChartColumn,
+  CheckCircle2,
   CreditCard,
+  Eye,
   Flame,
   Gift,
   Hourglass,
@@ -18,6 +20,7 @@ import {
   Megaphone,
   Newspaper,
   Receipt,
+  Search,
   Trash2,
   Trophy,
   type LucideIcon,
@@ -58,6 +61,15 @@ export function typeIcon(type: string | null): LucideIcon {
       return Newspaper;
     case "admin_announcement":
       return Megaphone;
+    // Migration 117: the reply loop on a question report. Three types, three
+    // stages of the same conversation — the glyph is what tells a student at a
+    // glance whether we are still looking or have finished.
+    case "question_report_in_review":
+      return Search;
+    case "question_report_resolved":
+      return CheckCircle2;
+    case "question_report_dismissed":
+      return Eye;
     default:
       return Bell;
   }

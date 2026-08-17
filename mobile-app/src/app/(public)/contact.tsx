@@ -7,22 +7,22 @@
 // maps app. Social links render only when configured, open externally, and
 // must be http(s) — config values are display data, never blindly-openable
 // URLs.
+//
+// Migration 117 withdrew the "Report a bug" sheet that used to sit below the
+// addresses: the platform has ONE reports section (question reports, filed from
+// inside an attempt and triaged in the admin panel) and no report sends mail.
+// These mailto/tel rows are now the only inbound channel on this screen.
 import React, { useState } from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, View } from "react-native";
-import { Stack, usePathname } from "expo-router";
+import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Bug, Mail, MapPin, MessageCircle, Phone } from "lucide-react-native";
+import { Mail, MapPin, MessageCircle, Phone } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
-import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { CmsProse } from "@/components/CmsProse";
 import { ListRow } from "@/components/ListRow";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { ContactMap, buildDirectionsUrl, resolveMapQuery } from "@/features/public/ContactMap";
-import { BugReportSheet } from "@/features/support/BugReportSheet";
-import { submitBugReport } from "@/features/support/api";
-import { useAuthStore } from "@/features/auth/authStore";
-import { showToast } from "@/features/toast/toastStore";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useContentOverrides, useMobileConfig } from "@/lib/configQueries";
@@ -59,15 +59,7 @@ export default function Contact() {
   const { t, locale } = useT();
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
-  const pathname = usePathname();
   const config = useMobileConfig();
-  // The bug-report endpoint is bearer-authenticated, so the trigger is offered
-  // only to a resolved session. A signed-out visitor gets the two addresses and
-  // a line saying so — web keeps its anonymous path because that form has a
-  // honeypot and a per-IP throttle behind it, neither of which exists here, and
-  // an unauthenticated mobile endpoint would be new surface for no new reports.
-  const signedIn = useAuthStore((s) => s.status) === "signedIn";
-  const [bugOpen, setBugOpen] = useState(false);
   const [mapsAppFailed, setMapsAppFailed] = useState(false);
   // A device with no mail/phone/WhatsApp handler rejects the scheme, which used
   // to look like a dead row. Surface it once, and clear it on the next attempt.
@@ -222,28 +214,6 @@ export default function Contact() {
           </>
         )}
 
-        {/* The escape hatch, below the addresses: the two mailboxes are the
-            primary action on a contact screen, the bug form is the fallback for
-            "something is broken" — same ordering as web.
-
-            Deliberately OUTSIDE the config branch above. "The app cannot load
-            its configuration" is itself a report worth filing, and burying the
-            trigger inside the success branch would hide it in exactly that
-            case. Nothing here reads the config. */}
-        <Card style={{ gap: spacing.sm }}>
-          <AppText variant="muted">{t("contact.bugCtaHint")}</AppText>
-          {signedIn ? (
-            <Button
-              title={t("contact.bugCta")}
-              variant="ghost"
-              icon={<Bug size={18} color={tokens.accent} strokeWidth={2} />}
-              onPress={() => setBugOpen(true)}
-            />
-          ) : (
-            <AppText variant="muted">{t("mob.bug.signInRequired")}</AppText>
-          )}
-        </Card>
-
         {socials.length > 0 ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
             {socials.map((s) => (
@@ -270,22 +240,6 @@ export default function Contact() {
           </View>
         ) : null}
       </ScrollView>
-
-      {/* Mounted outside the ScrollView: a Modal is its own native window and
-          must not live inside a scrolling content container. */}
-      <BugReportSheet
-        visible={bugOpen}
-        t={t}
-        onClose={() => setBugOpen(false)}
-        onSubmit={async (fields) => {
-          const res = await submitBugReport(fields, pathname, locale);
-          if (!res.ok) return { ok: false, errorKey: res.error };
-          // The sheet shows its own success state; the toast is the second
-          // confirmation, for the moment the reporter closes it.
-          showToast(t("bug.successTitle"), "ok");
-          return { ok: true };
-        }}
-      />
     </View>
   );
 }

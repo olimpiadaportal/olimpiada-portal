@@ -361,11 +361,12 @@ export const bffUpdateSubjects = (
     "sub.err.failed",
   );
 
-/** Round-24 mid-cycle proration quote (web parity contract): additions are
- *  charged a prorated top-up for the days left in the period (rate rises from
- *  now on); removals never refund — access + the old rate continue until
- *  `removals_effective_at`. No proration during a trial or on weekly plans;
- *  amounts under 0.50 AZN are waived (`due_now` comes back 0). Read-only —
+/** Mid-cycle plan-change quote (web parity contract). PRORATION IS RETIRED
+ *  (owner, 2026-08-17): every subject is billed on its OWN cycle starting the
+ *  day it is added, so an addition is charged its FULL first period
+ *  (`due_now`, sibling discount applied) and nothing is split by days. A trial
+ *  still charges nothing now. Removals never refund — each removed subject
+ *  keeps access to ITS OWN period end (`removals_effective`). Read-only —
  *  never applies anything; the apply step is still bffUpdateSubjects. */
 export type SubjectChangeQuote = {
   subscription_id: string;
@@ -376,18 +377,14 @@ export type SubjectChangeQuote = {
   current_recurring_total: number;
   new_recurring_total: number;
   due_now: number;
-  prorated: boolean;
-  proration_waived: boolean;
-  added_base: number;
-  remaining_ratio: number;
-  days_remaining: number;
-  period_days: number;
   effective_from: string;
   removals_effective_at: string | null;
-  // Migration 109 (additive): proration for additions is RETIRED — `prorated`
-  // is always false and `due_now` is the adds' FULL first cycles at the
-  // sibling rate. `renewals` replaces the single recurring figure, which
-  // cannot describe a plan whose subjects run on different cycles.
+  // Migration 118 removed the six proration fields this type used to mirror
+  // (prorated, proration_waived, added_base, remaining_ratio, days_remaining,
+  // period_days): the BFF no longer returns them, no screen ever read them,
+  // and each one described a shared child cycle that no longer exists.
+  // `renewals` replaces the single recurring figure, which cannot describe a
+  // plan whose subjects run on different cycles.
   items?: { subject_id: string; interval: string; price: number | null }[];
   groups?: Record<string, { count: number; base: number; discount: number; total: number }>;
   renewals?: { interval: string; next_at: string | null; total: number }[];

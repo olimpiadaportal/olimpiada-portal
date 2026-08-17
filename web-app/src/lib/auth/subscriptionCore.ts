@@ -18,6 +18,16 @@ import { revalidatePath } from "next/cache";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { applyAllocatedChildEmail } from "@/lib/auth/childAccountService";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
+import {
+  derivePlanItems,
+  desiredFromAddRemove,
+  effectivePlanInterval,
+  uniformPlanItems,
+  validatePlanItems,
+  type LivePlan,
+  type LivePlanRow,
+  type PlanItemInput,
+} from "@/lib/planBasket";
 import { isUuid } from "@/lib/uuid";
 import { notifySubscriptionCanceled } from "@/lib/notifications/events";
 import { writeAuditLog } from "@/lib/audit";
@@ -59,47 +69,50 @@ export async function paidMutationGateKey(
 }
 
 // ---- Per-subject plan baskets (migration 109) --------------------------------
-// One subject, one cycle. The client sends ids and cycles ONLY — never a price
-// — and every amount is re-read from subjects_pricing by the RPCs.
+// The PURE half — validation, the legacy-shape expansions and the server-side
+// derivation rule — lives in lib/planBasket so it can be unit-tested without
+// this server-only module (and its service-role client) being importable from a
+// test. Re-exported here because the actions and BFF routes take the type.
+export type { PlanItemInput };
 
-/** One basket entry as it arrives from a form post or a BFF body. */
-export type PlanItemInput = { subjectId: string; interval: string };
+// ---- The live plan, and how a subject-ID-only caller becomes a basket --------
+//
+// Migration 118 RETIRED `quote_subject_change` / `apply_subject_change`. Those
+// two wrappers were the last reachable route into the old billing model: one
+// shared renewal date for the whole child, an addition PRORATED into the days
+// left in it. The owner reversed that model — every subject is billed on its
+// OWN cycle, starting the day it is added — so the wrappers are not merely
+// unused, they are wrong, and a caller that sends only subject ids must not be
+// able to reach a different RPC pair by omitting a field.
+//
+// So the SERVER composes the basket itself (derivePlanItems), with exactly the
+// rule the dropped SQL used. This function is the only DB-touching half: read
+// the child's live subscription and its go-forward coverage.
 
-const PLAN_INTERVALS = ["week", "month", "year"] as const;
+/** The child's live (trialing/active/past_due) subscription with its coverage. */
+async function readLivePlan(studentId: string): Promise<LivePlan | null> {
+  const admin = getAdminClient();
+  const { data: sub } = await admin
+    .from("child_subscriptions")
+    .select("id, interval")
+    .eq("student_profile_id", studentId)
+    .in("status", ["trialing", "active", "past_due"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!sub?.id) return null;
 
-/**
- * Server-side gate for a client-supplied basket, mirroring the DB's own
- * `plan_items_normalize`: UUID-shaped ids, the interval ENUM whitelist, the
- * hard cap, and one entry per subject (last wins). Rejecting here means a bad
- * payload never reaches the RPC — the segmented control in the browser is UX,
- * this is the rule.
- *
- * Returns `null` when the basket is unusable, so callers map it to the same
- * generic `sub.err.invalid` key every other malformed input gets.
- */
-function validatePlanItems(
-  raw: readonly PlanItemInput[] | undefined,
-  max = 20,
-): { subject_id: string; interval: string }[] | null {
-  if (!Array.isArray(raw) || raw.length === 0 || raw.length > max) return null;
-  const bySubject = new Map<string, string>();
-  for (const item of raw) {
-    const id = typeof item?.subjectId === "string" ? item.subjectId : "";
-    const interval = typeof item?.interval === "string" ? item.interval : "";
-    if (!isUuid(id)) return null;
-    if (!(PLAN_INTERVALS as readonly string[]).includes(interval)) return null;
-    bySubject.set(id, interval);
-  }
-  if (bySubject.size === 0 || bySubject.size > max) return null;
-  return [...bySubject.entries()].map(([subject_id, interval]) => ({
-    subject_id,
-    interval,
-  }));
-}
-
-/** Expand the legacy `(interval, subjectIds)` shape into a uniform basket. */
-function uniformPlanItems(interval: string, subjectIds: string[]): PlanItemInput[] {
-  return subjectIds.map((subjectId) => ({ subjectId, interval }));
+  const { data: covered } = await admin
+    .from("subscription_subjects")
+    .select("subject_id, interval, pending_interval, remove_at")
+    .eq("child_subscription_id", (sub as { id: string }).id);
+  const rows = (covered ?? []) as LivePlanRow[];
+  return {
+    subscriptionId: (sub as { id: string }).id,
+    interval: (sub as { interval?: string | null }).interval ?? null,
+    activeRows: rows.filter((r) => !r.remove_at),
+    allRows: rows,
+  };
 }
 
 /** The `groups` / `items` blocks the plan RPCs return, copied defensively. */
@@ -429,33 +442,42 @@ export async function cancelChildSubscriptionCore(params: {
   return { ok: true };
 }
 
-// ---- Round 32: mid-cycle subject-change preview (quote_subject_change) -------
-// Read-only preview of the SAME math apply_subject_change will charge (the RPC
-// is the single source of truth — the preview can never drift from the applied
+// ---- Mid-cycle plan-change preview (quote_plan_change) -----------------------
+// Read-only preview of the SAME math apply_plan_change will charge (the RPC is
+// the single source of truth — the preview can never drift from the applied
 // amount). No payment-mode gate here: quoting is informational, exactly like
 // quoteSubscriptionCore for the initial-subscribe flow; the gate is enforced at
 // APPLY time in updateSubscriptionSubjectsCore below.
+//
+// PRORATION IS RETIRED (owner, 2026-08-17). `dueNow` is the ADDED subjects'
+// FULL first cycles at the sibling rate, each starting today; the six proration
+// fields the RPC still returns for its own legacy shape (prorated,
+// proration_waived, added_base, remaining_ratio, days_remaining, period_days)
+// are NOT parsed here, so no surface can render a number the model no longer
+// has. Everything kept below is read by a real caller.
 
 export type SubjectChangeQuote = {
   subscriptionId: string;
   status: string;
+  /** The subscription's DEFAULT cycle — what a newly added subject opens on. */
   interval: string;
   currency: string;
   discountPercent: number;
   currentRecurringTotal: number;
   newRecurringTotal: number;
-  /** The prorated top-up due immediately for additions (0 for a removal-only diff). */
+  /**
+   * Charged NOW: each added subject's FULL first period at the sibling rate,
+   * never a part-period top-up. 0 for a removal-only or cycle-change-only diff,
+   * and 0 during a trial (the adds ride the trial like every other subject).
+   */
   dueNow: number;
-  /** True when dueNow > 0 was actually prorated (paid, non-weekly, days remaining). */
-  prorated: boolean;
-  /** True when proration applied but rounded under the 0.50 AZN minimum charge. */
-  prorationWaived: boolean;
-  addedBase: number;
-  remainingRatio: number;
-  daysRemaining: number;
-  periodDays: number | null;
-  /** When the new recurring rate (and any scheduled removal) takes effect. */
+  /** The next charge date — used to say WHEN a 0 due-now change is first billed. */
   effectiveFrom: string | null;
+  /**
+   * LEGACY SCALAR: the LAST of the removed subjects' own period ends. Kept for
+   * already-shipped mobile binaries, which fall back to it when `removals` is
+   * empty; the web reads the per-subject `removals` list instead.
+   */
   removalsEffectiveAt: string | null;
   // ---- migration 109, all OPTIONAL so no existing consumer breaks ----------
   /** The desired basket, priced per subject at its own cycle. */
@@ -494,7 +516,8 @@ export async function quoteSubjectChangeCore(params: {
    * The DESIRED FULL set with per-subject cycles (migration 109). When present
    * the server diffs it itself through quote_plan_change — the client never
    * computes a diff and never sends a price. Absent = the historical
-   * add/remove path, kept for already-shipped mobile binaries.
+   * add/remove shape, kept for already-shipped mobile binaries; the server
+   * composes the SAME basket from the live plan and calls the same RPC.
    */
   items?: PlanItemInput[];
 }): Promise<SubjectChangeQuoteCoreResult> {
@@ -507,23 +530,31 @@ export async function quoteSubjectChangeCore(params: {
   if (!usingItems && add.length === 0 && remove.length === 0) {
     return { ok: false, errorKey: "sub.err.invalid" };
   }
-  const planItems = usingItems ? validatePlanItems(params.items) : null;
-  if (usingItems && !planItems) return { ok: false, errorKey: "sub.err.invalid" };
+  const suppliedItems = usingItems ? validatePlanItems(params.items) : null;
+  if (usingItems && !suppliedItems) return { ok: false, errorKey: "sub.err.invalid" };
   if (!(await ownsChildCore(parentProfileId, studentId))) {
     return { ok: false, errorKey: "sub.err.notYourChild" };
   }
 
+  // Subject-ids-only caller: the SERVER derives the basket (see readLivePlan).
+  // There is no second RPC to fall back to — migration 118 dropped it.
+  let planItems = suppliedItems;
+  if (!planItems) {
+    const live = await readLivePlan(studentId);
+    // No live subscription to change (the manage page only renders once one
+    // exists, but it can be canceled concurrently in another tab).
+    if (!live) return { ok: false, errorKey: "subjedit.err.addFailed" };
+    const desired = desiredFromAddRemove(live, add, remove);
+    if (desired.length === 0) return { ok: false, errorKey: "subjedit.minOne" };
+    planItems = validatePlanItems(derivePlanItems(desired, live));
+    if (!planItems) return { ok: false, errorKey: "sub.err.invalid" };
+  }
+
   const admin = getAdminClient();
-  const { data, error } = planItems
-    ? await admin.rpc("quote_plan_change", {
-        p_student_profile_id: studentId,
-        p_items: planItems,
-      })
-    : await admin.rpc("quote_subject_change", {
-        p_student_profile_id: studentId,
-        p_add: add,
-        p_remove: remove,
-      });
+  const { data, error } = await admin.rpc("quote_plan_change", {
+    p_student_profile_id: studentId,
+    p_items: planItems,
+  });
   if (error) {
     // no_data_found = no live subscription to change (should not normally
     // happen — the manage-subjects page only renders once one exists — but a
@@ -545,12 +576,6 @@ export async function quoteSubjectChangeCore(params: {
       currentRecurringTotal: Number(r.current_recurring_total ?? 0),
       newRecurringTotal: Number(r.new_recurring_total ?? 0),
       dueNow: Number(r.due_now ?? 0),
-      prorated: r.prorated === true,
-      prorationWaived: r.proration_waived === true,
-      addedBase: Number(r.added_base ?? 0),
-      remainingRatio: Number(r.remaining_ratio ?? 0),
-      daysRemaining: Number(r.days_remaining ?? 0),
-      periodDays: r.period_days == null ? null : Number(r.period_days),
       effectiveFrom: typeof r.effective_from === "string" ? r.effective_from : null,
       removalsEffectiveAt:
         typeof r.removals_effective_at === "string" ? r.removals_effective_at : null,
@@ -581,10 +606,10 @@ export async function quoteSubjectChangeCore(params: {
   };
 }
 
-// Deterministic idempotency key for ONE apply_subject_change call: the
+// Deterministic idempotency key for ONE apply_plan_change call: the
 // subscription + the sorted add/remove diff + a coarse 5-minute time bucket.
 // A genuine retry of the SAME user action (network hiccup, accidental double
-// submit) within the bucket replays the identical key, so apply_subject_change's
+// submit) within the bucket replays the identical key, so apply_plan_change's
 // unique-index replay guard returns the original outcome instead of charging
 // twice. A deliberate later change with an identical diff (e.g. re-adding a
 // subject removed weeks ago) lands in a new bucket and applies normally.
@@ -607,15 +632,14 @@ function buildSubjectChangeIdempotencyKey(
     .digest("hex");
 }
 
-// ---- Round 11 (item 1) / Round 32: batch subject update from the checkbox ----
-// editor. The caller posts the DESIRED full subject set. The server computes
-// the diff against the live subscription and applies it through ONE
-// apply_subject_change call (Round 32 — supersedes the historical per-subject
-// add_subscription_subject/remove_subscription_subject loop): additions get
-// immediate access + a prorated top-up, removals are scheduled for the period
-// end (no refund), and the recurring rate is recomputed atomically. Amounts are
-// never client-set, ≥1 subject must remain, and the same payment-mode gate as
-// any other billing change applies.
+// ---- Batch plan update from the Manage-Subjects editor -----------------------
+// The caller posts the DESIRED full set. The server computes the diff against
+// the live subscription and applies it through ONE apply_plan_change call:
+// each ADDED subject opens its OWN full period at now() and is charged that
+// full period, each REMOVED subject keeps access to its own period end (no
+// refund), and a CYCLE change is scheduled for that subject's own renewal.
+// Amounts are never client-set, ≥1 subject must remain, and the same
+// payment-mode gate as any other billing change applies.
 
 export type SubjectsUpdateCoreResult =
   | { ok: true; added: number; removed: number; planChanged: number }
@@ -628,7 +652,9 @@ export async function updateSubscriptionSubjectsCore(params: {
   /**
    * The DESIRED FULL set with per-subject cycles (migration 109). The server
    * computes adds / removes / cycle changes itself — the client never sends a
-   * diff and never a price. Absent = the historical subject-only path.
+   * diff and never a price. Absent = the historical subject-only shape; the
+   * server then derives each subject's cycle from the live plan (readLivePlan)
+   * and applies the SAME RPC. There is no separate subject-only RPC any more.
    */
   items?: PlanItemInput[];
   isFreeAccessActive: FreeAccessChecker;
@@ -642,8 +668,8 @@ export async function updateSubscriptionSubjectsCore(params: {
     return { ok: false, errorKey: "sub.err.invalid" };
   }
   if (desired.length === 0) return { ok: false, errorKey: "subjedit.minOne" };
-  const planItems = usingItems ? validatePlanItems(params.items) : null;
-  if (usingItems && !planItems) return { ok: false, errorKey: "sub.err.invalid" };
+  const suppliedItems = usingItems ? validatePlanItems(params.items) : null;
+  if (usingItems && !suppliedItems) return { ok: false, errorKey: "sub.err.invalid" };
   if (!(await ownsChildCore(parentProfileId, studentId))) {
     return { ok: false, errorKey: "sub.err.notYourChild" };
   }
@@ -655,36 +681,22 @@ export async function updateSubscriptionSubjectsCore(params: {
 
   const admin = getAdminClient();
 
-  // Current coverage of the child's live subscription.
-  const { data: sub } = await admin
-    .from("child_subscriptions")
-    .select("id, interval")
-    .eq("student_profile_id", studentId)
-    .in("status", ["trialing", "active", "past_due"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!sub?.id) return { ok: false, errorKey: "subjedit.err.addFailed" };
-  const subscriptionId = (sub as { id: string }).id;
-  const subInterval = (sub as { interval?: string | null }).interval ?? null;
+  // Current coverage of the child's live subscription. A row scheduled for
+  // removal is NOT current coverage: it keeps its row until its own period end,
+  // but the go-forward plan no longer contains it. Counting it as covered made
+  // re-adding it invisible to this diff — the request short-circuited with
+  // ok/0/0/0 and apply_plan_change (whose upsert is what clears remove_at) was
+  // never called, so "undo the removal" silently did nothing while the UI
+  // reported success.
+  const live = await readLivePlan(studentId);
+  if (!live) return { ok: false, errorKey: "subjedit.err.addFailed" };
+  const { subscriptionId, activeRows } = live;
 
-  const { data: covered } = await admin
-    .from("subscription_subjects")
-    .select("subject_id, interval, pending_interval, remove_at")
-    .eq("child_subscription_id", subscriptionId);
-  const coveredRows = (covered ?? []) as {
-    subject_id: string;
-    interval: string | null;
-    pending_interval: string | null;
-    remove_at: string | null;
-  }[];
-  // A row scheduled for removal is NOT current coverage: it keeps its row until
-  // its own period end, but the go-forward plan no longer contains it. Counting
-  // it as covered made re-adding it invisible to this diff — the request
-  // short-circuited with ok/0/0/0 and apply_plan_change (whose upsert is what
-  // clears remove_at) was never called, so "undo the removal" silently did
-  // nothing while the UI reported success.
-  const activeRows = coveredRows.filter((r) => !r.remove_at);
+  // Subject-ids-only caller: derive the basket server-side, each kept subject on
+  // its own effective cycle and each new one on the subscription default.
+  const planItems = suppliedItems ?? validatePlanItems(derivePlanItems(desired, live));
+  if (!planItems) return { ok: false, errorKey: "sub.err.invalid" };
+
   const current = new Set(activeRows.map((r) => r.subject_id));
   const want = new Set(desired);
   // The cycle a subject is EFFECTIVELY on: a scheduled change first, then its
@@ -692,18 +704,18 @@ export async function updateSubscriptionSubjectsCore(params: {
   // alone dropped two real changes — a row whose interval is still NULL (legal
   // since 007) could never be moved, and re-selecting the original cycle could
   // never cancel a scheduled change. Mirrors quote_plan_change exactly.
-  const effectiveInterval = (subjectId: string): string | null => {
-    const row = activeRows.find((r) => r.subject_id === subjectId);
-    return row?.pending_interval ?? row?.interval ?? subInterval;
-  };
+  const rowById = new Map(activeRows.map((r) => [r.subject_id, r]));
 
   const toAdd = desired.filter((id) => !current.has(id));
   const toRemove = Array.from(current).filter((id) => !want.has(id));
   // A cycle change on an already-covered subject is a real change even though
   // the subject set is identical — without this the "no diff" short-circuit
-  // below would swallow it.
-  const toChangePlan = (planItems ?? []).filter(
-    (i) => current.has(i.subject_id) && effectiveInterval(i.subject_id) !== i.interval,
+  // below would swallow it. A DERIVED basket produces none by construction: its
+  // cycles ARE the effective ones.
+  const toChangePlan = planItems.filter(
+    (i) =>
+      current.has(i.subject_id) &&
+      effectivePlanInterval(rowById.get(i.subject_id), live.interval) !== i.interval,
   );
 
   if (toAdd.length === 0 && toRemove.length === 0 && toChangePlan.length === 0) {
@@ -714,24 +726,17 @@ export async function updateSubscriptionSubjectsCore(params: {
     subscriptionId,
     toAdd,
     toRemove,
-    (planItems ?? [])
+    planItems
       .map((i) => `${i.subject_id}:${i.interval}`)
       .sort()
       .join(","),
   );
 
-  const { error } = planItems
-    ? await admin.rpc("apply_plan_change", {
-        p_student_profile_id: studentId,
-        p_items: planItems,
-        p_idempotency_key: idempotencyKey,
-      })
-    : await admin.rpc("apply_subject_change", {
-        p_student_profile_id: studentId,
-        p_add: toAdd,
-        p_remove: toRemove,
-        p_idempotency_key: idempotencyKey,
-      });
+  const { error } = await admin.rpc("apply_plan_change", {
+    p_student_profile_id: studentId,
+    p_items: planItems,
+    p_idempotency_key: idempotencyKey,
+  });
   if (error) {
     const code = (error as { code?: string }).code;
     const hint = (error as { hint?: string | null }).hint ?? "";

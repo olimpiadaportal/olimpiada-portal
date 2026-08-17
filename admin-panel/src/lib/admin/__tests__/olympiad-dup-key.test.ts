@@ -18,12 +18,12 @@ function read(rel: string): string {
 }
 
 /**
- * The importer's plpgsql BODY (`as $$ … $$;`), which is the part that must be
+ * A function's plpgsql BODY (`as $$ … $$;`), which is the part that must be
  * identical in both files. The headers differ by convention and always have:
  * the canonical file drops and `create`s, the migration `create or replace`s.
  */
-function importerBody(sql: string): string {
-  const decl = sql.indexOf("function public.bulk_insert_olympiad_package_questions(");
+function functionBody(sql: string, name: string): string {
+  const decl = sql.indexOf(`function public.${name}(`);
   expect(decl).toBeGreaterThan(-1);
   const at = sql.indexOf("\nas $$\n", decl);
   expect(at).toBeGreaterThan(decl);
@@ -32,20 +32,62 @@ function importerBody(sql: string): string {
   return sql.slice(at, end + 4);
 }
 
-const MIGRATION = importerBody(
-  read("supabase/sql/migrations/2026_08_11_108_olympiad_bulk_append.sql"),
+// The canonical file must match the LATEST migration that ships the body, not
+// the one that first introduced the logic under test. Migration 119 rewrote all
+// three of these functions (the per-locale explanation hoist), so 108's copy is
+// now history: comparing against it would report drift that does not exist and,
+// worse, would have to be silenced — losing the check entirely. The 108
+// invariants below are still asserted, on the two files that are actually live.
+const LATEST_MIGRATION = "supabase/sql/migrations/2026_08_17_119_trilingual_explanations.sql";
+const CANONICAL_FILE = "supabase/sql/011_indexes_constraints_functions_triggers.sql";
+
+const MIGRATION = functionBody(
+  read(LATEST_MIGRATION),
+  "bulk_insert_olympiad_package_questions",
 );
-const CANONICAL = importerBody(
-  read("supabase/sql/011_indexes_constraints_functions_triggers.sql"),
+const CANONICAL = functionBody(
+  read(CANONICAL_FILE),
+  "bulk_insert_olympiad_package_questions",
 );
 const BOTH: [string, string][] = [
-  ["migration 108", MIGRATION],
+  ["migration 119", MIGRATION],
   ["canonical 011", CANONICAL],
 ];
 
 describe("the canonical backport is the migration, character for character", () => {
-  it("keeps one implementation rather than two that drift", () => {
-    expect(CANONICAL).toBe(MIGRATION);
+  // Every function migration 119 rewrote, not just the olympiad importer: a
+  // backport that copies two of three is the exact failure this file exists to
+  // catch, and it is invisible on a live database (`create or replace` keeps
+  // working) until someone bootstraps from zero.
+  it.each([
+    "bulk_insert_questions",
+    "bulk_insert_olympiad_package_questions",
+    "get_test_review",
+  ])("keeps one implementation of %s rather than two that drift", (fn) => {
+    expect(functionBody(read(CANONICAL_FILE), fn)).toBe(
+      functionBody(read(LATEST_MIGRATION), fn),
+    );
+  });
+});
+
+describe("the per-locale explanation is stored independently of the body", () => {
+  // The regression migration 119 fixed: the explanation insert sat INSIDE the
+  // `... and coalesce(translations->loc->>'body','') <> ''` guard, so a locale
+  // supplying an explanation but no body lost it with no row and no error. If
+  // the guard ever swallows the explanation again nothing fails at import time —
+  // the rows just quietly stop arriving — so it is pinned on the source.
+  it.each([
+    ["bulk_insert_questions", functionBody(read(CANONICAL_FILE), "bulk_insert_questions")],
+    ["bulk_insert_olympiad_package_questions", CANONICAL],
+  ])("%s does not nest the explanation inside the body guard", (_name, src) => {
+    expect(src).not.toContain(
+      "'az','en','ru') and coalesce(v_item->'translations'->v_loc->>'body'",
+    );
+    // Still exactly one explanation insert, still reading the UNCHANGED payload
+    // contract (translations.<locale>.explanation) — a legacy az-only file must
+    // keep importing byte-for-byte as it always did.
+    expect(src.split("insert into public.question_explanations").length - 1).toBe(1);
+    expect(src).toContain("v_item->'translations'->v_loc->>'explanation'");
   });
 });
 

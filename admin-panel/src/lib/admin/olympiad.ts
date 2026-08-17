@@ -1823,6 +1823,10 @@ export async function saveOlympiadPackageQuestion(
     en: null,
     ru: null,
   };
+  // Locales that carry ONLY an explanation — no body, no options. A legitimate
+  // shape since migration 119 (see the `active` note below), stored as an
+  // explanation row with no translation row, exactly as the importer does.
+  const explanationOnly: Partial<Record<PoolLocale, string>> = {};
   for (const loc of LOCALES) {
     const body = s(fd, `body_${loc}`);
     const prompt = s(fd, `prompt_${loc}`);
@@ -1837,8 +1841,24 @@ export async function saveOlympiadPackageQuestion(
       if (text.length > POOL_OPTION_MAX) return { error: t("err.tooLong") };
       options.push(text);
     }
-    const active = Boolean(body || prompt || explanation || options.some(Boolean));
-    if (!active) continue;
+    // An EXPLANATION ALONE does not make a locale "active".
+    //
+    // `question_explanations` is keyed on (question_id, locale) independently of
+    // `question_translations`, and since migration 119 the bulk importers store
+    // an explanation for a locale whether or not that locale supplied a body —
+    // which is exactly the shape the on-screen olyjson.rules hint invites
+    // ("write the explanation in all three languages"). Counting the
+    // explanation here made such a question PERMANENTLY UNEDITABLE: opening it
+    // to fix an Azerbaijani typo failed with "English is incomplete", and the
+    // only escape was to invent a full English body plus five English options,
+    // or to clear the English explanation — which the save then deleted.
+    // A locale is active when it carries QUESTION CONTENT; an explanation-only
+    // locale is legitimate and is stored below as just that.
+    const active = Boolean(body || prompt || options.some(Boolean));
+    if (!active) {
+      if (explanation) explanationOnly[loc] = explanation;
+      continue;
+    }
     if (!body || options.some((x) => !x)) {
       if (loc === "az") {
         return { error: body ? lt("olyq.err.fiveOptions") : lt("olyq.err.azBody") };
@@ -1983,6 +2003,18 @@ export async function saveOlympiadPackageQuestion(
           .eq("question_id", questionId)
           .eq("locale", loc);
       }
+    } else if (explanationOnly[loc]) {
+      // Explanation-only locale: keep the explanation, and do NOT touch the
+      // (absent) translation row. Without this branch the next save of an
+      // imported trilingual-explanation question would silently destroy the
+      // very explanations the import was built to preserve.
+      const { error: eErr } = await supabase
+        .from("question_explanations")
+        .upsert(
+          { question_id: questionId, locale: loc, explanation_body: explanationOnly[loc] },
+          { onConflict: "question_id,locale" },
+        );
+      if (eErr) return cleanup("olympiad pool explanation upsert failed", eErr.message);
     } else if (qId) {
       // Language cleared on edit (az can never get here): remove its rows and
       // clean up an image that was linked to the removed translation.

@@ -1,5 +1,14 @@
-// Question-report status vocabulary, shared by the list page (searchParam
-// whitelist + stat cards), the detail page and the client status controls.
+// THE SHARED REPORT-STATUS VOCABULARY — used by BOTH report features: question
+// reports (migration 115) and platform bug reports (migration 116). Each drives
+// its list page (searchParam whitelist + stat cards), its detail page and its
+// client status controls.
+//
+// public.question_report_status and public.bug_report_status are two SEPARATE
+// Postgres enums carrying identical members, so that a future bug-only member
+// cannot silently widen question_reports' domain. This module is the reason
+// that separation is safe: the behaviour — which values exist, which are
+// filterable, which pill each gets — is defined ONCE, so the two admin sections
+// cannot drift apart. Adding a member here means adding it to both enums.
 //
 // A PLAIN module (no "use server"): Next.js allows only async function exports
 // from a server-action file, so these constants cannot live in

@@ -1,71 +1,119 @@
 import { getT } from "@/i18n/server";
 import { getPublicSiteSettings } from "@/lib/flags";
+import { ReportBugButton } from "@/components/ReportBugButton";
+// The key list and the surface type come from the PLAIN shared module, not from
+// the client component: every export of a `"use client"` module is a client
+// reference, which this server component could not iterate.
+import { BUG_DIALOG_KEYS, type BugReportSurface } from "@/lib/support/bugReport";
 
-// Shared contact body — the equal-height info card (address / support email /
-// optional phone / short note) + the keyless Google-Maps embed. Rendered by
-// the public /contact page and the in-app parent (/help/contact) and student
-// (/child/help/contact) pages from this single source. Support
-// email/phone/WhatsApp/address come from admin Settings
-// (contact.support_email/phone/whatsapp/address); email falls back to a
-// placeholder until configured; phone, WhatsApp and address render only when
-// set. The map always renders: it prefers the admin-configured precise pin
+// Shared contact body — the equal-height info card + the keyless Google-Maps
+// embed. Rendered by the public /contact page and the in-app parent
+// (/help/contact) and student (/child/help/contact) pages from this single
+// source, which is also why the "Report a bug" dialog is mounted here exactly
+// once and still reaches all three surfaces.
+//
+// The card is organised by PURPOSE, not by field: a general block
+// (contact.info_email — questions, suggestions, feedback) and a technical block
+// (contact.support_email + the optional phone/WhatsApp rows + the bug CTA),
+// then the optional address. Both addresses come from admin Settings and fall
+// back to the REAL mailboxes below rather than to a placeholder domain: a
+// blanked setting, a missing row, an unconfigured service-role key and an
+// unreachable database all still have to render an address a visitor can
+// actually write to. Phone, WhatsApp and address keep the "empty hides the row"
+// behaviour — they have no safe invented value.
+//
+// The map always renders: it prefers the admin-configured precise pin
 // (contact.support_map_query — a "lat,lng" pair or place query), else the
 // admin-configured address, else a hardcoded Government House of Baku
 // fallback — a contact page without a map looks broken.
 const MAPS_FALLBACK_QUERY = "Government House of Baku, Baku, Azerbaijan";
+const DEFAULT_INFO_EMAIL = "info@olympiq.ai";
+const DEFAULT_SUPPORT_EMAIL = "support@olympiq.ai";
 
-export async function ContactInfo() {
+export async function ContactInfo({
+  surface = "public",
+}: {
+  /** Decides what the bug dialog may ask for — a child is never asked for an email. */
+  surface?: BugReportSurface;
+}) {
   const t = await getT();
   const site = await getPublicSiteSettings();
-  const email = site.supportEmail || "info@olimpiada.example";
+  const infoEmail = site.infoEmail || DEFAULT_INFO_EMAIL;
+  const supportEmail = site.supportEmail || DEFAULT_SUPPORT_EMAIL;
   // wa.me accepts digits only — the row renders only when the admin-configured
   // value actually contains a dialable number.
   const whatsappDigits = site.whatsapp.replace(/\D/g, "");
   const mapQuery = site.mapQuery || site.address || MAPS_FALLBACK_QUERY;
   const mapsEmbed = `https://www.google.com/maps?q=${encodeURIComponent(mapQuery)}&output=embed`;
 
+  // The dialog is a client component and cannot call getT(); hand it a plain
+  // resolved dictionary, the same way the test runner hands one to
+  // ReportQuestionButton.
+  const dict: Record<string, string> = {};
+  for (const k of BUG_DIALOG_KEYS) dict[k] = t(k);
+
   return (
     <div className="contact-equal">
       <div className="info-card">
-        {site.address && (
-          <>
-            <h2>{t("contact.address")}</h2>
-            <p>{site.address}</p>
-          </>
-        )}
-
-        <h2>{t("contact.emailLabel")}</h2>
-        <p>
-          <a href={`mailto:${email}`}>{email}</a>
-        </p>
-
-        {site.supportPhone && (
-          <>
-            <h2>{t("contact.phoneLabel")}</h2>
-            <p>
-              <a href={`tel:${site.supportPhone.replace(/\s+/g, "")}`}>
-                {site.supportPhone}
-              </a>
+        <div className="contact-purposes">
+          <section className="contact-purpose">
+            <h2>{t("contact.generalTitle")}</h2>
+            <p>{t("contact.generalDesc")}</p>
+            <p className="contact-mail">
+              {/* The scheme is a hardcoded prefix, so an admin-typed setting can
+                  never turn this into a javascript:/data: href. */}
+              <a href={`mailto:${infoEmail}`}>{infoEmail}</a>
             </p>
-          </>
-        )}
+          </section>
 
-        {whatsappDigits && (
-          <>
-            <h2>{t("contact.whatsappLabel")}</h2>
-            <p>
-              <a
-                href={`https://wa.me/${whatsappDigits}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {site.whatsapp}
-              </a>
+          <section className="contact-purpose">
+            <h2>{t("contact.supportTitle")}</h2>
+            <p>{t("contact.supportDesc")}</p>
+            <p className="contact-mail">
+              <a href={`mailto:${supportEmail}`}>{supportEmail}</a>
             </p>
-          </>
-        )}
 
-        <p className="muted">{t("contact.shortNote")}</p>
+            {site.supportPhone && (
+              <div className="contact-row">
+                <span className="contact-label">{t("contact.phoneLabel")}</span>
+                <span className="contact-value">
+                  <a href={`tel:${site.supportPhone.replace(/\s+/g, "")}`}>
+                    {site.supportPhone}
+                  </a>
+                </span>
+              </div>
+            )}
+
+            {whatsappDigits && (
+              <div className="contact-row">
+                <span className="contact-label">{t("contact.whatsappLabel")}</span>
+                <span className="contact-value">
+                  <a
+                    href={`https://wa.me/${whatsappDigits}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {site.whatsapp}
+                  </a>
+                </span>
+              </div>
+            )}
+
+            <div className="contact-actions">
+              <ReportBugButton dict={dict} surface={surface} />
+              <p className="hint">{t("contact.bugCtaHint")}</p>
+            </div>
+          </section>
+
+          {site.address && (
+            <section className="contact-purpose">
+              <h2>{t("contact.address")}</h2>
+              <p>{site.address}</p>
+            </section>
+          )}
+        </div>
+
+        <p className="contact-note">{t("contact.responseTime")}</p>
       </div>
 
       <div className="map-frame">

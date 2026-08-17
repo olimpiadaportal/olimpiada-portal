@@ -165,6 +165,147 @@ comment on column public.question_reports.olympiad_package_id is
   'package column, so the question row is the only source at insert time.';
 
 -- -----------------------------------------------------------------------------
+-- bug_reports : PLATFORM-scoped defect reports filed from the contact/help area
+-- (migration 116). The structural sibling of question_reports above, and a
+-- deliberately separate feature: that one says "this question is wrong" and is
+-- bound to one question row; this one says "this page/flow is broken" and
+-- carries the prose an engineer needs to reproduce it.
+--
+-- Unlike question_reports it references only public.profiles (created in 002),
+-- so every FK can be inline here — no deferred constraint in a later file.
+--
+-- The client sends prose plus four diagnostics (severity claim, route, locale,
+-- platform). Reporter, role, contact email, status, priority and both stamps
+-- are ALL derived by trg_bug_report_derive (011), which is also where the
+-- authoritative throttle lives, so a direct PostgREST insert is exactly as
+-- constrained as the submit_bug_report RPC.
+-- -----------------------------------------------------------------------------
+create table if not exists public.bug_reports (
+  id                      uuid primary key default gen_random_uuid(),
+
+  -- ---- what the reporter wrote (frozen after insert) ----------------------
+  title                   text not null,
+  description             text not null,
+  steps_to_reproduce      text,
+  expected_behavior       text,
+  actual_behavior         text,
+  -- The reporter's SEVERITY CLAIM. Deliberately NOT named `priority`: a
+  -- reporter-set priority makes the admin worklist sort useless within a week
+  -- (everything becomes 'critical'). This is evidence; `priority` below is
+  -- triage, and only an administrator moves it.
+  reported_severity       public.bug_report_priority not null default 'normal',
+
+  -- ---- who (all derived server-side; never from the payload) --------------
+  -- set null, not cascade (support_requests / question_reports precedent):
+  -- deleting an account must not erase a still-valid bug report.
+  reporter_profile_id     uuid references public.profiles (id) on delete set null,
+  reporter_role           public.report_reporter_role not null default 'anonymous',
+  reporter_email          citext,
+  -- true  = copied from profiles.email for a resolved session (trustworthy)
+  -- false = typed into the public form by an unauthenticated visitor
+  reporter_email_verified boolean not null default false,
+
+  -- ---- environment (client-declared diagnostics, never authorization) -----
+  -- PATH ONLY. The query string and the fragment are stripped before this
+  -- column is written: /auth/callback?code=... and #access_token=... are
+  -- exactly where credentials live, and a bug report must never capture one.
+  route_path              text,
+  user_agent              text,
+  locale                  public.content_locale not null,
+  platform                public.report_platform not null,
+  app_version             text,
+
+  -- ---- triage (the ONLY mutable columns) ----------------------------------
+  status                  public.bug_report_status   not null default 'new',
+  priority                public.bug_report_priority not null default 'normal',
+  admin_note              text,
+  handled_by              uuid references public.profiles (id) on delete set null,
+  handled_at              timestamptz,
+  resolved_at             timestamptz,
+  created_at              timestamptz not null default now(),
+  updated_at              timestamptz not null default now(),
+
+  -- Dedupe key for uq_bug_reports_open_per_reporter (011). md5/lower/btrim are
+  -- all IMMUTABLE, so this is a legal STORED generated column. Generated
+  -- columns are computed AFTER BEFORE triggers, so it hashes the trimmed text
+  -- the derive trigger actually stored.
+  content_hash text generated always as
+    (md5(lower(btrim(title)) || '|' || lower(btrim(description)))) stored,
+
+  constraint chk_bug_reports_title
+    check (char_length(title) between 3 and 160),
+  constraint chk_bug_reports_description
+    check (char_length(description) between 10 and 4000),
+  constraint chk_bug_reports_steps
+    check (steps_to_reproduce is null or char_length(steps_to_reproduce) <= 2000),
+  constraint chk_bug_reports_expected
+    check (expected_behavior is null or char_length(expected_behavior) <= 1000),
+  constraint chk_bug_reports_actual
+    check (actual_behavior is null or char_length(actual_behavior) <= 1000),
+  constraint chk_bug_reports_admin_note
+    check (admin_note is null or char_length(admin_note) <= 2000),
+  -- A root-relative path with no whitespace and no control bytes. The app-tier
+  -- gate is isSafeRelativeUrl(); this is the LAST word, so a direct insert that
+  -- never passed through the app is bound by the same rule.
+  constraint chk_bug_reports_route
+    check (route_path is null or route_path ~ '^/[^[:space:][:cntrl:]]{0,499}$'),
+  constraint chk_bug_reports_user_agent
+    check (user_agent is null or char_length(user_agent) <= 300),
+  constraint chk_bug_reports_app_version
+    check (app_version is null or app_version ~ '^[0-9A-Za-z._+-]{1,32}$'),
+  constraint chk_bug_reports_email
+    check (reporter_email is null
+           or (char_length(reporter_email) <= 254
+               and reporter_email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'))
+);
+
+-- DELIBERATELY ABSENT: any CHECK coupling reporter_role / reporter_email_verified
+-- to reporter_profile_id. The FK is ON DELETE SET NULL, so deleting a parent
+-- (migration 098 cascades to their children) issues an UPDATE that nulls the
+-- column while the role stays 'parent' — a cross-column CHECK would make that
+-- DELETE fail and BLOCK ACCOUNT DELETION. The rule is enforced in the BEFORE
+-- INSERT trigger instead, where it is true at write time and cannot fight a
+-- referential action.
+
+comment on table public.bug_reports is
+  'Platform-scoped defect reports filed from the contact/help area (web + '
+  'mobile). Distinct from question_reports, which is bound to one question. '
+  'Reporter, role, contact email, status, priority and both stamps are derived '
+  'server-side by trg_bug_report_derive; the client supplies prose plus four '
+  'enum-constrained or shape-checked diagnostics.';
+
+comment on column public.bug_reports.route_path is
+  'PATH ONLY — the query string and the fragment are stripped by '
+  'trg_bug_report_derive BEFORE the row is written. /auth/callback?code=... and '
+  '#access_token=... are exactly the shapes that would turn a bug report into a '
+  'credential leak. Rendered as TEXT in the admin panel, never as a link.';
+
+comment on column public.bug_reports.user_agent is
+  'Read server-side from the request header, never a form field — but still '
+  'attacker-controlled: any client may send any string. Control characters are '
+  'flattened to spaces and the value is capped at 300 chars.';
+
+comment on column public.bug_reports.locale is
+  'CLIENT-SUPPLIED diagnostic: the UI language the reporter was reading. The '
+  'database cannot observe it. Enum-constrained, never an authorization input. '
+  'The web server action hardcodes it from its own getLocale() cookie '
+  'resolution; a mobile client self-reports.';
+
+comment on column public.bug_reports.platform is
+  'CLIENT-SUPPLIED diagnostic (see locale). A tampered client could claim the '
+  'wrong platform; the consequence is a mislabelled admin row, nothing more.';
+
+comment on column public.bug_reports.reported_severity is
+  'The REPORTER''s severity claim, frozen after insert. Never the triage value: '
+  'a reporter-set priority makes the admin worklist sort useless within a week. '
+  'public.bug_reports.priority is the administrator''s, and starts at normal.';
+
+comment on column public.bug_reports.reporter_email_verified is
+  'true = copied from profiles.email for a resolved session; false = typed into '
+  'the public form by an unauthenticated visitor. The admin detail view labels '
+  'the address "unverified" on false — it is a contact hint, never an identity.';
+
+-- -----------------------------------------------------------------------------
 -- audit_logs : immutable, append-only trail of sensitive actions.
 -- No updates/deletes are permitted (RLS in 010; append-only intent).
 -- -----------------------------------------------------------------------------

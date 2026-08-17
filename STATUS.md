@@ -6,6 +6,51 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — CONTACT ADDRESSES + BUG REPORTS (migration 116, 2026-08-17)
+
+**Applied to production. Validation `013` = 108/108 PASS.** web-app typecheck + 229 tests + build; admin-panel typecheck + 455 tests + build; mobile-app typecheck + 353 tests. Mobile **1.10.0**.
+
+Live settings: `contact.info_email = info@olympiq.ai`, `contact.support_email = support@olympiq.ai`.
+
+### Contact was already a setting — that shaped the whole fix
+
+There was exactly ONE placeholder in the repo: `ContactInfo.tsx`'s `|| "info@olimpiada.example"`, a FALLBACK behind `contact.support_email`, which `012` seeded as `""`. That empty seed is why the placeholder was visible. The fix adds `contact.info_email` beside it and seeds BOTH — hardcoding either address into a component would have regressed an existing admin-configurable feature.
+
+**Deliberately NOT changed:** `you@example.com` (auth + bug-form input placeholders) and `@example.invalid` (SQL validation probes). Those are not contact information; turning them into real addresses would be a bug, not a cleanup.
+
+`ContactInfo.tsx` was already the single component behind the public, parent and child contact pages, so "reuse, don't duplicate" was the existing architecture.
+
+### There was no mail service; there is now
+
+Auth emails are sent by Supabase Auth via Brevo SMTP configured in the SUPABASE DASHBOARD — outside application code, unreachable from a route handler. `web-app/src/lib/mail/brevo.ts` now calls Brevo's transactional REST API with plain `fetch` — **no new dependency** — behind `import "server-only"`. `lib/notifications/delivery.ts` was pointed at it so there is ONE transport.
+
+**A notification failure can never lose a report:** the send happens after the row is committed, is wrapped, and its outcome never changes the result. A missing `BREVO_API_KEY` logs and skips.
+
+### Two review findings fixed before this touched the database
+
+1. **A reporter could read `admin_note` and `handled_by` on their own report.** The SELECT policy was row-level while the grant was table-wide, and PostgREST lets the caller pick columns. Column privileges could not help — an admin is also `authenticated`, so narrowing the grant would blind the admin panel. Since NOTHING user-facing reads this table, the reporter branch bought nothing and leaked triage notes: **SELECT is now admin-only.** If a "my reports" screen is ever wanted, add a SECURITY DEFINER function returning only safe columns — the pattern this schema uses everywhere else.
+2. **A transient role-resolution failure downgraded a signed-in reporter to anonymous** — storing the row unattributed, letting a client-typed address become the reporter email, and swapping the per-profile throttle for the shared global anonymous bucket. `getChildResolution()` returns `kind:'unknown'` for a FAILED lookup, which is not the same as "signed out". It now **fails closed** with `bug.err.retry`.
+
+Fixing (1) then exposed a design improvement: the ops mail needed the trigger-DERIVED `reporter_role`/`reporter_email`, which previously meant reading the row back — and with SELECT admin-only that read would have needed the service role, breaking the invariant "a signed-in reporter never touches the service role". So **`submit_bug_report` now returns those fields alongside the id** via RETURNING (the BEFORE INSERT trigger has already run). One round trip, no read-back, no service-role on the signed-in path, invariant intact.
+
+### Anonymous submission is allowed, with no anonymous database surface
+
+The public contact page works signed out — "I cannot register" and "the login page is blank" are reports only a signed-out visitor can file. But `anon` holds **no** grant on `bug_reports`, no EXECUTE on `submit_bug_report`, and no policy names it; anonymous submissions go through the service-role client only AFTER the honeypot and a per-IP throttle. Check 104 asserts anon holds nothing.
+
+The throttle key is a **salted hash of the IP**, kept only in the in-memory bucket map — no IP is ever written to the database or a log.
+
+### Two report features now exist, and they are different on purpose
+
+`question_reports` (115) is question-scoped — "this question is wrong", reported from a question. `bug_reports` (116) is platform-scoped — title, steps, expected vs actual, route, browser, priority, reported from the contact/help area. Separate tables, separate admin sections, deliberately mirrored patterns so they read as one product.
+
+### Known gaps
+
+- **Nothing has been clicked.** No browser or device pass on the contact redesign, the bug modal, or the admin section.
+- **No email has actually been sent.** The Brevo path is code-complete but unexercised: it needs `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (a VERIFIED sender in the Brevo account) and `BUG_REPORT_NOTIFY_EMAIL` before a single notification goes out.
+- No native Android or iOS build was run (EAS, owner-run).
+- The DB's global anonymous cap is 20 rows/hour platform-wide — a deliberate backstop, but it is also an availability lever if abused.
+- Every Postgres `check_violation` from the RPC is reported to the user as "too many reports", though the same SQLSTATE covers bad locale/platform/severity/over-length. Client-side validation makes those paths near-unreachable; low priority.
+
 ## PINNED — 2026-08-16 ROUND: APPLIED AND VALIDATED (read before the entries below)
 
 **Migrations 113, 114 and 115 are APPLIED to production. Validation `013` = 107/107 PASS.**

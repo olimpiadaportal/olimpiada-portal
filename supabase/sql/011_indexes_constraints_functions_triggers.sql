@@ -220,7 +220,7 @@ begin
     'achievements','question_analytics',
     'subscription_plans','subscriptions','payments','coupons',
     'notification_templates','notification_deliveries','support_requests',
-    'question_reports',
+    'question_reports','bug_reports',
     'admin_actions','content_reviews','media_assets','system_settings','feature_flags'
   ]
   loop
@@ -546,6 +546,10 @@ begin
     'maintenance', jsonb_build_object('on', v_maint_on, 'message', v_maint_msg),
     'locales', jsonb_build_object('supported', v_locales, 'default', v_default_loc),
     'contact', jsonb_build_object(
+        -- Migration 116: the GENERAL contact address (questions, suggestions,
+        -- feedback), beside the TECHNICAL support one below. Empty = the app
+        -- falls back to its own compiled-in constant.
+        'info_email', coalesce((select value_json->>0 from public.system_settings where key='contact.info_email'), ''),
         'email',    coalesce((select value_json->>0 from public.system_settings where key='contact.support_email'), ''),
         'phone',    coalesce((select value_json->>0 from public.system_settings where key='contact.support_phone'), ''),
         -- Migration 070: admin-configured WhatsApp line (empty = hidden in UIs).
@@ -9209,6 +9213,361 @@ revoke all on function public.question_report_freeze() from public, anon, authen
 -- DELETE policy is not the only thing standing between a reporter and their own
 -- evidence.
 revoke delete on public.question_reports from anon, authenticated;
+
+-- -----------------------------------------------------------------------------
+-- bug_reports (migration 116) — indexes, triggers, RPC, grants
+-- -----------------------------------------------------------------------------
+-- The PLATFORM-scoped sibling of question_reports above. Same discipline: a
+-- BEFORE INSERT trigger is the single authority for every derived column and
+-- for the throttle, and a BEFORE UPDATE trigger makes the report evidence that
+-- an administrator may triage but never rewrite.
+create index if not exists idx_bug_reports_status_created
+  on public.bug_reports (status, created_at desc);
+create index if not exists idx_bug_reports_priority_created
+  on public.bug_reports (priority, created_at desc);
+create index if not exists idx_bug_reports_created
+  on public.bug_reports (created_at desc);
+create index if not exists idx_bug_reports_role_created
+  on public.bug_reports (reporter_role, created_at desc);
+-- Also covers the per-reporter throttle count in the derive trigger.
+create index if not exists idx_bug_reports_reporter
+  on public.bug_reports (reporter_profile_id, created_at desc);
+-- Covers the ANONYMOUS blast-radius count in the derive trigger.
+create index if not exists idx_bug_reports_anon_created
+  on public.bug_reports (created_at desc) where reporter_profile_id is null;
+
+-- ONE OPEN report per (reporter, identical title+description): the real
+-- double-submit / rage-click guard. Closing it frees the slot, so a genuinely
+-- recurring bug can be re-filed. Scoped to authenticated reporters exactly like
+-- uq_question_reports_open_per_reporter — two different anonymous visitors
+-- hitting the same bug must both get through.
+create unique index if not exists uq_bug_reports_open_per_reporter
+  on public.bug_reports (reporter_profile_id, content_hash)
+  where reporter_profile_id is not null and status in ('new','in_review');
+
+-- SECURITY DEFINER because it must read profile_roles and profiles for the
+-- caller and count rows the reporter's own SELECT policy hides once closed.
+-- search_path is pinned; 013 check 104 asserts anon holds no EXECUTE.
+create or replace function public.bug_report_derive()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_profile uuid := public.current_profile_id();
+  v_role    public.report_reporter_role;
+  v_email   citext;
+  v_ws      text := ' ' || chr(9) || chr(10) || chr(13);
+  v_hour    int;
+  v_day     int;
+  v_anon    int;
+begin
+  -- The reporter is WHOEVER IS CALLING, never what the payload claims. The
+  -- INSERT policy re-compares this same value, so a forged reporter_profile_id
+  -- is overwritten here and then fails nothing — it simply never existed.
+  new.reporter_profile_id := v_profile;
+
+  if v_profile is null then
+    -- Anonymous. Only reachable through the service-role client in the web
+    -- server action: anon holds no grant on this table and none on the RPC.
+    new.reporter_role           := 'anonymous';
+    new.reporter_email          :=
+      nullif(btrim(coalesce(new.reporter_email::text, ''), v_ws), '')::citext;
+    new.reporter_email_verified := false;
+  else
+    -- Most privileged role wins, so a staff member filing from their own
+    -- account is labelled as staff rather than as whatever else they hold.
+    select case
+             when bool_or(r.code = 'administrator')   then 'administrator'
+             when bool_or(r.code = 'content_manager') then 'content_manager'
+             when bool_or(r.code = 'parent')          then 'parent'
+             when bool_or(r.code = 'student')         then 'student'
+           end::public.report_reporter_role
+      into v_role
+      from public.profile_roles pr
+      join public.roles r on r.id = pr.role_id
+     where pr.profile_id = v_profile;
+    new.reporter_role := coalesce(v_role, 'unknown');
+    -- A signed-in reporter's contact address is the ACCOUNT's, never the
+    -- form's: otherwise a child could put a stranger's address on a report.
+    select p.email into v_email from public.profiles p where p.id = v_profile;
+    new.reporter_email          := v_email;
+    new.reporter_email_verified := v_email is not null;
+  end if;
+
+  -- Server-owned lifecycle: born 'new' at 'normal', unhandled, unnoted.
+  new.status      := 'new';
+  new.priority    := 'normal';
+  new.handled_by  := null;
+  new.handled_at  := null;
+  new.resolved_at := null;
+  new.admin_note  := null;
+  new.created_at  := now();
+  new.updated_at  := now();
+
+  new.title              := btrim(new.title, v_ws);
+  new.description        := btrim(new.description, v_ws);
+  new.steps_to_reproduce := nullif(btrim(coalesce(new.steps_to_reproduce, ''), v_ws), '');
+  new.expected_behavior  := nullif(btrim(coalesce(new.expected_behavior,  ''), v_ws), '');
+  new.actual_behavior    := nullif(btrim(coalesce(new.actual_behavior,    ''), v_ws), '');
+
+  -- Route: PATH ONLY. split_part drops the query string and then the fragment
+  -- before anything is stored. A value that is not root-relative afterwards is
+  -- DROPPED, not rejected: the context is worth less than the report.
+  new.route_path := nullif(regexp_replace(
+                       split_part(split_part(coalesce(new.route_path, ''), '?', 1), '#', 1),
+                       '[[:cntrl:][:space:]]', '', 'g'), '');
+  if new.route_path is not null and left(new.route_path, 1) <> '/' then
+    new.route_path := null;
+  end if;
+  new.route_path := left(new.route_path, 500);
+  new.user_agent := nullif(left(regexp_replace(coalesce(new.user_agent, ''),
+                                               '[[:cntrl:]]', ' ', 'g'), 300), '');
+
+  -- Throttle in the DATABASE. The same numbers as question_report_derive, so
+  -- the two report features cannot drift into different abuse budgets. One
+  -- indexed count per insert (idx_bug_reports_reporter); a plain SELECT over a
+  -- different row set, so there is no trigger recursion.
+  if new.reporter_profile_id is not null then
+    select count(*) filter (where created_at > now() - interval '1 hour'),
+           count(*) filter (where created_at > now() - interval '1 day')
+      into v_hour, v_day
+      from public.bug_reports
+     where reporter_profile_id = new.reporter_profile_id
+       and created_at > now() - interval '1 day';
+    if v_hour >= 5 or v_day >= 20 then
+      raise exception 'bug report: rate limited' using errcode = 'check_violation';
+    end if;
+  else
+    -- An anonymous row carries NOTHING to key a per-reporter limit on, and this
+    -- repo deliberately stores no IP addresses. The per-IP limit therefore
+    -- lives in the web tier (rateLimitAllow); THIS is the blast-radius cap that
+    -- survives a compromised app tier or a leaked service key.
+    select count(*) into v_anon
+      from public.bug_reports
+     where reporter_profile_id is null
+       and created_at > now() - interval '1 hour';
+    if v_anon >= 20 then
+      raise exception 'bug report: rate limited' using errcode = 'check_violation';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.bug_report_derive() is
+  'BEFORE INSERT on bug_reports: derives reporter, role, contact email, status, '
+  'priority and both stamps server-side, strips the query string and fragment '
+  'from route_path (credential hygiene), and enforces the authoritative rate '
+  'limit (5/hour + 20/day per reporter; 20/hour globally for anonymous rows). '
+  'Every write path passes through it, RPC and direct insert alike.';
+
+drop trigger if exists trg_bug_report_derive on public.bug_reports;
+create trigger trg_bug_report_derive
+  before insert on public.bug_reports
+  for each row execute function public.bug_report_derive();
+
+create or replace function public.bug_report_freeze()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  new.title                   := old.title;
+  new.description             := old.description;
+  new.steps_to_reproduce      := old.steps_to_reproduce;
+  new.expected_behavior       := old.expected_behavior;
+  new.actual_behavior         := old.actual_behavior;
+  new.reported_severity       := old.reported_severity;
+  new.reporter_role           := old.reporter_role;
+  new.reporter_email          := old.reporter_email;
+  new.reporter_email_verified := old.reporter_email_verified;
+  new.route_path              := old.route_path;
+  new.user_agent              := old.user_agent;
+  new.locale                  := old.locale;
+  new.platform                := old.platform;
+  new.app_version             := old.app_version;
+  new.created_at              := old.created_at;
+
+  -- reporter_profile_id is NOT frozen unconditionally. The FK's ON DELETE SET
+  -- NULL is itself an UPDATE: writing the old id back would leave a dangling
+  -- reference, because PostgreSQL skips the referential re-check when the key
+  -- value does not change. The ONLY legitimate change is null-ing a profile
+  -- that no longer exists. (question_report_freeze above does restore it
+  -- unconditionally and therefore has this hole; it is a separate fix.)
+  if new.reporter_profile_id is distinct from old.reporter_profile_id
+     and not (new.reporter_profile_id is null
+              and not exists (select 1 from public.profiles p
+                               where p.id = old.reporter_profile_id)) then
+    new.reporter_profile_id := old.reporter_profile_id;
+  end if;
+
+  -- handled_by is server-stamped, with the same referential carve-out.
+  if new.status is not distinct from old.status
+     and new.priority is not distinct from old.priority then
+    if new.handled_by is distinct from old.handled_by
+       and not (new.handled_by is null and old.handled_by is not null
+                and not exists (select 1 from public.profiles p
+                                 where p.id = old.handled_by)) then
+      new.handled_by := old.handled_by;
+      new.handled_at := old.handled_at;
+    end if;
+  else
+    new.handled_by := public.current_profile_id();
+    new.handled_at := now();
+  end if;
+
+  -- resolved_at is DERIVED, never a client value: stamped on the move into a
+  -- closed state, cleared on reopen, untouched by a note or a priority edit.
+  if new.status is distinct from old.status then
+    new.resolved_at := case when new.status in ('resolved','dismissed')
+                            then now() else null end;
+  else
+    new.resolved_at := old.resolved_at;
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.bug_report_freeze() is
+  'BEFORE UPDATE on bug_reports: only status, priority and admin_note may '
+  'change; a status or priority move stamps handled_by/handled_at and derives '
+  'resolved_at. A resolved report can never be a rewritten one.';
+
+drop trigger if exists trg_bug_report_freeze on public.bug_reports;
+create trigger trg_bug_report_freeze
+  before update on public.bug_reports
+  for each row execute function public.bug_report_freeze();
+-- Name ordering matters: PostgreSQL fires BEFORE triggers alphabetically, and
+-- trg_bug_report_freeze sorts before trg_set_updated_at, so the freeze runs
+-- first and updated_at is still stamped afterwards.
+
+create or replace function public.submit_bug_report(
+  p_title         text,
+  p_description   text,
+  p_steps         text,
+  p_expected      text,
+  p_actual        text,
+  p_severity      text,
+  p_route_path    text,
+  p_user_agent    text,
+  p_locale        text,
+  p_platform      text,
+  p_app_version   text default null,
+  p_contact_email text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_ws    text := ' ' || chr(9) || chr(10) || chr(13);
+  -- Populated by RETURNING below, after the BEFORE INSERT trigger derived them.
+  v_role     public.report_reporter_role;
+  v_email    citext;
+  v_verified boolean;
+  v_route    text;
+  v_ua       text;
+  v_title text := btrim(coalesce(p_title, ''), v_ws);
+  v_desc  text := btrim(coalesce(p_description, ''), v_ws);
+  v_id    uuid;
+begin
+  -- NO forbidden-when-anonymous guard here, unlike submit_question_report:
+  -- anonymous reports from the public contact page are a deliberate product
+  -- decision, because "I cannot register" and "the login page is blank" are
+  -- reports only a signed-out visitor can make. Its place is taken by the
+  -- GRANTS below — anon holds no EXECUTE on this function and no privilege on
+  -- the table, so the only unauthenticated caller is the web app's own
+  -- throttled server action running as service_role.
+  if char_length(v_title) < 3 or char_length(v_title) > 160 then
+    raise exception 'bug report: bad title' using errcode = 'check_violation';
+  end if;
+  if char_length(v_desc) < 10 or char_length(v_desc) > 4000 then
+    raise exception 'bug report: bad description' using errcode = 'check_violation';
+  end if;
+  -- Capped HERE as well as in the column CHECKs: a 2 MB body is refused before
+  -- it is written, not silently truncated.
+  if char_length(coalesce(p_steps, '')) > 2000
+     or char_length(coalesce(p_expected, '')) > 1000
+     or char_length(coalesce(p_actual, '')) > 1000 then
+    raise exception 'bug report: field too long' using errcode = 'check_violation';
+  end if;
+  if p_locale is null or p_locale not in ('az','en','ru') then
+    raise exception 'bug report: bad locale' using errcode = 'check_violation';
+  end if;
+  if p_platform is null or p_platform not in ('web','android','ios') then
+    raise exception 'bug report: bad platform' using errcode = 'check_violation';
+  end if;
+  if coalesce(p_severity, 'normal') not in ('low','normal','high','critical') then
+    raise exception 'bug report: bad severity' using errcode = 'check_violation';
+  end if;
+
+  insert into public.bug_reports
+    (title, description, steps_to_reproduce, expected_behavior, actual_behavior,
+     reported_severity, route_path, user_agent, locale, platform, app_version,
+     reporter_email)
+  values
+    (v_title, v_desc,
+     nullif(btrim(coalesce(p_steps,    ''), v_ws), ''),
+     nullif(btrim(coalesce(p_expected, ''), v_ws), ''),
+     nullif(btrim(coalesce(p_actual,   ''), v_ws), ''),
+     coalesce(p_severity, 'normal')::public.bug_report_priority,
+     nullif(btrim(coalesce(p_route_path,  ''), v_ws), ''),
+     nullif(btrim(coalesce(p_user_agent,  ''), v_ws), ''),
+     p_locale::public.content_locale,
+     p_platform::public.report_platform,
+     nullif(btrim(coalesce(p_app_version, ''), v_ws), ''),
+     nullif(btrim(coalesce(p_contact_email, ''), v_ws), '')::citext)
+  returning id, reporter_role, reporter_email, reporter_email_verified,
+            route_path, user_agent
+    into v_id, v_role, v_email, v_verified, v_route, v_ua;
+
+  -- The DERIVED values travel back with the id so the caller never has to read
+  -- the row again. The trigger has already overwritten reporter/role/email by
+  -- the time RETURNING evaluates, so these are exactly what an admin will see.
+  return jsonb_build_object(
+    'id',                      v_id,
+    'reporter_role',           v_role,
+    'reporter_email',          v_email,
+    'reporter_email_verified', v_verified,
+    'route_path',              v_route,
+    'user_agent',              v_ua);
+end;
+$$;
+
+comment on function public.submit_bug_report(
+  text,text,text,text,text,text,text,text,text,text,text,text) is
+  'Files one platform bug report for the CALLING profile, or anonymously when '
+  'invoked by the service role. Validates every field; reporter, role, contact '
+  'email, status, priority and the stamps are derived by trg_bug_report_derive, '
+  'which also enforces the rate limit — so a direct insert is exactly as '
+  'constrained. Returns the id so the caller can build the admin deep link.';
+
+-- 010 line 88 runs `alter default privileges in schema public grant execute on
+-- functions to anon, authenticated, service_role`, so EVERY new function is
+-- EXECUTE-able by anon and authenticated unless explicitly taken back. Revoke
+-- first, then grant only what is needed.
+revoke all on function public.submit_bug_report(
+  text,text,text,text,text,text,text,text,text,text,text,text)
+  from public, anon, authenticated;
+grant execute on function public.submit_bug_report(
+  text,text,text,text,text,text,text,text,text,text,text,text)
+  to authenticated, service_role;
+-- Trigger functions are never called directly by anyone.
+revoke all on function public.bug_report_derive() from public, anon, authenticated;
+revoke all on function public.bug_report_freeze() from public, anon, authenticated;
+
+-- Bug reports are operational history, and `anon` must hold NOTHING here: there
+-- is no anon policy, and a surviving grant would be the one thing between a
+-- scraper and every known defect in the platform if a policy were ever added
+-- carelessly. Anonymous submission still works — it runs as service_role.
+-- (A deliberate divergence from question_reports, which keeps a vestigial,
+-- policy-less anon SELECT.)
+revoke all on public.bug_reports from anon;
+revoke delete on public.bug_reports from anon, authenticated;
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

@@ -1060,6 +1060,62 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.mapsCaption": "Bakı, Hökumət Evi — xəritədə yerimiz.",
     "contact.shortNote":
       "Adətən iş günləri ərzində cavablandırırıq. Sual, təklif və ya texniki dəstək üçün yazın.",
+    // The two labelled purposes on the redesigned contact card. contact.emailLabel
+    // and contact.shortNote above are KEPT: the mobile contact screen still
+    // renders both, and this redesign is web-only.
+    "contact.generalTitle": "Suallar və təkliflər",
+    "contact.generalDesc":
+      "Xidmət, qiymətlər, əməkdaşlıq və ya təklifləriniz barədə bizə yazın.",
+    "contact.supportTitle": "Texniki dəstək",
+    "contact.supportDesc":
+      "Platformada xəta, girişlə bağlı problem və ya ödənişdə çətinlik varsa buraya yazın.",
+    "contact.responseTime": "İş günləri cavab veririk — adətən 24 saat ərzində.",
+    "contact.bugCta": "Xəta bildir",
+    "contact.bugCtaHint": "Qısa forma — nə baş verdiyini yazın, araşdıraq.",
+
+    // — Report a bug (dialog, migration 116) —
+    // The bug.emptyErr / bug.err.* keys are RETURNED BY THE SERVER
+    // (lib/support/bugReportCore.ts) — renaming one here silently turns a real
+    // error message into a raw key on screen.
+    "bug.title": "Xəta bildir",
+    "bug.intro":
+      "Nə baş verdiyini qısaca yazın. Nə qədər ətraflı yazsanız, o qədər tez düzəldə bilərik.",
+    "bug.f.title.label": "Başlıq",
+    "bug.f.title.ph": "Məsələn: test göndərilmir",
+    "bug.f.description.label": "Nə baş verdi?",
+    "bug.f.description.ph": "Xətanı mümkün qədər ətraflı təsvir edin.",
+    "bug.f.steps.label": "Necə təkrarlamaq olar? (istəyə bağlı)",
+    "bug.f.steps.ph": "1. …\n2. …\n3. …",
+    "bug.f.expected.label": "Gözlənilən nəticə (istəyə bağlı)",
+    "bug.f.expected.ph": "Nə baş verməli idi?",
+    "bug.f.actual.label": "Faktiki nəticə (istəyə bağlı)",
+    "bug.f.actual.ph": "Onun əvəzinə nə baş verdi?",
+    "bug.f.severity.label": "Nə qədər ciddidir?",
+    "bug.sev.low": "Az əhəmiyyətli",
+    "bug.sev.normal": "Normal",
+    "bug.sev.high": "Ciddi",
+    "bug.sev.critical": "Kritik",
+    "bug.f.email.label": "E-poçt (istəyə bağlı)",
+    "bug.f.email.ph": "siz@nümunə.az",
+    "bug.f.email.help": "Cavab istəyirsinizsə yazın. Boş qoya bilərsiniz.",
+    "bug.contextNote":
+      "Səhifənin ünvanı, dil və brauzer məlumatı avtomatik əlavə olunur.",
+    "bug.remaining": "{n} simvol qaldı",
+    "bug.cancel": "Ləğv et",
+    "bug.submit": "Göndər",
+    "bug.sending": "Göndərilir…",
+    "bug.close": "Bağla",
+    "bug.successTitle": "Bildiriş göndərildi",
+    "bug.successBody":
+      "Təşəkkür edirik. Komandamız bildirişinizi araşdıracaq və lazım olsa sizinlə əlaqə saxlayacaq.",
+    "bug.emptyErr":
+      "Başlıq ən azı 3, izah isə ən azı 10 simvol olmalıdır.",
+    "bug.err.tooLong": "Mətn həddindən artıq uzundur. Qısaldıb yenidən cəhd edin.",
+    "bug.err.tooMany":
+      "Qısa müddətdə çox bildiriş göndərdiniz. Bir azdan yenidən cəhd edin.",
+    "bug.err.duplicate": "Bu bildirişi artıq göndərmisiniz — üzərində işləyirik.",
+    "bug.err.retry": "Hesabınızı yoxlaya bilmədik. Bir az sonra yenidən cəhd edin.",
+    "bug.err.generic": "Bildiriş göndərilmədi. Bir azdan yenidən cəhd edin.",
 
     // — Footer —
     "footer.tagline": "1–11-ci siniflər üçün olimpiada hazırlığı portalı",
@@ -2800,6 +2856,62 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.mapsCaption": "Government House, Baku — our location on the map.",
     "contact.shortNote":
       "We usually reply during business days. Write to us with questions, suggestions, or technical support requests.",
+    // The two labelled purposes on the redesigned contact card. contact.emailLabel
+    // and contact.shortNote above are KEPT: the mobile contact screen still
+    // renders both, and this redesign is web-only.
+    "contact.generalTitle": "Questions & feedback",
+    "contact.generalDesc":
+      "Questions about the service or pricing, partnership requests, suggestions and feedback.",
+    "contact.supportTitle": "Technical support",
+    "contact.supportDesc":
+      "Errors on the platform, sign-in problems, or trouble with a payment.",
+    "contact.responseTime": "We reply on business days, usually within 24 hours.",
+    "contact.bugCta": "Report a bug",
+    "contact.bugCtaHint": "A short form — tell us what happened and we'll look into it.",
+
+    // — Report a bug (dialog, migration 116) —
+    // The bug.emptyErr / bug.err.* keys are RETURNED BY THE SERVER
+    // (lib/support/bugReportCore.ts) — renaming one here silently turns a real
+    // error message into a raw key on screen.
+    "bug.title": "Report a bug",
+    "bug.intro":
+      "Tell us briefly what went wrong. The more detail you give, the faster we can fix it.",
+    "bug.f.title.label": "Title",
+    "bug.f.title.ph": "For example: the test won't submit",
+    "bug.f.description.label": "What happened?",
+    "bug.f.description.ph": "Describe the problem in as much detail as you can.",
+    "bug.f.steps.label": "How can we reproduce it? (optional)",
+    "bug.f.steps.ph": "1. …\n2. …\n3. …",
+    "bug.f.expected.label": "What you expected (optional)",
+    "bug.f.expected.ph": "What should have happened?",
+    "bug.f.actual.label": "What actually happened (optional)",
+    "bug.f.actual.ph": "What happened instead?",
+    "bug.f.severity.label": "How serious is it?",
+    "bug.sev.low": "Minor",
+    "bug.sev.normal": "Normal",
+    "bug.sev.high": "Serious",
+    "bug.sev.critical": "Critical",
+    "bug.f.email.label": "Email (optional)",
+    "bug.f.email.ph": "you@example.com",
+    "bug.f.email.help": "Add it if you'd like a reply. You can leave it empty.",
+    "bug.contextNote":
+      "The page address, your language and browser details are attached automatically.",
+    "bug.remaining": "{n} characters left",
+    "bug.cancel": "Cancel",
+    "bug.submit": "Send report",
+    "bug.sending": "Sending…",
+    "bug.close": "Close",
+    "bug.successTitle": "Report sent",
+    "bug.successBody":
+      "Thank you. Our team will look into your report and get back to you if we need more details.",
+    "bug.emptyErr":
+      "The title needs at least 3 characters and the description at least 10.",
+    "bug.err.tooLong": "That text is too long. Please shorten it and try again.",
+    "bug.err.tooMany":
+      "You've sent too many reports in a short time. Please try again a little later.",
+    "bug.err.duplicate": "You've already sent this report — we're looking into it.",
+    "bug.err.retry": "We could not verify your account just now. Please try again in a moment.",
+    "bug.err.generic": "The report could not be sent. Please try again shortly.",
 
     // — Footer —
     "footer.tagline": "An olympiad preparation portal for grades 1–11",
@@ -4529,6 +4641,62 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.mapsCaption": "Дом Правительства, Баку — наше расположение на карте.",
     "contact.shortNote":
       "Обычно отвечаем в рабочие дни. Пишите нам по вопросам, предложениям или за технической поддержкой.",
+    // The two labelled purposes on the redesigned contact card. contact.emailLabel
+    // and contact.shortNote above are KEPT: the mobile contact screen still
+    // renders both, and this redesign is web-only.
+    "contact.generalTitle": "Вопросы и предложения",
+    "contact.generalDesc":
+      "Вопросы о сервисе и ценах, сотрудничество, предложения и отзывы.",
+    "contact.supportTitle": "Техническая поддержка",
+    "contact.supportDesc":
+      "Ошибки на платформе, проблемы со входом или с оплатой.",
+    "contact.responseTime": "Отвечаем в рабочие дни, обычно в течение 24 часов.",
+    "contact.bugCta": "Сообщить об ошибке",
+    "contact.bugCtaHint": "Короткая форма — расскажите, что произошло, и мы разберёмся.",
+
+    // — Report a bug (dialog, migration 116) —
+    // The bug.emptyErr / bug.err.* keys are RETURNED BY THE SERVER
+    // (lib/support/bugReportCore.ts) — renaming one here silently turns a real
+    // error message into a raw key on screen.
+    "bug.title": "Сообщить об ошибке",
+    "bug.intro":
+      "Кратко опишите, что пошло не так. Чем больше подробностей, тем быстрее мы всё исправим.",
+    "bug.f.title.label": "Заголовок",
+    "bug.f.title.ph": "Например: тест не отправляется",
+    "bug.f.description.label": "Что произошло?",
+    "bug.f.description.ph": "Опишите проблему как можно подробнее.",
+    "bug.f.steps.label": "Как это повторить? (необязательно)",
+    "bug.f.steps.ph": "1. …\n2. …\n3. …",
+    "bug.f.expected.label": "Что вы ожидали (необязательно)",
+    "bug.f.expected.ph": "Что должно было произойти?",
+    "bug.f.actual.label": "Что произошло на самом деле (необязательно)",
+    "bug.f.actual.ph": "Что случилось вместо этого?",
+    "bug.f.severity.label": "Насколько это серьёзно?",
+    "bug.sev.low": "Незначительная",
+    "bug.sev.normal": "Обычная",
+    "bug.sev.high": "Серьёзная",
+    "bug.sev.critical": "Критическая",
+    "bug.f.email.label": "Эл. почта (необязательно)",
+    "bug.f.email.ph": "you@example.com",
+    "bug.f.email.help": "Укажите, если хотите получить ответ. Можно оставить пустым.",
+    "bug.contextNote":
+      "Адрес страницы, язык и данные браузера прикрепляются автоматически.",
+    "bug.remaining": "Осталось символов: {n}",
+    "bug.cancel": "Отмена",
+    "bug.submit": "Отправить",
+    "bug.sending": "Отправляем…",
+    "bug.close": "Закрыть",
+    "bug.successTitle": "Сообщение отправлено",
+    "bug.successBody":
+      "Спасибо. Наша команда изучит ваше сообщение и свяжется с вами, если понадобятся детали.",
+    "bug.emptyErr":
+      "В заголовке нужно минимум 3 символа, в описании — минимум 10.",
+    "bug.err.tooLong": "Текст слишком длинный. Сократите его и попробуйте снова.",
+    "bug.err.tooMany":
+      "Вы отправили слишком много сообщений за короткое время. Попробуйте чуть позже.",
+    "bug.err.duplicate": "Вы уже отправляли это сообщение — мы им занимаемся.",
+    "bug.err.retry": "Не удалось проверить вашу учётную запись. Повторите попытку чуть позже.",
+    "bug.err.generic": "Не удалось отправить сообщение. Попробуйте чуть позже.",
 
     // — Footer —
     "footer.tagline": "Портал подготовки к олимпиадам для 1–11 классов",

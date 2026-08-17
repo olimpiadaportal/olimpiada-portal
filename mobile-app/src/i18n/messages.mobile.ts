@@ -66,6 +66,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.push.ch.news": "Xəbərlər",
     "mob.info.section": "Məlumat",
     "mob.contact.mapUnavailable": "Xəritəni yükləmək alınmadı. Ünvanı xəritə tətbiqində aç.",
+    "mob.bug.signInRequired":
+      "Xəta bildirmək üçün hesabına daxil ol. Girişsiz yuxarıdakı e-poçt ünvanlarına yaza bilərsən.",
     "mob.link.openFailed": "Bu bağlantını açmaq alınmadı. Cihazında uyğun tətbiq quraşdırılıb?",
     "mob.contact.directions": "Yol göstər",
     "mob.contact.mapLabel": "Ünvanımızın xəritəsi",
@@ -172,6 +174,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.push.ch.news": "News",
     "mob.info.section": "Information",
     "mob.contact.mapUnavailable": "The map couldn't load. Open the address in your maps app.",
+    "mob.bug.signInRequired":
+      "Sign in to report a bug. Without an account, write to one of the addresses above.",
     "mob.link.openFailed": "Couldn't open this link. Is a suitable app installed on your device?",
     "mob.contact.directions": "Get directions",
     "mob.contact.mapLabel": "Map of our address",
@@ -272,6 +276,8 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.push.ch.news": "Новости",
     "mob.info.section": "Информация",
     "mob.contact.mapUnavailable": "Карта не загрузилась. Откройте адрес в приложении карт.",
+    "mob.bug.signInRequired":
+      "Чтобы сообщить об ошибке, войдите в аккаунт. Без входа напишите на один из адресов выше.",
     "mob.link.openFailed": "Не удалось открыть ссылку. Установлено ли подходящее приложение?",
     "mob.contact.directions": "Построить маршрут",
     "mob.contact.mapLabel": "Карта с нашим адресом",

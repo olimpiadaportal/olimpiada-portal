@@ -188,6 +188,7 @@ export default async function SettingsPage() {
         title={t("settings.card.support.title")}
         description={t("settings.card.support.desc")}
       >
+        {field("contact.info_email")}
         {field("contact.support_email")}
         {field("contact.support_phone")}
         {/* WhatsApp contact — rendered directly (academic-card pattern) so the

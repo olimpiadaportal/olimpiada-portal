@@ -230,7 +230,12 @@ export function FaqSkeleton({ rows = 8 }: { rows?: number }) {
   );
 }
 
-/** Contact page body: info card + map frame (mirrors .contact-equal). */
+/**
+ * Contact page body: info card + map frame (mirrors .contact-equal).
+ * Shaped like the PURPOSE-organised card ContactInfo actually renders — two
+ * headed blocks with a mail line each, the address block, the bug CTA and the
+ * bottom response-time note — so the page does not visibly jump on hydration.
+ */
 export function ContactSkeleton() {
   return (
     <div
@@ -238,12 +243,27 @@ export function ContactSkeleton() {
       style={{ "--sk-left": "1fr", "--sk-right": "1.2fr", "--sk-gap": "20px", marginTop: 8 } as CSSProperties}
     >
       <SkeletonCard r={12} pad={20}>
-        <div className={s.stack} style={{ gap: 12 }}>
-          <Skeleton w={120} h={15} />
-          <SkeletonText lines={2} size={12} lastWidth="80%" />
-          <Skeleton w={100} h={15} style={{ marginTop: 8 }} />
-          <Skeleton w="55%" h={12} />
-          <Skeleton w="75%" h={11} style={{ marginTop: 10 }} />
+        <div className={s.stack} style={{ gap: 16 }}>
+          {/* general purpose */}
+          <div className={s.stack} style={{ gap: 8 }}>
+            <Skeleton w={150} h={15} />
+            <SkeletonText lines={2} size={12} lastWidth="70%" />
+            <Skeleton w="45%" h={12} />
+          </div>
+          {/* technical support purpose + the report-a-bug CTA */}
+          <div className={s.stack} style={{ gap: 8 }}>
+            <Skeleton w={130} h={15} />
+            <SkeletonText lines={2} size={12} lastWidth="60%" />
+            <Skeleton w="50%" h={12} />
+            <Skeleton w={120} h={38} r={8} style={{ marginTop: 6 }} />
+          </div>
+          {/* address */}
+          <div className={s.stack} style={{ gap: 8 }}>
+            <Skeleton w={80} h={15} />
+            <SkeletonText lines={2} size={12} lastWidth="85%" />
+          </div>
+          {/* response-time note pinned to the card's bottom edge */}
+          <Skeleton w="70%" h={11} style={{ marginTop: 10 }} />
         </div>
       </SkeletonCard>
       <Skeleton w="100%" h="auto" r={12} style={{ minHeight: 320 }} />

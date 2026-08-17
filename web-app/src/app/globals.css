@@ -2928,6 +2928,92 @@ ul.clean li {
   min-height: 320px;
 }
 
+/* ---- contact card, organised by PURPOSE (general / technical / address) ----
+   Every colour here is a TOKEN on purpose. `.arena .help-page` remaps exactly
+   --surface/--border/--text/--accent (and --muted comes from the .arena scope),
+   so one literal hex would break the student contact page in dark, in light and
+   in all 26 generated palettes at once. */
+.contact-purposes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.contact-purpose + .contact-purpose {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.contact-purpose h2 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+/* Direct children only: the CTA hint lives inside .contact-actions and must
+   keep its own smaller .hint sizing, which a descendant selector would win
+   against on specificity. */
+.contact-purpose > p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+.contact-mail a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  /* A long admin-typed address must wrap rather than push the card wider than
+     a 320px viewport. */
+  word-break: break-word;
+}
+.contact-mail a:hover {
+  text-decoration: underline;
+}
+.contact-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+/* The hint keeps the button company while there is room for it to read as a
+   sentence, and drops onto its own line below that. */
+.contact-actions .hint {
+  margin: 0;
+  flex: 1 1 190px;
+}
+/* Pins the response-time line to the bottom edge of the card, so the card
+   terminates level with the stretched map instead of leaving a gap.
+   Qualified by .info-card because the base `.info-card p { margin: 0 }` is a
+   (0,1,1) selector and would otherwise win over a bare class and kill the
+   `margin-top: auto` this whole layout depends on. */
+.info-card .contact-note {
+  margin: auto 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+@media (max-width: 760px) {
+  /* Stacked layout: the full-height map would otherwise push the support block
+     and its CTA more than a screen down. */
+  .contact-equal .map-frame {
+    min-height: 240px;
+  }
+}
+@media (max-width: 420px) {
+  .contact-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .contact-actions .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    /* A real tap target on the narrowest phone we support. */
+    min-height: 44px;
+  }
+}
+
 /* =====================  NEWS — browse toolbar + pager  ===================== */
 .news-toolbar {
   display: flex;
@@ -8029,6 +8115,61 @@ ul.clean li {
   .modal-actions { flex-direction: column-reverse; }
   .modal-actions > * { width: 100%; }
 }
+
+/* ---- report-a-bug dialog (ReportBugButton, migration 116) ----
+   Only the pieces the question-report dialog does not already have. Its
+   .tst-report-label-text / .tst-report-input / .tst-report-count /
+   .tst-report-error rules are reused verbatim for the labels, the textareas,
+   the counter and the error line; these add the single-line field, the
+   expected/actual pair and the honeypot. Tokens only — the dialog is portaled
+   to <body>, outside .arena, and Modal.tsx mirrors data-palette onto the
+   overlay so these same names resolve per palette. */
+.bug-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  padding: 10px 12px;
+}
+.bug-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* The optional bodies stay short so the required ones dominate the dialog. */
+.bug-short {
+  min-height: 64px;
+}
+.bug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 520px) {
+  .bug-grid { grid-template-columns: 1fr; gap: 0; }
+}
+.bug-hint {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+/* Honeypot: off-screen rather than display:none, because some bots skip fields
+   that are not rendered. Never focusable (tabindex -1 on the input). Offset to
+   the LEFT specifically: on a touch device .modal-overlay is overflow-y:auto,
+   which computes overflow-x to auto too, and only inline-END overflow is
+   scrollable in an LTR document — a `right` offset would add a horizontal
+   scrollbar to every modal on a phone. */
+.bug-hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 /* TOUCH DEVICES ONLY — on-screen-keyboard fix for modals that contain a form
    (today: DemoPaymentModal's card fields + its Pay button).
    Why it was broken: Modal.tsx locks `body { overflow: hidden }` while open, so

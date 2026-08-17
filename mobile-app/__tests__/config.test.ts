@@ -20,6 +20,7 @@ describe("parseMobileConfig", () => {
       locales: { supported: ["az", "ru"], default: "az" },
       contact: {
         email: "x@y.z",
+        info_email: "info@y.z",
         phone: "+994",
         whatsapp: "+994 50 123 45 67",
         address: "Səbail rayonu, Akademik Əhəd Yaqubov küç, 52C, Bakı, Azərbaycan",
@@ -36,12 +37,26 @@ describe("parseMobileConfig", () => {
     expect(cfg.flags.olympiadModule).toBe(true);
     expect(cfg.flags.notificationsPush).toBe(false);
     expect(cfg.locales.supported).toEqual(["az", "ru"]);
+    expect(cfg.contact.email).toBe("x@y.z");
+    expect(cfg.contact.infoEmail).toBe("info@y.z");
     expect(cfg.contact.whatsapp).toBe("+994 50 123 45 67");
     expect(cfg.contact.address).toBe(
       "Səbail rayonu, Akademik Əhəd Yaqubov küç, 52C, Bakı, Azərbaycan",
     );
     expect(cfg.contact.mapQuery).toBe("40.3777,49.8920");
     expect(cfg.version.ios.force).toBe(true);
+  });
+
+  // Migration 116 added contact.info_email to get_mobile_config(). A binary
+  // that ships before the migration is applied — or one talking to an older
+  // deployment — must simply hide the row, never render "undefined" as an
+  // address or crash the screen.
+  it("tolerates a server that predates contact.info_email", () => {
+    const cfg = parseMobileConfig({
+      contact: { email: "support@y.z", phone: "", whatsapp: "", address: "", map_query: "" },
+    });
+    expect(cfg.contact.email).toBe("support@y.z");
+    expect(cfg.contact.infoEmail).toBe("");
   });
 
   it("degrades garbage to the safe side", () => {
@@ -51,6 +66,7 @@ describe("parseMobileConfig", () => {
     expect(cfg.flags.leaderboard).toBe(false);
     expect(cfg.maintenance.on).toBe(false);
     expect(cfg.contact.whatsapp).toBe("");
+    expect(cfg.contact.infoEmail).toBe("");
     expect(cfg.contact.address).toBe("");
     expect(cfg.contact.mapQuery).toBe("");
     expect(cfg.locales.supported).toEqual(["az", "en", "ru"]);

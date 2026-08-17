@@ -55,7 +55,7 @@ begin
     'subjects_pricing','launch_promo_config','child_subscriptions',
     'subscription_subjects','checkout_sessions','sibling_discounts',
     'media_assets','notification_templates','notifications','notification_deliveries',
-    'support_requests','question_reports',
+    'support_requests','question_reports','bug_reports',
     'audit_logs','admin_actions','content_reviews',
     'system_settings','feature_flags','site_content','free_access_intervals',
     'mobile_app_versions'
@@ -763,6 +763,42 @@ create policy "qreports_update" on public.question_reports for update to authent
   using (public.is_admin()) with check (public.is_admin());
 -- Deliberately NO delete policy (audit_logs precedent): service role only.
 -- 011 also revokes the blanket DELETE grant this file hands to authenticated.
+
+-- bug_reports (migration 116): the same posture as question_reports above — a
+-- reporter reads only their own rows, admins read all and are the only ones who
+-- may triage. There is NO anon SELECT and no anon policy at all: a public
+-- reader would turn this table into a scrapeable list of every known defect in
+-- the platform. Anonymous reports still work, because the only unauthenticated
+-- writer is the web app's own server action running as service_role, which
+-- bypasses RLS entirely (see the file header of migration 116).
+drop policy if exists "bugreports_select" on public.bug_reports;
+-- ADMIN-ONLY, deliberately. A reporter branch here would ALSO expose
+-- admin_note and handled_by on that row: the grant is table-wide and RLS is
+-- row-level, so PostgREST lets the caller choose the columns. Column-level
+-- privileges cannot rescue it either — an admin is an `authenticated` user
+-- too, so narrowing the grant would blind the admin panel. Nothing
+-- user-facing reads this table (the only app read is the notification
+-- read-back, which runs service-role), so the reporter branch bought nothing
+-- and leaked internal triage notes. If a "my reports" screen is ever wanted,
+-- add a SECURITY DEFINER function returning only the safe columns — the
+-- pattern this schema already uses everywhere else.
+create policy "bugreports_select" on public.bug_reports for select to authenticated
+  using (public.is_admin());
+-- Safe even though the client picks the columns: WITH CHECK is evaluated AFTER
+-- the BEFORE INSERT trigger (011) has already overwritten reporter, role,
+-- email, status, priority and both stamps, so a hand-rolled PostgREST insert
+-- produces exactly the RPC's row — throttle included.
+drop policy if exists "bugreports_insert" on public.bug_reports;
+create policy "bugreports_insert" on public.bug_reports for insert to authenticated
+  with check (reporter_profile_id = public.current_profile_id());
+-- Narrow by virtue of trg_bug_report_freeze: an admin may move status/priority
+-- and write a note, and nothing else. A resolved report is never a rewritten one.
+drop policy if exists "bugreports_update" on public.bug_reports;
+create policy "bugreports_update" on public.bug_reports for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+-- Deliberately NO delete policy (audit_logs precedent): service role only.
+-- 011 also revokes the blanket DELETE grant this file hands to authenticated,
+-- and revokes everything this file hands `anon`.
 
 -- audit_logs: admin read only. No client insert/update/delete policies → all
 -- non-admin writes denied. Writes happen via SECURITY DEFINER triggers (011) or

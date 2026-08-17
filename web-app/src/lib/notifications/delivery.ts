@@ -9,6 +9,7 @@
 // history all already work.
 import "server-only";
 import { getAdminClient } from "@/lib/supabase/admin";
+import { isMailConfigured, sendTransactionalEmail } from "@/lib/mail/brevo";
 
 export type DeliveryResult = {
   ok: boolean;
@@ -16,22 +17,31 @@ export type DeliveryResult = {
   error?: string; // short machine reason (e.g. 'not_configured'); never raw provider text to clients
 };
 
-// ---- Email (SMTP / transactional provider) ----------------------------------
-// Configure by setting NOTIFICATIONS_SMTP_URL (or a provider API key) in the
-// server env; until then this reports not_configured so the delivery is marked
-// failed with a clear reason instead of silently stuck.
-const SMTP_URL = process.env.NOTIFICATIONS_SMTP_URL ?? "";
-export const isEmailConfigured = SMTP_URL.length > 0;
+// ---- Email (transactional provider) -----------------------------------------
+// Migration 116 gave the app a real transport (lib/mail/brevo.ts, Brevo's REST
+// API over plain fetch). This seam now DELEGATES to it rather than keeping a
+// second, parallel implementation — one transport, one place to configure, one
+// place to change providers.
+//
+// BEHAVIOUR CHANGE, stated plainly: once BREVO_API_KEY and BREVO_SENDER_EMAIL
+// are set, this stops reporting not_configured and actually sends. The channel
+// nevertheless stays DORMANT, because create_notification only produces email
+// delivery rows while the `notifications_email` feature flag is on, and that
+// flag is false by default.
+//
+// The legacy NOTIFICATIONS_SMTP_URL var is no longer what gates email; it is
+// left undocumented here rather than read, so a stale value in someone's env
+// cannot half-enable a channel.
+export const isEmailConfigured = isMailConfigured;
 
 export async function sendEmailDelivery(
-  _to: string,
-  _subject: string,
-  _body: string,
+  to: string,
+  subject: string,
+  body: string,
 ): Promise<DeliveryResult> {
-  if (!isEmailConfigured) return { ok: false, error: "not_configured" };
-  // TODO(email): send via the configured SMTP/provider and return its message id
-  // as providerRef. Keep bodies trilingual (render from notification_templates).
-  return { ok: false, error: "not_configured" };
+  // Text only. Notification bodies are rendered from notification_templates and
+  // may carry user-supplied names; plain text cannot execute in a mail client.
+  return sendTransactionalEmail({ to: [to], subject, text: body });
 }
 
 // ---- Push (Expo, mobile stage M4) --------------------------------------------

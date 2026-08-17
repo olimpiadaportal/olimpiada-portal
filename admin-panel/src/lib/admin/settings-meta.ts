@@ -102,6 +102,15 @@ export const SETTING_META: Record<string, SettingMeta> = {
     labelKey: "settings.sys.maintenance_message.label",
     helpKey: "settings.sys.maintenance_message.help",
   },
+  // General mailbox (migration 116) — listed BEFORE the technical one, matching
+  // the order the public contact card presents them in. settings.ts rejects any
+  // key absent from this map, so the editor can only save it once it is here.
+  "contact.info_email": {
+    kind: "email",
+    labelKey: "settings.sys.info_email.label",
+    helpKey: "settings.sys.info_email.help",
+    placeholder: "info@example.com",
+  },
   "contact.support_email": {
     kind: "email",
     labelKey: "settings.sys.support_email.label",

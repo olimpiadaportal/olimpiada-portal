@@ -647,7 +647,17 @@ insert into public.system_settings (key, value_json) values
   ('leaderboard.public_display_names', 'false'::jsonb),
   -- Round 6 (migration 019): support/maintenance/social settings surfaced by the
   -- redesigned admin Settings (typed controls; no raw-JSON editors).
-  ('contact.support_email',         '""'::jsonb),
+  -- Migration 116: TWO contact addresses, because they answer different mail.
+  -- info_email is the GENERAL one (questions, suggestions, feedback);
+  -- support_email is the TECHNICAL one (platform errors, sign-in, payments).
+  -- NOTE: this statement ends in `on conflict (key) do nothing`, so seeding the
+  -- real support address HERE can never repair a database that already holds
+  -- migration 019's empty '""' — that blank is exactly why the public contact
+  -- page showed a placeholder. Migration 116 therefore also carries a guarded
+  -- UPDATE; that UPDATE is the half that fixes production, this literal only
+  -- makes a from-zero build correct.
+  ('contact.info_email',            '"info@olympiq.ai"'::jsonb),
+  ('contact.support_email',         '"support@olympiq.ai"'::jsonb),
   ('contact.support_phone',         '""'::jsonb),
   -- Migration 070: admin-configured WhatsApp contact line. Empty by default —
   -- no real number exists yet; UIs hide the line while empty.

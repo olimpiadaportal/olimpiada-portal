@@ -182,6 +182,12 @@ export const getContentFontSizes = cache(
 export type PublicSiteSettings = {
   maintenanceMode: boolean;
   maintenanceMessage: Partial<Record<Locale, string>>;
+  // Two contact mailboxes, deliberately separate (migration 116): `infoEmail`
+  // (`contact.info_email`) is the GENERAL address — questions, suggestions,
+  // feedback — and `supportEmail` (`contact.support_email`) is the TECHNICAL
+  // one. The contact card labels them as two purposes, so one address for both
+  // would make the split meaningless.
+  infoEmail: string;
   supportEmail: string;
   supportPhone: string;
   // Admin-configured WhatsApp contact (system_settings key
@@ -259,6 +265,7 @@ export const getMaintenanceStatus = cache(async (): Promise<MaintenanceStatus> =
 const fetchPublicSiteSettings = unstable_cache(
   async (): Promise<Omit<PublicSiteSettings, "maintenanceMode" | "maintenanceMessage">> => {
   const out = {
+    infoEmail: "",
     supportEmail: "",
     supportPhone: "",
     whatsapp: "",
@@ -272,6 +279,7 @@ const fetchPublicSiteSettings = unstable_cache(
       .from("system_settings")
       .select("key, value_json")
       .in("key", [
+        "contact.info_email",
         "contact.support_email",
         "contact.support_phone",
         "contact.support_whatsapp",
@@ -286,6 +294,9 @@ const fetchPublicSiteSettings = unstable_cache(
     const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
     for (const row of data as { key: string; value_json: unknown }[]) {
       switch (row.key) {
+        case "contact.info_email":
+          out.infoEmail = str(row.value_json);
+          break;
         case "contact.support_email":
           out.supportEmail = str(row.value_json);
           break;
@@ -320,9 +331,11 @@ const fetchPublicSiteSettings = unstable_cache(
     return out;
   }
   },
-  // v4: shape gained `mapQuery` — new cache key so a stale persisted entry
-  // from a previous deploy can never be read back without the field.
-  ["public-site-settings-v4"],
+  // v5: shape gained `infoEmail` (migration 116) — new cache key so a stale
+  // persisted v4 entry from a previous deploy can never be read back without
+  // the field, which would leave the contact card on its fallback address for
+  // up to a minute after a deploy even though the setting is configured.
+  ["public-site-settings-v5"],
   { revalidate: 60 },
 );
 
@@ -331,6 +344,7 @@ export const getPublicSiteSettings = cache(async (): Promise<PublicSiteSettings>
     return {
       maintenanceMode: false,
       maintenanceMessage: {},
+      infoEmail: "",
       supportEmail: "",
       supportPhone: "",
       whatsapp: "",

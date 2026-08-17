@@ -2482,6 +2482,159 @@ select '103_question_reports_hardened' as check_name,
        (select count(*) filter (where not ok) from probe_ok) as failed_invariants,
        (select count(*) from pg_policies
          where schemaname = 'public' and tablename = 'question_reports') as policy_count;
+
+
+-- 104) Bug reports + contact settings (migration 116). The PLATFORM-scoped
+--      sibling of check 103, and the same safety argument: the client supplies
+--      prose plus four diagnostics, and everything that matters is derived. It
+--      adds the two things 103 has no equivalent of:
+--
+--        * this feature accepts ANONYMOUS submissions, so `anon` must hold
+--          absolutely NO privilege on the table and no EXECUTE on the RPC. The
+--          only unauthenticated writer is the web server action running as
+--          service_role. 115 left `anon` a vestigial (policy-less) SELECT on
+--          question_reports; here that is an outright failure, because a public
+--          reader would be a scrapeable index of every known defect;
+--        * bug_report_derive STRIPS the query string and the fragment from
+--          route_path before the row is written. /auth/callback?code=... and
+--          #access_token=... are where credentials live, so the split_part
+--          probe below guards the single line that keeps a bug report from
+--          becoming a credential leak — the invariant most likely to be
+--          "simplified" away by a later editor who reads it as cosmetic;
+--
+--      plus the usual: exact enum label sets (application code whitelists
+--      against these and nothing else), RLS on with EXACTLY three policies and
+--      no DELETE policy, the open-report unique index keeping its
+--      status in ('new','in_review') PREDICATE (without it a resolved report
+--      blocks its own re-filing forever), all three triggers attached, and the
+--      definer/search_path posture of each function.
+--
+--      The contact half is asserted here too, because a BLANK
+--      contact.support_email is not a cosmetic default — it is the exact state
+--      that made a placeholder address visible on the live contact page — and
+--      because get_mobile_config() must carry info_email or the mobile contact
+--      screen is structurally unable to ever show the general address.
+with enums (typname, labels) as (values
+  ('bug_report_status', 'dismissed,in_review,new,resolved'),
+  ('bug_report_priority', 'critical,high,low,normal'),
+  ('report_reporter_role',
+   'administrator,anonymous,content_manager,parent,student,unknown')
+), enum_ok as (
+  select e.typname,
+         coalesce((select string_agg(l.enumlabel, ',' order by l.enumlabel)
+                     from pg_enum l
+                     join pg_type ty on ty.oid = l.enumtypid
+                     join pg_namespace ns on ns.oid = ty.typnamespace
+                    where ns.nspname = 'public' and ty.typname = e.typname), '')
+           = e.labels as ok
+  from enums e
+), fns (sig, definer) as (values
+  ('public.submit_bug_report(text,text,text,text,text,text,text,text,text,text,text,text)',
+   true),
+  ('public.bug_report_derive()', true),
+  -- Least privilege: the freeze trigger reads no table, so it stays INVOKER.
+  ('public.bug_report_freeze()', false)
+), fn_ok as (
+  select f.sig,
+         -- CASE, not AND: has_function_privilege() errors on a missing
+         -- function, and this check has to REPORT that, not abort the file.
+         case when to_regprocedure(f.sig) is null then false
+              else (select p.prosecdef = f.definer
+                      and coalesce(p.proconfig, '{}'::text[])
+                            @> array['search_path=public, pg_temp']
+                      and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                    from pg_proc p where p.oid = to_regprocedure(f.sig))
+         end as ok
+  from fns f
+), probes (sig, needle) as (values
+  ('public.bug_report_derive()', 'current_profile_id('),
+  ('public.bug_report_derive()', 'rate limited'),
+  -- The credential-stripping line, guarded by name.
+  ('public.bug_report_derive()', 'split_part'),
+  ('public.bug_report_freeze()', 'old.description')
+), probe_ok as (
+  select p.sig, p.needle,
+         case when to_regprocedure(p.sig) is null then false
+              else position(p.needle in pg_get_functiondef(to_regprocedure(p.sig))) > 0
+         end as ok
+  from probes p
+), tbl_ok as (
+  -- has_table_privilege() RAISES on a missing table, so it is guarded the
+  -- same way: a missing table has to FAIL this check, not abort the file.
+  select case when to_regclass('public.bug_reports') is null then false
+              else not has_table_privilege('authenticated',
+                                           'public.bug_reports', 'DELETE')
+         end as ok
+), anon_ok as (
+  -- anon must hold NOTHING at all on this table (see the header).
+  select case when to_regclass('public.bug_reports') is null then false
+              else not (has_table_privilege('anon', 'public.bug_reports', 'SELECT')
+                     or has_table_privilege('anon', 'public.bug_reports', 'INSERT')
+                     or has_table_privilege('anon', 'public.bug_reports', 'UPDATE')
+                     or has_table_privilege('anon', 'public.bug_reports', 'DELETE'))
+         end as ok
+), settings (key) as (values
+  ('contact.info_email'), ('contact.support_email')
+), setting_ok as (
+  -- Present AND non-blank. Migration 019 seeded support_email as '""', and that
+  -- blank is what the placeholder fallback was covering for.
+  select s.key,
+         coalesce((select btrim(coalesce(ss.value_json->>0, ''))
+                     from public.system_settings ss
+                    where ss.key = s.key), '') <> '' as ok
+  from settings s
+)
+select '104_bug_reports_hardened' as check_name,
+       case when to_regclass('public.bug_reports') is not null
+             and (select count(*) filter (where not ok) from enum_ok) = 0
+             and (select count(*) from pg_class c
+                    join pg_namespace ns on ns.oid = c.relnamespace
+                   where ns.nspname = 'public'
+                     and c.relname = 'bug_reports'
+                     and c.relrowsecurity) = 1
+             and (select count(*) from pg_policies
+                   where schemaname = 'public' and tablename = 'bug_reports') = 3
+             and (select count(*) from pg_policies
+                   where schemaname = 'public' and tablename = 'bug_reports'
+                     and policyname in
+                         ('bugreports_select','bugreports_insert','bugreports_update')) = 3
+             and not exists (select 1 from pg_policies
+                              where schemaname = 'public'
+                                and tablename = 'bug_reports' and cmd = 'DELETE')
+             and (select ok from tbl_ok)
+             and (select ok from anon_ok)
+             -- The partial predicate IS the duplicate rule.
+             and exists (select 1 from pg_indexes
+                          where schemaname = 'public'
+                            and indexname = 'uq_bug_reports_open_per_reporter'
+                            and indexdef like '%in_review%')
+             and (select count(*) from pg_trigger
+                   where tgrelid = to_regclass('public.bug_reports')
+                     and tgname in ('trg_bug_report_derive',
+                                    'trg_bug_report_freeze',
+                                    'trg_set_updated_at')) = 3
+             and (select count(*) filter (where not ok) from fn_ok) = 0
+             and (select count(*) filter (where not ok) from probe_ok) = 0
+             -- The one function an app is supposed to call. The signature stays
+             -- on ONE line: these strings are parsed as function signatures, so
+             -- not wrapping them removes any dependence on how whitespace
+             -- inside an argument list is tolerated.
+             and to_regprocedure('public.submit_bug_report(text,text,text,text,text,text,text,text,text,text,text,text)')
+                 is not null
+             and has_function_privilege('authenticated',
+                   'public.submit_bug_report(text,text,text,text,text,text,text,text,text,text,text,text)',
+                   'EXECUTE')
+             and (select count(*) filter (where not ok) from setting_ok) = 0
+             -- Without this key the mobile contact screen can never show the
+             -- general address, however well the setting is configured.
+             and (public.get_mobile_config()->'contact' ? 'info_email')
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) filter (where not ok) from enum_ok)    as bad_enums,
+       (select count(*) filter (where not ok) from fn_ok)      as misconfigured_functions,
+       (select count(*) filter (where not ok) from probe_ok)   as failed_invariants,
+       (select count(*) filter (where not ok) from setting_ok) as blank_contact_settings,
+       (select count(*) from pg_policies
+         where schemaname = 'public' and tablename = 'bug_reports') as policy_count;
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

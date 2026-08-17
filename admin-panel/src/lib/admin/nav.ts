@@ -98,6 +98,12 @@ export const NAV: NavGroup[] = [
       // `permission` field exists for it, so there is no code a content manager
       // could be granted by accident — and the page reveals answer keys.
       { label: "nav.questionReports", href: "/question-reports", adminOnly: true },
+      // Platform bug reports (migration 116) — same posture as its sibling
+      // above: adminOnly with NO `permission` field, so there is no code a
+      // content manager could be granted by accident. It also displays text
+      // filed by UNAUTHENTICATED visitors, which is not a content-manager
+      // surface.
+      { label: "nav.bugReports", href: "/bug-reports", adminOnly: true },
       { label: "nav.audit", href: "/audit", adminOnly: true },
       { label: "nav.settings", href: "/settings", adminOnly: true },
       { label: "nav.siteContent", href: "/site-content", adminOnly: true },

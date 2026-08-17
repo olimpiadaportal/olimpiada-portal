@@ -28,7 +28,18 @@ export type MobileConfig = {
   };
   maintenance: { on: boolean; message: TriMessage };
   locales: { supported: string[]; default: string };
-  contact: { email: string; phone: string; whatsapp: string; address: string; mapQuery: string };
+  // `email` is the TECHNICAL support inbox; `infoEmail` (migration 116) is the
+  // general one for questions and feedback. Web's ContactInfo shows both, so
+  // the app does too — a single address here would silently drop half of what
+  // an administrator configured.
+  contact: {
+    email: string;
+    infoEmail: string;
+    phone: string;
+    whatsapp: string;
+    address: string;
+    mapQuery: string;
+  };
   social: { facebook: string; instagram: string; youtube: string; tiktok: string };
   // Migration 097. Deliberately the ONLY snake_case member of this type: it is
   // handed straight to resolvePrivacyPolicyStatus(), which both codebases share,
@@ -127,6 +138,9 @@ export function parseMobileConfig(raw: unknown): MobileConfig {
     },
     contact: {
       email: str(contact.email),
+      // Absent on a server that predates migration 116 — str() gives "" and the
+      // row simply does not render, exactly like the other optional rows.
+      infoEmail: str(contact.info_email),
       phone: str(contact.phone),
       whatsapp: str(contact.whatsapp),
       address: str(contact.address),

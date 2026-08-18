@@ -6,6 +6,79 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — UN-CANCEL + STAT SCOPE (migration 120, 2026-08-17)
+
+**Applied to production. Validation `013` = 111/111 PASS.** web-app tsc + 256 tests + build;
+admin-panel tsc + 511 tests + build; mobile-app tsc + 353 tests. Mobile **1.10.2**.
+
+The two decisions the owner was asked for in the queue-of-six round, both now made and built
+to the industry-standard behaviour.
+
+### 1. Cancelling a scheduled removal is an UN-CANCEL, not a purchase
+
+Removing a subject schedules it for THAT subject's own period end and refunds nothing — the
+child keeps access until then. Choosing it again before that date was billed as a brand-new
+add: **a second full period charged today for coverage the parent already owned**, and
+`current_period_start/end` reset to `now()`, destroying the remaining prepaid time. The RPC
+contradicted the removal rule in the same transaction.
+
+Both halves came from ONE hand-copied predicate — `not exists (… and ss.remove_at is null)` —
+appearing once in the preview and once in the apply. It answers "is this on the go-forward
+plan?" and was being used to answer "must this be bought?". Those are different questions.
+
+Migration 120 replaces both copies with one classifier, `plan_change_states()`, returning
+`covered | reinstate | add`. A **reinstatement** (`remove_at is not null` AND coverage not
+lapsed) clears `remove_at` and nothing else — cycle, price and period untouched — charges
+zero, and is logged as `change_type = 'reinstate'` with `prorated_amount = 0`. A **lapsed**
+row is still a true add, charged in full. This is the standard un-cancel: Stripe models it as
+`cancel_at_period_end = false`, and Chargebee/Recurly/Paddle behave the same.
+
+Ordering is part of the fix and is asserted three ways: the reinstate loop runs BEFORE the
+cycle-change loop (which filters `remove_at is null`, so a reinstate-onto-another-cycle would
+otherwise be silently dropped) and BEFORE the add loop (so a reinstated subject re-classifies
+as `covered` and can never also be bought).
+
+**Four defects found by review AFTER the build, all fixed before anything was applied:**
+
+1. **013 check `95` would have gone FAIL on every run.** It pinned
+   `left join public.subscription_subjects ss` inside `quote_plan_change`, and 120 rewrites
+   that CTE to read the classifier. Re-pointed at the surviving guarantee (fed by
+   `plan_change_states`, priced on the DESIRED interval, period from `s.period_end`) rather
+   than at retired text. The 111/111 run proves it.
+2. **The new copy told parents the wrong thing.** `subjedit.reinstateLine` said the subject
+   "stays active until {date}" — but that date is the RENEWAL date on which it auto-renews and
+   charges. Wrong in az, en and ru, on web and mobile, and it contradicted the note printed
+   directly beneath it. Now "renews on {date} as before".
+3. **The idempotency key lost the reinstatement.** Un-cancelling used to arrive inside
+   `toAdd`, which the key hashes; classifying it separately took it out, so a reinstate-only
+   save hashed identically to a no-op with the same adds and removes. Reinstate → change cycle
+   → revert inside one 5-minute bucket and the third save replayed the first key and was
+   swallowed. `reinstateKey` is now part of the hash.
+4. **The app was stricter than the RPC.** `paidMutationGateKey` ran BEFORE the diff existed,
+   so it blocked every subject change while payments were off — including the un-cancel this
+   migration exists to allow, and including removals, which the database has always let
+   through on purpose ("never trap a parent inside a plan they are leaving"). The gate now
+   runs after the diff and fires only on `toAdd` or `toChangePlan`, matching
+   `assert_payments_enabled()` exactly.
+
+### 2. The Questions stat cards are bank-wide, and now say so
+
+Both designs were defensible; silently mixing them was not. The cards count the WHOLE bank and
+ignore the filters — which is right for a control that IS the status filter, since a number
+that shrank as you filtered could never tell you how much work is left in each state. What was
+wrong was leaving it unsaid, with a global number sitting directly above a filtered list. A
+trilingual caption now states the scope.
+
+### Known gaps
+
+- **Nothing has been clicked.** No browser or device pass on the un-cancel flow.
+- The reinstatement has never been exercised against a real subscription — only against the
+  SQL and the derivation, by test.
+- No native Android or iOS build was run (EAS, owner-run).
+- **The from-zero rebuild proof is STILL PENDING.** `OLIMPIADA_STAGING_DB_URL` is unset.
+  Migrations 117–120 have now landed on production without it. This matters more from here on:
+  a staging database is also where ABB/Azericard test charges must be exercised.
+
 ## PINNED — QUEUE OF SIX (2026-08-17): APPLIED AND VALIDATED
 
 **Migrations 117, 118 and 119 applied to production. Validation `013` = 110/110 PASS.**

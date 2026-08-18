@@ -393,6 +393,12 @@ export type SubjectChangeQuote = {
   // yearly subject from a plan that also holds a weekly one was reported as
   // "ends in 7 days" while the database granted a year.
   removals_effective?: { subject_id: string; remove_at: string | null }[];
+  // Migration 120 — UN-CANCELS. A subject whose scheduled removal is withdrawn
+  // BEFORE its coverage lapses keeps its cycle, its price and its period and is
+  // charged NOTHING, so it is deliberately absent from `due_now`. Optional: an
+  // older server simply omits it and every subject stays classified as an add,
+  // which is the pre-120 behaviour rather than a crash.
+  reinstatements?: { subject_id: string; interval: string; renews_at: string | null }[];
   plan_changes?: {
     subject_id: string;
     from: string;

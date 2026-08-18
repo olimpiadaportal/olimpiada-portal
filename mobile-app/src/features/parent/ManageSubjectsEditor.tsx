@@ -1,9 +1,19 @@
 // Manage-subjects CHECKBOX editor for a child's LIVE subscription (web
 // ManageSubjects parity). Toggling is pure client state; nothing applies until
-// Save. Payment-first contract: a diff containing ANY addition opens the demo
-// payment sheet first (demo mode); removal-only diffs and free modes submit
-// directly. The BFF/server re-diffs the desired FULL set authoritatively —
-// the client never sends prices.
+// Save. Payment-first contract: a diff containing a TRUE addition opens the
+// demo payment sheet first (demo mode); removal-only diffs and free modes
+// submit directly. The BFF/server re-diffs the desired FULL set
+// authoritatively — the client never sends prices.
+//
+// Migration 120 — UN-CANCEL. Re-ticking a subject whose removal is scheduled
+// but whose paid period has NOT lapsed is a REINSTATEMENT, not a purchase: the
+// server clears remove_at and changes nothing else, so nothing is charged and
+// the prepaid period survives. It used to be billed as a brand-new add, which
+// contradicted the removal rule (access to period end, no refund) by charging
+// for the same coverage twice. This screen never loaded the period dates, so
+// the SERVER's `reinstatements` list is the only classification it trusts —
+// before the quote arrives, an add-shaped row is still treated as an addition
+// and still opens the payment sheet.
 //
 // Round 41 (web parity — structured change summary): the summary is a
 // SaaS-style card in a fixed order: Selected subjects (count) · Added ·
@@ -223,11 +233,15 @@ export function ManageSubjectsEditor({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const toAdd = subjects.filter((s) => selected.has(s.id) && !covered.has(s.id));
+  // The RAW add side — every ticked subject outside the live coverage. It stays
+  // raw on purpose: addKey below is the quote's cache key, and splitting it by
+  // something the quote itself returns would change the key the moment the
+  // answer arrived and re-request forever.
+  const addRows = subjects.filter((s) => selected.has(s.id) && !covered.has(s.id));
   const toRemove = subjects.filter((s) => !selected.has(s.id) && covered.has(s.id));
-  const hasDiff = toAdd.length > 0 || toRemove.length > 0;
+  const hasDiff = addRows.length > 0 || toRemove.length > 0;
 
-  const addKey = useMemo(() => toAdd.map((s) => s.id).sort().join(","), [toAdd]);
+  const addKey = useMemo(() => addRows.map((s) => s.id).sort().join(","), [addRows]);
   const removeKey = useMemo(() => toRemove.map((s) => s.id).sort().join(","), [toRemove]);
   // The DESIRED full set, each subject keeping its own cycle; a NEW subject
   // inherits the subscription's default (changing a cycle is a web action).
@@ -259,6 +273,19 @@ export function ManageSubjectsEditor({
     loading: quoting,
     error: quoteError,
   } = useSubjectChangeQuote(studentId, addKey, removeKey, selected.size > 0, itemsKey);
+
+  // Migration 120 — an UN-CANCEL is not a purchase. Re-ticking a subject whose
+  // removal is scheduled but whose paid period has NOT lapsed clears remove_at
+  // and changes nothing else: same cycle, same price, same period, zero
+  // charged. Only the SERVER may say which side of that line a subject is on
+  // (this screen never loaded the period dates), so until the quote lands every
+  // add-shaped row is still treated — and paid for — as an addition.
+  const reinstatedIds = useMemo(
+    () => new Set((quote?.reinstatements ?? []).map((r) => r.subject_id)),
+    [quote],
+  );
+  const toReinstate = addRows.filter((s) => reinstatedIds.has(s.id));
+  const toAdd = addRows.filter((s) => !reinstatedIds.has(s.id));
 
   // Migration 109: ONE renewal sentence per cycle. A single "{total} {currency}
   // / {interval}" line cannot express a plan whose subjects renew on different
@@ -306,7 +333,17 @@ export function ManageSubjectsEditor({
       : noChargeSentence(quote);
   }
 
-  const noChargeConfirm = toAdd.length > 0 && !!quote && quote.due_now === 0;
+  const noChargeConfirm = addRows.length > 0 && !!quote && quote.due_now === 0;
+  /** One dated line per un-cancelled subject: it keeps the period it paid for. */
+  const reinstateSentences = (q: SubjectChangeQuote): string[] => {
+    const byId = new Map(subjects.map((s) => [s.id, s]));
+    return (q.reinstatements ?? []).map((r) => {
+      const s = byId.get(r.subject_id);
+      return t("subjedit.reinstateLine")
+        .replace("{subject}", s ? subjectLabel(t, s.code, s.name) : r.subject_id)
+        .replace("{date}", fmtBakuDate(r.renews_at, locale));
+    });
+  };
 
   const toggle = (id: string) => {
     // Removal-only mode: checking a subject outside the live coverage would
@@ -345,7 +382,12 @@ export function ManageSubjectsEditor({
       setError(t("subjedit.minOne"));
       return;
     }
-    if (toAdd.length > 0 && posture.demoPay) {
+    // A TRUE addition always opens the sheet. A pure un-cancel skips it — but
+    // only once the server has actually priced it at zero; before that, or if
+    // an amount IS due, it is treated exactly like an addition. Fail safe.
+    const charges =
+      toAdd.length > 0 || (toReinstate.length > 0 && (!quote || quote.due_now > 0));
+    if (charges && posture.demoPay) {
       setError(null);
       setPayOpen(true);
       return;
@@ -417,6 +459,15 @@ export function ManageSubjectsEditor({
             ))}
           </SumBlock>
         ) : null}
+        {/* Un-cancels get their own block: folding them into "Added" next to a
+            pay-now amount is the mislabel that preceded the double charge. */}
+        {toReinstate.length > 0 ? (
+          <SumBlock label={t("subjedit.pendingReinstate")}>
+            {toReinstate.map((s) => (
+              <SumSubjectLine key={s.id} name={subjectLabel(t, s.code, s.name)} color={tokens.ok} />
+            ))}
+          </SumBlock>
+        ) : null}
         {toRemove.length > 0 ? (
           <SumBlock label={t("subjedit.pendingRemove")}>
             {toRemove.map((s) => (
@@ -450,6 +501,18 @@ export function ManageSubjectsEditor({
                 ) : (
                   <AppText variant="muted">{noChargeSentence(quote)}</AppText>
                 )}
+              </SumBlock>
+            ) : null}
+            {/* Un-cancel terms: dated, price-free, and explicit that the
+                already-paid period is kept rather than bought again. */}
+            {toReinstate.length > 0 ? (
+              <SumBlock label={t("subjedit.pendingReinstate")}>
+                {reinstateSentences(quote).map((line, i) => (
+                  <AppText variant="muted" key={i}>
+                    {line}
+                  </AppText>
+                ))}
+                <AppText variant="muted">{t("subjedit.reinstateNote")}</AppText>
               </SumBlock>
             ) : null}
             {/* Renewals: one sentence per cycle — no invented combined rate. */}
@@ -511,6 +574,14 @@ export function ManageSubjectsEditor({
                 },
               ]
             : []),
+          ...(toReinstate.length > 0
+            ? [
+                {
+                  label: t("subjedit.pendingReinstate"),
+                  value: toReinstate.map((s) => subjectLabel(t, s.code, s.name)).join(", "),
+                },
+              ]
+            : []),
           ...(toRemove.length > 0
             ? [
                 {
@@ -523,9 +594,16 @@ export function ManageSubjectsEditor({
         totalLabel={t("subjedit.dueNow")}
         totalValue={dueNowValueText()}
         // What the amount buys — a full first period per added subject,
-        // starting today. Never a proration sentence.
+        // starting today. Never a proration sentence. When the sheet opened for
+        // an un-cancel the server has since priced at zero, say THAT instead.
         thenText={
-          !quoting && quote && quote.due_now > 0 ? t("subjedit.dueNowNote") : null
+          quoting || !quote
+            ? null
+            : quote.due_now > 0
+              ? t("subjedit.dueNowNote")
+              : toAdd.length === 0 && toReinstate.length > 0
+                ? t("subjedit.reinstateNote")
+                : null
         }
         note={t("pay.note")}
         confirmLabel={noChargeConfirm ? t("pay.confirmNoCharge") : t("pay.payNow")}

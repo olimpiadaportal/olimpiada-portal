@@ -22,6 +22,7 @@ import {
   derivePlanItems,
   desiredFromAddRemove,
   effectivePlanInterval,
+  isReinstatement,
   uniformPlanItems,
   validatePlanItems,
   type LivePlan,
@@ -94,7 +95,7 @@ async function readLivePlan(studentId: string): Promise<LivePlan | null> {
   const admin = getAdminClient();
   const { data: sub } = await admin
     .from("child_subscriptions")
-    .select("id, interval")
+    .select("id, interval, current_period_end")
     .eq("student_profile_id", studentId)
     .in("status", ["trialing", "active", "past_due"])
     .order("created_at", { ascending: false })
@@ -102,14 +103,18 @@ async function readLivePlan(studentId: string): Promise<LivePlan | null> {
     .maybeSingle();
   if (!sub?.id) return null;
 
+  // current_period_end is read for the REINSTATEMENT test (migration 120): a
+  // removal-scheduled subject whose coverage has not lapsed is un-cancelled for
+  // free, and only the dates say which side of that line it is on.
   const { data: covered } = await admin
     .from("subscription_subjects")
-    .select("subject_id, interval, pending_interval, remove_at")
+    .select("subject_id, interval, pending_interval, remove_at, current_period_end")
     .eq("child_subscription_id", (sub as { id: string }).id);
   const rows = (covered ?? []) as LivePlanRow[];
   return {
     subscriptionId: (sub as { id: string }).id,
     interval: (sub as { interval?: string | null }).interval ?? null,
+    periodEnd: (sub as { current_period_end?: string | null }).current_period_end ?? null,
     activeRows: rows.filter((r) => !r.remove_at),
     allRows: rows,
   };
@@ -466,9 +471,10 @@ export type SubjectChangeQuote = {
   currentRecurringTotal: number;
   newRecurringTotal: number;
   /**
-   * Charged NOW: each added subject's FULL first period at the sibling rate,
-   * never a part-period top-up. 0 for a removal-only or cycle-change-only diff,
-   * and 0 during a trial (the adds ride the trial like every other subject).
+   * Charged NOW: each TRULY added subject's FULL first period at the sibling
+   * rate, never a part-period top-up. 0 for a removal-only, cycle-change-only
+   * or REINSTATEMENT-only diff, and 0 during a trial (the adds ride the trial
+   * like every other subject).
    */
   dueNow: number;
   /** The next charge date — used to say WHEN a 0 due-now change is first billed. */
@@ -497,6 +503,14 @@ export type SubjectChangeQuote = {
    * these entries; the scalar stays only for already-shipped mobile binaries.
    */
   removals?: { subject_id: string; remove_at: string | null }[];
+  /**
+   * UN-CANCELS (migration 120): subjects whose scheduled removal is being
+   * withdrawn before their coverage lapsed. Each keeps its cycle, its price and
+   * its period, and each costs ZERO — they are deliberately NOT in `dueNow`.
+   * The editor reads this list so it stops calling an un-cancel an "addition"
+   * and stops opening a payment sheet for one.
+   */
+  reinstatements?: { subject_id: string; interval: string; renews_at: string | null }[];
   /** Cycle changes scheduled at each subject's own renewal (never charged now). */
   planChanges?: { subject_id: string; from: string; to: string; effective_at: string | null }[];
   /** More than one distinct cycle — no single periodic total is honest. */
@@ -593,6 +607,13 @@ export async function quoteSubjectChangeCore(params: {
             remove_at: typeof row?.remove_at === "string" ? row.remove_at : null,
           }))
         : [],
+      reinstatements: Array.isArray(r.reinstatements)
+        ? (r.reinstatements as Record<string, unknown>[]).map((row) => ({
+            subject_id: String(row?.subject_id ?? ""),
+            interval: String(row?.interval ?? ""),
+            renews_at: typeof row?.renews_at === "string" ? row.renews_at : null,
+          }))
+        : [],
       planChanges: Array.isArray(r.plan_changes)
         ? (r.plan_changes as Record<string, unknown>[]).map((row) => ({
             subject_id: String(row?.subject_id ?? ""),
@@ -622,13 +643,23 @@ function buildSubjectChangeIdempotencyKey(
   // key of the previous change and is swallowed as a replay — the parent's
   // cycle change would silently never apply.
   intervalKey = "",
+  // Migration 120: a REINSTATEMENT is its own kind of change and must be part of
+  // the key. Un-cancelling used to arrive here inside `toAdd`; now it is
+  // classified separately, so leaving it out would make a reinstate-only change
+  // hash identically to a no-op with the same adds and removes. Reinstate a
+  // subject, change its cycle, then revert the cycle inside one 5-minute bucket
+  // and the third save replays the first key — silently swallowed as a duplicate
+  // while the parent watches nothing happen.
+  reinstateKey = "",
 ): string {
   const BUCKET_MS = 5 * 60 * 1000;
   const bucket = Math.floor(Date.now() / BUCKET_MS);
   const addKey = [...toAdd].sort().join(",");
   const removeKey = [...toRemove].sort().join(",");
   return createHash("sha256")
-    .update(`${subscriptionId}|${addKey}|${removeKey}|${intervalKey}|${bucket}`)
+    .update(
+      `${subscriptionId}|${addKey}|${removeKey}|${intervalKey}|${reinstateKey}|${bucket}`,
+    )
     .digest("hex");
 }
 
@@ -642,7 +673,18 @@ function buildSubjectChangeIdempotencyKey(
 // payment-mode gate as any other billing change applies.
 
 export type SubjectsUpdateCoreResult =
-  | { ok: true; added: number; removed: number; planChanged: number }
+  | {
+      ok: true;
+      added: number;
+      removed: number;
+      planChanged: number;
+      /**
+       * Scheduled removals WITHDRAWN (migration 120). Counted apart from
+       * `added` because nothing was bought: the subject keeps the period the
+       * parent already paid for. Optional so no existing consumer breaks.
+       */
+      reinstated?: number;
+    }
   | { ok: false; errorKey: string };
 
 export async function updateSubscriptionSubjectsCore(params: {
@@ -674,11 +716,6 @@ export async function updateSubscriptionSubjectsCore(params: {
     return { ok: false, errorKey: "sub.err.notYourChild" };
   }
 
-  // Billing change → same payment-mode / free-access gate as starting a plan,
-  // scoped to this child.
-  const gateKey = await paidMutationGateKey(studentId, params.isFreeAccessActive);
-  if (gateKey) return { ok: false, errorKey: gateKey };
-
   const admin = getAdminClient();
 
   // Current coverage of the child's live subscription. A row scheduled for
@@ -704,22 +741,61 @@ export async function updateSubscriptionSubjectsCore(params: {
   // alone dropped two real changes — a row whose interval is still NULL (legal
   // since 007) could never be moved, and re-selecting the original cycle could
   // never cancel a scheduled change. Mirrors quote_plan_change exactly.
-  const rowById = new Map(activeRows.map((r) => [r.subject_id, r]));
+  // Built from allRows, because a REINSTATED subject is not in activeRows and
+  // still has a cycle of its own.
+  const rowById = new Map(live.allRows.map((r) => [r.subject_id, r]));
 
-  const toAdd = desired.filter((id) => !current.has(id));
+  // Withdrawing a scheduled removal is an UN-CANCEL, not a purchase (migration
+  // 120): the DB clears remove_at and charges nothing. Counting it as an add
+  // here would only mislabel the audit trail — the money is the RPC's business
+  // — but the labels are what a billing dispute is read from.
+  const reinstated = desired.filter(
+    (id) => !current.has(id) && isReinstatement(rowById.get(id), live.periodEnd ?? null),
+  );
+  const reinstating = new Set(reinstated);
+  const toAdd = desired.filter((id) => !current.has(id) && !reinstating.has(id));
   const toRemove = Array.from(current).filter((id) => !want.has(id));
   // A cycle change on an already-covered subject is a real change even though
   // the subject set is identical — without this the "no diff" short-circuit
   // below would swallow it. A DERIVED basket produces none by construction: its
-  // cycles ARE the effective ones.
+  // cycles ARE the effective ones. A subject being reinstated onto a DIFFERENT
+  // cycle counts too: the RPC schedules that change at the subject's own
+  // renewal rather than switching it on the spot.
   const toChangePlan = planItems.filter(
     (i) =>
-      current.has(i.subject_id) &&
+      (current.has(i.subject_id) || reinstating.has(i.subject_id)) &&
       effectivePlanInterval(rowById.get(i.subject_id), live.interval) !== i.interval,
   );
 
-  if (toAdd.length === 0 && toRemove.length === 0 && toChangePlan.length === 0) {
-    return { ok: true, added: 0, removed: 0, planChanged: 0 };
+  if (
+    toAdd.length === 0 &&
+    reinstated.length === 0 &&
+    toRemove.length === 0 &&
+    toChangePlan.length === 0
+  ) {
+    return { ok: true, added: 0, removed: 0, planChanged: 0, reinstated: 0 };
+  }
+
+  // Billing change → same payment-mode / free-access gate as starting a plan,
+  // scoped to this child. Evaluated HERE, after the diff, so it gates the same
+  // things `apply_plan_change` gates and no more.
+  //
+  // It used to run before the diff existed, so it blocked EVERY subject change
+  // while payments were off. The database has never been that strict: it calls
+  // assert_payments_enabled() only when `v_adds > 0 or v_changes > 0`, letting
+  // removals through on purpose — never trap a parent inside a plan they are
+  // trying to leave because billing happens to be paused. Migration 120 put
+  // reinstatements on that same footing: un-cancelling moves no money and only
+  // restores coverage already paid for, so blocking it would trap the parent
+  // inside a cancellation they are trying to undo, which is the same failure in
+  // the other direction. The app now agrees with the RPC instead of quietly
+  // being stricter than it.
+  //
+  // A reinstatement onto a DIFFERENT cycle IS gated: that half is a real billing
+  // change and reaches this through `toChangePlan`.
+  if (toAdd.length > 0 || toChangePlan.length > 0) {
+    const gateKey = await paidMutationGateKey(studentId, params.isFreeAccessActive);
+    if (gateKey) return { ok: false, errorKey: gateKey };
   }
 
   const idempotencyKey = buildSubjectChangeIdempotencyKey(
@@ -730,6 +806,7 @@ export async function updateSubscriptionSubjectsCore(params: {
       .map((i) => `${i.subject_id}:${i.interval}`)
       .sort()
       .join(","),
+    [...reinstated].sort().join(","),
   );
 
   const { error } = await admin.rpc("apply_plan_change", {
@@ -771,7 +848,10 @@ export async function updateSubscriptionSubjectsCore(params: {
     }
     return {
       ok: false,
-      errorKey: toAdd.length > 0 ? "subjedit.err.addFailed" : "subjedit.err.removeFailed",
+      errorKey:
+        toAdd.length > 0 || reinstated.length > 0
+          ? "subjedit.err.addFailed"
+          : "subjedit.err.removeFailed",
     };
   }
 
@@ -782,6 +862,16 @@ export async function updateSubscriptionSubjectsCore(params: {
       targetTable: "students",
       targetId: studentId,
       metadata: { op: "add", subject_count: toAdd.length },
+    });
+  }
+  // Its own op, never folded into "add": the DB ledger records these as
+  // change_type = 'reinstate' with a zero amount, and the two trails have to
+  // tell the same story when a billing dispute is read.
+  if (reinstated.length > 0) {
+    await writeAuditLog(parentProfileId, "parent.subscription_subjects_change", {
+      targetTable: "students",
+      targetId: studentId,
+      metadata: { op: "reinstate", subject_count: reinstated.length },
     });
   }
   if (toRemove.length > 0) {
@@ -807,6 +897,7 @@ export async function updateSubscriptionSubjectsCore(params: {
     added: toAdd.length,
     removed: toRemove.length,
     planChanged: toChangePlan.length,
+    reinstated: reinstated.length,
   };
 }
 

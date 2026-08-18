@@ -12,7 +12,7 @@
 //   subscription_id, status, interval, currency, discount_percent,
 //   current_recurring_total, new_recurring_total, due_now, effective_from,
 //   removals_effective_at, items, groups, renewals, removals_effective,
-//   plan_changes, mixed.
+//   reinstatements, plan_changes, mixed.
 //
 // PRORATION IS RETIRED (owner, 2026-08-17) and migration 118 dropped the RPCs
 // that implemented it. The six proration fields this route used to echo
@@ -86,6 +86,11 @@ export async function POST(
       // Per-subject removal dates. removals_effective_at above is one scalar
       // and cannot describe a plan whose subjects run to different dates.
       removals_effective: q.removals ?? [],
+      // Migration 120 — the UN-CANCELS in this basket. A subject whose
+      // scheduled removal is withdrawn before its coverage lapses keeps its
+      // cycle, its price and its period and costs ZERO, so it is deliberately
+      // not part of due_now. Additive field: older binaries ignore it.
+      reinstatements: q.reinstatements ?? [],
       plan_changes: q.planChanges ?? [],
       mixed: q.mixed === true,
     });

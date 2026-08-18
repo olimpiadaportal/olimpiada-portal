@@ -248,19 +248,29 @@ create table if not exists public.subscription_subjects (
 
 -- -----------------------------------------------------------------------------
 -- subscription_changes : immutable ledger of mid-cycle plan changes
--- (migration 078). Every add / remove / cycle change must stay reconstructible
--- for the next renewal amount and for billing disputes. Written ONLY by
--- apply_plan_change() (migration 118 dropped apply_subject_change, the wrapper
--- that used to be named here). Proration is retired: remaining_ratio is 1 and
--- period_days is null on new rows, and the columns are kept because rows
+-- (migration 078). Every add / reinstate / remove / cycle change must stay
+-- reconstructible for the next renewal amount and for billing disputes. Written
+-- ONLY by apply_plan_change() (migration 118 dropped apply_subject_change, the
+-- wrapper that used to be named here). Proration is retired: remaining_ratio is
+-- 1 and period_days is null on new rows, and the columns are kept because rows
 -- written before that decision must stay readable exactly as they were.
+--
+-- 'reinstate' (migration 120) = a scheduled removal was cancelled before its
+-- period lapsed. It ALWAYS carries prorated_amount = 0: no money moves, the
+-- parent simply keeps coverage they had already paid for. A payment provider
+-- integration will reconcile against this table, so a reinstatement logged as
+-- an 'add' would look like a charge that never happened.
 -- -----------------------------------------------------------------------------
 create table if not exists public.subscription_changes (
   id                      uuid primary key default gen_random_uuid(),
   child_subscription_id   uuid not null references public.child_subscriptions (id) on delete cascade,
   student_profile_id      uuid not null references public.students (profile_id) on delete cascade,
   owner_parent_profile_id uuid references public.profiles (id) on delete set null,
-  change_type             text not null check (change_type in ('add', 'remove', 'plan_change')),
+  -- Migration 120 widened this list with 'reinstate'. The CHECK stays INLINE so
+  -- a from-zero build produces the same auto-generated constraint name
+  -- (subscription_changes_change_type_check) the migration writes on a live
+  -- database; 013 check 107 asserts exactly one such CHECK survives.
+  change_type             text not null check (change_type in ('add', 'remove', 'plan_change', 'reinstate')),
   subject_id              uuid not null references public.subjects (id) on delete restrict,
   -- Migration 109: the cycle the row applied to. On an 'add' prorated_amount is
   -- now the FULL first-cycle price — per-subject periods leave no shared period

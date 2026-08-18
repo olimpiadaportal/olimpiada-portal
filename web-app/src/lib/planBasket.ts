@@ -72,6 +72,12 @@ export type LivePlanRow = {
   interval: string | null;
   pending_interval: string | null;
   remove_at: string | null;
+  /**
+   * THIS subject's own coverage end. Optional because the derivation above
+   * never needed it; `isReinstatement` does — whether an un-cancel is free or a
+   * genuine repurchase depends entirely on whether that date has passed.
+   */
+  current_period_end?: string | null;
 };
 
 /** The child's live subscription reduced to what a basket derivation needs. */
@@ -101,7 +107,49 @@ export type LivePlan = {
    * a cycle change, and a price change, that the parent never asked for.
    */
   allRows: LivePlanRow[];
+  /**
+   * The SUBSCRIPTION's own period end — the fallback coverage date for a legacy
+   * row whose `current_period_end` is NULL, exactly as the DB classifier reads
+   * it (`coalesce(ss.current_period_end, cs.current_period_end)`).
+   */
+  periodEnd?: string | null;
 };
+
+/**
+ * Is choosing this subject again an UN-CANCEL rather than a purchase?
+ *
+ * Mirrors the DB's `plan_change_states` (migration 120), which is the
+ * authority: a row SCHEDULED for removal whose coverage has NOT lapsed is a
+ * REINSTATEMENT — `remove_at` is cleared, the cycle, the price and the period
+ * are untouched and NOTHING is charged, because the parent already paid for
+ * that coverage and a removal never refunds. Once the period HAS lapsed the
+ * same click is a genuinely new subscription and is charged in full.
+ *
+ * Resolution order matches the SQL: the row's own period end, then the
+ * subscription's. `remove_at` is the last resort — it was itself written as
+ * `coalesce(ss.current_period_end, cs.current_period_end, now())`, so it is the
+ * best available proxy on a surface (the mobile editor) that never loaded the
+ * period columns, and it degrades to "lapsed" in exactly the case the SQL does.
+ *
+ * This is a UI-side classification: it decides what the editor SAYS and whether
+ * a payment sheet opens. Every amount still comes from the server quote.
+ */
+export function isReinstatement(
+  row:
+    | Pick<LivePlanRow, "remove_at">
+    | (Pick<LivePlanRow, "remove_at"> & { current_period_end?: string | null })
+    | undefined,
+  subscriptionPeriodEnd: string | null = null,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!row?.remove_at) return false;
+  const endsAt =
+    ("current_period_end" in row ? row.current_period_end : null) ??
+    subscriptionPeriodEnd ??
+    row.remove_at;
+  const at = Date.parse(endsAt);
+  return Number.isFinite(at) && at > nowMs;
+}
 
 /**
  * The cycle a subject is EFFECTIVELY on: a SCHEDULED change first, then the

@@ -1888,11 +1888,26 @@ select '95_pending_interval_rollover' as check_name,
              -- mis-clicked 'yearly' can never be undone.
              and position('then null else v_row.to_iv end' in
                    pg_get_functiondef('public.apply_plan_change(uuid,jsonb,text)'::regprocedure)) > 0
-             -- Renewal sentences must be priced from the DESIRED basket. The
-             -- left join onto the stored rows only supplies each subject's own
-             -- period end; reading those rows for the CYCLE is what quoted the
-             -- pre-change amount back to the parent.
-             and position('left join public.subscription_subjects ss' in
+             -- Renewal sentences must be priced from the DESIRED basket, with
+             -- the stored rows supplying ONLY each subject's own period end;
+             -- reading those rows for the CYCLE is what quoted the pre-change
+             -- amount back to the parent.
+             --
+             -- Migration 120 re-pointed this anchor. The rule is unchanged; its
+             -- mechanism is. The renewals CTE used to reach the stored rows
+             -- through `left join public.subscription_subjects ss`, and now
+             -- reads them through `plan_change_states`, the single classifier
+             -- that both plan RPCs share — which returns `period_end` per
+             -- subject for exactly this purpose. Pinning the retired join text
+             -- would have made this check FAIL on every database the moment 120
+             -- landed, so it pins the surviving guarantee instead: the CTE is
+             -- fed by the classifier, and it prices from `subjects_pricing`
+             -- joined on the DESIRED interval rather than a stored one.
+             and position('from public.plan_change_states(v_sub.id, p_items) s' in
+                   pg_get_functiondef('public.quote_plan_change(uuid,jsonb)'::regprocedure)) > 0
+             and position('on sp.subject_id = s.subject_id and sp.interval = s.interval' in
+                   pg_get_functiondef('public.quote_plan_change(uuid,jsonb)'::regprocedure)) > 0
+             and position('else s.period_end' in
                    pg_get_functiondef('public.quote_plan_change(uuid,jsonb)'::regprocedure)) > 0
              -- The clause that used to sit here probed apply_subject_change for
              -- "coalesce(ss.pending_interval, ss.interval, v_sub.interval)" — the
@@ -2788,6 +2803,129 @@ select '106_trilingual_explanations' as check_name,
        (select az_rows from cov)                     as explanations_az,
        (select en_rows from cov)                     as explanations_en,
        (select ru_rows from cov)                     as explanations_ru;
+
+
+-- 107) REINSTATING A CANCELLED SUBJECT (migration 120). Removing a subject
+--      schedules it for THAT subject's own period end and refunds nothing --
+--      the parent keeps access until then. Choosing it again before that date
+--      is therefore an UN-CANCEL, and it used to be billed as a brand-new add:
+--      a full second period charged today for coverage already paid for, and
+--      current_period_start/end reset to now(), destroying the remaining
+--      prepaid time. Both halves came from the SAME hand-copied predicate
+--      (`not exists (... and ss.remove_at is null)`) appearing once in the
+--      preview and once in the apply.
+--
+--      So the check pins the SHAPE that makes the defect unreachable rather
+--      than the wording of any one query:
+--
+--        * ONE CLASSIFIER, READ BY BOTH. plan_change_states() owns the
+--          add/reinstate/covered split, and both RPCs call it. Two copies of a
+--          billing rule mis-bill silently the day they drift, and
+--          "preview == charged" is an audited invariant (H7). A regression here
+--          most likely looks like someone inlining the predicate back into one
+--          of the two functions.
+--        * THE NOT-LAPSED PREDICATE ITSELF still lives in that classifier.
+--          Delete it and every reinstatement silently becomes an add again --
+--          which is exactly the bug, restored, with no error anywhere.
+--        * due_now IS BUILT FROM TRUE ADDS ONLY (`where s.state = 'add'`) and
+--          the quote still reports prorated = false (migration 118's posture is
+--          untouched -- nothing is split by days).
+--        * THE LEDGER VOCABULARY ACCEPTS 'reinstate', exactly once. A leftover
+--          narrow duplicate CHECK would reject every reinstatement at INSERT
+--          time, i.e. the whole save would fail rather than mis-bill.
+--        * THE ORDERING. apply_plan_change's reinstatement loop must precede
+--          the cycle-change loop, which filters on remove_at is null -- undoing
+--          a removal and moving that subject to another cycle in one save must
+--          not silently drop the cycle change.
+--
+--      reinstate_rows and reinstatable_subjects are REPORT-ONLY. The second is
+--      how many subjects are sitting in the un-cancellable window right now
+--      (scheduled for removal, period not yet lapsed); on a from-zero rebuild
+--      both are 0. bad_reinstate_rows, however, GATES: a reinstatement that
+--      carries money is a ledger that lies to the payment provider that will
+--      read it.
+with con as (
+  select count(*) as n_checks,
+         coalesce(bool_or(pg_get_constraintdef(oid) like '%reinstate%'), false) as accepts,
+         coalesce(bool_and(pg_get_constraintdef(oid) like '%plan_change%'), false) as keeps_legacy
+  from pg_constraint
+  where conrelid = 'public.subscription_changes'::regclass
+    and contype = 'c'
+    and pg_get_constraintdef(oid) like '%change_type%'
+),
+fns as (
+  select to_regprocedure('public.plan_change_states(uuid,jsonb)')   as states,
+         to_regprocedure('public.quote_plan_change(uuid,jsonb)')    as quote,
+         to_regprocedure('public.apply_plan_change(uuid,jsonb,text)') as apply
+),
+defs as (
+  -- pg_get_functiondef raises on a missing function, so every body probe is
+  -- guarded: a dropped RPC must report FAIL, never abort the whole 013 run.
+  select case when states is null then null else pg_get_functiondef(states) end as states_def,
+         case when quote  is null then null else pg_get_functiondef(quote)  end as quote_def,
+         case when apply  is null then null else pg_get_functiondef(apply)  end as apply_def
+  from fns
+),
+locked as (
+  select case when (select states from fns) is null then false
+              else not has_function_privilege('anon',
+                     'public.plan_change_states(uuid,jsonb)', 'EXECUTE')
+               and not has_function_privilege('authenticated',
+                     'public.plan_change_states(uuid,jsonb)', 'EXECUTE')
+               and has_function_privilege('service_role',
+                     'public.plan_change_states(uuid,jsonb)', 'EXECUTE') end as ok
+),
+shape as (
+  select coalesce(
+           states_def is not null
+       and position('coalesce(ss.current_period_end, cs.current_period_end) > now()'
+                     in states_def) > 0
+       and position('''reinstate''' in states_def) > 0
+       and quote_def is not null
+       and position('public.plan_change_states(v_sub.id, p_items)' in quote_def) > 0
+       and position('where s.state = ''add''' in quote_def) > 0
+       and position('''reinstatements''' in quote_def) > 0
+       and position('''prorated'',               false' in quote_def) > 0
+       and apply_def is not null
+       and position('public.plan_change_states(v_sub.id, p_items)' in apply_def) > 0
+       and position('where s.state = ''reinstate''' in apply_def) > 0
+       and position('''reinstate'',' in apply_def) > 0
+       and position('if v_left < 1 and v_adds < 1 and v_restores < 1 then' in apply_def) > 0
+       -- the kill switch still gates adds and cycle changes, and only those
+       and position('if v_adds > 0 or v_changes > 0 then' in apply_def) > 0
+       -- reinstatement BEFORE the cycle-change loop (which filters remove_at is
+       -- null) and BEFORE the add loop (which would otherwise buy it again).
+       -- Anchored on the STATEMENTS, not on the `where s.state = ...` filters:
+       -- those also appear in the counts query at the top of the function,
+       -- where 'add' legitimately comes first.
+       and position('set remove_at = null' in apply_def)
+             < position('set pending_interval =' in apply_def)
+       and position('set remove_at = null' in apply_def)
+             < position('insert into public.subscription_subjects' in apply_def),
+           false) as ok
+  from defs
+)
+select '107_reinstate_cancelled_subject' as check_name,
+       case when (select n_checks from con) = 1
+             and (select accepts from con)
+             and (select keeps_legacy from con)
+             and (select ok from locked)
+             and (select ok from shape)
+             and not exists (select 1 from public.subscription_changes
+                              where change_type = 'reinstate' and prorated_amount <> 0)
+            then 'PASS' else 'FAIL' end as status,
+       (select n_checks from con)                    as change_type_checks,
+       (select count(*) from public.subscription_changes
+         where change_type = 'reinstate')            as reinstate_rows,
+       (select count(*) from public.subscription_changes
+         where change_type = 'reinstate' and prorated_amount <> 0)
+                                                     as bad_reinstate_rows,
+       (select count(*)
+          from public.subscription_subjects ss
+          join public.child_subscriptions cs on cs.id = ss.child_subscription_id
+         where ss.remove_at is not null
+           and coalesce(ss.current_period_end, cs.current_period_end) > now())
+                                                     as reinstatable_subjects;
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

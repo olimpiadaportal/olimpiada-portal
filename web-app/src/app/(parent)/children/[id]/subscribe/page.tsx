@@ -22,6 +22,9 @@ const KEYS = [
   // Round 11 — checkbox editor + demo-payment modal:
   "pricing.perSubjectNote", "subjedit.activeChip", "subjedit.endingChip", "subjedit.selectedCount",
   "subjedit.pendingAdd", "subjedit.pendingRemove",
+  // Migration 120 — un-cancelling a scheduled removal is its own outcome, not
+  // an addition: nothing is charged and the paid period is kept.
+  "subjedit.pendingReinstate", "subjedit.reinstateLine", "subjedit.reinstateNote",
   "subjedit.save", "subjedit.saving", "subjedit.saved", "subjedit.noChanges",
   "subjedit.demoModeNote", "dpay.cancel",
   "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",

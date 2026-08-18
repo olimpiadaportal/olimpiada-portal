@@ -555,7 +555,15 @@ export default async function QuestionsPage({
         </p>
       )}
 
-      {/* Lifecycle stat cards — click to filter by status (Total clears it). */}
+      {/* Lifecycle stat cards — click to filter by status (Total clears it).
+          SCOPE: these are counts over the WHOLE question bank and deliberately
+          ignore the filters below. That is the right behaviour for a control
+          that IS the status filter — a card whose number shrank as you filtered
+          could never tell you how much work is left in each state. What was
+          wrong was leaving it unsaid: an unlabelled global number sitting
+          directly above a filtered list reads as a contradiction. The caption
+          resolves it, in all three languages. */}
+      <p className="qstat-scope muted">{t("qstat.scopeBank")}</p>
       <div className="qstat-grid">
         {statCards.map((c) => (
           <Link

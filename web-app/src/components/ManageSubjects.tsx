@@ -16,8 +16,8 @@
 // needs — its cycle, its price and WHEN IT RENEWS — with the dates read from
 // each subject's own `current_period_end`.
 //
-// PAYMENT-FIRST contract (owner requirement), now three-way:
-//   * ANY ADDITION (including a mixed diff) opens the payment sheet
+// PAYMENT-FIRST contract (owner requirement), now four-way:
+//   * A TRUE ADDITION (including a mixed diff) opens the payment sheet
 //     (DemoPaymentModal) BEFORE the apply, in BOTH 'demo' and 'real' modes —
 //     there is no provider yet and the real charge seam is server-side.
 //   * A REMOVAL-ONLY diff submits directly: nothing is charged, access runs to
@@ -25,6 +25,14 @@
 //   * A CYCLE-CHANGE-ONLY diff also submits directly. It is SCHEDULED into
 //     pending_interval and takes effect at that subject's next renewal, so
 //     there is nothing to charge now and a payment sheet would be a lie.
+//   * A REINSTATEMENT-ONLY diff submits directly too (migration 120). Putting
+//     back a subject whose removal is scheduled but whose period has not lapsed
+//     is an UN-CANCEL: the DB clears remove_at and changes nothing else, so the
+//     parent pays NOTHING for coverage they already own. Before 120 this screen
+//     called it an "addition", opened a payment sheet and the server charged a
+//     second full period — while the removal rule promises access to period end
+//     with no refund. Once that period HAS lapsed it is a genuine add again,
+//     and the server (never this component) is what decides which it is.
 //
 // The SERVER receives the DESIRED FULL set (subject + cycle) and derives the
 // adds / removes / cycle changes itself — ownership recheck, payment-mode gate
@@ -45,6 +53,7 @@ import { SubjectPlanCard } from "@/components/SubjectPlanCard";
 import { useLocale, useT } from "@/i18n/I18nProvider";
 import { formatLongDate } from "@/lib/formatDate";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { isReinstatement } from "@/lib/planBasket";
 import {
   addPlanSubject,
   availableSubjects,
@@ -127,6 +136,22 @@ export function ManageSubjects({
     () => new Map(covered.filter((c) => c.removeAt).map((c) => [c.subjectId, c])),
     [covered],
   );
+  // Re-selecting one of THESE is an un-cancel, not a purchase: the removal is
+  // scheduled but the paid period has not run out yet. Mirrors the DB
+  // classifier (plan_change_states, migration 120) on the data the page was
+  // rendered with, so the copy is right immediately — before the debounced
+  // quote lands. The MONEY decision below still defers to the server.
+  const reinstatableById = useMemo(
+    () =>
+      new Map(
+        covered
+          .filter((c) =>
+            isReinstatement({ remove_at: c.removeAt, current_period_end: c.periodEnd }),
+          )
+          .map((c) => [c.subjectId, c]),
+      ),
+    [covered],
+  );
   // The cycle a subject is EFFECTIVELY on = a scheduled change first, then the
   // cycle it is paid on. Seeding the editor from `interval` alone is what made
   // a saved cycle change look like it had failed: the radio snapped straight
@@ -169,25 +194,39 @@ export function ManageSubjects({
   );
   const localQuote = useMemo(() => computePlanQuote(catalog, plan), [catalog, plan]);
 
-  // Three-way diff. A cycle change is a real change even though the subject set
-  // is identical — without it the "no changes" state would swallow it.
-  const { toAdd, toRemove, toChangePlan } = useMemo(() => {
+  // Four-way diff. A cycle change is a real change even though the subject set
+  // is identical — without it the "no changes" state would swallow it. And a
+  // REINSTATEMENT is split out of the additions: it is the same click, but it
+  // buys nothing, so listing it under "Added" next to a due-now amount is the
+  // copy that used to lie.
+  const { toAdd, toReinstate, toRemove, toChangePlan } = useMemo(() => {
     const inPlan = new Set(plan.map((p) => p.subjectId));
     return {
-      toAdd: plan.filter((p) => !activeById.has(p.subjectId)),
+      toAdd: plan.filter(
+        (p) => !activeById.has(p.subjectId) && !reinstatableById.has(p.subjectId),
+      ),
+      toReinstate: plan.filter(
+        (p) => !activeById.has(p.subjectId) && reinstatableById.has(p.subjectId),
+      ),
       toRemove: active.filter((c) => !inPlan.has(c.subjectId)),
       // Compared against the EFFECTIVE cycle (a scheduled change wins), so
       // re-selecting the cycle the subject is actually paid on registers as a
       // change and CANCELS the schedule. Comparing against `interval` alone
       // meant a parent who mis-clicked "yearly" got hasDiff === false and a
       // disabled Save — locked into the mistake with no way back.
+      // A reinstated subject counts here too: the server schedules that cycle
+      // for its own renewal instead of switching it on the spot.
       toChangePlan: plan.filter((p) => {
-        const cur = activeById.get(p.subjectId);
+        const cur = activeById.get(p.subjectId) ?? reinstatableById.get(p.subjectId);
         return !!cur && effectiveCycle(cur) !== p.interval;
       }),
     };
-  }, [plan, active, activeById, effectiveCycle]);
-  const hasDiff = toAdd.length > 0 || toRemove.length > 0 || toChangePlan.length > 0;
+  }, [plan, active, activeById, reinstatableById, effectiveCycle]);
+  const hasDiff =
+    toAdd.length > 0 ||
+    toReinstate.length > 0 ||
+    toRemove.length > 0 ||
+    toChangePlan.length > 0;
   const planKey = useMemo(
     () => plan.map((p) => `${p.subjectId}:${p.interval}`).join(","),
     [plan],
@@ -264,7 +303,11 @@ export function ManageSubjects({
     () =>
       plan.map((item) => {
         const s = byId.get(item.subjectId);
-        const cur = activeById.get(item.subjectId);
+        // A subject being reinstated is answered from ITS OWN row: it keeps the
+        // period it already paid for, so the honest sentence is "renews on
+        // {its date}" — not "starts today", which is what an absent row used to
+        // produce and what the retired second charge was based on.
+        const cur = activeById.get(item.subjectId) ?? reinstatableById.get(item.subjectId);
         const price = quotePrice.has(item.subjectId)
           ? (quotePrice.get(item.subjectId) ?? null)
           : s
@@ -292,9 +335,22 @@ export function ManageSubjects({
     // tt/t/cycleName are derived from the props' dict and never change identity
     // in a way that matters here; the data inputs are listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [plan, byId, activeById, quotePrice, effectiveCycle, fmtDate, locale],
+    [plan, byId, activeById, reinstatableById, quotePrice, effectiveCycle, fmtDate, locale],
   );
   const addedIds = useMemo(() => new Set(toAdd.map((p) => p.subjectId)), [toAdd]);
+  const reinstatedIds = useMemo(
+    () => new Set(toReinstate.map((p) => p.subjectId)),
+    [toReinstate],
+  );
+  // ONE LINE PER REINSTATED SUBJECT: what it is, and the date it keeps.
+  const reinstateLines = (): string[] =>
+    toReinstate.map((p) => {
+      const s = byId.get(p.subjectId);
+      const cur = reinstatableById.get(p.subjectId);
+      return tt("subjedit.reinstateLine")
+        .replace("{subject}", s ? subjectLabel(t, s.code, s.name) : p.subjectId)
+        .replace("{date}", fmtDate(cur?.periodEnd ?? cur?.removeAt ?? null));
+    });
 
   const [state, formAction, saving] = useActionState<SubjectsUpdateState, FormData>(
     updateSubscriptionSubjectsAction,
@@ -309,9 +365,18 @@ export function ManageSubjects({
 
   function onSaveClick() {
     if (!hasDiff || saving) return;
-    // PAYMENT-FIRST: only an ADDITION costs money now. A scheduled cycle change
-    // and a removal both charge nothing, so they submit directly.
+    // PAYMENT-FIRST: only a TRUE ADDITION costs money now. A scheduled cycle
+    // change and a removal both charge nothing, so they submit directly —
+    // unchanged behaviour.
     if (toAdd.length > 0) {
+      setPayOpen(true);
+      return;
+    }
+    // A reinstatement charges nothing either, but this component must never be
+    // the thing that decides so: it reads a removal date, the server reads the
+    // period. Until the quote has landed AND says zero, an un-cancel is treated
+    // exactly like an addition. Fail safe, not clever.
+    if (toReinstate.length > 0 && (!quote || quote.dueNow > 0)) {
       setPayOpen(true);
       return;
     }
@@ -410,7 +475,23 @@ export function ManageSubjects({
                     <button
                       type="button"
                       className="pcfg-add"
-                      onClick={() => setPlan((prev) => addPlanSubject(prev, s.id, catalog))}
+                      // A subject being PUT BACK returns on the cycle it is
+                      // still paid on, not the configurator default — otherwise
+                      // an un-cancel silently drags a cycle change along with
+                      // it. Same rule the server uses for a subject-ids-only
+                      // caller (planBasket.derivePlanItems reads allRows).
+                      onClick={() =>
+                        setPlan((prev) =>
+                          addPlanSubject(
+                            prev,
+                            s.id,
+                            catalog,
+                            reinstatableById.has(s.id)
+                              ? effectiveCycle(reinstatableById.get(s.id)!)
+                              : undefined,
+                          ),
+                        )
+                      }
                       disabled={saving || addsDisabled}
                       title={addsDisabled ? tt("gate.paymentsOff") : undefined}
                       aria-label={tt("cfg.addAria").replace(
@@ -453,6 +534,23 @@ export function ManageSubjects({
                 </ul>
               </div>
             )}
+            {/* UN-CANCELS get their own block. Folding them into "Added" is
+                exactly the mislabel that preceded the double charge: the
+                parent is not buying anything, they are withdrawing a
+                cancellation and keeping the period they already paid for. */}
+            {toReinstate.length > 0 && (
+              <div className="subjedit-sum-block">
+                <span className="subjedit-sum-label">
+                  {tt("subjedit.pendingReinstate")}
+                </span>
+                <ul className="subjedit-sum-list">
+                  {reinstateLines().map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+                <p className="subjedit-note">{tt("subjedit.reinstateNote")}</p>
+              </div>
+            )}
             {toRemove.length > 0 && (
               <div className="subjedit-sum-block">
                 <span className="subjedit-sum-label">{tt("subjedit.pendingRemove")}</span>
@@ -476,7 +574,8 @@ export function ManageSubjects({
                 <ul className="subjedit-sum-list">
                   {toChangePlan.map((p) => {
                     const s = byId.get(p.subjectId);
-                    const cur = activeById.get(p.subjectId);
+                    const cur =
+                      activeById.get(p.subjectId) ?? reinstatableById.get(p.subjectId);
                     return (
                       <li key={p.subjectId}>
                         {tt("subjedit.planChangeLine")
@@ -620,16 +719,26 @@ export function ManageSubjects({
                 ? {
                     dueNowLabel: `${quote.dueNow} ${quote.currency}`,
                     // What the money buys, in one sentence: a full first period
-                    // per added subject, starting today.
+                    // per added subject, starting today. When the sheet opened
+                    // for an UN-CANCEL that the quote has since priced at zero,
+                    // say THAT instead — "no charge now, first payment on
+                    // {date}" describes a trial, not a subject that keeps
+                    // running on the period it already paid for.
                     thenLabel:
                       quote.dueNow > 0
                         ? tt("subjedit.dueNowNote")
-                        : noChargeSentence(quote),
-                    // One line per subject BEING PAID FOR — the subjects already
-                    // on the plan are untouched by this charge and listing their
-                    // renewals here would suggest otherwise.
+                        : toAdd.length === 0 && toReinstate.length > 0
+                          ? tt("subjedit.reinstateNote")
+                          : noChargeSentence(quote),
+                    // One line per subject BEING PAID FOR (plus any un-cancel
+                    // that opened this sheet) — the subjects already on the plan
+                    // are untouched by this charge and listing their renewals
+                    // here would suggest otherwise.
                     lines: planRows
-                      .filter((row) => addedIds.has(row.subjectId))
+                      .filter(
+                        (row) =>
+                          addedIds.has(row.subjectId) || reinstatedIds.has(row.subjectId),
+                      )
                       .map((row) => ({ label: row.head, value: row.when })),
                     noCharge: quote.dueNow <= 0,
                   }

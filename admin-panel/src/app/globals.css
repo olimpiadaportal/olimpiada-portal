@@ -1779,6 +1779,15 @@ select.sfield-select {
    ========================================================================= */
 
 /* ---- Lifecycle stat cards (clickable status filters) --------------------- */
+/* Scope caption for the stat cards. They count the WHOLE bank and ignore the
+   filters below on purpose — this line says so, so a global number sitting
+   above a filtered list stops reading as a contradiction. */
+.qstat-scope {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .qstat-grid {
   display: grid;
   gap: 12px;

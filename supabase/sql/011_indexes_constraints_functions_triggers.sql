@@ -8311,12 +8311,27 @@ grant execute on function public.admin_manage_child_subscription(uuid, text, int
 --   REMOVE      -> never refunds. Access runs to THAT SUBJECT'S own period end
 --                  (subscription_subjects.remove_at) and the subject drops out
 --                  of the next invoice.
+--   REINSTATE   -> (migration 120) choosing a removal-scheduled subject again
+--                  BEFORE its coverage lapses is an UN-CANCEL, not a purchase:
+--                  remove_at is cleared and NOTHING else changes -- same cycle,
+--                  same price, same period, ZERO charged. Once the period HAS
+--                  lapsed it is a genuine ADD again. This is the standard
+--                  behaviour of every subscription platform (Stripe
+--                  cancel_at_period_end = false, Chargebee "remove scheduled
+--                  cancellation", Recurly "reactivate"): billing a parent a
+--                  second full period for coverage they already own directly
+--                  contradicts the no-refund REMOVE rule above.
 --   PLAN CHANGE -> a different cycle for an already-paid subject is SCHEDULED
 --                  into pending_interval and applies at that subject's renewal.
 --                  One rule in both directions: no refund, no surprise charge.
+--                  A reinstatement onto a DIFFERENT cycle is exactly this, not
+--                  an instant switch.
 -- quote_plan_change() is the SINGLE source of the math and apply_plan_change()
 -- calls it, so the previewed price can never drift from the applied one (audit
--- H7). Amounts are never accepted from a client.
+-- H7). Amounts are never accepted from a client. Since 120 the add / reinstate
+-- / covered split is likewise ONE expression -- plan_change_states() below --
+-- read by both, because the two hand-copied `not exists (... remove_at is
+-- null)` predicates it replaced were what made an un-cancel bill as an add.
 --
 -- Migration 118 DROPPED the quote_subject_change / apply_subject_change
 -- add/remove wrappers. They composed a per-subject basket in SQL — a second
@@ -8328,6 +8343,54 @@ grant execute on function public.admin_manage_child_subscription(uuid, text, int
 -- and reaches this same pair like every other caller. 013 check 105 asserts
 -- both wrappers stay gone.
 -- =============================================================================
+
+create or replace function public.plan_change_states(
+  p_child_subscription_id uuid,
+  p_items                 jsonb
+)
+returns table (
+  subject_id uuid,
+  "interval" public.plan_interval,
+  state      text,
+  period_end timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select n.subject_id,
+         n.interval,
+         case
+           when ss.subject_id is null then 'add'
+           when ss.remove_at is null  then 'covered'
+           -- NOT LAPSED = still paid for, so choosing it again is an un-cancel.
+           -- NULL on both sides is not a future date and falls through to
+           -- 'add', which is right: remove_at was itself set to now() when
+           -- neither period end existed, so that coverage is already over.
+           when coalesce(ss.current_period_end, cs.current_period_end) > now()
+             then 'reinstate'
+           else 'add'
+         end::text as state,
+         -- The coverage a covered/reinstated subject KEEPS. NULL for a true
+         -- add: it has no period yet, it opens one at now().
+         case
+           when ss.subject_id is null then null::timestamptz
+           when ss.remove_at is null
+             or coalesce(ss.current_period_end, cs.current_period_end) > now()
+             then coalesce(ss.current_period_end, cs.current_period_end)
+           else null::timestamptz
+         end as period_end
+  from public.plan_items_normalize(p_items) n
+  left join public.child_subscriptions cs
+    on cs.id = p_child_subscription_id
+  left join public.subscription_subjects ss
+    on ss.child_subscription_id = p_child_subscription_id
+   and ss.subject_id = n.subject_id
+$$;
+
+comment on function public.plan_change_states(uuid, jsonb) is
+  'Migration 120: classifies each desired basket entry against the live subscription as covered / reinstate / add, and returns the coverage end it keeps. A row SCHEDULED for removal whose period has not lapsed is a REINSTATEMENT (un-cancel): clear remove_at and nothing else, charge zero. Read by BOTH quote_plan_change and apply_plan_change so the preview and the charge cannot disagree about what is an add.';
 
 create or replace function public.quote_plan_change(
   p_student_profile_id uuid,
@@ -8352,6 +8415,7 @@ declare
   v_groups     jsonb;
   v_renewals   jsonb;
   v_removals   jsonb;
+  v_restores   jsonb;
   v_changes    jsonb;
   v_ivs        int;
   v_remaining  int;
@@ -8384,17 +8448,16 @@ begin
   where ss.child_subscription_id = v_sub.id
     and ss.remove_at is null;
 
-  -- ADDS = desired subjects not currently covered. Each buys a FULL first cycle
-  -- (proration retired — see the file header).
+  -- ADDS = desired subjects that are GENUINELY NEW: no row at all, or a row
+  -- whose coverage has already lapsed. Each buys a FULL first cycle (proration
+  -- retired -- see the file header). A subject merely SCHEDULED for removal is
+  -- NOT an add (migration 120): it is paid for to its period end, so choosing
+  -- it again is a REINSTATEMENT and costs nothing.
   select coalesce(sum(sp.price_amount), 0) into v_added_base
-  from public.plan_items_normalize(p_items) n
+  from public.plan_change_states(v_sub.id, p_items) s
   join public.subjects_pricing sp
-    on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
-  where not exists (
-    select 1 from public.subscription_subjects ss
-    where ss.child_subscription_id = v_sub.id
-      and ss.subject_id = n.subject_id
-      and ss.remove_at is null);
+    on sp.subject_id = s.subject_id and sp.interval = s.interval and sp.status = 'active'
+  where s.state = 'add';
 
   -- NEXT recurring set = the desired set, priced on the desired cycles.
   select coalesce(sum(sp.price_amount), 0) into v_next_base
@@ -8425,51 +8488,47 @@ begin
     into v_groups, v_ivs
   from g;
 
-  -- due_now: the ADDS only, at the sibling rate, rounded per cycle group. A
-  -- trial charges nothing (the adds ride the trial like every other subject).
+  -- due_now: the TRUE ADDS only, at the sibling rate, rounded per cycle group.
+  -- A trial charges nothing (the adds ride the trial like every other subject),
+  -- and so does a reinstatement -- there is nothing to buy back.
   if v_sub.status <> 'trialing' then
     with g as (
-      select n.interval as iv, coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
-      from public.plan_items_normalize(p_items) n
+      select s.interval as iv, coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
+      from public.plan_change_states(v_sub.id, p_items) s
       join public.subjects_pricing sp
-        on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
-      where not exists (
-        select 1 from public.subscription_subjects ss
-        where ss.child_subscription_id = v_sub.id
-          and ss.subject_id = n.subject_id
-          and ss.remove_at is null)
-      group by n.interval)
+        on sp.subject_id = s.subject_id and sp.interval = s.interval and sp.status = 'active'
+      where s.state = 'add'
+      group by s.interval)
     select coalesce(sum(g.base - round(g.base * v_pct / 100.0, 2)), 0) into v_due from g;
   end if;
 
   -- Per-cycle renewal sentences, built from the DESIRED basket. Reading the
   -- STORED rows here is what told a parent who had just moved a subject to
   -- yearly that they would renew at the WEEKLY amount: p_items already carries
-  -- the chosen cycle (and, for an untouched subject, its pending_interval --
-  -- both wrappers compose it that way), so the sentence now describes the plan
-  -- the parent is about to have instead of the one they are leaving.
-  -- An already-covered subject renews at ITS OWN period end; a newly added one
-  -- opens a full cycle at now(), which is exactly what apply_plan_change writes.
+  -- the chosen cycle (and, for an untouched subject, its pending_interval), so
+  -- the sentence describes the plan the parent is about to have instead of the
+  -- one they are leaving.
+  -- An already-covered subject renews at ITS OWN period end, a REINSTATED one
+  -- at the period end it never lost, and a newly added one opens a full cycle
+  -- at now() -- which is exactly what apply_plan_change writes. The branch is
+  -- on the STATE, not on a null period_end: a legacy covered row with no period
+  -- anywhere must keep reporting no date rather than be given a guessed one.
   with r as (
-    select n.interval as iv,
+    select s.interval as iv,
            min(case
-                 when ss.subject_id is null
-                   then now() + case n.interval
+                 when s.state = 'add'
+                   then now() + case s.interval
                                   when 'week'  then interval '7 days'
                                   when 'month' then interval '1 month'
                                   else              interval '1 year'
                                 end
-                 else coalesce(ss.current_period_end, v_sub.current_period_end)
+                 else s.period_end
                end) as next_at,
            coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
-    from public.plan_items_normalize(p_items) n
+    from public.plan_change_states(v_sub.id, p_items) s
     join public.subjects_pricing sp
-      on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
-    left join public.subscription_subjects ss
-      on ss.child_subscription_id = v_sub.id
-     and ss.subject_id = n.subject_id
-     and ss.remove_at is null
-    group by n.interval)
+      on sp.subject_id = s.subject_id and sp.interval = s.interval and sp.status = 'active'
+    group by s.interval)
   select jsonb_agg(jsonb_build_object(
            'interval', r.iv, 'next_at', r.next_at,
            'total', r.base - round(r.base * v_pct / 100.0, 2)))
@@ -8488,7 +8547,26 @@ begin
       select 1 from public.plan_items_normalize(p_items) n
       where n.subject_id = ss.subject_id);
 
-  -- PLAN CHANGES = covered with a different cycle; scheduled, never charged.
+  -- REINSTATEMENTS = scheduled for removal, chosen again BEFORE that coverage
+  -- lapsed. Nothing is charged, the period is untouched, and the subject simply
+  -- renews on its own date as if the removal had never been scheduled. The UI
+  -- reads this list so it can stop calling an un-cancel an "addition" and stop
+  -- opening a payment sheet for it.
+  select jsonb_agg(jsonb_build_object(
+           'subject_id', s.subject_id,
+           'interval', coalesce(ss.interval, v_sub.interval),
+           'renews_at', s.period_end))
+    into v_restores
+  from public.plan_change_states(v_sub.id, p_items) s
+  join public.subscription_subjects ss
+    on ss.child_subscription_id = v_sub.id
+   and ss.subject_id = s.subject_id
+  where s.state = 'reinstate';
+
+  -- PLAN CHANGES = still covered -- live OR being reinstated -- with a different
+  -- cycle; scheduled, never charged. Reinstating a subject onto another cycle
+  -- is a CYCLE CHANGE like any other: it applies at that subject's own renewal,
+  -- never immediately, so the period it is paid on is never overwritten.
   -- The comparison basis is the EFFECTIVE cycle -- pending_interval when one is
   -- already scheduled -- so re-selecting the ORIGINAL cycle is itself a change
   -- (it CANCELS the schedule). Comparing against ss.interval alone locked in a
@@ -8497,14 +8575,15 @@ begin
   select jsonb_agg(jsonb_build_object(
            'subject_id', ss.subject_id,
            'from', coalesce(ss.pending_interval, ss.interval, v_sub.interval),
-           'to', n.interval,
+           'to', s.interval,
            'effective_at', coalesce(ss.current_period_end, v_sub.current_period_end)))
     into v_changes
-  from public.subscription_subjects ss
-  join public.plan_items_normalize(p_items) n on n.subject_id = ss.subject_id
-  where ss.child_subscription_id = v_sub.id
-    and ss.remove_at is null
-    and n.interval is distinct from coalesce(ss.pending_interval, ss.interval, v_sub.interval);
+  from public.plan_change_states(v_sub.id, p_items) s
+  join public.subscription_subjects ss
+    on ss.child_subscription_id = v_sub.id
+   and ss.subject_id = s.subject_id
+  where s.state in ('covered', 'reinstate')
+    and s.interval is distinct from coalesce(ss.pending_interval, ss.interval, v_sub.interval);
 
   v_remaining := greatest(0, ceil(
     extract(epoch from (coalesce(v_sub.next_renewal_at, v_sub.current_period_end, now()) - now())) / 86400.0)::int);
@@ -8514,6 +8593,9 @@ begin
     'groups',   coalesce(v_groups, '{}'::jsonb),
     'renewals', coalesce(v_renewals, '[]'::jsonb),
     'removals_effective', coalesce(v_removals, '[]'::jsonb),
+    -- Migration 120: the un-cancels in this basket. Additive on purpose --
+    -- already-shipped parsers whitelist the fields they read and ignore it.
+    'reinstatements', coalesce(v_restores, '[]'::jsonb),
     'plan_changes', coalesce(v_changes, '[]'::jsonb),
     'mixed', coalesce(v_ivs, 0) > 1,
     -- Legacy contract keys: the web/BFF/mobile parsers still read these.
@@ -8548,7 +8630,7 @@ end;
 $$;
 
 comment on function public.quote_plan_change(uuid, jsonb) is
-  'Migration 109: diffs a DESIRED full per-subject basket against the live subscription into adds / removes / plan_changes and prices it. due_now = the adds'' full first cycles at the sibling rate (proration retired); a cycle change costs nothing now and applies at that subject''s renewal.';
+  'Migration 109/120: diffs a DESIRED full per-subject basket against the live subscription into adds / reinstatements / removes / plan_changes and prices it. due_now = the TRUE adds'' full first cycles at the sibling rate (proration retired); un-cancelling a scheduled removal before its period lapses costs nothing, and a cycle change costs nothing now and applies at that subject''s renewal.';
 
 create or replace function public.apply_plan_change(
   p_student_profile_id uuid,
@@ -8561,19 +8643,22 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_quote   jsonb;
-  v_sub     public.child_subscriptions%rowtype;
-  v_actor   uuid := public.current_profile_id();
-  v_pct     numeric(5,2);
-  v_before  numeric(12,2);
-  v_after   numeric(12,2);
-  v_left    int;
-  v_prior   jsonb;
-  v_adds    int;
-  v_changes int;
-  v_row     record;
+  v_quote    jsonb;
+  v_sub      public.child_subscriptions%rowtype;
+  v_actor    uuid := public.current_profile_id();
+  v_pct      numeric(5,2);
+  v_before   numeric(12,2);
+  v_after    numeric(12,2);
+  v_left     int;
+  v_prior    jsonb;
+  v_adds     int;
+  v_restores int;
+  v_changes  int;
+  v_row      record;
 begin
   -- Replay guard: the same batch key returns the original outcome untouched.
+  -- A reinstatement participates: it writes a ledger row under the same key, so
+  -- a retried batch short-circuits here instead of re-running.
   if p_idempotency_key is not null then
     select jsonb_build_object('idempotent', true, 'applied_at', min(created_at))
       into v_prior
@@ -8587,18 +8672,22 @@ begin
   -- ONE source of truth for the numbers (preview == charged, audit H7).
   v_quote := public.quote_plan_change(p_student_profile_id, p_items);
 
-  select count(*)::int into v_adds
-  from public.plan_items_normalize(p_items) n
-  where not exists (
-    select 1 from public.subscription_subjects ss
-    where ss.child_subscription_id = (v_quote->>'subscription_id')::uuid
-      and ss.subject_id = n.subject_id
-      and ss.remove_at is null);
+  -- ...and ONE source of truth for WHAT IS AN ADD (migration 120). The quote
+  -- priced with this exact classifier, so the preview and the charge cannot
+  -- disagree about which subjects are bought and which are merely un-cancelled.
+  select (count(*) filter (where s.state = 'add'))::int,
+         (count(*) filter (where s.state = 'reinstate'))::int
+    into v_adds, v_restores
+  from public.plan_change_states((v_quote->>'subscription_id')::uuid, p_items) s;
   v_changes := jsonb_array_length(v_quote->'plan_changes');
 
   -- Round 48/51 kill switch: while payments are off a parent may still REMOVE
   -- subjects (never trap someone into paying), but may not ADD one — and a
   -- cycle change is a billing change, so it is blocked too.
+  -- A REINSTATEMENT is deliberately absent from this condition: it moves no
+  -- money and only restores coverage the parent has already paid for, so
+  -- blocking it would trap them inside a cancellation they want to undo —
+  -- precisely the failure mode the removal carve-out above exists to avoid.
   if v_adds > 0 or v_changes > 0 then
     perform public.assert_payments_enabled();
   end if;
@@ -8612,13 +8701,11 @@ begin
   v_after  := (v_quote->>'new_recurring_total')::numeric;
 
   -- ---- removals: keep access to THIS SUBJECT'S own period end --------------
-  select count(*) into v_left
-  from public.subscription_subjects ss
-  where ss.child_subscription_id = v_sub.id
-    and ss.remove_at is null
-    and exists (select 1 from public.plan_items_normalize(p_items) n
-                 where n.subject_id = ss.subject_id);
-  if v_left < 1 and v_adds < 1 then
+  -- 'covered' IS "a live row that the desired basket keeps", so this is the
+  -- same count the hand-written subquery produced, read from the one classifier.
+  select (count(*) filter (where s.state = 'covered'))::int into v_left
+  from public.plan_change_states(v_sub.id, p_items) s;
+  if v_left < 1 and v_adds < 1 and v_restores < 1 then
     raise exception 'subject_change: at least one subject must remain'
       using errcode = 'check_violation', hint = 'last_subject';
   end if;
@@ -8649,19 +8736,54 @@ begin
     on conflict do nothing;
   end loop;
 
-  -- ---- additions: a NEW full cycle anchored at now() -----------------------
+  -- ---- reinstatements: clear remove_at and NOTHING ELSE --------------------
+  -- The un-cancel. interval, price_amount, current_period_start and
+  -- current_period_end are untouched, so the prepaid time survives and the
+  -- subject renews on the date it always had. Zero is charged.
+  --
+  -- THIS LOOP MUST RUN BEFORE THE CYCLE-CHANGE LOOP: that loop filters on
+  -- remove_at is null, so reinstating afterwards would silently drop a cycle
+  -- change requested in the same save. It also runs before the ADD loop, which
+  -- re-reads the classifier — a subject reinstated here is 'covered' by then
+  -- and can never be processed twice.
   for v_row in
-    select n.subject_id, n.interval as iv, sp.price_amount
-    from public.plan_items_normalize(p_items) n
-    join public.subjects_pricing sp
-      on sp.subject_id = n.subject_id and sp.interval = n.interval and sp.status = 'active'
-    where not exists (
-      select 1 from public.subscription_subjects ss
-      where ss.child_subscription_id = v_sub.id
-        and ss.subject_id = n.subject_id
-        and ss.remove_at is null)
+    select s.subject_id,
+           coalesce(ss.interval, v_sub.interval) as iv
+    from public.plan_change_states(v_sub.id, p_items) s
+    join public.subscription_subjects ss
+      on ss.child_subscription_id = v_sub.id
+     and ss.subject_id = s.subject_id
+    where s.state = 'reinstate'
   loop
-    -- Un-schedule a pending removal instead of duplicating the row.
+    update public.subscription_subjects
+       set remove_at = null
+     where child_subscription_id = v_sub.id and subject_id = v_row.subject_id;
+
+    -- prorated_amount = 0, always. The ledger is what a payment provider will
+    -- reconcile against, and no money moves here.
+    insert into public.subscription_changes
+      (child_subscription_id, student_profile_id, owner_parent_profile_id, change_type,
+       subject_id, interval, effective_at, prorated_amount, currency, recurring_before,
+       recurring_after, discount_percent, remaining_ratio, period_days, idempotency_key,
+       created_by_profile_id)
+    values
+      (v_sub.id, p_student_profile_id, v_sub.owner_parent_profile_id, 'reinstate',
+       v_row.subject_id, v_row.iv, now(), 0, v_sub.currency, v_before,
+       v_after, v_pct, 1, null, p_idempotency_key, v_actor)
+    on conflict do nothing;
+  end loop;
+
+  -- ---- additions: a NEW full cycle anchored at now() -----------------------
+  -- TRUE adds only: no row at all, or a row whose coverage already lapsed. The
+  -- on-conflict branch below therefore only ever fires for a LAPSED row, where
+  -- resetting the period is exactly right — it genuinely is a new subscription.
+  for v_row in
+    select s.subject_id, s.interval as iv, sp.price_amount
+    from public.plan_change_states(v_sub.id, p_items) s
+    join public.subjects_pricing sp
+      on sp.subject_id = s.subject_id and sp.interval = s.interval and sp.status = 'active'
+    where s.state = 'add'
+  loop
     insert into public.subscription_subjects
       (child_subscription_id, subject_id, interval, price_amount, currency,
        current_period_start, current_period_end)
@@ -8695,6 +8817,10 @@ begin
   end loop;
 
   -- ---- cycle changes: SCHEDULED only, never a refund, never a charge -------
+  -- Reaches a just-reinstated subject too, because the loop above already
+  -- cleared its remove_at. That is the whole point of the ordering: a parent
+  -- who un-cancels a subject AND moves it to another cycle gets both, and the
+  -- cycle still applies at that subject's own renewal rather than immediately.
   for v_row in
     select ss.subject_id,
            coalesce(ss.pending_interval, ss.interval, v_sub.interval) as from_iv,
@@ -8737,7 +8863,7 @@ end;
 $$;
 
 comment on function public.apply_plan_change(uuid, jsonb, text) is
-  'Migration 109: applies a DESIRED full per-subject basket atomically — adds open their own now()-anchored cycle, removals are scheduled for THAT subject''s own period end, cycle changes write pending_interval only. quote_plan_change is the single source of the numbers; assert_payments_enabled() gates adds and cycle changes while removals stay legal.';
+  'Migration 109/120: applies a DESIRED full per-subject basket atomically — true adds open their own now()-anchored cycle, a subject whose scheduled removal has not yet lapsed is REINSTATED (remove_at cleared, period and price untouched, nothing charged), removals are scheduled for THAT subject''s own period end, cycle changes write pending_interval only. quote_plan_change is the single source of the numbers and plan_change_states of the add/reinstate/covered split; assert_payments_enabled() gates adds and cycle changes while removals and reinstatements stay legal.';
 
 -- ---- the boundary job: a scheduled cycle actually takes effect --------------
 -- Without this, pending_interval is WRITE-ONLY: apply_plan_change stores the
@@ -8820,6 +8946,10 @@ comment on function public.apply_due_plan_changes() is
 
 revoke all on function public.apply_due_plan_changes() from public, anon, authenticated;
 grant execute on function public.apply_due_plan_changes() to service_role;
+
+-- Migration 120 — the add/reinstate/covered classifier both plan RPCs read.
+revoke all on function public.plan_change_states(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.plan_change_states(uuid, jsonb) to service_role;
 
 revoke all on function public.quote_plan_change(uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.quote_plan_change(uuid, jsonb) to service_role;

@@ -58,6 +58,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.selectedCount": "Seçilmiş fənlər",
     "subjedit.pendingAdd": "Əlavə olunanlar",
     "subjedit.pendingRemove": "Silinənlər",
+    // Migration 120 — UN-CANCEL. Ləğvi planlanmış, lakin dövrü hələ bitməmiş
+    // fənni yenidən seçmək əlavə ALIŞ deyil: ödəniş yoxdur, dövr olduğu kimi
+    // qalır. Ona görə "Əlavə olunanlar" siyahısında yox, öz blokunda görünür.
+    "subjedit.pendingReinstate": "Bərpa olunanlar",
+    "subjedit.reinstateLine": "{subject} — ləğv geri götürüldü, əvvəlki kimi {date} tarixində yenilənir.",
+    "subjedit.reinstateNote":
+      "Ləğvi geri götürmək pulsuzdur: artıq ödədiyiniz dövr olduğu kimi qalır, fənn öz tarixində yenilənir və indi heç nə ödəmirsiniz.",
     "subjedit.noChanges": "Dəyişiklik yoxdur",
     // ---- Structured change summary. PRORATION IS RETIRED (owner,
     // 2026-08-17): every subject is billed on ITS OWN cycle, starting the day
@@ -1831,6 +1838,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.selectedCount": "Selected subjects",
     "subjedit.pendingAdd": "Added",
     "subjedit.pendingRemove": "Removed",
+    "subjedit.pendingReinstate": "Reinstated",
+    "subjedit.reinstateLine": "{subject} — cancellation undone, renews on {date} as before.",
+    "subjedit.reinstateNote":
+      "Undoing a cancellation is free: the period you have already paid for stays exactly as it was, the subject renews on its own date, and nothing is charged now.",
     "subjedit.noChanges": "No changes yet",
     // ---- Structured change summary; proration retired (see the az block). ----
     "subjedit.dueNow": "Pay now",
@@ -3572,6 +3583,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subjedit.selectedCount": "Выбранные предметы",
     "subjedit.pendingAdd": "Добавлено",
     "subjedit.pendingRemove": "Удалено",
+    "subjedit.pendingReinstate": "Возобновлено",
+    "subjedit.reinstateLine": "{subject} — отказ отменён, продлевается {date}, как и раньше.",
+    "subjedit.reinstateNote":
+      "Отмена отказа бесплатна: уже оплаченный период сохраняется полностью, предмет продлевается в свою обычную дату, и сейчас с вас ничего не списывается.",
     "subjedit.noChanges": "Изменений пока нет",
     // ---- Structured change summary; proration retired (see the az block). ----
     "subjedit.dueNow": "К оплате сейчас",

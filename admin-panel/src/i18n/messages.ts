@@ -624,6 +624,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "flt.allCities": "Bütün şəhərlər",
     "flt.noMatches": "Filtrlərə uyğun nəticə tapılmadı.",
     "qstat.total": "Cəmi",
+    "qstat.scopeBank": "Rəqəmlər bütün sual bankına aiddir — aşağıdakı filtrlərdən asılı deyil. Statusa görə süzmək üçün kartlardan birinə klikləyin.",
     "qnotice.olympiadScoped":
       "Bu sual olimpiada paketinə aiddir və yalnız paketin öz səhifəsindən idarə olunur.",
     "bulk.codesRef": "Sahə dəyərləri",
@@ -2120,6 +2121,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "flt.allCities": "All cities",
     "flt.noMatches": "No results match the filters.",
     "qstat.total": "Total",
+    "qstat.scopeBank": "These counts cover the whole question bank and do not follow the filters below. Click a card to filter the list by that status.",
     "qnotice.olympiadScoped":
       "This question belongs to an olympiad package and is managed only from that package's page.",
     "bulk.codesRef": "Field values",
@@ -3621,6 +3623,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "flt.allCities": "Все города",
     "flt.noMatches": "По выбранным фильтрам ничего не найдено.",
     "qstat.total": "Всего",
+    "qstat.scopeBank": "Числа относятся ко всему банку вопросов и не зависят от фильтров ниже. Нажмите на карточку, чтобы отфильтровать список по статусу.",
     "qnotice.olympiadScoped":
       "Этот вопрос относится к пакету олимпиады и управляется только со страницы пакета.",
     "bulk.codesRef": "Значения полей",

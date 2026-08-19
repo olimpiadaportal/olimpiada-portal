@@ -46,9 +46,8 @@ const KEYS = [
   "sub.discount",
   "pricing.plan.weekly.note", "pricing.plan.monthly.note",
   "pricing.plan.yearly.note",
-  // payment (demo)
-  "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",
-  "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing", "pay.success",
+  // payment confirmation (step 4) + the result
+  "pay.title", "pay.note", "pay.payNow", "pay.processing", "pay.success",
   "pay.idRevealed", "pay.subtotal", "pay.discount", "pay.total",
   // done
   "parent.child.idNote", "parent.dash.title",

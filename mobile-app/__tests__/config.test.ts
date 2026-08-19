@@ -77,6 +77,13 @@ describe("parseMobileConfig", () => {
   it("never trusts an unknown payment mode", () => {
     expect(parseMobileConfig({ payment: { mode: "free-for-all" } }).payment.mode).toBe("off");
   });
+
+  // The demo payment mode was deleted platform-wide (owner, 2026-08-18). A
+  // server (or a stale cached config) that still says "demo" must land on the
+  // fail-closed kill switch — never on a mode the app would treat as live.
+  it("treats the retired demo mode as off", () => {
+    expect(parseMobileConfig({ payment: { mode: "demo" } }).payment.mode).toBe("off");
+  });
 });
 
 describe("compareSemver", () => {

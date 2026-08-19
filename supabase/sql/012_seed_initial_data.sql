@@ -700,9 +700,12 @@ insert into public.feature_flags (key, enabled) values
   ('launch_promo',    true),
   ('news_public',     true),
   ('olympiad_module', true),
-  -- Round 11 (migration 025): payment modes. At most ONE of payments /
-  -- demo_payments / giveaway_period may be enabled (DB trigger in 011).
-  ('demo_payments',   false),
+  -- Round 11 (migration 025) / migration 121: payment modes. At most ONE of
+  -- payments / giveaway_period may be enabled (DB trigger in 011); neither
+  -- enabled = mode `off`. The third flag (`demo_payments`) was DELETED on
+  -- 2026-08-18 together with the demo payment mode — do not re-add it here:
+  -- the exclusivity trigger now REJECTS that row on insert, so a from-zero
+  -- build that seeded it would abort.
   ('giveaway_period', false)
 on conflict (key) do nothing;
 

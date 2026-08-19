@@ -126,8 +126,10 @@ district, plb.* — into `messages.generated.ts`); mobile-only additions live in
   REAL pool count** (fed by `features/olympiads/data.ts` — §6.1). Detail sheet
   restyled (grab handle, KeyRows with icons, gradient buy CTA).
 - **Subscription** — active plan card with gradient border, plan rows,
-  `ManageSubjectsEditor`/`CancelSheet` restyled; demo Billing/Invoices keep
-  their demo data (owner-approved) but adopt the new visual system.
+  `ManageSubjectsEditor`/`CancelSheet` restyled. *(2026-08-18: the demo
+  Billing/Invoices sections are DELETED — fabricated amounts and a fake card
+  cannot ship in a store binary, and a "demo data" disclaimer does not cure
+  them.)*
 - **Notifications (shared parent+student)** — date-grouped list, unread dot +
   weight, category chips, `ListRow`-based rows, detail sheet restyled,
   mark-all-read as header action.

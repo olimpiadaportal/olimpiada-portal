@@ -224,7 +224,7 @@ export function ChildInfoForm({
         }
         disabled={disabled}
         error={err("cityId")}
-        closeLabel={t("dpay.cancel")}
+        closeLabel={t("mob.select.cancel")}
       />
       {hasDistricts ? (
         <SelectField
@@ -235,7 +235,7 @@ export function ChildInfoForm({
           onChange={(cityDistrictId) => onChange({ cityDistrictId })}
           disabled={disabled}
           error={err("cityDistrictId")}
-          closeLabel={t("dpay.cancel")}
+          closeLabel={t("mob.select.cancel")}
         />
       ) : null}
       <SelectField
@@ -248,7 +248,7 @@ export function ChildInfoForm({
         onChange={(schoolId) => onChange({ schoolId })}
         disabled={disabled || !value.cityId}
         error={err("schoolId")}
-        closeLabel={t("dpay.cancel")}
+        closeLabel={t("mob.select.cancel")}
       />
       <SelectField
         label={`${t("addchild.field.grade")} *`}
@@ -258,7 +258,7 @@ export function ChildInfoForm({
         onChange={(gradeId) => onChange({ gradeId })}
         disabled={disabled}
         error={err("gradeId")}
-        closeLabel={t("dpay.cancel")}
+        closeLabel={t("mob.select.cancel")}
       />
       <View style={{ gap: spacing.xs }}>
         {/* Run 2 of 2: a run of one. It only DISMISSES — the avatar picker and

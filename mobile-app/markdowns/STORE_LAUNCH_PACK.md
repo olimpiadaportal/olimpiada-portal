@@ -157,9 +157,11 @@ usage string set via the expo-local-authentication plugin). Nothing else.
 - **Purchasing happens on the WEB only** (browser, ABB, AZN). The mobile app is
   **purchase-silent for BOTH roles** — parent and child share one binary, and Google's
   consumption-only test is app-wide, so the parent tabs must be purchase-free too.
-- **Payment posture is a BUILD-TIME constant.** Store builds compile with commerce off
-  and the demo/subscribe code dead-stripped. `demo` / `giveaway` flows run in
-  **internal builds only**. (Previously this pack said they "may run end-to-end
+- **Payment posture is a BUILD-TIME constant.** *(2026-08-18: this is now the state of
+  the code, not a target — the demo mode is deleted platform-wide, and the demo sheet,
+  the subscribe wizard and the olympiad buy flow are gone from the binary rather than
+  flag-gated inside it. The remaining modes are `real | giveaway | off`, and none of
+  them renders a price or a purchase CTA.)* (Previously this pack said they "may run end-to-end
   because no real money moves" — that is Apple 2.3.1(a) hidden/dormant functionality,
   and a remotely-switchable non-IAP checkout risks **developer-account termination**,
   not merely rejection.)

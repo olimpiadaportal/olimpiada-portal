@@ -1,14 +1,17 @@
 // Round 43 — "Ətraflı" olympiad detail rows (web OlympiadPurchase
 // DetailsDialogBody parity). Every AVAILABLE field with its poly.det.* az label;
 // a row whose value is null/empty is dropped entirely (never renders
-// "null"/"undefined"). Dates use the shared Baku formatLongDate; money uses the
-// existing fmtMoney. Shared by the student + parent olympiad card lists so both
-// details views stay identical. Pure (no supabase import) — jest-friendly.
+// "null"/"undefined"). Dates use the shared Baku formatLongDate. Shared by the
+// student + parent olympiad card lists so both details views stay identical.
+// Pure (no supabase import) — jest-friendly.
+//
+// There is NO price row and no way to ask for one (owner, 2026-08-18): the app
+// is purchase-silent for both roles, so the optional includePrice flag that
+// the parent sheet used to pass was deleted along with the buy flow.
 import type { Locale } from "@/i18n";
 import { formatLongDate } from "@/lib/formatDate";
 import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
-import { fmtMoney } from "@/features/parent/commerce";
 import type { OlympiadPackageRow } from "@/lib/data";
 
 export type OlympiadDetailRow = { key: string; label: string; value: string };
@@ -40,19 +43,6 @@ export function buildOlympiadDetailRows(
   count: number,
   locale: Locale,
   t: (key: string) => string,
-  /**
-   * Round 55 (store compliance): append the AZN price row.
-   *
-   * DEFAULTS TO FALSE — a price must never reach a CHILD. This builder is
-   * shared by the parent catalog and the STUDENT olympiad screen, and it used
-   * to append the price unconditionally, so the student sheet showed an AZN
-   * amount directly above "ask your parent to buy it". That breaks three rules
-   * at once: no price anywhere in the app, children never see commerce, and
-   * children's-advertising rules forbid urging a minor to make an adult buy.
-   * Opting IN keeps the failure mode safe: a new caller that forgets the flag
-   * shows no price, rather than silently exposing one.
-   */
-  includePrice = false,
 ): OlympiadDetailRow[] {
   const rows: OlympiadDetailRow[] = [];
   const push = (key: string, label: string, value: string | null | undefined) => {
@@ -109,12 +99,5 @@ export function buildOlympiadDetailRows(
   push("eventAt", t("poly.det.eventAt"), dateOf(pkg.event_starts_at));
   push("saleStart", t("poly.det.saleStart"), dateOf(pkg.sale_starts_at));
   push("saleEnd", t("poly.det.saleEnd"), dateOf(pkg.sale_ends_at));
-  if (includePrice) {
-    push(
-      "price",
-      t("poly.det.price"),
-      pkg.price_amount > 0 ? fmtMoney(pkg.price_amount, pkg.currency) : t("poly.free"),
-    );
-  }
   return rows;
 }

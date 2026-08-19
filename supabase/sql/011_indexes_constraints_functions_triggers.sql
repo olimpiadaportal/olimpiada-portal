@@ -437,10 +437,11 @@ create trigger trg_audit_mobile_app_versions
   for each row execute function public.fn_audit_row();
 
 -- get_mobile_config(): one JSON of everything the app gates itself with. The
--- payment MODE is resolved here with web paymentMode.ts parity: missing
--- `payments` flag -> real (legacy), missing demo/giveaway -> off; the giveaway
--- window expires LAZILY (flag alone is never enough); precedence
--- giveaway(active) > demo > real > off.
+-- payment MODE is resolved here with web paymentMode.ts parity: a missing
+-- flag row means OFF (fail closed); the giveaway window expires LAZILY (the
+-- flag alone is never enough); precedence giveaway(active) > real > off.
+-- Migration 121 DELETED the fourth mode (demo): a demo_payments row can no
+-- longer exist, so nothing here reads one.
 create or replace function public.get_mobile_config()
 returns jsonb
 language plpgsql
@@ -451,7 +452,6 @@ as $$
 declare
   v_flags        jsonb;
   v_real         boolean;
-  v_demo         boolean;
   v_gvw_flag     boolean;
   v_gvw_days     int := 0;
   v_gvw_start    timestamptz;
@@ -467,14 +467,13 @@ declare
 begin
   select jsonb_object_agg(key, enabled) into v_flags
   from public.feature_flags
-  where key in ('payments','demo_payments','giveaway_period','news_public',
+  where key in ('payments','giveaway_period','news_public',
                 'olympiad_module','leaderboard','notifications',
                 'notifications_push','launch_promo');
   v_flags    := coalesce(v_flags, '{}'::jsonb);
   -- Round 51 (migration 091): missing flag row = OFF for the money gate too
   -- (fail closed; matches current_payment_mode and the web resolver).
   v_real     := coalesce((v_flags->>'payments')::boolean, false);
-  v_demo     := coalesce((v_flags->>'demo_payments')::boolean, false);
   v_gvw_flag := coalesce((v_flags->>'giveaway_period')::boolean, false);
 
   select value_json into v_setting from public.system_settings where key = 'giveaway.duration_days';
@@ -496,7 +495,6 @@ begin
   end if;
   v_mode := case
     when v_gvw_active then 'giveaway'
-    when v_demo       then 'demo'
     when v_real       then 'real'
     else 'off'
   end;
@@ -578,8 +576,9 @@ begin
         'backup_retention',        coalesce((select value_json->>0 from public.system_settings where key='privacy.backup_retention'), ''),
         -- DERIVED, never stored: both already have exactly one canonical switch
         -- in this database, and a second free-typed admin copy could only ever
-        -- contradict it. 'real' only — demo/giveaway move no money and touch no
-        -- card data, so §8 must keep describing payments in the future tense.
+        -- contradict it. 'real' only — a giveaway window moves no money and
+        -- touches no card data, so §8 must keep describing payments in the
+        -- future tense while one is running.
         'push_live',               coalesce((v_flags->>'notifications_push')::boolean, false),
         'payments_live',           (v_mode = 'real')),
     'version', coalesce(v_version, '{}'::jsonb)
@@ -3166,7 +3165,6 @@ as $$
 declare
   v_flags      jsonb;
   v_real       boolean := false;
-  v_demo       boolean := false;
   v_gvw_flag   boolean := false;
   v_gvw_days   int := 0;
   v_gvw_start  timestamptz;
@@ -3175,12 +3173,11 @@ declare
 begin
   select jsonb_object_agg(key, enabled) into v_flags
   from public.feature_flags
-  where key in ('payments', 'demo_payments', 'giveaway_period');
+  where key in ('payments', 'giveaway_period');
   v_flags := coalesce(v_flags, '{}'::jsonb);
 
   -- Missing row → OFF for every flag (fail closed; F1).
   v_real     := coalesce((v_flags ->> 'payments')::boolean, false);
-  v_demo     := coalesce((v_flags ->> 'demo_payments')::boolean, false);
   v_gvw_flag := coalesce((v_flags ->> 'giveaway_period')::boolean, false);
 
   -- Giveaway window — the EXACT parsing rules of get_mobile_config (F2):
@@ -3208,7 +3205,6 @@ begin
 
   return case
     when v_gvw_active then 'giveaway'
-    when v_demo       then 'demo'
     when v_real       then 'real'
     else 'off'
   end;
@@ -3216,11 +3212,11 @@ end;
 $$;
 
 comment on function public.current_payment_mode() is
-  'Round 51: resolves payments/demo_payments/giveaway_period into '
-  'off|real|demo|giveaway with EXACTLY get_mobile_config''s parsing rules — '
+  'Migration 121: resolves payments/giveaway_period into '
+  'off|real|giveaway with EXACTLY get_mobile_config''s parsing rules — '
   'a 013 check asserts the two can never drift. Missing flag rows mean OFF '
   '(fail closed); a malformed giveaway window means "no window", never an '
-  'exception out of a money gate.';
+  'exception out of a money gate. The demo mode was deleted on 2026-08-18.';
 
 revoke all on function public.current_payment_mode() from public, anon;
 grant execute on function public.current_payment_mode() to authenticated, service_role;
@@ -3525,10 +3521,11 @@ revoke all on function public.admin_upsert_subject_price(uuid, text, numeric) fr
 grant execute on function public.admin_upsert_subject_price(uuid, text, numeric) to authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
--- Round 11 (migrations 2026_07_04_025 + 027): payment-mode exclusivity +
--- free-access grants. Three payment modes exist as feature flags — payments
--- (real/automatic), demo_payments, giveaway_period — and the DB guarantees at
--- most ONE is enabled.
+-- Round 11 (migrations 2026_07_04_025 + 027) / migration 121: payment-mode
+-- exclusivity + free-access grants. TWO payment-mode flags exist — payments
+-- (real/automatic) and giveaway_period — and the DB guarantees at most ONE is
+-- enabled. Neither enabled = mode `off` (the kill switch, and the fail-closed
+-- fallback every resolver returns). The demo mode was DELETED by 121.
 -- -----------------------------------------------------------------------------
 
 -- is_giveaway_active() — single DB-side source of truth for the free window
@@ -3680,8 +3677,11 @@ comment on function public.current_parent_free_access() is
 revoke all on function public.current_parent_free_access() from public, anon;
 grant execute on function public.current_parent_free_access() to authenticated, service_role;
 
--- Enabling any one of the trio disables the other two; enabling giveaway_period
--- (re)stamps system_settings 'giveaway.started_at' so the countdown restarts.
+-- Enabling either flag disables the other; enabling giveaway_period (re)stamps
+-- system_settings 'giveaway.started_at' so the countdown restarts. A
+-- demo_payments row is REJECTED outright (migration 121 deleted that mode):
+-- nothing resolves it any more, so a row that came back would render as a
+-- payment mode the admin can select while changing nothing.
 -- SECURITY DEFINER so the cross-row/cross-table writes succeed for any
 -- authorized caller (admin session under RLS, or service role). The inner
 -- UPDATE sets enabled=false, which does not re-satisfy the trigger's WHEN
@@ -3694,13 +3694,21 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
+  -- Migration 121: the demo payment mode was DELETED. Nothing resolves it any
+  -- more, so a row carrying this key must never exist again — fail loudly
+  -- rather than let a dead switch reappear in the admin panel.
+  if new.key = 'demo_payments' then
+    raise exception 'payment mode: demo_payments was removed (migration 121)'
+      using errcode = 'check_violation', hint = 'demo_payments_removed';
+  end if;
+
   if tg_op = 'UPDATE' and old.enabled = true then
     return new;
   end if;
 
   update public.feature_flags
      set enabled = false, updated_at = now()
-   where key in ('payments', 'demo_payments', 'giveaway_period')
+   where key in ('payments', 'giveaway_period')
      and key <> new.key
      and enabled;
 
@@ -3715,13 +3723,19 @@ end;
 $$;
 
 comment on function public.fn_payment_mode_exclusivity() is
-  'DB-layer guarantee that payments / demo_payments / giveaway_period are never enabled together; stamps giveaway.started_at when the giveaway flips on.';
+  'Migration 121: DB-layer guarantee that payments / giveaway_period are never '
+  'enabled together; stamps giveaway.started_at when the giveaway flips on; '
+  'REJECTS any demo_payments row (that payment mode was deleted).';
 
+-- The WHEN clause carries the demo_payments guard WITHOUT the
+-- `new.enabled = true` condition on purpose: an insert of a DISABLED demo row
+-- must be rejected too, or the dead switch simply reappears in /settings.
 drop trigger if exists trg_payment_mode_exclusivity on public.feature_flags;
 create trigger trg_payment_mode_exclusivity
   after insert or update of enabled on public.feature_flags
   for each row
-  when (new.enabled = true and new.key in ('payments', 'demo_payments', 'giveaway_period'))
+  when (new.key = 'demo_payments'
+        or (new.enabled = true and new.key in ('payments', 'giveaway_period')))
   execute function public.fn_payment_mode_exclusivity();
 
 -- Allocate the deferred 8-digit login ID WITHOUT a subscription (giveaway
@@ -8108,7 +8122,7 @@ grant execute on function public.notify_giveaway_ending() to service_role;
 
 -- =============================================================================
 -- Admin subscription lifecycle (migration 077): the ONE centralized, self-
--- auditing entry point the Admin Panel uses to manage demo/comped
+-- auditing entry point the Admin Panel uses to manage comped / admin-granted
 -- subscriptions. Validated transitions only (activate/cancel/expire/extend);
 -- anything else raises check_violation with hint 'invalid_transition'. Also
 -- reconciles students.access_status for the affected child. Administrator-only

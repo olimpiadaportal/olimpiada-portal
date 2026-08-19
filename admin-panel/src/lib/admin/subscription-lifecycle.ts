@@ -74,12 +74,16 @@ export function statusPillClass(status: string): string {
   }
 }
 
-// "demo" = no provider wired up yet (default 'none'); "comped" = an admin
-// grant (admin_grant_child_access); anything else is a real future provider.
-export type ProviderKind = "demo" | "comped" | "other";
+// "none" = no provider charged this subscription (column default 'none');
+// "comped" = an admin grant (admin_grant_child_access); anything else is a real
+// future provider. It used to read "demo", after the demo payment mode — that
+// mode was deleted on 2026-08-18 and the label would now name something that
+// does not exist, while the fact it describes (no provider transaction) is
+// unchanged.
+export type ProviderKind = "none" | "comped" | "other";
 
 export function providerKind(provider: string | null | undefined): ProviderKind {
-  if (!provider || provider === "none") return "demo";
+  if (!provider || provider === "none") return "none";
   if (provider === "admin_grant") return "comped";
   return "other";
 }
@@ -87,5 +91,5 @@ export function providerKind(provider: string | null | undefined): ProviderKind 
 export function providerBadgeClass(kind: ProviderKind): string {
   if (kind === "comped") return "pill-ok";
   if (kind === "other") return "pill-ok"; // a real provider = a real transaction
-  return "pill-muted"; // demo
+  return "pill-muted"; // no provider transaction
 }

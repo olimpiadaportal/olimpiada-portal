@@ -23,10 +23,6 @@ export const FLAG_META: Record<string, FlagMeta> = {
     labelKey: "settings.flag.payments.label",
     descKey: "settings.flag.payments.desc",
   },
-  demo_payments: {
-    labelKey: "settings.flag.demo_payments.label",
-    descKey: "settings.flag.demo_payments.desc",
-  },
   giveaway_period: {
     labelKey: "settings.flag.giveaway_period.label",
     descKey: "settings.flag.giveaway_period.desc",

@@ -9,6 +9,15 @@ parent, child/student, and public site. Mobile is future-only (not in this build
 > **Trilingual:** every screen has a language switcher. Test **az / en / ru**. If an en/ru
 > translation is ever missing, you should see the **Azerbaijani** text (fallback), never a raw key.
 
+> **⚠️ 2026-08-18 — the DEMO payment mode is DELETED (migration 121).** This guide is an
+> append-only log of past review rounds, so older sections still walk you through a **DEMO
+> checkout**, cosmetic **card fields**, a **"Demo Payments"** flag and **fake billing/invoice**
+> rows. Those flows no longer exist in any app — treat every such step as a historical record,
+> not an instruction. The steps that replace them are in the final section,
+> **[2026-08-18 — the demo payment mode is gone (DM1–DM6)](#2026-08-18--the-demo-payment-mode-is-gone-migration-121)**.
+> Affected: **R4** step 4, **Z1**, **Z2**, **ZF4**, the analytics/subscription DEMO notes in the
+> Round-8 section, **AP3**, and the **M2/M-series** mobile notes.
+
 ---
 
 ## 0. One-time setup
@@ -2040,3 +2049,76 @@ If anything doesn't match, tell me the **ZZ-# / AB-# / AC-# / AD-# / AE-# / AF-#
 - Sign in as a **Content Manager**: the whole Olimpiada module stays invisible, and there is no way to reach the append.
 
 If anything doesn't match, tell me the **TT-#** + what you saw.
+
+---
+
+# 2026-08-18 — the demo payment mode is gone (migration 121)
+
+The platform had FOUR payment modes; it now has **THREE: `real` | `giveaway` | `off`.** The
+`demo_payments` feature flag row is deleted, the database **rejects** its re-insert, and every
+cosmetic checkout surface (web `DemoPaymentModal`, the Add-Child card fields, the fake Billing /
+Invoices blocks, mobile `DemoPaySheet` + `SubscribeFlow`) is deleted from the source. `off` stays —
+it is the kill switch and the fail-closed fallback, **not** a payment method.
+
+Run these against dev with both apps up (`web-app` :3000, `admin-panel` :3001), plus Expo for DM6.
+
+## DM1. Admin → Settings → Features → "Payment mode": TWO switches, not three
+- The card lists exactly **Automatic payments** and **Giveaway Period**. There is **no "Demo payments"
+  row**, in az / en / ru.
+- Exclusivity still holds: turn Giveaway ON → Automatic visibly flips OFF, and vice versa. **Both OFF
+  at once is allowed** and means mode `off`.
+- The card description and the exclusivity note both speak of **two** modes — no sentence anywhere
+  still says "three modes" or names a demo mode.
+- *(Supersedes **Z1**, whose trio no longer exists.)*
+
+## DM2. Parent → Manage subjects: a confirmation sheet, never a card form
+- Payments **real** or **giveaway** → a child with a plan → **Manage subjects** → tick an extra
+  subject → **Save**.
+- Expect a **confirmation sheet** showing the authoritative server quote (per-subject lines, **Due
+  now**, and when each subject renews). Expect **no DEMO badge, no card number, no expiry, no CVC**.
+- **Cancel** → nothing changes (the subject stays locked). **Confirm** → the subject unlocks.
+- When nothing is due now (trial, removal-only, a scheduled cycle change) the sheet explains that
+  instead of showing 0, and its button reads the no-charge wording.
+- Untick a subject (keep ≥ 1) → Save applies directly, no sheet. The last subject cannot be unticked.
+- *(Supersedes **Z2**.)*
+
+## DM3. Add-Child wizard: step 4 is a confirm step
+- Parent → **Add child** in **real** mode: Info → Subjects → Plan → **Confirm** → Done.
+- Step 4 states the amount and what happens next, and has **no card fields at all** — so the old CVC
+  overflow check has nothing left to overflow.
+- **Done** still reveals the **8-digit ID**, and the child still appears on the dashboard. Completing
+  the wizard must not bounce you to /login.
+- In **giveaway** / free-access the wizard is still Info → Done with the ID revealed immediately; in
+  **off** it is Info → Done with the ID pending.
+- *(Supersedes **R4** step 4 and **ZF4**.)*
+
+## DM4. Parent → Subscription → Billing: real numbers or an honest empty state
+- For a child with an active plan, Billing shows only that child's **REAL** per-subject cycles, next
+  charge date and amount.
+- For a child with nothing active, Billing shows the empty state ("no billing details yet…"), in
+  az / en / ru.
+- **Nothing fabricated survives:** no `29/01/2026`, no `≈ 18 AZN`, no `MasterCard ****8475`, no
+  `INV-2026-001` / `INV-2025-012`, no "add card" / "download invoice" buttons, no invoice-email
+  toggle. The whole Invoices block is gone.
+- *(Supersedes the Round-8 `/subscription` DEMO note. The analytics dashboard's demo numbers are a
+  SEPARATE, still-open owner-approved item — unchanged by this round.)*
+
+## DM5. Admin → Subscriptions: a provider-less row is not called "Demo"
+- Open the list and a detail page for a subscription with no provider. The source badge reads
+  **"Provayder yoxdur" / "No provider" / "Без провайдера"** — never "Demo" / "Демо".
+- An admin-granted row still reads **Komplimentar / Comped / Льготная**.
+- The "Payment transaction" card still says plainly that no real provider transaction exists.
+
+## DM6. Mobile: purchase-silent in every mode
+- Expo Go, parent session, with the admin flags flipped one at a time:
+  - **real** → the Subscription tab shows a read-only status card; **no price, no Subscribe/Abunə ol
+    button, no checkout**.
+  - **giveaway / free access** → the free notice and the free-activation action still work; the
+    subjects editor shows **no amounts**.
+  - **off** → the payments-off notice; the subjects editor allows removals only.
+- Parent **Olimpiadalar** tab: browse-only — package details render with **no price and no buy CTA**.
+- Public **Xidmətlər / Services** screen: information only, **no AZN amount anywhere**.
+- Child session: no screen tells a child to **buy** anything (access/activation wording only).
+- *(Supersedes the payment-mode note and the demo bullets in the **M2 / M-series** sections.)*
+
+If anything doesn't match, tell me the **DM-#** + what you saw.

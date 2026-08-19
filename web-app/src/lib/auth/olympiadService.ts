@@ -22,7 +22,7 @@ import { notifyOlympiadPurchased } from "@/lib/notifications/events";
 export async function buyOlympiad(formData: FormData): Promise<void> {
   const parent = await requireParent();
   // Server-side gates: a purchase needs the olympiad module AND a transactable
-  // payment mode ('real'/'demo'/'giveaway'). Giveaway windows grant free
+  // payment mode ('real'/'giveaway'). Giveaway windows grant free
   // SUBJECT access only — olympiad packages stay purchase-only at full price
   // through the mock payment seam; only mode 'off' blocks purchases.
   if (!(await isFeatureEnabled("olympiad_module"))) return;

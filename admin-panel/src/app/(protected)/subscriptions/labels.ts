@@ -13,7 +13,7 @@ type Dict = Record<string, string>;
 const STRINGS: Record<Locale, Dict> = {
   az: {
     "subs.subtitle":
-      "Uşaq abunəliklərini idarə et: demo/komplimentar əldə edilən girişləri fəallaşdır, uzat, ləğv et və ya bitir. Ödəniş provayderi hələ qoşulmayıb.",
+      "Uşaq abunəliklərini idarə et: komplimentar və ya inzibatçı tərəfindən verilmiş girişləri fəallaşdır, uzat, ləğv et və ya bitir. Ödəniş provayderi hələ qoşulmayıb.",
 
     // Filters
     "subs.filter.search": "Uşaq və ya valideyn (ad / e-poçt)",
@@ -63,7 +63,7 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.interval.year": "İllik",
 
     // Source / provider
-    "subs.source.demo": "Demo",
+    "subs.source.none": "Provayder yoxdur",
     "subs.source.comped": "Komplimentar",
 
     // Detail page
@@ -100,7 +100,7 @@ const STRINGS: Record<Locale, Dict> = {
       "Bu abunəlik üçün ayrıca bacı/qardaş endirim qeydi yoxdur.",
     "subs.detail.paymentTitle": "Ödəniş əməliyyatı",
     "subs.detail.paymentNote":
-      "Real ödəniş provayderi hələ qoşulmayıb — bu, real pul əməliyyatı olmayan demo və ya inzibatçı tərəfindən verilmiş komplimentar girişdir. Heç bir ödəniş qeydi yaradılmayıb.",
+      "Real ödəniş provayderi hələ qoşulmayıb — bu giriş üçün heç bir pul əməliyyatı olmayıb (inzibatçı tərəfindən verilmiş və ya komplimentar giriş). Heç bir ödəniş qeydi yaradılmayıb.",
     "subs.detail.actionsSection": "Əməliyyatlar",
     "subs.detail.noActions":
       "Bu status üçün mövcud əməliyyat yoxdur (son vəziyyət).",
@@ -151,7 +151,7 @@ const STRINGS: Record<Locale, Dict> = {
   },
   en: {
     "subs.subtitle":
-      "Manage child subscriptions: activate, extend, cancel or expire demo/comped access. No real payment provider is wired up yet.",
+      "Manage child subscriptions: activate, extend, cancel or expire comped and admin-granted access. No real payment provider is wired up yet.",
 
     "subs.filter.search": "Child or parent (name / email)",
     "subs.filter.status": "Status",
@@ -196,7 +196,7 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.interval.month": "Monthly",
     "subs.interval.year": "Yearly",
 
-    "subs.source.demo": "Demo",
+    "subs.source.none": "No provider",
     "subs.source.comped": "Comped",
 
     "subs.detail.back": "Back to Subscriptions",
@@ -232,7 +232,7 @@ const STRINGS: Record<Locale, Dict> = {
       "No separate sibling-discount record for this subscription.",
     "subs.detail.paymentTitle": "Payment transaction",
     "subs.detail.paymentNote":
-      "No real payment provider is connected yet — this is demo or admin-granted comped access, not a real money transaction. No payment record was created.",
+      "No real payment provider is connected yet — no money moved for this access (admin-granted or comped). No payment record was created.",
     "subs.detail.actionsSection": "Actions",
     "subs.detail.noActions":
       "No actions are available for this status (terminal state).",
@@ -281,7 +281,7 @@ const STRINGS: Record<Locale, Dict> = {
   },
   ru: {
     "subs.subtitle":
-      "Управляйте подписками детей: активируйте, продлевайте, отменяйте или завершайте демо/льготный доступ. Реальный платёжный провайдер пока не подключён.",
+      "Управляйте подписками детей: активируйте, продлевайте, отменяйте или завершайте льготный и выданный администратором доступ. Реальный платёжный провайдер пока не подключён.",
 
     "subs.filter.search": "Ребёнок или родитель (имя / email)",
     "subs.filter.status": "Статус",
@@ -326,7 +326,7 @@ const STRINGS: Record<Locale, Dict> = {
     "subs.interval.month": "Ежемесячно",
     "subs.interval.year": "Ежегодно",
 
-    "subs.source.demo": "Демо",
+    "subs.source.none": "Без провайдера",
     "subs.source.comped": "Льготная",
 
     "subs.detail.back": "Назад к подпискам",
@@ -362,7 +362,7 @@ const STRINGS: Record<Locale, Dict> = {
       "Отдельной записи о скидке за братьев/сестёр для этой подписки нет.",
     "subs.detail.paymentTitle": "Платёжная операция",
     "subs.detail.paymentNote":
-      "Реальный платёжный провайдер ещё не подключён — это демо- или льготный доступ, предоставленный администратором, без реальной денежной операции. Запись об оплате не создавалась.",
+      "Реальный платёжный провайдер ещё не подключён — по этому доступу не было денежных операций (доступ выдан администратором или предоставлен льготно). Запись об оплате не создавалась.",
     "subs.detail.actionsSection": "Действия",
     "subs.detail.noActions":
       "Для этого статуса действия недоступны (конечное состояние).",

@@ -212,7 +212,7 @@ describe("tests home helpers", () => {
     expect(isGiveawayNow("giveaway", future, NOW)).toBe(true);
     expect(isGiveawayNow("giveaway", past, NOW)).toBe(false);
     expect(isGiveawayNow("giveaway", null, NOW)).toBe(true); // server said active
-    expect(isGiveawayNow("demo", future, NOW)).toBe(false);
+    expect(isGiveawayNow("real", future, NOW)).toBe(false);
     expect(isGiveawayNow(undefined, null, NOW)).toBe(false);
   });
 });

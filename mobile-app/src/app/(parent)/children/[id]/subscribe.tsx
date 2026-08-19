@@ -1,10 +1,14 @@
 // Subjects & subscription for ONE existing child (web /children/[id]/subscribe
 // parity). The id param is validated against the parent's own children (RLS
-// list) — a foreign/malformed id renders the not-your-child notice. Posture:
+// list) — a foreign/malformed id renders the not-your-child notice.
+//
+// PURCHASE-SILENT (docs/STORE_PAYMENTS_COMPLIANCE.md): there is no subscribe
+// wizard on mobile in ANY mode since the demo payment mode was deleted (owner,
+// 2026-08-18). Every branch below is read-only or free-activation:
 //   off        → gate.paymentsOff
-//   free modes → free notice + bffActivateFree when the child has no login ID
-//   real       → read-only note (money is managed on the family's web account)
-//   demo       → live sub ? ManageSubjectsEditor : SubscribeFlow (wizard 2-4)
+//   free modes → free notice + bffActivateFree when the child has no login ID,
+//                and the price-free subjects editor when a plan is live
+//   real       → status only (mob.pay.notInApp)
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -22,14 +26,12 @@ import { bffActivateFree } from "@/lib/api";
 import {
   extractChildUniqueId,
   fmtDate,
-  fmtMoney,
   groupChildId,
   isCancellable,
   resolvePosture,
   subStatusKey,
 } from "@/features/parent/commerce";
 import { ManageSubjectsEditor } from "@/features/parent/ManageSubjectsEditor";
-import { SubscribeFlow } from "@/features/parent/SubscribeFlow";
 import {
   useChildSubscriptions,
   useChildren,
@@ -84,8 +86,6 @@ export default function ChildSubscribeScreen() {
   const [freePending, setFreePending] = useState(false);
   const [freeError, setFreeError] = useState<string | null>(null);
   const [revealedId, setRevealedId] = useState<string | null>(null);
-  const [subscribedId, setSubscribedId] = useState<string | null>(null);
-  const [flowDone, setFlowDone] = useState(false);
 
   const loading =
     config.isPending || freeAccess.isPending || children.isPending || subs.isPending;
@@ -158,7 +158,9 @@ export default function ChildSubscribeScreen() {
   const cycleName = (iv: string | null) =>
     iv === "week" ? t("pricing.weekly") : iv === "year" ? t("pricing.yearly") : t("pricing.monthly");
 
-  // Compact live-subscription summary (status/per-subject cycles/total).
+  // Compact live-subscription summary. STATUS + WHAT IS ACTIVE + until when —
+  // never an amount and never a next-charge date (store compliance: show what
+  // is active, not what it costs).
   const liveSubCard = liveSub ? (
     <Card style={{ gap: spacing.sm }}>
       <Pill label={t(subStatusKey(liveSub.status))} tone="ok" />
@@ -179,17 +181,13 @@ export default function ChildSubscribeScreen() {
             : cycleName(liveSub.billing_interval)
         }
       />
-      {/* next_renewal_at is the NEXT CHARGE; current_period_end is only when
-          coverage ends (the MAX of the subject periods). */}
+      {/* current_period_end is when COVERAGE ends (the MAX of the subject
+          periods) — the honest read-only fact. next_renewal_at is a charge
+          date and is deliberately not shown. */}
       <KeyRow
-        label={t("billing.row.next")}
-        value={fmtDate(liveSub.next_renewal_at ?? liveSub.current_period_end, locale)}
+        label={t("mob.sub.accessUntil")}
+        value={fmtDate(liveSub.current_period_end, locale)}
       />
-      <KeyRow
-        label={t("billing.totalLabel")}
-        value={fmtMoney(liveSub.total_amount ?? 0, liveSub.currency)}
-      />
-      <AppText variant="muted">{t("plan.dueTodayNote")}</AppText>
     </Card>
   ) : null;
 
@@ -197,33 +195,7 @@ export default function ChildSubscribeScreen() {
     <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
       <AppText variant="muted">{childName}</AppText>
 
-      {flowDone ? (
-        // Demo subscribe finished — success + (new) login ID reveal.
-        <Card style={{ gap: spacing.md }}>
-          <AppText variant="title" style={{ textAlign: "center" }}>
-            {t("pay.success")}
-          </AppText>
-          {subscribedId ? (
-            <>
-              <AppText variant="muted" style={{ textAlign: "center" }}>
-                {t("pay.idRevealed")}
-              </AppText>
-              <IdReveal id={subscribedId} />
-              <AppText variant="muted" style={{ textAlign: "center" }}>
-                {t("parent.child.idNote")}
-              </AppText>
-            </>
-          ) : (
-            <AppText variant="muted" style={{ textAlign: "center" }}>
-              {t("sub.done")}
-            </AppText>
-          )}
-          <Button
-            title={t("parent.dash.title")}
-            onPress={() => router.replace("/(parent)/(tabs)/home")}
-          />
-        </Card>
-      ) : posture.paymentsOff ? (
+      {posture.paymentsOff ? (
         <GateNotice title={t("sub.title")} body={t("gate.paymentsOff")} />
       ) : posture.freeFlow ? (
         <>
@@ -269,45 +241,19 @@ export default function ChildSubscribeScreen() {
                 removeAt: s.remove_at,
               }))}
               defaultInterval={liveSub.billing_interval}
-              posture={posture}
               onSaved={invalidate}
             />
           ) : null}
         </>
-      ) : posture.webOnly ? (
+      ) : (
+        // 'real': read-only. The plan itself is not started, changed or paid
+        // for anywhere in this app.
         <>
           {liveSubCard}
           <Card>
-            <AppText variant="muted">{t("mob.pay.webOnly")}</AppText>
+            <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
           </Card>
         </>
-      ) : liveSub ? (
-        <>
-          {liveSubCard}
-          <ManageSubjectsEditor
-            studentId={id}
-            subjects={subjects.data ?? []}
-            covered={liveSub.subjects.map((s) => ({
-              subjectId: s.subject_id,
-              interval: s.interval,
-              pendingInterval: s.pending_interval,
-              removeAt: s.remove_at,
-            }))}
-            defaultInterval={liveSub.billing_interval}
-            posture={posture}
-            onSaved={invalidate}
-          />
-        </>
-      ) : (
-        <SubscribeFlow
-          studentId={id}
-          subjects={subjects.data ?? []}
-          onDone={(newId) => {
-            setSubscribedId(newId);
-            setFlowDone(true);
-            invalidate();
-          }}
-        />
       )}
     </ScreenScroll>
   );

@@ -1,27 +1,26 @@
-// SUBSCRIPTION tab (web /subscription one-page billing center parity,
-// redesigned): child selector chips → per-child live-subscription card (brand
-// gradient-border when a plan is live) + manage-subjects editor
-// (posture-aware) + cancel flow, plus the owner-approved, clearly labeled DEMO
-// Billing and Invoices sections (billing.demoNote) restyled to the new visual
-// system. Posture: editor runs in demo (payment-first sheet) and free modes
-// (direct); 'real' shows the web-only note; 'off' shows gate.paymentsOff.
+// SUBSCRIPTION tab: child selector chips → per-child live-subscription card
+// (brand gradient-border when a plan is live) + manage-subjects editor +
+// cancel flow.
+//
+// PURCHASE-SILENT (docs/STORE_PAYMENTS_COMPLIANCE.md, owner 2026-08-18 — the
+// demo payment mode is deleted). Two things went with it:
+//   - the FABRICATED Billing section (next charge 29/01/2026, "≈ 18 AZN",
+//     "MasterCard — 8475", expiry 11/2028) and the empty Invoices section. A
+//     "demo data" disclaimer does not cure a displayed false price
+//     (Guideline 2.3.1), and there is nothing truthful to put there yet, so
+//     the section — and the three-way switcher around it — is gone.
+//   - every amount. The card shows STATUS, the subjects and when access runs
+//     to; the web account keeps the money.
+// Posture: free modes and 'off' (removal-only) get the editor; 'real' is
+// read-only; 'off' also shows gate.paymentsOff.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  CalendarDays,
-  CreditCard,
-  FileText,
-  Receipt,
-  RefreshCw,
-  Wallet,
-} from "lucide-react-native";
+import { CalendarDays, CreditCard, FileText, RefreshCw } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { CmsProse } from "@/components/CmsProse";
-import { SectionHeader } from "@/components/SectionHeader";
-import { Segmented } from "@/components/Segmented";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
@@ -29,13 +28,7 @@ import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { subjectLabel } from "@/lib/subjectLabel";
-import {
-  fmtDate,
-  fmtMoney,
-  isCancellable,
-  resolvePosture,
-  subStatusKey,
-} from "@/features/parent/commerce";
+import { fmtDate, isCancellable, resolvePosture, subStatusKey } from "@/features/parent/commerce";
 import { CancelSheet } from "@/features/parent/CancelSheet";
 import { ManageSubjectsEditor } from "@/features/parent/ManageSubjectsEditor";
 import {
@@ -54,8 +47,6 @@ import {
   childDisplayName,
 } from "@/features/parent/ui";
 
-type SectionId = "plans" | "billing" | "invoices";
-
 export default function ParentSubscription() {
   const { tokens } = useTheme();
   const { t, locale } = useT();
@@ -68,7 +59,6 @@ export default function ParentSubscription() {
   const subjects = useSubjectOptions();
   const invalidate = useInvalidateParentData();
 
-  const [section, setSection] = useState<SectionId>("plans");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Captured when the sheet opens so it survives the post-cancel refetch.
   const [cancelTarget, setCancelTarget] = useState<{
@@ -148,20 +138,14 @@ export default function ParentSubscription() {
                 : intervalName(liveSub.billing_interval)
             }
           />
-          {/* next_renewal_at is the NEXT CHARGE (the MIN of the subject period
-              ends); current_period_end is now only when coverage ends. */}
+          {/* current_period_end is when COVERAGE ends. next_renewal_at is a
+              charge date and total_amount is an amount — neither belongs in a
+              purchase-silent binary. */}
           <KeyRow
             icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
-            label={t("billing.row.next")}
-            value={fmtDate(liveSub.next_renewal_at ?? liveSub.current_period_end, locale)}
+            label={t("mob.sub.accessUntil")}
+            value={fmtDate(liveSub.current_period_end, locale)}
           />
-          <KeyRow
-            icon={<Wallet size={16} color={tokens.muted} strokeWidth={2} />}
-            label={t("billing.totalLabel")}
-            value={fmtMoney(liveSub.total_amount ?? 0, liveSub.currency, locale)}
-          />
-          {/* total_amount is the NEXT INVOICE, not a monthly figure. */}
-          <AppText variant="muted">{t("plan.dueTodayNote")}</AppText>
           <KeyRow
             icon={<FileText size={16} color={tokens.muted} strokeWidth={2} />}
             label={t("subscription.subjects")}
@@ -195,7 +179,6 @@ export default function ParentSubscription() {
             removeAt: s.remove_at,
           }))}
           defaultInterval={liveSub.billing_interval}
-          posture={posture}
           addsDisabled={addsDisabled}
           onSaved={invalidate}
         />
@@ -237,16 +220,6 @@ export default function ParentSubscription() {
             />
           ) : null}
 
-          <Segmented
-            options={[
-              { value: "plans" as const, label: t("billing.tab.plans") },
-              { value: "billing" as const, label: t("billing.tab.billing") },
-              { value: "invoices" as const, label: t("billing.tab.invoices") },
-            ]}
-            value={section}
-            onChange={setSection}
-          />
-
           {posture.freeFlow ? (
             <Card>
               <AppText variant="muted">
@@ -255,7 +228,7 @@ export default function ParentSubscription() {
             </Card>
           ) : null}
 
-          {section === "plans" && selected ? (
+          {selected ? (
             <View style={{ gap: spacing.lg }}>
               {/* Live subscription summary — gradient border marks an ACTIVE plan. */}
               {liveSub ? (
@@ -274,92 +247,11 @@ export default function ParentSubscription() {
                 </>
               ) : posture.webOnly ? (
                 <Card>
-                  <AppText variant="muted">{t("mob.pay.webOnly")}</AppText>
+                  <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
                 </Card>
               ) : liveSub ? (
                 manageBlock(false)
-              ) : posture.freeFlow ? null : (
-                // demo mode, no live plan → start one on the subscribe screen.
-                <Button
-                  title={t("subscription.startPlan")}
-                  variant="gradient"
-                  onPress={() =>
-                    router.push({
-                      pathname: "/(parent)/children/[id]/subscribe",
-                      params: { id: selected.profile_id },
-                    })
-                  }
-                />
-              )}
-            </View>
-          ) : null}
-
-          {section === "billing" ? (
-            <Card style={{ gap: spacing.sm }}>
-              <SectionHeader title={t("billing.billingTitle")} />
-              <KeyRow
-                icon={<FileText size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("billing.current")}
-                value={t("pricing.plan.monthly.name")}
-              />
-              <KeyRow
-                icon={<RefreshCw size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("billing.row.cycle")}
-                value={t("pricing.monthly")}
-              />
-              <KeyRow
-                icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("billing.row.next")}
-                value="29/01/2026"
-              />
-              <KeyRow
-                icon={<Wallet size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("billing.totalLabel")}
-                value="≈ 18 AZN"
-              />
-              <KeyRow
-                icon={<CreditCard size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("billing.row.method")}
-                value={t("billing.cardEnding")}
-              />
-              <KeyRow
-                icon={<CalendarDays size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("billing.row.expiry")}
-                value="11/2028"
-              />
-              <KeyRow
-                icon={<Receipt size={16} color={tokens.muted} strokeWidth={2} />}
-                label={t("billing.row.status")}
-                value={t("billing.defaultMethod")}
-              />
-              <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
-                <Button title={t("billing.changeMethod")} variant="ghost" disabled onPress={() => {}} />
-                <Button title={t("billing.addCard")} variant="ghost" disabled onPress={() => {}} />
-                <AppText variant="muted" style={{ textAlign: "center", fontSize: 12 }}>
-                  {t("billing.soon")}
-                </AppText>
-              </View>
-              <AppText variant="muted" style={{ marginTop: spacing.sm, fontSize: 12 }}>
-                {t("billing.demoNote")}
-              </AppText>
-            </Card>
-          ) : null}
-
-          {section === "invoices" ? (
-            <View style={{ gap: spacing.md }}>
-              <SectionHeader title={t("billing.invoicesTitle")} />
-              {/* Round 55 (store compliance): the two FABRICATED PAID invoices
-                  (INV-2026-001 / INV-2025-012, each with a "≈ 18 AZN" amount and
-                  a green Paid pill) are DELETED. Guideline 2.3.1 names promoting
-                  a false price as grounds for removal from the App Store AND
-                  termination of the developer account, and a "demo" disclaimer
-                  does not cure a displayed false price — it renders as a real
-                  receipt for money that was never charged. Until real invoices
-                  exist there is nothing truthful to show, so the section states
-                  that plainly. */}
-              <Card>
-                <AppText variant="muted">{t("billing.invoicesEmpty")}</AppText>
-              </Card>
+              ) : null}
             </View>
           ) : null}
 

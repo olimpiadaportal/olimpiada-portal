@@ -1,21 +1,27 @@
-// SERVER-ONLY payment-mode resolver — Round 11.
+// SERVER-ONLY payment-mode resolver — Round 11, narrowed by migration 121.
 //
 // The platform has THREE payment modes, driven by admin feature flags that are
 // mutually exclusive AT THE DATABASE LAYER (trigger `trg_payment_mode_exclusivity`,
-// migration 2026_07_04_025):
+// migrations 2026_07_04_025 + 2026_08_18_121):
 //
 //   'real'     — feature flag `payments`        : real/automatic payments
-//                (provider still pending; today it behaves like demo at the
-//                single provider seams, but the flag semantics are "real").
-//   'demo'     — feature flag `demo_payments`   : the temporary demo-payment
-//                flow (cosmetic card form, no charge) until the provider lands.
+//                (provider still pending; the flag semantics are "real").
 //   'giveaway' — feature flag `giveaway_period` : everything payment-related is
 //                FREE for `giveaway.duration_days` days from `giveaway.started_at`
 //                (stamped by the DB trigger when the flag flips on). An ELAPSED
 //                window counts as INACTIVE even while the flag is still on —
 //                expiry is enforced here, server-side, on every check.
-//   'off'      — none of the above: paid mutations are blocked (existing
+//   'off'      — neither flag: paid mutations are blocked (existing
 //                `gate.paymentsOff` UX).
+//
+// There is NO demo mode. The fourth mode ('demo', flag `demo_payments`) was the
+// temporary cosmetic-card-form stand-in for a payment provider and was DELETED
+// on 2026-08-18 — flag row, DB branches and UI. The database now REJECTS a
+// `demo_payments` row outright, so this resolver can never see one again.
+//
+// 'off' is deliberately NOT a payment method: it is the kill switch AND the
+// fail-closed fallback below, so the UI and the DB guard
+// (`assert_payments_enabled`) always agree even during an infra failure.
 //
 // This module is THE single source of truth for "may this transaction happen"
 // and "is access currently free". Every payment-adjacent server action calls
@@ -24,7 +30,7 @@ import "server-only";
 import { cache } from "react";
 import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 
-export type PaymentMode = "real" | "demo" | "giveaway" | "off";
+export type PaymentMode = "real" | "giveaway" | "off";
 
 export type GiveawayInfo = {
   /** Flag on AND the window has not elapsed. */
@@ -41,14 +47,14 @@ export type PaymentModeInfo = {
   giveaway: GiveawayInfo;
 };
 
-const TRIO = ["payments", "demo_payments", "giveaway_period"] as const;
+const MODE_FLAGS = ["payments", "giveaway_period"] as const;
 
 /**
  * Resolve the payment mode + giveaway window in two queries, memoized per
- * request (React cache). Precedence: giveaway (active window) > demo > real.
+ * request (React cache). Precedence: giveaway (active window) > real.
  *
  * Round 51 (sync audit F1/F3): this is a MONEY gate, so every failure path is
- * fail-CLOSED now — mode 'off'. The old fallback was 'real' (pre-Round-11
+ * fail-CLOSED — mode 'off'. The old fallback was 'real' (pre-Round-11
  * parity), which showed the full paid UI on an infra hiccup while the DB kill
  * switch (assert_payments_enabled, migration 089) refused every write: buy
  * buttons that always error. 'off' keeps the two layers agreeing. The same
@@ -68,7 +74,7 @@ export const getPaymentModeInfo = cache(async (): Promise<PaymentModeInfo> => {
         admin
           .from("feature_flags")
           .select("key, enabled")
-          .in("key", TRIO as unknown as string[]),
+          .in("key", MODE_FLAGS as unknown as string[]),
         admin
           .from("system_settings")
           .select("key, value_json")
@@ -83,7 +89,6 @@ export const getPaymentModeInfo = cache(async (): Promise<PaymentModeInfo> => {
     // Missing-row semantics: EVERY flag missing → off (fail closed; matches
     // current_payment_mode() in the DB — migration 091 aligned all resolvers).
     const real = enabled.get("payments") ?? false;
-    const demo = enabled.get("demo_payments") ?? false;
     const giveawayFlag = enabled.get("giveaway_period") ?? false;
 
     let durationDays = 0;
@@ -120,13 +125,7 @@ export const getPaymentModeInfo = cache(async (): Promise<PaymentModeInfo> => {
       }
     }
 
-    const mode: PaymentMode = giveaway.active
-      ? "giveaway"
-      : demo
-        ? "demo"
-        : real
-          ? "real"
-          : "off";
+    const mode: PaymentMode = giveaway.active ? "giveaway" : real ? "real" : "off";
     return { mode, giveaway };
   } catch {
     return fallback;

@@ -195,7 +195,18 @@ The existing `child.lockedNote` is already the correct shape — copy its patter
 
 ## 7. Gap analysis — what the current mobile app would fail on
 
-Every item below was verified in `mobile-app/src` on 2026-07-26. **The app today is not purchase-silent; it ships a complete, working, non-IAP checkout.** Until this is fixed, the question "is web-only compliant?" is moot.
+Every item below was verified in `mobile-app/src` on **2026-07-26**. The table is kept as the
+original audit; the status column records what has happened since.
+
+> **STATUS 2026-08-18 — the app IS purchase-silent now.** The demo payment mode was deleted
+> platform-wide (migration 121). In `mobile-app` that removed `DemoPaySheet.tsx` and
+> `SubscribeFlow.tsx` from disk, `demoPay` from the commerce posture, the `demo` member from
+> `PaymentMode`, every AZN amount, every buy CTA and every purchase API call from parent AND
+> child sessions. **Findings 1, 2, 3, 4, 6 and 7 are CLOSED; 5 and 8 remain open** — see 7.1.
+> Two DOs from §5 are still outstanding and are build-variant work, not removal work:
+> **dead-stripping commerce at build time** (DO 1) and **excluding the Services screen and its
+> deep-link routes from store builds** (DO 3). They now protect an app that has no purchase code
+> left to strip, which is why they are the last mile rather than the blocker they were.
 
 | # | Finding | Location | Severity |
 |---|---|---|---|
@@ -212,36 +223,37 @@ Every item below was verified in `mobile-app/src` on 2026-07-26. **The app today
 
 ### 7.1 Blockers by platform — the launch checklist
 
-Grouped by where each item actually blocks. Nothing here is fixed yet; this is the
-work list. Severity is the store's penalty tier, not our effort.
+Grouped by where each item actually blocks. Severity is the store's penalty tier, not our
+effort. **Struck-through rows were closed on 2026-08-18** by the demo-mode removal; the rest
+is the remaining work list.
 
 **WEB (olympiq.ai) — no store policy applies. Zero blockers.**
 A website is not governed by either store. Web can ship full ABB commerce whenever the
 provider is ready. The only gates are the §8.3 integration rules and the §8.4 legal layer
 (resident billing entity, VAT ruling, e-kassa receipts) — commercial/legal, not store.
 
-**ANDROID (Google Play) — 2 blockers, both straightforward.**
+**ANDROID (Google Play) — both original blockers are now CLOSED in substance.**
 
 | # | Blocker | Why it blocks | Fix |
 |---|---|---|---|
-| A1 | Purchase UI in the binary (`SubscribeFlow`, `DemoPaySheet`, olympiad buy CTA, `ManageSubjectsEditor` writes) | Consumption-only requires that *nothing* can be purchased in the app, and the test is **app-wide** — the parent tabs count | Compile them out of store builds (build-time constant, §5 DO-1) |
-| A2 | Public pricing screen with live AZN prices + CTA | Anti-steering: "leading users" to another payment method is the violation even with no money moving | Exclude `pricing.tsx` from store builds and drop its deep-link route |
+| ~~A1~~ | ~~Purchase UI in the binary (`SubscribeFlow`, `DemoPaySheet`, olympiad buy CTA, `ManageSubjectsEditor` writes)~~ | Consumption-only requires that *nothing* can be purchased in the app, and the test is **app-wide** — the parent tabs count | **DONE 2026-08-18** — the two sheets are deleted, the olympiad tab is browse-only and the subjects editor carries no amount. Build-time dead-stripping (§5 DO-1) still recommended |
+| ~~A2~~ | ~~Public pricing screen with live AZN prices + CTA~~ | Anti-steering: "leading users" to another payment method is the violation even with no money moving | **DONE 2026-08-18** — the Services screen is information-only, no price, no CTA. Excluding it from store builds (§5 DO-3) still recommended |
 
-Google explicitly permits consumption-only apps, so once A1–A2 are done Android is
+Google explicitly permits consumption-only apps, and A1–A2 are done, so Android is
 **sound** — not "probably fine". Out-of-app conversion (email, web, schools) stays fully
 permitted, so nothing about the business model has to change.
 
-**iOS (App Store) — the same 2 blockers, plus 4 more, plus irreducible uncertainty.**
+**iOS (App Store) — 2 of the 8 original blockers remain (I5, I8), plus irreducible uncertainty.**
 
 | # | Blocker | Severity | Fix |
 |---|---|---|---|
-| I1 | Runtime `PaymentMode` flag can switch a non-IAP checkout on **after review** | **Account termination** (2.3.1(a)/(b)) — the only item on this list at that tier | Build-time constant; dead-strip. Verify by grepping the release bundle |
-| I2 | Public paywall before login (prices, trial line, sibling discount, CTA) | Rejection (3.1.1(a)) | Exclude from store builds |
-| I3 | Fake billing block: hardcoded next charge, `≈ 18 AZN`, card ending, expiry, two fabricated paid invoices | Rejection, and 2.3.1 names false pricing as grounds for **removal + developer-account termination** | **Delete.** A `demoNote` disclaimer does not cure a displayed false price |
-| I4 | Simulated card `4242 4242 4242 4242` with expiry/CVC | Rejection — a card-entry surface for digital goods | Delete from store builds |
+| ~~I1~~ | ~~Runtime `PaymentMode` flag can switch a non-IAP checkout on **after review**~~ | **Account termination** (2.3.1(a)/(b)) — the only item on this list at that tier | **DONE 2026-08-18** — there is no checkout in the binary for any flag value to switch on; `PaymentMode` is `real \| giveaway \| off` and an unknown value degrades to `off`. Dead-strip + bundle grep still recommended |
+| ~~I2~~ | ~~Public paywall before login (prices, trial line, sibling discount, CTA)~~ | Rejection (3.1.1(a)) | **DONE 2026-08-18** — the screen carries no price and no CTA. Excluding it from store builds still recommended |
+| ~~I3~~ | ~~Fake billing block: hardcoded next charge, `≈ 18 AZN`, card ending, expiry, two fabricated paid invoices~~ | Rejection, and 2.3.1 names false pricing as grounds for **removal + developer-account termination** | **DONE 2026-08-18** — deleted on mobile AND on the web page it was copied from |
+| ~~I4~~ | ~~Simulated card `4242 4242 4242 4242` with expiry/CVC~~ | Rejection — a card-entry surface for digital goods | **DONE 2026-08-18** — `DemoPaySheet.tsx` deleted; no card field exists in any app |
 | I5 | `RichBody` opens arbitrary admin-supplied `https` URLs, **on the student screen**, with no allowlist | Rejection (3.1.1(a) dynamic steering) **and** a child-safety problem (ungated link-out to a minor) | Render external URLs as plain non-tappable text; keep the allowlisted relative-path routing |
-| I6 | `mob.pay.webOnly` names "your family's **web account**" directly beneath an AZN price chip | Rejection — price + "buy it there" is a call to action without a hyperlink | Reword to name no destination (§5 copy table) |
-| I7 | Child copy using *almaq* (to buy) — `oly4.buyNote`, `oly5.errNoAccess`, `oly3.childNone` | Medium — the classic prohibited pattern in children's advertising rules | Rewrite to access/activation language |
+| ~~I6~~ | ~~`mob.pay.webOnly` names "your family's **web account**" directly beneath an AZN price chip~~ | Rejection — price + "buy it there" is a call to action without a hyperlink | **DONE 2026-08-18** — the key is gone and no price chip remains for it to sit under |
+| ~~I7~~ | ~~Child copy using *almaq* (to buy) — `oly4.buyNote`, `oly5.errNoAccess`, `oly3.childNone`~~ | Medium — the classic prohibited pattern in children's advertising rules | **DONE 2026-08-18** — all three are overridden in `messages.mobile.ts` with access language ("talk to your parent"), az/en/ru |
 | I8 | `/forgot-password` link-out from login | Low — but a reviewer follows it; if that page shows the site nav with "Qiymətlər", they are one tap from a purchase page | Make the linked page bare and chrome-free |
 
 Even with I1–I8 fixed, iOS is **acceptable, not safe**: Apple has no general
@@ -356,9 +368,13 @@ Both fallbacks are verifiably recurring-capable:
 The owner's first launch runs with **payments disabled**. That is now enforced in the
 database, not only in application code.
 
-- **Mode** derives from three mutually-exclusive feature flags (`payments`,
-  `demo_payments`, `giveaway_period`), with a DB trigger guaranteeing they can never be
-  on together. None enabled ⇒ mode `off` ⇒ the kill switch is active.
+- **Mode** derives from two mutually-exclusive feature flags (`payments`,
+  `giveaway_period`), with a DB trigger guaranteeing they can never be on together.
+  Neither enabled ⇒ mode `off` ⇒ the kill switch is active. *(Migration 121, 2026-08-18:
+  a third flag `demo_payments` — the cosmetic no-charge checkout — was DELETED along with
+  the mode it drove; the trigger now REJECTS its re-insert. No build of any app simulates a
+  charge or collects card data any more, which also removes the 2.3.1(a) surface a demo
+  checkout inside a store binary would have been.)*
 - **`public.current_payment_mode()`** is the SQL-side single source of truth, with the
   same semantics as `get_mobile_config().payment.mode`, so web, mobile and the database
   can never disagree. It exposes only the derived string — never the admin-locked flag rows.

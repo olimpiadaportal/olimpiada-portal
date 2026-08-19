@@ -1,32 +1,31 @@
 "use client";
 
-// Round 11 (item 2) — payment confirmation sheet for subject additions.
+// Payment confirmation sheet for subject ADDITIONS (Round 11; rebuilt 2026-08-18
+// when the demo payment mode was deleted).
 //
-// The amount confirmed here is what the change costs TODAY: each added subject's
-// FULL first period, starting today, at the sibling rate. Proration is retired
-// (owner, 2026-08-17), so this is never a part-period top-up and never the whole
-// plan's recurring total — the subjects already on the plan are untouched by
-// this charge and keep their own renewal dates.
+// It replaces the old DemoPaymentModal, which showed a DEMO badge, a "no card
+// is ever charged" line and four cosmetic card fields. Those are gone: with the
+// demo mode removed there is nothing to disclaim, and a card form that looks
+// real but is not is worse than none — a parent could type a real PAN into it.
+// What survives is the half that was always real: the AUTHORITATIVE server
+// quote and an explicit confirm step before any paid change is applied.
 //
 // PAYMENT-FIRST contract: whenever the pending Manage-Subjects diff contains
-// ANY addition, this sheet opens BEFORE the server apply — in BOTH 'demo' and
-// 'real' payment modes. There is no real provider yet, so this cosmetic sheet
-// IS the payment flow for now; when the provider lands, 'real' mode swaps this
-// modal for the provider's checkout at this exact seam, while the actual
-// charge/authorization seam stays SERVER-side (updateSubscriptionSubjectsAction
-// → apply_plan_change). Removal-only changes never show a payment dialog.
+// ANY addition, this sheet opens BEFORE the server apply. When the ABB/web
+// provider lands it takes over at this exact seam (confirm → hosted payment
+// page); the actual charge/authorization stays SERVER-side
+// (updateSubscriptionSubjectsAction → apply_plan_change). Removal-only,
+// cycle-change-only and reinstatement-only diffs never show this dialog.
 //
-// The card fields are purely COSMETIC — never validated, never charged, never
-// stored, never sent anywhere. `quote` carries only ALREADY-FORMATTED,
-// locale-aware strings built by the caller (ManageSubjects) from the
-// AUTHORITATIVE server quote (quote_plan_change: the due-now total plus, per
-// added subject, its cycle, price and start) — the client never computes or
-// sends amounts. Confirm runs the provided onConfirm callback (submits the
-// server action); cancel/close applies NOTHING — the parent's selection stays
-// for a retry.
+// `quote` carries only ALREADY-FORMATTED, locale-aware strings built by the
+// caller (ManageSubjects) from the AUTHORITATIVE server quote
+// (quote_plan_change: the due-now total plus, per added subject, its cycle,
+// price and start) — the client never computes or sends amounts. Confirm runs
+// the provided onConfirm callback (submits the server action); cancel/close
+// applies NOTHING — the parent's selection stays for a retry.
 import { Modal } from "@/components/Modal";
 
-export type DemoPayQuote = {
+export type PlanChangeQuote = {
   /** "12.50 AZN" — the amount due right now. Ignored when noCharge. */
   dueNowLabel: string;
   /** Full sentence: either what the amount buys (a full first period per added
@@ -47,7 +46,7 @@ export type DemoPayQuote = {
   noCharge: boolean;
 };
 
-export function DemoPaymentModal({
+export function PlanChangeConfirmModal({
   isOpen,
   quote,
   pending,
@@ -57,7 +56,7 @@ export function DemoPaymentModal({
 }: {
   isOpen: boolean;
   /** Latest AUTHORITATIVE server quote for the pending diff; null while calculating. */
-  quote: DemoPayQuote | null;
+  quote: PlanChangeQuote | null;
   pending: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -70,47 +69,17 @@ export function DemoPaymentModal({
       isOpen={isOpen}
       onClose={onCancel}
       title={tt("pay.title")}
-      closeLabel={tt("dpay.cancel")}
+      closeLabel={tt("pay.cancel")}
     >
-      {/* Reuses the Add-Child wizard's .pay-* look; .dpay-card drops the outer
+      {/* Reuses the Add-Child wizard's .pay-* look; .pcsheet-card drops the outer
           card frame so it sits cleanly inside the shared modal panel. */}
-      <div className="pay-card dpay-card">
-        <span className="pay-demo-badge">{tt("pay.demoBadge")}</span>
-        <p className="muted" style={{ margin: "10px 0 2px" }}>
-          {tt("pay.note")}
-        </p>
-
-        {/* Cosmetic card fields — NEVER validated / charged / stored. */}
-        <div className="pay-field">
-          <span className="field-label">{tt("pay.cardName")}</span>
-          <input type="text" autoComplete="off" placeholder="Ad Soyad" />
-        </div>
-        <div className="pay-field">
-          <span className="field-label">{tt("pay.cardNumber")}</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="4242 4242 4242 4242"
-          />
-        </div>
-        <div className="pay-grid">
-          <div className="pay-field">
-            <span className="field-label">{tt("pay.expiry")}</span>
-            <input type="text" autoComplete="off" placeholder="MM/YY" />
-          </div>
-          <div className="pay-field">
-            <span className="field-label">{tt("pay.cvc")}</span>
-            <input type="text" inputMode="numeric" autoComplete="off" placeholder="123" />
-          </div>
-        </div>
-
+      <div className="pay-card pcsheet-card">
         {/* The amount due NOW (the added subjects' full first periods, never a
             part period and never the whole plan's recurring total), the
             sentence explaining what it buys, and one row per subject being paid
             for — all pre-formatted from the authoritative quote_plan_change
             quote, never computed client-side. */}
-        <div className="wizard-summary dpay-total">
+        <div className="wizard-summary pcsheet-total">
           {quote ? (
             quote.noCharge ? (
               <p className="subjedit-note">{quote.thenLabel}</p>
@@ -142,7 +111,7 @@ export function DemoPaymentModal({
 
         <div className="modal-actions">
           <button type="button" className="btn-ghost" onClick={onCancel} disabled={pending}>
-            {tt("dpay.cancel")}
+            {tt("pay.cancel")}
           </button>
           {/* Confirm stays locked until the authoritative quote is displayed. */}
           <button

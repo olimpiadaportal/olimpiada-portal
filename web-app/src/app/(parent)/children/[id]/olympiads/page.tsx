@@ -18,8 +18,8 @@ export default async function ParentOlympiadsPage({
   const locale = await getLocale();
   const t = await getT();
   const olympiadOn = await isFeatureEnabled("olympiad_module");
-  // Payment modes: buy in real/demo/giveaway — giveaway windows grant free
-  // SUBJECT access only, so olympiad packages stay purchase-only at full
+  // Payment modes: buying works in real AND giveaway — giveaway windows grant
+  // free SUBJECT access only, so olympiad packages stay purchase-only at full
   // price; mode 'off' keeps the paymentsOff notice (no buy form).
   const { mode } = await getPaymentModeInfo();
   const paymentsOn = mode !== "off";

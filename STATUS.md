@@ -6,6 +6,214 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — DEMO PAYMENT MODE DELETED (migration 121, 2026-08-18)
+
+**Migration `2026_08_18_121_remove_demo_payments.sql` is written and NOT YET APPLIED** (the
+orchestrator applies it: staging first, then production, then `013`).
+
+Both lanes (DB+web+admin, mobile) are merged and validated together: **web-app** tsc + 263
+tests + `next build`; **admin-panel** tsc + 518 tests + `next build`; **mobile-app** tsc + 354
+tests (29 suites) + eslint + `check-i18n` (725 keys in 180 files resolve). Mobile is at
+**1.11.0** in `app.json` and `package.json` together.
+
+The owner removed the demo payment mode from the platform. It was the temporary
+"cosmetic card form, nothing is charged" stand-in for a payment provider, and today
+production is IN it (`payments = false`, `demo_payments = true`).
+
+### Three modes now, not four: `real` | `giveaway` | `off`
+
+- The `demo_payments` flag ROW is deleted, and `fn_payment_mode_exclusivity()` now enforces
+  exclusivity over the PAIR (`payments`, `giveaway_period`) **and REJECTS any attempt to
+  re-insert a `demo_payments` row** (`check_violation`, hint `demo_payments_removed`). The
+  trigger's WHEN clause routes such a row into the guard REGARDLESS of `enabled`, because a
+  DISABLED row would still render as a selectable payment mode in /settings. A flag nothing
+  resolves is worse than an error: it would claim the platform is in demo mode while it is
+  really charging.
+- `current_payment_mode()` and `get_mobile_config()` lost their demo branch. Both were patched
+  from their OWN live definition (the house rule), never retyped — 091's payment-mode fix and
+  097's privacy block live in those bodies.
+- **`off` STAYS.** It is not a payment method: it is the kill switch AND the fail-closed
+  fallback every resolver returns on an infra failure, so the UI and `assert_payments_enabled()`
+  always agree. Removing it would show a paid UI on a hiccup while the DB refused every write.
+
+### Production legitimately lands in `off` — that is intended
+
+The migration does NOT switch `giveaway_period` on. Enabling it stamps `giveaway.started_at`
+and starts the free-window clock, which is the owner's launch decision, made from the admin
+panel. `giveaway.duration_days` is also untouched (still **7**) — the owner wants a one-month
+free launch, but that is an admin-configurable business setting and is theirs to set, in
+/settings → Features, at the moment they flip the giveaway on.
+
+### The fake billing surface went with it
+
+With demo payments gone, fabricated invoices are worse than none. The parent Subscription
+page's static Billing card (next billing 29/01/2026, MasterCard ****8475, expiry 11/2028, the
+three inert card buttons) and the whole Invoices section (email toggle, request button, two
+PAID invoice rows) are deleted, along with `InvoicesSection.tsx` and ~33 i18n keys ×3 locales.
+Billing now prints only the child's REAL per-subject cycles, next charge date and amount, or an
+empty state; Invoices says "none yet". **The parent analytics demo dashboard was NOT in scope
+and is untouched.**
+
+### The card form is gone, not relabelled
+
+`DemoPaymentModal` is deleted from disk. Its real half — the AUTHORITATIVE server quote and an
+explicit confirm before a paid change is applied — survives as `PlanChangeConfirmModal`; its
+DEMO badge, its "no card is ever charged" line and its four cosmetic card fields do not. Same
+in the Add-Child wizard: step 4 is now a CONFIRM step showing the due-today total. This is a
+deliberate call, not a rename: a card form that looks real but charges nothing, with the
+disclaimer removed, invites a parent to type a real PAN into a field that goes nowhere.
+
+### Admin panel
+
+The Features tab offers two payment-mode switches; the demo toggle, its `FLAG_META` entry and
+its six i18n strings are gone, and the exclusivity note now says "these two". One more leftover
+was fixed while in there: the Subscriptions module badged every `provider = 'none'` row **Demo**
+— now "Provayder yoxdur" / "No provider" / "Без провайдера", which is the fact it always meant.
+
+### Guarded against return
+
+013 check `108_demo_payment_mode_removed` asserts, on every validation run: no flag row, the
+exclusivity function covers the pair and still carries the re-insert guard, the trigger catches
+a demo row regardless of `enabled`, neither resolver resolves the mode, and the two resolvers
+agree. Check `33` is now the PAIR and check `57`'s mode whitelist dropped `demo`. Two
+source-reading suites (`web-app/src/lib/__tests__/demoPaymentsRemoved.test.ts`,
+`admin-panel/src/lib/admin/__tests__/demo-payments-removed.test.ts`) fail the build if the mode,
+the modal, the card fields or the i18n come back — in ANY of az/en/ru.
+
+### Mobile app — purchase-silent, v1.11.0
+
+The mobile lane went further than the flag, because the demo mode was the ONLY mode in which
+the mobile purchase wizard rendered: deleting the mode deleted the last reachable checkout.
+`DemoPaySheet.tsx` and `SubscribeFlow.tsx` are deleted from disk rather than left dormant,
+`demoPay` is gone from `CommercePosture`, and `PaymentMode` is `real | giveaway | off` with a
+server that still says `demo` degrading to the fail-closed `off`. Per branch: `real` → a
+read-only status card, `giveaway`/free-access → the existing free notice + `bffActivateFree`
+plus a now price-free subjects editor, `off` → `gate.paymentsOff` (removal-only editor). The
+Add-Child `flow` phase went with `SubscribeFlow`; `ManageSubjectsEditor` stays (it is still
+reachable in giveaway/free/off) stripped of every amount. Store-compliance consequence: **no
+AZN amount, purchase verb, buy CTA, confirm sheet or purchase API call is reachable in any
+parent or child session** — the parent olympiads tab is browse-only, the public Services
+screen is information-only, and the child-facing "ask your parent to buy" strings are
+overridden in `messages.mobile.ts` with access language in az/en/ru.
+
+`messages.generated.ts` was regenerated from the web catalog AFTER both lanes landed (that is
+the only correct order — the web lane deleted ~35 keys the generator copies).
+
+### Consolidation pass (both lanes merged)
+
+- **One real bug found and fixed:** `admin-panel/src/app/(protected)/subscriptions/labels.ts`
+  had az + en rewritten off "demo" wording but the **RUSSIAN** `subs.subtitle` and
+  `subs.detail.paymentNote` still said «демо». The existing catalog test only reads
+  `messages.ts`, so a module-local `STRINGS` dictionary was invisible to it. Both strings are
+  rewritten, and the test now sweeps **every string literal in the panel**, not just the main
+  catalog — this is exactly the one-locale-survives failure mode the rule warns about.
+- Repo-wide grep for `demo_payments` / `DemoPayment` / `DemoPaySheet` / `demoPay` / `'demo'`
+  as a mode: every surviving hit is a HISTORICAL migration (a record of what ran — never
+  rewritten), the removal migration and its canonical backport, a deliberate comment, or one
+  of the two guard tests. No dead code left.
+- Docs brought in line: `docs/MANUAL_TESTING_GUIDE.md` gains a banner plus a new **DM1–DM6**
+  section (the guide is append-only, so the superseded R4/Z1/Z2/ZF4/AP3/M-series steps stay as
+  the record and the banner says so); `docs/STORE_PAYMENTS_COMPLIANCE.md` §7/§7.1 now marks
+  findings 1/2/3/4/6/7 and blockers A1–A2, I1–I4, I6–I7 CLOSED; the M2 stage in
+  `MOBILE_APP_IMPLEMENTATION_EXECUTION_PLAN.md` carries a superseded note.
+
+### Known gaps
+
+- **Nothing has been applied or clicked.** The migration has not run anywhere; no browser pass
+  on the rebuilt Billing panel, the Add-Child confirm step or the plan-change sheet.
+- **The from-zero rebuild proof is still PENDING** (`OLIMPIADA_STAGING_DB_URL` unset). The 012
+  seed no longer creates the row, and if it ever did again the new guard would ABORT the build —
+  which is the intended behaviour but has not been proven on a real database.
+- After the migration, production is in mode `off`: parents cannot start or extend a plan until
+  the owner switches on the giveaway (or a provider lands). Removals stay legal by design.
+- **No device pass on mobile.** The three posture branches, the browse-only olympiads tab and
+  the information-only Services screen have not been rendered on a phone in any locale.
+- **Store-build hardening is still open** and is build-variant work, not removal work:
+  dead-stripping commerce at build time and excluding the Services screen + its deep-link
+  routes from store builds (compliance §5 DO 1 and DO 3). They now guard an app with no
+  purchase code left to strip.
+- **Compliance gap #5 remains a store blocker:** `mobile-app/src/lib/notifMarkdown.tsx` opens
+  arbitrary admin-supplied `https` URLs via `Linking.openURL`, and it renders on the STUDENT
+  notification screen. The relative-path branch is correctly allowlisted; the `https` branch is
+  not. Unrelated to demo removal and deliberately out of its blast radius.
+- `mobile-app/src/lib/data.ts` still maps `price_amount`/`currency` off the olympiad RPCs into
+  its row types. Nothing renders them; the mapper mirrors the server contract on purpose.
+
+## PINNED — DEMO PAYMENTS DELETED (migration 121, 2026-08-18)
+
+**Applied to production. Validation `013` = 112/112 PASS.** web-app tsc + 263 tests + build;
+admin-panel tsc + 518 tests + build; mobile-app tsc + 354 tests + check-i18n. Mobile **1.11.0**.
+
+**Owner decision: the demo payment mode is gone from the database and all three apps.** The
+platform now has **real | giveaway | off** — no fourth mode, no dormant path, no `if (false)`.
+
+### Why `off` survived and what production runs today
+
+`off` is not a payment mode; it is the kill switch AND the fail-closed value
+`getPaymentModeInfo` returns on any infra error, which is what keeps the UI and the DB guard
+(`assert_payments_enabled`) agreeing. Deleting it would show a paid UI on a Supabase hiccup.
+
+Migration 121 deliberately does NOT turn the giveaway on: flipping `giveaway_period` stamps
+`giveaway.started_at` via the trigger and starts the free-window clock. So production now sits
+in `off` — intended, not a bug — until the owner flips it on launch day.
+`giveaway.duration_days` is still 7 and is the owner's to set (they want 30).
+
+**Verified after the trigger rewrite:** the exclusivity function still stamps
+`giveaway.started_at` on the flip to on, still only stamps on a transition (an already-on flag
+is not re-stamped), and now RAISES on any attempt to insert a `demo_payments` row — including a
+disabled one, so the dead switch cannot reappear in /settings as a selectable no-op.
+
+### The mobile app is now purchase-silent by construction
+
+This is the part that matters for the App Store. The mobile purchase wizard rendered ONLY in
+demo mode, so deleting demo removed it entirely: `SubscribeFlow.tsx` and `DemoPaySheet.tsx` are
+deleted, and no purchase flow exists in any surviving mode. Purchase-silence is no longer a
+server flag that could flip — it is the absence of the code.
+
+Review then found three purchase affordances that survived that deletion, all fixed:
+
+1. The parent home carousel still said **"Buy an olympiad package once"** (plus the 7-day-trial
+   and "choose a plan" lines) in an always-mounted component.
+2. A **primary "Choose a plan" button** on the parent home tab.
+3. The public **FAQ** carried the pricing question, the trial billing line and the sibling
+   discount — reachable from a STUDENT session.
+
+These strings are generated from the WEB catalog, where the purchasing language is correct, so
+they are patched through `mobile-app/src/i18n/messages.mobile.ts` (the overlay wins per key)
+rather than by weakening the web copy. 11 keys x 3 locales.
+
+A sweep of every key the mobile source actually renders now returns **two** hits, both
+privacy-policy statements ("a child can never register", "we do not advertise to children") —
+legitimate and reviewer-safe.
+
+### One dead end fixed on the web
+
+In `off` mode — the mode production now lands in — `ManageSubjects` passed
+`disabled={saving || (addsDisabled && !!cur)}` to every covered subject's card, and the card's
+`disabled` also gates its Remove button. So a paying parent had **no available action at all**,
+with no tooltip saying why. That contradicted the server, which has always allowed removals
+while payments are off so nobody is trapped in a plan they are leaving. `SubjectPlanCard` gained
+a `cycleDisabled` prop: the cycle rail freezes, removal stays available. The other three hosts
+of that card were checked and are unaffected.
+
+### Also removed
+
+The parent Subscription page's fabricated Billing/Invoices block (the "next billing 29/01/2026 /
+MasterCard ****8475" card and two fake PAID invoices). `DemoPaymentModal` was deleted but its
+REAL half survives as `PlanChangeConfirmModal` — the authoritative server quote plus an explicit
+confirm before a paid change applies; deleting it outright would have made a subject addition
+apply with no amount confirmation once real payments land.
+
+### Known gaps
+
+- **Nothing has been clicked.** No browser or device pass on any remaining mode.
+- The giveaway has never been exercised end to end: flag on -> stamp -> free access -> expiry.
+- No native Android or iOS build was run (EAS, owner-run). The Android build already in early
+  access still contains the demo purchase flow until a new build ships.
+- **The from-zero rebuild proof is STILL PENDING.** `OLIMPIADA_STAGING_DB_URL` is unset. This
+  round is the one that most wants it: `012` no longer seeds the flag row, and the new guard
+  would ABORT a rebuild if anything re-added it — intended, but untested.
+
 ## PINNED — UN-CANCEL + STAT SCOPE (migration 120, 2026-08-17)
 
 **Applied to production. Validation `013` = 111/111 PASS.** web-app tsc + 256 tests + build;

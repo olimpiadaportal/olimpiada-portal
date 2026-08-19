@@ -36,7 +36,7 @@ export async function POST(
     const body = await readJsonBody(request);
     const studentId = bodyStr(body, "student_id").trim();
     if (!isUuid(studentId)) return errorResponse("sub.err.invalid", 400);
-    // Same cap as the web form; captured for demo UX only (not persisted).
+    // Same cap as the web form; collected for the parent's benefit, not persisted.
     const reason = bodyStr(body, "reason").slice(0, 60);
 
     const res = await cancelChildSubscriptionCore({

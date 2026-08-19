@@ -315,40 +315,15 @@ export const bffAddChild = (fields: AddChildFields) =>
   );
 
 /** A per-subject basket (migration 109). Sent as `items`; when it is omitted
- *  the endpoints keep their legacy `{interval, subject_ids}` shape — which is
- *  exactly what already-shipped binaries post and what the BFF still accepts,
- *  so an OTA is never required to keep an older build working. */
+ *  the endpoint keeps its legacy `{subject_ids}` shape — which is exactly what
+ *  already-shipped binaries post and what the BFF still accepts, so an OTA is
+ *  never required to keep an older build working.
+ *
+ *  The BUYING endpoints (`/quote`, `/subscribe`) are deliberately absent: the
+ *  app is purchase-silent (docs/STORE_PAYMENTS_COMPLIANCE.md) and starting a
+ *  plan is a web action. Only the change/quote pair below survives, because a
+ *  parent must always be able to remove a subject and stop paying. */
 export type BffPlanItem = { subject_id: string; interval: string };
-
-const planBody = (
-  items: BffPlanItem[] | undefined,
-  interval: string,
-  subjectIds: string[],
-) => (items && items.length > 0 ? { items } : { interval, subject_ids: subjectIds });
-
-export const bffQuote = (
-  childId: string,
-  interval: string,
-  subjectIds: string[],
-  items?: BffPlanItem[],
-) =>
-  bffAuthedPost<Record<string, any>>(
-    `/api/mobile/v1/children/${childId}/quote`,
-    planBody(items, interval, subjectIds),
-    "sub.err.failed",
-  );
-
-export const bffSubscribe = (
-  childId: string,
-  interval: string,
-  subjectIds: string[],
-  items?: BffPlanItem[],
-) =>
-  bffAuthedPost<Record<string, any>>(
-    `/api/mobile/v1/children/${childId}/subscribe`,
-    planBody(items, interval, subjectIds),
-    "sub.err.failed",
-  );
 
 export const bffUpdateSubjects = (
   childId: string,
@@ -460,18 +435,6 @@ export const bffRemoveAvatar = () =>
     "/api/mobile/v1/profile/avatar",
     { remove: true },
     "prof2.err.generic",
-  );
-
-export const bffPurchaseOlympiad = (
-  packageId: string,
-  studentProfileId: string,
-  idempotencyKey: string,
-) =>
-  bffAuthedPost<Record<string, any>>(
-    `/api/mobile/v1/olympiads/${packageId}/purchase`,
-    { student_profile_id: studentProfileId },
-    "poly.err.generic",
-    { "Idempotency-Key": idempotencyKey },
   );
 
 export const bffDeleteAccount = () =>

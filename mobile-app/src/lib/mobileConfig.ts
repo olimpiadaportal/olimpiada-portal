@@ -4,7 +4,10 @@
 // degrade to the SAFE side: modules off, payments off, maintenance off.
 import type { PrivacyPolicyOverrides } from "@/lib/privacyPolicy";
 
-export type PaymentMode = "real" | "demo" | "giveaway" | "off";
+// The DEMO mode was deleted platform-wide (owner, 2026-08-18): the server can
+// only report 'real', 'giveaway' or 'off', and anything else degrades to 'off'
+// (the fail-closed kill switch, which the UI and the DB guard agree on).
+export type PaymentMode = "real" | "giveaway" | "off";
 
 export type TriMessage = { az: string; en: string; ru: string };
 
@@ -119,7 +122,7 @@ export function parseMobileConfig(raw: unknown): MobileConfig {
 
   return {
     payment: {
-      mode: mode === "real" || mode === "demo" || mode === "giveaway" ? mode : "off",
+      mode: mode === "real" || mode === "giveaway" ? mode : "off",
       giveawayEndsAt:
         typeof payment.giveaway_ends_at === "string" ? payment.giveaway_ends_at : null,
     },

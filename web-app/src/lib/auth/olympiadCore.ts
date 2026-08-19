@@ -21,8 +21,8 @@ export type PurchaseOlympiadCoreResult =
  * MOCK PAYMENT — the single seam for a real provider.
  *
  * This is deliberately the ONLY place in the purchase flow that "talks to a
- * payment provider". Today it is a stub that always approves (no real charge —
- * mirrors the demo subscription payment). When the official provider is chosen,
+ * payment provider". Today it is a stub that always approves (no real charge:
+ * no provider is wired up yet). When the official provider is chosen,
  * replace ONLY this function body with the real charge call (create payment
  * intent → confirm → verify), keep the same result contract, and the rest of
  * the flow (authorization, flag gates, purchase_olympiad RPC, revalidation)
@@ -55,7 +55,7 @@ export async function purchaseOlympiadForChildCore(params: {
 
   // Server-side gates — the page hides the buy UI too; this stops hand-crafted
   // POSTs when an admin has switched a module off. Purchases proceed in
-  // real/demo/giveaway mode (giveaways cover free SUBJECT access only — never
+  // real or giveaway mode (giveaways cover free SUBJECT access only — never
   // olympiad play, so packages sell at full price); 'off' keeps the
   // payments-off message.
   if (!(await isFeatureEnabled("olympiad_module"))) return fail;

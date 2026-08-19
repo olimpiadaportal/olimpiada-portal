@@ -10,11 +10,14 @@ import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { getT, getLocale } from "@/i18n/server";
 import { localStrings } from "./labels";
 
-// Round 11: the three payment-mode flags are grouped into their own Features
-// sub-card. The DATABASE trigger guarantees mutual exclusivity (enabling one
-// auto-disables the other two); the toggle's revalidatePath("/settings") makes
-// the sibling switches visibly drop after a flip.
-const PAYMENT_MODE_FLAGS = ["payments", "demo_payments", "giveaway_period"] as const;
+// Round 11 / migration 121: the payment-mode flags are grouped into their own
+// Features sub-card. The DATABASE trigger guarantees mutual exclusivity
+// (enabling one auto-disables the other); the toggle's
+// revalidatePath("/settings") makes the sibling switch visibly drop after a
+// flip. There are TWO of them: the demo payment mode was deleted on
+// 2026-08-18, and the admin must not be able to select a mode that no longer
+// exists. Neither flag on = mode `off` (the kill switch).
+const PAYMENT_MODE_FLAGS = ["payments", "giveaway_period"] as const;
 
 // Settings redesign (Round 6): a single tabbed page (General / Localization /
 // Features) with settings grouped into cards and typed per-field editors.
@@ -396,7 +399,7 @@ export default async function SettingsPage() {
         variant="info"
       >
         {/* Mutual exclusivity is enforced by the DATABASE: flipping one on
-            turns the other two off; revalidation refreshes the sibling rows. */}
+            turns the other off; revalidation refreshes the sibling row. */}
         <p className="pm-note">{t("settings.paymentMode.exclusiveNote")}</p>
         <div className="flag-list">
           {PAYMENT_MODE_FLAGS.map((key) => flagRow(key))}

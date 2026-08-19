@@ -472,14 +472,16 @@ select '32_baku_schools_seed' as check_name,
                             and indexname = 'uq_schools_district_name')
             then 'PASS' else 'FAIL' end as status;
 
--- 33) Round 11 (migration 025): payment-mode trio seeded + exclusivity trigger
---     present. The DB — not the UI — guarantees at most one of payments /
---     demo_payments / giveaway_period is enabled.
+-- 33) Round 11 (migration 025) / migration 121: payment-mode PAIR seeded +
+--     exclusivity trigger present. The DB — not the UI — guarantees at most
+--     one of payments / giveaway_period is enabled; neither enabled = mode
+--     `off`. The third flag (demo_payments) was deleted with the demo mode —
+--     check 108 asserts it stays gone.
 select '33_payment_mode_exclusivity' as check_name,
        case when (select count(*) from public.feature_flags
-                   where key in ('payments','demo_payments','giveaway_period')) = 3
+                   where key in ('payments','giveaway_period')) = 2
              and (select count(*) from public.feature_flags
-                   where key in ('payments','demo_payments','giveaway_period')
+                   where key in ('payments','giveaway_period')
                      and enabled) <= 1
              and exists (select 1 from pg_trigger
                           where tgname = 'trg_payment_mode_exclusivity'
@@ -862,7 +864,7 @@ select '57_mobile_config_shape' as check_name,
                = array['contact','flags','locales','maintenance','payment','privacy','social','version']
              and public.get_mobile_config()->'version'->'ios' is not null
              and public.get_mobile_config()->'version'->'android' is not null
-             and (public.get_mobile_config()->'payment'->>'mode') in ('real','demo','giveaway','off')
+             and (public.get_mobile_config()->'payment'->>'mode') in ('real','giveaway','off')
             then 'PASS' else 'FAIL' end as status;
 
 -- 57e) Migration 100 — the olympiad PACKAGE owns the olympiad type. The pool
@@ -916,8 +918,8 @@ select '57c_parent_child_cascade' as check_name,
 --      and exposed, and the two DERIVED booleans agree with the switches they
 --      describe. That agreement is the whole reason they are not settings: a
 --      free-typed copy could tell parents no push data is collected while the
---      pipeline is live. `payments_live` is 'real' ONLY — demo and giveaway move
---      no money, so §8 must keep describing payments in the future tense.
+--      pipeline is live. `payments_live` is 'real' ONLY — a giveaway window
+--      moves no money, so §8 must keep describing payments in the future tense.
 select '57b_privacy_metadata' as check_name,
        case when (select count(*) from public.system_settings where key like 'privacy.%') = 8
              and (select array_agg(k order by k)
@@ -2926,6 +2928,52 @@ select '107_reinstate_cancelled_subject' as check_name,
          where ss.remove_at is not null
            and coalesce(ss.current_period_end, cs.current_period_end) > now())
                                                      as reinstatable_subjects;
+
+-- 108) Migration 121 — the DEMO PAYMENT MODE IS GONE, and cannot come back.
+--      Three separate guarantees, because each fails differently:
+--        a) no `demo_payments` flag row exists (a disabled row would still
+--           render as a selectable payment mode in the admin panel);
+--        b) the exclusivity function no longer treats it as A MODE — the
+--           mutual-exclusion list is the PAIR — while still naming it in the
+--           re-insert guard (hint `demo_payments_removed`), and the trigger's
+--           WHEN clause routes a demo row into that guard REGARDLESS of
+--           `enabled`, so an insert of a disabled row is rejected too;
+--        c) neither SQL resolver resolves a demo mode any more, and the pair
+--           exclusivity still holds on the live rows.
+--      `off` is deliberately still a mode: it is the kill switch and the
+--      fail-closed fallback, not a payment method.
+with defs as (
+  select pg_get_functiondef('public.fn_payment_mode_exclusivity()'::regprocedure) as excl,
+         pg_get_functiondef('public.current_payment_mode()'::regprocedure)        as cpm,
+         pg_get_functiondef('public.get_mobile_config()'::regprocedure)           as cfg,
+         pg_get_triggerdef((select oid from pg_trigger
+                             where tgname = 'trg_payment_mode_exclusivity'
+                               and tgrelid = 'public.feature_flags'::regclass
+                               and not tgisinternal))                             as trg
+)
+select '108_demo_payment_mode_removed' as check_name,
+       case when not exists (select 1 from public.feature_flags
+                              where key = 'demo_payments')
+             -- (b) exclusivity is over the PAIR, and the guard is armed
+             and position($q$key in ('payments', 'giveaway_period')$q$
+                   in (select excl from defs)) > 0
+             and position($q$'payments', 'demo_payments'$q$
+                   in (select excl from defs)) = 0
+             and position('demo_payments_removed' in (select excl from defs)) > 0
+             and position($q$new.key = 'demo_payments'$q$
+                   in (select trg from defs)) > 0
+             -- (c) neither resolver knows the mode; both agree on the result
+             and (select cpm from defs) !~ $q$v_demo([^A-Za-z0-9_]|$)$q$
+             and (select cfg from defs) !~ $q$v_demo([^A-Za-z0-9_]|$)$q$
+             and position('demo_payments' in (select cpm from defs)) = 0
+             and position('demo_payments' in (select cfg from defs)) = 0
+             and public.current_payment_mode() in ('real','giveaway','off')
+             and public.current_payment_mode()
+                 = (public.get_mobile_config()->'payment'->>'mode')
+             and (select count(*) from public.feature_flags
+                   where key in ('payments','giveaway_period') and enabled) <= 1
+            then 'PASS' else 'FAIL' end as status,
+       public.current_payment_mode() as resolved_mode;
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

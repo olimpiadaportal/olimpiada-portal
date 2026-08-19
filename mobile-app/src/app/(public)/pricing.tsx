@@ -1,13 +1,17 @@
-// Public pricing / SERVICES (web /services parity): pricing2.* copy, one plan
-// card per interval behind a Segmented switcher (the clean mobile pattern for
-// three dense cards), real per-subject prices from subjects_pricing, trial
-// line gated by the launch_promo flag, fixed sibling-discount callout, and the
-// active-olympiad-packages band (anon get_public_olympiad_packages RPC — the
-// same server-filtered rows as the web landing/services section). Prices are
-// display-only — checkout always reprices server-side.
-// Redesign (plan §4-Public): the popular interval gets a gradient border +
-// "Populyar" pill, per-subject rows carry lucide subject glyphs, the CTA is
-// the screen's one gradient button, the disclaimer stays a muted footnote.
+// Public SERVICES screen ("Xidmətlər"): what a subscription cycle covers, plus
+// the active-olympiad-packages band (anon get_public_olympiad_packages RPC —
+// the same server-filtered rows as the web landing/services section).
+//
+// INFORMATION ONLY (docs/STORE_PAYMENTS_COMPLIANCE.md, owner 2026-08-18).
+// Everything that made this a paywall is gone: the AZN plan price and the
+// per-subject price rows, the "choose this plan" CTA into the registration
+// funnel, the trial line, the sibling-discount percentages, and the package
+// price + "Əldə et" CTA. A parent reaches this screen from the account sheet,
+// so an amount here is an amount inside a parent session — which is exactly
+// what Apple 3.1.1 / the Play Payments policy forbid in a purchase-silent
+// binary. No price, no CTA, no destination named.
+// Redesign (plan §4-Public): the popular interval keeps its gradient border +
+// "Populyar" pill.
 import React, { useState } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
 import { Stack, useRouter } from "expo-router";
@@ -16,80 +20,32 @@ import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   BookOpen,
-  Brain,
-  Calculator,
   CalendarDays,
   Check,
   CircleHelp,
   Clock3,
-  Cpu,
-  FlaskConical,
-  Languages,
   Trophy,
-  type LucideIcon,
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
-import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ListRow } from "@/components/ListRow";
 import { Segmented } from "@/components/Segmented";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, spacing } from "@/theme/tokens";
-import {
-  fetchPublicOlympiadPackages,
-  fetchSubjectsPricing,
-  type PublicOlympiadPackage,
-  type SubjectPricingRow,
-} from "@/lib/data";
+import { fetchPublicOlympiadPackages, type PublicOlympiadPackage } from "@/lib/data";
 import { isSupabaseConfigured } from "@/lib/env";
-import { useContentOverrides, useMobileConfig } from "@/lib/configQueries";
+import { useContentOverrides } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
 import { formatLongDate } from "@/lib/formatDate";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
-import { useAuthStore } from "@/features/auth/authStore";
 
-const PRICING_STALE_MS = 5 * 60_000;
-
-const PLANS = [
-  { key: "weekly", interval: "week" },
-  { key: "monthly", interval: "month" },
-  { key: "yearly", interval: "year" },
-] as const;
+const PLANS = [{ key: "weekly" }, { key: "monthly" }, { key: "yearly" }] as const;
 
 type PlanKey = (typeof PLANS)[number]["key"];
-
-function formatAmount(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
-}
-
-/** Subject glyph keyed by the canonical machine `code` (the same value the
- *  subjectLabel `subj.<code>` keys switch on); the old name regex survives
- *  only as a last-resort fallback for unknown codes. Display only. */
-function subjectIcon(code: string | null | undefined, name: string): LucideIcon {
-  switch (code) {
-    case "math":
-      return Calculator;
-    case "science":
-      return FlaskConical;
-    case "logic":
-      return Brain;
-    case "english":
-    case "az_language":
-      return Languages;
-    case "informatics":
-      return Cpu;
-  }
-  const n = name.toLowerCase();
-  if (/riyaz|math|мат/.test(n)) return Calculator;
-  if (/elm|science|təbiət|наук|естеств/.test(n)) return FlaskConical;
-  if (/məntiq|mentiq|logic|логик/.test(n)) return Brain;
-  if (/ingilis|english|англ|dil|language/.test(n)) return Languages;
-  return BookOpen;
-}
 
 function Pill({ text }: { text: string }) {
   const { tokens } = useTheme();
@@ -166,12 +122,9 @@ function MetaChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
-function PublicPackagesSection({ paymentsOff }: { paymentsOff: boolean }) {
+function PublicPackagesSection() {
   const { t, locale } = useT();
   const { tokens } = useTheme();
-  const router = useRouter();
-  const role = useAuthStore((s) => s.role);
-  const status = useAuthStore((s) => s.status);
 
   const q = useQuery({
     queryKey: ["public-oly-packages"],
@@ -179,18 +132,6 @@ function PublicPackagesSection({ paymentsOff }: { paymentsOff: boolean }) {
     enabled: isSupabaseConfigured,
     staleTime: PKG_STALE_MS,
   });
-
-  // CTA auth state picks the TARGET only (web parity): signed out → register,
-  // parent → the olympiads tab (which re-gates server-side). Students never
-  // see commerce — no CTA for a student session (this screen is deep-link
-  // blocked for them anyway).
-  const isParent = status === "signedIn" && role === "parent";
-  const showCta = isParent || status === "signedOut";
-  const onCta = () =>
-    isParent
-      ? router.push("/(parent)/(tabs)/olympiads")
-      : router.push("/(public)/register");
-  const ctaLabel = isParent ? t("polyPub.ctaParent") : t("polyPub.cta");
 
   return (
     <View style={{ gap: spacing.lg }}>
@@ -246,9 +187,6 @@ function PublicPackagesSection({ paymentsOff }: { paymentsOff: boolean }) {
                     : null;
             const saleEnds = pkgDate(r.sale_ends_at, locale);
             const eventAt = pkgDate(r.event_at, locale);
-            const price = Number(r.price_amount ?? 0);
-            const priceText =
-              price > 0 ? `${price} ${r.currency ?? "AZN"}` : t("poly.free");
             const questions = Number(r.question_count ?? 0) || 0;
             return (
               <Card key={r.id} style={{ gap: spacing.md }}>
@@ -300,39 +238,12 @@ function PublicPackagesSection({ paymentsOff }: { paymentsOff: boolean }) {
                     </View>
                   ) : null}
                 </View>
-                {/* Payments off (admin kill-switch / unloaded config): the
-                    package stays browsable, but the price chip and the CTA
-                    are money UI and disappear together. */}
-                {!paymentsOff ? (
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: spacing.md,
-                    }}
-                  >
-                    {/* The amount never truncates — the CTA shrinks instead. */}
-                    <AppText
-                      variant="mono"
-                      color={tokens.accent}
-                      style={{ fontSize: 18, fontWeight: "700", flexShrink: 0 }}
-                    >
-                      {priceText}
-                    </AppText>
-                    {showCta ? (
-                      <Button
-                        title={ctaLabel}
-                        style={{
-                          minHeight: 44,
-                          paddingVertical: spacing.sm,
-                          flexShrink: 1,
-                        }}
-                        onPress={onCta}
-                      />
-                    ) : null}
-                  </View>
-                ) : null}
+                {/* Where the AZN price and the "Əldə et" CTA used to be: one
+                    line of PLAIN TEXT, never a tappable link. A link in a
+                    purchasing context is itself the 3.1.1 violation. */}
+                <AppText variant="muted" style={{ fontSize: 13 }}>
+                  {t("mob.oly.notInApp")}
+                </AppText>
               </Card>
             );
           })}
@@ -349,35 +260,11 @@ export default function Pricing() {
   const insets = useSafeAreaInsets();
   const [plan, setPlan] = useState<PlanKey>("monthly");
 
-  const config = useMobileConfig();
-  const promoOn = config.data?.flags.launchPromo === true;
-  // Payment-mode gate (web /services + parent-tab GateNotice parity): "off"
-  // hides every money surface on this screen. Money UI fails CLOSED — a
-  // failed/unloaded config (undefined mode) gates exactly like the admin
-  // kill-switch.
-  const paymentsOff = (config.data?.payment.mode ?? "off") === "off";
-
-  const q = useQuery({
-    queryKey: ["subjects-pricing"],
-    queryFn: fetchSubjectsPricing,
-    enabled: isSupabaseConfigured,
-    staleTime: PRICING_STALE_MS,
-  });
-
-  // Prices, the promo flag and the surrounding CMS copy are three separate
-  // reads — a pull that skipped one would show a half-updated price page.
+  // The subjects_pricing read is gone with the amounts it fed; only the CMS
+  // copy around the cards still comes from the server.
   const overridesQ = useContentOverrides(locale);
-  const { refreshing, onRefresh } = usePullRefresh([q, config, overridesQ]);
+  const { refreshing, onRefresh } = usePullRefresh([overridesQ]);
 
-  // One boot state for prices + config: while it lasts the skeleton renders
-  // and the gate notice stays back (no flash before the mode is known).
-  const booting = (q.isPending || config.isPending) && isSupabaseConfigured;
-
-  const interval = PLANS.find((p) => p.key === plan)?.interval ?? "month";
-  const rows: SubjectPricingRow[] = (q.data ?? [])
-    .filter((r) => r.interval === interval)
-    .sort((a, b) => (a.subject?.name ?? "").localeCompare(b.subject?.name ?? ""));
-  const minAmount = rows.length > 0 ? Math.min(...rows.map((r) => r.amount)) : null;
   const popular = plan === "monthly";
 
   const planCard = (
@@ -390,16 +277,6 @@ export default function Pricing() {
     >
       {popular ? <Pill text={t("pricing2.popular")} /> : null}
       <AppText variant="title">{t(`pricing2.${plan}.name`)}</AppText>
-      {/* Money UI (price line, per-subject prices, register CTA) hides as one
-          block while payments are off; the plan description stays browsable. */}
-      {minAmount !== null && !paymentsOff ? (
-        <View style={{ gap: 2 }}>
-          <AppText variant="display" color={tokens.accent}>
-            {t(`pricing2.${plan}.price`).replace("{price}", formatAmount(minAmount))}
-          </AppText>
-          <AppText variant="muted">{t(`pricing2.${plan}.per`)}</AppText>
-        </View>
-      ) : null}
       <AppText>{t(`pricing2.${plan}.desc`)}</AppText>
 
       <View style={{ gap: spacing.sm }}>
@@ -413,51 +290,6 @@ export default function Pricing() {
           </View>
         ))}
       </View>
-
-      {rows.length > 0 && !paymentsOff ? (
-        <View
-          style={{
-            borderTopWidth: 1,
-            borderTopColor: tokens.border,
-            paddingTop: spacing.md,
-            gap: spacing.sm,
-          }}
-        >
-          {rows.map((r) => {
-            const Icon = subjectIcon(r.subject?.code, r.subject?.name ?? "");
-            return (
-              <View
-                key={r.subject_id}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: spacing.md,
-                  minHeight: 32,
-                }}
-              >
-                <Icon size={18} color={tokens.accent} strokeWidth={2} />
-                <AppText style={{ flex: 1 }}>
-                  {subjectLabel(t, r.subject?.code, r.subject?.name)}
-                </AppText>
-                <AppText variant="mono" color={tokens.accent}>
-                  {formatAmount(r.amount)} {r.currency}
-                </AppText>
-              </View>
-            );
-          })}
-          <AppText variant="muted" style={{ fontSize: 12 }}>
-            {t("pricing.perSubjectNote")}
-          </AppText>
-        </View>
-      ) : null}
-
-      {!paymentsOff ? (
-        <Button
-          title={t(`pricing2.${plan}.cta`)}
-          variant="gradient"
-          onPress={() => router.push("/(public)/register")}
-        />
-      ) : null}
     </Card>
   );
 
@@ -494,21 +326,6 @@ export default function Pricing() {
           <AppText variant="muted">{t("pricing2.sub")}</AppText>
         </View>
 
-        {/* The one gate notice for the whole screen when payments are off. */}
-        {paymentsOff && !booting ? (
-          <Card>
-            <AppText variant="muted">{t("gate.paymentsOff")}</AppText>
-          </Card>
-        ) : null}
-
-        {/* The trial line is a billing promise — it hides with the rest of
-            the money UI while payments are off. */}
-        {promoOn && !paymentsOff ? (
-          <Card style={{ borderColor: tokens.accent }}>
-            <AppText>{t("pricing.trialLine")}</AppText>
-          </Card>
-        ) : null}
-
         <View style={{ alignItems: "center" }}>
           <Segmented<PlanKey>
             options={PLANS.map((p) => ({
@@ -520,21 +337,7 @@ export default function Pricing() {
           />
         </View>
 
-        {booting ? (
-          <Card style={{ gap: spacing.md }}>
-            <Skeleton height={22} width="40%" />
-            <Skeleton height={28} width="55%" />
-            <Skeleton height={14} />
-            <Skeleton height={14} width="80%" />
-            <Skeleton height={14} width="70%" />
-          </Card>
-        ) : q.isError && !q.data ? (
-          <ErrorRetry
-            message={t("mob.boot.error")}
-            retryLabel={t("mob.retry")}
-            onRetry={() => void q.refetch()}
-          />
-        ) : popular ? (
+        {popular ? (
           // Gradient border frame around the popular plan (plan §4-Public).
           <LinearGradient
             colors={[...gradients.brand]}
@@ -547,14 +350,6 @@ export default function Pricing() {
         ) : (
           planCard
         )}
-
-        {/* Sibling discount = pricing copy → gated with the rest of it. */}
-        {!paymentsOff ? (
-          <Card style={{ gap: spacing.sm }}>
-            <AppText variant="label">{t("pricing2.sibling.title")}</AppText>
-            <AppText variant="muted">{t("pricing2.sibling.body")}</AppText>
-          </Card>
-        ) : null}
 
         {/* Subjects catalog cross-link (info surface, web /subjects parity). */}
         <Card style={{ paddingVertical: spacing.sm }}>
@@ -572,7 +367,7 @@ export default function Pricing() {
 
         {/* Active olympiad packages — the shared public band, below the
             subscription plans (web /services parity). */}
-        <PublicPackagesSection paymentsOff={paymentsOff} />
+        <PublicPackagesSection />
       </ScrollView>
     </View>
   );

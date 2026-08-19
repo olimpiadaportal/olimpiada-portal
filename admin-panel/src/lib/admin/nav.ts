@@ -73,7 +73,7 @@ export const NAV: NavGroup[] = [
       // below (subscription lifecycle monitoring/management).
       { label: "nav.pricing", href: "/pricing", adminOnly: true },
       // Round 31: subscription lifecycle monitoring (activate/extend/cancel/
-      // expire demo+comped child subscriptions). Moved out of comingSoon now
+      // expire comped/admin-granted child subscriptions). Moved out of comingSoon now
       // that the module is built. The "nav.payments" placeholder stays in
       // comingSoon, untouched — a separate future module.
       { label: "nav.subscriptions", href: "/subscriptions", adminOnly: true },

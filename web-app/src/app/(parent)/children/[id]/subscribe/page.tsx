@@ -19,16 +19,14 @@ const KEYS = [
   "pricing.weekly", "pricing.monthly", "pricing.yearly", "parent.dash.title",
   // Manage-subjects (existing subscription) keys:
   "subjedit.title", "subjedit.minOne",
-  // Round 11 — checkbox editor + demo-payment modal:
+  // Round 11 — checkbox editor + the plan-change confirmation sheet:
   "pricing.perSubjectNote", "subjedit.activeChip", "subjedit.endingChip", "subjedit.selectedCount",
   "subjedit.pendingAdd", "subjedit.pendingRemove",
   // Migration 120 — un-cancelling a scheduled removal is its own outcome, not
   // an addition: nothing is charged and the paid period is kept.
   "subjedit.pendingReinstate", "subjedit.reinstateLine", "subjedit.reinstateNote",
   "subjedit.save", "subjedit.saving", "subjedit.saved", "subjedit.noChanges",
-  "subjedit.demoModeNote", "dpay.cancel",
-  "pay.title", "pay.demoBadge", "pay.note", "pay.cardName", "pay.cardNumber",
-  "pay.expiry", "pay.cvc", "pay.payNow", "pay.processing",
+  "pay.cancel", "pay.title", "pay.payNow", "pay.processing",
   "pay.subtotal", "pay.discount", "pay.total",
   // Mid-cycle change: an added subject opens its OWN period today and is
   // charged that period in full (proration retired, owner 2026-08-17), a

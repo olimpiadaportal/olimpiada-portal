@@ -7,7 +7,6 @@ import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { CancelSubscription } from "@/components/CancelSubscription";
 import { BillingTabs } from "@/components/BillingTabs";
 import { Segmented } from "@/components/Segmented";
-import { InvoicesSection, type InvoiceRow } from "@/components/InvoicesSection";
 import { getPerSubjectPrices } from "@/lib/pricing";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
@@ -21,10 +20,15 @@ import { formatLongDate } from "@/lib/formatDate";
 //              copy with graceful fallback to the live pricing.* keys), the
 //              child's REAL subscribed subjects + a computed total per plan,
 //              "Current plan" badge on the child's actual interval.
-//   BILLING  — owner-approved static demo card (plan / cycle / next date /
-//              card on file) + the REAL cancel flow (CancelSubscription
-//              server action) for every cancellable child subscription.
-//   INVOICES — demo invoice history + email-notification toggle (client).
+//   BILLING  — the child's REAL billing facts (per-subject cycles, the next
+//              charge date and its amount) + the REAL cancel flow
+//              (CancelSubscription server action) for every cancellable child
+//              subscription. Nothing here is invented: the static demo card
+//              (next billing 29/01/2026, MasterCard ****8475, inert card
+//              buttons) went out with the demo payment mode on 2026-08-18.
+//   INVOICES — an honest empty state until a payment provider issues real
+//              ones. It used to be two fabricated PAID invoices; a displayed
+//              false price is not cured by calling it a demo.
 // Data is read via the RLS-scoped server client; every branch is try/catch
 // guarded so a query hiccup degrades gracefully instead of throwing.
 
@@ -104,36 +108,6 @@ const CANCEL_KEYS = [
   "cancel.benefitsTitle", "cancel.benefit1", "cancel.benefit2", "cancel.benefit3",
   "cancel.confirm", "cancel.keep", "cancel.done", "cancel.err",
 ];
-
-// Copy passed to the invoices client section.
-const INVOICE_KEYS = [
-  "billing.emailToggle", "billing.emailToggleHint", "billing.recipient",
-  "billing.changeEmail", "billing.requestInvoice", "billing.soon",
-  "billing.download",
-  "billing.col.id", "billing.col.date", "billing.col.plan",
-  "billing.col.subjects", "billing.col.amount", "billing.col.status",
-  "billing.col.action",
-];
-
-// Small MasterCard mark (inline SVG — strict CSP, no external images).
-function CardBrandIcon() {
-  return (
-    <svg width="30" height="20" viewBox="0 0 30 20" aria-hidden="true">
-      <rect
-        x="0.5"
-        y="0.5"
-        width="29"
-        height="19"
-        rx="3.5"
-        fill="none"
-        stroke="currentColor"
-        opacity="0.3"
-      />
-      <circle cx="12" cy="10" r="5.6" fill="#eb001b" opacity="0.9" />
-      <circle cx="18" cy="10" r="5.6" fill="#f79e1b" opacity="0.85" />
-    </svg>
-  );
-}
 
 export default async function ParentSubscription({
   searchParams,
@@ -295,20 +269,6 @@ export default async function ParentSubscription({
     : false;
   const giveaway = mode === "giveaway" || freeIntervalActive;
 
-  // Parent's real email for the invoices section (demo fallback).
-  let parentEmail = "parent@example.com";
-  try {
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("email")
-      .eq("id", parent.profileId)
-      .single();
-    const e = (prof as { email?: string } | null)?.email;
-    if (e) parentEmail = e;
-  } catch {
-    // keep the demo address
-  }
-
   // Shared plan-card copy (pricing2.* from the contract, pricing.* fallback).
   // The .price strings carry a {price} placeholder filled with the DB price.
   const planCopy = PLANS.map(({ slug, interval }) => ({
@@ -335,12 +295,9 @@ export default async function ParentSubscription({
     month: t("billing.perMonth"),
     year: t("billing.perYear"),
   };
-  const monthlyName = planCopy[1].name;
 
   const cancelStrings: Record<string, string> = {};
   for (const k of CANCEL_KEYS) cancelStrings[k] = t(k);
-  const invoiceStrings: Record<string, string> = {};
-  for (const k of INVOICE_KEYS) invoiceStrings[k] = t(k);
 
   // Billing/cancel rows are scoped to the SELECTED child only (Task 5); the
   // cancel action itself re-validates ownership + subscription id server-side.
@@ -354,25 +311,6 @@ export default async function ParentSubscription({
       ? [selectedCard]
       : [];
 
-  // Owner-approved static demo invoice history.
-  const invoiceRows: InvoiceRow[] = [
-    {
-      id: "INV-2026-001",
-      date: t("billing.date1"),
-      plan: monthlyName,
-      subjects: t("billing.threeSubjects"),
-      amount: "≈ 18 AZN",
-      status: t("billing.paid"),
-    },
-    {
-      id: "INV-2025-012",
-      date: t("billing.date2"),
-      plan: monthlyName,
-      subjects: t("billing.threeSubjects"),
-      amount: "≈ 18 AZN",
-      status: t("billing.paid"),
-    },
-  ];
 
   const tabs = [
     { id: "billing-plans", label: t("billing.tab.plans") },
@@ -380,53 +318,37 @@ export default async function ParentSubscription({
     { id: "billing-invoices", label: t("billing.tab.invoices") },
   ];
 
-  // Migration 109: the cycle/next/total rows use the child's REAL numbers where
-  // they exist — next_renewal_at is the MIN of the subject period ends (the
-  // next charge), and total_amount is the invoice that falls due on it. The
-  // hardcoded demo values remain only as the no-plan fallback. The card-on-file
-  // rows below are still the owner-approved demo block.
+  // Migration 109: every row here is the child's REAL number — next_renewal_at
+  // is the MIN of the subject period ends (the next charge) and total_amount is
+  // the invoice that falls due on it. A row is OMITTED rather than filled with
+  // a placeholder: the hardcoded fallbacks (29/01/2026, ≈ 18 AZN) and the
+  // card-on-file block were demo content and were deleted with the demo payment
+  // mode on 2026-08-18. With no live plan the list is empty and the panel says
+  // so.
   const liveCycles = selectedCard
     ? Array.from(new Set(selectedCard.plan.map((p) => p.interval)))
     : [];
-  const billingRows: { label: string; value: React.ReactNode }[] = [
-    { label: t("billing.current"), value: monthlyName },
-    {
+  const billingRows: { label: string; value: React.ReactNode }[] = [];
+  if (liveCycles.length > 0) {
+    billingRows.push({
       label: t("billing.row.cycle"),
-      value:
-        liveCycles.length === 0
-          ? monthlyName
-          : liveCycles
-              .map((iv) => t(CYCLE_NAME_KEY[iv] ?? "pricing.monthly"))
-              .join(" · "),
-    },
-    {
+      value: liveCycles
+        .map((iv) => t(CYCLE_NAME_KEY[iv] ?? "pricing.monthly"))
+        .join(" · "),
+    });
+  }
+  if (selectedCard?.nextRenewalAt) {
+    billingRows.push({
       label: t("billing.row.next"),
-      value: selectedCard?.nextRenewalAt
-        ? formatLongDate(selectedCard.nextRenewalAt, locale)
-        : "29/01/2026",
-    },
-    {
+      value: formatLongDate(selectedCard.nextRenewalAt, locale),
+    });
+  }
+  if (selectedCard?.totalAmount != null) {
+    billingRows.push({
       label: t("billing.totalLabel"),
-      value:
-        selectedCard?.totalAmount != null
-          ? `${selectedCard.totalAmount} AZN`
-          : "≈ 18 AZN",
-    },
-    {
-      label: t("billing.row.method"),
-      value: (
-        <span className="billing-card-brand">
-          <CardBrandIcon />
-          {t("billing.cardEnding")}
-        </span>
-      ),
-    },
-    { label: t("billing.row.expiry"), value: "11/2028" },
-    {
-      label: t("billing.row.status"),
-      value: <span className="billing-pill ok">{t("billing.defaultMethod")}</span>,
-    },
-  ];
+      value: `${selectedCard.totalAmount} AZN`,
+    });
+  }
 
   return (
     <section className="billing-page">
@@ -646,41 +568,18 @@ export default async function ParentSubscription({
       <section id="billing-billing" className="billing-section">
         <h2 className="billing-section-h">{t("billing.billingTitle")}</h2>
         <div className="billing-panel">
-          <div className="billing-rows">
-            {billingRows.map((r) => (
-              <div className="billing-row" key={r.label}>
-                <span className="billing-row-label">{r.label}</span>
-                <span className="billing-row-value">{r.value}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="billing-actions">
-            <button
-              type="button"
-              className="billing-btn inert"
-              aria-disabled="true"
-              title={t("billing.soon")}
-            >
-              {t("billing.changeMethod")}
-            </button>
-            <button
-              type="button"
-              className="billing-btn inert"
-              aria-disabled="true"
-              title={t("billing.soon")}
-            >
-              {t("billing.addCard")}
-            </button>
-            <button
-              type="button"
-              className="billing-btn inert"
-              aria-disabled="true"
-              title={t("billing.soon")}
-            >
-              {t("billing.updateDetails")}
-            </button>
-          </div>
+          {billingRows.length > 0 ? (
+            <div className="billing-rows">
+              {billingRows.map((r) => (
+                <div className="billing-row" key={r.label}>
+                  <span className="billing-row-label">{r.label}</span>
+                  <span className="billing-row-value">{r.value}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">{t("billing.noBillingYet")}</p>
+          )}
 
           {cancellable.length > 0 && (
             <div className="billing-cancel-rows">
@@ -697,19 +596,13 @@ export default async function ParentSubscription({
               ))}
             </div>
           )}
-
-          <p className="billing-note">{t("billing.demoNote")}</p>
         </div>
       </section>
 
       {/* ------------------------------------------------------- INVOICES */}
       <section id="billing-invoices" className="billing-section">
         <h2 className="billing-section-h">{t("billing.invoicesTitle")}</h2>
-        <InvoicesSection
-          email={parentEmail}
-          rows={invoiceRows}
-          strings={invoiceStrings}
-        />
+        <p className="muted">{t("billing.invoicesEmpty")}</p>
       </section>
     </section>
   );

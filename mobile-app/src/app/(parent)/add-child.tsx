@@ -1,11 +1,10 @@
-// Add-Child WIZARD (web AddChildWizard parity, commerce-posture aware,
-// redesigned: StepDots progress + one clean section per step + a summary card
-// before submit):
-//   demo                → Info → Subjects → Plan → DemoPay sheet → Done (ID reveal)
+// Add-Child WIZARD (web AddChildWizard parity, redesigned: StepDots progress +
+// one clean section per step + a summary card before submit). Since the demo
+// payment mode was deleted (owner, 2026-08-18) the wizard is always TWO steps —
+// the app has no purchase flow in any mode (docs/STORE_PAYMENTS_COMPLIANCE.md):
 //   giveaway / free acc → Info → (bffAddChild + bffActivateFree) → Done (instant ID)
-//   real                → Info → Done: child created, ID pending, plans are
-//                         completed on the family's WEB account (read-only money)
-//   off                 → Info → Done: child created, ID pending, gate.paymentsOff
+//   real                → Info → Done: child created, login ID pending
+//   off                 → Info → Done: child created, gate.paymentsOff
 // Round 21: the District (rayon) field lives between City and School — shown
 // only when the city has active rayons, required then, narrows the school
 // list; city_district_id goes to the BFF (which re-validates and maps a miss
@@ -42,7 +41,6 @@ import {
   applyChildAvatarChoice,
   type ChildAvatarChoice,
 } from "@/features/parent/ChildAvatarPicker";
-import { SubscribeFlow, type SubscribeStep } from "@/features/parent/SubscribeFlow";
 import { extractChildUniqueId, groupChildId, resolvePosture } from "@/features/parent/commerce";
 import {
   useCities,
@@ -51,17 +49,15 @@ import {
   useInvalidateParentData,
   useParentFreeAccess,
   useSchools,
-  useSubjectOptions,
 } from "@/features/parent/queries";
 import { KeyRow, ScreenScroll } from "@/features/parent/ui";
 
-type Phase = "info" | "flow" | "done";
+type Phase = "info" | "done";
+
+const STEPS = ["info", "done"] as const;
 
 const STEP_KEYS: Record<string, string> = {
   info: "addchild.step.info",
-  subjects: "addchild.step.subjects",
-  plan: "addchild.step.plan",
-  payment: "addchild.step.payment",
   done: "addchild.step.done",
 };
 
@@ -84,7 +80,6 @@ export default function AddChildScreen() {
   const router = useRouter();
   const config = useMobileConfig();
   const freeAccess = useParentFreeAccess();
-  const subjects = useSubjectOptions();
   const grades = useGrades();
   const cities = useCities();
   const districts = useCityDistricts();
@@ -96,7 +91,6 @@ export default function AddChildScreen() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [studentProfileId, setStudentProfileId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("info");
-  const [flowStep, setFlowStep] = useState<SubscribeStep>("subjects");
   const [doneId, setDoneId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -108,18 +102,7 @@ export default function AddChildScreen() {
   const cityRayons = rayonsOfCity(districts.data, info.cityId);
   const hasDistricts = cityRayons.length > 0;
 
-  // Ordered indicator steps for the resolved posture.
-  const steps = posture.demoPay
-    ? ["info", "subjects", "plan", "payment", "done"]
-    : ["info", "done"];
-  const activeIdx =
-    phase === "info"
-      ? 0
-      : phase === "done"
-        ? steps.length - 1
-        : flowStep === "subjects"
-          ? 1
-          : 2;
+  const activeIdx = phase === "info" ? 0 : 1;
 
   // ---- summary card inputs (resolved display names) ------------------------
   const cityName = ((cities.data ?? []) as { id: string; name: string }[]).find(
@@ -196,12 +179,7 @@ export default function AddChildScreen() {
         return;
       }
 
-      if (posture.demoPay) {
-        setPhase("flow"); // Subjects → Plan → DemoPay
-        return;
-      }
-
-      // 'real' (web-only money) and 'off': the child exists with a pending ID.
+      // 'real' and 'off': the child exists, its login ID is still pending.
       setPhase("done");
     } finally {
       setPending(false);
@@ -215,7 +193,6 @@ export default function AddChildScreen() {
     setServerError(null);
     setStudentProfileId(null);
     setDoneId(null);
-    setFlowStep("subjects");
     setPhase("info");
   }
 
@@ -230,7 +207,7 @@ export default function AddChildScreen() {
         </View>
       ) : (
         <>
-          <StepProgress steps={steps} activeIdx={activeIdx} />
+          <StepProgress steps={[...STEPS]} activeIdx={activeIdx} />
 
           {phase === "info" ? (
             <>
@@ -282,26 +259,13 @@ export default function AddChildScreen() {
                 </AppText>
               ) : null}
               <Button
-                title={steps.length === 2 ? t("addchild.createChild") : t("addchild.next")}
+                title={t("addchild.createChild")}
                 variant="gradient"
                 pending={pending}
                 pendingTitle={t("parent.child.submitting")}
                 onPress={() => void submitInfo()}
               />
             </>
-          ) : null}
-
-          {phase === "flow" && studentProfileId ? (
-            <SubscribeFlow
-              studentId={studentProfileId}
-              subjects={subjects.data ?? []}
-              onStepChange={setFlowStep}
-              onDone={(id) => {
-                setDoneId(id);
-                invalidate();
-                setPhase("done");
-              }}
-            />
           ) : null}
 
           {phase === "done" ? (
@@ -327,13 +291,13 @@ export default function AddChildScreen() {
                     {t("gate.paymentsOff")}
                   </AppText>
                 </>
-              ) : posture.webOnly ? (
+              ) : !posture.freeFlow ? (
                 <>
                   <AppText variant="title" style={{ textAlign: "center" }}>
                     {t("parent.child.created")}
                   </AppText>
                   <AppText variant="muted" style={{ textAlign: "center" }}>
-                    {t("mob.addchild.webPlan")}
+                    {t("mob.addchild.idPending")}
                   </AppText>
                 </>
               ) : (
@@ -341,9 +305,7 @@ export default function AddChildScreen() {
                   <AppText variant="title" style={{ textAlign: "center" }}>
                     {posture.mode === "giveaway"
                       ? t("addchild.giveawayGranted")
-                      : posture.freeFlow
-                        ? t("addchild.freeAccessGranted")
-                        : t("pay.success")}
+                      : t("addchild.freeAccessGranted")}
                   </AppText>
                   <AppText variant="muted" style={{ textAlign: "center" }}>
                     {t("pay.idRevealed")}

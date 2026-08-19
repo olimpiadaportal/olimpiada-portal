@@ -50,7 +50,7 @@ export type FreeAccessChecker = (studentId: string) => Promise<boolean>;
 export type GateErrorKey = "gate.paymentsOff" | "gate.giveawayFree" | "gate.freeAccess";
 
 // Round 11: paid mutations are gated by the PAYMENT MODE, not the raw flag —
-// 'real'/'demo' allow the transaction, 'off' blocks it (existing UX), and
+// 'real' allows the transaction, 'off' blocks it (existing UX), and
 // 'giveaway' blocks paid WRITES with a friendly "it's free right now" message
 // (access during the window comes from the server-side giveaway override, so
 // nothing has to be unwound when the window expires). Round 12: an active
@@ -375,7 +375,8 @@ export async function quoteSubscriptionCore(params: {
 }
 
 // ---- W2: cancel a child's current subscription (parent-initiated) ------------
-// Demo-safe: no real payment reversal. Ownership first, then flip the child's
+// No payment reversal is attempted (no provider is wired up yet, and a
+// cancellation refunds nothing by rule). Ownership first, then flip the child's
 // live subscription (trialing/active/past_due) to 'canceled'. Access is KEPT
 // until the current period end; the daily access-recompute job downgrades
 // access once current_period_end passes.
@@ -426,7 +427,8 @@ export async function cancelChildSubscriptionCore(params: {
       .eq("profile_id", studentId);
   }
 
-  // reason is captured for demo UX only; there is no cancel_reason column to persist to.
+  // The reason is collected for the parent's benefit only; there is no
+  // cancel_reason column to persist it to.
   void reason;
 
   // Notify the parent that the plan will end at the period end (best-effort;

@@ -40,6 +40,7 @@ export function SubjectPlanCard({
   removeDisabled = false,
   removeDisabledReason,
   disabled = false,
+  cycleDisabled = false,
   loading = false,
   chip,
   chipText,
@@ -59,8 +60,19 @@ export function SubjectPlanCard({
   removeDisabled?: boolean;
   /** Tooltip explaining why removal is blocked (usually "≥1 subject must remain"). */
   removeDisabledReason?: string;
-  /** Payments off / a pending save: the whole card goes non-interactive. */
+  /** A pending save: the whole card goes non-interactive, removal included. */
   disabled?: boolean;
+  /**
+   * Only the CYCLE control is frozen; REMOVAL stays available.
+   *
+   * Payments being off must never block a removal. The database has always
+   * allowed one (`assert_payments_enabled` fires on adds and cycle changes
+   * only) so a parent is never trapped inside a plan they are leaving, and
+   * folding that state into `disabled` contradicted the server: every remove
+   * button on a covered subject went grey with no explanation, leaving a
+   * paying parent with no available action at all.
+   */
+  cycleDisabled?: boolean;
   /** A newer server quote is in flight — only the PRICE cell shows it. */
   loading?: boolean;
   chip?: SubjectPlanCardChip;
@@ -108,7 +120,7 @@ export function SubjectPlanCard({
       <fieldset
         className="splan-plan"
         aria-label={t("plan.cycleAria").replace("{subject}", label)}
-        disabled={disabled}
+        disabled={disabled || cycleDisabled}
       >
         <Segmented className="splan-seg" track>
           {PLAN_INTERVALS.map((iv) => {
@@ -128,7 +140,7 @@ export function SubjectPlanCard({
                   name={`splan-${id}`}
                   value={iv}
                   checked={on}
-                  disabled={disabled || !sold}
+                  disabled={disabled || cycleDisabled || !sold}
                   onChange={() => onIntervalChange(id, iv)}
                 />
                 <span>{t(INTERVAL_LABEL_KEY[iv])}</span>

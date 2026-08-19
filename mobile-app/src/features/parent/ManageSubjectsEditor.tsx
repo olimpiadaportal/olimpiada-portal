@@ -1,9 +1,17 @@
 // Manage-subjects CHECKBOX editor for a child's LIVE subscription (web
 // ManageSubjects parity). Toggling is pure client state; nothing applies until
-// Save. Payment-first contract: a diff containing a TRUE addition opens the
-// demo payment sheet first (demo mode); removal-only diffs and free modes
-// submit directly. The BFF/server re-diffs the desired FULL set
-// authoritatively — the client never sends prices.
+// Save. The BFF/server re-diffs the desired FULL set authoritatively — the
+// client never sends prices.
+//
+// PURCHASE-SILENT (docs/STORE_PAYMENTS_COMPLIANCE.md, owner 2026-08-18 — the
+// demo payment mode is deleted). This editor renders ONLY where nothing is
+// bought: the giveaway/free-access window, and payments-off removal-only mode.
+// It therefore shows NO amount anywhere. Because it can no longer print a
+// price, it must never commit a change that COSTS something either: an add is
+// blocked (mob.subjedit.notInApp) until the server quote answers, and released
+// only when it prices the change at zero — which is what the free window this
+// editor renders in returns. Removals stay legal in every mode: a parent must
+// always be able to stop paying.
 //
 // Migration 120 — UN-CANCEL. Re-ticking a subject whose removal is scheduled
 // but whose paid period has NOT lapsed is a REINSTATEMENT, not a purchase: the
@@ -13,58 +21,132 @@
 // for the same coverage twice. This screen never loaded the period dates, so
 // the SERVER's `reinstatements` list is the only classification it trusts —
 // before the quote arrives, an add-shaped row is still treated as an addition
-// and still opens the payment sheet.
+// and is therefore still blocked.
 //
 // Round 41 (web parity — structured change summary): the summary is a
 // SaaS-style card in a fixed order: Selected subjects (count) · Added ·
-// Removed · Pay now · Renewals · Note. The no-charge line
-// (subjedit.noChargeNow) and the removal note (subjedit.noteText) are
-// PRICE-FREE and only carry {date}. Amounts stay authoritative
-// (bffQuoteSubjectChange's due_now / renewals — never client-computed).
-//
-// PRORATION IS RETIRED (owner, 2026-08-17): a subject is billed on its OWN
-// cycle starting the day it is added, so `due_now` is the added subjects' FULL
-// first periods and subjedit.dueNowNote says so. There is no child-wide renewal
-// date left to print — subjedit.nextBilling / .nextBillingLine and .estTotal
-// were removed from the catalog with the model they described.
+// Removed · Note. Every line it prints is PRICE-FREE and carries only a
+// {date} or a subject name; the web keeps the amounts.
 //
 // Migration 109 — PER-SUBJECT CYCLES. Every covered subject carries its own
 // billing cycle, so this editor shows each subject's cycle and PRESERVES it
 // when the subject set changes (it posts the desired full set as `items`).
-// Choosing a different cycle for an existing subject stays a WEB action: the
-// mobile parent surface is deliberately display-first for commerce, and a
-// scheduled cycle change is a billing change. The single
-// subjedit.nextBillingLine sentence is replaced by one plan.renewalLine.*
-// sentence per cycle — one sentence cannot describe a mixed plan.
+// Choosing a different cycle for an existing subject is NOT a mobile action:
+// the mobile parent surface is read-only for commerce, and a scheduled cycle
+// change is a billing change.
 import React, { useEffect, useMemo, useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/theme/ThemeProvider";
-import { spacing, weight } from "@/theme/tokens";
+import { radius, spacing } from "@/theme/tokens";
 import { bffQuoteSubjectChange, bffUpdateSubjects, type SubjectChangeQuote } from "@/lib/api";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
 import {
   INTERVAL_NAME_KEY,
-  fmtAmount,
   fmtBakuDate,
-  fmtMoney,
   isInterval,
-  renewalLineKey,
-  type CommercePosture,
   type Interval,
   type SubjectOption,
 } from "./commerce";
-import { DemoPaySheet } from "./DemoPaySheet";
-import { SubjectCheckRow } from "./SubscribeFlow";
 import { KeyRow } from "./ui";
 
-/** Debounced (~400ms) diff-based plan-change quote (BFF /subjects/quote) — the
- *  useServerQuote (SubscribeFlow) twin, but keyed by the add/remove diff
- *  instead of the desired full set. Result is keyed by its input, so a stale
- *  response for an older diff simply never matches the current key. */
+// ---- subject checkbox row ---------------------------------------------------------
+// Lived in SubscribeFlow until the demo purchase wizard was deleted; this is
+// now its only consumer. The trailing text is the subject's own BILLING CYCLE
+// — never an amount (the row used to print "9,00 AZN · Aylıq").
+
+function SubjectCheckRow({
+  name,
+  metaText,
+  checked,
+  onToggle,
+  chip,
+  chipTone = "active",
+  disabled = false,
+}: {
+  name: string;
+  /** Trailing muted meta — this subject's cycle name, or "" to show nothing. */
+  metaText: string;
+  checked: boolean;
+  onToggle: () => void;
+  /** Optional trailing chip (e.g. subjedit.activeChip). */
+  chip?: string;
+  /** "active" = accent pill (covered now); "ending" = muted pill (scheduled
+   *  removal), matching web's .subjedit-chip-active / -chip-ending pair. */
+  chipTone?: "active" | "ending";
+  disabled?: boolean;
+}) {
+  const { tokens } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled }}
+      accessibilityLabel={name}
+      onPress={disabled ? undefined : onToggle}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.md,
+        paddingVertical: spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: tokens.border,
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      <View
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: radius.sm - 4,
+          borderWidth: 2,
+          borderColor: checked ? tokens.accent : tokens.border,
+          backgroundColor: checked ? tokens.accent : "transparent",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {checked ? (
+          <AppText variant="label" color="#ffffff" style={{ fontSize: 14 }}>
+            ✓
+          </AppText>
+        ) : null}
+      </View>
+      <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+        <AppText style={{ flexShrink: 1 }}>{name}</AppText>
+        {chip ? (
+          <View
+            style={{
+              backgroundColor: chipTone === "ending" ? "transparent" : tokens.pillBg,
+              borderWidth: chipTone === "ending" ? 1 : 0,
+              borderColor: tokens.border,
+              borderRadius: 999,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 1,
+            }}
+          >
+            <AppText
+              variant="label"
+              color={chipTone === "ending" ? tokens.muted : tokens.pillText}
+              style={{ fontSize: 11 }}
+            >
+              {chip}
+            </AppText>
+          </View>
+        ) : null}
+      </View>
+      <AppText variant="muted">{metaText}</AppText>
+    </Pressable>
+  );
+}
+
+/** Debounced (~400ms) plan-change quote (BFF /subjects/quote), keyed by the
+ *  add/remove diff. The result is keyed by its input, so a stale response for
+ *  an older diff simply never matches the current key. It is read for its
+ *  CLASSIFICATION (free / not free, reinstatement or addition, dates) — the
+ *  amounts it carries are never rendered. */
 function useSubjectChangeQuote(
   studentId: string,
   addKey: string,
@@ -160,7 +242,6 @@ export function ManageSubjectsEditor({
   subjects,
   covered: coveredRows,
   defaultInterval,
-  posture,
   addsDisabled = false,
   onSaved,
 }: {
@@ -173,7 +254,6 @@ export function ManageSubjectsEditor({
   covered: CoveredSubject[];
   /** The subscription's DEFAULT cycle — what a newly added subject inherits. */
   defaultInterval: string | null;
-  posture: CommercePosture;
   /** Removal-only mode (payments off): the server deliberately keeps
    *  REMOVALS legal when payments are off — a parent must always be able to
    *  stop paying — and blocks only ADDS. Add-side rows (unchecked subjects
@@ -228,7 +308,6 @@ export function ManageSubjectsEditor({
     return sel;
   }, [subjects, covered, toggled]);
 
-  const [payOpen, setPayOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -279,7 +358,7 @@ export function ManageSubjectsEditor({
   // and changes nothing else: same cycle, same price, same period, zero
   // charged. Only the SERVER may say which side of that line a subject is on
   // (this screen never loaded the period dates), so until the quote lands every
-  // add-shaped row is still treated — and paid for — as an addition.
+  // add-shaped row is still treated as an addition.
   const reinstatedIds = useMemo(
     () => new Set((quote?.reinstatements ?? []).map((r) => r.subject_id)),
     [quote],
@@ -287,17 +366,6 @@ export function ManageSubjectsEditor({
   const toReinstate = addRows.filter((s) => reinstatedIds.has(s.id));
   const toAdd = addRows.filter((s) => !reinstatedIds.has(s.id));
 
-  // Migration 109: ONE renewal sentence per cycle. A single "{total} {currency}
-  // / {interval}" line cannot express a plan whose subjects renew on different
-  // dates for different amounts.
-  const renewalSentences = (q: SubjectChangeQuote): string[] =>
-    (q.renewals ?? [])
-      .filter((r) => isInterval(r.interval))
-      .map((r) =>
-        t(renewalLineKey(r.interval as Interval))
-          .replace("{total}", fmtAmount(r.total, locale))
-          .replace("{currency}", q.currency),
-      );
   const noChargeSentence = (q: SubjectChangeQuote) =>
     t("subjedit.noChargeNow").replace("{date}", fmtBakuDate(q.effective_from, locale));
   // ONE LINE PER REMOVED SUBJECT with ITS OWN period end. removals_effective_at
@@ -322,18 +390,13 @@ export function ManageSubjectsEditor({
     ];
   };
 
-  /** The DemoPaySheet total: the authoritative due_now amount, or the
-   *  price-free no-charge sentence when it's 0 (trial / weekly / waived —
-   *  never a bare "0 AZN"). Web DemoPaymentModal wiring. */
-  function dueNowValueText(): string {
-    if (quoting) return t("sub.calculating");
-    if (!quote) return quoteError ? t(quoteError) : t("sub.calculating");
-    return quote.due_now > 0
-      ? fmtMoney(quote.due_now, quote.currency, locale)
-      : noChargeSentence(quote);
-  }
+  // A change this screen may NOT complete: an addition the SERVER prices above
+  // zero. With no amount on screen, saving it would commit the parent to a
+  // charge they were never shown. Fail-safe in both directions: an add-shaped
+  // diff is blocked until the quote lands, and released only once the quote
+  // says zero — which is what the giveaway/free window it renders in returns.
+  const chargeable = addRows.length > 0 && (!quote || quote.due_now > 0);
 
-  const noChargeConfirm = addRows.length > 0 && !!quote && quote.due_now === 0;
   /** One dated line per un-cancelled subject: it keeps the period it paid for. */
   const reinstateSentences = (q: SubjectChangeQuote): string[] => {
     const byId = new Map(subjects.map((s) => [s.id, s]));
@@ -370,26 +433,15 @@ export function ManageSubjectsEditor({
       setError(t(res.error));
       return;
     }
-    setPayOpen(false);
     setSaved(true);
     setToggled(new Set()); // fresh baseline: the refetched coverage IS the selection
     onSaved();
   }
 
   function onSave() {
-    if (!hasDiff || pending) return;
+    if (!hasDiff || pending || chargeable) return;
     if (selected.size === 0) {
       setError(t("subjedit.minOne"));
-      return;
-    }
-    // A TRUE addition always opens the sheet. A pure un-cancel skips it — but
-    // only once the server has actually priced it at zero; before that, or if
-    // an amount IS due, it is treated exactly like an addition. Fail safe.
-    const charges =
-      toAdd.length > 0 || (toReinstate.length > 0 && (!quote || quote.due_now > 0));
-    if (charges && posture.demoPay) {
-      setError(null);
-      setPayOpen(true);
       return;
     }
     void apply();
@@ -398,31 +450,22 @@ export function ManageSubjectsEditor({
   return (
     <View style={{ gap: spacing.md }}>
       <AppText variant="title">{t("subjedit.title")}</AppText>
-      <AppText variant="muted">{t("pricing.perSubjectNote")}</AppText>
-      {posture.demoPay ? <AppText variant="muted">{t("subjedit.demoModeNote")}</AppText> : null}
 
       <Card style={{ paddingVertical: spacing.xs }}>
         {subjects.map((s) => {
           const isChecked = selected.has(s.id);
           // Checking this row would ADD a subject (it is outside the live
-          // coverage) — in removal-only mode that side is disabled and shows
-          // no price line.
+          // coverage) — in removal-only mode that side is disabled.
           const wouldAdd = !isChecked && !covered.has(s.id);
-          // Its OWN cycle: the price and the chip both describe what this
-          // subject actually costs, not one plan-wide interval.
+          // Its OWN cycle: the meta text and the chip both describe how this
+          // subject actually renews, not one plan-wide interval.
           const rowIv = cycleOf.get(s.id) ?? iv;
           const pendingIv = pendingOf.get(s.id);
           return (
             <SubjectCheckRow
               key={s.id}
               name={subjectLabel(t, s.code, s.name)}
-              priceText={
-                addsDisabled && wouldAdd
-                  ? ""
-                  : `${fmtMoney(s.prices[rowIv] ?? 0, "AZN", locale)} · ${t(
-                      INTERVAL_NAME_KEY[rowIv],
-                    )}`
-              }
+              metaText={addsDisabled && wouldAdd ? "" : t(INTERVAL_NAME_KEY[rowIv])}
               checked={isChecked}
               onToggle={() => toggle(s.id)}
               chip={
@@ -448,7 +491,7 @@ export function ManageSubjectsEditor({
       <AppText variant="muted">{t("subjedit.minOne")}</AppText>
 
       {/* Round 41 — structured change summary (web .subjedit-summary twin):
-          Selected · Added · Removed · Pay now · Next billing · Note. */}
+          Selected · Added · Un-cancelled · Removed · Note. Price-free. */}
       <Card>
         <KeyRow label={t("subjedit.selectedCount")} value={String(selected.size)} />
 
@@ -457,6 +500,12 @@ export function ManageSubjectsEditor({
             {toAdd.map((s) => (
               <SumSubjectLine key={s.id} name={subjectLabel(t, s.code, s.name)} color={tokens.ok} />
             ))}
+            {/* An addition that costs nothing (giveaway / free window) says so.
+                One the server DOES price prints no amount — the blocked-change
+                notice next to the Save button covers that case. */}
+            {quote && quote.due_now === 0 ? (
+              <AppText variant="muted">{noChargeSentence(quote)}</AppText>
+            ) : null}
           </SumBlock>
         ) : null}
         {/* Un-cancels get their own block: folding them into "Added" next to a
@@ -486,23 +535,6 @@ export function ManageSubjectsEditor({
           </AppText>
         ) : quote ? (
           <>
-            {/* Pay now: the added subjects' FULL first periods as ONE prominent
-                amount, with the sentence that says exactly that. A trial (0)
-                shows the price-free no-charge line instead. */}
-            {toAdd.length > 0 ? (
-              <SumBlock label={t("subjedit.dueNow")}>
-                {quote.due_now > 0 ? (
-                  <>
-                    <AppText variant="mono" style={{ fontSize: 20, fontWeight: weight.bold }}>
-                      {fmtMoney(quote.due_now, quote.currency, locale)}
-                    </AppText>
-                    <AppText variant="muted">{t("subjedit.dueNowNote")}</AppText>
-                  </>
-                ) : (
-                  <AppText variant="muted">{noChargeSentence(quote)}</AppText>
-                )}
-              </SumBlock>
-            ) : null}
             {/* Un-cancel terms: dated, price-free, and explicit that the
                 already-paid period is kept rather than bought again. */}
             {toReinstate.length > 0 ? (
@@ -515,14 +547,6 @@ export function ManageSubjectsEditor({
                 <AppText variant="muted">{t("subjedit.reinstateNote")}</AppText>
               </SumBlock>
             ) : null}
-            {/* Renewals: one sentence per cycle — no invented combined rate. */}
-            <SumBlock label={t("plan.renewals")}>
-              {renewalSentences(quote).map((line, i) => (
-                <AppText variant="body" key={i}>
-                  {line}
-                </AppText>
-              ))}
-            </SumBlock>
             {/* Note: price-free removal terms. */}
             {toRemove.length > 0 ? (
               <SumBlock label={t("subjedit.noteLabel")}>
@@ -552,63 +576,21 @@ export function ManageSubjectsEditor({
         </AppText>
       ) : null}
 
+      {/* Why Save is off: the server priced this change above zero, and a
+          change with a price is not made in this app. Shown only once the
+          quote has actually said so — never while it is still loading. */}
+      {chargeable && quote ? (
+        <AppText variant="muted">{t("mob.subjedit.notInApp")}</AppText>
+      ) : null}
+
       <Button
         title={t("subjedit.save")}
-        pending={pending && !payOpen}
-        pendingTitle={t("subjedit.saving")}
-        disabled={!hasDiff}
-        onPress={onSave}
-      />
-
-      <DemoPaySheet
-        visible={payOpen}
-        onClose={() => setPayOpen(false)}
-        onConfirm={() => void apply()}
         pending={pending}
-        rows={[
-          ...(toAdd.length > 0
-            ? [
-                {
-                  label: t("subjedit.pendingAdd"),
-                  value: toAdd.map((s) => subjectLabel(t, s.code, s.name)).join(", "),
-                },
-              ]
-            : []),
-          ...(toReinstate.length > 0
-            ? [
-                {
-                  label: t("subjedit.pendingReinstate"),
-                  value: toReinstate.map((s) => subjectLabel(t, s.code, s.name)).join(", "),
-                },
-              ]
-            : []),
-          ...(toRemove.length > 0
-            ? [
-                {
-                  label: t("subjedit.pendingRemove"),
-                  value: toRemove.map((s) => subjectLabel(t, s.code, s.name)).join(", "),
-                },
-              ]
-            : []),
-        ]}
-        totalLabel={t("subjedit.dueNow")}
-        totalValue={dueNowValueText()}
-        // What the amount buys — a full first period per added subject,
-        // starting today. Never a proration sentence. When the sheet opened for
-        // an un-cancel the server has since priced at zero, say THAT instead.
-        thenText={
-          quoting || !quote
-            ? null
-            : quote.due_now > 0
-              ? t("subjedit.dueNowNote")
-              : toAdd.length === 0 && toReinstate.length > 0
-                ? t("subjedit.reinstateNote")
-                : null
-        }
-        note={t("pay.note")}
-        confirmLabel={noChargeConfirm ? t("pay.confirmNoCharge") : t("pay.payNow")}
-        error={error}
+        pendingTitle={t("subjedit.saving")}
+        disabled={!hasDiff || chargeable}
+        onPress={onSave}
       />
     </View>
   );
 }
+

@@ -1713,7 +1713,7 @@ ul.clean li {
 }
 
 /* =============================================================================
-   ROUND3 PHASE D — auth/password + Add-child wizard + demo payment.
+   ROUND3 PHASE D — auth/password + Add-child wizard + payment confirmation.
    Everything here is theme-aware: parent/public surfaces use the :root
    theme-flippable variables (--bg/--text/--muted/--border/--accent/--surface/
    --danger/--shadow/--ok/--warn/--chip-bg/-text/--pill-bg/-text), and the same
@@ -1723,14 +1723,13 @@ ul.clean li {
      .pw-field .pw-eye
      .wizard .wizard-steps .wizard-step .wizard-step.active .wizard-step.done
      .wizard-body .wizard-actions .wizard-summary .quote-row .quote-total
-     .pay-card .pay-demo-badge .pay-field .pay-grid
+     .pay-card
    ========================================================================== */
 
 /* ---- Shared placeholder + focus-ring (readable in BOTH themes) ---- */
 /* Parent/public form inputs: visible placeholder + a clear focus ring. */
 .form input::placeholder,
-.form textarea::placeholder,
-.pay-field input::placeholder {
+.form textarea::placeholder {
   color: var(--muted);
   opacity: 1;
 }
@@ -1903,7 +1902,11 @@ ul.clean li {
   color: var(--text);
 }
 
-/* =============================  DEMO PAYMENT  ============================= */
+/* =========================  PAYMENT CONFIRMATION  ========================= */
+/* The Add-Child wizard's confirm step and the plan-change sheet. The DEMO
+   badge, the cosmetic card fields and their 2-up expiry/CVC grid were deleted
+   with the demo payment mode on 2026-08-18 — no surface collects card data
+   any more; the provider's hosted page will. */
 .pay-card {
   position: relative;
   border: 1px solid var(--border);
@@ -1912,56 +1915,6 @@ ul.clean li {
   padding: 24px 22px;
   max-width: 460px;
   box-shadow: 0 1px 2px var(--shadow);
-}
-.pay-demo-badge {
-  display: inline-block;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 16%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
-  border-radius: 999px;
-  padding: 3px 10px;
-}
-.pay-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 14px;
-}
-.pay-field > label,
-.pay-field > .field-label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text);
-}
-.pay-field input {
-  width: 100%;
-  box-sizing: border-box; /* keep padding+border INSIDE the field width */
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font: inherit;
-  color: var(--text);
-  background: var(--bg);
-}
-.pay-field input:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
-}
-/* Expiry + CVC side by side. minmax(0,1fr) (not 1fr) lets the columns shrink
-   below the input's intrinsic ~20-char width; min-width:0 on the field lets the
-   grid item shrink too — together they stop CVC overflowing the card. */
-.pay-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
-}
-.pay-grid .pay-field {
-  min-width: 0;
 }
 
 /* =============================================================================
@@ -5692,69 +5645,6 @@ ul.clean li {
   font-size: 14.5px;
   overflow-wrap: anywhere;
 }
-.billing-card-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-.billing-card-brand svg {
-  flex: none;
-  display: block;
-  color: var(--muted);
-}
-
-/* status / paid pills */
-.billing-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 700;
-  background: var(--pill-bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  white-space: nowrap;
-}
-.billing-pill.ok {
-  color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 12%, transparent);
-  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-}
-
-/* action buttons (demo-inert secondary buttons) */
-.billing-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid var(--border);
-}
-.billing-btn {
-  appearance: none;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 13.5px;
-  font-weight: 600;
-  padding: 9px 16px;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-.billing-btn:hover {
-  border-color: var(--accent);
-}
-.billing-btn.inert {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-.billing-btn.inert:hover {
-  border-color: var(--border);
-}
-
 /* real cancel-subscription rows (one per cancellable child) */
 .billing-cancel-rows {
   margin-top: 18px;
@@ -5772,148 +5662,6 @@ ul.clean li {
   font-weight: 600;
   color: var(--text);
   font-size: 14px;
-}
-
-.billing-note {
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 12.5px;
-}
-
-/* -------------------------------------------------------- invoices ------ */
-.billing-invmail {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.billing-invmail-text {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-.billing-invmail-title {
-  font-weight: 700;
-  color: var(--text);
-  font-size: 15px;
-}
-.billing-invmail-hint {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-/* styled switch (local demo state) */
-.billing-switch {
-  position: relative;
-  width: 46px;
-  height: 26px;
-  flex: none;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--chip-bg);
-  cursor: pointer;
-  padding: 0;
-  transition: background 0.18s ease, border-color 0.18s ease;
-}
-.billing-switch-thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--surface);
-  box-shadow: 0 1px 3px var(--shadow);
-  transition: transform 0.18s ease, background 0.18s ease;
-}
-.billing-switch.on {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.billing-switch.on .billing-switch-thumb {
-  transform: translateX(20px);
-  background: #ffffff;
-}
-.billing-switch:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* recipient email row */
-.billing-email-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--border);
-}
-.billing-email {
-  background: var(--chip-bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: 13.5px;
-  font-weight: 600;
-  padding: 7px 14px;
-  border-radius: 999px;
-  overflow-wrap: anywhere;
-}
-
-/* invoice history table (horizontal scroll on small screens) */
-.billing-table-wrap {
-  margin-top: 20px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  overflow-x: auto;
-}
-.billing-table {
-  width: 100%;
-  min-width: 680px;
-  border-collapse: collapse;
-  font-size: 13.5px;
-}
-.billing-table th {
-  text-align: left;
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--chip-bg);
-  white-space: nowrap;
-}
-.billing-table td {
-  padding: 13px 16px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
-  vertical-align: middle;
-}
-.billing-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-/* inert download chip */
-.billing-dl {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent);
-  font-size: 12.5px;
-  font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 999px;
-  cursor: not-allowed;
-  white-space: nowrap;
-}
-.billing-dl svg {
-  display: block;
-  flex: none;
 }
 
 /* -------------------------------------------------------- responsive ---- */
@@ -5946,13 +5694,6 @@ ul.clean li {
   .billing-tab {
     padding: 8px 14px;
     font-size: 13.5px;
-  }
-  .billing-actions .billing-btn {
-    flex: 1 1 auto;
-    text-align: center;
-  }
-  .billing-invmail {
-    align-items: flex-start;
   }
 }
 
@@ -8097,7 +7838,7 @@ ul.clean li {
 }
 
 /* TOUCH DEVICES ONLY — on-screen-keyboard fix for modals that contain a form
-   (today: DemoPaymentModal's card fields + its Pay button).
+   (today: the plan-change sheet's action row).
    Why it was broken: Modal.tsx locks `body { overflow: hidden }` while open, so
    the document can no longer scroll, and `.modal-overlay` is `position: fixed`
    — which on iOS is laid out against the LAYOUT viewport and therefore keeps
@@ -8693,8 +8434,9 @@ ul.clean li {
 
 /* =====================  ROUND 11 — a.css  ===================== */
 /* =============================================================================
-   ROUND 11 — Agent A: Manage-Subjects checkbox editor (subjedit-*) + demo
-   payment modal (dpay-*). Token-driven only (light/dark safe); no literals.
+   ROUND 11 — Agent A: Manage-Subjects checkbox editor (subjedit-*) + the
+   plan-change confirmation sheet (pcsheet-*). Token-driven only (light/dark
+   safe); no literals.
    Reuses existing .wizard-summary/.quote-row/.quote-total/.pay-* primitives.
    ========================================================================== */
 
@@ -8883,11 +8625,6 @@ ul.clean li {
   gap: 8px;
   margin-top: 16px;
 }
-.subjedit-mode-note {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--warn);
-}
 .subjedit-success {
   margin: 8px 0 0;
   font-weight: 600;
@@ -8919,16 +8656,17 @@ ul.clean li {
   cursor: default;
 }
 
-/* Demo-payment modal: reuse the wizard's .pay-* look, but drop the outer
-   card frame so it doesn't render as a card-inside-a-card in .modal-panel. */
-.dpay-card {
+/* Plan-change confirmation sheet: reuses the wizard's .pay-* look, but drops
+   the outer card frame so it doesn't render as a card-inside-a-card inside
+   .modal-panel. */
+.pcsheet-card {
   border: none;
   box-shadow: none;
   background: transparent;
   padding: 0;
   max-width: none;
 }
-.dpay-total {
+.pcsheet-total {
   margin-top: 16px;
 }
 

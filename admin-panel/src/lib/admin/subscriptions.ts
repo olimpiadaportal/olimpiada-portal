@@ -17,9 +17,9 @@
 // (mirrors the pattern in pricing.ts's saveSubjectPrice).
 //
 // payments / checkout_sessions are written by NO code today (ground truth,
-// Round 31) — a demo/comped subscription never produces a payment row, so the
-// detail view states that honestly instead of joining a table that would
-// always read empty.
+// Round 31) — a comped or admin-granted subscription never produces a payment
+// row, so the detail view states that honestly instead of joining a table that
+// would always read empty.
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/admin/guards";
 import { createClient } from "@/lib/supabase/server";

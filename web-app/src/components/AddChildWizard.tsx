@@ -8,7 +8,7 @@
 // (getPaymentModeInfo, server-only) and passes it down; the wizard only picks
 // which steps exist — every price/discount/grant stays server-authoritative.
 //
-//   mode 'real' | 'demo' — the full 5-step flow:
+//   mode 'real' — the full 5-step flow:
 //     1. INFO     — name, city, school (filtered to city), grade, password.
 //                   "Next" calls the addChild server action (creates the child,
 //                   NO login ID yet) and stores the returned studentProfileId.
@@ -17,11 +17,14 @@
 //                   subject; there is no global cycle control any more.
 //     3. PLAN     — REVIEW: the grouped per-cycle breakdown + a LIVE server
 //                   quote (sibling discount).
-//     4. PAYMENT  — the DEMO card form (cosmetic, never charged). "Pay" calls
-//                   subscribeChild, which allocates + reveals the 8-digit ID.
-//                   NOTE: the future real provider replaces the SERVER seam
-//                   inside subscribeChild (webhook-verified charge) — this UI
-//                   step stays as the card-entry surface in both modes.
+//     4. CONFIRM  — the authoritative due-today total and an explicit confirm.
+//                   It calls subscribeChild, which allocates + reveals the
+//                   8-digit ID. There are NO card fields here: the demo
+//                   payment mode was deleted on 2026-08-18, and a card form
+//                   that never charges is worse than none — a parent would
+//                   type a real PAN into it. The future provider replaces the
+//                   SERVER seam inside subscribeChild (webhook-verified
+//                   charge) and takes over this step as its redirect point.
 //     5. DONE     — success + the allocated login ID + a link to /dashboard.
 //
 //   mode 'giveaway' — TWO steps (Info → Done): after addChild succeeds the
@@ -36,7 +39,7 @@
 //     (the dashboard already renders "ID pending — choose a plan").
 //
 // All amounts/discounts are computed server-side (quoteSubscription /
-// subscribeChild). The demo card fields are NOT validated against any processor.
+// subscribeChild); this component never computes or sends a price.
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -107,7 +110,6 @@ const STEP_KEY: Record<StepId, string> = {
 // flow ('real') — the server actions still gate every mutation authoritatively.
 const FLOWS: Record<string, StepId[]> = {
   real: ["info", "subjects", "plan", "payment", "done"],
-  demo: ["info", "subjects", "plan", "payment", "done"],
   giveaway: ["info", "done"],
   off: ["info", "done"],
 };
@@ -131,7 +133,7 @@ export function AddChildWizard({
   grades: Grade[];
   subjects: Subj[];
   dict: Record<string, string>;
-  /** Server-resolved payment mode: 'real' | 'demo' | 'giveaway' | 'off'. */
+  /** Server-resolved payment mode: 'real' | 'giveaway' | 'off'. */
   paymentMode: string;
   /** H8: server-resolved active free-access window for this parent. */
   freeAccessActive?: boolean;
@@ -206,7 +208,7 @@ export function AddChildWizard({
   // Step 3 — review + live quote.
   const [quote, setQuote] = useState<QuoteResult | null>(null);
 
-  // Step 4 — demo payment + the result.
+  // Step 4 — payment confirmation + the result.
   const [payError, setPayError] = useState<string | null>(null);
   const [childUniqueId, setChildUniqueId] = useState<string | null>(null);
 
@@ -355,13 +357,13 @@ export function AddChildWizard({
         setChildUniqueId(grant.childUniqueId ?? null);
       }
 
-      setStepIdx(1); // → subjects (real/demo) or done (giveaway/off).
+      setStepIdx(1); // → subjects (real) or done (giveaway/off).
     });
   }
 
-  // STEP "payment" → confirm the demo payment: allocate the 8-digit ID, then
-  // reveal it. (A real provider replaces the server seam inside subscribeChild —
-  // webhook-verified activation — not this UI step.)
+  // STEP "payment" → confirm the plan: create the subscription, allocate the
+  // 8-digit ID, then reveal it. (A real provider replaces the server seam
+  // inside subscribeChild — webhook-verified activation — not this UI step.)
   function confirmPayment() {
     if (!studentProfileId) return;
     setPayError(null);
@@ -716,35 +718,13 @@ export function AddChildWizard({
         )}
 
         {/* ========================= STEP — PAYMENT ========================= */}
+        {/* CONFIRMATION, not a card form. The demo payment mode was deleted on
+            2026-08-18: there is no cosmetic card entry left anywhere, and the
+            provider's own hosted page will collect the card when it lands. */}
         {cur === "payment" && (
           <div className="pay-card">
-            <span className="pay-demo-badge">{tt("pay.demoBadge")}</span>
-            <h2 style={{ margin: "12px 0 4px" }}>{tt("pay.title")}</h2>
+            <h2 style={{ margin: "0 0 4px" }}>{tt("pay.title")}</h2>
             <p className="muted">{tt("pay.note")}</p>
-
-            <div className="pay-field">
-              <span className="field-label">{tt("pay.cardName")}</span>
-              <input type="text" autoComplete="off" placeholder="Ad Soyad" />
-            </div>
-            <div className="pay-field">
-              <span className="field-label">{tt("pay.cardNumber")}</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="4242 4242 4242 4242"
-              />
-            </div>
-            <div className="pay-grid">
-              <div className="pay-field">
-                <span className="field-label">{tt("pay.expiry")}</span>
-                <input type="text" autoComplete="off" placeholder="MM/YY" />
-              </div>
-              <div className="pay-field">
-                <span className="field-label">{tt("pay.cvc")}</span>
-                <input type="text" inputMode="numeric" autoComplete="off" placeholder="123" />
-              </div>
-            </div>
 
             <div className="wizard-summary" style={{ marginTop: 18 }}>
               {/* No period suffix: with per-subject cycles the only honest

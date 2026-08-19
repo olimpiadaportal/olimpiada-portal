@@ -89,7 +89,7 @@ export function Modal({
     // scroll container is `.modal-overlay` (see globals.css), NOT the document
     // — the body is scroll-locked below. The browser's native "scroll the
     // focused field into view" therefore does not reach a field inside the
-    // panel, so a low field (e.g. the CVC in DemoPaymentModal) stays under the
+    // panel, so a low field in a form-carrying dialog stays under the
     // keyboard. Centring it inside the overlay also keeps its inline validation
     // message and the .modal-actions row clear of the keyboard.
     // Desktop matches `pointer: fine`, so this listener is never attached there

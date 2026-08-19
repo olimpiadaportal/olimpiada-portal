@@ -33,7 +33,7 @@ export default async function ParentOlympiadCatalogPage() {
   const locale = await getLocale();
   const t = await getT();
   const olympiadOn = await isFeatureEnabled("olympiad_module");
-  // Payment modes: buying is possible in real/demo/giveaway (giveaways cover
+  // Payment modes: buying is possible in real AND giveaway (giveaways cover
   // free SUBJECT access only — olympiad packages are always purchase-only);
   // mode 'off' keeps the existing paymentsOff notice.
   const { mode } = await getPaymentModeInfo();

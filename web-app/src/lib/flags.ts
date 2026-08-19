@@ -481,9 +481,9 @@ const fetchPrivacySettings = unstable_cache(
  *
  * `pushLive` and `paymentsLive` are NOT settings anywhere. They mirror the
  * notifications_push flag and the payment mode, so they are read from those and
- * can never contradict them. `paymentsLive` is `real` ONLY — demo and giveaway
- * modes move no money and touch no card data, so §8 must keep describing
- * payments in the future tense while either is on.
+ * can never contradict them. `paymentsLive` is `real` ONLY — a giveaway window
+ * moves no money and touches no card data, so §8 must keep describing
+ * payments in the future tense while one is running.
  */
 export const getPrivacyPolicyStatus = cache(
   async (): Promise<PrivacyPolicyStatus> => {

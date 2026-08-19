@@ -17,9 +17,10 @@
 // each subject's own `current_period_end`.
 //
 // PAYMENT-FIRST contract (owner requirement), now four-way:
-//   * A TRUE ADDITION (including a mixed diff) opens the payment sheet
-//     (DemoPaymentModal) BEFORE the apply, in BOTH 'demo' and 'real' modes —
-//     there is no provider yet and the real charge seam is server-side.
+//   * A TRUE ADDITION (including a mixed diff) opens the confirmation sheet
+//     (PlanChangeConfirmModal) BEFORE the apply — the parent sees the
+//     authoritative amount and what it buys before anything is charged, and the
+//     real charge seam stays server-side.
 //   * A REMOVAL-ONLY diff submits directly: nothing is charged, access runs to
 //     that subject's own period end and no refund is ever made.
 //   * A CYCLE-CHANGE-ONLY diff also submits directly. It is SCHEDULED into
@@ -47,7 +48,7 @@ import {
   type SubjectChangeQuote,
   type SubjectsUpdateState,
 } from "@/lib/auth/subscriptionService";
-import { DemoPaymentModal } from "@/components/DemoPaymentModal";
+import { PlanChangeConfirmModal } from "@/components/PlanChangeConfirmModal";
 import { PlanSummary } from "@/components/PlanSummary";
 import { SubjectPlanCard } from "@/components/SubjectPlanCard";
 import { useLocale, useT } from "@/i18n/I18nProvider";
@@ -97,7 +98,7 @@ export function ManageSubjects({
   subjects: Subj[];
   covered: CoveredSubject[];
   /**
-   * Server-resolved payment mode. "real" | "demo" → full editor. "off" →
+   * Server-resolved payment mode. "real" | "giveaway" → full editor. "off" →
    * REMOVAL-ONLY (Round 51, audit F7): the DB kill switch blocks ADDS and, since
    * 109, cycle changes too — a cycle change is a billing change — but
    * deliberately keeps removals legal, so a parent can always stop paying.
@@ -420,8 +421,13 @@ export function ManageSubjects({
                   onRemove={(id) => setPlan((prev) => removePlanSubject(prev, id))}
                   removeDisabled={isLastOne || saving}
                   removeDisabledReason={tt("subjedit.minOne")}
-                  // A covered subject's cycle cannot move while payments are off.
-                  disabled={saving || (addsDisabled && !!cur)}
+                  // A covered subject's CYCLE cannot move while payments are off —
+                  // but REMOVAL must stay available. The server allows it (the DB
+                  // gate fires on adds and cycle changes only), so disabling the
+                  // whole card here contradicted it and left a paying parent in
+                  // `off` mode with no action at all.
+                  disabled={saving}
+                  cycleDisabled={addsDisabled && !!cur}
                   loading={quoting}
                   chip={pending ? "pendingChange" : cur ? "active" : undefined}
                   // A bare cycle name ("İllik") next to a radio sitting on
@@ -700,19 +706,16 @@ export function ManageSubjects({
               >
                 {saving ? tt("subjedit.saving") : tt("subjedit.save")}
               </button>
-              {paymentMode === "demo" && (
-                <p className="subjedit-mode-note">{tt("subjedit.demoModeNote")}</p>
-              )}
             </div>
           </form>
 
           {state && state.ok === false && <p className="form-error">{state.error}</p>}
           {showSaved && <p className="subjedit-success">{tt("subjedit.saved")}</p>}
 
-          {/* Payment-first sheet for additions ('demo' AND 'real' — no provider
-              yet). Confirm is the ONLY path that submits the apply action;
-              cancel/close keeps the selection and applies nothing. */}
-          <DemoPaymentModal
+          {/* Payment-first confirmation for additions. Confirm is the ONLY path
+              that submits the apply action; cancel/close keeps the selection and
+              applies nothing. */}
+          <PlanChangeConfirmModal
             isOpen={payOpen}
             quote={
               !quoting && quote

@@ -1,12 +1,14 @@
-// OLYMPIADS tab (web parent catalog parity, redesigned): cover cards with a
-// bottom gradient scrim (title + price chip over the image), child selector,
-// per-child "owned" pills, a detail sheet (grab handle, icon KeyRows, gradient
-// buy CTA) and the posture-aware Buy flow. Question counts are the REAL
-// published pool sizes (get_olympiad_pool_counts — the legacy
-// questions_per_attempt column is display-only). Packages are ALWAYS
-// purchases — giveaway/free-access do NOT make them free (web Round 13.1):
-// demo AND giveaway buy through the demo sheet; 'real' is read-only (web
-// account note); 'off' shows gate.paymentsOff. Idempotency-Key = pkg:child.
+// OLYMPIADS tab: cover cards with a bottom gradient scrim, child selector,
+// per-child "unlocked" pills and a detail sheet (grab handle, icon KeyRows).
+// Question counts are the REAL published pool sizes (get_olympiad_pool_counts
+// — the legacy questions_per_attempt column is display-only).
+//
+// BROWSE-ONLY (docs/STORE_PAYMENTS_COMPLIANCE.md, owner 2026-08-18 — the demo
+// payment mode is deleted): the whole purchase path is GONE from this tab —
+// no price chip, no "Əldə et" button, no confirm sheet, no purchase call. One
+// binary serves both roles, so Google's consumption-only test covers the
+// PARENT tabs too; packages are obtained outside the app and simply appear
+// here once they are unlocked for the child.
 import React, { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { Image } from "expo-image";
@@ -32,25 +34,14 @@ import { usePullRefresh } from "@/lib/usePullRefresh";
 import { formatGradeLabel, formatGradeRangeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { publicStorageUrl, type OlympiadPackageRow } from "@/lib/data";
-import { bffPurchaseOlympiad } from "@/lib/api";
-import { fmtDate, fmtMoney, resolvePosture } from "@/features/parent/commerce";
-import { DemoPaySheet } from "@/features/parent/DemoPaySheet";
+import { fmtDate } from "@/features/parent/commerce";
 import {
   useChildren,
-  useInvalidateParentData,
   useOlympiadCatalog,
   useOlympiadPoolCounts,
   useOlympiadPurchases,
-  useParentFreeAccess,
 } from "@/features/parent/queries";
-import {
-  ChildChips,
-  KeyRow,
-  Pill,
-  ScreenScroll,
-  SheetShell,
-  childDisplayName,
-} from "@/features/parent/ui";
+import { ChildChips, KeyRow, Pill, ScreenScroll, SheetShell } from "@/features/parent/ui";
 import { buildOlympiadDetailRows, sharedGradeValue } from "@/features/olympiads/details";
 import { TypeMarquee } from "@/features/olympiads/TypeMarquee";
 
@@ -85,18 +76,17 @@ function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
 }
 
 /** Cover area: image (or brand-gradient fallback) + bottom scrim with the
- *  title and the price chip. Scrim ink is the fixed contrast contract
- *  (#0a0e1a → white text) so it reads on any cover photo in any theme. */
+ *  title. Scrim ink is the fixed contrast contract (#0a0e1a → white text) so
+ *  it reads on any cover photo in any theme. The price chip that used to sit
+ *  beside the title is gone — no amount renders anywhere in this app. */
 function CoverHeader({
   pkg,
-  priceText,
   owned,
   past,
   ownedLabel,
   heldLabel,
 }: {
   pkg: OlympiadPackageRow;
-  priceText: string;
   owned: boolean;
   past: boolean;
   ownedLabel: string;
@@ -163,18 +153,6 @@ function CoverHeader({
         >
           {pkg.title}
         </AppText>
-        <View
-          style={{
-            backgroundColor: "rgba(255,255,255,0.92)",
-            borderRadius: 999,
-            paddingHorizontal: spacing.md,
-            paddingVertical: 3,
-          }}
-        >
-          <AppText variant="mono" color="#0a0e1a" style={{ fontSize: 13, fontWeight: "700" }}>
-            {priceText}
-          </AppText>
-        </View>
       </LinearGradient>
     </View>
   );
@@ -186,7 +164,6 @@ export default function ParentOlympiads() {
   const router = useRouter();
 
   const config = useMobileConfig();
-  const freeAccess = useParentFreeAccess();
   const olympiadOn = config.data?.flags.olympiadModule === true;
   const children = useChildren();
 
@@ -201,7 +178,6 @@ export default function ParentOlympiads() {
   const catalog = useOlympiadCatalog(locale, selected?.profile_id ?? null, olympiadOn);
   const purchases = useOlympiadPurchases(olympiadOn);
   const poolCounts = useOlympiadPoolCounts((catalog.data ?? []).map((p) => p.id));
-  const invalidate = useInvalidateParentData();
   // poolCounts drives the REAL question count on every card, so a pull that
   // skipped it would leave the most load-bearing number stale. The catalog
   // entry is conditional: with no selection (childless parent) the query is
@@ -214,19 +190,8 @@ export default function ParentOlympiads() {
   ]);
 
   const [detail, setDetail] = useState<OlympiadPackageRow | null>(null);
-  const [buying, setBuying] = useState<OlympiadPackageRow | null>(null);
-  const [buyPending, setBuyPending] = useState(false);
-  const [buyError, setBuyError] = useState<string | null>(null);
-  const [successFor, setSuccessFor] = useState<string | null>(null);
   // Render-stable "now" for the past-event check (impure calls stay out of render).
   const [now] = useState(() => Date.now());
-
-  const posture = resolvePosture(
-    config.data?.payment.mode ?? "off",
-    freeAccess.data?.active === true,
-  );
-  // Buying runs via the demo-style sheet in BOTH demo and giveaway modes.
-  const canBuy = posture.demoPay || posture.mode === "giveaway";
 
   const ownedForSelected = new Set(
     (purchases.data ?? [])
@@ -248,49 +213,9 @@ export default function ParentOlympiads() {
   const loading = config.isPending || children.isPending;
   const catalogLoading = selected !== null && catalog.isPending;
 
-  async function confirmBuy() {
-    if (!buying || !selected || buyPending) return;
-    setBuyPending(true);
-    setBuyError(null);
-    const res = await bffPurchaseOlympiad(
-      buying.id,
-      selected.profile_id,
-      `${buying.id}:${selected.profile_id}`,
-    );
-    setBuyPending(false);
-    if (!res.ok) {
-      setBuyError(t(res.error));
-      return;
-    }
-    setBuying(null);
-    setSuccessFor(buying.id);
-    invalidate();
-  }
-
-  function startBuy(pkg: OlympiadPackageRow) {
-    setDetail(null);
-    setBuyError(null);
-    setSuccessFor(null);
-    setBuying(pkg);
-  }
-
-  const priceText = (pkg: OlympiadPackageRow) =>
-    pkg.price_amount > 0 ? fmtMoney(pkg.price_amount, pkg.currency) : t("poly.free");
   const isPast = (pkg: OlympiadPackageRow) => {
     const ts = pkg.event_starts_at ? Date.parse(pkg.event_starts_at) : NaN;
     return Number.isFinite(ts) && ts <= now;
-  };
-  // Web parity: outside [sale_starts_at, sale_ends_at] the card shows the
-  // "Satış bitib" chip instead of Buy. Cosmetic only — purchase_olympiad
-  // rejects off-sale buys server-side (poly.err.notOnSale) either way. RLS
-  // keeps such rows visible ONLY to purchaser families (lifetime access).
-  const isOffSale = (pkg: OlympiadPackageRow) => {
-    const saleStart = pkg.sale_starts_at ? Date.parse(pkg.sale_starts_at) : NaN;
-    const saleEnd = pkg.sale_ends_at ? Date.parse(pkg.sale_ends_at) : NaN;
-    return (
-      (Number.isFinite(saleStart) && saleStart > now) ||
-      (Number.isFinite(saleEnd) && saleEnd <= now)
-    );
   };
   // REAL pool size (missing row / still loading → 0, web coalesce parity).
   // Round 34: the catalog RPC computes the caller-relevant published count
@@ -325,7 +250,7 @@ export default function ParentOlympiads() {
         <>
           {list.length === 0 ? (
             <EmptyState
-              title={t("poly.noChildren")}
+              title={t("parent.dash.noChildren")}
               icon={<Medal size={26} color={tokens.muted} strokeWidth={2} />}
               action={{
                 label: t("poly.addChild"),
@@ -344,21 +269,12 @@ export default function ParentOlympiads() {
             </View>
           )}
 
-          {posture.paymentsOff ? (
-            <Card>
-              <AppText variant="muted">{t("gate.paymentsOff")}</AppText>
-            </Card>
-          ) : posture.webOnly ? (
-            <Card>
-              <AppText variant="muted">{t("mob.pay.webOnly")}</AppText>
-            </Card>
-          ) : null}
-
-          {successFor ? (
-            <Card>
-              <AppText color={tokens.ok}>{t("poly.modal.success")}</AppText>
-            </Card>
-          ) : null}
+          {/* One constant, mode-independent statement of fact: packages are
+              not obtained here. (The old payments-off / web-account notices
+              existed only to explain a missing Buy button.) */}
+          <Card>
+            <AppText variant="muted">{t("mob.oly.notInApp")}</AppText>
+          </Card>
 
           {catalogLoading ? (
             // Chip switch / first child load: keep the selector mounted and
@@ -381,7 +297,6 @@ export default function ParentOlympiads() {
                   <Card key={pkg.id} style={{ padding: 0, overflow: "hidden" }}>
                     <CoverHeader
                       pkg={pkg}
-                      priceText={priceText(pkg)}
                       owned={owned}
                       past={past}
                       ownedLabel={t("poly.owned")}
@@ -435,31 +350,12 @@ export default function ParentOlympiads() {
                             : t("oly4.dateTbd")
                         }
                       />
-                      <View
-                        style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
-                      >
-                        <Button
-                          title={t("poly.details")}
-                          variant="ghost"
-                          style={{ flex: 1, minHeight: 44, paddingVertical: spacing.sm }}
-                          onPress={() => setDetail(pkg)}
-                        />
-                        {canBuy && selected && !owned && !past ? (
-                          isOffSale(pkg) ? (
-                            // Sale window closed for this family-visible row —
-                            // chip instead of Buy (web .poly-chip parity).
-                            <Pill label={t("poly.notOnSale")} tone="muted" />
-                          ) : (
-                            <Button
-                              // Short, name-free label: this button shares the row
-                              // with Details, and the confirm sheet names the child.
-                              title={t("poly.buyNow")}
-                              style={{ flex: 1, minHeight: 44, paddingVertical: spacing.sm }}
-                              onPress={() => startBuy(pkg)}
-                            />
-                          )
-                        ) : null}
-                      </View>
+                      <Button
+                        title={t("poly.details")}
+                        variant="ghost"
+                        style={{ minHeight: 44, paddingVertical: spacing.sm }}
+                        onPress={() => setDetail(pkg)}
+                      />
                     </View>
                   </Card>
                 );
@@ -489,12 +385,10 @@ export default function ParentOlympiads() {
                 paddingVertical: spacing.sm,
               }}
             >
-              {/* Parent surface only — the student screen omits the price by
-                  default (see buildOlympiadDetailRows). Still governed by the
-                  purchase-silent store posture: this whole tab loses its money
-                  UI in a store build. */}
-              {buildOlympiadDetailRows(detail, questionCount(detail), locale, t, true).map((r) => (
-                <KeyRow key={r.key} label={r.label} value={r.value} strong={r.key === "price"} />
+              {/* Identical rows for both roles — the builder no longer knows
+                  how to render a price at all. */}
+              {buildOlympiadDetailRows(detail, questionCount(detail), locale, t).map((r) => (
+                <KeyRow key={r.key} label={r.label} value={r.value} />
               ))}
             </View>
             {detail.description ? (
@@ -503,47 +397,15 @@ export default function ParentOlympiads() {
                 <AppText variant="muted">{detail.description}</AppText>
               </View>
             ) : null}
-            {ownedForSelected.has(detail.id) ? (
-              <AppText variant="muted">{t("poly.modal.already")}</AppText>
-            ) : canBuy && selected && !isPast(detail) && isOffSale(detail) ? (
-              // Sales ended (server rejects such buys with poly.err.notOnSale).
-              <AppText variant="muted">{t("poly.err.notOnSale")}</AppText>
-            ) : canBuy && selected && !isPast(detail) ? (
-              <Button
-                variant="gradient"
-                title={t("poly.buyNow")}
-                onPress={() => startBuy(detail)}
-              />
-            ) : posture.webOnly ? (
-              <AppText variant="muted">{t("mob.pay.webOnly")}</AppText>
-            ) : posture.paymentsOff ? (
-              <AppText variant="muted">{t("gate.paymentsOff")}</AppText>
-            ) : null}
+            <AppText variant="muted">
+              {ownedForSelected.has(detail.id)
+                ? t("poly.modal.already")
+                : t("mob.oly.notInApp")}
+            </AppText>
             <Button title={t("poly.modal.close")} variant="ghost" onPress={() => setDetail(null)} />
           </ScrollView>
         ) : null}
       </SheetShell>
-
-      {/* ---- purchase confirm (demo-style sheet; server re-validates) ---- */}
-      <DemoPaySheet
-        visible={buying !== null}
-        onClose={() => setBuying(null)}
-        onConfirm={() => void confirmBuy()}
-        pending={buyPending}
-        rows={
-          buying && selected
-            ? [
-                { label: t("poly.modal.package"), value: buying.title },
-                { label: t("poly.modal.child"), value: childDisplayName(selected) },
-              ]
-            : []
-        }
-        totalLabel={t("poly.price")}
-        totalValue={buying ? priceText(buying) : ""}
-        note={t("poly.modal.mockNote")}
-        confirmLabel={t("poly.modal.confirm")}
-        error={buyError}
-      />
     </ScreenScroll>
   );
 }

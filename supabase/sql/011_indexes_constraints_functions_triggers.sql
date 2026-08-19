@@ -9241,8 +9241,7 @@ begin
   -- kept a DANGLING reporter. That was invisible while nothing read the column;
   -- it stops being invisible now that trg_notify_question_report_status keys a
   -- create_notification INSERT off it and would take an FK violation on every
-  -- triage of such a report — swallowed as a warning, so the admin would be
-  -- promised a delivery that never happens.
+  -- triage of such a report.
   -- Only the cascade can produce this exact shape (new NULL, old set, profile
   -- already gone); no client can delete a profile row. So honouring it closes
   -- the hole without opening any way to detach a live report from its reporter.
@@ -9259,6 +9258,14 @@ begin
   new.platform            := old.platform;
   new.app_version         := old.app_version;
   new.created_at          := old.created_at;
+  -- resolution_message is DELIBERATELY ABSENT from the list above (migration
+  -- 122). This function freezes a report as EVIDENCE — what the student wrote,
+  -- when, about which question — and the administrator's answer is not part of
+  -- that evidence; it is the response to it, written after the fact by the only
+  -- role that can update this table at all. Restoring it here would freeze it
+  -- at NULL forever and every reply would be silently discarded on its way to
+  -- the notifier, which reads new.resolution_message. Do not "complete" the
+  -- list. admin_note is absent for exactly the same reason.
   if new.status is distinct from old.status then
     new.handled_by := public.current_profile_id();
     new.handled_at := now();
@@ -9268,10 +9275,11 @@ end;
 $$;
 
 comment on function public.question_report_freeze() is
-  'BEFORE UPDATE on question_reports: only status and admin_note may change, '
-  'and a status change stamps handled_by/handled_at. The reporter id is frozen '
-  'EXCEPT against its own `on delete set null` cascade, which would otherwise '
-  'be reverted into a dangling reference.';
+  'BEFORE UPDATE on question_reports: only status, admin_note and '
+  'resolution_message may change, and a status change stamps '
+  'handled_by/handled_at. The reporter id is frozen EXCEPT against its own '
+  '`on delete set null` cascade, which would otherwise be reverted into a '
+  'dangling reference.';
 
 drop trigger if exists trg_question_report_freeze on public.question_reports;
 create trigger trg_question_report_freeze
@@ -9348,7 +9356,7 @@ revoke all on function public.question_report_freeze() from public, anon, authen
 revoke delete on public.question_reports from anon, authenticated;
 
 -- -----------------------------------------------------------------------------
--- question_reports (migration 117) — the reporter hears back
+-- question_reports (migrations 117 + 122) — the reporter hears back
 -- -----------------------------------------------------------------------------
 -- Fired from the DATABASE, on the transition itself, for the same reason
 -- trg_notify_attempt_graded lives here: the admin panel is not the only thing
@@ -9360,7 +9368,7 @@ revoke delete on public.question_reports from anon, authenticated;
 -- service_role-only by design (a user must never be able to forge an inbox row),
 -- and the admin whose UPDATE fires this trigger is an `authenticated` caller.
 -- Without DEFINER every notification would fail on EXECUTE. search_path pinned;
--- 013 check 104 asserts the whole posture.
+-- 013 checks 104 and 109 assert the whole posture.
 --
 -- WHICH LANGUAGE: question_reports.locale — the UI language the reporter was
 -- actually READING when they filed. profiles.preferred_locale is deliberately
@@ -9368,6 +9376,82 @@ revoke delete on public.question_reports from anon, authenticated;
 -- it as the report's own locale source: nothing in web-app or mobile-app ever
 -- writes that column, so it is 'az' for everyone and localising by it would be
 -- a trilingual gesture that ships one language.
+--
+-- MIGRATION 122 changed WHAT a closing transition says. "Resolved" and
+-- "dismissed" used to send fixed copy — the same sentence for a wrong answer
+-- key, a broken image and a misunderstanding, which answers none of them. An
+-- administrator now WRITES the answer; question_report_reply_text below frames
+-- it, and the notifier requires it and no longer swallows a failed send.
+
+-- ONE definition of what the student receives, called by the trigger that sends
+-- it. The admin panel's live preview is a TypeScript port
+-- (admin-panel/src/lib/admin/question-report-reply.ts) and is pinned to this
+-- text, literal by literal, by admin-panel/src/lib/admin/__tests__/
+-- question-report-reply.test.ts — which reads this file and the migration. A
+-- preview that quietly disagreed with the send would be worse than no preview:
+-- the admin would approve one message and the student would read another.
+--
+-- TIME = Asia/Baku, the convention throughout this file. Rendering the filing
+-- time in UTC would show every student a moment four hours before the one they
+-- remember.
+create or replace function public.question_report_reply_text(
+  p_locale     text,
+  p_created_at timestamptz,
+  p_body       text)
+returns text
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  with l as (
+    select case when p_locale in ('en','ru') then p_locale else 'az' end as loc
+  ), d as (
+    select to_char(p_created_at at time zone 'Asia/Baku', 'DD.MM.YYYY') as dt,
+           to_char(p_created_at at time zone 'Asia/Baku', 'HH24:MI')    as tm
+  )
+  select case l.loc
+           when 'en' then
+             'Your report submitted on ' || d.dt || ' at ' || d.tm || ' has been reviewed.'
+           when 'ru' then
+             'Ваше обращение, направленное ' || d.dt || ' в ' || d.tm || ', было рассмотрено.'
+           else
+             d.dt || ' tarixində saat ' || d.tm || '-də ünvanladığınız sorğu araşdırılmışdır.'
+         end
+      || E'\n\n'
+      || btrim(coalesce(p_body, ''), ' ' || chr(9) || chr(10) || chr(13))
+      || E'\n\n'
+      || case l.loc
+           when 'en' then 'Thank you for your attention and understanding.'
+           when 'ru' then 'Благодарим за внимание и понимание.'
+           else 'Diqqətiniz və anlayışınız üçün təşəkkür edirik.'
+         end
+  from l, d;
+$$;
+
+comment on function public.question_report_reply_text(text, timestamptz, text) is
+  'Assembles the notification a reporter receives when their report is resolved '
+  'or dismissed: a generated opening line naming the filing date and time in '
+  'Asia/Baku, the administrator''s own body, and a generated closing line — '
+  'joined by blank lines, all in the locale the report was filed in. The single '
+  'definition of that text; the admin panel preview is a pinned port of it.';
+
+-- Line 88 of 010 default-grants EXECUTE to anon AND authenticated, so all three
+-- are named here. Nothing outside the SECURITY DEFINER trigger below calls it.
+revoke all on function public.question_report_reply_text(text, timestamptz, text)
+  from public, anon, authenticated;
+
+-- THE SEND IS NOT OPTIONAL AND IS NOT SWALLOWED (migration 122, owner decision).
+-- Migration 117 wrapped create_notification in `exception when others then raise
+-- warning` so a broken inbox could never block triage. That trade was right
+-- while the notification was boilerplate and wrong now that it is the admin's
+-- actual answer: a report marked resolved whose reply evaporated is a report
+-- nobody will ever look at again. A genuine failure now propagates and takes the
+-- status change down with it.
+--
+-- A SUPPRESSED notification is not a failed one. create_notification returns
+-- NULL without raising when the recipient has in-app notifications off
+-- (priority > 1) and when the idempotency key was already used. Both are normal
+-- outcomes and both COMMIT — the reply is still stored on the report either way.
 create or replace function public.notify_question_report_status_tg()
 returns trigger
 language plpgsql
@@ -9379,6 +9463,8 @@ declare
   v_type  text;
   v_title text;
   v_body  text;
+  v_reply text;
+  v_key   text;
 begin
   -- No reporter profile = no inbox. This is not only the anonymous case: the
   -- FK is ON DELETE SET NULL, so a report whose author deleted their account
@@ -9388,8 +9474,16 @@ begin
   end if;
 
   v_loc := case when new.locale::text in ('en','ru') then new.locale::text else 'az' end;
+  -- IDEMPOTENT per (report, status). The WHEN clause already suppresses a
+  -- re-save of the same status; this is what survives the other shape of the
+  -- mistake — in_review -> new -> in_review, which IS a transition and would
+  -- otherwise notify a second time for the same news. Deduped by
+  -- create_notification's on conflict (idempotency_key) do nothing.
+  v_key := 'qreport:' || new.id::text || ':' || new.status::text;
 
   if new.status = 'in_review' then
+    -- Unchanged by migration 122: this transition says only "we have it",
+    -- there is nothing for an admin to write yet, and no composer is opened.
     v_type := 'question_report_in_review';
     if v_loc = 'en' then
       v_title := 'Your report is being reviewed';
@@ -9402,79 +9496,89 @@ begin
       v_body  := 'Sualla bağlı bildirişini aldıq və hazırda yoxlayırıq.';
     end if;
 
-  elsif new.status = 'resolved' then
-    v_type := 'question_report_resolved';
-    if v_loc = 'en' then
-      v_title := 'Your report is resolved';
-      v_body  := 'We checked the question you reported and fixed the problem. Thank you!';
-    elsif v_loc = 'ru' then
-      v_title := 'Сообщение обработано';
-      v_body  := 'Мы проверили вопрос, о котором ты написал(а), и устранили проблему. Спасибо!';
-    else
-      v_title := 'Bildirişin həll olundu';
-      v_body  := 'Bildirdiyin sualı yoxladıq və problemi aradan qaldırdıq. Təşəkkür edirik!';
+  elsif new.status in ('resolved','dismissed') then
+    -- The reply is REQUIRED, and this is the last of three gates: the admin
+    -- panel server action refuses an empty one, chk_question_reports_resolution
+    -- _message refuses a malformed one, and a transition that reached here with
+    -- nothing to say aborts.
+    --
+    -- Deliberately NOT a table-level `status in ('resolved','dismissed')
+    -- implies resolution_message is not null` CHECK: such a constraint is
+    -- re-evaluated on EVERY update of the row, including the ordinary UPDATE
+    -- that `reporter_profile_id on delete set null` performs when an account is
+    -- deleted — and reports resolved before migration 122 carry no message, so
+    -- deleting their reporter would fail. The rule belongs on the transition.
+    v_reply := btrim(coalesce(new.resolution_message, ''),
+                     ' ' || chr(9) || chr(10) || chr(13));
+    if char_length(v_reply) < 10 then
+      raise exception
+        'question report %: a % transition must carry a resolution_message of '
+        'at least 10 characters — the reporter is told what an administrator '
+        'wrote, and there is nothing to tell them', new.id, new.status
+        using errcode = 'check_violation';
     end if;
 
-  elsif new.status = 'dismissed' then
-    -- A dismissal is told to the reporter too, and told HONESTLY: "we checked
-    -- it, nothing needed changing". Silence would be the cheaper option and the
-    -- worse one — a student who reports a question and never hears anything
-    -- concludes the report button does nothing and stops using it, which costs
-    -- us the broken questions nobody else will find. The wording deliberately
-    -- carries no blame: dismissed means the question was fine, not that the
-    -- report was wrong to file.
-    v_type := 'question_report_dismissed';
-    if v_loc = 'en' then
-      v_title := 'Your report was checked';
-      v_body  := 'We checked the question you reported — no change was needed. '
-              || 'Thanks for telling us all the same.';
-    elsif v_loc = 'ru' then
-      v_title := 'Мы проверили твоё сообщение';
-      v_body  := 'Мы проверили вопрос — изменения не потребовались. '
-              || 'Спасибо, что написал(а) нам.';
+    if new.status = 'resolved' then
+      -- The TITLES still carry the distinction between "we changed it" and "we
+      -- checked it", which the neutral generated opening line does not.
+      v_type := 'question_report_resolved';
+      if v_loc = 'en' then
+        v_title := 'Your report is resolved';
+      elsif v_loc = 'ru' then
+        v_title := 'Сообщение обработано';
+      else
+        v_title := 'Bildirişin həll olundu';
+      end if;
     else
-      v_title := 'Bildirişin yoxlanıldı';
-      v_body  := 'Bildirdiyin sualı yoxladıq — dəyişiklik tələb olunmadı. '
-              || 'Yenə də bizə yazdığın üçün təşəkkür edirik.';
+      -- A dismissal is told to the reporter too, and told HONESTLY: we looked,
+      -- and here is why nothing changed. Silence would be the cheaper option
+      -- and the worse one — a student who reports a question and never hears
+      -- anything concludes the report button does nothing and stops using it,
+      -- which costs us the broken questions nobody else will find. The title
+      -- carries no blame; the body is now the admin's own words.
+      v_type := 'question_report_dismissed';
+      if v_loc = 'en' then
+        v_title := 'Your report was checked';
+      elsif v_loc = 'ru' then
+        v_title := 'Мы проверили твоё сообщение';
+      else
+        v_title := 'Bildirişin yoxlanıldı';
+      end if;
     end if;
+
+    v_body := public.question_report_reply_text(v_loc, new.created_at, v_reply);
+    -- The reply text joins the key. Without it, an admin who reopens a report
+    -- and closes it again with a CORRECTED answer delivers nothing: the
+    -- (report, status) key was already spent on the first, wrong answer. With
+    -- it, re-sending the SAME answer is still deduped — which is the property
+    -- the key exists for — while a different answer is different news.
+    v_key := v_key || ':' || md5(v_body);
 
   else
     -- Reopening a report to 'new' is an internal correction, not news.
     return null;
   end if;
 
-  begin
-    perform public.create_notification(
-      new.reporter_profile_id,
-      v_type,
-      v_title,
-      v_body,
-      -- Both keys end in _id, so the notification detail view drops them from
-      -- its scalar-pair list (opaque identifiers are noise to a reader) while
-      -- still carrying the context any future surface would need.
-      jsonb_build_object('question_report_id', new.id,
-                         'question_id',        new.question_id),
-      array['in_app'],
-      -- IDEMPOTENT per (report, status). The WHEN clause already suppresses a
-      -- re-save of the same status; this is what survives the other shape of
-      -- the mistake — in_review -> new -> in_review, which IS a transition and
-      -- would otherwise notify a second time for the same news. Deduped by
-      -- create_notification's on conflict (idempotency_key) do nothing.
-      'qreport:' || new.id::text || ':' || new.status::text,
-      4,
-      -- No action_url: the reporter has no screen that shows one report, and a
-      -- deep link into nothing is worse than none. The notification carries the
-      -- whole message.
-      null,
-      'announcement',
-      null);
-  exception when others then
-    -- Triage must never fail because the inbox did (award_attempt_points_tg /
-    -- notify_attempt_graded_tg precedent). An admin moving a report is the
-    -- important half; the courtesy note is not worth aborting it for.
-    raise warning 'notify_question_report_status failed for report %: %',
-      new.id, sqlerrm;
-  end;
+  -- NO exception handler — see the note above this function.
+  perform public.create_notification(
+    new.reporter_profile_id,
+    v_type,
+    v_title,
+    v_body,
+    -- Both keys end in _id, so the notification detail view drops them from
+    -- its scalar-pair list (opaque identifiers are noise to a reader) while
+    -- still carrying the context any future surface would need.
+    jsonb_build_object('question_report_id', new.id,
+                       'question_id',        new.question_id),
+    array['in_app'],
+    v_key,
+    4,
+    -- No action_url: the reporter has no screen that shows one report, and a
+    -- deep link into nothing is worse than none. The notification carries the
+    -- whole message.
+    null,
+    'announcement',
+    null);
 
   return null;
 end;
@@ -9483,9 +9587,11 @@ $$;
 comment on function public.notify_question_report_status_tg() is
   'AFTER UPDATE on question_reports: notifies the REPORTER, in the locale they '
   'filed in, when an administrator takes their report into review, resolves it '
-  'or dismisses it. Idempotent per (report, status) via create_notification. '
-  'Skips anonymous and deleted reporters; failure-safe (warnings only) so a '
-  'notification can never abort triage.';
+  'or dismisses it. A resolution or dismissal carries the administrator''s own '
+  'written answer, framed by question_report_reply_text(); it is REQUIRED, and '
+  'a failed send aborts the transition rather than leaving a report marked '
+  'answered with nothing delivered. Idempotent per (report, status, reply text) '
+  'via create_notification. Skips anonymous and deleted reporters.';
 
 drop trigger if exists trg_notify_question_report_status on public.question_reports;
 -- No `of status` column list, unlike trg_notify_attempt_graded. The WHEN clause

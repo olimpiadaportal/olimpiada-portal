@@ -14,17 +14,32 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { ReportStatus } from "@/lib/admin/question-report-status";
+import {
+  validateReplyBody,
+  type ReportReplyState,
+} from "@/lib/admin/question-report-reply";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Client strings are mapped to enum values HERE, server-side. A client string
 // never reaches the status column, and an unknown action is a silent no-op.
+//
+// RESOLVE AND DISMISS ARE NOT IN THIS MAP (migration 122). Both close a report
+// by sending the reporter an answer an administrator wrote, so both go through
+// replyQuestionReport below, which requires that answer. Leaving them here as
+// well would leave a second, message-free route to the same transition — one
+// the database now refuses anyway (the notifier raises), but as an opaque
+// failure instead of a validation error the admin can act on.
 const TRANSITIONS: Record<string, ReportStatus> = {
   in_review: "in_review",
+  reopen: "new",
+};
+
+/** The two transitions that carry a written reply. Same server-side mapping. */
+const REPLY_TRANSITIONS: Record<string, ReportStatus> = {
   resolve: "resolved",
   dismiss: "dismissed",
-  reopen: "new",
 };
 
 export type ReportTranslation = { locale: string; body: string; prompt: string | null };
@@ -51,6 +66,12 @@ export type QuestionReportDetail = {
     app_version: string | null;
     status: string;
     admin_note: string | null;
+    /**
+     * The administrator's own answer (migration 122) — the BODY only. The
+     * detail page re-frames it for display with the same rule the database
+     * sends through (lib/admin/question-report-reply.ts).
+     */
+    resolution_message: string | null;
     handled_by_label: string | null;
     handled_at: string | null;
     created_at: string;
@@ -91,7 +112,7 @@ export async function loadQuestionReport(
   const { data: r } = await supabase
     .from("question_reports")
     .select(
-      "id, question_id, attempt_id, attempt_kind, olympiad_package_id, reporter_profile_id, message, locale, platform, app_version, status, admin_note, handled_by, handled_at, created_at",
+      "id, question_id, attempt_id, attempt_kind, olympiad_package_id, reporter_profile_id, message, locale, platform, app_version, status, admin_note, resolution_message, handled_by, handled_at, created_at",
     )
     .eq("id", id)
     .maybeSingle();
@@ -193,6 +214,7 @@ export async function loadQuestionReport(
       app_version: r.app_version ?? null,
       status: String(r.status),
       admin_note: r.admin_note ?? null,
+      resolution_message: r.resolution_message ?? null,
       handled_by_label: label(r.handled_by ?? null),
       handled_at: r.handled_at ?? null,
       created_at: r.created_at,
@@ -201,7 +223,8 @@ export async function loadQuestionReport(
   };
 }
 
-// Status transition. Modelled on transitionNews: guard first, whitelist the
+// Status transition WITHOUT a written reply — "Baxışa götür" and "Yenidən aç"
+// only (see TRANSITIONS). Modelled on transitionNews: guard first, whitelist the
 // action, write through the USER-SESSION client (qreports_update is the real
 // gate, and trg_question_report_freeze stamps handled_by/handled_at and
 // protects the evidence), then audit ids and statuses only.
@@ -252,4 +275,96 @@ export async function transitionQuestionReport(formData: FormData): Promise<void
 
   revalidatePath("/question-reports");
   revalidatePath(`/question-reports/${id}`);
+}
+
+// CLOSING a report — "Həll olundu" / "Rədd et" (migration 122).
+//
+// The status change and the notification are ONE transaction and always were:
+// trg_notify_question_report_status is an AFTER UPDATE trigger, so it runs
+// inside the same statement. What migration 122 changed is what happens when
+// the send fails — the trigger no longer swallows it, so an exception rolls the
+// UPDATE back and the report keeps its old status. That is the owner's rule
+// ("if sending fails, the status must not change") and it is why this action
+// still does not emit anything itself: an app-tier emitter would be a second
+// insert path AND a second transaction, and the second one is the part that
+// cannot be made atomic with the first.
+//
+// A SUPPRESSED notification is not a failed one. create_notification returns
+// NULL — no exception — when the student has in-app notifications switched off,
+// and when this exact reply was already delivered. Both commit: the response is
+// stored on the report either way, which is what the owner asked for.
+export async function replyQuestionReport(
+  _prev: ReportReplyState,
+  formData: FormData,
+): Promise<ReportReplyState> {
+  const ctx = await requireAdmin(); // authorize FIRST (before any FormData read)
+
+  const rawId = formData.get("__id");
+  const rawAction = formData.get("__action");
+  const id = typeof rawId === "string" ? rawId.trim() : "";
+  const action = typeof rawAction === "string" ? rawAction.trim() : "";
+  const to = REPLY_TRANSITIONS[action];
+  if (!UUID_RE.test(id) || !to) return { ok: false, error: "failed" };
+
+  // THE REAL GATE. The dialog disables its own button below ten characters and
+  // caps the textarea at a thousand; both are UX. The same validator runs here,
+  // and chk_question_reports_resolution_message runs it a third time in the
+  // database, where a hand-rolled PostgREST PATCH also has to pass.
+  const validated = validateReplyBody(formData.get("__message"));
+  if (!validated.ok) return { ok: false, error: validated.reason };
+
+  const supabase = await createClient();
+  // Re-verify the client-supplied id server-side even though RLS would also
+  // block it: an admin may only close a report that exists and is not already
+  // in this state.
+  const { data: current } = await supabase
+    .from("question_reports")
+    .select("status, question_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!current) return { ok: false, error: "failed" };
+  // NOT a silent success. This guard is inherited from the payload-free
+  // transition action, where returning ok on a no-op was harmless. Here the
+  // request CARRIES a reply the admin just typed: skipping the update would
+  // drop that text, send nothing, write no audit row — and close the dialog
+  // reporting success. The status also would not change, so the notifier
+  // (which fires on `new.status is distinct from old.status`) could not run
+  // even if the row were written. Re-answering is a deliberate flow in this
+  // design — reopen, then close again, which the idempotency key already
+  // accounts for — so say that instead of pretending it worked.
+  if (current.status === to) return { ok: false, error: "already" };
+
+  // ONE statement: the status and the reply land together, because the trigger
+  // that sends the reply reads new.resolution_message. Writing them in two
+  // updates would send the PREVIOUS answer — or none at all on the first close.
+  const { error } = await supabase
+    .from("question_reports")
+    .update({ status: to, resolution_message: validated.body })
+    .eq("id", id);
+  if (error) {
+    // Never the raw message: it can carry Postgres internals, and when the
+    // notifier raises it carries the reporter's row context too.
+    console.error("[admin] question report reply failed", error.code);
+    return { ok: false, error: "failed" };
+  }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.question_report.reply",
+    targetTable: "question_reports",
+    targetId: id,
+    // Ids, statuses and a LENGTH. Neither the report nor the reply enters an
+    // audit row: audit metadata is a small capped payload, and both are free
+    // text. The reply itself is on the report, where the admin can read it.
+    metadata: {
+      from: current.status,
+      to,
+      question_id: current.question_id,
+      reply_length: validated.body.length,
+    },
+  });
+
+  revalidatePath("/question-reports");
+  revalidatePath(`/question-reports/${id}`);
+  return { ok: true };
 }

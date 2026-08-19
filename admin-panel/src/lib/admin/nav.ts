@@ -94,11 +94,15 @@ export const NAV: NavGroup[] = [
       // Local trilingual fallback (see the layout's navLabel chain) until
       // messages.ts gains the key.
       { label: "nav.alerts", href: "/alerts" },
-      // "Sual bildirişləri" — the platform's ONE reports section (migration 115;
+      // "Texniki dəstək" — the platform's ONE reports section (migration 115;
       // migration 117 withdrew the separate bug-report inbox that briefly sat
-      // beside it). Administrator-only: no `permission` field exists for it, so
-      // there is no code a content manager could be granted by accident — and
-      // the page reveals answer keys.
+      // beside it). The KEY is unchanged and so is the route: the owner renamed
+      // the DISPLAY LABEL only (2026-08-19), because since migration 122 an
+      // admin answers a report in their own words rather than triaging it, and
+      // "Sual bildirişləri" no longer described what happens here.
+      // Administrator-only: no `permission` field exists for it, so there is no
+      // code a content manager could be granted by accident — and the page
+      // reveals answer keys.
       { label: "nav.questionReports", href: "/question-reports", adminOnly: true },
       { label: "nav.audit", href: "/audit", adminOnly: true },
       { label: "nav.settings", href: "/settings", adminOnly: true },

@@ -5,6 +5,10 @@ import { getLocale, getT } from "@/i18n/server";
 import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { loadQuestionReport } from "@/lib/admin/questionReports";
 import { reportStatusPill } from "@/lib/admin/question-report-status";
+import {
+  buildReportReply,
+  normalizeReportLocale,
+} from "@/lib/admin/question-report-reply";
 import { QuestionReportStatus } from "@/components/QuestionReportStatus";
 
 const LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"];
@@ -28,9 +32,14 @@ export default async function QuestionReportDetailPage({
   if (!data) notFound();
   const { report, question } = data;
 
+  // EVERY key the client controls read, listed here. A key the array omits is
+  // not translated at all — QuestionReportStatus falls back to `dict[k] ?? k`
+  // and renders the key itself, however carefully the string was translated.
   const dict: Record<string, string> = {};
   for (const k of [
     "pend.processing",
+    "pend.sending",
+    "modal.close",
     "qrep.act.in_review",
     "qrep.act.resolve",
     "qrep.act.dismiss",
@@ -38,9 +47,35 @@ export default async function QuestionReportDetailPage({
     "qrep.detail.actionsHeading",
     "qrep.notify.hint",
     "qrep.notify.none",
+    // The reply composer (migration 122).
+    "report.reply.titleResolved",
+    "report.reply.titleRejected",
+    "report.reply.bodyLabel",
+    "report.reply.bodyPlaceholder",
+    "report.reply.autoNote",
+    "report.reply.preview",
+    "report.reply.charCount",
+    "report.reply.send",
+    "report.reply.cancel",
+    "report.reply.tooShort",
+    "report.reply.tooLong",
+    "report.reply.already",
+    "report.reply.failed",
   ]) {
     dict[k] = t(k);
   }
+
+  // The reply already sent, re-framed for display with the same rule the
+  // database sent it through — opening line, the admin's stored body, closing
+  // line, in the language of the REPORT. Stored as the body alone precisely so
+  // this stays derived rather than a second copy that can drift.
+  const sentReply = report.resolution_message
+    ? buildReportReply({
+        locale: normalizeReportLocale(report.locale),
+        createdAt: report.created_at,
+        body: report.resolution_message,
+      })
+    : null;
 
   // A pool question is edited inside its package, never in the general editor —
   // the same split loadQuestionForEdit already encodes with its "olympiadScoped"
@@ -131,6 +166,17 @@ export default async function QuestionReportDetailPage({
           </div>
         </dl>
 
+        {/* What was actually sent, shown to whoever opens the report next —
+            including after a reopen, which deliberately leaves the stored reply
+            in place. Rendered as a React TEXT CHILD like the report body above,
+            with pre-wrap for the blank lines between the three parts. */}
+        {sentReply && (
+          <div className="qrep-reply-sent">
+            <span className="qrep-reply-sent-label">{t("report.reply.sentHeading")}</span>
+            <p>{sentReply}</p>
+          </div>
+        )}
+
         {/* The trigger behind the notification skips a NULL reporter, so the
             control must say the same thing rather than promise a delivery that
             silently does not happen. */}
@@ -138,6 +184,8 @@ export default async function QuestionReportDetailPage({
           id={report.id}
           status={report.status}
           notifiesReporter={report.reporter_profile_id !== null}
+          reportLocale={report.locale}
+          createdAt={report.created_at}
           dict={dict}
         />
       </section>

@@ -15,7 +15,7 @@ type Dict = Record<string, string>;
 
 const STRINGS: Record<Locale, Dict> = {
   az: {
-    "nav.alerts": "Bildirişlərim",
+    "nav.alerts": "Admin bildirişləri",
     "alerts.bell": "Bildirişlər",
     "alerts.markAllRead": "Hamısını oxunmuş et",
     "alerts.seeAll": "Hamısına bax",
@@ -25,7 +25,7 @@ const STRINGS: Record<Locale, Dict> = {
     "alerts.timeMin": "dəq əvvəl",
     "alerts.timeHour": "saat əvvəl",
     "alerts.timeDay": "gün əvvəl",
-    "alerts.pageTitle": "Bildirişlərim",
+    "alerts.pageTitle": "Admin bildirişləri",
     "alerts.pageSubtitle":
       "Sizə ünvanlanmış bildirişlər — bildiriş mərkəzindən göndərilənlər və dərc olunan olimpiada paketləriniz.",
     "alerts.markRead": "Oxundu et",
@@ -38,7 +38,7 @@ const STRINGS: Record<Locale, Dict> = {
     "alerts.type.default": "Bildiriş",
   },
   en: {
-    "nav.alerts": "My Alerts",
+    "nav.alerts": "Admin notifications",
     "alerts.bell": "Notifications",
     "alerts.markAllRead": "Mark all read",
     "alerts.seeAll": "See all",
@@ -48,7 +48,7 @@ const STRINGS: Record<Locale, Dict> = {
     "alerts.timeMin": "min ago",
     "alerts.timeHour": "h ago",
     "alerts.timeDay": "d ago",
-    "alerts.pageTitle": "My Alerts",
+    "alerts.pageTitle": "Admin notifications",
     "alerts.pageSubtitle":
       "Notifications addressed to you — sends from the notification center, plus your published olympiad packages.",
     "alerts.markRead": "Mark read",
@@ -61,7 +61,7 @@ const STRINGS: Record<Locale, Dict> = {
     "alerts.type.default": "Notification",
   },
   ru: {
-    "nav.alerts": "Мои уведомления",
+    "nav.alerts": "Уведомления администратора",
     "alerts.bell": "Уведомления",
     "alerts.markAllRead": "Отметить все как прочитанные",
     "alerts.seeAll": "Смотреть все",
@@ -71,7 +71,7 @@ const STRINGS: Record<Locale, Dict> = {
     "alerts.timeMin": "мин назад",
     "alerts.timeHour": "ч назад",
     "alerts.timeDay": "дн назад",
-    "alerts.pageTitle": "Мои уведомления",
+    "alerts.pageTitle": "Уведомления администратора",
     "alerts.pageSubtitle":
       "Уведомления, адресованные вам — рассылки из центра уведомлений и публикация ваших олимпиадных пакетов.",
     "alerts.markRead": "Отметить прочитанным",

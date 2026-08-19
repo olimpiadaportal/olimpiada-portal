@@ -4672,3 +4672,53 @@ a.qpage-link:hover {
 .qrep-triage .hint {
   margin-top: 0;
 }
+
+/* ---- Reply composer + the reply already sent (migration 122) -------------- */
+
+/* The two GENERATED sentences that wrap the admin's body. Static text on a
+   muted ground rather than a disabled <input>: there is nothing here to edit,
+   and a greyed-out field invites the attempt. */
+.qrep-reply-frame {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.qrep-reply-count {
+  align-self: flex-end;
+  font-size: 0.76rem;
+}
+
+/* Exactly what the student receives, assembled by the same rule the database
+   sends through. pre-wrap is load-bearing: the three parts are joined by BLANK
+   lines, and a preview that collapsed them would not be a preview. */
+.qrep-reply-preview,
+.qrep-reply-sent {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--brand) 4%, transparent);
+}
+.qrep-reply-preview p,
+.qrep-reply-sent p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.qrep-reply-preview-label,
+.qrep-reply-sent-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.qrep-reply-sent {
+  margin: 0 0 16px;
+}

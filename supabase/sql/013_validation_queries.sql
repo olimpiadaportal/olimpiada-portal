@@ -2975,6 +2975,124 @@ select '108_demo_payment_mode_removed' as check_name,
             then 'PASS' else 'FAIL' end as status,
        public.current_payment_mode() as resolved_mode;
 
+-- 109) THE ADMINISTRATOR WRITES THE ANSWER (migration 122). Resolving or
+--      dismissing a question report no longer sends fixed copy: an admin writes
+--      the body, the database frames it with a generated opening line (naming
+--      the date and time the report was FILED) and a generated closing line in
+--      the language of the REPORT, and the three parts go out as one in-app
+--      notification joined by blank lines.
+--
+--      Four things break silently here, so all four are asserted:
+--
+--        * THE COLUMN AND ITS SHAPE. resolution_message must exist and its
+--          CHECK must still TRIM before measuring. Without the trim, ten spaces
+--          is a ten-character answer and a student receives a blank explanation
+--          wrapped in two polite sentences.
+--        * THE FRAME IS ONE DEFINITION, CHECKED BY ITS OUTPUT. The admin panel
+--          shows a live preview of the assembled message, and that preview is a
+--          TypeScript port of question_report_reply_text. A preview that
+--          disagreed with the send would be worse than no preview — the admin
+--          would approve one message and the student would read another — so
+--          this asserts the exact text the function returns for one fixed
+--          instant, in all three languages. 05:30 UTC must render as 09:30:
+--          Asia/Baku is the convention in this schema and UTC would show every
+--          student a moment four hours before the one they remember. A missing
+--          function makes THIS STATEMENT error out rather than report, which is
+--          why check 109 is last in the file — there is nothing behind it to
+--          skip, and a missing frame is not a subtle failure.
+--        * THE FREEZE STILL LETS THE REPLY THROUGH. question_report_freeze
+--          restores a FIXED list of columns and resolution_message is writable
+--          precisely because it is NOT in that list. "Completing" the list
+--          looks like tidying and breaks nothing visible — the UPDATE still
+--          succeeds, the status still moves — but every reply is discarded on
+--          its way to the notifier, which reads new.resolution_message.
+--        * THE SEND IS STILL REQUIRED AND STILL UNSWALLOWED (owner rule). A
+--          failed send must abort the status change, so the notifier carries NO
+--          `exception when others` handler and no `raise warning`, and it must
+--          still raise when a closing transition has nothing to say. A restored
+--          swallow would read as defensive programming and would re-create the
+--          exact failure the rule exists to prevent: a report marked answered
+--          with nothing delivered. The md5 discriminator on the idempotency key
+--          is asserted for the mirror-image failure — without it a corrected
+--          answer after a reopen is deduped against the wrong one and never
+--          arrives.
+with cst as (
+  select coalesce((select pg_get_constraintdef(c.oid)
+                     from pg_constraint c
+                    where c.conrelid = to_regclass('public.question_reports')
+                      and c.conname  = 'chk_question_reports_resolution_message'), '') as def
+), fr as (
+  select case when to_regprocedure('public.question_report_freeze()') is null then ''
+              else pg_get_functiondef(to_regprocedure('public.question_report_freeze()'))
+         end as def
+), nt as (
+  select case when to_regprocedure('public.notify_question_report_status_tg()') is null then ''
+              else pg_get_functiondef(to_regprocedure('public.notify_question_report_status_tg()'))
+         end as def
+), frame_ok as (
+  -- STABLE (the zone is a literal but to_char depends on lc_time), search_path
+  -- pinned, and callable by nobody: the SECURITY DEFINER trigger reaches it as
+  -- the owner, and an end user who could call it directly gains nothing but is
+  -- one grant closer to a surface nobody reviewed.
+  select case when to_regprocedure(
+                    'public.question_report_reply_text(text, timestamptz, text)') is null
+              then false
+              else (select p.provolatile = 's'
+                      and coalesce(p.proconfig, '{}'::text[])
+                            @> array['search_path=public, pg_temp']
+                      and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                      and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                      from pg_proc p
+                     where p.oid = to_regprocedure(
+                       'public.question_report_reply_text(text, timestamptz, text)'))
+         end as ok
+)
+select '109_question_report_reply' as check_name,
+       case when (select def from cst) <> ''
+             and position('btrim' in (select def from cst)) > 0
+             and position('10' in (select def from cst)) > 0
+             and position('1000' in (select def from cst)) > 0
+             and exists (select 1 from information_schema.columns
+                          where table_schema = 'public'
+                            and table_name   = 'question_reports'
+                            and column_name  = 'resolution_message')
+             and (select ok from frame_ok)
+             -- The frame, by its output. Body deliberately padded: the trim is
+             -- part of the contract, not a convenience.
+             and public.question_report_reply_text(
+                   'az', timestamptz '2026-08-19 05:30:00+00', '  Sual düzəldildi.  ')
+                 = '19.08.2026 tarixində saat 09:30-də ünvanladığınız sorğu araşdırılmışdır.'
+                   || E'\n\n' || 'Sual düzəldildi.'
+                   || E'\n\n' || 'Diqqətiniz və anlayışınız üçün təşəkkür edirik.'
+             and public.question_report_reply_text(
+                   'en', timestamptz '2026-08-19 05:30:00+00', 'The answer key is fixed.')
+                 = 'Your report submitted on 19.08.2026 at 09:30 has been reviewed.'
+                   || E'\n\n' || 'The answer key is fixed.'
+                   || E'\n\n' || 'Thank you for your attention and understanding.'
+             and public.question_report_reply_text(
+                   'ru', timestamptz '2026-08-19 05:30:00+00', 'Ключ ответа исправлен.')
+                 = 'Ваше обращение, направленное 19.08.2026 в 09:30, было рассмотрено.'
+                   || E'\n\n' || 'Ключ ответа исправлен.'
+                   || E'\n\n' || 'Благодарим за внимание и понимание.'
+             -- An unrecognised locale falls back to az, never to an empty frame.
+             and public.question_report_reply_text(
+                   'tr', timestamptz '2026-08-19 05:30:00+00', 'On karakterden uzun.')
+                 = public.question_report_reply_text(
+                   'az', timestamptz '2026-08-19 05:30:00+00', 'On karakterden uzun.')
+             -- The freeze leaves the reply writable (and kept its own guard).
+             and position('new.resolution_message :=' in (select def from fr)) = 0
+             and position('old.message' in (select def from fr)) > 0
+             -- The notifier composes it, demands it, and does not swallow.
+             and position('question_report_reply_text' in (select def from nt)) > 0
+             and position('resolution_message' in (select def from nt)) > 0
+             and position('exception when others' in (select def from nt)) = 0
+             and position('raise warning' in (select def from nt)) = 0
+             and position('md5(v_body)' in (select def from nt)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       (select def from cst) <> ''                                        as has_resolution_check,
+       position('new.resolution_message :=' in (select def from fr)) = 0  as reply_is_writable,
+       position('exception when others' in (select def from nt)) = 0      as send_failure_aborts_triage;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

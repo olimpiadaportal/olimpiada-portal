@@ -1060,7 +1060,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.supportTitle": "Texniki dəstək",
     "contact.supportDesc":
       "Platformada xəta, girişlə bağlı problem və ya ödənişdə çətinlik varsa buraya yazın.",
-    "contact.responseTime": "İş günləri cavab veririk — adətən 24 saat ərzində.",
+    "contact.responseTime": "Sorğunuz 24 saat ərzində cavablanacaq.",
 
     // — Footer —
     "footer.tagline": "1–11-ci siniflər üçün olimpiada hazırlığı portalı",
@@ -2789,7 +2789,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.supportTitle": "Technical support",
     "contact.supportDesc":
       "Errors on the platform, sign-in problems, or trouble with a payment.",
-    "contact.responseTime": "We reply on business days, usually within 24 hours.",
+    "contact.responseTime": "Your request will be answered within 24 hours.",
 
     // — Footer —
     "footer.tagline": "An olympiad preparation portal for grades 1–11",
@@ -4507,7 +4507,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "contact.supportTitle": "Техническая поддержка",
     "contact.supportDesc":
       "Ошибки на платформе, проблемы со входом или с оплатой.",
-    "contact.responseTime": "Отвечаем в рабочие дни, обычно в течение 24 часов.",
+    "contact.responseTime": "Ваш запрос будет рассмотрен в течение 24 часов.",
 
     // — Footer —
     "footer.tagline": "Портал подготовки к олимпиадам для 1–11 классов",

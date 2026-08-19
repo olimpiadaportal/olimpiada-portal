@@ -139,6 +139,84 @@ the only correct order — the web lane deleted ~35 keys the generator copies).
 - `mobile-app/src/lib/data.ts` still maps `price_amount`/`currency` off the olympiad RPCs into
   its row types. Nothing renders them; the mapper mirrors the server contract on purpose.
 
+## PINNED — REPORT REPLY COMPOSER (migration 122, 2026-08-19)
+
+**Applied to production. Validation `013` = 113/113 PASS** (new check `109_question_report_reply`).
+admin-panel tsc + 581 tests + build; web-app tsc + 263 tests; mobile-app tsc + 354 tests +
+check-i18n. Mobile stays **1.11.0** (no mobile source changed — only a synced string).
+
+### The admin now writes the answer
+
+`Həll olundu` / `Rədd et` open a composer instead of firing immediately: a read-only opening
+line naming the date and time the report was FILED (`dd.MM.yyyy` / `HH:mm`, **Asia/Baku** — the
+schema's convention; UTC would have shown every student a time 4 hours off), one required body
+(10–1000 chars, trimmed), a read-only closing line, and a live preview of exactly what is sent.
+`Baxışa götür` and `Yenidən aç` are unchanged.
+
+Opening and closing render in the **report's** locale (`question_reports.locale`), never the
+admin's interface language.
+
+**Only one new column was needed.** `handled_by` / `handled_at` were already stamped by
+`question_report_freeze` on every status change, so "the responding admin and timestamp" was
+already persisted. `resolution_message` is the only addition — and the freeze needed no edit
+either, because it restores a FIXED column list and a new column is writable by omission. That
+is now stated in the trigger body so nobody "completes" the list and silently breaks this.
+
+**The owner's rule reverses migration 117.** 117 deliberately wrapped the send in
+`exception when others then raise warning` so a broken inbox could never block triage. The owner
+asked for the opposite: if the send fails, the status must not change. The swallow is removed.
+A NULL return from `create_notification` (student has in-app notifications off) is NOT a failure
+and commits normally, with the reply still stored — the owner's other rule, preserved.
+
+**How the preview is guaranteed not to lie:** the message is assembled by SQL
+(`question_report_reply_text`) because the trigger is what sends it; the composer uses a
+TypeScript port, and a test READS the SQL — both the migration and the canonical 011 backport —
+asserting every template segment, all three closing lines, `Asia/Baku`, the two blank-line joins
+and byte-identity between migration and backport. Change either side and the test fails.
+
+**Idempotency key gained `md5(reply)`.** 117 keyed on (report, status), which with an
+admin-written body would have deduped a CORRECTED answer after a reopen against the first, wrong
+one and delivered nothing.
+
+### Three review findings fixed after the build
+
+1. **A typed reply could be silently discarded.** `if (current.status === to) return { ok: true }`
+   was inherited from the payload-free transition action, where a no-op success was harmless.
+   Here the request carries text: the branch skipped the update, the audit row and the
+   notification, then closed the dialog reporting success. It now returns `already` with
+   trilingual copy naming the way forward (reopen, then answer again).
+2. **The three gates counted different units.** JS `.length` counts UTF-16 code units, the DB
+   counts characters, so a six-emoji reply read as 12 in the browser and 6 in the database:
+   composer said send, server agreed, DB rejected it as the opaque generic failure. A shared
+   `replyLength()` now counts code points on both sides.
+3. `report.reply.already` had to be added to the detail page's `KEYS` array — the repo's known
+   failure mode. The existing guard test covers indirect `ERROR_KEYS` lookups and would have
+   caught it.
+
+**Left as specified, not a defect:** `report.reply.cancel` is `İmtina` per the owner's exact
+table, though the panel elsewhere uses `Ləğv et` for cancel. Owner's string, owner's call.
+
+### Renames
+
+`nav.alerts` → Admin bildirişləri / Admin notifications / Уведомления администратора (including
+`alerts.pageTitle`, which repeated the old wording). `nav.questionReports` → Texniki dəstək /
+Technical support / Техническая поддержка. `nav.notifications` was already correct in en/ru.
+Routes, hrefs, permission flags, component names and DB identifiers are byte-identical.
+Admin-panel has no per-page `metadata`, so there was no tab title to change.
+
+Also: `contact.responseTime` is now "Sorğunuz 24 saat ərzində cavablanacaq." (az/en/ru, web +
+mobile).
+
+### Known gaps
+
+- **Nothing has been clicked.** The composer, the preview, the stored-reply display and the
+  renamed menu have had no browser pass.
+- The fail-closed send has never been exercised against a real failure.
+- `qrep.detail.title` still reads "Sual bildirişi" — deliberately left; it names the record, not
+  the section.
+- **The from-zero rebuild proof is STILL PENDING.** `OLIMPIADA_STAGING_DB_URL` is unset;
+  migrations 117–122 are on production without it.
+
 ## PINNED — DEMO PAYMENTS DELETED (migration 121, 2026-08-18)
 
 **Applied to production. Validation `013` = 112/112 PASS.** web-app tsc + 263 tests + build;

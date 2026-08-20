@@ -367,3 +367,36 @@ describe("the answer must name the transaction the signed callback named", () =>
     expect(reconcileStatus(reply(), EXPECTED).mismatches).toEqual([]);
   });
 });
+
+describe("the live reply's own spellings", () => {
+  // Every name here was read off the TEST terminal on 2026-08-20, not guessed.
+  // An APPROVED reply carries approval_id; a declined one does not, which is
+  // why it was the last field left unmapped.
+  it("captures the bank approval code from approval_id", () => {
+    const r = reconcileStatus(
+      parseStatusResponse(
+        JSON.stringify({
+          terminal: EXPECTED.terminal,
+          actionCode: "0",
+          approval_id: "517400",
+          responseCode: "00",
+          amount: EXPECTED.amount,
+          currency: "944",
+        }),
+      ),
+      EXPECTED,
+    );
+    expect(r.approval, "the approval code is the strongest dispute evidence").toBe("517400");
+    expect(r.approved).toBe(true);
+  });
+
+  it("normalises underscores, hyphens and spaces alike", () => {
+    const r = reconcileStatus(
+      parseStatusResponse(
+        JSON.stringify({ "INT_REF": "AAAA", "tran-date": "20260820", actionCode: "0", responseCode: "00", amount: EXPECTED.amount }),
+      ),
+      EXPECTED,
+    );
+    expect(r.intRef).toBe("AAAA");
+  });
+});

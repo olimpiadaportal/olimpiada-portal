@@ -76,6 +76,13 @@ const ALIASES: Record<string, StatusFieldName> = {
   MERCHANTORDERID: "ORDER",
   APPROVAL: "APPROVAL",
   APPROVALCODE: "APPROVAL",
+  // The live reply spells it `approval_id`. Confirmed on the test terminal
+  // 2026-08-20: it is present on an APPROVED status reply and absent on a
+  // declined one, which is what made it the last unmapped field. This is the
+  // bank's authorisation code and the strongest single piece of evidence in a
+  // dispute, so losing it silently was worth fixing.
+  APPROVAL_ID: "APPROVAL",
+  APPROVALID: "APPROVAL",
   BANKSAPPROVALCODE: "APPROVAL",
   RRN: "RRN",
   TRANSACTIONRRN: "RRN",
@@ -103,10 +110,15 @@ const ALIASES: Record<string, StatusFieldName> = {
 };
 
 function canonicalName(raw: string): StatusFieldName | null {
+  // Underscores are stripped too. They were not, which is exactly how
+  // `approval_id` slipped through while `approvalCode` would have matched. The
+  // literal fallback below still catches the canonical spellings that CONTAIN
+  // an underscore (INT_REF, P_SIGN), and both also appear de-punctuated in the
+  // table (INTREF, PSIGN), so nothing is lost by normalising harder here.
   const key = String(raw)
     .trim()
     .toUpperCase()
-    .replace(/[\s-]+/g, "");
+    .replace(/[\s\-_]+/g, "");
   // Try the de-punctuated form first, then the literal one (INT_REF, P_SIGN).
   return ALIASES[key] ?? ALIASES[String(raw).trim().toUpperCase()] ?? null;
 }

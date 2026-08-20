@@ -182,6 +182,19 @@ create index if not exists idx_child_subs_next_renewal
   on public.child_subscriptions (next_renewal_at)
   where status in ('trialing', 'active', 'past_due');
 create index if not exists idx_checkout_owner on public.checkout_sessions (owner_parent_profile_id);
+-- Migration 123: a merchant order id is unique per provider.
+-- The AzeriCard gateway spec says the last six digits of ORDER are the system
+-- trace audit number and must be unique per terminal per day. We mint
+-- YYYYMMDD + six CSPRNG digits, which makes the day part structural but leaves
+-- the six digits to chance -- ~39% odds of at least one collision at a thousand
+-- orders a day, and a collision would let the TRTYPE 90 status query for one
+-- payment answer about another. "Check then insert" cannot close it (two
+-- concurrent requests both see the gap), so the mint loop inserts and retries
+-- on 23505 and THIS index is what makes that correct. Partial + provider-keyed
+-- so providers can never collide with each other's id space.
+create unique index if not exists uq_checkout_provider_session
+  on public.checkout_sessions (provider, provider_session_id)
+  where provider_session_id is not null;
 create index if not exists idx_sibling_discounts_owner on public.sibling_discounts (owner_parent_profile_id);
 
 create index if not exists idx_notifications_recipient on public.notifications (recipient_profile_id, read_at);

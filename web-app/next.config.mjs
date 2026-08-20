@@ -23,6 +23,38 @@ function supabaseHost() {
 const SUPABASE_HOST = supabaseHost();
 const isDev = process.env.NODE_ENV === "development";
 
+// Payment redirect targets for the CSP's `form-action`.
+//
+// The AzeriCard/ABB rail is a FULL HTTP REDIRECT: our page renders a form whose
+// action is the acquirer's hosted payment page and the cardholder submits it
+// (never an iframe, never a card form of ours — that is what keeps us on PCI
+// SAQ A). `form-action 'self'` alone would block exactly that submission, so
+// the gateway origins are listed EXPLICITLY here. Never widen this to a
+// wildcard, and never add an origin that is not a payment gateway.
+//
+// Both documented AzeriCard MPI origins are listed unconditionally so a build
+// whose AZERICARD_GATEWAY_URL happens to be unset does not fail at the CSP
+// layer with nothing in the console to explain it; anything the environment
+// actually names is unioned in on top.
+function paymentFormOrigins() {
+  const origins = new Set([
+    "https://testmpi.3dsecure.az", // AzeriCard sandbox
+    "https://mpi.3dsecure.az", // AzeriCard production
+  ]);
+  for (const name of ["AZERICARD_GATEWAY_URL", "AZERICARD_TOKEN_URL"]) {
+    const value = process.env[name];
+    if (!value) continue;
+    try {
+      const url = new URL(value);
+      if (url.protocol === "https:") origins.add(url.origin);
+    } catch {
+      // A malformed value is reported by describeConfigProblems() at runtime;
+      // it must not take the whole build down here.
+    }
+  }
+  return [...origins];
+}
+
 // Content-Security-Policy (Round 7 hardening).
 // - script-src needs 'unsafe-inline' for Next.js hydration inline scripts and
 //   our no-flash theme script; 'unsafe-eval' is DEV-ONLY (react-refresh).
@@ -31,6 +63,8 @@ const isDev = process.env.NODE_ENV === "development";
 // - fonts: the student area loads JetBrains Mono from Google Fonts.
 // - connect-src: Supabase REST/Auth/Storage (+ websocket) only.
 // - frame-src: the Google Maps embed on the Contact page.
+// - form-action: 'self' plus the AzeriCard payment gateway origins only — the
+//   checkout redirect is a form POST to the acquirer's hosted page.
 // - frame-ancestors 'self': the site must not be framed by other origins.
 const CSP = [
   "default-src 'self'",
@@ -42,7 +76,7 @@ const CSP = [
   "frame-src https://www.google.com",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  `form-action 'self' ${paymentFormOrigins().join(" ")}`,
   "frame-ancestors 'self'",
 ].join("; ");
 

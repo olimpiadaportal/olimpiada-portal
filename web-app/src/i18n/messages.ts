@@ -1757,6 +1757,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "childedit.idNote": "Giriş ID-si və daxili identifikatorlar dəyişdirilə bilməz.",
     "childedit.err.generic": "Dəyişiklikləri yadda saxlamaq alınmadı. Yenidən cəhd et.",
     "childedit.err.notYourChild": "Bu uşaq sizin hesabınıza aid deyil.",
+    // ---- Payment result (payres.*) — the bare page the bank returns the
+    // cardholder to. Chrome-free by design: no site nav, no prices, no CTA.
+    // It reports the RESULT OF A PAYMENT only; access is never granted here.
+    "payres.title": "Ödəniş nəticəsi",
+    "payres.ok": "Ödəniş təsdiqləndi.",
+    "payres.pending": "Ödənişin nəticəsi hələ təsdiqlənməyib. Bir qədər sonra yenidən yoxlayın.",
+    "payres.failed": "Ödəniş baş tutmadı.",
+    "payres.close": "Bu pəncərəni bağlaya bilərsiniz.",
+    "payres.redirect": "Ödəniş səhifəsinə yönləndirilirsiniz.",
+    "payres.continue": "Davam et",
   },
   en: {
     // ---- Notifications (notif.*) — in-app notification center ----
@@ -3472,6 +3482,14 @@ export const messages: Record<Locale, Record<string, string>> = {
     "childedit.idNote": "The login ID and internal identifiers cannot be changed.",
     "childedit.err.generic": "Couldn't save the changes. Please try again.",
     "childedit.err.notYourChild": "This child doesn't belong to your account.",
+    // ---- Payment result (payres.*) — see the az block for why it is bare.
+    "payres.title": "Payment result",
+    "payres.ok": "Payment confirmed.",
+    "payres.pending": "This payment has not been confirmed yet. Please check again shortly.",
+    "payres.failed": "The payment did not go through.",
+    "payres.close": "You can close this window.",
+    "payres.redirect": "You are being redirected to the payment page.",
+    "payres.continue": "Continue",
   },
   ru: {
     // ---- Notifications (notif.*) — in-app notification center ----
@@ -5191,5 +5209,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "childedit.idNote": "ID для входа и внутренние идентификаторы изменить нельзя.",
     "childedit.err.generic": "Не удалось сохранить изменения. Попробуй ещё раз.",
     "childedit.err.notYourChild": "Этот ребёнок не относится к вашему аккаунту.",
+    // ---- Payment result (payres.*) — see the az block for why it is bare.
+    "payres.title": "Результат платежа",
+    "payres.ok": "Платёж подтверждён.",
+    "payres.pending": "Результат платежа пока не подтверждён. Проверьте ещё раз чуть позже.",
+    "payres.failed": "Платёж не прошёл.",
+    "payres.close": "Это окно можно закрыть.",
+    "payres.redirect": "Вы перенаправляетесь на страницу оплаты.",
+    "payres.continue": "Продолжить",
   },
 };

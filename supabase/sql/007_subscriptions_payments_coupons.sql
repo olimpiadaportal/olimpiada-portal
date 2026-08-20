@@ -300,12 +300,25 @@ create unique index if not exists uq_sub_changes_idem
   where idempotency_key is not null;
 
 -- -----------------------------------------------------------------------------
--- checkout_sessions : provider-agnostic checkout (subscription | olympiad).
+-- checkout_sessions : provider-agnostic checkout
+-- (subscription | olympiad | protocol_test).
+--
+-- Migration 123 added 'protocol_test': an acquirer integration test on the
+-- bank's sandbox terminal is neither a subscription nor an olympiad, and
+-- recording it as one would leave a sale nobody can explain in every future
+-- reconciliation report. The CHECK stays INLINE so a from-zero build produces
+-- the same auto-generated constraint name (checkout_sessions_kind_check) the
+-- migration writes on a live database; 013 check 110 asserts exactly one such
+-- CHECK survives.
+--
+-- provider_session_id carries the PROVIDER'S order id — for AzeriCard/ABB, the
+-- merchant ORDER we mint. It is unique per provider (uq_checkout_provider_session
+-- in 011); see that index for why uniqueness has to be the database's job.
 -- -----------------------------------------------------------------------------
 create table if not exists public.checkout_sessions (
   id                       uuid primary key default gen_random_uuid(),
   owner_parent_profile_id  uuid not null references public.profiles (id) on delete cascade,
-  kind                     text not null check (kind in ('subscription', 'olympiad')),
+  kind                     text not null check (kind in ('subscription', 'olympiad', 'protocol_test')),
   child_subscription_id    uuid references public.child_subscriptions (id) on delete set null,
   amount                   numeric(12,2),
   currency                 text not null default 'AZN',

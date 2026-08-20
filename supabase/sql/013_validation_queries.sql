@@ -3093,6 +3093,67 @@ select '109_question_report_reply' as check_name,
        position('new.resolution_message :=' in (select def from fr)) = 0  as reply_is_writable,
        position('exception when others' in (select def from nt)) = 0      as send_failure_aborts_triage;
 
+-- -----------------------------------------------------------------------------
+-- 110) AZERICARD ORDER UNIQUENESS + THE PROTOCOL-TEST CHECKOUT KIND
+--      (migration 123). Two assertions, and both of them are about money.
+--
+--        * THE UNIQUE INDEX. The gateway spec makes the last six digits of a
+--          merchant ORDER the system trace audit number and requires them to be
+--          unique per terminal per day. We mint YYYYMMDD + six CSPRNG digits, so
+--          only the six digits are left to chance -- roughly a 39% chance of at
+--          least one collision at a thousand orders a day. A collision is not
+--          cosmetic: two checkouts would share an order id, the TRTYPE 90 status
+--          query for one would answer about the other, and money would be
+--          attributed to the wrong session. The mint loop inserts and retries on
+--          23505, which is only correct while this index exists. It must be
+--          UNIQUE, on (provider, provider_session_id), and PARTIAL -- a
+--          non-partial index would make a second null-session row impossible for
+--          every other provider.
+--
+--        * THE KIND WHITELIST. 'protocol_test' must be accepted and the CHECK
+--          must still be exactly ONE constraint with the auto-generated name, so
+--          a from-zero build from 007 and a live database patched by 123 agree.
+--          A duplicated CHECK here is the classic backport failure: the table
+--          would silently keep enforcing the OLD, narrower list as well.
+-- -----------------------------------------------------------------------------
+with idx as (
+  select coalesce((select pg_get_indexdef(i.indexrelid)
+                     from pg_index i
+                     join pg_class c on c.oid = i.indexrelid
+                    where c.relname = 'uq_checkout_provider_session'
+                      and i.indrelid = to_regclass('public.checkout_sessions')), '') as def
+), kindchk as (
+  -- One row: the CHECK definitions that mention `kind`, joined, plus how many
+  -- of them there are. A SECOND one is the classic backport failure -- the table
+  -- would silently keep enforcing the OLD, narrower list alongside the new one.
+  select coalesce(string_agg(pg_get_constraintdef(c.oid), ' | '), '') as def,
+         count(*)                                                     as n
+    from pg_constraint c
+   where c.conrelid = to_regclass('public.checkout_sessions')
+     and c.contype  = 'c'
+     and pg_get_constraintdef(c.oid) like '%kind%'
+), namedchk as (
+  select count(*) as n
+    from pg_constraint c
+   where c.conrelid = to_regclass('public.checkout_sessions')
+     and c.conname  = 'checkout_sessions_kind_check'
+)
+select '110_azericard_order_uniqueness' as check_name,
+       case when (select def from idx) <> ''
+             and position('UNIQUE INDEX' in (select def from idx)) > 0
+             and position('provider, provider_session_id' in (select def from idx)) > 0
+             -- Partial: providers that write no session id keep working.
+             and position('provider_session_id IS NOT NULL' in (select def from idx)) > 0
+             and (select n from namedchk) = 1
+             and (select n from kindchk) = 1
+             and position('protocol_test' in (select def from kindchk)) > 0
+             and position('subscription'  in (select def from kindchk)) > 0
+             and position('olympiad'      in (select def from kindchk)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       (select def from idx) <> ''  as order_index_present,
+       (select n from namedchk)     as named_kind_checks,
+       (select n from kindchk)      as kind_checks_total;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

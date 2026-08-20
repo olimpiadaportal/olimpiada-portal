@@ -6,6 +6,85 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — AZERICARD/ABB PROTOCOL LAYER (migration 123, 2026-08-19) — CODE ONLY, NOT RUN
+
+ABB issued a **TEST terminal** and asked us to run a transaction and report back. This round
+builds the **protocol layer and its proof** only. It deliberately does NOT build the purchase
+experience: no parent-facing checkout, no change to the subscribe flow, nothing in `mobile-app/`
+or `admin-panel/`. Store compliance is untouched.
+
+**Nothing was executed.** No `psql`, no network call to AzeriCard, no commit. Migration
+`2026_08_19_123_azericard_order_uniqueness.sql` is WRITTEN and **NOT APPLIED** (staging first,
+then production, then `013`).
+
+### The one fact the whole design is built around
+
+The gateway's callback signature covers **AMOUNT, TERMINAL, APPROVAL, RRN, INT_REF** — and
+**not ORDER**. A valid signature therefore proves that *some* transaction happened on our
+terminal for that amount; it proves nothing about *which* of our orders it belongs to. Anyone
+who ever obtains one valid tuple can post it back naming a different order and the signature
+still verifies. So the callback route grants nothing and decides nothing: it verifies the
+signature, looks OUR order up, refuses a tuple whose RRN/INT_REF already belongs to another
+order, then asks the gateway itself (**TRTYPE 90**) about OUR order and believes only that.
+
+### No entitlement is granted, on purpose
+
+`docs/STORE_PAYMENTS_COMPLIANCE.md` §4.1 requires a provider-agnostic `entitlements` table as
+the single source of truth for access, with ABB as ONE producer of rows. **That table does not
+exist yet.** Wiring money to access before it does is the exact trap that document names, and
+it is the difference between "add IAP" being a two-week job and being a rewrite. The layer
+records payment facts and stops; the ledger row literally carries `granted: false`.
+
+### Files
+
+- `web-app/src/lib/payments/azericard/` — `mac.ts`, `format.ts`, `signing.ts`, `codes.ts`,
+  `callback.ts`, `statusResponse.ts`, `resultPage.ts` (**pure**, no `server-only`, no
+  `process.env` — the `planBasket.ts` / `subscriptionCore.ts` split) and `config.ts`,
+  `gateway.ts`, `store.ts` (**`server-only`**, the only modules that touch keys or the DB).
+- `web-app/src/app/api/payments/azericard/callback/route.ts` — public, POST, idempotent,
+  rate-limited per IP and per order, body-capped, generic responses, no field echoed.
+- `web-app/src/app/api/payments/azericard/test-initiate/route.ts` — owner-only, guarded by
+  `AZERICARD_TEST_TOKEN` (constant-time, fail-closed, **404** not 401 so a parent or child
+  cannot tell it from a typo). `POST` mints an order and returns the signed field set (or
+  `?format=html` for a real browser redirect); `GET` reports configuration problems by
+  VARIABLE NAME, or re-runs a TRTYPE 90 query for `?order=`.
+- `web-app/next.config.mjs` — CSP `form-action` now names the two AzeriCard MPI origins
+  explicitly (a redirect checkout is a form POST to the acquirer; `'self'` alone blocks it).
+  Never widened to a wildcard.
+- `web-app/.env.local.example` — the full `AZERICARD_*` block, all server-only, all commented.
+- `web-app/src/i18n/messages.ts` — `payres.*` (7 keys × az/en/ru) for the bare, chrome-free
+  result and redirect pages. No price, no CTA, nothing reflected.
+
+### Tests — 386 pass (was 263), `npx tsc --noEmit` clean, `next lint` clean
+
+120 of them are new. The ones that matter: the spec's **three known-answer vectors** (auth,
+callback, status), the absent-field rule (`-` with the length NOT counted, and an empty string
+counts as absent), every per-TRTYPE field order, sign/verify round-trip with a **throwaway**
+keypair (the real keys never enter a test), rejection of a tampered signature / a signature
+over different data / a signature by another key, and source-level invariants: the callback
+verifies before it queries, never falls back on the callback's own ACTION, calls no RPC, knows
+no entitlement, and echoes nothing.
+
+### Two decisions the owner should know about
+
+1. **A documented ambiguity in their spec.** §8.1 lists `TRAN_TRTYPE` among the merchant-
+   generated fields of a TRTYPE 90 request; §8.3's **worked example** computes the MAC without
+   it. We follow the worked example and pin it as a known-answer vector. If the live test
+   returns an invalid-signature error on status queries only, set
+   `AZERICARD_STATUS_MAC_INCLUDES_TRAN_TRTYPE=true` — both readings are implemented and tested.
+2. **The status-response field NAMES are undocumented.** §8.2 describes them in prose ("Banks
+   approval code") rather than naming the JSON keys. The parser is tolerant (JSON, form, XML,
+   plus an alias table) and the test route reports which keys it recognised and how many it did
+   not, so the alias table can be finished from EVIDENCE after the live run.
+
+### Deliberately not built
+
+Card-on-file / recurring (`TOKEN_ACTION=REGISTER`, `MERCH_TRAN_STATE`, `TOKEN`, `EXT_NET_REF`)
+— the bank has not approved it for this merchant and a dormant token path is an unused money
+surface. The seam is `config.tokenUrl`; nothing reads it.
+
+---
+
 ## PINNED — DEMO PAYMENT MODE DELETED (migration 121, 2026-08-18)
 
 **Migration `2026_08_18_121_remove_demo_payments.sql` is written and NOT YET APPLIED** (the
@@ -138,6 +217,33 @@ the only correct order — the web lane deleted ~35 keys the generator copies).
   not. Unrelated to demo removal and deliberately out of its blast radius.
 - `mobile-app/src/lib/data.ts` still maps `price_amount`/`currency` off the olympiad RPCs into
   its row types. Nothing renders them; the mapper mirrors the server contract on purpose.
+
+## PINNED — OPEN WITH THE BANK: RECURRING NOT YET APPROVED (2026-08-19)
+
+**Chase this until it is answered. It is not a code task; it is a bank decision, and the whole
+renewal design depends on it.**
+
+Azericard (Vusal Abdullayev) confirmed on 2026-08-19 that ABB's original integration request,
+ticket **`AZCDF-100303`**, did NOT state that we would use Recurring — so Azericard cannot enable
+it on their own and must have the bank's opinion. They CC'd Elvin.Kishizada@abb-bank.az,
+Orkhan.Dilbazov@abb-bank.az and Nazrin.Baylarova@abb-bank.az asking ABB to respond. Their offer
+meanwhile: if we are NOT using Recurring, send the RSA public key and they configure the test
+terminal immediately — which is the path we took.
+
+**What Recurring buys us** (spec §6–7): `TOKEN_ACTION=REGISTER` + `MERCH_TRAN_STATE='S'` on the
+first successful charge returns a 28-char `TOKEN` and an `EXT_NET_REF`; later renewals post
+`MERCH_TRAN_STATE='M'` (merchant-initiated). That is also exactly the "flag the first charge as
+the initial transaction of a recurring series" that the CBAR enhanced-authentication rules
+require — without it, renewals silently die.
+
+**What we ship if it is refused:** manual renewal. Each subject keeps its own period; before it
+ends the parent is notified and pays again from the web. Same scheduler, one branch — the
+renewal job sends a notification instead of a charge. It is a legitimate v1 but expensive:
+churn on manual-renewal subscriptions is severe, and every parent must remember, every period,
+for every child.
+
+**Deliberately NOT pre-built.** No token flow, no dormant recurring path. The seam is marked in
+the Azericard module. Build it when the bank says yes.
 
 ## PINNED — REPORT REPLY COMPOSER (migration 122, 2026-08-19)
 

@@ -143,6 +143,12 @@ export async function POST(request: Request): Promise<Response> {
       terminal: config.terminal,
       amount: expectedAmount,
       currency: session.currency,
+      // The SIGNED half of the callback. The gateway's callback MAC covers RRN
+      // and INT_REF but not ORDER, so these are the only transaction identity
+      // in this request an attacker cannot choose — and the status answer has
+      // to agree with them.
+      rrn: shape.rrn,
+      intRef: shape.intRef,
     },
   });
 

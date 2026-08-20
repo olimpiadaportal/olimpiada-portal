@@ -14,7 +14,7 @@
 // onto the canonical names. Being tolerant about the SHAPE costs nothing;
 // being tolerant about the VERDICT would cost everything, so `reconcileStatus`
 // is strict and conjunctive.
-import { amountsMatch } from "./format";
+import { amountsMatch, currenciesMatch } from "./format";
 import { outcomeFromCodes, type PaymentOutcome } from "./codes";
 import { isForbiddenFieldName } from "./callback";
 
@@ -51,6 +51,13 @@ export type StatusFieldName =
  */
 const ALIASES: Record<string, StatusFieldName> = {
   ACTION: "ACTION",
+  // Learned from the live TEST gateway on 2026-08-20, not from the spec, which
+  // never names these keys. The reply is camelCase and shares almost no
+  // spelling with the request: terminal, actionCode, responseCode, statusMsg,
+  // card, amount, currency, tranDate, rrn, intRef, nonce, signature, timestamp.
+  // Missing ACTIONCODE is why `action` came back null and the outcome had to be
+  // inferred from RC alone.
+  ACTIONCODE: "ACTION",
   RC: "RC",
   RESPONSECODE: "RC",
   RESPONSE_CODE: "RC",
@@ -86,6 +93,13 @@ const ALIASES: Record<string, StatusFieldName> = {
   TRANSACTIONSTATE: "TRANSACTION_STATE",
   STATE: "TRANSACTION_STATE",
   TRANSACTIONDATE: "TRANSACTION_DATE",
+  TRANDATE: "TRANSACTION_DATE",
+  // Their reply is itself SIGNED. We do not yet verify it — the spec does not
+  // document the field order of the response MAC — but recognising the field
+  // keeps it out of the unrecognised bucket and makes it available the moment
+  // ABB confirms the order. `card` is deliberately absent from this table: it
+  // is the masked PAN and must never be mapped, stored or logged.
+  SIGNATURE: "P_SIGN",
 };
 
 function canonicalName(raw: string): StatusFieldName | null {
@@ -211,6 +225,16 @@ export type StatusExpectation = {
   /** Formatted exactly as we sent it, e.g. "3.00". Compared numerically. */
   amount: string;
   currency: string;
+  /**
+   * The references from the SIGNED callback that triggered this query.
+   *
+   * These are the only unforgeable transaction identity we hold: the callback
+   * MAC covers AMOUNT, TERMINAL, APPROVAL, RRN and INT_REF — but NOT ORDER. So
+   * when the status reply names a transaction, these are what it must name.
+   * Optional because a reconciliation sweep may query with no callback in hand.
+   */
+  rrn?: string | null;
+  intRef?: string | null;
 };
 
 export type StatusReconciliation = {
@@ -228,8 +252,10 @@ export type StatusReconciliation = {
 
 export type StatusMismatch =
   | "no_response"
-  | "order_missing"
   | "order_mismatch"
+  // The status answer names a DIFFERENT transaction than the signed callback
+  // that triggered this query. See the reference check in reconcileStatus.
+  | "reference_mismatch"
   | "terminal_mismatch"
   | "amount_mismatch"
   | "currency_mismatch";
@@ -244,8 +270,13 @@ export type StatusMismatch =
  * this is" must never resolve to "so it is probably ours".
  *
  * TERMINAL and CURRENCY are compared only when present, because the spec allows
- * a sparse response; ORDER and AMOUNT are required, because they are the two
- * facts that make the answer about this payment and no other.
+ * a sparse response.
+ *
+ * ORDER used to be required here. It cannot be: the live gateway's status reply
+ * contains no order field at all, so requiring it meant nothing could ever
+ * settle. Its job — proving the answer is about THIS payment — is now done by
+ * the callback's gateway-SIGNED RRN/INT_REF, which is a stronger guarantee than
+ * the unsigned ORDER echo ever was. AMOUNT is still required.
  */
 export function reconcileStatus(
   parsed: ParsedStatusResponse,
@@ -258,9 +289,28 @@ export function reconcileStatus(
     mismatches.push("no_response");
   }
 
+  // ORDER: BINDING COMES FROM THE QUERY, NOT FROM AN ECHO.
+  //
+  // The original rule — a missing ORDER is a mismatch, because "the gateway did
+  // not tell us which order this is" must never become "so it is probably ours"
+  // — is the right instinct and was written before we had ever seen a reply.
+  // The live TEST gateway settles the question: its status response contains NO
+  // order field at all (terminal, actionCode, responseCode, statusMsg, card,
+  // amount, currency, tranDate, rrn, intRef, nonce, signature, timestamp). So
+  // that rule could never pass, and no payment could ever settle.
+  //
+  // What binds the answer instead is that WE keyed the request: the query is a
+  // POST carrying ORDER=<ours>, so the reply is about that order by
+  // construction, over TLS, and it must additionally agree with us on terminal,
+  // amount and currency below. An echoed ORDER that DISAGREES is still fatal —
+  // that is a real contradiction rather than a silent protocol characteristic.
+  //
+  // This is deliberately weaker than the original and it is the weakest link in
+  // the chain. The response carries a `signature` field, so the proper
+  // hardening is to verify it; the spec does not document that MAC's field
+  // order, so it is an open question with ABB rather than something to guess.
   const order = f.ORDER ?? null;
-  if (order === null) mismatches.push("order_missing");
-  else if (order !== expected.order) mismatches.push("order_mismatch");
+  if (order !== null && order !== expected.order) mismatches.push("order_mismatch");
 
   if (f.TERMINAL !== undefined && f.TERMINAL !== expected.terminal) {
     mismatches.push("terminal_mismatch");
@@ -271,8 +321,41 @@ export function reconcileStatus(
     mismatches.push("amount_mismatch");
   }
 
-  if (f.CURRENCY !== undefined && f.CURRENCY.toUpperCase() !== expected.currency) {
+  // They answer with the ISO-4217 NUMERIC code while we send the alphabetic one
+  // — the live callback echoed CURRENCY="944" for the "AZN" we posted. A plain
+  // string compare made every single reply a currency_mismatch, which then
+  // blocked every settlement.
+  if (f.CURRENCY !== undefined && !currenciesMatch(f.CURRENCY, expected.currency)) {
     mismatches.push("currency_mismatch");
+  }
+
+  // THE ANSWER MUST NAME THE SAME TRANSACTION THE SIGNED CALLBACK NAMED.
+  //
+  // This replaces the binding that dropping the ORDER echo removed, and it is
+  // strictly stronger than what it replaces: ORDER was never covered by the
+  // callback MAC, while RRN and INT_REF are — so an attacker cannot forge them,
+  // whereas ORDER was always attacker-supplied.
+  //
+  // Without it, "we queried by our order" was only an ASSUMPTION about how the
+  // gateway keys its lookup, and the live run never tested it (we only ever
+  // queried orders the terminal really had). If that assumption is ever wrong —
+  // a gateway that answers about the terminal's most recent transaction when it
+  // does not recognise an order — then two of our own orders for the same
+  // amount are indistinguishable, and a DECLINED payer gets credited with a
+  // different parent's approved one while that parent's real payment is
+  // permanently blocked by the reference claim.
+  //
+  // Compared only when BOTH sides carry the value: a blank is legal under the
+  // MAC rules, and a sweep may run with no callback at hand.
+  const refPairs: [string | null | undefined, string | null | undefined][] = [
+    [expected.rrn, f.RRN],
+    [expected.intRef, f.INT_REF],
+  ];
+  for (const [ours, theirs] of refPairs) {
+    if (ours && theirs && ours !== theirs) {
+      mismatches.push("reference_mismatch");
+      break;
+    }
   }
 
   const outcome = outcomeFromCodes(f.ACTION ?? null, f.RC ?? null);

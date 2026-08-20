@@ -114,13 +114,59 @@ describe("reconciliation — approval requires EVERYTHING to line up", () => {
     expect(r.mismatches).toContain("order_mismatch");
   });
 
-  it("refuses when the response names no order at all", () => {
+  // REPLACES an earlier test that required the response to echo ORDER. The live
+  // TEST gateway settled that: its status reply carries no order field at all
+  // (terminal, actionCode, responseCode, statusMsg, card, amount, currency,
+  // tranDate, rrn, intRef, nonce, signature, timestamp), so the old rule could
+  // never pass and nothing could ever settle. The binding now comes from the
+  // QUERY — we POST ORDER=<ours> — and from everything else still having to
+  // agree. These tests pin that the loosening went no further than that.
+  it("accepts a reply that simply does not echo the order", () => {
     const r = reconcileStatus(
-      parseStatusResponse(JSON.stringify({ ACTION: "0", RC: "00", AMOUNT: "3.00" })),
+      parseStatusResponse(
+        JSON.stringify({
+          actionCode: "0",
+          responseCode: "00",
+          amount: "3.00",
+          terminal: EXPECTED.terminal,
+          currency: "944",
+        }),
+      ),
+      EXPECTED,
+    );
+    expect(r.mismatches).toEqual([]);
+    expect(r.approved).toBe(true);
+  });
+
+  it("still refuses a reply that echoes a DIFFERENT order", () => {
+    const r = reconcileStatus(
+      parseStatusResponse(
+        JSON.stringify({ ACTION: "0", RC: "00", AMOUNT: "3.00", ORDER: "20260101000001" }),
+      ),
       EXPECTED,
     );
     expect(r.approved).toBe(false);
-    expect(r.mismatches).toContain("order_missing");
+    expect(r.mismatches).toContain("order_mismatch");
+  });
+
+  it("still requires the amount, even with no order to check", () => {
+    const r = reconcileStatus(
+      parseStatusResponse(JSON.stringify({ actionCode: "0", responseCode: "00", amount: "9.99" })),
+      EXPECTED,
+    );
+    expect(r.approved).toBe(false);
+    expect(r.mismatches).toContain("amount_mismatch");
+  });
+
+  it("reads actionCode, so the outcome is not inferred from RC alone", () => {
+    // ACTIONCODE was missing from the alias table, which is why the live reply
+    // came back with action: null.
+    const r = reconcileStatus(
+      parseStatusResponse(JSON.stringify({ actionCode: "2", responseCode: "51", amount: "3.00" })),
+      EXPECTED,
+    );
+    expect(r.action).toBe("2");
+    expect(r.outcome).toBe("declined");
   });
 
   it("refuses on a different amount, terminal or currency", () => {
@@ -265,5 +311,59 @@ describe("a verdict is only as good as the evidence behind it", () => {
     const r = reconcile({});
     expect(r.approved).toBe(true);
     expect(settledOutcome(r)).toBe("approved");
+  });
+});
+
+describe("the answer must name the transaction the signed callback named", () => {
+  // THE HOLE THIS CLOSES. Dropping the ORDER echo left "we queried by our order"
+  // as the only binding — an ASSUMPTION about the gateway's keying that the live
+  // run never tested, because we only ever queried orders the terminal really
+  // had. RRN and INT_REF are covered by the callback MAC (ORDER is not), so
+  // they are the one transaction identity an attacker cannot choose.
+  //
+  // Concretely: two parents, same 3.00 AZN subject, same terminal. P1 is
+  // DECLINED, P2 is APPROVED. If P1's status query is answered with P2's
+  // transaction, every remaining field agrees — and P1 gets credited a payment
+  // they never made while P2's real payment is permanently blocked by the
+  // reference claim.
+  const CALLBACK_REFS = { rrn: "623279219080", intRef: "3433B1032B15CE76" };
+
+  function reply(over: Record<string, string> = {}) {
+    return parseStatusResponse(
+      JSON.stringify({
+        terminal: EXPECTED.terminal,
+        actionCode: "0",
+        responseCode: "00",
+        amount: EXPECTED.amount,
+        currency: "944",
+        rrn: CALLBACK_REFS.rrn,
+        intRef: CALLBACK_REFS.intRef,
+        ...over,
+      }),
+    );
+  }
+
+  it("refuses an answer about a different transaction", () => {
+    const r = reconcileStatus(reply({ rrn: "999999999999" }), {
+      ...EXPECTED,
+      ...CALLBACK_REFS,
+    });
+    expect(r.mismatches).toContain("reference_mismatch");
+    expect(r.approved).toBe(false);
+    expect(settledOutcome(r), "must not settle on a foreign transaction").toBe("unknown");
+  });
+
+  it("accepts the answer about our own transaction", () => {
+    const r = reconcileStatus(reply(), { ...EXPECTED, ...CALLBACK_REFS });
+    expect(r.mismatches).toEqual([]);
+    expect(r.approved).toBe(true);
+  });
+
+  it("does not invent a mismatch when either side omits the reference", () => {
+    // A blank is legal under the MAC rules, and a reconciliation sweep may run
+    // with no callback in hand. Absence must not block settlement.
+    expect(reconcileStatus(reply({ rrn: "" }), { ...EXPECTED, ...CALLBACK_REFS }).mismatches)
+      .toEqual([]);
+    expect(reconcileStatus(reply(), EXPECTED).mismatches).toEqual([]);
   });
 });

@@ -64,6 +64,40 @@ export function amountsMatch(a: string, b: string): boolean {
   return Math.round(x * 100) === Math.round(y * 100);
 }
 
+/**
+ * ISO-4217 numeric codes for the currencies this terminal can be configured
+ * for. Only AZN is in use; the others are here so a future terminal does not
+ * silently fall through to a string compare that can never match.
+ */
+const CURRENCY_NUMERIC: Record<string, string> = {
+  AZN: "944",
+  USD: "840",
+  EUR: "978",
+  GBP: "826",
+  TRY: "949",
+  RUB: "643",
+};
+
+/**
+ * True when two currency codes name the same currency, whichever notation each
+ * side used.
+ *
+ * We POST the ALPHABETIC code ("AZN"); the gateway answers with the NUMERIC one
+ * ("944") — confirmed on the live test terminal, where the callback echoed
+ * CURRENCY="944" for the "AZN" we sent. A direct string compare therefore
+ * flagged every reply as a currency mismatch, and a currency mismatch blocks
+ * settlement, so no payment could ever complete.
+ */
+export function currenciesMatch(a: string, b: string): boolean {
+  const norm = (v: string): string => {
+    const t = v.trim().toUpperCase();
+    return CURRENCY_NUMERIC[t] ?? t;
+  };
+  const x = norm(a);
+  const y = norm(b);
+  return x !== "" && x === y;
+}
+
 // ---------------------------------------------------------------------------
 // TIMESTAMP
 // ---------------------------------------------------------------------------

@@ -49,6 +49,62 @@ export type FreeAccessChecker = (studentId: string) => Promise<boolean>;
 
 export type GateErrorKey = "gate.paymentsOff" | "gate.giveawayFree" | "gate.freeAccess";
 
+// ---- WHO IS ALLOWED TO REACH A PRICED APPLY (migration 126) ------------------
+//
+// The two apply cores below are shared by the WEB actions and the MOBILE BFF,
+// and until now that sharing carried a defect the shape of a hole: the BFF
+// routes called them with no checkout anywhere, so a parent bearer token
+// reached a full paid plan for free the moment the payment mode became `real`.
+// It is a store problem as much as a money one — the apps are purchase-silent
+// BY ARCHITECTURE (docs/STORE_PAYMENTS_COMPLIANCE.md §4), and an app-reachable
+// server route that starts a paid plan is that architecture failing quietly.
+//
+// So every caller must SAY WHICH IT IS, and there is no default:
+//
+//   "allow"   the WEB. A payment has already been verified (checkout_redeem_plan
+//             is the only thing that reaches this on a priced change) or the
+//             change is free. Calls the ordinary plan RPC.
+//   "refuse"  the PURCHASE-SILENT surface. Calls the `_if_free` RPC, which
+//             applies the change and then ROLLS THE WHOLE STATEMENT BACK if the
+//             apply's own answer priced it above zero.
+//
+// WHY THE ENFORCEMENT IS IN SQL AND NOT HERE. "Quote, see zero, then apply"
+// cannot be made safe from this side of the wire: prices, the sibling tier and
+// `launch_promo_config.trial_days` can all move between the two calls, and READ
+// COMMITTED gives each statement its own snapshot. The `_if_free` wrappers take
+// their verdict from the apply's OWN return value inside the SAME statement, so
+// there is no window in which a priced change exists.
+//
+// Removals, reinstatements (migration 120), scheduled cycle changes, a giveaway
+// window, an admin free-access interval and a running trial all price at zero
+// and all still work from the app — never trap a family inside a plan they are
+// trying to leave because the payment rail lives somewhere else.
+export type PaidChangePosture = "allow" | "refuse";
+
+/** SQLSTATE + hint the `_if_free` wrappers raise for a change that costs money. */
+const HINT_PAYMENT_REQUIRED = "payment_required";
+
+/**
+ * The trilingual answer for a priced change reaching a purchase-silent surface.
+ *
+ * `gate.*` on purpose: `statusForErrorKey` maps the whole family to 409, which
+ * is what this is — a conflict with server state, not a malformed request. The
+ * COPY is bound by docs/STORE_PAYMENTS_COMPLIANCE.md §5: it states a FACT about
+ * where subscriptions are managed and names no price, no destination, no URL
+ * and no purchase verb. "Manage it on your web account" is specifically the
+ * wrong form (finding I6) — it is the sentence an App Store reviewer
+ * screenshots.
+ */
+const PAID_CHANGE_REFUSED_KEY = "gate.notInApp";
+
+/** True when a `_if_free` wrapper refused because the change had to be paid for. */
+function isPaymentRequired(error: { code?: string; hint?: string | null }): boolean {
+  return (
+    error.code === PG_CHECK_VIOLATION &&
+    (error.hint ?? "") === HINT_PAYMENT_REQUIRED
+  );
+}
+
 // Round 11: paid mutations are gated by the PAYMENT MODE, not the raw flag —
 // 'real' allows the transaction, 'off' blocks it (existing UX), and
 // 'giveaway' blocks paid WRITES with a friendly "it's free right now" message
@@ -183,6 +239,22 @@ export type SubscribeCoreResult =
         trial_days: number;
         currency: string;
         childUniqueId: string | null;
+        /**
+         * The subscription the RPC just created, and what it owes RIGHT NOW.
+         *
+         * Both are read straight off `create_child_plan`'s own return value, so
+         * they are the same numbers the quote showed (invariant H7). They exist
+         * for ONE caller: the WEB checkout, which opens a payment session for
+         * `dueNow` immediately after this returns. Nothing else reads them, and
+         * the mobile BFF whitelists its response field by field, so neither
+         * crosses into an app binary — an AZN amount must not (see
+         * docs/STORE_PAYMENTS_COMPLIANCE.md section 5).
+         *
+         * `dueNow` is 0 for a TRIALING plan: every subject's first period runs
+         * to the trial end and no money is owed until it does.
+         */
+        subscriptionId: string | null;
+        dueNow: number;
         items: { subject_id: string; interval: string; price: number | null }[];
         groups: Record<
           string,
@@ -205,6 +277,12 @@ export async function subscribeChildCore(params: {
    */
   items?: PlanItemInput[];
   isFreeAccessActive: FreeAccessChecker;
+  /**
+   * REQUIRED, no default — see PaidChangePosture. The web passes "allow"; the
+   * mobile BFF passes "refuse" and can therefore start a trial or a genuinely
+   * free plan but never a paid one.
+   */
+  paidChanges: PaidChangePosture;
 }): Promise<SubscribeCoreResult> {
   const { parentProfileId, studentId, interval } = params;
   // Payment-mode gate (admin Settings): enforced SERVER-side so a hand-crafted
@@ -238,10 +316,18 @@ export async function subscribeChildCore(params: {
   }
 
   const admin = getAdminClient();
-  const { data, error } = await admin.rpc("create_child_plan", {
-    p_student_profile_id: studentId,
-    p_items: planItems,
-  });
+  // Migration 126: the purchase-silent surface names a DIFFERENT function, one
+  // that rolls the plan back if it turns out to have been priced. Choosing by
+  // name rather than by a boolean parameter is deliberate — a route that wants
+  // the priced behaviour has to write the priced function's name, which is a
+  // thing a reviewer can see in a diff.
+  const { data, error } = await admin.rpc(
+    params.paidChanges === "refuse" ? "create_child_plan_if_free" : "create_child_plan",
+    {
+      p_student_profile_id: studentId,
+      p_items: planItems,
+    },
+  );
   // R7 security: never surface raw Postgres error text (schema/constraint
   // details) to the client — generic message only.
   // Round 51 (audit F6): except the DB payment kill switch, which maps to the
@@ -250,6 +336,11 @@ export async function subscribeChildCore(params: {
     const hint = (error as { hint?: string | null }).hint ?? "";
     if (hint === "payments_disabled") {
       return { ok: false, errorKey: "gate.paymentsOff" };
+    }
+    // The plan priced above zero on a surface that may not take money. The
+    // whole statement was rolled back by the RPC, so nothing was granted.
+    if (isPaymentRequired(error as { code?: string; hint?: string | null })) {
+      return { ok: false, errorKey: PAID_CHANGE_REFUSED_KEY };
     }
     return { ok: false, errorKey: "sub.err.failed" };
   }
@@ -268,6 +359,14 @@ export async function subscribeChildCore(params: {
 
   const total = Number(result.total ?? 0);
   const shape = readPlanShape(result);
+  // What the family owes TODAY, from the RPC's own answer. A trialing plan owes
+  // nothing until the trial ends (create_child_plan runs every subject's first
+  // period to the trial end); an ACTIVE one — a child who has had a plan before,
+  // so no second free trial — owes the full first period now.
+  const planStatus = String(result.status ?? "");
+  const dueNow = planStatus === "trialing" ? 0 : total;
+  const subscriptionId =
+    typeof result.subscription_id === "string" ? result.subscription_id : null;
   await writeAuditLog(parentProfileId, "parent.subscription_create", {
     targetTable: "students",
     targetId: studentId,
@@ -292,6 +391,8 @@ export async function subscribeChildCore(params: {
       trial_days: Number(result.trial_days ?? 0),
       currency: String(result.currency ?? "AZN"),
       childUniqueId,
+      subscriptionId,
+      dueNow,
       items: shape.items,
       groups: shape.groups,
     },
@@ -307,7 +408,25 @@ export type QuoteCoreResult =
       discount_percent: number;
       discount: number;
       total: number;
+      /**
+       * The EFFECTIVE trial for THIS child, not the config default (migration
+       * 125). The free trial is granted once per child, and until 125 the quote
+       * did not look — so a returning child was previewed a trial they would
+       * never get.
+       */
       trial_days: number;
+      /**
+       * What the family owes RIGHT NOW: 0 while a trial applies, the plan total
+       * otherwise. The SAME number `create_child_plan` charges, from the SAME
+       * RPC (audit invariant H7: the preview and the charge are one
+       * computation), and the ONLY number a checkout may be opened for.
+       *
+       * Read by the WEB action, which must know whether a payment is required
+       * BEFORE anything is applied. The mobile BFF whitelists its response field
+       * by field and does not carry it — an AZN amount must not cross into an
+       * app binary (docs/STORE_PAYMENTS_COMPLIANCE.md section 5).
+       */
+      dueNow: number;
       currency: string;
       items: { subject_id: string; interval: string; price: number | null }[];
       groups: Record<
@@ -360,18 +479,54 @@ export async function quoteSubscriptionCore(params: {
   if (error) return { ok: false, errorKey: "sub.err.failed" };
   const r = (data ?? {}) as Record<string, unknown>;
   const shape = readPlanShape(r);
+  const total = Number(r.total ?? 0);
+  const trialDays = Number(r.trial_days ?? 0);
   return {
     ok: true,
     base: Number(r.base ?? 0),
     discount_percent: Number(r.discount_percent ?? 0),
     discount: Number(r.discount ?? 0),
-    total: Number(r.total ?? 0),
-    trial_days: Number(r.trial_days ?? 0),
+    total,
+    trial_days: trialDays,
+    // The RPC's own number since migration 125. The fallback restates the same
+    // rule for a database that has not been migrated yet, so a stale schema
+    // under-charges nothing and over-charges nothing — it simply agrees.
+    dueNow: Number.isFinite(Number(r.due_now))
+      ? Number(r.due_now)
+      : trialDays > 0
+        ? 0
+        : total,
     currency: String(r.currency ?? "AZN"),
     items: shape.items,
     groups: shape.groups,
     mixed: shape.mixed,
   };
+}
+
+/**
+ * The DESIRED basket for a caller that sent only subject ids.
+ *
+ * The web action needs a concrete `[{subjectId, interval}]` list before it can
+ * open a payment intent — the checkout has to know exactly what is being bought,
+ * and "whatever the server derives later" is not something a parent can be
+ * charged for. This is the same derivation updateSubscriptionSubjectsCore does
+ * internally (readLivePlan + derivePlanItems: each kept subject on its own
+ * effective cycle, each new one on the subscription default), exported so both
+ * paths use ONE rule.
+ *
+ * Returns null when the child has no live subscription — there is nothing to
+ * derive a cycle from, and guessing one would price a plan the parent never saw.
+ */
+export async function resolveDesiredBasketCore(
+  studentId: string,
+  subjectIds: string[],
+): Promise<PlanItemInput[] | null> {
+  if (!isUuid(studentId)) return null;
+  const desired = subjectIds.filter(isUuid);
+  if (desired.length === 0 || desired.length > 20) return null;
+  const live = await readLivePlan(studentId);
+  if (!live) return null;
+  return derivePlanItems(desired, live);
 }
 
 // ---- W2: cancel a child's current subscription (parent-initiated) ------------
@@ -686,6 +841,21 @@ export type SubjectsUpdateCoreResult =
        * parent already paid for. Optional so no existing consumer breaks.
        */
       reinstated?: number;
+      /**
+       * The plan that was changed, and what the change costs RIGHT NOW — read
+       * off `apply_plan_change`'s own return value, which IS `quote_plan_change`
+       * output (invariant H7: the preview and the charge are one computation).
+       *
+       * Only the WEB checkout reads these, to open a payment session for exactly
+       * what was applied. `undefined` on an idempotent replay, because the RPC
+       * short-circuits and reports no numbers — correct, since the original
+       * attempt already opened its session. Both mobile BFF routes whitelist
+       * their response field by field, so an AZN amount never crosses into an
+       * app binary (docs/STORE_PAYMENTS_COMPLIANCE.md section 5).
+       */
+      dueNow?: number;
+      subscriptionId?: string;
+      currency?: string;
     }
   | { ok: false; errorKey: string };
 
@@ -702,6 +872,14 @@ export async function updateSubscriptionSubjectsCore(params: {
    */
   items?: PlanItemInput[];
   isFreeAccessActive: FreeAccessChecker;
+  /**
+   * REQUIRED, no default — see PaidChangePosture. The web passes "allow" (and
+   * only ever reaches this once a payment was verified, or when the diff is
+   * free); the mobile BFF passes "refuse", so a removal, a reinstatement, a
+   * scheduled cycle change and a trial-time add all still work from the app
+   * while anything priced is rolled back by the RPC itself.
+   */
+  paidChanges: PaidChangePosture;
 }): Promise<SubjectsUpdateCoreResult> {
   const { parentProfileId, studentId } = params;
   const usingItems = Array.isArray(params.items) && params.items.length > 0;
@@ -811,14 +989,25 @@ export async function updateSubscriptionSubjectsCore(params: {
     [...reinstated].sort().join(","),
   );
 
-  const { error } = await admin.rpc("apply_plan_change", {
-    p_student_profile_id: studentId,
-    p_items: planItems,
-    p_idempotency_key: idempotencyKey,
-  });
+  // Migration 126 — see the create_child_plan call above for why the posture
+  // picks a FUNCTION NAME rather than passing a flag into one.
+  const { data: applied, error } = await admin.rpc(
+    params.paidChanges === "refuse" ? "apply_plan_change_if_free" : "apply_plan_change",
+    {
+      p_student_profile_id: studentId,
+      p_items: planItems,
+      p_idempotency_key: idempotencyKey,
+    },
+  );
   if (error) {
     const code = (error as { code?: string }).code;
     const hint = (error as { hint?: string | null }).hint ?? "";
+    // The diff priced above zero on a surface that may not take money. The RPC
+    // rolled back the apply, its ledger rows and the entitlement rows the
+    // producer triggers wrote, so nothing was granted and nothing is owed.
+    if (isPaymentRequired(error as { code?: string; hint?: string | null })) {
+      return { ok: false, errorKey: PAID_CHANGE_REFUSED_KEY };
+    }
     // check_violation + hint 'last_subject' = the diff would leave zero
     // subjects on the plan (the RPC's own guard — the client cap above already
     // tries to prevent this, this is the authoritative backstop).
@@ -894,12 +1083,26 @@ export async function updateSubscriptionSubjectsCore(params: {
   revalidatePath(`/children/${studentId}/subscribe`);
   revalidatePath("/subscription");
   revalidatePath("/dashboard");
+
+  // What the RPC says the change costs. Copied field by field — never spread the
+  // raw payload back to a caller, it carries the whole quote plus internals.
+  // An idempotent replay returns {idempotent, applied_at} and nothing else, so
+  // `due_now` is absent and no second payment session can be opened for a change
+  // that was already applied once.
+  const appliedRow = (applied ?? {}) as Record<string, unknown>;
+  const dueNowRaw = Number(appliedRow.due_now);
+  const dueNow = Number.isFinite(dueNowRaw) ? dueNowRaw : undefined;
+
   return {
     ok: true,
     added: toAdd.length,
     removed: toRemove.length,
     planChanged: toChangePlan.length,
     reinstated: reinstated.length,
+    dueNow,
+    subscriptionId,
+    currency:
+      typeof appliedRow.currency === "string" ? appliedRow.currency : undefined,
   };
 }
 

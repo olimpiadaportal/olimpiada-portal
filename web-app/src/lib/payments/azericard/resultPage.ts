@@ -23,6 +23,39 @@ export function safeLocale(value: string | null | undefined): Locale {
   return (locales as readonly string[]).includes(v) ? (v as Locale) : defaultLocale;
 }
 
+/** The signed-in parent's payment-result screen. */
+export const PARENT_RESULT_PATH = "/checkout/result";
+
+/**
+ * Where a PARENT is sent after the bank returns them.
+ *
+ * The bare page above is right for the owner's protocol test — chrome-free,
+ * link-free, and safe for anything to land on. It is a dead end for a parent
+ * mid-purchase, who needs a way back into the product. So a plan checkout ends
+ * on a real page instead, and this builds its URL.
+ *
+ * The ONLY input is the reconciled `ResultKind`, which is one of three literal
+ * strings this module defines. No callback field, no order id, no amount and no
+ * gateway text reaches it — the same "reflects nothing" rule the bare page
+ * follows, expressed as a path with a single enum in it. `encodeURIComponent`
+ * is belt-and-braces over an already-closed set: it means a future edit that
+ * widens ResultKind cannot turn this into an injection.
+ *
+ * Relative and same-origin by construction: there is no way to express another
+ * host here, which is what keeps it out of the open-redirect class of bug.
+ */
+export function parentResultUrl(kind: ResultKind): string {
+  return `${PARENT_RESULT_PATH}?status=${encodeURIComponent(kind)}`;
+}
+
+/** Whitelist the `status` a parent result page was asked to render. */
+export function safeResultKind(value: string | null | undefined): ResultKind {
+  if (value === "ok" || value === "failed") return value;
+  // Anything unrecognised is PENDING, never "ok": an unreadable result must
+  // never be reported to a payer as a completed payment.
+  return "pending";
+}
+
 function t(locale: Locale, key: string): string {
   const dict = messages[locale] as Record<string, string>;
   const fallback = messages[defaultLocale] as Record<string, string>;

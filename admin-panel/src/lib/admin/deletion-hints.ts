@@ -56,6 +56,12 @@ export type DestructiveState =
 const HINT_KEYS: Record<string, string> = {
   // Olympiad package
   package_has_purchases: "del.hint.packageHasPurchases",
+  // Migration 124 — an ENTITLEMENT on the package is not a purchase row: an
+  // apple_iap / google_play grant, a school licence or a manual comp lands here
+  // too, and the guarded-deletion helper reports it under its own hint. Without
+  // this line the panel drops the reason silently and shows the generic server
+  // error instead of the one sentence that says what to do.
+  package_has_entitlements: "del.hint.packageHasEntitlements",
   package_is_active: "del.hint.packageIsActive",
   package_not_deletable: "del.hint.packageNotDeletable",
   not_archived: "del.hint.notArchived",
@@ -86,6 +92,8 @@ const HINT_KEYS: Record<string, string> = {
   subject_has_topics: "del.hint.subjectHasTopics",
   subject_has_questions: "del.hint.subjectHasQuestions",
   subject_has_round_attempts: "del.hint.subjectHasRoundAttempts",
+  // Migration 124 — same story on the subject side (see above).
+  subject_has_entitlements: "del.hint.subjectHasEntitlements",
   // Shared
   live_attempts: "del.hint.liveAttempts",
   confirmation_mismatch: "del.hint.confirmationMismatch",

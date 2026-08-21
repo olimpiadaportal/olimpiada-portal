@@ -218,3 +218,42 @@ export function desiredFromAddRemove(
     ...add,
   ];
 }
+
+/**
+ * Is a FROZEN checkout basket the same purchase as the one being asked for?
+ *
+ * Migration 126. When a parent clicks "continue to payment" twice, the second
+ * click re-signs the pending order the first one opened instead of minting a
+ * parallel `checkout_sessions` row — but only if it is genuinely the same
+ * purchase. Two orders are two transactions to the acquirer, and its duplicate
+ * protection is per-ORDER, so re-using is the safer half; re-using the WRONG
+ * one would take money for a basket the parent is no longer looking at, and the
+ * intent is frozen, so the stored basket is what would be delivered.
+ *
+ * Compared as a SET of (subject, cycle) pairs: the order the checkboxes were
+ * ticked in is not part of what is being bought. `stored` comes back from the
+ * database as `unknown` (it is jsonb), so every field is re-established here
+ * rather than assumed, and anything unreadable answers FALSE — which opens a
+ * fresh intent, the safe direction.
+ */
+export function storedBasketMatches(
+  stored: unknown,
+  items: readonly PlanItemInput[],
+): boolean {
+  if (!Array.isArray(stored)) return false;
+  if (stored.length === 0 || stored.length !== items.length) return false;
+  const key = (subjectId: string, interval: string) => `${subjectId}:${interval}`;
+  const want = new Set(items.map((i) => key(i.subjectId, i.interval)));
+  // A duplicate pair on either side collapses in its Set, so the length check
+  // above is what keeps [A,A] from matching [A,B]: the sets would both be size
+  // one and every membership test would pass.
+  if (want.size !== items.length) return false;
+  for (const raw of stored) {
+    const row = (raw ?? {}) as Record<string, unknown>;
+    const subjectId = typeof row.subject_id === "string" ? row.subject_id : "";
+    const interval = typeof row.interval === "string" ? row.interval : "";
+    if (!subjectId || !interval) return false;
+    if (!want.delete(key(subjectId, interval))) return false;
+  }
+  return want.size === 0;
+}

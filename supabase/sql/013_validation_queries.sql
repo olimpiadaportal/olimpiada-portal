@@ -544,14 +544,19 @@ select '36_sticker_themes' as check_name,
                             and allowed_mime_types = array['image/png','image/webp'])
             then 'PASS' else 'FAIL' end as status;
 
--- 37) Round 11 (migration 027) + owner ruling (migration 038): the giveaway
---     window opens SUBJECTS only — is_giveaway_active() exists (anon cannot
---     execute), the PRACTICE guard references it, and the OLYMPIAD guard does
---     NOT (olympiad packages are purchase-only in every mode).
+-- 37) Round 11 (migration 027) + owner ruling (migration 038) + migration 124:
+--     the giveaway window opens SUBJECTS only. is_giveaway_active() still
+--     exists and anon still cannot execute it — but since 124 the call site is
+--     has_subject_access(), the ONE reader the three subject gates share, so
+--     the assertion follows it there instead of into each gate. The OLYMPIAD
+--     guard must still not mention it, and now structurally cannot:
+--     live_package_entitlement() consults no window at all.
 select '37_giveaway_attempt_access' as check_name,
        case when has_function_privilege('anon', 'public.is_giveaway_active()', 'EXECUTE') = false
-             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+             and pg_get_functiondef('public.has_subject_access(uuid,uuid)'::regprocedure)
                  like '%is_giveaway_active%'
+             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+                 like '%has_subject_access%'
              and pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)
                  not like '%is_giveaway_active%'
             then 'PASS' else 'FAIL' end as status;
@@ -608,10 +613,15 @@ select '41_design_tokens_removed' as check_name,
        case when (select count(*) from public.system_settings where key like 'design.%') = 0
             then 'PASS' else 'FAIL' end as status;
 
--- 42) Round 12 (migration 033): per-parent/child free-access intervals — table with
---     RLS ON + admin-only policy; the SECURITY DEFINER helpers are NOT anon-executable;
---     the PRACTICE guard honors is_free_access_active_for_student() while the
---     OLYMPIAD guard does NOT (migration 038: packages are purchase-only).
+-- 42) Round 12 (migration 033) + migration 124: per-parent/child free-access
+--     intervals — table with RLS ON + admin-only policy; the SECURITY DEFINER
+--     helpers are NOT anon-executable; the free-access window is still honoured
+--     by the subject gates and still NOT by the olympiad gate (migration 038:
+--     packages are purchase-only). Since 124 the honouring happens inside
+--     has_subject_access(), so the assertion follows it there — and the two new
+--     readers join the "takes an arbitrary student id, therefore service_role
+--     only" list, which is the property that stops one family probing another's
+--     access state.
 select '42_free_access_intervals' as check_name,
        case when to_regclass('public.free_access_intervals') is not null
              and (select relrowsecurity from pg_class where oid='public.free_access_intervals'::regclass)
@@ -624,8 +634,18 @@ select '42_free_access_intervals' as check_name,
              and has_function_privilege('authenticated','public.is_free_access_active_for_student(uuid)','EXECUTE') = false
              and has_function_privilege('anon','public.is_child_free_access_active(uuid)','EXECUTE') = false
              and has_function_privilege('anon','public.current_parent_free_access()','EXECUTE') = false
-             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+             -- Migration 124: same rule, same reason, for the two entitlement readers.
+             and has_function_privilege('anon','public.has_subject_access(uuid,uuid)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.has_subject_access(uuid,uuid)','EXECUTE') = false
+             and has_function_privilege('anon','public.live_package_entitlement(uuid,uuid)','EXECUTE') = false
+             and has_function_privilege('authenticated','public.live_package_entitlement(uuid,uuid)','EXECUTE') = false
+             -- ...and the caller-scoped entrypoint that IS authenticated-executable.
+             and has_function_privilege('anon','public.my_accessible_subjects()','EXECUTE') = false
+             and has_function_privilege('authenticated','public.my_accessible_subjects()','EXECUTE') = true
+             and pg_get_functiondef('public.has_subject_access(uuid,uuid)'::regprocedure)
                  like '%is_free_access_active_for_student%'
+             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+                 like '%has_subject_access%'
              and pg_get_functiondef('public.start_olympiad_attempt(uuid)'::regprocedure)
                  not like '%is_free_access_active_for_student%'
             then 'PASS' else 'FAIL' end as status;
@@ -658,15 +678,26 @@ select '45_answer_key_not_readable' as check_name,
                             and qual not like '%published%')
             then 'PASS' else 'FAIL' end as status;
 
--- 46) Audit Batch 1 (migration 035, C2+H6): one live subscription per child is
---     DB-enforced, and start_practice_attempt gates on subscription_subjects
---     (per-subject access) + current_period_end (lazy expiry).
+-- 46) Audit Batch 1 (migration 035, C2+H6) + migration 124: one live
+--     subscription per child is still DB-enforced, and the per-subject,
+--     lazily-dated access rule still exists — but it has MOVED. Since 124 the
+--     subscription join and its date arithmetic live in the entitlement mirror,
+--     not in the gate: start_practice_attempt calls has_subject_access(), and
+--     has_subject_access() reads public.entitlements. Asserting the old
+--     substrings here would fail the file for the exact change it was meant to
+--     verify, so the two body clauses are re-pointed rather than dropped.
 select '46_subscription_invariants' as check_name,
        case when exists (select 1 from pg_indexes
                           where schemaname='public' and indexname='uq_child_subscriptions_live')
              and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+                 like '%has_subject_access%'
+             and pg_get_functiondef('public.has_subject_access(uuid,uuid)'::regprocedure)
+                 like '%public.entitlements%'
+             -- The rule the join used to express now lives in the mapper, which
+             -- is the only place it is written down.
+             and pg_get_functiondef('public.fn_entitlement_map_subject(uuid,uuid)'::regprocedure)
                  like '%subscription_subjects%'
-             and pg_get_functiondef('public.start_practice_attempt(uuid,int)'::regprocedure)
+             and pg_get_functiondef('public.fn_entitlement_map_subject(uuid,uuid)'::regprocedure)
                  like '%current_period_end%'
             then 'PASS' else 'FAIL' end as status;
 
@@ -3153,6 +3184,664 @@ select '110_azericard_order_uniqueness' as check_name,
        (select def from idx) <> ''  as order_index_present,
        (select n from namedchk)     as named_kind_checks,
        (select n from kindchk)      as kind_checks_total;
+
+-- -----------------------------------------------------------------------------
+-- 111) THE ENTITLEMENT TABLE'S SHAPE (migration 124).
+--      docs/STORE_PAYMENTS_COMPLIANCE.md §4.1 requires access to be governed by
+--      a provider-agnostic table with ABB as ONE producer of rows. This check
+--      asserts the parts of that shape a well-meaning edit could quietly undo.
+--
+--        * THE SEVEN CHECKS, EXACTLY ONCE EACH, BY NAME. A duplicated CHECK
+--          after a backport is the classic silent failure this file already
+--          guards for checkout_sessions_kind_check (check 110): the table would
+--          keep enforcing an old, narrower rule alongside the new one, and
+--          nothing would say so. Naming them explicitly is also what makes a
+--          from-zero build (007 + 015) and a live database patched by 124 end
+--          up with identical object names.
+--
+--        * THE TWO DEFERRED FKs AND THEIR DELETE ACTIONS. package_id is
+--          RESTRICT, mirroring olympiad_purchases.olympiad_package_id exactly —
+--          a package with a grant behind it can never be deleted out from under
+--          it. olympiad_purchase_id is CASCADE, because that link is the mirror
+--          scope and a grant whose producer is gone must not survive as free
+--          access; cascade is the fail-closed direction.
+--
+--        * THE ABSENCE OF A (STUDENT, PRODUCT) UNIQUE INDEX. THIS ABSENCE IS
+--          THE INVARIANT. On forced-IAP day the same child+subject must be able
+--          to hold a live abb_web grant AND a live apple_iap grant; a
+--          well-meaning future "dedup" index would make that unrepresentable
+--          and the failure would surface only under the deadline it exists to
+--          survive. uq_entitlements_source_ref (the producer idempotency key
+--          and the upsert conflict target) is the ONLY unique index besides the
+--          primary key.
+-- -----------------------------------------------------------------------------
+with wanted (name) as (values
+  ('ck_entitlement_target'), ('ck_entitlement_bounded'), ('ck_entitlement_lifetime'),
+  ('ck_entitlement_grade'),  ('ck_entitlement_window'),  ('ck_entitlement_ref'),
+  ('ck_entitlement_reason')
+), ckcount as (
+  select w.name,
+         (select count(*) from pg_constraint c
+           where c.conrelid = to_regclass('public.entitlements')
+             and c.contype  = 'c'
+             and c.conname  = w.name) as n
+  from wanted w
+), fk as (
+  select c.conname, c.confdeltype
+    from pg_constraint c
+   where c.conrelid = to_regclass('public.entitlements') and c.contype = 'f'
+), uq as (
+  select coalesce((select pg_get_indexdef(i.indexrelid)
+                     from pg_index i
+                     join pg_class cl on cl.oid = i.indexrelid
+                    where cl.relname = 'uq_entitlements_source_ref'
+                      and i.indrelid = to_regclass('public.entitlements')), '') as def
+), dedup as (
+  select count(*) as n
+    from pg_index i
+    join pg_class cl on cl.oid = i.indexrelid
+   where i.indrelid = to_regclass('public.entitlements')
+     and i.indisunique
+     and cl.relname not in ('entitlements_pkey', 'uq_entitlements_source_ref')
+), srcvals (v) as (values
+  ('abb_web'), ('apple_iap'), ('google_play'), ('giveaway'), ('manual'), ('school_license')
+), srcok as (
+  select count(*) as n from srcvals s
+   where exists (select 1 from pg_enum en
+                  join pg_type t on t.oid = en.enumtypid
+                 where t.typname = 'entitlement_source' and en.enumlabel = s.v)
+)
+select '111_entitlements_shape' as check_name,
+       case when to_regclass('public.entitlements') is not null
+             and (select count(*) from ckcount where n = 1) = 7
+             and (select confdeltype from fk where conname = 'fk_entitlements_package')  = 'r'
+             and (select confdeltype from fk where conname = 'fk_entitlements_purchase') = 'c'
+             and position('UNIQUE INDEX' in (select def from uq)) > 0
+             and position('(source, external_ref)' in (select def from uq)) > 0
+             and (select n from dedup) = 0
+             and (select n from srcok) = 6
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from ckcount where n <> 1) as checks_not_exactly_once,
+       (select n from dedup)                       as forbidden_unique_indexes,
+       (select n from srcok)                       as source_enum_values_present;
+
+-- -----------------------------------------------------------------------------
+-- 112) ENTITLEMENT RLS AND PRIVILEGES (migration 124).
+--      The write posture here is deliberately STRICTER than every comparable
+--      table: child_subs_write and olympiad_purchases_write both allow
+--      is_admin(), and this allows NOBODY. An admin with a direct INSERT can
+--      mint free lifetime access with no reason string and no producer row
+--      behind it; comps go through admin_grant_entitlement() instead, which
+--      records granted_by and leaves an audit row.
+--
+--      The mapper/reader/producer functions all take an ARBITRARY student id,
+--      so none of them may be executable by anon OR authenticated — otherwise
+--      any signed-in session could probe another family's access state. That is
+--      the same split is_free_access_active_for_student already lives under;
+--      the caller-scoped entrypoint is my_accessible_subjects().
+-- -----------------------------------------------------------------------------
+with sigs (sig) as (values
+  ('public.has_subject_access(uuid,uuid)'),
+  ('public.live_package_entitlement(uuid,uuid)'),
+  ('public.fn_entitlement_map_subject(uuid,uuid)'),
+  ('public.fn_entitlement_map_purchase(uuid)'),
+  ('public.entitlements_reconcile()'),
+  ('public.entitlement_grant(uuid,public.entitlement_scope,public.entitlement_source,text,uuid,uuid,uuid,text,timestamptz,timestamptz,uuid,text)'),
+  ('public.entitlement_revoke(public.entitlement_source,text,text)'),
+  ('public.admin_grant_entitlement(uuid,public.entitlement_scope,uuid,uuid,uuid,timestamptz,text)'),
+  ('public.admin_revoke_entitlement(uuid,text)')
+), locked as (
+  -- to_regprocedure() rather than the text form of has_function_privilege():
+  -- the text form ERRORS on a missing function, and this check has to REPORT
+  -- that rather than abort the file.
+  select count(*) as n from sigs s
+   where to_regprocedure(s.sig) is not null
+     and not has_function_privilege('anon',          to_regprocedure(s.sig)::oid, 'EXECUTE')
+     and not has_function_privilege('authenticated', to_regprocedure(s.sig)::oid, 'EXECUTE')
+), pol as (
+  select count(*) filter (where cmd = 'SELECT')  as n_select,
+         count(*) filter (where cmd <> 'SELECT') as n_write
+    from pg_policies where schemaname = 'public' and tablename = 'entitlements'
+)
+select '112_entitlements_rls_acl' as check_name,
+       case when coalesce((select relrowsecurity from pg_class
+                            where oid = to_regclass('public.entitlements')), false)
+             and (select n_select from pol) = 1
+             and (select n_write  from pol) = 0
+             and has_table_privilege('anon',          'public.entitlements', 'SELECT') = false
+             and has_table_privilege('authenticated', 'public.entitlements', 'SELECT') = true
+             and has_table_privilege('authenticated', 'public.entitlements', 'INSERT') = false
+             and has_table_privilege('authenticated', 'public.entitlements', 'UPDATE') = false
+             and has_table_privilege('authenticated', 'public.entitlements', 'DELETE') = false
+             and (select n from locked) = (select count(*) from sigs)
+            then 'PASS' else 'FAIL' end as status,
+       (select n_write from pol)                        as write_policies,
+       (select count(*) from sigs) - (select n from locked) as functions_not_locked;
+
+-- -----------------------------------------------------------------------------
+-- 113) THE PRODUCER MIRROR IS ARMED (migration 124).
+--      The three triggers are the single point of SILENT failure in this
+--      design: if one stops firing, access disappears — or worse, persists —
+--      with no error anywhere. tgenabled = 'O' is the "assert the guard is
+--      still armed" pattern migration 094 established, and it catches the two
+--      realistic ways a trigger dies quietly (ALTER TABLE ... DISABLE TRIGGER,
+--      and a replica-role session that left it 'D').
+--
+--      It also asserts the reconciler's scope predicates are still STRUCTURAL.
+--      entitlements_reconcile() re-maps producer rows and sweeps orphans; it is
+--      scoped on `child_subscription_id is not null` / `olympiad_purchase_id is
+--      not null`, which makes an apple_iap, google_play, school_license or
+--      manual-comp row (both links NULL) unreachable BY CONSTRUCTION. Scoping
+--      it on `source = 'abb_web'` instead would put one editable literal
+--      between that job and deleting every Apple entitlement.
+--
+--      Deliberately does NOT read cron.job — see check 28: a missing relation
+--      fails at PLAN time on databases without pg_cron. Verify the schedule by
+--      hand there:
+--        select jobname, schedule from cron.job
+--         where jobname = 'olympiq_entitlements_reconcile';   -- expect '22 * * * *'
+-- -----------------------------------------------------------------------------
+with trg (name, tbl) as (values
+  ('trg_entitlements_from_sub_subjects', 'public.subscription_subjects'),
+  ('trg_entitlements_from_child_subs',   'public.child_subscriptions'),
+  ('trg_entitlements_from_purchases',    'public.olympiad_purchases')
+), armed as (
+  select t.name,
+         coalesce((select g.tgenabled = 'O' and not g.tgisinternal
+                     from pg_trigger g
+                    where g.tgrelid = to_regclass(t.tbl) and g.tgname = t.name), false) as ok
+    from trg t
+), rec as (
+  select coalesce((select pg_get_functiondef(to_regprocedure('public.entitlements_reconcile()'))
+                    where to_regprocedure('public.entitlements_reconcile()') is not null), '') as def
+)
+select '113_entitlements_producer_armed' as check_name,
+       case when (select count(*) filter (where ok) from armed) = 3
+             and position('child_subscription_id is not null' in (select def from rec)) > 0
+             and position('olympiad_purchase_id is not null'  in (select def from rec)) > 0
+             and position('source = ' in (select def from rec)) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select string_agg(name, ', ') from armed where not ok) as triggers_not_armed,
+       case when exists (select 1 from pg_extension where extname = 'pg_cron')
+            then 'pg_cron present; olympiq_entitlements_reconcile managed by 016'
+            else 'SKIP (pg_cron absent — 016 skipped safely)' end as reconcile_schedule;
+
+-- -----------------------------------------------------------------------------
+-- 114) ENTITLEMENT PARITY — THE PERMANENT DRIFT ALARM (migration 124).
+--      Set equality, both directions, between the access the OLD rule granted
+--      and the access the entitlement table grants. Row COUNTS prove nothing
+--      here: twelve rows on each side can be twelve different rows.
+--
+--      The old subject rule is quoted verbatim from the three attempt gates as
+--      they stood before 124; the old package rule is start_olympiad_attempt's
+--      `olympiad_purchases ... status = 'active'` lookup. Neither is dead code
+--      in this file — this check is the ONLY remaining place either predicate
+--      is written down, and it is what would catch the mirror trigger failing
+--      silently between hourly reconciles.
+--
+--      IT COMPARES THE MIRROR, NOT THE WHOLE TABLE (amended by migration 125).
+--      As first written, the `new_*` sides read EVERY live entitlement, so the
+--      first legitimate non-producer grant — a manual comp, a school licence,
+--      the first apple_iap row on forced-IAP day — appeared in `new except old`
+--      and turned this check FAIL. Permanently: nothing removes such a row, and
+--      the design REQUIRES it to exist (§4.1, and the deliberate absence of any
+--      (student, product) uniqueness is what makes it representable). A check
+--      that goes red on a correct state and stays red is not an alarm; it is a
+--      light somebody learns to ignore, and it would have masked the real drift
+--      this exists to catch.
+--
+--      So both `new_*` sides are scoped to rows carrying a PRODUCER LINK
+--      (child_subscription_id / olympiad_purchase_id) — exactly the set
+--      fn_entitlement_map_* writes and entitlements_reconcile() re-maps. A
+--      mirrored row can never be missing that link, so nothing the mirror could
+--      get wrong escapes: a trigger that stopped firing, a period computed
+--      wrongly, a revocation that did not propagate, all still land in
+--      access_rows_differing. What no longer lands there is the EXISTENCE of a
+--      grant this check was never measuring — that is reported, deliberately
+--      unasserted, in grants_with_no_producer_link.
+--
+--      THE LAST THREE COLUMNS ARE REPORT-ONLY, NEVER ASSERTED ZERO:
+--        * grants_with_no_producer_link is where a future apple_iap /
+--          google_play / school_license / manual grant lands. The number MUST
+--          be allowed to move visibly instead of turning this check red.
+--        * students_with_multiple_live_package_grants is 0 until IAP exists,
+--          and is a genuinely new state no existing code contemplates —
+--          Round-49's rotation is keyed on (student, package, grade), so a
+--          second source with a different grade snapshot starts a fresh cycle.
+--          live_package_entitlement pins oldest-grant-wins for stability; this
+--          column makes the day it first happens visible rather than leaving it
+--          to be discovered as a rotation anomaly.
+--        * remove_at_would_disagree_with_db_gate is 0 today and reports the
+--          pre-existing web-app/src/lib/childSubjects.ts drift: that file
+--          honours subscription_subjects.remove_at and the DB gate never has.
+-- -----------------------------------------------------------------------------
+with old_subject as (
+  select cs.student_profile_id as sid, ss.subject_id as pid
+  from public.child_subscriptions cs
+  join public.subscription_subjects ss on ss.child_subscription_id = cs.id
+  where cs.status in ('trialing', 'active', 'canceled')
+    and cs.current_period_end is not null
+    and cs.current_period_end > now()
+    and coalesce(ss.current_period_end, cs.current_period_end) > now()
+), new_subject as (
+  -- PRODUCER-MIRRORED ROWS ONLY. See the note above: an apple_iap / manual /
+  -- school_license grant is not drift, it is the point of the table.
+  select e.student_profile_id as sid, e.subject_id as pid
+  from public.entitlements e
+  where e.scope = 'subject' and e.revoked_at is null
+    and e.child_subscription_id is not null
+    and e.starts_at <= now() and e.ends_at > now()
+), old_pkg as (
+  select pu.student_profile_id as sid, pu.olympiad_package_id as pid
+  from public.olympiad_purchases pu
+  where pu.status = 'active' and pu.student_profile_id is not null
+), new_pkg as (
+  select e.student_profile_id as sid, e.package_id as pid
+  from public.entitlements e
+  where e.scope = 'olympiad_package' and e.revoked_at is null
+    and e.olympiad_purchase_id is not null
+    and e.starts_at <= now() and (e.ends_at is null or e.ends_at > now())
+), drift as (
+  select count(*) as n from (
+    (table old_subject except table new_subject) union all
+    (table new_subject except table old_subject) union all
+    (table old_pkg     except table new_pkg)     union all
+    (table new_pkg     except table old_pkg)) d
+), unlinked as (
+  select count(*) as n from public.entitlements
+   where child_subscription_id is null and olympiad_purchase_id is null
+), multi as (
+  select count(*) as n from (
+    select e.student_profile_id, e.package_id
+      from public.entitlements e
+     where e.scope = 'olympiad_package' and e.revoked_at is null
+       and e.starts_at <= now() and (e.ends_at is null or e.ends_at > now())
+     group by 1, 2 having count(*) > 1) m
+), removedrift as (
+  select count(*) as n
+    from public.subscription_subjects ss
+    join public.child_subscriptions cs on cs.id = ss.child_subscription_id
+   where ss.remove_at is not null
+     and ss.remove_at < coalesce(ss.current_period_end, cs.current_period_end)
+)
+select '114_entitlements_parity' as check_name,
+       case when (select n from drift) = 0 then 'PASS' else 'FAIL' end as status,
+       (select n from drift)       as access_rows_differing,
+       (select n from unlinked)    as grants_with_no_producer_link,
+       (select n from multi)       as students_with_multiple_live_package_grants,
+       (select n from removedrift) as remove_at_would_disagree_with_db_gate;
+
+-- -----------------------------------------------------------------------------
+-- 115) THE GATES READ ENTITLEMENTS AND NOTHING ELSE (migration 124).
+--      The anti-regression device that makes §4.1 self-enforcing. It is not
+--      enough that the gates call has_subject_access today; the point of the
+--      whole exercise is that a subscription row must never AGAIN be consulted
+--      for access, because the day Apple forces IAP the subscription table
+--      stops being the record of who may play. So each gate is asserted to
+--      mention the reader AND to mention neither producer table.
+-- -----------------------------------------------------------------------------
+with defs (name, def) as (
+  select s.name,
+         coalesce((select pg_get_functiondef(to_regprocedure(s.sig))
+                    where to_regprocedure(s.sig) is not null), '')
+  from (values
+    ('start_practice_attempt',   'public.start_practice_attempt(uuid,int)'),
+    ('start_topic_test_attempt', 'public.start_topic_test_attempt(uuid,uuid[],uuid[])'),
+    ('start_daily_round_attempt','public.start_daily_round_attempt(uuid,text)')
+  ) as s(name, sig)
+), oly as (
+  select coalesce((select pg_get_functiondef(to_regprocedure('public.start_olympiad_attempt(uuid)'))
+                    where to_regprocedure('public.start_olympiad_attempt(uuid)') is not null), '') as def
+), bad as (
+  select count(*) as n from defs
+   where def = ''
+      or position('has_subject_access'    in def) = 0
+      or position('subscription_subjects' in def) > 0
+      or position('child_subscriptions'   in def) > 0
+)
+select '115_gates_read_entitlements' as check_name,
+       case when (select n from bad) = 0
+             and position('live_package_entitlement' in (select def from oly)) > 0
+             and position('olympiad_purchases'       in (select def from oly)) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select string_agg(name, ', ') from defs
+         where def = '' or position('has_subject_access' in def) = 0
+            or position('subscription_subjects' in def) > 0
+            or position('child_subscriptions' in def) > 0) as subject_gates_still_reading_producers;
+
+-- -----------------------------------------------------------------------------
+-- 116) LIFETIME OLYMPIAD ACCESS SURVIVED THE CUTOVER (migration 124).
+--      A CLAUDE.md non-negotiable: purchased olympiad packages keep LIFETIME
+--      access, INCLUDING for an ARCHIVED package. Two halves.
+--
+--      THE DEFINITION HALF. can_view_olympiad_package must still carry the
+--      original purchase branch (olympiad_purchases.student_profile_id is ON
+--      DELETE SET NULL per audit M13, while entitlements.student_profile_id is
+--      NOT NULL and CASCADEs — so a parent who deletes a child can only be kept
+--      seeing the package they bought through the purchase row). It must read
+--      the package's own catalog status EXACTLY ONCE, inside
+--      olympiad_package_on_sale(), and never as a second condition — that is
+--      what keeps an archived-but-purchased package visible. And the new
+--      entitlement branch must filter on NEITHER withdrawal NOR expiry: the
+--      purchase branch is status-blind today, so filtering would silently strip
+--      a refunded family's catalog row, and a package grant is lifetime anyway.
+--
+--      THE DATA HALF. Every active purchase of an ARCHIVED package must still
+--      hold a live, unbounded entitlement. This is the assertion that would
+--      catch a mapper that quietly learned to read a package's status.
+-- -----------------------------------------------------------------------------
+with cv as (
+  select coalesce((select pg_get_functiondef(to_regprocedure('public.can_view_olympiad_package(uuid)'))
+                    where to_regprocedure('public.can_view_olympiad_package(uuid)') is not null), '') as def
+), pstatus as (
+  select case when (select def from cv) = '' then -1
+              else (length((select def from cv))
+                    - length(replace((select def from cv), 'p.status', ''))) / length('p.status')
+         end as n
+), arch as (
+  select count(*) as n
+    from public.olympiad_purchases pu
+    join public.olympiad_packages p on p.id = pu.olympiad_package_id
+   where p.status = 'archived'
+     and pu.status = 'active'
+     and pu.student_profile_id is not null
+     and not exists (select 1 from public.entitlements e
+                      where e.olympiad_purchase_id = pu.id
+                        and e.scope = 'olympiad_package'
+                        and e.revoked_at is null
+                        and e.ends_at is null)
+), bounded as (
+  select count(*) as n from public.entitlements
+   where scope = 'olympiad_package' and ends_at is not null
+)
+select '116_olympiad_lifetime_preserved' as check_name,
+       case when position('pu.owner_parent_profile_id' in (select def from cv)) > 0
+             and position('public.olympiad_purchases'  in (select def from cv)) > 0
+             and position('public.entitlements'        in (select def from cv)) > 0
+             and (select n from pstatus) = 1
+             and position('revoked_at' in (select def from cv)) = 0
+             and position('e.ends_at'  in (select def from cv)) = 0
+             and has_function_privilege('anon', 'public.can_view_olympiad_package(uuid)', 'EXECUTE') = true
+             and (select n from arch)    = 0
+             and (select n from bounded) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select n from pstatus) as package_status_reads,
+       (select n from arch)    as archived_purchases_without_live_entitlement,
+       (select n from bounded) as package_grants_with_an_end_date;
+
+
+-- -----------------------------------------------------------------------------
+-- 117) THE CHECKOUT INTENT IS PRESENT, FROZEN AND LOCKED DOWN (migration 125).
+--      The structural half of "the payment causes the grant". Three properties,
+--      each of which fails silently if it regresses.
+--
+--      THE INTENT EXISTS. Eight columns and two CHECKs. Without them a session
+--      records an AMOUNT and not a PURCHASE, a verified payment has nothing to
+--      act on, and the only way to ship is the one this replaced: apply the plan
+--      first and ask for money afterwards, which makes the money optional.
+--
+--      THE FREEZE IS ARMED. tgenabled = 'O' is the "assert the guard is still
+--      armed" pattern migration 094 established. If trg_checkout_intent_immutable
+--      stops firing, the basket and the amount a parent authorised become
+--      editable while the gateway signature over that amount still verifies —
+--      i.e. a signed payment could deliver something else.
+--
+--      NOTHING HERE IS REACHABLE FROM A BROWSER. checkout_redeem_plan is a GRANT
+--      path. An EXECUTE grant to anon or authenticated would reintroduce the
+--      original defect wearing a different hat, so all four are asserted locked.
+--
+--      It also pins quote_child_plan's `due_now`, which is what makes the
+--      "due today" on the start-a-plan screen the same number the gateway is
+--      asked for (audit invariant H7: preview == charged).
+-- -----------------------------------------------------------------------------
+with cols as (
+  select count(*) as n
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'checkout_sessions'
+     and column_name in ('intent_kind', 'student_profile_id', 'intent_items',
+                         'intent_quote', 'expires_at', 'redeemed_at',
+                         'redemption_status', 'redemption_note')
+), cons as (
+  select count(*) as n
+    from pg_constraint
+   where conrelid = to_regclass('public.checkout_sessions')
+     and conname in ('ck_checkout_intent_shape', 'ck_checkout_redemption')
+), idx as (
+  select count(*) as n
+    from pg_class
+   where relkind = 'i'
+     and relname in ('idx_checkout_intent_student', 'idx_checkout_paid_unredeemed',
+                     'idx_checkout_needs_review')
+), armed as (
+  select coalesce((select g.tgenabled = 'O' and not g.tgisinternal
+                     from pg_trigger g
+                    where g.tgrelid = to_regclass('public.checkout_sessions')
+                      and g.tgname = 'trg_checkout_intent_immutable'), false) as ok
+), sigs (sig) as (values
+  ('public.checkout_intent_open(uuid,public.checkout_intent_kind,jsonb,text,int)'),
+  ('public.checkout_intent_price(text)'),
+  ('public.checkout_redeem_plan(text)'),
+  ('public.checkout_flag_redemption(text,text)')
+), locked as (
+  -- to_regprocedure() rather than the text form of has_function_privilege():
+  -- the text form ERRORS on a missing function, and this check has to REPORT
+  -- that rather than abort the file.
+  select count(*) as n from sigs s
+   where to_regprocedure(s.sig) is not null
+     and not has_function_privilege('anon',          to_regprocedure(s.sig)::oid, 'EXECUTE')
+     and not has_function_privilege('authenticated', to_regprocedure(s.sig)::oid, 'EXECUTE')
+), quote as (
+  select coalesce((select pg_get_functiondef(to_regprocedure('public.quote_child_plan(uuid,jsonb)'))
+                    where to_regprocedure('public.quote_child_plan(uuid,jsonb)') is not null), '') as def
+)
+select '117_checkout_intent_armed' as check_name,
+       case when (select n  from cols)   = 8
+             and (select n  from cons)   = 2
+             and (select n  from idx)    = 3
+             and (select ok from armed)
+             and (select n  from locked) = (select count(*) from sigs)
+             and position('due_now'   in (select def from quote)) > 0
+             and position('v_had_any' in (select def from quote)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       (select n from cols)                                as intent_columns,
+       (select count(*) from sigs) - (select n from locked) as functions_not_locked,
+       case when (select ok from armed) then 'armed' else 'NOT ARMED' end as intent_freeze;
+
+-- -----------------------------------------------------------------------------
+-- 118) MONEY AND DELIVERY AGREE (migration 125).
+--      The behavioural half. Everything asserted here is 0 in a healthy system
+--      and each non-zero value names a family that is owed something.
+--
+--      grants_without_a_paid_session IS THE INVARIANT THIS WHOLE CHANGE EXISTS
+--      FOR. A redemption marked 'applied' on a session that is not 'paid' is a
+--      plan granted without money — the exact defect that shipped, restated as a
+--      query. checkout_redeem_plan refuses to run unless status = 'paid', so a
+--      non-zero here means either that guard was edited out or a status was
+--      moved backwards afterwards.
+--
+--      applied_without_a_payments_row is the same statement from the ledger's
+--      side: recordOutcome writes `payments` BEFORE it advances the session to
+--      'paid', so an applied redemption with no succeeded payment row is a grant
+--      whose money nobody can find.
+--
+--      paid_but_never_redeemed is the OTHER direction, and the one a family
+--      notices: money taken, nothing delivered. The 30-minute grace covers a
+--      callback that arrived while the redeem transaction was still in flight;
+--      beyond that it is stuck and someone has to look.
+--
+--      needs_a_human_older_than_7_days is what keeps this from becoming the
+--      next permanent alarm. Opening one is a legitimate, expected state — a
+--      price moved, a subject was withdrawn, a subscription was cancelled in
+--      another tab — so the OPEN COUNT is reported and never asserted. What is
+--      asserted is that nobody is ignoring them: an unresolved one a week later
+--      means we are holding money, or holding a child out of their account, and
+--      have said nothing.
+--
+--      "NEEDS A HUMAN" IS TWO THINGS, AND THE STATUS ONLY NAMES ONE. A
+--      `needs_review` row is money we have not delivered on. An APPLIED row
+--      carrying a `redemption_note` is the other kind: the plan WAS delivered
+--      and a follow-up failed (today, only `child_login_email_failed` — the
+--      Auth-admin call SQL cannot make, which leaves a paid-for child unable to
+--      sign in). Flipping such a row to `needs_review` would have been the easy
+--      move and a lie; two problems that need two different answers must not
+--      share one word. So the status keeps saying what happened to the MONEY,
+--      and the presence of a note is what says a person is needed.
+--
+--      Deliberately report-only: expired_pending_intents. An intent nobody paid
+--      is harmless BY CONSTRUCTION (it granted nothing), and the number is here
+--      only so a sudden spike — a checkout that silently stopped working — is
+--      visible rather than invisible.
+-- -----------------------------------------------------------------------------
+with granted_unpaid as (
+  select count(*) as n from public.checkout_sessions
+   where redemption_status = 'applied' and status <> 'paid'
+), granted_unbilled as (
+  select count(*) as n
+    from public.checkout_sessions cs
+   where cs.redemption_status = 'applied'
+     and not exists (select 1 from public.payments p
+                      where p.provider = cs.provider
+                        and p.provider_ref = cs.provider_session_id
+                        and p.status = 'succeeded')
+), stuck as (
+  select count(*) as n from public.checkout_sessions
+   where status = 'paid' and intent_kind is not null and redeemed_at is null
+     and created_at < now() - interval '30 minutes'
+), needs_human as (
+  select redeemed_at from public.checkout_sessions
+   where redemption_status = 'needs_review'
+      or (redemption_status = 'applied' and redemption_note is not null)
+), stale_review as (
+  select count(*) as n from needs_human
+   where redeemed_at < now() - interval '7 days'
+), open_review as (
+  select count(*) as n from needs_human
+), expired_pending as (
+  select count(*) as n from public.checkout_sessions
+   where intent_kind is not null and status = 'pending'
+     and redeemed_at is null and expires_at < now()
+)
+select '118_checkout_money_matches_delivery' as check_name,
+       case when (select n from granted_unpaid)   = 0
+             and (select n from granted_unbilled) = 0
+             and (select n from stuck)            = 0
+             and (select n from stale_review)     = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select n from granted_unpaid)   as grants_without_a_paid_session,
+       (select n from granted_unbilled) as applied_without_a_payments_row,
+       (select n from stuck)            as paid_but_never_redeemed,
+       (select n from stale_review)     as needs_a_human_older_than_7_days,
+       (select n from open_review)      as needs_a_human_open,
+       (select n from expired_pending)  as expired_pending_intents;
+
+
+-- -----------------------------------------------------------------------------
+-- 119) THE PURCHASE-SILENT SURFACE CANNOT BUY (migration 126).
+--      The structural half of finding A. The mobile apps are purchase-silent BY
+--      ARCHITECTURE (docs/STORE_PAYMENTS_COMPLIANCE.md section 4) -- and that
+--      was true of everything they RENDER and false of what their BFF could
+--      CALL: both plan routes reached create_child_plan / apply_plan_change
+--      directly, so a parent bearer token reached a full paid plan for free the
+--      moment the payment mode became `real`.
+--
+--      THE FOUR FUNCTIONS ARE THE FIX AND THE ALARM. *_if_free do the work and
+--      then RAISE if the apply's own answer priced it above zero, which rolls
+--      back the apply, its ledger rows and the entitlement rows the producer
+--      triggers wrote. checkout_reconcile_candidates / checkout_redeem_sweep
+--      are the lost-callback half. All four are GRANT paths (the sweep is a
+--      grant path wearing a schedule), so an EXECUTE grant to anon or
+--      authenticated on any of them is this whole migration undone.
+--
+--      THE TWO BODY PROBES ARE NOT DECORATION. Both halves of finding B are a
+--      single line inside a function this repository re-issues often, and a
+--      `create or replace` from an older copy of 011 would undo either one in
+--      silence, leaving every other check green.
+-- -----------------------------------------------------------------------------
+with sigs (sig) as (values
+  ('public.create_child_plan_if_free(uuid,jsonb)'),
+  ('public.apply_plan_change_if_free(uuid,jsonb,text)'),
+  ('public.checkout_reconcile_candidates(int)'),
+  ('public.checkout_redeem_sweep(int)')
+), locked as (
+  -- to_regprocedure() rather than the text form of has_function_privilege():
+  -- the text form ERRORS on a missing function, and this check has to REPORT
+  -- that rather than abort the file.
+  select count(*) as n from sigs s
+   where to_regprocedure(s.sig) is not null
+     and not has_function_privilege('anon',          to_regprocedure(s.sig)::oid, 'EXECUTE')
+     and not has_function_privilege('authenticated', to_regprocedure(s.sig)::oid, 'EXECUTE')
+), bodies as (
+  select coalesce((select pg_get_functiondef(to_regprocedure('public.apply_plan_change(uuid,jsonb,text)'))
+                    where to_regprocedure('public.apply_plan_change(uuid,jsonb,text)') is not null), '') as apply_def,
+         coalesce((select pg_get_functiondef(to_regprocedure('public.create_child_plan(uuid,jsonb)'))
+                    where to_regprocedure('public.create_child_plan(uuid,jsonb)') is not null), '') as create_def
+)
+select '119_purchase_silent_cannot_buy' as check_name,
+       case when (select n from locked) = (select count(*) from sigs)
+             and position('trial_ends_at' in (select apply_def  from bodies)) > 0
+             and position('v_offer <= 0'  in (select create_def from bodies)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from sigs) - (select n from locked) as functions_missing_or_open,
+       case when position('trial_ends_at' in (select apply_def from bodies)) > 0
+            then 'capped' else 'NOT CAPPED' end as trial_time_add,
+       case when position('v_offer <= 0' in (select create_def from bodies)) > 0
+            then 'guarded' else 'NOT GUARDED' end as zero_day_trial;
+
+-- -----------------------------------------------------------------------------
+-- 120) A TRIAL NEVER BECOMES A FREE PAID PERIOD (migration 126).
+--      The behavioural half of finding B, and the one that costs money. Both
+--      asserted numbers are 0 in a healthy system.
+--
+--      periods_outliving_their_trial WAS THE HOLE. quote_plan_change prices an
+--      addition at ZERO while the plan is trialing and calls it 'riding the
+--      trial'; apply_plan_change opened a FULL cycle at now() regardless. So a
+--      yearly subject added on day one of a seven-day trial was a free year --
+--      repeatable, with no obligation recorded and nothing in the platform that
+--      charges at a trial end or a period end (there is no renewal path, and
+--      card-on-file is not approved by the bank yet, AZCDF-100303). A non-zero
+--      here means either the cap was edited out or a period was written by
+--      something that does not know the rule.
+--
+--      trials_that_ended_when_they_started is the other half: with
+--      launch_promo_config.trial_days = 0 the plan still took the `trialing`
+--      branch and wrote trial_ends_at = now(), so the family was charged the
+--      full total for a period that had ALREADY ENDED.
+--
+--      Report-only: trialing_without_a_trial_end. Legacy rows can be `trialing`
+--      with no end date at all. The cap FAILS CLOSED for them (an add lands on
+--      now() and grants nothing), so this is a number to watch, not an alarm.
+--
+--      THE ONE-MINUTE SLACK is deliberate. current_period_end and trial_ends_at
+--      are written by different statements in the same transaction, and
+--      asserting exact equality would turn clock granularity into a red board.
+-- -----------------------------------------------------------------------------
+with over_trial as (
+  select count(*) as n
+    from public.child_subscriptions cs
+    join public.subscription_subjects ss on ss.child_subscription_id = cs.id
+   where cs.status = 'trialing'
+     and cs.trial_ends_at is not null
+     and ss.remove_at is null
+     and ss.current_period_end > cs.trial_ends_at + interval '1 minute'
+), dead_on_arrival as (
+  select count(*) as n
+    from public.child_subscriptions
+   where status = 'trialing'
+     and trial_started_at is not null
+     and trial_ends_at is not null
+     and trial_ends_at <= trial_started_at
+), no_end as (
+  select count(*) as n
+    from public.child_subscriptions
+   where status = 'trialing' and trial_ends_at is null
+)
+select '120_trial_is_not_a_free_paid_period' as check_name,
+       case when (select n from over_trial)      = 0
+             and (select n from dead_on_arrival) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select n from over_trial)      as periods_outliving_their_trial,
+       (select n from dead_on_arrival) as trials_that_ended_when_they_started,
+       (select n from no_end)          as trialing_without_a_trial_end;
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

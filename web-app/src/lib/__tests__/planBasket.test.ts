@@ -262,9 +262,12 @@ describe("proration is retired everywhere, not just on the happy path", () => {
       expect(CORE).not.toContain(`rpc("${name}"`);
       expect(CORE).not.toContain(`rpc('${name}'`);
     }
-    // Both surviving calls are the plan pair.
+    // Both surviving calls are the plan pair. Migration 126 made the APPLY name
+    // depend on the caller's posture — `apply_plan_change_if_free` for the
+    // purchase-silent surface — so the assertion is that the plan pair is what
+    // is reached, not that one exact literal is present.
     expect(CORE).toContain('rpc("quote_plan_change"');
-    expect(CORE).toContain('rpc("apply_plan_change"');
+    expect(CORE).toContain('"apply_plan_change_if_free" : "apply_plan_change"');
   });
 
   it("a subject-ids-only caller is derived server-side rather than routed elsewhere", () => {

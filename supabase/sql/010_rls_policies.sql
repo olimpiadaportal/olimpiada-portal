@@ -53,7 +53,7 @@ begin
     'subscription_plans','subscriptions','payments','payment_events',
     'coupons','coupon_redemptions',
     'subjects_pricing','launch_promo_config','child_subscriptions',
-    'subscription_subjects','checkout_sessions','sibling_discounts',
+    'subscription_subjects','entitlements','checkout_sessions','sibling_discounts',
     'media_assets','notification_templates','notifications','notification_deliveries',
     'support_requests','question_reports',
     'audit_logs','admin_actions','content_reviews',
@@ -667,6 +667,30 @@ drop policy if exists "sub_subjects_write" on public.subscription_subjects;
 create policy "sub_subjects_write" on public.subscription_subjects for all to authenticated
   using (public.is_admin() or public.has_permission('subscriptions.manage'))
   with check (public.is_admin() or public.has_permission('subscriptions.manage'));
+
+-- entitlements (migration 124): the family READS its own grants; NOBODY writes
+-- through the API. The read rule mirrors child_subs_select plus the
+-- creator-parent clause olympiad_purchases_select carries, so "what you are
+-- billed for" and "what you are entitled to" can never drift apart in the UI.
+--
+-- WRITE POSTURE IS DELIBERATELY STRICTER THAN EVERY COMPARABLE TABLE.
+-- child_subs_write and olympiad_purchases_write both allow is_admin(); this
+-- allows nobody. An admin with direct INSERT can mint free lifetime access
+-- with no reason string and no producer row behind it. Comps go through
+-- admin_grant_entitlement() (011) from an authorized, audited admin action —
+-- which is also the only route that records granted_by_profile_id.
+drop policy if exists "entitlements_select" on public.entitlements;
+create policy "entitlements_select" on public.entitlements for select to authenticated
+  using (
+    student_profile_id = public.current_profile_id()
+    or public.is_parent_linked_to_student(student_profile_id)
+    or exists (select 1 from public.students s
+               where s.profile_id = student_profile_id
+                 and s.created_by_parent_profile_id = public.current_profile_id())
+    or public.is_admin()
+    or public.has_permission('subscriptions.manage')
+  );
+-- NO insert/update/delete policy, for anyone, ever. Not even admins.
 
 -- checkout_sessions + sibling_discounts: owner reads; writes admin/service only.
 drop policy if exists "checkout_select" on public.checkout_sessions;

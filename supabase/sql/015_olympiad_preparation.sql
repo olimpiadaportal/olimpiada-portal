@@ -414,6 +414,37 @@ create index if not exists idx_olympiad_purchases_student on public.olympiad_pur
 create index if not exists idx_olympiad_purchases_package on public.olympiad_purchases (olympiad_package_id);
 
 -- -----------------------------------------------------------------------------
+-- entitlements -> olympiad (migration 124). The two FKs that could not live in
+-- 007: olympiad_packages / olympiad_purchases do not exist yet at that point in
+-- the canonical run order.
+--
+-- RESTRICT on package_id mirrors olympiad_purchases.olympiad_package_id
+-- exactly, so a package with a grant behind it can never be deleted out from
+-- under it. It is safe against the only hard-delete path
+-- (admin_delete_olympiad_package / rollbackNewPackage), which already refuses
+-- any package carrying purchases — and zero purchases implies zero MIRRORED
+-- entitlements. A future non-producer grant (apple_iap, school_license) would
+-- otherwise abort with a bare 23503, which is why
+-- olympiad_package_deletion_blocks gains a package_has_entitlements hint in the
+-- same change.
+--
+-- CASCADE on olympiad_purchase_id: the link is the mirror scope, and a row
+-- whose producer is gone must not survive as free access. Cascade is the
+-- fail-closed direction.
+-- -----------------------------------------------------------------------------
+do $$ begin
+  alter table public.entitlements
+    add constraint fk_entitlements_package foreign key (package_id)
+      references public.olympiad_packages (id) on delete restrict;
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.entitlements
+    add constraint fk_entitlements_purchase foreign key (olympiad_purchase_id)
+      references public.olympiad_purchases (id) on delete cascade;
+exception when duplicate_object then null; end $$;
+
+-- -----------------------------------------------------------------------------
 -- updated_at + audit triggers
 -- -----------------------------------------------------------------------------
 drop trigger if exists trg_set_updated_at on public.olympiad_packages;
@@ -434,6 +465,16 @@ drop trigger if exists trg_audit_olympiad_purchases on public.olympiad_purchases
 create trigger trg_audit_olympiad_purchases
   after insert or update or delete on public.olympiad_purchases
   for each row execute function public.fn_audit_row();
+
+-- The purchase half of the entitlement mirror (migration 124). Column-scoped:
+-- an amount or provider_payment_id correction changes nothing about ACCESS, and
+-- an unfiltered trigger would write a redundant entitlement row AND an audit row
+-- on every one of them.
+drop trigger if exists trg_entitlements_from_purchases on public.olympiad_purchases;
+create trigger trg_entitlements_from_purchases
+  after insert or update of status, grade_id, student_profile_id
+  on public.olympiad_purchases
+  for each row execute function public.tg_entitlements_purchase();
 
 -- Package-published notification (migration 076): the package CREATOR (content
 -- manager / admin) is notified when their package goes live. Recipient-scoped
@@ -531,6 +572,18 @@ as $$
         public.olympiad_package_on_sale(p.status, p.sale_starts_at, p.sale_ends_at)
         or public.is_admin()
         or exists (
+             select 1 from public.entitlements e
+             where e.package_id = p.id
+               and e.scope = 'olympiad_package'
+               and (
+                 e.student_profile_id = public.current_profile_id()
+                 or public.is_parent_linked_to_student(e.student_profile_id)
+                 or exists (select 1 from public.students s
+                            where s.profile_id = e.student_profile_id
+                              and s.created_by_parent_profile_id = public.current_profile_id())
+               )
+           )
+        or exists (
              select 1 from public.olympiad_purchases pu
              where pu.olympiad_package_id = p.id
                and (
@@ -546,11 +599,24 @@ as $$
   )
 $$;
 comment on function public.can_view_olympiad_package(uuid) is
-  'Row visibility for olympiad packages + their translations (migration 070): '
-  'on sale (olympiad_package_on_sale) OR admin OR anyone in the purchase family '
-  '(purchaser parent / the child / active linked parent / creator parent — the '
+  'Row visibility for olympiad packages + their translations (migration 070, '
+  'EXTENDED by migration 124): on sale (olympiad_package_on_sale) OR admin OR '
+  'anyone in the ENTITLEMENT family OR anyone in the PURCHASE family (purchaser '
+  'parent / the child / active linked parent / creator parent — the '
   'olympiad_purchases_select rule). Purchasers keep reading a package after the '
-  'sales window forever (lifetime access, no entitlement expiry).';
+  'sales window forever (lifetime access, no entitlement expiry). '
+  'THREE THINGS THIS MUST NEVER DO, each a CLAUDE.md non-negotiable or a silent '
+  'behaviour change: read the package''s own catalog status outside the sale '
+  'predicate (an ARCHIVED-but-purchased package stays visible); filter the '
+  'entitlement branch on withdrawal (today''s purchase branch is status-blind, '
+  'so a refunded family keeps its catalog row); or filter it on an expiry column '
+  '(a package grant is lifetime, and ck_entitlement_lifetime already guarantees '
+  'the column is empty). The PURCHASE branch is kept because '
+  'olympiad_purchases.student_profile_id is ON DELETE SET NULL (audit M13) while '
+  'entitlements.student_profile_id is NOT NULL and CASCADEs — a parent who '
+  'deletes a child would otherwise lose sight of a package they bought for life. '
+  'This is catalog VISIBILITY, not the access gate; the gate is '
+  'start_olympiad_attempt, which reads entitlements exclusively.';
 revoke all on function public.can_view_olympiad_package(uuid) from public;
 grant execute on function public.can_view_olympiad_package(uuid) to anon, authenticated, service_role;
 
@@ -1159,14 +1225,28 @@ begin
     v := v || jsonb_build_object('hint', 'live_attempts', 'count', n);
   end if;
 
+  -- 4. ENTITLEMENTS (migration 124). fk_entitlements_package is RESTRICT — it
+  --    mirrors olympiad_purchases.olympiad_package_id exactly — so a grant row
+  --    already aborts the delete today, but with a bare 23503 carrying no hint,
+  --    which the panel can only render as "server error". Block 1 covers every
+  --    MIRRORED grant (each has a purchase row behind it); this covers a
+  --    non-producer rail (apple_iap, google_play, school_license), which has no
+  --    purchase row for block 1 to count.
+  select count(*)::int into n
+  from public.entitlements where package_id = p_package_id;
+  if n > 0 then
+    v := v || jsonb_build_object('hint', 'package_has_entitlements', 'count', n);
+  end if;
+
   return v;
 end;
 $$;
 
 comment on function public.olympiad_package_deletion_blocks(uuid) is
-  'Service-internal (migration 111): the reasons an olympiad package may not be '
-  'deleted, as a jsonb array of {hint, count} — package_has_purchases, '
-  'package_is_active, live_attempts. Empty array = deletable.';
+  'Service-internal (migration 111, extended by 124): the reasons an olympiad '
+  'package may not be deleted, as a jsonb array of {hint, count} — '
+  'package_has_purchases, package_is_active, live_attempts, '
+  'package_has_entitlements. Empty array = deletable.';
 revoke all on function public.olympiad_package_deletion_blocks(uuid) from public, anon, authenticated;
 grant execute on function public.olympiad_package_deletion_blocks(uuid) to service_role;
 

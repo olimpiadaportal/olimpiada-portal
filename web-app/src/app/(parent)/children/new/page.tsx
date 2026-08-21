@@ -47,7 +47,14 @@ const KEYS = [
   "pricing.plan.weekly.note", "pricing.plan.monthly.note",
   "pricing.plan.yearly.note",
   // payment confirmation (step 4) + the result
-  "pay.title", "pay.note", "pay.payNow", "pay.processing", "pay.success",
+  // Migration 126: `pay.continue` / `pay.confirmNoCharge` are the honest
+  // labels — the button says "continue to payment" only when the server quote
+  // says something is due — and `sub.trialNoChargeToday` explains a zero.
+  // `pay.payNow` stays listed: the wizard no longer renders it, but a dictionary
+  // that drops a key a cached bundle still asks for renders the key itself.
+  "pay.title", "pay.note", "pay.payNow", "pay.continue", "pay.confirmNoCharge",
+  "sub.trialNoChargeToday",
+  "pay.processing", "pay.success",
   "pay.idRevealed", "pay.subtotal", "pay.discount", "pay.total",
   // done
   "parent.child.idNote", "parent.dash.title",

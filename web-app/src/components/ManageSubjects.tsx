@@ -48,6 +48,7 @@ import {
   type SubjectChangeQuote,
   type SubjectsUpdateState,
 } from "@/lib/auth/subscriptionService";
+import { CheckoutRedirect } from "@/components/CheckoutRedirect";
 import { PlanChangeConfirmModal } from "@/components/PlanChangeConfirmModal";
 import { PlanSummary } from "@/components/PlanSummary";
 import { SubjectPlanCard } from "@/components/SubjectPlanCard";
@@ -92,6 +93,7 @@ export function ManageSubjects({
   subjects,
   covered,
   paymentMode,
+  outstandingCheckout,
   dict,
 }: {
   studentId: string;
@@ -104,6 +106,14 @@ export function ManageSubjects({
    * deliberately keeps removals legal, so a parent can always stop paying.
    */
   paymentMode: string;
+  /**
+   * An unfinished payment for THIS plan, resolved server-side (a checkout that
+   * was opened and never completed, or one the gateway declined). Passed in
+   * rather than fetched here so there is exactly ONE renderer of the payment
+   * step on this screen: a save in this session takes precedence, and on any
+   * later visit this prop is what brings the prompt back.
+   */
+  outstandingCheckout?: { order: string; amount: number } | null;
   dict: Record<string, string>;
 }) {
   const tt = (k: string) => dict[k] ?? k;
@@ -384,7 +394,18 @@ export function ManageSubjects({
     formRef.current?.requestSubmit();
   }
 
-  const showSaved = state?.ok === true && !hasDiff && !saving;
+  // "Saved" only when something WAS saved. A payable change applies nothing
+  // until the bank confirms it, so a save that came back with a checkout has
+  // changed no plan yet and must not say it did.
+  const showSaved = state?.ok === true && !state.checkout && !hasDiff && !saving;
+
+  // The payment step, if there is one. A save that needs money comes back with a
+  // SIGNED checkout — one click and the parent is at the bank. Otherwise this is
+  // the unfinished checkout the page resolved from an earlier visit, which has
+  // to be signed on a click because signing writes an audit row and must never
+  // ride on a render.
+  const signedCheckout = state?.ok === true ? (state.checkout ?? null) : null;
+  const payable = signedCheckout ?? outstandingCheckout ?? null;
 
   return (
     <div className="form" style={{ maxWidth: 640 }}>
@@ -712,9 +733,38 @@ export function ManageSubjects({
           {state && state.ok === false && <p className="form-error">{state.error}</p>}
           {showSaved && <p className="subjedit-success">{tt("subjedit.saved")}</p>}
 
+          {/* The charge, BEFORE the change (migration 125). `quote_plan_change`
+              said what the desired basket costs today, the server opened an
+              intent for exactly that number and signed the redirect, and
+              NOTHING has been applied — the plan is written only when the
+              verified payment redeems the intent. A removal-only,
+              cycle-change-only or reinstatement-only save costs nothing, is
+              applied on the spot, returns no checkout, and renders nothing here:
+              this is driven by the server's answer, never by the local diff.
+              Abandon it and there is nothing to unwind. */}
+          {payable && (
+            <CheckoutRedirect
+              order={payable.order}
+              amount={payable.amount}
+              signed={
+                signedCheckout
+                  ? {
+                      action: signedCheckout.action,
+                      fields: signedCheckout.fields,
+                      amount: signedCheckout.amount,
+                    }
+                  : null
+              }
+            />
+          )}
+
           {/* Payment-first confirmation for additions. Confirm is the ONLY path
-              that submits the apply action; cancel/close keeps the selection and
-              applies nothing. */}
+              that submits the action; cancel/close keeps the selection and does
+              nothing. Since migration 125 confirming a PAYABLE change opens the
+              payment rather than applying the change, which is why the sheet's
+              primary button says "continue to payment" and means it — the
+              button that used to say "pay now" charged nothing, and the real
+              payment step appeared afterwards. */}
           <PlanChangeConfirmModal
             isOpen={payOpen}
             quote={

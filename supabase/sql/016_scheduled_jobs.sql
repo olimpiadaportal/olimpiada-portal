@@ -120,6 +120,44 @@ begin
     perform cron.schedule('olympiq_notify_giveaway_ending', '30 4 * * *',
                           'select public.notify_giveaway_ending();');
     raise notice 'pg_cron jobs olympiq_notify_expiring_subscriptions + olympiq_notify_giveaway_ending scheduled.';
+
+    -- Entitlements (migration 124): repair the mirror. The three producer
+    -- triggers are the single point of silent failure in that design — if one
+    -- stops firing, or a period is computed wrongly, access disappears (or
+    -- worse, persists) with no error anywhere. This job re-runs the SAME
+    -- mapping expression over every producer row and sweeps orphans, so the
+    -- worst case is up to an hour of drift instead of an unbounded one.
+    -- Runs at :22, five minutes after recompute_child_access at :17, so it
+    -- observes a settled state rather than racing it.
+    perform cron.unschedule(jobid)
+       from cron.job
+      where jobname = 'olympiq_entitlements_reconcile';
+
+    perform cron.schedule(
+      'olympiq_entitlements_reconcile',
+      '22 * * * *',                                  -- hourly at :22 UTC
+      'select public.entitlements_reconcile();'
+    );
+    raise notice 'pg_cron job olympiq_entitlements_reconcile scheduled (hourly).';
+
+    -- Checkout redemption backstop (migration 126): a payment the ledger
+    -- already records as PAID whose redemption never ran -- the callback wrote
+    -- the money and then died -- is money taken with nothing delivered. This
+    -- re-runs checkout_redeem_plan for those, which is idempotent (a decided
+    -- session answers 'already'). It deliberately does NOT ask the gateway:
+    -- that needs a MAC signed with the merchant private key, which lives only
+    -- in the web app's environment and must never enter the database, so the
+    -- TRTYPE=90 half is the web-app sweep's job and this is the floor under it.
+    perform cron.unschedule(jobid)
+       from cron.job
+      where jobname = 'olympiq_checkout_redeem_sweep';
+
+    perform cron.schedule(
+      'olympiq_checkout_redeem_sweep',
+      '*/10 * * * *',                                -- every 10 minutes
+      'select public.checkout_redeem_sweep(50);'
+    );
+    raise notice 'pg_cron job olympiq_checkout_redeem_sweep scheduled (every 10 min).';
   else
     raise notice 'pg_cron absent — grade promotion / access recompute / attempt expiry / leaderboard rollover / plan-change rollover / notifications NOT scheduled (skipped safely).';
   end if;

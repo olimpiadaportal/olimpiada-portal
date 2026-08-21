@@ -18,6 +18,7 @@ import {
   type SubscribeState,
   type QuoteResult,
 } from "@/lib/auth/subscriptionService";
+import { CheckoutRedirect } from "@/components/CheckoutRedirect";
 import { PlanSummary } from "@/components/PlanSummary";
 import { SubjectPlanCard } from "@/components/SubjectPlanCard";
 import { useLocale, useT } from "@/i18n/I18nProvider";
@@ -42,10 +43,19 @@ type Subj = { id: string; code: string | null; name: string; prices: Record<stri
 export function SubscribeForm({
   studentId,
   subjects,
+  outstandingCheckout,
   dict,
 }: {
   studentId: string;
   subjects: Subj[];
+  /**
+   * An unfinished payment for this child, resolved server-side (opened and
+   * never completed, or declined by the gateway). Since migration 125 it
+   * granted nothing, so this is an offer to finish rather than a debt — and
+   * because a first plan has no subscription until its payment lands, this is
+   * the ONLY way the parent can find that checkout again after closing the tab.
+   */
+  outstandingCheckout?: { order: string; amount: number } | null;
   dict: Record<string, string>;
 }) {
   const tt = (k: string) => dict[k] ?? k;
@@ -97,6 +107,34 @@ export function SubscribeForm({
     };
   }, [planKey, studentId]);
 
+  // PAYMENT FIRST. A payable plan is not applied until the bank confirms it, so
+  // the action comes back with a SIGNED checkout and nothing else — no plan, no
+  // 8-digit login ID, because `create_child_plan` has not run. One card, one
+  // button, and the parent leaves for the bank.
+  if (state?.ok && state.checkout) {
+    const c = state.checkout;
+    return (
+      <div className="card">
+        <p>
+          <strong>{t("sub.payFirst")}</strong>
+        </p>
+        <p className="muted">{t("sub.payFirstNote")}</p>
+        <CheckoutRedirect
+          order={c.order}
+          amount={c.amount}
+          signed={{ action: c.action, fields: c.fields, amount: c.amount }}
+        />
+        {/* A ghost link, so the one primary button on the screen is the one the
+            parent must act on. */}
+        <Link className="btn-ghost" href="/dashboard">
+          {tt("parent.dash.title")}
+        </Link>
+      </div>
+    );
+  }
+
+  // FREE (a trial): the plan exists already, because nothing had to be paid for
+  // it — so this is the historical success screen, 8-digit ID and all.
   if (state?.ok && state.result) {
     const r = state.result;
     return (
@@ -127,7 +165,10 @@ export function SubscribeForm({
           server={{
             discountPercent: r.discount_percent,
             discount: r.discount,
-            dueToday: r.total,
+            // A plan reaches this screen only when nothing was due, so the
+            // honest "due today" is zero. Printing `r.total` here stated a
+            // charge that did not happen.
+            dueToday: 0,
             trialDays: r.trial_days,
             currency: r.currency,
             groups: r.groups ?? null,
@@ -145,6 +186,15 @@ export function SubscribeForm({
   return (
     <form action={action} className="form" style={{ maxWidth: 560 }}>
       <input type="hidden" name="student_id" value={studentId} />
+      {/* Picked up from an earlier visit. Shown ABOVE the picker because
+          finishing it is the shorter path to the same plan — and starting over
+          is still available directly below. */}
+      {outstandingCheckout && (
+        <CheckoutRedirect
+          order={outstandingCheckout.order}
+          amount={outstandingCheckout.amount}
+        />
+      )}
       {plan.map((p) => (
         <input
           key={p.subjectId}
@@ -252,7 +302,13 @@ export function SubscribeForm({
               server={{
                 discountPercent: quote.discount_percent,
                 discount: quote.discount,
-                dueToday: quote.total,
+                // `due_now`, NOT `total` (migration 125, audit invariant H7).
+                // These are different numbers whenever a trial applies, and the
+                // screen used to print the total beside a trial row — telling a
+                // first-time family they owe today what they do not, and a
+                // returning one they get a trial they will not. The checkout is
+                // opened for exactly this figure.
+                dueToday: quote.dueNow,
                 trialDays: quote.trial_days,
                 currency: quote.currency,
                 // Per-cycle subtotals at the SIBLING rate; the local quote can
@@ -262,6 +318,16 @@ export function SubscribeForm({
               locale={locale}
               t={tt}
             />
+            {/* Says WHY "due today" is zero, so a 0,00 does not read as free
+                forever. Rendered from the same server quote as the figure. */}
+            {quote.trial_days > 0 && quote.dueNow === 0 && (
+              <p className="muted">
+                {t("sub.trialNoChargeToday").replace(
+                  "{days}",
+                  String(quote.trial_days),
+                )}
+              </p>
+            )}
           </>
         ) : (
           <p className="muted">{tt("sub.calculating")}</p>

@@ -25,6 +25,24 @@ const SQL_015 = read("supabase/sql/015_olympiad_preparation.sql");
 // so IT owns that function signature and its grants — 111 still carries the old
 // two-argument form and must not be searched for the new one.
 const MIGRATION_113 = read("supabase/sql/migrations/2026_08_15_113_package_delete_no_token.sql");
+// Migration 124 REDEFINED both deletion-block helpers to count `entitlements`
+// (a subject or package can now be reached by an apple_iap / google_play /
+// school_license / manual grant that has no subscription or purchase row behind
+// it, so blocks 1..3 could not see it). The canonical files therefore carry
+// 124's body, not 111's, and the comparison below has to be told which migration
+// OWNS each function — pinning it to 111 forever would mean the canonical file
+// can never be legitimately extended again.
+const MIGRATION_124 = read("supabase/sql/migrations/2026_08_20_124_entitlements.sql");
+
+/**
+ * The migration whose body the canonical file must match: the LAST one to
+ * redefine that function. Anything not listed is still owned by 111.
+ */
+function owner(name: string): string {
+  return name === "subject_deletion_blocks" || name === "olympiad_package_deletion_blocks"
+    ? MIGRATION_124
+    : MIGRATION;
+}
 
 /**
  * A function's plpgsql BODY (`as $$ … $$;`) — the part that must be identical in
@@ -97,11 +115,11 @@ describe("migration 113 owns the token-free package delete", () => {
 
 describe("the canonical backport is the migration, character for character", () => {
   it.each(SUBJECT_HALF)("011 carries %s unchanged", (name) => {
-    expect(body(SQL_011, name)).toBe(body(MIGRATION, name));
+    expect(body(SQL_011, name)).toBe(body(owner(name), name));
   });
 
   it.each(OLYMPIAD_HALF)("015 carries %s unchanged", (name) => {
-    expect(body(SQL_015, name)).toBe(body(MIGRATION, name));
+    expect(body(SQL_015, name)).toBe(body(owner(name), name));
   });
 
   it("keeps the subject half out of 015 and the olympiad half out of 011", () => {

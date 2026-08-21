@@ -85,6 +85,9 @@ export async function purchaseOlympiadForChild(
     parentProfileId: parent.profileId,
     studentId,
     packageId,
+    // The web is where purchasing happens. (The seam this reaches is still the
+    // mock one — see the note on PaidChangePosture in olympiadCore.)
+    paidChanges: "allow",
   });
   if (!res.ok) return { ok: false, error: t(res.errorKey) };
   return res;

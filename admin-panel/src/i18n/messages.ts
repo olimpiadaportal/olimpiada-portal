@@ -1385,6 +1385,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     // yoxsa admin yalnız "olmaz" görür və nə edəcəyini bilmir.
     "del.hint.packageHasPurchases":
       "Bu paketi {n} nəfər alıb — paket silinmir. Alıcıların girişi ömürlükdür; əvəzinə paketi arxivləyin.",
+    // Migration 124 — paketə bağlı GİRİŞ HÜQUQU (entitlements). Satın alma
+    // sətrindən fərqli bir şeydir: burada Apple/Google, məktəb lisenziyası və ya
+    // əl ilə verilmiş giriş də ola bilər, ona görə öz cümləsi var.
+    "del.hint.packageHasEntitlements":
+      "Bu paketə {n} giriş hüququ bağlıdır — silinmir. Giriş ömürlükdür; əvəzinə paketi arxivləyin.",
     "del.hint.packageIsActive":
       "Paket hazırda aktivdir. Əvvəlcə arxivləyin, sonra silin — aktiv paket baxan valideynin gözü qarşısında yoxa çıxmamalıdır.",
     "del.hint.packageNotDeletable":
@@ -1428,6 +1433,11 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Fənnin ümumi bankında {n} sual var. Fənn silinsə, suallar qalar, amma hansı fənnə aid olduqlarını itirər — əvvəlcə bankı təmizləyin, ya da fənni arxivləyin.",
     "del.hint.subjectHasRoundAttempts":
       "Fənnin günlük turlarına bağlı {n} cəhd var. Bu nəticələr saxlanılır — fənni arxivləyin.",
+    // Migration 124 — fənnə bağlı GİRİŞ HÜQUQU (entitlements). Abunə sətri ilə
+    // eyni deyil: Apple/Google, məktəb lisenziyası və ya əl ilə verilmiş giriş də
+    // bu siyahıya düşür, ona görə ayrıca cümlədir.
+    "del.hint.subjectHasEntitlements":
+      "Bu fənnə {n} aktiv giriş hüququ bağlıdır — silmək həmin şagirdlərin girişini kəsərdi. Əvəzinə fənni arxivləyin.",
     "del.hint.liveAttempts":
       "Hazırda {n} cəhd davam edir. Onlar bitənə qədər gözləyin — bu müddətdə məzmunu arxivləyə bilərsiniz.",
     "del.hint.confirmationMismatch":
@@ -2894,6 +2904,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     // otherwise the admin is told "no" and left with nowhere to go.
     "del.hint.packageHasPurchases":
       "{n} purchase(s) exist for this package, so it cannot be deleted. Buyers keep lifetime access — archive the package instead.",
+    // Migration 124 — ENTITLEMENTS on the package, which is not the same thing
+    // as a purchase row: an Apple/Play grant, a school licence or a manual comp
+    // lands here too, so it gets its own sentence.
+    "del.hint.packageHasEntitlements":
+      "{n} entitlement(s) grant access to this package, so it cannot be deleted. That access is lifetime — archive the package instead.",
     "del.hint.packageIsActive":
       "The package is still active. Archive it first, then delete — a live listing must not vanish while a parent is browsing it.",
     "del.hint.packageNotDeletable":
@@ -2937,6 +2952,11 @@ export const messages: Record<Locale, Record<string, string>> = {
       "The subject's general bank still holds {n} question(s). Deleting it would keep the questions but strip the column that says what they teach — clear the bank first, or archive the subject.",
     "del.hint.subjectHasRoundAttempts":
       "{n} attempt(s) are tied to this subject's daily rounds. Those results are kept — archive the subject instead.",
+    // Migration 124 — ENTITLEMENTS on the subject. Not the same as a
+    // subscription row: an Apple/Play grant, a school licence or a manual comp
+    // lands here too, so it gets its own sentence.
+    "del.hint.subjectHasEntitlements":
+      "{n} live entitlement(s) grant access to this subject, and deleting it would cut those students off. Archive the subject instead.",
     "del.hint.liveAttempts":
       "{n} attempt(s) are in progress right now. Wait until they finish — you can archive the content in the meantime.",
     "del.hint.confirmationMismatch":
@@ -4418,6 +4438,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     // иначе администратору говорят «нельзя» и не говорят, что делать.
     "del.hint.packageHasPurchases":
       "Пакет уже купили ({n}), поэтому удалить его нельзя. Доступ покупателей пожизненный — вместо удаления архивируйте пакет.",
+    // Миграция 124 — права доступа (entitlements) на пакет. Это не то же самое,
+    // что запись о покупке: сюда попадают и Apple/Play, и школьная лицензия, и
+    // выданный вручную доступ, поэтому фраза отдельная.
+    "del.hint.packageHasEntitlements":
+      "К пакету привязаны права доступа ({n}), поэтому удалить его нельзя. Этот доступ пожизненный — вместо удаления архивируйте пакет.",
     "del.hint.packageIsActive":
       "Пакет ещё активен. Сначала архивируйте его, потом удаляйте — активная позиция не должна исчезать прямо во время просмотра родителем.",
     "del.hint.packageNotDeletable":
@@ -4462,6 +4487,11 @@ export const messages: Record<Locale, Record<string, string>> = {
       "В общем банке предмета ещё есть вопросы ({n}). Удаление их не сотрёт, но лишит указания на предмет — сначала очистите банк или архивируйте предмет.",
     "del.hint.subjectHasRoundAttempts":
       "К ежедневным раундам предмета привязаны попытки ({n}). Эти результаты сохраняются — архивируйте предмет.",
+    // Миграция 124 — права доступа (entitlements) на предмет. Это не запись о
+    // подписке: сюда попадают и Apple/Play, и школьная лицензия, и выданный
+    // вручную доступ, поэтому фраза отдельная.
+    "del.hint.subjectHasEntitlements":
+      "К предмету привязаны действующие права доступа ({n}) — удаление отрезало бы этих учеников. Вместо этого архивируйте предмет.",
     "del.hint.liveAttempts":
       "Прямо сейчас выполняется попыток: {n}. Дождитесь их завершения — а пока содержимое можно архивировать.",
     "del.hint.confirmationMismatch":

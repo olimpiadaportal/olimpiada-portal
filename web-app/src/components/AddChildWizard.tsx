@@ -17,14 +17,21 @@
 //                   subject; there is no global cycle control any more.
 //     3. PLAN     — REVIEW: the grouped per-cycle breakdown + a LIVE server
 //                   quote (sibling discount).
-//     4. CONFIRM  — the authoritative due-today total and an explicit confirm.
-//                   It calls subscribeChild, which allocates + reveals the
-//                   8-digit ID. There are NO card fields here: the demo
-//                   payment mode was deleted on 2026-08-18, and a card form
-//                   that never charges is worse than none — a parent would
-//                   type a real PAN into it. The future provider replaces the
-//                   SERVER seam inside subscribeChild (webhook-verified
-//                   charge) and takes over this step as its redirect point.
+//     4. CONFIRM  — the authoritative DUE-TODAY total and one honest button.
+//                   Migration 126 inverted this step the way 125 inverted
+//                   Manage-Subjects: it used to say "İndi ödə" / "Pay now",
+//                   charge nothing, apply the plan, and only THEN reveal the
+//                   real departure button underneath — so the parent was asked
+//                   to pay twice for one plan and the first ask was a lie. The
+//                   button now says what happens: "continue to payment" when
+//                   something is due (subscribeChild opens the intent and hands
+//                   back a SIGNED redirect; nothing is applied until the bank
+//                   confirms it), and "confirm" when the plan rides a trial and
+//                   nothing is charged. The amount printed here is the server's
+//                   `due_now` — the same number the gateway is asked for (audit
+//                   invariant H7) — never the plan total, which is a DIFFERENT
+//                   number whenever a trial applies. There are NO card fields:
+//                   the cardholder types the PAN on the acquirer's own page.
 //     5. DONE     — success + the allocated login ID + a link to /dashboard.
 //
 //   mode 'giveaway' — TWO steps (Info → Done): after addChild succeeds the
@@ -57,8 +64,10 @@ import {
   subscribeChild,
   quoteSubscription,
   activateChildGiveaway,
+  type PlanCheckout,
   type QuoteResult,
 } from "@/lib/auth/subscriptionService";
+import { CheckoutRedirect } from "@/components/CheckoutRedirect";
 import { PlanSummary } from "@/components/PlanSummary";
 import { SubjectPlanCard } from "@/components/SubjectPlanCard";
 import {
@@ -211,6 +220,14 @@ export function AddChildWizard({
   // Step 4 — payment confirmation + the result.
   const [payError, setPayError] = useState<string | null>(null);
   const [childUniqueId, setChildUniqueId] = useState<string | null>(null);
+  // Migration 125 — the signed departure for the bank, when this plan is
+  // PAYABLE. A brand-new child normally rides the free trial and never gets one
+  // (`due_now` is 0, so subscribeChild applies the plan and returns `result`);
+  // with `launch_promo_config.trial_days = 0` the very first plan is charged,
+  // and then the money has to move BEFORE anything is granted. Holding it here
+  // keeps the wizard on this step instead of announcing a success that neither
+  // took a payment nor allocated an 8-digit ID.
+  const [checkout, setCheckout] = useState<PlanCheckout | null>(null);
 
   // Rayons of the chosen city. A city with NO active rayons skips the district
   // field entirely (its schools attach directly to the city).
@@ -378,7 +395,19 @@ export function AddChildWizard({
         setPayError(res?.error ?? tt("sub.err.invalid"));
         return;
       }
-      setChildUniqueId(res.result?.childUniqueId ?? null);
+      // PAYABLE: nothing was applied and nothing was charged yet. Show the
+      // departure form and stay here — advancing would claim a success that has
+      // not happened. The parent returns from the bank on /checkout/result.
+      if (res.checkout) {
+        setCheckout(res.checkout);
+        return;
+      }
+      // FREE (the trial): the plan exists, so the 8-digit ID exists too.
+      if (!res.result) {
+        setPayError(tt("sub.err.invalid"));
+        return;
+      }
+      setChildUniqueId(res.result.childUniqueId ?? null);
       setStepIdx(flow.length - 1);
     });
   }
@@ -387,6 +416,19 @@ export function AddChildWizard({
   // the authoritative server quote arrives. Never a "per period" figure: the
   // basket may span several cycles.
   const subtotal = localQuote.dueToday;
+
+  // MIGRATION 126 — IS A PAYMENT ABOUT TO HAPPEN? The label on the one button of
+  // the payment step, taken from the SERVER quote's `due_now` and nothing else:
+  // a trial (or a giveaway-priced basket) charges nothing and gets "confirm",
+  // anything else gets "continue to payment" and gets exactly that. `total` is
+  // NOT usable here — it is a different number whenever a trial applies, and
+  // reading it is what let the old button promise a payment it never made.
+  //
+  // While the quote is still loading the button is DISABLED rather than
+  // guessing. A quote that FAILED defaults to the payment wording: a button that
+  // promises a payment step and then turns out not to need one is a far smaller
+  // lie than one that promises no charge and then asks for money.
+  const payableNow = !quote || !quote.ok || quote.dueNow > 0;
 
   return (
     <div className="wizard">
@@ -697,7 +739,10 @@ export function AddChildWizard({
                     ? {
                         discountPercent: quote.discount_percent,
                         discount: quote.discount,
-                        dueToday: quote.total,
+                        // `due_now`, NOT `total` (migration 126, audit
+                        // invariant H7). They are different numbers whenever a
+                        // trial applies, and this row is captioned "due today".
+                        dueToday: quote.dueNow,
                         trialDays: quote.trial_days,
                         currency: quote.currency,
                         // The per-cycle groups carry the sibling discount already
@@ -732,13 +777,40 @@ export function AddChildWizard({
               <div className="quote-total">
                 <span>{tt("plan.dueToday")}</span>
                 <span>
-                  {quote && quote.ok ? quote.total : subtotal}{" "}
+                  {quote && quote.ok ? quote.dueNow : subtotal}{" "}
                   {quote && quote.ok ? quote.currency : "AZN"}
                 </span>
               </div>
             </div>
 
+            {/* Says WHY a zero is zero, so it cannot read as "free forever".
+                Same sentence and same source as the subscribe page. */}
+            {quote && quote.ok && quote.trial_days > 0 && quote.dueNow === 0 && (
+              <p className="muted">
+                {tt("sub.trialNoChargeToday").replace(
+                  "{days}",
+                  String(quote.trial_days),
+                )}
+              </p>
+            )}
+
             {payError && <p className="form-error">{payError}</p>}
+
+            {/* The full-page redirect to the acquirer, once the server has
+                opened and signed the intent. Rendered here rather than on a
+                step of its own: the parent authorises the charge in the same
+                place they were shown what it costs. */}
+            {checkout && (
+              <CheckoutRedirect
+                order={checkout.order}
+                amount={checkout.amount}
+                signed={{
+                  action: checkout.action,
+                  fields: checkout.fields,
+                  amount: checkout.amount,
+                }}
+              />
+            )}
           </div>
         )}
 
@@ -832,14 +904,18 @@ export function AddChildWizard({
               {tt("addchild.next")}
             </button>
           )}
-          {cur === "payment" && (
+          {cur === "payment" && !checkout && (
             <button
               type="button"
               className="btn"
               onClick={confirmPayment}
-              disabled={pending || plan.length === 0}
+              disabled={pending || plan.length === 0 || !quote}
             >
-              {pending ? tt("pay.processing") : tt("pay.payNow")}
+              {pending
+                ? tt("pay.processing")
+                : payableNow
+                  ? tt("pay.continue")
+                  : tt("pay.confirmNoCharge")}
             </button>
           )}
         </div>

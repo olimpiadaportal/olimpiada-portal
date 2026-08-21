@@ -18,12 +18,28 @@
 //   c. refuses a tuple whose RRN / INT_REF already belongs to another order;
 //   d. asks the gateway itself (TRTYPE 90) about OUR order and believes only
 //      that answer;
-//   e. records the result idempotently — and GRANTS NOTHING.
+//   e. records the result idempotently;
+//   f. and ONLY THEN redeems the checkout's INTENT into the plan it was opened
+//      for.
 //
-// (e) is not a simplification. docs/STORE_PAYMENTS_COMPLIANCE.md §4.1 requires
-// a provider-agnostic `entitlements` table as the single source of truth for
-// access, with ABB as one producer of rows. That table does not exist yet, and
-// wiring money to access before it does is the exact trap that document names.
+// (f) IS THE GRANT, AND IT BELONGS HERE (migration 125). Until then the plan was
+// applied by the parent's own click and the charge was opened afterwards by a
+// helper that could not fail it — so closing the tab before paying kept the
+// access. Inverting that means the only place a plan can be created is behind a
+// payment this route has already verified twice over.
+//
+// EVERY HARD GUARANTEE OF (f) IS IN SQL, NOT HERE. `checkout_redeem_plan` locks
+// the session row, refuses anything that is not `paid`, re-prices the frozen
+// basket against the amount the gateway confirmed, applies inside the same
+// transaction that stamps `redeemed_at`, and records anything it cannot deliver
+// safely as `needs_review` with a reason. A gateway retry, a double callback or
+// a refresh therefore finds a decided row. This route only calls it and maps the
+// answer onto what the parent is shown.
+//
+// It still writes no entitlement row: redemption goes through the subscription
+// RPCs and migration 124's producer triggers mirror the result, exactly as
+// docs/STORE_PAYMENTS_COMPLIANCE.md §4.1 requires (ABB is ONE producer, never
+// the source of truth for access).
 //
 // It must also be safe to hit: idempotent under gateway retries, bounded in the
 // work any single request can cause, rate limited, and generic in every
@@ -44,9 +60,16 @@ import {
   findSessionByOrder,
   hasReferenceConflict,
   recordOutcome,
+  PLAN_CHECKOUT_KIND,
 } from "@/lib/payments/azericard/store";
 import { formatAmount } from "@/lib/payments/azericard/format";
-import { renderResultPage, safeLocale, type ResultKind } from "@/lib/payments/azericard/resultPage";
+import {
+  parentResultUrl,
+  renderResultPage,
+  safeLocale,
+  type ResultKind,
+} from "@/lib/payments/azericard/resultPage";
+import { redeemPlanCheckout } from "@/lib/payments/checkoutIntent";
 import { rateLimitAllow } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -61,6 +84,31 @@ const HTML_HEADERS = {
 
 function page(kind: ResultKind, locale: ReturnType<typeof safeLocale>, status = 200): Response {
   return new Response(renderResultPage(kind, locale), { status, headers: HTML_HEADERS });
+}
+
+/**
+ * Send a PARENT back into the product instead of onto the bare page.
+ *
+ * 303, so the browser turns this cross-site POST into a same-origin GET: that
+ * navigation carries the SameSite=Lax session cookie a cross-site POST cannot,
+ * which is what lets the parent land signed in. The Location is built by
+ * parentResultUrl() from the reconciled ResultKind alone — a relative path with
+ * one enum in it, so nothing from this request can steer it and there is no way
+ * to express another origin.
+ *
+ * The body is empty on purpose: a redirect that also renders is two answers to
+ * one question, and the second one would be the reflected page this route
+ * exists not to produce.
+ */
+function seeOther(location: string): Response {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: location,
+      "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex, nofollow",
+    },
+  });
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -123,16 +171,29 @@ export async function POST(request: Request): Promise<Response> {
     console.warn("[azericard] callback named an order we never minted");
     return page("failed", locale, 404);
   }
+
+  // WHO CAME BACK. A plan checkout belongs to a signed-in parent, who needs a
+  // route back into the product; the owner's protocol test belongs to nobody and
+  // keeps the bare, chrome-free page. The decision comes from OUR OWN row, never
+  // from a request field — the callback cannot ask to be redirected anywhere.
+  //
+  // Every answer from here on goes through `respond`, so a parent lands on the
+  // result screen whichever way the transaction settles, including the ones that
+  // settle badly.
+  const parentFlow = session.kind === PLAN_CHECKOUT_KIND;
+  const respond = (result: ResultKind, status = 200): Response =>
+    parentFlow ? seeOther(parentResultUrl(result)) : page(result, locale, status);
+
   const expectedAmount = session.amount === null ? null : formatAmount(session.amount);
   if (!expectedAmount) {
     console.error("[azericard] checkout session has no usable amount");
-    return page("pending", locale, 500);
+    return respond("pending", 500);
   }
 
   // ---- 4. Reference reuse, checked BEFORE we spend a status query ----------
   if (await hasReferenceConflict(shape.order, shape.rrn, shape.intRef)) {
     console.warn("[azericard] callback references already belong to a different order");
-    return page("failed", locale, 409);
+    return respond("failed", 409);
   }
 
   // ---- 5. Ask the gateway about OUR order, and believe only that -----------
@@ -158,10 +219,10 @@ export async function POST(request: Request): Promise<Response> {
     // because those are not trustworthy on their own. Leave the payment pending
     // and let reconciliation (or a retry from the gateway) settle it.
     console.error(`[azericard] status query failed: ${status.error}`);
-    return page("pending", locale, 200);
+    return respond("pending");
   }
 
-  // ---- 6. Record. Grant nothing. ------------------------------------------
+  // ---- 6. Record the money. -----------------------------------------------
   const recorded = await recordOutcome({
     session,
     shape,
@@ -175,7 +236,7 @@ export async function POST(request: Request): Promise<Response> {
 
   if (!recorded.ok) {
     console.error(`[azericard] recording the outcome failed: ${recorded.error}`);
-    return page(recorded.error === "reference_reused" ? "failed" : "pending", locale, 200);
+    return respond(recorded.error === "reference_reused" ? "failed" : "pending");
   }
 
   // A summary line the owner can read during the live test. Deliberately made
@@ -186,13 +247,31 @@ export async function POST(request: Request): Promise<Response> {
       `format=${status.parsed.format} unmapped=${status.parsed.unrecognisedCount}`,
   );
 
-  const kind: ResultKind =
-    recorded.outcome === "approved"
-      ? "ok"
-      : recorded.outcome === "declined" || recorded.outcome === "failed"
+  if (recorded.outcome !== "approved") {
+    return respond(
+      recorded.outcome === "declined" || recorded.outcome === "failed"
         ? "failed"
-        : "pending";
-  return page(kind, locale, 200);
+        : "pending",
+    );
+  }
+
+  // ---- 7. The money is real. Now deliver what it bought. ------------------
+  //
+  // Only for a PLAN checkout: the owner's protocol test has no intent, and
+  // `checkout_redeem_plan` answers 'no_intent' for it rather than improvising
+  // one. Everything else about safety lives in that function.
+  if (!parentFlow) return respond("ok");
+
+  const redeemed = await redeemPlanCheckout(session.order);
+
+  // WHAT THE PARENT IS TOLD. 'ok' means the plan is live — and it is only said
+  // when the redemption actually applied. A payment we took but could not turn
+  // into a plan is `pending` on the screen, because from the payer's side that
+  // is exactly what it is: taken, not finished, and now in front of a human
+  // (013 check 118). Claiming success there would be the one lie a parent is
+  // guaranteed to discover.
+  const kind: ResultKind = redeemed === "applied" ? "ok" : "pending";
+  return respond(kind);
 }
 
 /**

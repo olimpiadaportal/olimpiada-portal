@@ -173,6 +173,49 @@ do $$ begin
     ('all_or_nothing', 'per_question', 'weighted');
 exception when duplicate_object then null; end $$;
 
+-- -----------------------------------------------------------------------------
+-- ENTITLEMENT vocabulary (migration 124; docs/STORE_PAYMENTS_COMPLIANCE.md
+-- §4.1). `scope` says WHAT was granted; `source` says WHICH RAIL produced the
+-- grant -- the producer, never the commercial flavour. There is deliberately no
+-- 'trial', 'promo' or 'giveaway_window' value: a trial is an abb_web grant with
+-- a short period, and the giveaway is a COMPUTED window that owns no rows at
+-- all. The source list is §4.1's, verbatim and in order; extending it is an
+-- owner decision, because every value is a rail somebody has to reconcile
+-- money for.
+-- -----------------------------------------------------------------------------
+do $$ begin
+  create type public.entitlement_scope as enum ('subject', 'olympiad_package');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.entitlement_source as enum
+    ('abb_web', 'apple_iap', 'google_play', 'giveaway', 'manual', 'school_license');
+exception when duplicate_object then null; end $$;
+
+-- -----------------------------------------------------------------------------
+-- CHECKOUT INTENT vocabulary (migration 125). A checkout_sessions row used to
+-- record only that money was wanted, never WHAT for -- so a verified payment had
+-- nothing to act on and the plan had to be applied BEFORE the charge, which made
+-- the money optional. These two types are what let the order be reversed.
+--
+-- `checkout_intent_kind` says which RPC a verified payment redeems into, and it
+-- is RECORDED at intent time rather than inferred at redeem time: a parent who
+-- authorised "start a plan with these three subjects" must never have that
+-- quietly become "change the existing plan" because a subscription appeared in
+-- between.
+--
+-- `checkout_redemption_status` deliberately has no 'pending' value. Absence of a
+-- status IS pending; both values below are TERMINAL and are written together
+-- with redeemed_at, which is what makes "exactly once" a single NULL test.
+-- -----------------------------------------------------------------------------
+do $$ begin
+  create type public.checkout_intent_kind as enum ('plan_start', 'plan_change');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.checkout_redemption_status as enum ('applied', 'needs_review');
+exception when duplicate_object then null; end $$;
+
 -- =============================================================================
 -- End of 001_extensions_and_enums.sql
 -- =============================================================================

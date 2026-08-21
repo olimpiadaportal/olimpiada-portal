@@ -739,6 +739,14 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.noSubjectsAvailable": "Hələ aktiv qiymətli fənn yoxdur.",
     "sub.err.invalid": "Ödəniş dövrünü seçin.",
     "sub.err.noSubjects": "Ən az bir fənn seçin.",
+    // Migration 125 — the plan is created only after the bank confirms the
+    // payment, so the start-a-plan screen ends on a payment step, not on a
+    // "done" message.
+    "sub.payFirst": "Ödənişi tamamlayın",
+    "sub.payFirstNote":
+      "Plan ödəniş təsdiqləndikdən sonra aktivləşəcək. Uşağınızın 8 rəqəmli giriş ID-si də həmin an yaradılacaq və valideyn panelində görünəcək.",
+    "sub.trialNoChargeToday":
+      "Bu gün heç nə ödənilmir — {days} günlük sınaq müddəti başlayır, ilk ödəniş isə o bitəndən sonra alınacaq.",
     "sub.err.notYourChild": "Bu uşaq sizin hesabınıza aid deyil.",
     "sub.err.idFailed": "Giriş ID-si təyin edilə bilmədi. Yenidən cəhd edin.",
     "sub.err.failed": "Əməliyyat alınmadı. Zəhmət olmasa yenidən cəhd edin.",
@@ -748,6 +756,15 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Hazırda pulsuz kampaniya dövrü davam edir — bütün imkanlar ödənişsiz açıqdır, ödəniş tələb olunmur.",
     "gate.freeAccess":
       "Sizin üçün pulsuz giriş dövrü aktivdir — bütün abunə imkanları hazırda ödənişsiz açıqdır.",
+    // Migration 126 — a change that costs money, asked for on a surface that
+    // may not take money (the mobile BFF). The copy is bound by
+    // docs/STORE_PAYMENTS_COMPLIANCE.md section 5: it states a FACT about where
+    // subscriptions are managed and names no price, no destination, no URL and
+    // no purchase verb. "Manage it on your web account" is specifically the
+    // WRONG form (audit finding I6) — it is the sentence an App Store reviewer
+    // screenshots. This one is the shape section 5 lists as right.
+    "gate.notInApp":
+      "Bu dəyişiklik tətbiqdə tamamlana bilmir. Abunəliklər bu tətbiqdə idarə olunmur.",
     "fa.title": "Pulsuz giriş",
     "fa.sub": "Bütün abunə imkanları hazırda sizin üçün pulsuzdur.",
     "gate.olympiadOff": "Olimpiada modulu hazırda aktiv deyil.",
@@ -973,6 +990,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pay.note":
       "Aşağıdakı məbləği təsdiqləyin — abunə dərhal başlayacaq və övladınızın giriş ID-si yaradılacaq.",
     "pay.payNow": "İndi ödə",
+    // Migration 125 — the plan-change sheet leads to the bank, so its primary
+    // button says so. `pay.payNow` stays for the add-child wizard only.
+    "pay.continue": "Ödənişə keç",
     "pay.processing": "Emal olunur…",
     "pay.success": "Ödəniş uğurlu oldu",
     "pay.idRevealed": "Uşağınızın 8 rəqəmli giriş ID-si yaradıldı.",
@@ -1767,6 +1787,51 @@ export const messages: Record<Locale, Record<string, string>> = {
     "payres.close": "Bu pəncərəni bağlaya bilərsiniz.",
     "payres.redirect": "Ödəniş səhifəsinə yönləndirilirsiniz.",
     "payres.continue": "Davam et",
+    // ---- Parent checkout (checkout.*) — the WEB purchase flow -------------
+    // WEB ONLY. These strings name a price, a payment step and a bank page, all
+    // of which are correct in a browser and forbidden in a store binary
+    // (docs/STORE_PAYMENTS_COMPLIANCE.md section 5). The mobile catalog is
+    // GENERATED from this file, so these keys will exist there — no mobile
+    // screen may reference one. The amount itself is never in the catalog: it
+    // is rendered from the server's own number, so no locale can drift from it.
+    "checkout.title": "Ödənişi tamamlayın",
+    "checkout.intro":
+      "Ödənişi bankın təhlükəsiz səhifəsində tamamlayacaqsınız. Kart məlumatları yalnız orada daxil edilir və bizim serverlərimizə düşmür.",
+    "checkout.amount": "Ödəniləcək məbləğ",
+    "checkout.payNow": "Ödənişə keç",
+    "checkout.starting": "Hazırlanır…",
+    "checkout.redirectNote":
+      "İndi bankın ödəniş səhifəsinə keçəcəksiniz. Ödəniş bitdikdən sonra bura qaytarılacaqsınız.",
+    "checkout.continue": "Bank səhifəsinə keç",
+    "checkout.err.notFound": "Bu ödəniş tapılmadı. Səhifəni yeniləyib yenidən cəhd edin.",
+    "checkout.err.alreadyPaid": "Bu ödəniş artıq tamamlanıb.",
+    "checkout.err.unavailable":
+      "Ödəniş hazırda mümkün deyil. Bir qədər sonra yenidən cəhd edin.",
+    "checkout.resume": "Ödənişi tamamla",
+    "checkout.err.priceChanged":
+      "Qiymət dəyişib. Seçiminizi yenidən nəzərdən keçirin — yeni məbləği göstərəcəyik.",
+    "checkout.err.expired":
+      "Bu ödənişin vaxtı bitib. Fənləri yenidən seçib davam edin.",
+    "checkout.err.planChanged":
+      "Plan başqa bir yerdə dəyişdirilib. Səhifəni yeniləyin və yenidən cəhd edin.",
+    "checkout.err.tooMany": "Çox sayda cəhd oldu. Bir neçə dəqiqədən sonra yenidən yoxlayın.",
+    // The result screen says what actually happened. Since migration 125 a
+    // confirmed payment IS what creates the plan, so "ok" may say so — and it
+    // is only ever shown when the redemption actually applied. A payment we
+    // took but could not turn into a plan lands on "pending", which is what it
+    // is from the payer's side: taken, not finished, and in front of a human.
+    "checkout.res.ok.title": "Ödəniş təsdiqləndi",
+    "checkout.res.ok.body":
+      "Ödənişiniz təsdiqləndi və plan aktivləşdirildi. Valideyn panelində baxa bilərsiniz.",
+    "checkout.res.pending.title": "Ödəniş hələ təsdiqlənməyib",
+    "checkout.res.pending.body":
+      "Bank hələ yekun cavab verməyib. Bu adətən bir neçə dəqiqə çəkir.",
+    "checkout.res.pending.hint":
+      "Zəhmət olmasa təkrar ödəniş etməyin — nəticə hazır olan kimi hesabınızda görünəcək. Bir müddət sonra da dəyişməzsə, bizimlə əlaqə saxlayın.",
+    "checkout.res.failed.title": "Ödəniş baş tutmadı",
+    "checkout.res.failed.body":
+      "Məbləğ silinmədi. Kartınızı yoxlayıb yenidən cəhd edə bilərsiniz.",
+    "checkout.res.back": "Valideyn panelinə qayıt",
   },
   en: {
     // ---- Notifications (notif.*) — in-app notification center ----
@@ -2478,6 +2543,14 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.noSubjectsAvailable": "No subjects with active pricing yet.",
     "sub.err.invalid": "Please choose a billing period.",
     "sub.err.noSubjects": "Select at least one subject.",
+    // Migration 125 — the plan is created only after the bank confirms the
+    // payment, so the start-a-plan screen ends on a payment step, not on a
+    // "done" message.
+    "sub.payFirst": "Complete your payment",
+    "sub.payFirstNote":
+      "The plan becomes active once the payment is confirmed. Your child's 8-digit login ID is created at the same moment and appears in the parent panel.",
+    "sub.trialNoChargeToday":
+      "Nothing is charged today — a {days}-day trial starts now, and the first payment is taken only when it ends.",
     "sub.err.notYourChild": "This child is not on your account.",
     "sub.err.idFailed": "Could not assign the login ID. Please try again.",
     "sub.err.failed": "The operation could not be completed. Please try again.",
@@ -2487,6 +2560,15 @@ export const messages: Record<Locale, Record<string, string>> = {
       "A free giveaway period is running — everything is unlocked at no cost, so no payment is needed right now.",
     "gate.freeAccess":
       "A free-access period is active for you — all subscription features are unlocked at no cost right now.",
+    // Migration 126 — a change that costs money, asked for on a surface that
+    // may not take money (the mobile BFF). The copy is bound by
+    // docs/STORE_PAYMENTS_COMPLIANCE.md section 5: it states a FACT about where
+    // subscriptions are managed and names no price, no destination, no URL and
+    // no purchase verb. "Manage it on your web account" is specifically the
+    // WRONG form (audit finding I6) — it is the sentence an App Store reviewer
+    // screenshots. This one is the shape section 5 lists as right.
+    "gate.notInApp":
+      "This change can't be completed in the app. Subscriptions aren't managed in this app.",
     "fa.title": "Free access",
     "fa.sub": "All subscription features are free for you right now.",
     "gate.olympiadOff": "The olympiad module is currently unavailable.",
@@ -2712,6 +2794,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pay.note":
       "Confirm the amount below — the subscription starts right away and your child's login ID is created.",
     "pay.payNow": "Pay now",
+    // Migration 125 — the plan-change sheet leads to the bank, so its primary
+    // button says so. `pay.payNow` stays for the add-child wizard only.
+    "pay.continue": "Continue to payment",
     "pay.processing": "Processing…",
     "pay.success": "Payment successful",
     "pay.idRevealed": "Your child's 8-digit login ID has been created.",
@@ -3490,6 +3575,51 @@ export const messages: Record<Locale, Record<string, string>> = {
     "payres.close": "You can close this window.",
     "payres.redirect": "You are being redirected to the payment page.",
     "payres.continue": "Continue",
+    // ---- Parent checkout (checkout.*) — the WEB purchase flow -------------
+    // WEB ONLY. These strings name a price, a payment step and a bank page, all
+    // of which are correct in a browser and forbidden in a store binary
+    // (docs/STORE_PAYMENTS_COMPLIANCE.md section 5). The mobile catalog is
+    // GENERATED from this file, so these keys will exist there — no mobile
+    // screen may reference one. The amount itself is never in the catalog: it
+    // is rendered from the server's own number, so no locale can drift from it.
+    "checkout.title": "Complete your payment",
+    "checkout.intro":
+      "You will finish this payment on your bank's secure page. Card details are entered there only and never reach our servers.",
+    "checkout.amount": "Amount due",
+    "checkout.payNow": "Continue to payment",
+    "checkout.starting": "Preparing…",
+    "checkout.redirectNote":
+      "You are about to be taken to the bank's payment page. You will be brought back here once the payment is finished.",
+    "checkout.continue": "Go to the bank's page",
+    "checkout.err.notFound": "We could not find this payment. Refresh the page and try again.",
+    "checkout.err.alreadyPaid": "This payment has already been completed.",
+    "checkout.err.unavailable":
+      "Payment is not available right now. Please try again shortly.",
+    "checkout.resume": "Complete this payment",
+    "checkout.err.priceChanged":
+      "The price has changed. Please review your selection — we will show you the new amount.",
+    "checkout.err.expired":
+      "This payment has expired. Choose the subjects again to continue.",
+    "checkout.err.planChanged":
+      "The plan was changed somewhere else. Refresh the page and try again.",
+    "checkout.err.tooMany": "Too many attempts. Please check again in a few minutes.",
+    // The result screen says what actually happened. Since migration 125 a
+    // confirmed payment IS what creates the plan, so "ok" may say so — and it
+    // is only ever shown when the redemption actually applied. A payment we
+    // took but could not turn into a plan lands on "pending", which is what it
+    // is from the payer's side: taken, not finished, and in front of a human.
+    "checkout.res.ok.title": "Payment confirmed",
+    "checkout.res.ok.body":
+      "Your payment is confirmed and the plan is now active. You can see it in the parent panel.",
+    "checkout.res.pending.title": "Payment not confirmed yet",
+    "checkout.res.pending.body":
+      "The bank has not given a final answer yet. This usually takes a few minutes.",
+    "checkout.res.pending.hint":
+      "Please do not pay again — the result will appear in your account as soon as it is ready. If it still has not after a while, get in touch with us.",
+    "checkout.res.failed.title": "Payment did not go through",
+    "checkout.res.failed.body":
+      "No money was taken. You can check your card and try again.",
+    "checkout.res.back": "Back to the parent panel",
   },
   ru: {
     // ---- Notifications (notif.*) — in-app notification center ----
@@ -4204,6 +4334,14 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.noSubjectsAvailable": "Пока нет предметов с активной ценой.",
     "sub.err.invalid": "Выберите период оплаты.",
     "sub.err.noSubjects": "Выберите хотя бы один предмет.",
+    // Migration 125 — the plan is created only after the bank confirms the
+    // payment, so the start-a-plan screen ends on a payment step, not on a
+    // "done" message.
+    "sub.payFirst": "Завершите оплату",
+    "sub.payFirstNote":
+      "План станет активным после подтверждения оплаты. Тогда же будет создан 8-значный логин ребёнка, и он появится в родительской панели.",
+    "sub.trialNoChargeToday":
+      "Сегодня ничего не списывается — начинается пробный период на {days} дн., а первый платёж будет взят только после его окончания.",
     "sub.err.notYourChild": "Этот ребёнок не привязан к вашему аккаунту.",
     "sub.err.idFailed": "Не удалось назначить ID для входа. Попробуйте ещё раз.",
     "sub.err.failed": "Не удалось выполнить операцию. Пожалуйста, попробуйте ещё раз.",
@@ -4213,6 +4351,15 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Сейчас идёт бесплатный акционный период — все возможности открыты бесплатно, оплата не требуется.",
     "gate.freeAccess":
       "Для вас активен период бесплатного доступа — все возможности подписки сейчас открыты бесплатно.",
+    // Migration 126 — a change that costs money, asked for on a surface that
+    // may not take money (the mobile BFF). The copy is bound by
+    // docs/STORE_PAYMENTS_COMPLIANCE.md section 5: it states a FACT about where
+    // subscriptions are managed and names no price, no destination, no URL and
+    // no purchase verb. "Manage it on your web account" is specifically the
+    // WRONG form (audit finding I6) — it is the sentence an App Store reviewer
+    // screenshots. This one is the shape section 5 lists as right.
+    "gate.notInApp":
+      "Это изменение нельзя завершить в приложении. Подписки не управляются в этом приложении.",
     "fa.title": "Бесплатный доступ",
     "fa.sub": "Все возможности подписки сейчас для вас бесплатны.",
     "gate.olympiadOff": "Модуль олимпиад в данный момент недоступен.",
@@ -4438,6 +4585,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pay.note":
       "Подтвердите сумму ниже — подписка начнётся сразу, и для ребёнка будет создан ID для входа.",
     "pay.payNow": "Оплатить",
+    // Migration 125 — the plan-change sheet leads to the bank, so its primary
+    // button says so. `pay.payNow` stays for the add-child wizard only.
+    "pay.continue": "Перейти к оплате",
     "pay.processing": "Обработка…",
     "pay.success": "Оплата прошла успешно",
     "pay.idRevealed": "8-значный ID для входа вашего ребёнка создан.",
@@ -5217,5 +5367,50 @@ export const messages: Record<Locale, Record<string, string>> = {
     "payres.close": "Это окно можно закрыть.",
     "payres.redirect": "Вы перенаправляетесь на страницу оплаты.",
     "payres.continue": "Продолжить",
+    // ---- Parent checkout (checkout.*) — the WEB purchase flow -------------
+    // WEB ONLY. These strings name a price, a payment step and a bank page, all
+    // of which are correct in a browser and forbidden in a store binary
+    // (docs/STORE_PAYMENTS_COMPLIANCE.md section 5). The mobile catalog is
+    // GENERATED from this file, so these keys will exist there — no mobile
+    // screen may reference one. The amount itself is never in the catalog: it
+    // is rendered from the server's own number, so no locale can drift from it.
+    "checkout.title": "Завершите оплату",
+    "checkout.intro":
+      "Оплату вы завершите на защищённой странице банка. Данные карты вводятся только там и на наши серверы не попадают.",
+    "checkout.amount": "Сумма к оплате",
+    "checkout.payNow": "Перейти к оплате",
+    "checkout.starting": "Подготовка…",
+    "checkout.redirectNote":
+      "Сейчас вы перейдёте на страницу оплаты банка. После завершения оплаты вы вернётесь сюда.",
+    "checkout.continue": "Перейти на страницу банка",
+    "checkout.err.notFound": "Не удалось найти этот платёж. Обновите страницу и попробуйте ещё раз.",
+    "checkout.err.alreadyPaid": "Этот платёж уже выполнен.",
+    "checkout.err.unavailable":
+      "Оплата сейчас недоступна. Попробуйте немного позже.",
+    "checkout.resume": "Завершить оплату",
+    "checkout.err.priceChanged":
+      "Цена изменилась. Проверьте свой выбор — мы покажем новую сумму.",
+    "checkout.err.expired":
+      "Срок этого платежа истёк. Выберите предметы заново, чтобы продолжить.",
+    "checkout.err.planChanged":
+      "План был изменён в другом месте. Обновите страницу и попробуйте снова.",
+    "checkout.err.tooMany": "Слишком много попыток. Проверьте ещё раз через несколько минут.",
+    // The result screen says what actually happened. Since migration 125 a
+    // confirmed payment IS what creates the plan, so "ok" may say so — and it
+    // is only ever shown when the redemption actually applied. A payment we
+    // took but could not turn into a plan lands on "pending", which is what it
+    // is from the payer's side: taken, not finished, and in front of a human.
+    "checkout.res.ok.title": "Платёж подтверждён",
+    "checkout.res.ok.body":
+      "Ваш платёж подтверждён, план активирован. Его можно увидеть в родительской панели.",
+    "checkout.res.pending.title": "Платёж ещё не подтверждён",
+    "checkout.res.pending.body":
+      "Банк пока не дал окончательного ответа. Обычно это занимает несколько минут.",
+    "checkout.res.pending.hint":
+      "Пожалуйста, не платите повторно — результат появится в вашем аккаунте, как только будет готов. Если через некоторое время ничего не изменится, свяжитесь с нами.",
+    "checkout.res.failed.title": "Платёж не прошёл",
+    "checkout.res.failed.body":
+      "Деньги не списаны. Проверьте карту и попробуйте ещё раз.",
+    "checkout.res.back": "Вернуться в родительскую панель",
   },
 };

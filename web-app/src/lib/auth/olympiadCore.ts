@@ -17,6 +17,29 @@ export type PurchaseOlympiadCoreResult =
   | { ok: true; already?: boolean }
   | { ok: false; errorKey: string };
 
+// ---- WHO IS ALLOWED TO REACH A PRICED PURCHASE (migration 126) --------------
+//
+// The same posture the plan cores take, for the same reason: this core is
+// shared by the web action and the MOBILE BFF, and the apps are purchase-silent
+// BY ARCHITECTURE (docs/STORE_PAYMENTS_COMPLIANCE.md section 4). Google's
+// consumption-only test is APP-WIDE, so a parent tab that can buy an olympiad
+// package fails it exactly as a parent tab that can buy a subject would.
+//
+//   "allow"   the WEB.
+//   "refuse"  the purchase-silent surface: a package whose SERVER-READ price is
+//             above zero is refused before the payment seam is reached at all.
+//
+// The price comes from `olympiad_packages` below — our own catalog, never the
+// client — so "above zero" is not something a caller can influence.
+//
+// KNOWN AND TRACKED, and NOT fixed here: the WEB olympiad purchase still runs
+// on the mock payment seam a few lines down, i.e. it grants lifetime access
+// without taking money. That is the same defect migration 125 fixed for plans
+// and it needs the same treatment — its own checkout intent kind — which is a
+// piece of work, not a line. This posture closes the MOBILE half now because
+// that half is also a store-policy violation, not only a money one.
+export type PaidChangePosture = "allow" | "refuse";
+
 /**
  * MOCK PAYMENT — the single seam for a real provider.
  *
@@ -49,6 +72,8 @@ export async function purchaseOlympiadForChildCore(params: {
   parentProfileId: string;
   studentId: string;
   packageId: string;
+  /** REQUIRED, no default — see PaidChangePosture above. */
+  paidChanges: PaidChangePosture;
 }): Promise<PurchaseOlympiadCoreResult> {
   const { parentProfileId, studentId, packageId } = params;
   const fail: PurchaseOlympiadCoreResult = { ok: false, errorKey: "poly.err.generic" };
@@ -101,6 +126,17 @@ export async function purchaseOlympiadForChildCore(params: {
   }
 
   const amount = Number((pkg as { price_amount?: number }).price_amount ?? 0);
+
+  // Migration 126 — the purchase-silent surface may not reach a priced package.
+  // BEFORE the payment seam, so nothing is even attempted; a package the owner
+  // has priced at zero (a free or comped one) still works from the app, which
+  // is the only kind an entitlement-reflecting binary should ever be able to
+  // activate. A non-finite price is refused too: "we could not tell what this
+  // costs" must never resolve to "so it is probably free".
+  if (params.paidChanges === "refuse" && !(Number.isFinite(amount) && amount <= 0)) {
+    return { ok: false, errorKey: "gate.notInApp" };
+  }
+
   const payment = await processOlympiadPayment({
     parentProfileId,
     studentProfileId: studentId,

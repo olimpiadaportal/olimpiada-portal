@@ -7,6 +7,16 @@
 // admin-defined price read server-side, the isolated MOCK payment seam, then
 // the purchase_olympiad RPC. Lifetime access; purchases are never deleted.
 //
+// PURCHASE-SILENT (migration 126). The core is called with
+// `paidChanges: "refuse"`, so a package whose SERVER-READ price is above zero is
+// refused before the payment seam is reached; only a zero-priced (free or
+// comped) package can be activated from the app. Purchasing happens on the WEB
+// only, and Google's consumption-only test is APP-WIDE — a parent tab that can
+// buy a package fails it exactly as one that can buy a subject would
+// (docs/STORE_PAYMENTS_COMPLIANCE.md sections 4 and 5). The refusal answers
+// `gate.notInApp`: a fact about where purchases are managed, with no price, no
+// destination and no URL.
+//
 // Idempotency: an optional `Idempotency-Key` header is ACCEPTED for client
 // retry ergonomics, but the real guarantee is server-side — purchase_olympiad
 // is idempotent per (child, package): a re-purchase (or a concurrent race on
@@ -50,6 +60,7 @@ export async function POST(
       parentProfileId: parent.profileId,
       studentId,
       packageId,
+      paidChanges: "refuse",
     });
     if (!res.ok) {
       return errorResponse(res.errorKey, statusForErrorKey(res.errorKey));

@@ -103,12 +103,35 @@ describe("the callback grants nothing", () => {
     expect(src).toContain("CALLBACK_MAX_BODY_BYTES");
   });
 
-  it("answers with the bare result page and nothing else — no field is echoed", () => {
-    // Exactly one Response constructor, and its body is always the static
-    // dictionary-driven page. No JSON, no reflected order id, no gateway text.
-    expect(src.match(/new Response\(/g) ?? []).toHaveLength(1);
+  it("echoes no field — the only two answers are the bare page and a redirect", () => {
+    // TWO Response constructors, and this count is the assertion: the static
+    // dictionary-driven page, and an EMPTY-BODIED 303 for a parent. There is no
+    // third — no JSON, no reflected order id, no gateway text, nothing built
+    // from a submitted field.
+    //
+    // (It was one until the parent checkout landed. The bare page is right for
+    // the owner's protocol test and a dead end for a parent mid-purchase, so a
+    // plan checkout is redirected back into the product instead. The redirect
+    // reflects nothing either — see the next test.)
+    expect(src.match(/new Response\(/g) ?? []).toHaveLength(2);
     expect(src).toContain("renderResultPage(kind, locale)");
+    expect(src).toContain("new Response(null, {");
     expect(src).not.toContain("NextResponse");
+  });
+
+  it("redirects a parent only to a path built from the reconciled verdict", () => {
+    // The Location comes from parentResultUrl(), whose only argument is the
+    // ResultKind this route computed — never a callback field, never the order,
+    // never a query parameter. A redirect target that could be steered by the
+    // POST body would be an open redirect on a public, unauthenticated endpoint.
+    expect(flow).toContain("parentResultUrl(");
+    expect(flow).not.toMatch(/parentResultUrl\([^)]*(shape|url|params|fields)/);
+    // WHO gets redirected is decided from OUR OWN row, not from the request.
+    expect(flow).toContain("session.kind === PLAN_CHECKOUT_KIND");
+    // 303 specifically: it turns the cross-site POST into a same-origin GET, so
+    // the parent's SameSite=Lax session cookie rides along and they land signed
+    // in. A 307 would replay the POST at our own page with the bank's body.
+    expect(src).toContain("status: 303");
   });
 
   it("marks its responses no-store and noindex", () => {
@@ -117,13 +140,16 @@ describe("the callback grants nothing", () => {
   });
 });
 
-describe("nothing in the payment layer touches access", () => {
-  it("calls no privileged RPC and knows nothing about entitlements", () => {
-    // docs/STORE_PAYMENTS_COMPLIANCE.md §4.1: access must be governed by a
-    // provider-agnostic `entitlements` table with ABB as ONE producer. That
-    // table does not exist yet, and this layer must not improvise one.
+describe("the payment layer touches access at exactly ONE seam", () => {
+  it("keeps the protocol modules free of any access concept at all", () => {
+    // docs/STORE_PAYMENTS_COMPLIANCE.md §4.1: access is governed by the
+    // provider-agnostic `entitlements` table with ABB as ONE producer. The
+    // modules that speak the protocol — MAC, signing, callback shape, status
+    // parsing, the ledger writer — must know nothing about any of it. The
+    // callback ROUTE is deliberately not in this list: since migration 125 it
+    // owns the one seam, asserted separately below.
     const offenders: string[] = [];
-    for (const file of PAYMENT_FILES) {
+    for (const file of [...MODULE_FILES, TEST_ROUTE]) {
       const src = code(read(file));
       for (const needle of [
         ".rpc(",
@@ -142,8 +168,58 @@ describe("nothing in the payment layer touches access", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("records the fact that it granted nothing, in the ledger row itself", () => {
-    expect(code(read(join(MODULE_DIR, "store.ts")))).toContain("granted: false");
+  it("grants only through redeemPlanCheckout, and only after the money is recorded", () => {
+    // THE SEAM, pinned. One call, downstream of everything that establishes the
+    // payment is real: the signature, the TRTYPE 90 re-query, the transaction
+    // identity match and recordOutcome (which is what advances the session to
+    // `paid` — and checkout_redeem_plan refuses anything else).
+    //
+    // Before migration 125 the plan was applied by the parent's own click and
+    // the charge came afterwards, through a helper that could not fail it. The
+    // ordering below is the inversion, expressed as the only thing a source
+    // sweep can see.
+    const src = code(read(CALLBACK_ROUTE));
+    const flow = body(read(CALLBACK_ROUTE));
+    expect(src.match(/redeemPlanCheckout\(/g) ?? []).toHaveLength(1);
+
+    const recordAt = flow.indexOf("recordOutcome({");
+    const redeemAt = flow.indexOf("redeemPlanCheckout(");
+    const approvedAt = flow.indexOf('recorded.outcome !== "approved"');
+    expect(recordAt).toBeGreaterThan(-1);
+    expect(approvedAt).toBeGreaterThan(recordAt);
+    expect(redeemAt).toBeGreaterThan(approvedAt);
+
+    // It redeems OUR stored order, never a submitted field.
+    expect(flow).toContain("redeemPlanCheckout(session.order)");
+    // The owner's protocol test has no intent and is never redeemed.
+    expect(flow).toContain('if (!parentFlow) return respond("ok")');
+
+    // And the route still improvises nothing: no direct RPC, no entitlement, no
+    // producer table. It calls one named function that owns all of it.
+    for (const needle of [".rpc(", "entitlement", "apply_plan_change", "child_subscriptions"]) {
+      expect(src, needle).not.toContain(needle);
+    }
+  });
+
+  it("never tells a payer the plan is live unless the redemption applied", () => {
+    // A payment we took but could not deliver on is `pending` on the screen and
+    // `needs_review` in the database. Saying "ok" there would be the one lie a
+    // parent is guaranteed to discover.
+    const flow = body(read(CALLBACK_ROUTE));
+    expect(flow).toContain('redeemed === "applied" ? "ok" : "pending"');
+  });
+
+  it("records the fact that the LEDGER WRITER granted nothing", () => {
+    // recordOutcome writes money and stops; the redemption is its own step with
+    // its own `redeem:<order>` event. Keeping the two apart is what makes
+    // "money without delivery" and "delivery without money" both queryable
+    // after the fact (013 check 118).
+    const store = code(read(join(MODULE_DIR, "store.ts")));
+    expect(store).toContain("granted: false");
+    // It READS the redemption columns — that is how an already-decided session
+    // is kept out of the "you still owe this" prompt — but it must never CALL
+    // the redemption. One writer, one seam.
+    expect(store).not.toContain("checkout_redeem_plan");
   });
 });
 

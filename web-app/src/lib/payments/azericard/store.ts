@@ -4,13 +4,18 @@
 // authorised first. Nothing in this module authorises anything; it is the layer
 // below that decision.
 //
-// IT GRANTS NOTHING. A recorded payment is a fact about money, not a fact about
-// access. docs/STORE_PAYMENTS_COMPLIANCE.md §4.1 requires a provider-agnostic
-// `entitlements` table to be the single source of truth for access, with ABB as
-// one PRODUCER of entitlement rows — and that table does not exist yet. Wiring
-// money straight to access before it exists is precisely the trap that document
-// names, and it is the difference between "add IAP" being a two-week job and
-// being a rewrite. So: record, and stop.
+// IT GRANTS NOTHING, AND THAT IS STILL TRUE AFTER MIGRATION 125. A recorded
+// payment is a fact about money; access is `entitlements`' job
+// (docs/STORE_PAYMENTS_COMPLIANCE.md §4.1, migration 124), and the rail that
+// produces an entitlement row is the SUBSCRIPTION, mirrored by a trigger.
+//
+// Since 125 a verified payment DOES cause a plan to be applied — but not here.
+// This module records the money and advances the session to `paid`; the
+// redemption is a separate, later, separately-recorded step
+// (`checkout_redeem_plan`, reached through lib/payments/checkoutIntent). Keeping
+// the two apart is what makes "money without delivery" and "delivery without
+// money" both queryable after the fact instead of being one indivisible write
+// that either happened or did not.
 //
 // EXISTING TABLES ONLY, by design:
 //   * `checkout_sessions` — one row per initiated payment; `provider_session_id`
@@ -37,6 +42,13 @@ const UNIQUE_VIOLATION = "23505";
 const ORDER_MINT_ATTEMPTS = 8;
 
 export type CheckoutKind = "subscription" | "olympiad" | "protocol_test";
+
+/**
+ * The kind a PARENT plan payment carries — the one checkout that belongs to a
+ * signed-in family rather than to the owner's sandbox. Declared here, beside the
+ * union, so the callback and the checkout core cannot drift on the literal.
+ */
+export const PLAN_CHECKOUT_KIND: CheckoutKind = "subscription";
 
 export type CreateSessionInput = {
   ownerParentProfileId: string;
@@ -115,7 +127,61 @@ export type CheckoutSessionRow = {
   currency: string;
   status: string;
   order: string;
+  /**
+   * The plan this checkout was opened for, when there is one. Carried so a
+   * retry can be minted against the same plan without a second lookup, and so
+   * an unpaid checkout can be found again from the plan side. Null for the
+   * owner's protocol test, which belongs to no plan, and for a `plan_start`
+   * intent, whose subscription does not exist until the payment is redeemed.
+   */
+  childSubscriptionId: string | null;
+  // ---- The INTENT (migration 125) ------------------------------------------
+  // What this payment is FOR. NULL on the owner's protocol test and on every
+  // row written before 125; non-NULL means a verified payment may be redeemed
+  // into a plan, exactly once. Read here so the checkout layer can re-price and
+  // re-authorise without a second query, and so nothing has to infer intent
+  // from an amount.
+  /** 'plan_start' | 'plan_change', as recorded when the session was opened. */
+  intentKind: string | null;
+  /** The child. NULL only after that child was deleted (the FK sets it null). */
+  studentProfileId: string | null;
+  /** The FROZEN basket, exactly as `plan_items_normalize` left it. */
+  intentItems: unknown;
+  /** Beyond this the intent is not redeemable — see checkout_redeem_plan. */
+  expiresAt: string | null;
+  /** Set once, for BOTH terminal outcomes. Non-null = already decided. */
+  redeemedAt: string | null;
+  /** 'applied' | 'needs_review' once decided. */
+  redemptionStatus: string | null;
 };
+
+/** The row shape both readers below select. One list, so they cannot drift. */
+// ONE string literal, deliberately not a concatenation: supabase-js infers the
+// row shape from the literal type of this argument, and `"a" + "b"` widens it to
+// `string`, which silently turns every read below into an untyped one. It is
+// therefore left long on purpose; there is no formatter in this project to
+// disable, and naming one that is not installed fails `next build` outright
+// ("Definition for rule 'prettier/prettier' was not found").
+const SESSION_COLUMNS = "id, owner_parent_profile_id, kind, child_subscription_id, amount, currency, status, provider_session_id, intent_kind, student_profile_id, intent_items, expires_at, redeemed_at, redemption_status";
+
+function toSessionRow(data: Record<string, unknown>): CheckoutSessionRow {
+  return {
+    id: data.id as string,
+    ownerParentProfileId: data.owner_parent_profile_id as string,
+    kind: data.kind as string,
+    amount: data.amount === null || data.amount === undefined ? null : Number(data.amount),
+    currency: (data.currency as string) ?? "AZN",
+    status: (data.status as string) ?? "pending",
+    order: data.provider_session_id as string,
+    childSubscriptionId: (data.child_subscription_id as string | null) ?? null,
+    intentKind: (data.intent_kind as string | null) ?? null,
+    studentProfileId: (data.student_profile_id as string | null) ?? null,
+    intentItems: data.intent_items ?? null,
+    expiresAt: (data.expires_at as string | null) ?? null,
+    redeemedAt: (data.redeemed_at as string | null) ?? null,
+    redemptionStatus: (data.redemption_status as string | null) ?? null,
+  };
+}
 
 /**
  * Look an ORDER up. Returns null for an unknown one — and an unknown ORDER is a
@@ -128,21 +194,60 @@ export async function findSessionByOrder(order: string): Promise<CheckoutSession
   const admin = getAdminClient();
   const { data, error } = await admin
     .from("checkout_sessions")
-    .select("id, owner_parent_profile_id, kind, amount, currency, status, provider_session_id")
+    .select(SESSION_COLUMNS)
     .eq("provider", PROVIDER)
     .eq("provider_session_id", order)
     .maybeSingle();
   if (error || !data) return null;
-  const row = data as Record<string, unknown>;
-  return {
-    id: row.id as string,
-    ownerParentProfileId: row.owner_parent_profile_id as string,
-    kind: row.kind as string,
-    amount: row.amount === null || row.amount === undefined ? null : Number(row.amount),
-    currency: (row.currency as string) ?? "AZN",
-    status: (row.status as string) ?? "pending",
-    order: row.provider_session_id as string,
-  };
+  return toSessionRow(data as Record<string, unknown>);
+}
+
+/**
+ * The newest UNFINISHED checkout a parent still has open for a given CHILD.
+ *
+ * KEYED ON THE CHILD, NOT ON THE SUBSCRIPTION (migration 125). It used to key on
+ * `child_subscription_id`, which was possible only because the plan had already
+ * been applied before the charge — the very ordering that made the money
+ * optional. A `plan_start` intent has no subscription until its payment is
+ * redeemed, so keying on one would have made exactly the checkout that matters
+ * most (a family's first) impossible to find again.
+ *
+ * `pending` (opened, never completed) and `failed` (the gateway told us, through
+ * our own status query, that it did not go through) are the two states a parent
+ * can still act on. `paid` is deliberately absent: a completed payment is not an
+ * outstanding one, and returning it would put a "finish paying" prompt in front
+ * of someone who already has.
+ *
+ * EXPIRED AND REDEEMED ROWS ARE EXCLUDED HERE, not filtered by the caller. An
+ * expired intent is no longer redeemable, so offering to pay it would take money
+ * for something that cannot be delivered.
+ *
+ * The parent id is part of the WHERE clause, not a post-filter — the caller has
+ * already authorized, and this keeps a mistyped student id from ever returning
+ * another family's row.
+ */
+export async function findOutstandingSession(
+  ownerParentProfileId: string,
+  studentProfileId: string,
+): Promise<CheckoutSessionRow | null> {
+  if (!isServiceRoleConfigured) return null;
+  if (!isUuid(ownerParentProfileId) || !isUuid(studentProfileId)) return null;
+  const admin = getAdminClient();
+  const { data, error } = await admin
+    .from("checkout_sessions")
+    .select(SESSION_COLUMNS)
+    .eq("provider", PROVIDER)
+    .eq("owner_parent_profile_id", ownerParentProfileId)
+    .eq("student_profile_id", studentProfileId)
+    .not("intent_kind", "is", null)
+    .is("redeemed_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .in("status", ["pending", "failed"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return toSessionRow(data as Record<string, unknown>);
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +337,17 @@ export async function hasReferenceConflict(
 
 export type RecordOutcomeInput = {
   session: CheckoutSessionRow;
-  shape: CallbackShape;
+  /**
+   * The callback that triggered this, when there was one.
+   *
+   * NULL for the RECONCILIATION SWEEP (migration 126), which exists precisely
+   * because a callback never arrived. Nothing this function DECIDES has ever
+   * come from here — the verdict is `reconciliation`, i.e. what the gateway
+   * itself answered about our order — so its absence changes only what is
+   * written into the audit copy, and the audit copy says which of the two it
+   * was rather than leaving a reader to guess.
+   */
+  shape: CallbackShape | null;
   /** The reconciliation of the TRTYPE 90 answer — the ONLY thing we believe. */
   reconciliation: StatusReconciliation;
   /** Diagnostics for the ledger. No response body, no card data, ever. */
@@ -351,12 +466,22 @@ export async function recordOutcome(
   // 4. the audit copy. Card fields are stripped by sanitizeCallbackForStorage
   // and were already dropped at parse time; the status RESPONSE BODY is never
   // stored at all (§8.2 says it carries the masked card number).
+  //
+  // TWO EVENT IDS, ONE PER ORIGIN. `cb:<order>` is a callback we received;
+  // `recon:<order>` is an answer we went and asked for because no callback came
+  // (migration 126). Sharing one id would make the sweep's first write look like
+  // a replay of a callback that never happened, and a ledger that cannot tell
+  // "they told us" from "we asked" is a ledger a dispute cannot be read from.
+  // Either may follow the other: a late callback after a reconciliation writes
+  // its own row, `payments` is already idempotent, and the session status only
+  // ever moves forward.
   const { error: eventError } = await admin.from("payment_events").insert({
     provider: PROVIDER,
-    event_id: `cb:${order}`,
+    event_id: shape ? `cb:${order}` : `recon:${order}`,
     payload_json: {
       order,
-      callback: sanitizeCallbackForStorage({
+      source: shape ? "callback" : "reconciliation",
+      callback: shape === null ? null : sanitizeCallbackForStorage({
         AMOUNT: shape.amount,
         CURRENCY: shape.currency ?? "",
         ORDER: shape.order,
@@ -386,7 +511,10 @@ export async function recordOutcome(
         action: reconciliation.action,
         rc: reconciliation.rc,
       },
-      granted: false, // see the module header: this layer grants nothing.
+      // This WRITER grants nothing (see the module header). Redemption is its
+      // own step and leaves its own `redeem:<order>` event beside this one, so
+      // the ledger says which of the two happened rather than implying it.
+      granted: false,
     },
     processed_at: new Date().toISOString(),
   });

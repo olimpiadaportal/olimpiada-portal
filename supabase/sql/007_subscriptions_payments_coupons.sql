@@ -315,6 +315,13 @@ create unique index if not exists uq_sub_changes_idem
 -- merchant ORDER we mint. It is unique per provider (uq_checkout_provider_session
 -- in 011); see that index for why uniqueness has to be the database's job.
 -- -----------------------------------------------------------------------------
+-- THE INTENT (migration 125). Everything from `intent_kind` down exists because
+-- the columns above describe an AMOUNT and not a PURCHASE. Without a record of
+-- which child and which subjects a payment was for, a verified payment has
+-- nothing to act on — which is why the plan used to be applied BEFORE the money
+-- was asked for, and why the money was therefore optional. With an intent the
+-- order inverts: open a session, redirect, and let the verified callback redeem
+-- it exactly once (checkout_redeem_plan, 011).
 create table if not exists public.checkout_sessions (
   id                       uuid primary key default gen_random_uuid(),
   owner_parent_profile_id  uuid not null references public.profiles (id) on delete cascade,
@@ -325,8 +332,75 @@ create table if not exists public.checkout_sessions (
   status                   text not null default 'pending',
   provider                 text not null default 'none',
   provider_session_id      text,
-  created_at               timestamptz not null default now()
+  created_at               timestamptz not null default now(),
+
+  -- NULL = a session with no intent: the owner's protocol test, and every row
+  -- written before migration 125. Such a row is never redeemable.
+  intent_kind              public.checkout_intent_kind,
+  -- ON DELETE SET NULL, never CASCADE: deleting a child must not delete the
+  -- record of money that was taken. A redemption whose child is gone becomes a
+  -- needs_review with the payments row still standing — the only version of
+  -- this that can be refunded.
+  student_profile_id       uuid references public.students (profile_id) on delete set null,
+  -- The FROZEN basket the parent authorised: [{subject_id, interval}], already
+  -- through plan_items_normalize. Deliberately jsonb and deliberately WITHOUT a
+  -- foreign key: a CASCADE from `subjects` would silently SHRINK a signed
+  -- basket and deliver a plan nobody authorised, and a RESTRICT would let a
+  -- stale pending checkout block a subject deletion. Redeem re-prices instead,
+  -- and fails loudly.
+  intent_items             jsonb,
+  -- The quote the amount came from, kept as evidence.
+  intent_quote             jsonb,
+  -- Bounded redeemability. A forgotten pending session must not be redeemable
+  -- by a replayed callback weeks later.
+  expires_at               timestamptz,
+  -- The exactly-once claim. Set by checkout_redeem_plan inside the same
+  -- transaction as the apply, for BOTH terminal outcomes.
+  redeemed_at              timestamptz,
+  redemption_status        public.checkout_redemption_status,
+  redemption_note          text,
+
+  -- WHAT THIS CHECK DELIBERATELY OMITS: `student_profile_id is not null`. A
+  -- CHECK is re-evaluated on every UPDATE and the FK's ON DELETE SET NULL is an
+  -- UPDATE, so requiring it here would make deleting a child fail on any old
+  -- checkout row. It is enforced where it is enforceable — at open time by
+  -- checkout_intent_open, and again at redeem time, which refuses a session
+  -- whose child is gone rather than guessing one.
+  constraint ck_checkout_intent_shape check (
+    intent_kind is null
+    or (    intent_items is not null
+        and jsonb_typeof(intent_items) = 'array'
+        and jsonb_array_length(intent_items) between 1 and 20
+        and expires_at is not null
+        and amount is not null
+        and amount > 0)),
+
+  -- A redemption is DECIDED or it has not happened. The two columns move
+  -- together, and neither can exist without an intent to redeem.
+  constraint ck_checkout_redemption check (
+        (redeemed_at is null) = (redemption_status is null)
+    and (redemption_status is null or intent_kind is not null)
+    and (redemption_note is null or length(redemption_note) <= 200))
 );
+
+comment on column public.checkout_sessions.intent_kind is
+  'Migration 125. NULL = a session with no intent (the owner''s protocol test, '
+  'and every row written before this migration). Non-NULL = a verified payment '
+  'for this order MAY be redeemed into a plan, exactly once.';
+comment on column public.checkout_sessions.intent_items is
+  'The FROZEN basket the parent authorised: [{subject_id, interval}], already '
+  'through plan_items_normalize. Re-priced at redeem time by the same RPC that '
+  'priced it here; never edited, and deliberately carrying no foreign key, so a '
+  'deleted subject cannot silently shrink what was bought.';
+comment on column public.checkout_sessions.intent_quote is
+  'The quote the amount came from, kept as evidence. The charge is '
+  'checkout_sessions.amount; this is what it was computed from.';
+comment on column public.checkout_sessions.redemption_note is
+  'Why a redemption needs a human: expired | student_gone | plan_already_live | '
+  'subscription_changed | price_changed | reprice_failed:<sqlstate> | '
+  'apply_failed:<sqlstate> | child_login_email_failed. The last one sits on an '
+  'APPLIED row -- the plan was delivered and only the child login needs '
+  'repairing -- so a note is what marks "a human is needed", not the status.';
 
 -- -----------------------------------------------------------------------------
 -- sibling_discounts : audit of the automatic discount applied.
@@ -346,6 +420,123 @@ create table if not exists public.sibling_discounts (
 alter table public.payments
   add column if not exists child_subscription_id uuid references public.child_subscriptions (id) on delete set null,
   add column if not exists checkout_session_id uuid references public.checkout_sessions (id) on delete set null;
+
+-- =============================================================================
+-- entitlements : THE ACCESS RECORD (migration 124).
+-- docs/STORE_PAYMENTS_COMPLIANCE.md §4.1 — provider-agnostic, and the only
+-- thing any gate is allowed to read. An ABB subscription row must NEVER *be*
+-- the entitlement: that separation is what makes a forced-IAP scenario roughly
+-- a two-week job instead of a rewrite.
+--
+-- GRAIN: one row per GRANT, keyed (source, external_ref). There is
+-- deliberately NO unique index on (student, product) anywhere — on forced-IAP
+-- day the same child+subject must be able to hold a LIVE abb_web grant AND a
+-- LIVE apple_iap grant at the same time, and any (student, product) uniqueness
+-- would make that state unrepresentable. Access is the OR over live rows.
+--
+-- NO `status` COLUMN. Liveness is COMPUTED:
+--     revoked_at is null and starts_at <= now()
+--     and (ends_at is null or ends_at > now())
+-- This codebase already ran the other experiment: students.access_status is
+-- documented inside the gate itself as "a display cache, not authority", and
+-- recompute_child_access() exists solely to repair its drift. A stored liveness
+-- flag needs a sweeper, and between sweeps it is wrong — drifting toward FREE
+-- ACCESS, which is the wrong direction to be wrong in.
+--
+-- THE MIRROR. A row carrying a producer link (child_subscription_id /
+-- olympiad_purchase_id) is MIRRORED from that producer by
+-- fn_entitlement_map_subject / fn_entitlement_map_purchase (011). A direct
+-- UPDATE on such a row is reverted by the next producer write or by the next
+-- entitlements_reconcile(). Revocation of a mirrored grant is expressed on the
+-- PRODUCER (olympiad_purchases.status = 'refunded', a subscription status
+-- change). Manual/IAP grants carry both links NULL and the mirror never
+-- touches them.
+-- =============================================================================
+create table if not exists public.entitlements (
+  id                    uuid primary key default gen_random_uuid(),
+
+  -- WHO. Access is per CHILD. The payer lives in the financial tables.
+  student_profile_id    uuid not null references public.students (profile_id) on delete cascade,
+
+  -- WHAT. Exactly one target; ck_entitlement_target enforces it.
+  scope                 public.entitlement_scope not null,
+  subject_id            uuid references public.subjects (id) on delete cascade,
+  -- fk_entitlements_package is added in 015 — olympiad_packages does not exist
+  -- yet at this point in the canonical run order.
+  package_id            uuid,
+  grade_id              uuid references public.grades (id) on delete set null,
+
+  -- WHO GRANTED IT. (source, external_ref) is simultaneously the provider's
+  -- idempotency key and the upsert conflict target: 'sub:<cs>:<subject>',
+  -- 'oly:<purchase>', Apple's originalTransactionId, Play's purchase token,
+  -- 'manual:<uuid>'. It is STABLE across renewals — history lives in
+  -- audit_logs, and a stable ref makes reconciliation an exact set comparison
+  -- instead of a staleness hunt.
+  source                public.entitlement_source not null,
+  external_ref          text not null,
+  provider_account_ref  text,
+
+  -- WHEN. Lazy. No job decides access.
+  starts_at             timestamptz not null default now(),
+  ends_at               timestamptz,            -- NULL = lifetime (packages only)
+  revoked_at            timestamptz,
+  revoked_reason        text,
+
+  -- PROVENANCE. Never read by a gate; this is the mirror scope.
+  child_subscription_id uuid references public.child_subscriptions (id) on delete cascade,
+  -- fk_entitlements_purchase is added in 015 (olympiad_purchases does not
+  -- exist yet either).
+  olympiad_purchase_id  uuid,
+  granted_by_profile_id uuid references public.profiles (id) on delete set null,
+  note                  text,
+
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+
+  constraint ck_entitlement_target check (
+       (scope = 'subject'          and subject_id is not null and package_id is null)
+    or (scope = 'olympiad_package' and package_id is not null and subject_id is null)),
+
+  -- A subject grant can NEVER be lifetime. NULL ends_at means forever, and the
+  -- live estate contains legacy NULL-period subscription rows that grant
+  -- NOTHING today; this makes "backfilled it forward into free-forever maths"
+  -- unrepresentable rather than merely unlikely.
+  constraint ck_entitlement_bounded check (scope <> 'subject' or ends_at is not null),
+
+  -- CLAUDE.md's LIFETIME rule as a constraint instead of a convention: a
+  -- purchased olympiad package never expires, not even for an archived
+  -- package. A future school licence wanting one academic year hits this on
+  -- purpose — it forces a reviewed migration and an owner decision instead of
+  -- a silent semantic change.
+  constraint ck_entitlement_lifetime check (scope <> 'olympiad_package' or ends_at is null),
+
+  constraint ck_entitlement_grade   check (scope = 'olympiad_package' or grade_id is null),
+  constraint ck_entitlement_window  check (ends_at is null or ends_at > starts_at),
+  constraint ck_entitlement_ref     check (length(external_ref) between 1 and 200),
+  constraint ck_entitlement_reason  check (revoked_reason is null or
+                                           (revoked_at is not null and length(revoked_reason) <= 200))
+);
+
+comment on table public.entitlements is
+  'THE access record (STORE_PAYMENTS_COMPLIANCE §4.1). One row per GRANT, keyed '
+  '(source, external_ref). Access is the OR over LIVE rows: revoked_at IS NULL '
+  'AND starts_at <= now() AND (ends_at IS NULL OR ends_at > now()). There is '
+  'deliberately NO unique index on (student, product) — one child may hold a '
+  'live abb_web grant AND a live apple_iap grant for the same subject. '
+  'Rows with a producer link (child_subscription_id / olympiad_purchase_id) are '
+  'MIRRORED: a direct UPDATE on one is reverted by the next producer write or by '
+  'entitlements_reconcile(). Revocation of a mirrored grant is expressed on the '
+  'PRODUCER. Manual grants (both links NULL) are never touched by the mirror.';
+
+comment on column public.entitlements.external_ref is
+  'The producer''s idempotency key AND the upsert target, namespaced by rail: '
+  'sub:<child_subscription>:<subject> | oly:<purchase> | Apple '
+  'originalTransactionId | Play purchase token | manual:<uuid>. Stable across '
+  'renewals — a renewal moves ends_at, it does not mint a row.';
+
+comment on column public.entitlements.source is
+  'The RAIL that produced the grant, never the commercial flavour. A trial is '
+  'an abb_web grant with a short period; the giveaway window owns no rows at all.';
 
 -- =============================================================================
 -- End of 007_subscriptions_payments_coupons.sql

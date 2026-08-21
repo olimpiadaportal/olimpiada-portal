@@ -11,11 +11,16 @@
 // quote and an explicit confirm step before any paid change is applied.
 //
 // PAYMENT-FIRST contract: whenever the pending Manage-Subjects diff contains
-// ANY addition, this sheet opens BEFORE the server apply. When the ABB/web
-// provider lands it takes over at this exact seam (confirm → hosted payment
-// page); the actual charge/authorization stays SERVER-side
-// (updateSubscriptionSubjectsAction → apply_plan_change). Removal-only,
-// cycle-change-only and reinstatement-only diffs never show this dialog.
+// ANY addition, this sheet opens BEFORE anything is applied. Removal-only,
+// cycle-change-only and reinstatement-only diffs never show it.
+//
+// ITS PRIMARY BUTTON IS THE HONEST ONE (migration 125). It used to say "pay
+// now" and charge nothing: confirming applied the plan, and the real payment
+// step appeared on the next screen — so a parent was asked to pay twice for one
+// change, and the first ask was a lie. Confirming a PAYABLE change now opens the
+// payment and hands back the signed redirect, so the button says "continue to
+// payment" and that is exactly what happens. When the change costs nothing it
+// still says "confirm", because nothing is being paid.
 //
 // `quote` carries only ALREADY-FORMATTED, locale-aware strings built by the
 // caller (ManageSubjects) from the AUTHORITATIVE server quote
@@ -124,7 +129,7 @@ export function PlanChangeConfirmModal({
               ? tt("pay.processing")
               : quote?.noCharge
                 ? tt("pay.confirmNoCharge")
-                : tt("pay.payNow")}
+                : tt("pay.continue")}
           </button>
         </div>
       </div>

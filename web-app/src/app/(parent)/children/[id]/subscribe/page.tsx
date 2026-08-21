@@ -8,6 +8,7 @@ import { isChildFreeAccessActive } from "@/lib/freeAccess";
 import { SubscribeForm } from "@/components/SubscribeForm";
 import { ManageSubjects, type CoveredSubject } from "@/components/ManageSubjects";
 import { FreeActivation } from "@/components/FreeActivation";
+import { findOutstandingPlanCheckout } from "@/lib/payments/checkoutCore";
 
 const KEYS = [
   "sub.interval", "sub.subjects", "sub.subtotal", "sub.siblingNote",
@@ -26,7 +27,7 @@ const KEYS = [
   // an addition: nothing is charged and the paid period is kept.
   "subjedit.pendingReinstate", "subjedit.reinstateLine", "subjedit.reinstateNote",
   "subjedit.save", "subjedit.saving", "subjedit.saved", "subjedit.noChanges",
-  "pay.cancel", "pay.title", "pay.payNow", "pay.processing",
+  "pay.cancel", "pay.title", "pay.processing",
   "pay.subtotal", "pay.discount", "pay.total",
   // Mid-cycle change: an added subject opens its OWN period today and is
   // charged that period in full (proration retired, owner 2026-08-17), a
@@ -43,7 +44,9 @@ const KEYS = [
   // fallback for a server that returns no per-subject list.
   "subjedit.noteLabel",
   "subjedit.noteLine", "subjedit.noteNoRefund", "subjedit.pendingChip",
-  "subjedit.noChargeNow", "pay.confirmNoCharge",
+  // Migration 125 - the sheet's primary button leads to the bank now, so it
+  // says so. `pay.payNow` is retired from this screen: it charged nothing.
+  "subjedit.noChargeNow", "pay.confirmNoCharge", "pay.continue",
   // Migration 109 — per-subject billing cycles (cards + grouped summary):
   "plan.cycle", "plan.cycleAria", "plan.cycleChangedAria",
   "plan.removeSubject",
@@ -151,6 +154,29 @@ export default async function SubscribePage({
   // like a giveaway (scoped per-child so a sibling's window doesn't affect this one).
   const freeIntervalActive = await isChildFreeAccessActive(id);
 
+  // An unfinished payment for THIS CHILD - a checkout that was opened and never
+  // completed, or one the gateway declined. Resolved here, server-side, so the
+  // parent finds it again on the next visit instead of only in the tab where it
+  // was created; a payment that can only be finished from a page you already
+  // closed is a payment that never gets finished.
+  //
+  // KEYED ON THE CHILD, NOT ON A SUBSCRIPTION (migration 125). Since nothing is
+  // applied until the money arrives, a family's FIRST plan has no subscription
+  // to key on - and that is precisely the checkout most worth being able to
+  // resume. Nothing was granted for it either way, so this is an offer to
+  // finish, never a debt.
+  //
+  // Only in REAL mode: prompting for a payment during a giveaway or while
+  // payments are off would be wrong, and the checkout action would refuse it
+  // anyway (the mode is re-read at signing time).
+  const outstandingCheckout =
+    mode === "real"
+      ? await findOutstandingPlanCheckout({
+          ownerParentProfileId: parent.profileId,
+          studentId: id,
+        })
+      : null;
+
   return (
     <section className="prose" style={{ maxWidth: 600 }}>
       {/* Same head row as the sibling child pages (edit / olympiads): title +
@@ -202,10 +228,16 @@ export default async function SubscribePage({
           subjects={subjects}
           covered={covered}
           paymentMode={mode}
+          outstandingCheckout={outstandingCheckout}
           dict={dict}
         />
       ) : (
-        <SubscribeForm studentId={id} subjects={subjects} dict={dict} />
+        <SubscribeForm
+          studentId={id}
+          subjects={subjects}
+          outstandingCheckout={outstandingCheckout}
+          dict={dict}
+        />
       )}
     </section>
   );

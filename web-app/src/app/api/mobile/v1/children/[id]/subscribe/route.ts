@@ -9,6 +9,19 @@
 // sibling discount / trial) and the deferred 8-digit login-ID allocation +
 // synthetic-email application. The ID is revealed once, here.
 //
+// PURCHASE-SILENT (migration 126). This route may start a plan that costs
+// NOTHING — a trial, or a basket whose subjects are all free — and nothing else.
+// It calls the core with `paidChanges: "refuse"`, which reaches
+// `create_child_plan_if_free`: that RPC applies the plan and then rolls the
+// whole statement back if its own answer priced it above zero, so no re-quote
+// race can slip a paid plan past a check that ran a moment earlier. Purchasing
+// happens on the WEB only (docs/STORE_PAYMENTS_COMPLIANCE.md §4) and the apps
+// reflect entitlement; before this the route reached the paid apply directly, so
+// a parent bearer token bought a full plan for free the moment the payment mode
+// became `real`. The refusal answers `gate.notInApp`, which states a fact about
+// where subscriptions are managed and names no price, no destination and no URL
+// (§5 copy rules) — and no AZN amount is in this response either.
+//
 // Migration 109 — DUAL BODY, same contract as the sibling /quote route:
 // `items: [{subject_id, interval}]` starts a PER-SUBJECT plan; without it the
 // legacy `interval` + `subject_ids` pair is expanded server-side into a uniform
@@ -54,6 +67,9 @@ export async function POST(
       subjectIds: bodyStrArray(body, "subject_ids"),
       items: items.length > 0 ? items : undefined,
       isFreeAccessActive: bearerFreeAccessChecker(createBearerClient(token)),
+      // See the header. Not a flag someone could flip: it selects a DIFFERENT,
+      // narrower RPC, and the enforcement lives inside that RPC's transaction.
+      paidChanges: "refuse",
     });
     if (!res.ok) {
       return errorResponse(res.errorKey, statusForErrorKey(res.errorKey));

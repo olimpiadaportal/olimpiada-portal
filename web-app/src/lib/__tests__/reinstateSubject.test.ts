@@ -105,6 +105,13 @@ const SQL_013 = read("supabase/sql/013_validation_queries.sql");
 const MIGRATION_120 = read(
   "supabase/sql/migrations/2026_08_17_120_reinstate_cancelled_subject.sql",
 );
+// The LATEST migration to re-issue quote_plan_change / apply_plan_change. The
+// canonical body has to match whichever migration wrote it last, not whichever
+// one this suite happens to be about — a backport check pinned to a superseded
+// migration would fail on every correct future change and pass on none.
+const MIGRATION_126 = read(
+  "supabase/sql/migrations/2026_08_20_126_free_only_and_reconcile.sql",
+);
 const CORE = read("web-app/src/lib/auth/subscriptionCore.ts");
 
 /** The body of one `create or replace function public.<name>(` block in 011. */
@@ -254,8 +261,11 @@ describe("migration 120 and its validation check", () => {
 
   it("carries the canonical function bodies verbatim (no drift on backport)", () => {
     // A backport that paraphrases is a second implementation with extra steps.
-    for (const name of ["plan_change_states", "quote_plan_change", "apply_plan_change"]) {
-      expect(SQL_011).toContain(fnBody(MIGRATION_120, name));
+    // plan_change_states is still 120's; the other two were re-issued by 126,
+    // which capped a trial-time addition at the trial end.
+    expect(SQL_011).toContain(fnBody(MIGRATION_120, "plan_change_states"));
+    for (const name of ["quote_plan_change", "apply_plan_change"]) {
+      expect(SQL_011, name).toContain(fnBody(MIGRATION_126, name));
     }
   });
 

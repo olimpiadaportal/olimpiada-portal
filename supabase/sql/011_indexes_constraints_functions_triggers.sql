@@ -195,7 +195,65 @@ create index if not exists idx_checkout_owner on public.checkout_sessions (owner
 create unique index if not exists uq_checkout_provider_session
   on public.checkout_sessions (provider, provider_session_id)
   where provider_session_id is not null;
+-- Checkout INTENT (migration 125). All three are PARTIAL, and all three exist
+-- to answer an operational question fast on a table that is otherwise written
+-- once per purchase.
+create index if not exists idx_checkout_intent_student
+  on public.checkout_sessions (student_profile_id, created_at desc)
+  where intent_kind is not null;
+-- "Money taken, nothing delivered" — 013 check 118 reads exactly this.
+create index if not exists idx_checkout_paid_unredeemed
+  on public.checkout_sessions (created_at desc)
+  where status = 'paid' and intent_kind is not null and redeemed_at is null;
+-- "A human owes this family an answer."
+create index if not exists idx_checkout_needs_review
+  on public.checkout_sessions (created_at desc)
+  where redemption_status = 'needs_review';
 create index if not exists idx_sibling_discounts_owner on public.sibling_discounts (owner_parent_profile_id);
+
+-- Entitlements (migration 124). Seven indexes, each doing one job.
+--
+-- NOTE ON THE PARTIAL PREDICATES: they use only IMMUTABLE terms. Do NOT
+-- "optimise" idx_entitlements_subject_live to `where ends_at > now()` — that
+-- raises "functions in index predicate must be IMMUTABLE", and it raises it at
+-- rebuild time on a fresh database rather than in review.
+--
+-- Producer idempotency AND the upsert conflict target. One index, both jobs.
+create unique index if not exists uq_entitlements_source_ref
+  on public.entitlements (source, external_ref);
+
+-- HOT PATH 1: the subject gate (has_subject_access).
+create index if not exists idx_entitlements_subject_live
+  on public.entitlements (student_profile_id, subject_id, ends_at)
+  where scope = 'subject' and revoked_at is null;
+
+-- HOT PATH 2: the olympiad gate (live_package_entitlement).
+create index if not exists idx_entitlements_package_live
+  on public.entitlements (student_profile_id, package_id)
+  where scope = 'olympiad_package' and revoked_at is null;
+
+-- Catalog visibility (can_view_olympiad_package) — revocation-blind ON PURPOSE,
+-- because that branch is status-blind today and a refunded family must not
+-- silently lose the catalog row under a refactor.
+create index if not exists idx_entitlements_package_any
+  on public.entitlements (package_id, student_profile_id)
+  where scope = 'olympiad_package';
+
+-- Mirror scope + reconciliation joins.
+create index if not exists idx_entitlements_child_sub
+  on public.entitlements (child_subscription_id) where child_subscription_id is not null;
+create index if not exists idx_entitlements_purchase
+  on public.entitlements (olympiad_purchase_id)  where olympiad_purchase_id is not null;
+
+-- Lapse scanners / dunning.
+create index if not exists idx_entitlements_ends_at
+  on public.entitlements (ends_at) where revoked_at is null and ends_at is not null;
+
+-- THE ABSENCE IS THE DESIGN: there is deliberately no unique index on
+-- (student_profile_id, subject_id) or (student_profile_id, package_id). A
+-- well-meaning future "dedup" index there would make double-sourcing
+-- impossible and the failure would only surface on forced-IAP day. 013 check
+-- 111 asserts no such index exists.
 
 create index if not exists idx_notifications_recipient on public.notifications (recipient_profile_id, read_at);
 create index if not exists idx_support_profile_status on public.support_requests (profile_id, status);
@@ -231,7 +289,7 @@ begin
     'test_attempts','test_attempt_answers','progress_snapshots',
     'leaderboard_periods','leaderboard_entries',
     'achievements','question_analytics',
-    'subscription_plans','subscriptions','payments','coupons',
+    'subscription_plans','subscriptions','payments','coupons','entitlements',
     'notification_templates','notification_deliveries','support_requests',
     'question_reports',
     'admin_actions','content_reviews','media_assets','system_settings','feature_flags'
@@ -331,6 +389,80 @@ drop trigger if exists trg_audit_checkout_sessions on public.checkout_sessions;
 create trigger trg_audit_checkout_sessions
   after insert or update on public.checkout_sessions
   for each row execute function public.fn_audit_row();
+-- -----------------------------------------------------------------------------
+-- THE CHECKOUT INTENT IS FROZEN ONCE IT EXISTS (migration 125).
+--
+-- What the parent authorised is EVIDENCE. Everything that decides what will be
+-- delivered, and for how much, is immutable from the moment the session is
+-- opened: an UPDATE that moved the basket or the amount would let a signed
+-- payment deliver something else entirely, and the gateway signature would
+-- still verify.
+--
+-- TWO DELIBERATE HOLES, both one-way:
+--   * student_profile_id may go to NULL, because the FK's ON DELETE SET NULL is
+--     an UPDATE and blocking it would make deleting a child impossible. It can
+--     never be re-pointed at another child.
+--   * redemption_status may move OFF 'needs_review', because that is exactly
+--     what an operator resolving one does. It can never move off 'applied', and
+--     redeemed_at can never be cleared -- so a delivered plan cannot be made to
+--     look undelivered.
+-- -----------------------------------------------------------------------------
+create or replace function public.fn_checkout_intent_immutable()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if old.intent_kind is null then
+    return new;                      -- no intent: nothing to protect
+  end if;
+
+  if new.intent_kind             is distinct from old.intent_kind
+     or new.intent_items         is distinct from old.intent_items
+     or new.amount               is distinct from old.amount
+     or new.currency             is distinct from old.currency
+     or new.kind                 is distinct from old.kind
+     or new.provider             is distinct from old.provider
+     or new.provider_session_id  is distinct from old.provider_session_id
+     or new.expires_at           is distinct from old.expires_at
+     or new.owner_parent_profile_id is distinct from old.owner_parent_profile_id
+     or (new.student_profile_id is distinct from old.student_profile_id
+         and new.student_profile_id is not null)
+  then
+    raise exception 'checkout: the intent and its price are frozen once opened'
+      using errcode = 'check_violation', hint = 'checkout_intent_frozen';
+  end if;
+
+  if old.redeemed_at is not null
+     and (new.redeemed_at is null
+          or (old.redemption_status = 'applied'
+              and new.redemption_status is distinct from old.redemption_status))
+  then
+    raise exception 'checkout: a decided redemption cannot be undone'
+      using errcode = 'check_violation', hint = 'checkout_redemption_decided';
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.fn_checkout_intent_immutable() is
+  'Migration 125. Freezes the signed intent (child, basket, amount, currency, '
+  'order, expiry, owner) and forbids un-deciding a redemption. Two one-way '
+  'exceptions: the FK cascade may NULL student_profile_id, and an operator may '
+  'move a needs_review to applied.';
+
+-- A trigger function is never called directly. Line 88 of 010 default-grants
+-- EXECUTE to anon AND authenticated, so all three are named here.
+revoke all on function public.fn_checkout_intent_immutable()
+  from public, anon, authenticated;
+
+drop trigger if exists trg_checkout_intent_immutable on public.checkout_sessions;
+create trigger trg_checkout_intent_immutable
+  before update on public.checkout_sessions
+  for each row execute function public.fn_checkout_intent_immutable();
+
 
 drop trigger if exists trg_audit_students on public.students;
 create trigger trg_audit_students
@@ -704,6 +836,15 @@ create trigger trg_set_updated_at before update on public.launch_promo_config
 drop trigger if exists trg_audit_child_subscriptions on public.child_subscriptions;
 create trigger trg_audit_child_subscriptions
   after insert or update or delete on public.child_subscriptions
+  for each row execute function public.fn_audit_row();
+
+-- Entitlements are money-adjacent: every grant, renewal, revocation and sweep
+-- leaves an audit row (migration 124). This is also the only queryable history
+-- of a grant once its student is deleted -- entitlements.student_profile_id
+-- CASCADEs, while payments/olympiad_purchases deliberately SET NULL.
+drop trigger if exists trg_audit_entitlements on public.entitlements;
+create trigger trg_audit_entitlements
+  after insert or update or delete on public.entitlements
   for each row execute function public.fn_audit_row();
 
 -- Migration 109 — per-subject billing periods. child_subscriptions no longer
@@ -1694,6 +1835,20 @@ begin
     v := v || jsonb_build_object('hint', 'subject_has_round_attempts', 'count', n);
   end if;
 
+  -- 10. ENTITLEMENTS (migration 124). entitlements.subject_id is CASCADE, so a
+  --     subject delete does not fail on a grant — it SILENTLY DESTROYS the
+  --     access record docs/STORE_PAYMENTS_COMPLIANCE.md §4.1 makes
+  --     authoritative, and with it the only queryable proof a family was ever
+  --     entitled. Block 1 already fires for every MIRRORED subject grant (each
+  --     one has a subscription_subjects row behind it); what this block adds is
+  --     the non-producer rails — an apple_iap, google_play or school_license
+  --     grant carries no subscription row at all and would sail past block 1.
+  select count(*)::int into n
+  from public.entitlements where subject_id = p_subject_id;
+  if n > 0 then
+    v := v || jsonb_build_object('hint', 'subject_has_entitlements', 'count', n);
+  end if;
+
   return v;
 end;
 $$;
@@ -1704,7 +1859,9 @@ comment on function public.subject_deletion_blocks(uuid) is
   'history (subscriptions, billing, attempts, points, olympiad packages, live '
   'attempts); blocks 7-9 are the structural ones that also fire for a '
   'never-played subject — topics, general-bank questions and attempts pinned to '
-  'this subject''s daily rounds. Shared by admin_preview_subject_deletion, '
+  'this subject''s daily rounds; block 10 (migration 124) is the entitlement '
+  'grant, which subject_id CASCADE would destroy silently. Shared by '
+  'admin_preview_subject_deletion, '
   'admin_delete_subject and trg_subject_delete_guard so the rule has exactly '
   'one definition.';
 revoke all on function public.subject_deletion_blocks(uuid) from public, anon, authenticated;
@@ -2914,6 +3071,9 @@ declare
   v_items   jsonb;
   v_groups  jsonb;
   v_ivs     int;
+  -- Migration 125: the two values that make this quote agree with the charge.
+  v_had_any boolean;
+  v_due     numeric(12,2);
 begin
   select count(*) into v_count from public.plan_items_normalize(p_items);
   if v_count = 0 then raise exception 'quote: no subjects selected'; end if;
@@ -2979,17 +3139,38 @@ begin
   select coalesce(trial_days, 7) into v_trial from public.launch_promo_config where id = 1;
   v_trial := coalesce(v_trial, 7);
 
+  -- MIGRATION 125 -- audit invariant H7 (the preview and the charge are one
+  -- computation). The free trial is granted ONCE PER CHILD: create_child_plan
+  -- reads exactly this predicate (any prior subscription row, canceled and
+  -- expired included) and sets trial_days = 0 / status = 'active' when it is
+  -- true. Until now the quote did not look, so a returning child was previewed
+  -- a trial they would not get, and a first-time child was previewed a "due
+  -- today" of the full total that create_child_plan would not charge. The
+  -- preview contradicted the charge in BOTH directions.
+  v_had_any := exists (
+    select 1 from public.child_subscriptions
+    where student_profile_id = p_student_profile_id);
+  if v_had_any then v_trial := 0; end if;
+
+  -- What the family owes RIGHT NOW. A trialing plan owes nothing until the
+  -- trial ends -- create_child_plan runs every subject's first period to the
+  -- trial end -- so this is the amount, and the ONLY amount, a checkout may be
+  -- opened for.
+  v_due := case when v_trial > 0 then 0 else v_total end;
+
   return jsonb_build_object(
     'items', coalesce(v_items, '[]'::jsonb),
     'groups', coalesce(v_groups, '{}'::jsonb),
     'base', v_base, 'discount_percent', v_pct, 'discount', v_disc,
     'total', v_total, 'rank', v_rank, 'trial_days', v_trial, 'currency', 'AZN',
+    'due_now', v_due,
     'mixed', coalesce(v_ivs, 0) > 1);
 end;
 $$;
 
 comment on function public.quote_child_plan(uuid, jsonb) is
-  'Migration 109: read-only price quote for a PER-SUBJECT basket [{subject_id, interval}]. Prices are re-read from subjects_pricing; the sibling discount (2nd 10% / 3rd+ 15%) is applied per cycle group with today''s rounding rule, so a uniform basket returns exactly the number quote_child_subscription always returned.';
+  'Migration 109: read-only price quote for a PER-SUBJECT basket [{subject_id, interval}]. Prices are re-read from subjects_pricing; the sibling discount (2nd 10% / 3rd+ 15%) is applied per cycle group with today''s rounding rule, so a uniform basket returns exactly the number quote_child_subscription always returned. Migration 125: also applies create_child_plan''s one-trial-per-child rule and returns due_now -- the preview and the charge are one computation (audit H7).';
+
 
 create or replace function public.create_child_plan(
   p_student_profile_id uuid,
@@ -3008,6 +3189,10 @@ declare
   v_child    text;
   v_auth     uuid;
   v_had_any  boolean;
+  -- Migration 126: the trial the CONFIG offers, before the one-per-child rule.
+  -- Named rather than inlined so the two questions stay separate: "is a trial
+  -- on offer at all?" and "has this child already had theirs?".
+  v_offer    int;
   v_status   public.subscription_status;
   v_default  public.plan_interval;
   v_trialend timestamptz;
@@ -3053,11 +3238,27 @@ begin
   v_had_any := exists (
     select 1 from public.child_subscriptions
     where student_profile_id = p_student_profile_id);
-  if v_had_any then
+
+  -- MIGRATION 126 -- A ZERO-DAY TRIAL IS NOT A TRIAL.
+  --
+  -- The branch used to be on v_had_any ALONE, so with
+  -- launch_promo_config.trial_days = 0 a first-time child took the `trialing`
+  -- side with v_trial = 0: trial_ends_at = now(), every subject's
+  -- current_period_end = now(), and access_status = 'trialing'. The row
+  -- announced a running trial while the period it granted had ALREADY ENDED --
+  -- and quote_child_plan, reading the same 0, priced due_now at the FULL total.
+  -- So the family was charged for a plan that expired the instant it existed.
+  --
+  -- The rule is now one sentence: a plan is `trialing` only when it actually
+  -- has trial days left to run. Everything else is an ACTIVE plan whose
+  -- subjects open real, paid, full-length periods -- which is what the checkout
+  -- took the money for.
+  v_offer := greatest(coalesce((v_q->>'trial_days')::int, 0), 0);
+  if v_had_any or v_offer <= 0 then
     v_trial  := 0;
     v_status := 'active';
   else
-    v_trial  := (v_q->>'trial_days')::int;
+    v_trial  := v_offer;
     v_status := 'trialing';
   end if;
   v_trialend := now() + (v_trial || ' days')::interval;
@@ -3129,7 +3330,7 @@ end;
 $$;
 
 comment on function public.create_child_plan(uuid, jsonb) is
-  'Migration 109: starts a child subscription from a PER-SUBJECT basket. Each subject opens its own period (trial end while trialing, else now() + its own cycle); child_subscriptions.interval stores only the DEFAULT cycle for future adds. The amount columns are left to trg_sync_subscription_period.';
+  'Migration 109: starts a child subscription from a PER-SUBJECT basket. Each subject opens its own period (trial end while trialing, else now() + its own cycle); child_subscriptions.interval stores only the DEFAULT cycle for future adds. The amount columns are left to trg_sync_subscription_period. Migration 126: the trialing branch is taken ONLY when the effective trial is at least one day, so trial_days = 0 can no longer create a plan whose period has already ended.';
 
 -- Read-only price quote (base, sibling discount, total, trial length) — the
 -- uniform-basket wrapper over quote_child_plan.
@@ -3690,6 +3891,816 @@ comment on function public.current_parent_free_access() is
 revoke all on function public.current_parent_free_access() from public, anon;
 grant execute on function public.current_parent_free_access() to authenticated, service_role;
 
+-- =============================================================================
+-- ENTITLEMENTS (migration 124) — THE ACCESS RECORD.
+-- docs/STORE_PAYMENTS_COMPLIANCE.md §4.1. Everything that gates access reads
+-- this table and nothing else; the subscription / purchase tables remain the
+-- record of the TRANSACTION. That boundary is the whole point: an ABB
+-- subscription row must never *be* the entitlement, or a forced-IAP scenario
+-- becomes a rewrite.
+--
+-- Placed here — after the giveaway / free-access block and BEFORE the attempt
+-- RPCs at the end of this file — for two reasons: the function REVOKEs below
+-- must run after 010's blanket `alter default privileges ... grant execute on
+-- functions to anon, authenticated`, and has_subject_access /
+-- live_package_entitlement must exist before the four gates that call them.
+-- =============================================================================
+
+-- entitlements table privileges. MUST run here (after 010's blanket grants) so
+-- the write-revoke for `authenticated` takes effect — the same reason
+-- question_imports' revoke lives in this file and not in 004. The family may
+-- READ (RLS limits the rows); every write goes through a DEFINER producer.
+-- The revoke from anon also removes anon SELECT: entitlements are never public.
+revoke all on public.entitlements from anon, authenticated;
+grant select on public.entitlements to authenticated;
+grant all    on public.entitlements to service_role;
+
+-- -----------------------------------------------------------------------------
+-- THE MAPPER, half one: (child_subscription, subject) -> its entitlement row.
+--
+-- Roughly eight functions in this estate mutate subscription periods
+-- (create_child_subscription, add_subscription_subject,
+-- remove_subscription_subject, admin_grant_child_access,
+-- admin_manage_child_subscription, apply_plan_change, apply_due_plan_changes,
+-- fn_sync_subscription_period). Patching all eight would be eight chances to
+-- miss one, and a miss means a PAYING CHILD IS LOCKED OUT with no error
+-- anywhere. So there is exactly ONE mapping expression and three callers use
+-- it: the triggers, the reconciler and the backfill. The 013 parity check
+-- therefore proves the TABLE matches the PRODUCERS, not that an expression
+-- matches itself.
+--
+-- FULLY CONVERGENT: given a pair it makes the entitlement match whatever state
+-- it was in, including "should not exist".
+--
+-- THE END DATE IS THE LEGACY GATE'S EXPRESSION, EXACTLY. The gate that lived
+-- in the three attempt RPCs granted access while
+--     cs.status in ('trialing','active','canceled')
+--     and cs.current_period_end is not null
+--     and cs.current_period_end > now()
+--     and coalesce(ss.current_period_end, cs.current_period_end) > now()
+-- i.e. until least(cs.current_period_end, ss.current_period_end) — least()
+-- ignoring NULL is precisely the coalesce arm. Nothing else is consulted.
+--
+-- remove_at IS DELIBERATELY NOT CONSULTED. web-app/src/lib/childSubjects.ts
+-- honours it and the DB gate never has; they coincide only because migrations
+-- 078/109 set remove_at equal to that subject's own period end. The one live
+-- divergence is admin_manage_child_subscription('extend'), which pushes
+-- subscription_subjects.current_period_end forward WITHOUT touching remove_at
+-- — so a least(remove_at, ...) mapping would lock out a child an admin had
+-- deliberately extended. That TypeScript/DB disagreement and the half-applied
+-- extend are pre-existing bugs, tracked, and deliberately NOT fixed inside a
+-- cutover whose entire job is to preserve today's behaviour byte-for-byte.
+--
+-- A LAPSE IS A REVOCATION, NOT A TRUNCATION. past_due / expired / incomplete
+-- set revoked_at + revoked_reason; recovery to active clears both, because
+-- every field is re-derived. Truncating ends_at to now() would make the row
+-- LOOK expired, which is a lie about why access stopped.
+-- -----------------------------------------------------------------------------
+create or replace function public.fn_entitlement_map_subject(p_cs uuid, p_subject uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_found_cs boolean := false;
+  v_ss_found boolean := false;
+  v_student  uuid;
+  v_status   public.subscription_status;
+  v_provider text;
+  v_cs_start timestamptz;
+  v_cs_end   timestamptz;
+  v_ss_start timestamptz;
+  v_ss_end   timestamptz;
+  v_ss_added timestamptz;
+  v_starts   timestamptz;
+  v_ends     timestamptz;
+  v_live     boolean;
+  v_src      public.entitlement_source;
+  v_ref      text;
+begin
+  if p_cs is null or p_subject is null then return; end if;
+
+  select cs.student_profile_id, cs.status, cs.provider,
+         cs.current_period_start, cs.current_period_end
+    into v_student, v_status, v_provider, v_cs_start, v_cs_end
+  from public.child_subscriptions cs
+  where cs.id = p_cs;
+  v_found_cs := found;
+
+  select ss.current_period_start, ss.current_period_end, ss.added_at
+    into v_ss_start, v_ss_end, v_ss_added
+  from public.subscription_subjects ss
+  where ss.child_subscription_id = p_cs and ss.subject_id = p_subject;
+  v_ss_found := found;
+
+  -- No producer pair, no student, or a legacy NULL-period row (which grants
+  -- NOTHING today, and whose NULL ends_at would mean LIFETIME): remove the row.
+  -- Guarded BEFORE the insert, never left to ck_entitlement_bounded to raise —
+  -- a raise inside the hourly renewal batch is an outage for the whole batch
+  -- rather than one skipped row. The CHECK is the backstop, not the mechanism.
+  if not v_found_cs or not v_ss_found or v_student is null or v_cs_end is null then
+    delete from public.entitlements
+     where child_subscription_id = p_cs and subject_id = p_subject and scope = 'subject';
+    return;
+  end if;
+
+  v_ends := least(v_cs_end, v_ss_end);
+  v_live := v_status in ('trialing', 'active', 'canceled');
+  v_src  := case when v_provider = 'azericard' then 'abb_web'::public.entitlement_source
+                 else 'manual'::public.entitlement_source end;
+  v_ref  := 'sub:' || p_cs::text || ':' || p_subject::text;
+
+  -- The window start. The legacy gate never looked at a period START, so a
+  -- degenerate start (>= the end) has to be clamped rather than allowed to
+  -- narrow access that exists today; ck_entitlement_window would reject it
+  -- anyway.
+  v_starts := coalesce(v_ss_start, v_cs_start, v_ss_added, v_ends - interval '1 second');
+  if v_starts >= v_ends then
+    v_starts := v_ends - interval '1 second';
+  end if;
+
+  -- Convergence: if the PROVIDER changed, the old (source, external_ref) row is
+  -- stale and would survive the upsert untouched.
+  delete from public.entitlements
+   where child_subscription_id = p_cs and subject_id = p_subject and scope = 'subject'
+     and (source, external_ref) is distinct from (v_src, v_ref);
+
+  insert into public.entitlements
+    (student_profile_id, scope, subject_id, package_id, grade_id,
+     source, external_ref, starts_at, ends_at, revoked_at, revoked_reason,
+     child_subscription_id)
+  values
+    (v_student, 'subject', p_subject, null, null,
+     v_src, v_ref, v_starts, v_ends,
+     case when not v_live then now() end,
+     case when not v_live then 'subscription_' || v_status::text end,
+     p_cs)
+  on conflict (source, external_ref) do update
+    set student_profile_id    = excluded.student_profile_id,
+        subject_id            = excluded.subject_id,
+        starts_at             = excluded.starts_at,
+        ends_at               = excluded.ends_at,
+        -- Keep the ORIGINAL revocation instant. Re-deriving it as now() on
+        -- every pass would make the hourly reconciler rewrite (and audit)
+        -- every lapsed row forever, and would move the moment access stopped.
+        revoked_at            = case when excluded.revoked_at is null then null
+                                     else coalesce(entitlements.revoked_at, excluded.revoked_at) end,
+        revoked_reason        = excluded.revoked_reason,
+        child_subscription_id = excluded.child_subscription_id,
+        updated_at            = now()
+    -- IDEMPOTENCE: no UPDATE at all when nothing moved, so the reconciler is a
+    -- true no-op and does not emit an audit row per subscription per hour.
+    where entitlements.student_profile_id    is distinct from excluded.student_profile_id
+       or entitlements.subject_id            is distinct from excluded.subject_id
+       or entitlements.starts_at             is distinct from excluded.starts_at
+       or entitlements.ends_at               is distinct from excluded.ends_at
+       or (entitlements.revoked_at is null)  is distinct from (excluded.revoked_at is null)
+       or entitlements.revoked_reason        is distinct from excluded.revoked_reason
+       or entitlements.child_subscription_id is distinct from excluded.child_subscription_id;
+end;
+$$;
+
+comment on function public.fn_entitlement_map_subject(uuid, uuid) is
+  'THE (subscription, subject) -> entitlement mapping (migration 124). Fully '
+  'convergent, including "should not exist". ends_at = least(cs.current_period_end, '
+  'ss.current_period_end), which is the legacy attempt-RPC gate verbatim; remove_at '
+  'is deliberately not consulted. A non-live status becomes revoked_at + '
+  'revoked_reason, never a truncated period. Called by the two subscription '
+  'triggers, by entitlements_reconcile() and by the backfill — one expression, '
+  'three callers.';
+
+revoke all on function public.fn_entitlement_map_subject(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.fn_entitlement_map_subject(uuid, uuid) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- THE MAPPER, half two: olympiad purchase -> its entitlement row.
+-- ends_at is ALWAYS NULL (CLAUDE.md: lifetime access, including for an
+-- ARCHIVED package — ck_entitlement_lifetime makes anything else impossible).
+--
+-- A 'pending' or 'refunded' purchase is MIRRORED AS A REVOKED ROW, never
+-- omitted: can_view_olympiad_package's entitlement branch is revocation-blind
+-- on purpose, so omitting those rows would quietly strip catalog visibility
+-- from a refunded family. purchase_olympiad's re-buy-after-refund branch
+-- updates the same purchase row in place, so it flows back through here and
+-- un-revokes with no new code in the RPC.
+--
+-- An ANONYMISED purchase (student_profile_id set to NULL when a child is
+-- deleted — audit M13) cannot be represented at all: entitlements.student_
+-- profile_id is NOT NULL and cascades. The row is removed and the buying
+-- parent's catalog visibility is carried by the ORIGINAL purchase branch of
+-- can_view_olympiad_package, which is why that branch is kept verbatim.
+-- -----------------------------------------------------------------------------
+create or replace function public.fn_entitlement_map_purchase(p_purchase uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_found    boolean := false;
+  v_student  uuid;
+  v_package  uuid;
+  v_grade    uuid;
+  v_status   text;
+  v_provider text;
+  v_bought   timestamptz;
+  v_created  timestamptz;
+  v_src      public.entitlement_source;
+  v_ref      text;
+  v_starts   timestamptz;
+begin
+  if p_purchase is null then return; end if;
+
+  select pu.student_profile_id, pu.olympiad_package_id, pu.grade_id, pu.status,
+         pu.provider, pu.purchased_at, pu.created_at
+    into v_student, v_package, v_grade, v_status, v_provider, v_bought, v_created
+  from public.olympiad_purchases pu
+  where pu.id = p_purchase;
+  v_found := found;
+
+  if not v_found or v_student is null or v_package is null then
+    delete from public.entitlements where olympiad_purchase_id = p_purchase;
+    return;
+  end if;
+
+  v_src    := case when v_provider = 'azericard' then 'abb_web'::public.entitlement_source
+                   else 'manual'::public.entitlement_source end;
+  v_ref    := 'oly:' || p_purchase::text;
+  v_starts := coalesce(v_bought, v_created, now());
+
+  delete from public.entitlements
+   where olympiad_purchase_id = p_purchase
+     and (source, external_ref) is distinct from (v_src, v_ref);
+
+  insert into public.entitlements
+    (student_profile_id, scope, subject_id, package_id, grade_id,
+     source, external_ref, starts_at, ends_at, revoked_at, revoked_reason,
+     olympiad_purchase_id)
+  values
+    (v_student, 'olympiad_package', null, v_package, v_grade,
+     v_src, v_ref, v_starts, null,
+     case when v_status <> 'active' then now() end,
+     case when v_status <> 'active' then 'purchase_' || v_status end,
+     p_purchase)
+  on conflict (source, external_ref) do update
+    set student_profile_id   = excluded.student_profile_id,
+        package_id           = excluded.package_id,
+        grade_id             = excluded.grade_id,
+        starts_at            = excluded.starts_at,
+        revoked_at           = case when excluded.revoked_at is null then null
+                                    else coalesce(entitlements.revoked_at, excluded.revoked_at) end,
+        revoked_reason       = excluded.revoked_reason,
+        olympiad_purchase_id = excluded.olympiad_purchase_id,
+        updated_at           = now()
+    where entitlements.student_profile_id   is distinct from excluded.student_profile_id
+       or entitlements.package_id           is distinct from excluded.package_id
+       or entitlements.grade_id             is distinct from excluded.grade_id
+       or entitlements.starts_at            is distinct from excluded.starts_at
+       or (entitlements.revoked_at is null) is distinct from (excluded.revoked_at is null)
+       or entitlements.revoked_reason       is distinct from excluded.revoked_reason
+       or entitlements.olympiad_purchase_id is distinct from excluded.olympiad_purchase_id;
+end;
+$$;
+
+comment on function public.fn_entitlement_map_purchase(uuid) is
+  'THE olympiad purchase -> entitlement mapping (migration 124). ends_at is '
+  'always NULL: lifetime, including for an archived package. pending/refunded '
+  'are mirrored as REVOKED rows rather than omitted, because the catalog '
+  'visibility branch is revocation-blind and omitting them would strip a '
+  'refunded family''s row. An anonymised purchase (student set NULL) has no '
+  'representable entitlement and is removed.';
+
+revoke all on function public.fn_entitlement_map_purchase(uuid) from public, anon, authenticated;
+grant execute on function public.fn_entitlement_map_purchase(uuid) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- The three trigger bodies. They only ever call the mapper, and the mapper
+-- writes only public.entitlements — which carries no trigger that writes back
+-- to a producer, so there is no recursion.
+-- -----------------------------------------------------------------------------
+create or replace function public.tg_entitlements_subject()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'DELETE' then
+    -- remove_subscription_subject HARD-DELETES, so this branch is required;
+    -- the mapper's own delete-if-absent path handles it.
+    perform public.fn_entitlement_map_subject(old.child_subscription_id, old.subject_id);
+  else
+    perform public.fn_entitlement_map_subject(new.child_subscription_id, new.subject_id);
+    if tg_op = 'UPDATE'
+       and (old.child_subscription_id, old.subject_id)
+           is distinct from (new.child_subscription_id, new.subject_id) then
+      perform public.fn_entitlement_map_subject(old.child_subscription_id, old.subject_id);
+    end if;
+  end if;
+  return null;
+end;
+$$;
+revoke all on function public.tg_entitlements_subject() from public, anon, authenticated;
+grant execute on function public.tg_entitlements_subject() to service_role;
+
+create or replace function public.tg_entitlements_subscription()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare r record;
+begin
+  for r in select ss.subject_id
+             from public.subscription_subjects ss
+            where ss.child_subscription_id = new.id
+  loop
+    perform public.fn_entitlement_map_subject(new.id, r.subject_id);
+  end loop;
+  return null;
+end;
+$$;
+revoke all on function public.tg_entitlements_subscription() from public, anon, authenticated;
+grant execute on function public.tg_entitlements_subscription() to service_role;
+
+create or replace function public.tg_entitlements_purchase()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'DELETE' then
+    perform public.fn_entitlement_map_purchase(old.id);
+  else
+    perform public.fn_entitlement_map_purchase(new.id);
+  end if;
+  return null;
+end;
+$$;
+revoke all on function public.tg_entitlements_purchase() from public, anon, authenticated;
+grant execute on function public.tg_entitlements_purchase() to service_role;
+
+-- -----------------------------------------------------------------------------
+-- THE RECONCILER — what makes trigger-mirroring safe.
+-- Re-runs the SAME mapper over every producer pair, then sweeps orphans.
+-- Scheduled hourly in 016 at :22, five minutes after recompute_child_access at
+-- :17 so it observes a settled state.
+--
+-- THE SCOPE PREDICATE IS STRUCTURAL, NOT A STRING. The sweeps are keyed on
+-- `child_subscription_id is not null` / `olympiad_purchase_id is not null`, so
+-- an apple_iap, google_play, school_license or manual-comp row (both links
+-- NULL) is UNREACHABLE here regardless of its source value. Scoping on
+-- `source = 'abb_web'` would have put one editable literal between this job
+-- and wiping every Apple entitlement.
+-- -----------------------------------------------------------------------------
+create or replace function public.entitlements_reconcile()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_subjects  int := 0;
+  v_purchases int := 0;
+  v_orphans   int := 0;
+  n           int;
+  r           record;
+begin
+  for r in select ss.child_subscription_id as cs, ss.subject_id as sid
+             from public.subscription_subjects ss
+  loop
+    perform public.fn_entitlement_map_subject(r.cs, r.sid);
+    v_subjects := v_subjects + 1;
+  end loop;
+
+  for r in select pu.id as pid from public.olympiad_purchases pu
+  loop
+    perform public.fn_entitlement_map_purchase(r.pid);
+    v_purchases := v_purchases + 1;
+  end loop;
+
+  delete from public.entitlements e
+   where e.scope = 'subject' and e.child_subscription_id is not null
+     and not exists (select 1 from public.subscription_subjects ss
+                      where ss.child_subscription_id = e.child_subscription_id
+                        and ss.subject_id = e.subject_id);
+  get diagnostics n = row_count;
+  v_orphans := v_orphans + n;
+
+  delete from public.entitlements e
+   where e.scope = 'olympiad_package' and e.olympiad_purchase_id is not null
+     and not exists (select 1 from public.olympiad_purchases pu where pu.id = e.olympiad_purchase_id);
+  get diagnostics n = row_count;
+  v_orphans := v_orphans + n;
+
+  return jsonb_build_object('subjects_mapped',  v_subjects,
+                            'purchases_mapped', v_purchases,
+                            'orphans_removed',  v_orphans);
+end;
+$$;
+
+comment on function public.entitlements_reconcile() is
+  'Hourly repair for the entitlement mirror (migration 124, cron :22). Re-runs '
+  'fn_entitlement_map_subject / fn_entitlement_map_purchase over every producer '
+  'row and sweeps orphans. Scoped STRUCTURALLY on the producer-link columns, so '
+  'a grant with no producer (apple_iap, google_play, school_license, manual comp) '
+  'is unreachable here by construction, not by a literal somebody could edit.';
+
+revoke all on function public.entitlements_reconcile() from public, anon, authenticated;
+grant execute on function public.entitlements_reconcile() to service_role;
+
+-- -----------------------------------------------------------------------------
+-- THE NON-PRODUCER GRANT SURFACE. This is what a rail with no row of its own
+-- calls — Apple, Google Play, a school licence, a manual comp.
+--
+-- On forced-IAP day the entire access-side integration is ONE call site: the
+-- BFF verifies the App Store Server Notification V2 JWS, resolves the child
+-- from appAccountToken, maps productId -> target, and calls entitlement_grant()
+-- with originalTransactionId as the external_ref. DID_RENEW = the same call
+-- with a later expiry. REFUND/REVOKE = entitlement_revoke(). DID_FAIL_TO_RENEW
+-- = nothing at all; access lapses lazily. No schema change, no reader change,
+-- no trigger, no RLS change.
+--
+-- THE ABB CALLBACK MUST NOT CALL THIS. A producer that bypasses the mirror is
+-- by definition the first drift, and the row would have no invoice and no
+-- ledger entry to reconcile against. The web rail writes the PRODUCER row
+-- (child_subscriptions / subscription_subjects / olympiad_purchases) after
+-- signature verification, the TRTYPE=90 re-query, the transaction-identity
+-- match and assert_payments_enabled(); the trigger below writes the
+-- entitlement. The sub:/oly: ref namespace is refused here to make that
+-- structural rather than a convention.
+--
+-- No assert_payments_enabled() call: granting while the payment mode is off is
+-- exactly what a giveaway comp and admin_grant_child_access already do.
+-- -----------------------------------------------------------------------------
+create or replace function public.entitlement_grant(
+  p_student              uuid,
+  p_scope                public.entitlement_scope,
+  p_source               public.entitlement_source,
+  p_external_ref         text,
+  p_subject_id           uuid        default null,
+  p_package_id           uuid        default null,
+  p_grade_id             uuid        default null,
+  p_provider_account_ref text        default null,
+  p_starts_at            timestamptz default now(),
+  p_ends_at              timestamptz default null,
+  p_granted_by           uuid        default null,
+  p_note                 text        default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_id     uuid;
+  v_starts timestamptz := coalesce(p_starts_at, now());
+begin
+  if p_student is null then
+    raise exception 'entitlement_grant: student required' using errcode = 'check_violation';
+  end if;
+  if p_external_ref is null or length(btrim(p_external_ref)) = 0 or length(p_external_ref) > 200 then
+    raise exception 'entitlement_grant: external_ref must be 1..200 chars'
+      using errcode = 'check_violation', hint = 'bad_external_ref';
+  end if;
+  if p_external_ref like 'sub:%' or p_external_ref like 'oly:%' then
+    raise exception 'entitlement_grant: the sub:/oly: ref namespace belongs to the producer mirror'
+      using errcode = 'check_violation', hint = 'mirrored_namespace';
+  end if;
+  if p_scope = 'subject' then
+    if p_subject_id is null then
+      raise exception 'entitlement_grant: a subject grant needs a subject'
+        using errcode = 'check_violation', hint = 'subject_required';
+    end if;
+    if p_ends_at is null then
+      raise exception 'entitlement_grant: a subject grant must be bounded'
+        using errcode = 'check_violation', hint = 'subject_needs_end';
+    end if;
+  else
+    if p_package_id is null then
+      raise exception 'entitlement_grant: a package grant needs a package'
+        using errcode = 'check_violation', hint = 'package_required';
+    end if;
+    if p_ends_at is not null then
+      raise exception 'entitlement_grant: an olympiad package grant is lifetime'
+        using errcode = 'check_violation', hint = 'package_is_lifetime';
+    end if;
+  end if;
+  if exists (select 1 from public.entitlements e
+              where e.source = p_source and e.external_ref = p_external_ref
+                and (e.child_subscription_id is not null or e.olympiad_purchase_id is not null)) then
+    raise exception 'entitlement_grant: that grant is MIRRORED from a producer row'
+      using errcode = 'check_violation', hint = 'mirrored_grant';
+  end if;
+
+  insert into public.entitlements
+    (student_profile_id, scope, subject_id, package_id, grade_id,
+     source, external_ref, provider_account_ref,
+     starts_at, ends_at, revoked_at, revoked_reason,
+     granted_by_profile_id, note)
+  values
+    (p_student, p_scope,
+     case when p_scope = 'subject' then p_subject_id end,
+     case when p_scope = 'olympiad_package' then p_package_id end,
+     case when p_scope = 'olympiad_package' then p_grade_id end,
+     p_source, p_external_ref, p_provider_account_ref,
+     v_starts, p_ends_at, null, null,
+     coalesce(p_granted_by, public.current_profile_id()), nullif(left(coalesce(p_note, ''), 500), ''))
+  on conflict (source, external_ref) do update
+    set student_profile_id    = excluded.student_profile_id,
+        subject_id            = excluded.subject_id,
+        package_id            = excluded.package_id,
+        grade_id              = excluded.grade_id,
+        provider_account_ref  = coalesce(excluded.provider_account_ref, entitlements.provider_account_ref),
+        starts_at             = excluded.starts_at,
+        ends_at               = excluded.ends_at,
+        -- A renewal after a refund is an UN-REVOCATION, exactly like the
+        -- olympiad re-buy branch.
+        revoked_at            = null,
+        revoked_reason        = null,
+        note                  = coalesce(excluded.note, entitlements.note),
+        updated_at            = now()
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+comment on function public.entitlement_grant(uuid, public.entitlement_scope, public.entitlement_source, text, uuid, uuid, uuid, text, timestamptz, timestamptz, uuid, text) is
+  'THE non-producer grant entrypoint (migration 124): Apple, Google Play, a '
+  'school licence, a manual comp. Idempotent on (source, external_ref) — a '
+  'renewal moves ends_at and un-revokes. REFUSES the sub:/oly: namespace and '
+  'refuses to touch a MIRRORED row, so the ABB rail cannot bypass the producer '
+  'mirror. service_role EXECUTE only.';
+
+revoke all on function public.entitlement_grant(uuid, public.entitlement_scope, public.entitlement_source, text, uuid, uuid, uuid, text, timestamptz, timestamptz, uuid, text) from public, anon, authenticated;
+grant execute on function public.entitlement_grant(uuid, public.entitlement_scope, public.entitlement_source, text, uuid, uuid, uuid, text, timestamptz, timestamptz, uuid, text) to service_role;
+
+create or replace function public.entitlement_revoke(
+  p_source       public.entitlement_source,
+  p_external_ref text,
+  p_reason       text default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_n int;
+begin
+  if p_external_ref is null or length(p_external_ref) > 200 then
+    raise exception 'entitlement_revoke: bad external_ref' using errcode = 'check_violation';
+  end if;
+  if exists (select 1 from public.entitlements e
+              where e.source = p_source and e.external_ref = p_external_ref
+                and (e.child_subscription_id is not null or e.olympiad_purchase_id is not null)) then
+    -- A mirrored grant is revoked ON THE PRODUCER (a subscription status
+    -- change, olympiad_purchases.status = 'refunded'); doing it here would be
+    -- silently undone by the next producer write or the next reconcile.
+    raise exception 'entitlement_revoke: that grant is MIRRORED — revoke it on the producer row'
+      using errcode = 'check_violation', hint = 'mirrored_grant';
+  end if;
+
+  update public.entitlements
+     set revoked_at     = coalesce(revoked_at, now()),
+         revoked_reason = left(coalesce(p_reason, 'revoked'), 200),
+         updated_at     = now()
+   where source = p_source and external_ref = p_external_ref
+     and revoked_at is null;
+  get diagnostics v_n = row_count;
+  return v_n > 0;
+end;
+$$;
+
+comment on function public.entitlement_revoke(public.entitlement_source, text, text) is
+  'Withdraws a NON-MIRRORED grant (Apple REFUND/REVOKE, a cancelled school '
+  'licence, a rescinded comp). Refuses a mirrored row: revocation of a produced '
+  'grant is expressed on the producer, or the next reconcile reverts it.';
+
+revoke all on function public.entitlement_revoke(public.entitlement_source, text, text) from public, anon, authenticated;
+grant execute on function public.entitlement_revoke(public.entitlement_source, text, text) to service_role;
+
+-- Administrator comps. source = 'manual', ref = 'manual:<uuid>', and
+-- granted_by_profile_id is recorded — which is the reason a direct INSERT is
+-- refused to everybody, admins included (see the RLS block in 010).
+create or replace function public.admin_grant_entitlement(
+  p_student    uuid,
+  p_scope      public.entitlement_scope,
+  p_subject_id uuid        default null,
+  p_package_id uuid        default null,
+  p_grade_id   uuid        default null,
+  p_ends_at    timestamptz default null,
+  p_note       text        default null
+)
+returns uuid
+language sql
+security definer
+set search_path = public, pg_temp
+as $$
+  select public.entitlement_grant(
+    p_student              => p_student,
+    p_scope                => p_scope,
+    p_source               => 'manual'::public.entitlement_source,
+    p_external_ref         => 'manual:' || gen_random_uuid()::text,
+    p_subject_id           => p_subject_id,
+    p_package_id           => p_package_id,
+    p_grade_id             => p_grade_id,
+    p_provider_account_ref => null,
+    p_starts_at            => now(),
+    p_ends_at              => p_ends_at,
+    p_granted_by           => public.current_profile_id(),
+    p_note                 => p_note);
+$$;
+
+comment on function public.admin_grant_entitlement(uuid, public.entitlement_scope, uuid, uuid, uuid, timestamptz, text) is
+  'Administrator comp: a manual entitlement with granted_by recorded and an '
+  'audit row from trg_audit_entitlements. service_role EXECUTE only; the '
+  'admin-panel action guards and audits the caller.';
+
+revoke all on function public.admin_grant_entitlement(uuid, public.entitlement_scope, uuid, uuid, uuid, timestamptz, text) from public, anon, authenticated;
+grant execute on function public.admin_grant_entitlement(uuid, public.entitlement_scope, uuid, uuid, uuid, timestamptz, text) to service_role;
+
+create or replace function public.admin_revoke_entitlement(
+  p_entitlement_id uuid,
+  p_reason         text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_src public.entitlement_source;
+  v_ref text;
+begin
+  select e.source, e.external_ref into v_src, v_ref
+  from public.entitlements e where e.id = p_entitlement_id;
+  if not found then
+    raise exception 'admin_revoke_entitlement: not found' using errcode = 'no_data_found';
+  end if;
+  return public.entitlement_revoke(v_src, v_ref, p_reason);
+end;
+$$;
+
+comment on function public.admin_revoke_entitlement(uuid, text) is
+  'Administrator withdrawal of a NON-MIRRORED grant, by entitlement id. A '
+  'mirrored grant raises with hint mirrored_grant — express it on the producer.';
+
+revoke all on function public.admin_revoke_entitlement(uuid, text) from public, anon, authenticated;
+grant execute on function public.admin_revoke_entitlement(uuid, text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- THE READ PATH. Two functions, and every gate in the platform uses one of them.
+-- -----------------------------------------------------------------------------
+
+-- has_subject_access: THE per-subject rule. One definition, three callers, so
+-- the ORDER of the checks can never differ between the three gates again.
+--   1. a STORED entitlement row — the common paid case, one partial-index probe;
+--   2. the two COMPUTED override windows, which own no rows and expire lazily
+--      (nothing to unwind, no job, no per-child materialisation).
+-- plpgsql rather than sql because the obvious `coalesce(...)` collapse is a
+-- LIVE BUG here: is_giveaway_active() returns FALSE, never NULL, so coalesce
+-- would stop at it and never evaluate free access.
+create or replace function public.has_subject_access(p_student uuid, p_subject uuid)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if p_student is null or p_subject is null then return false; end if;
+
+  -- ck_entitlement_bounded makes a NULL ends_at unrepresentable for a subject
+  -- grant, so this needs no `ends_at is null` arm: "forever" is a package shape.
+  if exists (
+    select 1 from public.entitlements e
+    where e.student_profile_id = p_student
+      and e.scope = 'subject'
+      and e.subject_id = p_subject
+      and e.revoked_at is null
+      and e.starts_at <= now()
+      and e.ends_at   >  now()
+  ) then return true; end if;
+
+  if public.is_giveaway_active() then return true; end if;
+  if public.is_free_access_active_for_student(p_student) then return true; end if;
+
+  return false;
+end;
+$$;
+
+comment on function public.has_subject_access(uuid, uuid) is
+  'THE per-subject access rule (migration 124): a LIVE public.entitlements row, '
+  'OR the giveaway window, OR an admin free-access interval — in that order. '
+  'Read by start_practice_attempt, start_topic_test_attempt and '
+  'start_daily_round_attempt so the three can never drift. Takes an ARBITRARY '
+  'student id, so EXECUTE is service_role only (the same split as '
+  'is_free_access_active_for_student); the caller-scoped entrypoint is '
+  'my_accessible_subjects().';
+
+revoke all on function public.has_subject_access(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.has_subject_access(uuid, uuid) to service_role;
+
+-- live_package_entitlement: THE olympiad rule. Consults NO window, which is how
+-- the migration-038 owner ruling (giveaway / free access cover SUBJECTS only)
+-- becomes structural instead of something to remember not to add.
+--
+-- `returns table`, NOT the table's composite type: canonical run order creates
+-- this function in 011 while entitlements is created in 007 — the composite
+-- would work, but 011 already hit the reverse of that compile-order trap once
+-- (see the Round-49 rotation-state comment in start_olympiad_attempt) and the
+-- house style is to avoid depending on it at all.
+create or replace function public.live_package_entitlement(p_student uuid, p_package uuid)
+returns table (entitlement_id uuid, grade_id uuid)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select e.id, e.grade_id
+  from public.entitlements e
+  where e.student_profile_id = p_student
+    and e.scope = 'olympiad_package'
+    and e.package_id = p_package
+    and e.revoked_at is null
+    and e.starts_at <= now()
+    and (e.ends_at is null or e.ends_at > now())
+  -- Multiplicity becomes possible only once a second SOURCE exists. Tie-break
+  -- is OLDEST-GRANT-WINS: the grade snapshot must not move when an Apple grant
+  -- lands beside a live ABB one, because Round 49's rotation is keyed on
+  -- (student, package, grade) and a grade flip starts a fresh cycle.
+  order by e.created_at asc, e.id asc
+  limit 1
+$$;
+
+comment on function public.live_package_entitlement(uuid, uuid) is
+  'THE olympiad access rule (migration 124): the live package grant for this '
+  'child, with its grade snapshot. Consults no giveaway/free-access window — '
+  'olympiad packages are purchase-only (owner ruling, migration 038). '
+  'Oldest-grant-wins so a second source cannot move the grade snapshot out from '
+  'under the Round-49 rotation.';
+
+revoke all on function public.live_package_entitlement(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.live_package_entitlement(uuid, uuid) to service_role;
+
+-- The CALLER-SCOPED subject reader: what the signed-in child can play right
+-- now, by exactly the rule the engines enforce. current_profile_id() scopes it,
+-- so unlike has_subject_access it is safe for authenticated sessions — the same
+-- split as my_free_access_active() over is_free_access_active_for_student().
+-- Intended to replace the hand-rolled coverage queries in the web and mobile
+-- clients in the round after this one.
+create or replace function public.my_accessible_subjects()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select s.id
+  from public.subjects s
+  where public.has_subject_access(public.current_profile_id(), s.id)
+$$;
+
+comment on function public.my_accessible_subjects() is
+  'The CURRENT child''s playable subjects, by has_subject_access — the same rule '
+  'the three attempt engines enforce. Caller-scoped through current_profile_id().';
+
+revoke all on function public.my_accessible_subjects() from public, anon;
+grant execute on function public.my_accessible_subjects() to authenticated, service_role;
+
+-- The subscription half of the entitlement mirror (migration 124).
+--
+-- COLUMN SCOPING IS LOAD-BEARING on both. apply_due_plan_changes rewrites
+-- interval / pending_interval / price_amount hourly, and the add/remove paths
+-- fire no-op `set currency = currency` touches; none of that changes ACCESS, and
+-- an unfiltered trigger would write a redundant entitlement row AND an audit row
+-- on every one.
+drop trigger if exists trg_entitlements_from_sub_subjects on public.subscription_subjects;
+create trigger trg_entitlements_from_sub_subjects
+  after insert or update of current_period_start, current_period_end or delete
+  on public.subscription_subjects
+  for each row execute function public.tg_entitlements_subject();
+
+-- The WHEN guard is equally load-bearing: fn_sync_subscription_period updates
+-- child_subscriptions on EVERY subject-row write to re-derive the totals, so
+-- without it every plan edit would fan out quadratically. With it, the mapper
+-- re-runs only when the container's status or coverage window actually moved —
+-- which is also what makes trigger FIRING ORDER a non-issue: the mapper always
+-- re-reads child_subscriptions fresh, and this trigger re-runs it for every
+-- subject once trg_sync_subscription_period has settled the container.
+drop trigger if exists trg_entitlements_from_child_subs on public.child_subscriptions;
+create trigger trg_entitlements_from_child_subs
+  after update of status, current_period_end, current_period_start
+  on public.child_subscriptions
+  for each row
+  when (old.status               is distinct from new.status
+     or old.current_period_end   is distinct from new.current_period_end
+     or old.current_period_start is distinct from new.current_period_start)
+  execute function public.tg_entitlements_subscription();
+
 -- Enabling either flag disables the other; enabling giveaway_period (re)stamps
 -- system_settings 'giveaway.started_at' so the countdown restarts. A
 -- demo_payments row is REJECTED outright (migration 121 deleted that mode):
@@ -3922,33 +4933,16 @@ begin
   select grade_id into v_grade
   from public.students where profile_id = v_student;
   if not found then raise exception 'start_practice: not a student'; end if;
-  -- Round 11 (migration 027): an active GIVEAWAY window grants access without a
-  -- subscription. Round 12 (migration 033): an active per-parent/child FREE-ACCESS
-  -- interval does the same. Otherwise (migration 035, audit H6 + C1): the child
-  -- needs a live, DATE-VALID subscription covering THIS subject — one paid subject
-  -- must not unlock the rest, and expiry is checked lazily against
-  -- current_period_end (students.access_status is a display cache, not authority).
-  -- trialing/active = live until current_period_end; canceled keeps access until
-  -- the already-paid period ends; past_due (failed charge) blocks.
-  if not public.is_giveaway_active()
-     and not public.is_free_access_active_for_student(v_student) then
-    if not exists (
-      select 1
-      from public.child_subscriptions cs
-      join public.subscription_subjects ss
-        on ss.child_subscription_id = cs.id and ss.subject_id = p_subject_id
-      where cs.student_profile_id = v_student
-        and cs.status in ('trialing', 'active', 'canceled')
-        and cs.current_period_end is not null
-        and cs.current_period_end > now()
-        -- Migration 109: cs.current_period_end is the MAX of the per-subject
-        -- periods, so the subscription outlives its shortest-cycle subject —
-        -- gating on it alone would keep serving a lapsed weekly subject. The
-        -- coalesce keeps a legacy row (NULL period) behaving exactly as before.
-        and coalesce(ss.current_period_end, cs.current_period_end) > now()
-    ) then
-      raise exception 'start_practice: no active access' using errcode = 'check_violation';
-    end if;
+  -- THE access gate (migration 124; docs/STORE_PAYMENTS_COMPLIANCE.md §4.1).
+  -- Every rule that used to be hand-copied into this function — the giveaway
+  -- window, the admin free-access interval, the per-subject subscription join
+  -- and its lazy date arithmetic — now lives in ONE reader,
+  -- has_subject_access(), which consults public.entitlements first and the two
+  -- computed override windows second. Three copies of one predicate drift
+  -- within a release; one cannot. The gate still runs BEFORE any row is
+  -- created, so a refusal still consumes nothing.
+  if not public.has_subject_access(v_student, p_subject_id) then
+    raise exception 'start_practice: no active access' using errcode = 'check_violation';
   end if;
 
   insert into public.test_attempts (student_profile_id, subject_id, kind, status)
@@ -4286,9 +5280,14 @@ begin
 
   -- Purchase-only (owner ruling 2026-07-06, migration 038): free-access/trial/
   -- giveaway windows cover SUBJECTS only — olympiad packages are always bought.
-  select grade_id into v_buy_grade
-  from public.olympiad_purchases
-  where student_profile_id = v_student and olympiad_package_id = p_package_id and status = 'active';
+  -- Migration 124: the grant is read from public.entitlements through
+  -- live_package_entitlement(), which consults NO window — so the ruling above
+  -- is preserved STRUCTURALLY rather than by remembering not to add one here.
+  -- `select ... into` still sets FOUND, so a legacy purchase whose grade was
+  -- never snapshotted arrives as a NULL v_buy_grade and falls through to the
+  -- Round-34 ladder below exactly as it did before.
+  select le.grade_id into v_buy_grade
+  from public.live_package_entitlement(v_student, p_package_id) le;
   if not found then
     raise exception 'olympiad: no active purchase' using errcode = 'check_violation';
   end if;
@@ -5427,26 +6426,16 @@ begin
   from public.students where profile_id = v_student;
   if not found then raise exception 'start_test: not a student'; end if;
 
-  -- Access: same rule as start_practice_attempt (035 — per-subject, lazy-dated).
-  if not public.is_giveaway_active()
-     and not public.is_free_access_active_for_student(v_student) then
-    if not exists (
-      select 1
-      from public.child_subscriptions cs
-      join public.subscription_subjects ss
-        on ss.child_subscription_id = cs.id and ss.subject_id = p_subject_id
-      where cs.student_profile_id = v_student
-        and cs.status in ('trialing', 'active', 'canceled')
-        and cs.current_period_end is not null
-        and cs.current_period_end > now()
-        -- Migration 109: cs.current_period_end is the MAX of the per-subject
-        -- periods, so the subscription outlives its shortest-cycle subject —
-        -- gating on it alone would keep serving a lapsed weekly subject. The
-        -- coalesce keeps a legacy row (NULL period) behaving exactly as before.
-        and coalesce(ss.current_period_end, cs.current_period_end) > now()
-    ) then
-      raise exception 'start_test: no active access' using errcode = 'check_violation';
-    end if;
+  -- THE access gate (migration 124; docs/STORE_PAYMENTS_COMPLIANCE.md §4.1).
+  -- Every rule that used to be hand-copied into this function — the giveaway
+  -- window, the admin free-access interval, the per-subject subscription join
+  -- and its lazy date arithmetic — now lives in ONE reader,
+  -- has_subject_access(), which consults public.entitlements first and the two
+  -- computed override windows second. Three copies of one predicate drift
+  -- within a release; one cannot. The gate still runs BEFORE any row is
+  -- created, so a refusal still consumes nothing.
+  if not public.has_subject_access(v_student, p_subject_id) then
+    raise exception 'start_test: no active access' using errcode = 'check_violation';
   end if;
 
   -- Scope validation: topics must belong to the subject; subtopics to the
@@ -6285,26 +7274,16 @@ begin
     raise exception 'daily: student has no grade' using errcode = 'check_violation';
   end if;
 
-  -- Access: identical gate to the practice/test engines (per-subject).
-  if not public.is_giveaway_active()
-     and not public.is_free_access_active_for_student(v_student) then
-    if not exists (
-      select 1
-      from public.child_subscriptions cs
-      join public.subscription_subjects ss
-        on ss.child_subscription_id = cs.id and ss.subject_id = p_subject_id
-      where cs.student_profile_id = v_student
-        and cs.status in ('trialing', 'active', 'canceled')
-        and cs.current_period_end is not null
-        and cs.current_period_end > now()
-        -- Migration 109: cs.current_period_end is the MAX of the per-subject
-        -- periods, so the subscription outlives its shortest-cycle subject —
-        -- gating on it alone would keep serving a lapsed weekly subject. The
-        -- coalesce keeps a legacy row (NULL period) behaving exactly as before.
-        and coalesce(ss.current_period_end, cs.current_period_end) > now()
-    ) then
-      raise exception 'daily: no active access' using errcode = 'check_violation';
-    end if;
+  -- THE access gate (migration 124; docs/STORE_PAYMENTS_COMPLIANCE.md §4.1).
+  -- Every rule that used to be hand-copied into this function — the giveaway
+  -- window, the admin free-access interval, the per-subject subscription join
+  -- and its lazy date arithmetic — now lives in ONE reader,
+  -- has_subject_access(), which consults public.entitlements first and the two
+  -- computed override windows second. Three copies of one predicate drift
+  -- within a release; one cannot. The gate still runs BEFORE any row is
+  -- created, so a refusal still consumes nothing.
+  if not public.has_subject_access(v_student, p_subject_id) then
+    raise exception 'daily: no active access' using errcode = 'check_violation';
   end if;
 
   v_date := (now() at time zone 'Asia/Baku')::date - (case when v_rated then 0 else 1 end);
@@ -8518,6 +9497,15 @@ begin
   -- due_now: the TRUE ADDS only, at the sibling rate, rounded per cycle group.
   -- A trial charges nothing (the adds ride the trial like every other subject),
   -- and so does a reinstatement -- there is nothing to buy back.
+  --
+  -- MIGRATION 126 -- THIS ZERO IS NOW TRUE. It was a claim the apply side did
+  -- not honour: apply_plan_change anchored an add at now() + its FULL cycle
+  -- whatever the subscription status, so adding a yearly subject on day one of
+  -- a seven-day trial bought a year of access for nothing -- repeatably, with
+  -- no obligation recorded anywhere and no renewal path that could ever collect
+  -- it. The apply now ends a trial-time add at the TRIAL END, which is what
+  -- 'rides the trial' has always said. The trial stays a bounded free window;
+  -- it can no longer become a free PAID period.
   if v_sub.status <> 'trialing' then
     with g as (
       select s.interval as iv, coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
@@ -8542,7 +9530,14 @@ begin
   -- anywhere must keep reporting no date rather than be given a guessed one.
   with r as (
     select s.interval as iv,
+           -- MIGRATION 126: while the plan is TRIALING an add does not open a
+           -- full cycle -- it rides the trial and ends with it (see
+           -- apply_plan_change). Telling a parent 'renews in a year' about a
+           -- subject added on day two of a seven-day trial was the sentence
+           -- that made the free-forever add look legitimate.
            min(case
+                 when s.state = 'add' and v_sub.status = 'trialing'
+                   then coalesce(v_sub.trial_ends_at, v_sub.current_period_end, now())
                  when s.state = 'add'
                    then now() + case s.interval
                                   when 'week'  then interval '7 days'
@@ -8657,7 +9652,7 @@ end;
 $$;
 
 comment on function public.quote_plan_change(uuid, jsonb) is
-  'Migration 109/120: diffs a DESIRED full per-subject basket against the live subscription into adds / reinstatements / removes / plan_changes and prices it. due_now = the TRUE adds'' full first cycles at the sibling rate (proration retired); un-cancelling a scheduled removal before its period lapses costs nothing, and a cycle change costs nothing now and applies at that subject''s renewal.';
+  'Migration 109/120/126: diffs a DESIRED full per-subject basket against the live subscription into adds / reinstatements / removes / plan_changes and prices it. due_now = the TRUE adds'' full first cycles at the sibling rate (proration retired); un-cancelling a scheduled removal before its period lapses costs nothing, and a cycle change costs nothing now and applies at that subject''s renewal. Migration 126: while the plan is trialing an add renews at the TRIAL END, matching what apply_plan_change writes.';
 
 create or replace function public.apply_plan_change(
   p_student_profile_id uuid,
@@ -8817,11 +9812,33 @@ begin
     values
       (v_sub.id, v_row.subject_id, v_row.iv, v_row.price_amount, v_sub.currency,
        now(),
-       now() + case v_row.iv
-                 when 'week'  then interval '7 days'
-                 when 'month' then interval '1 month'
-                 else              interval '1 year'
-               end)
+       -- MIGRATION 126 -- A TRIAL-TIME ADD ENDS WITH THE TRIAL.
+       --
+       -- quote_plan_change prices a trialing add at ZERO and has always said it
+       -- 'rides the trial like every other subject'. This line did the
+       -- opposite: it opened a FULL cycle anchored at now(), so a yearly
+       -- subject added on day one of a seven-day trial was a free year --
+       -- repeatable, unrecorded and uncollectable, because nothing in the
+       -- platform charges at a trial end or a period end and card-on-file is
+       -- not approved by the bank yet (AZCDF-100303). A zero we have no way to
+       -- bill later may only buy a period that ENDS, never one that outlives
+       -- the window that justified it.
+       --
+       -- create_child_plan already writes exactly this for the opening basket,
+       -- so the rule is now uniform and one sentence long: WHILE TRIALING,
+       -- EVERY SUBJECT PERIOD ENDS AT THE TRIAL END.
+       --
+       -- The coalesce chain FAILS CLOSED. A legacy trialing row carrying no
+       -- trial_ends_at and no period lands on now(), i.e. grants nothing --
+       -- the safe direction for a period we could not establish.
+       case when v_sub.status = 'trialing'
+              then coalesce(v_sub.trial_ends_at, v_sub.current_period_end, now())
+            else now() + case v_row.iv
+                           when 'week'  then interval '7 days'
+                           when 'month' then interval '1 month'
+                           else              interval '1 year'
+                         end
+       end)
     on conflict (child_subscription_id, subject_id) do update
       set remove_at            = null,
           interval             = excluded.interval,
@@ -8890,7 +9907,7 @@ end;
 $$;
 
 comment on function public.apply_plan_change(uuid, jsonb, text) is
-  'Migration 109/120: applies a DESIRED full per-subject basket atomically — true adds open their own now()-anchored cycle, a subject whose scheduled removal has not yet lapsed is REINSTATED (remove_at cleared, period and price untouched, nothing charged), removals are scheduled for THAT subject''s own period end, cycle changes write pending_interval only. quote_plan_change is the single source of the numbers and plan_change_states of the add/reinstate/covered split; assert_payments_enabled() gates adds and cycle changes while removals and reinstatements stay legal.';
+  'Migration 109/120/126: applies a DESIRED full per-subject basket atomically — true adds open their own now()-anchored cycle, a subject whose scheduled removal has not yet lapsed is REINSTATED (remove_at cleared, period and price untouched, nothing charged), removals are scheduled for THAT subject''s own period end, cycle changes write pending_interval only. quote_plan_change is the single source of the numbers and plan_change_states of the add/reinstate/covered split; assert_payments_enabled() gates adds and cycle changes while removals and reinstatements stay legal. Migration 126: while the subscription is trialing an add period ends at the TRIAL END, never a full cycle -- a zero the platform has no way to bill later may only buy a window that closes on its own.';
 
 -- ---- the boundary job: a scheduled cycle actually takes effect --------------
 -- Without this, pending_interval is WRITE-ONLY: apply_plan_change stores the
@@ -9624,6 +10641,696 @@ create trigger trg_notify_question_report_status
 -- grants EXECUTE to anon AND authenticated, so all three are named here.
 revoke all on function public.notify_question_report_status_tg()
   from public, anon, authenticated;
+
+-- =============================================================================
+-- CHECKOUT INTENT -> PLAN (migration 125). The four functions that make a
+-- PAYMENT cause a GRANT.
+--
+-- Before 125 the parent checkout applied the plan change FIRST and asked for
+-- money AFTERWARDS, and the helper that asked "could only return null -- it
+-- never fails the change". A parent could add a 90 AZN yearly subject, confirm,
+-- close the tab before paying, and the child had a live year of access with no
+-- payments row anywhere. It could not simply be reordered, because
+-- checkout_sessions recorded an AMOUNT and never a PURCHASE: a verified payment
+-- had nothing to act on. 007 gives the session an intent; these four use it.
+--
+--   checkout_intent_open   quote + insert in ONE transaction, so the stored
+--                          amount is provably the RPC's own number
+--   checkout_intent_price  read-only re-quote, run before the redirect is signed
+--   checkout_redeem_plan   the ONLY path from a verified payment to an applied
+--                          plan: re-price, demand exact equality, apply once
+--   checkout_flag_redemption  the caller's way to say a follow-up failed
+--
+-- NONE OF THEM WRITES `entitlements`. Redemption calls create_child_plan /
+-- apply_plan_change like every other caller and lets migration 124's producer
+-- triggers mirror the result. A rail that wrote access directly would be the
+-- first drift, with no invoice and no ledger row to reconcile against.
+--
+-- All four are SECURITY DEFINER and service_role-only: they are reachable from
+-- the web-app's server actions and the AzeriCard callback, never from a browser.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 6. Opening an intent  (backport -> 011)
+-- -----------------------------------------------------------------------------
+-- THE ONLY WAY A PAYABLE SESSION COMES INTO EXISTENCE. It quotes and inserts in
+-- ONE transaction, so the stored amount is provably the RPC's own number and
+-- there is no parameter through which a caller could name a price. The ORDER is
+-- minted by the caller (a CSPRNG loop that retries on the unique index of
+-- migration 123) and passed in; a collision surfaces here as SQLSTATE 23505 and
+-- the caller mints again.
+--
+-- It takes the SAME family advisory lock create_child_plan takes, so an intent
+-- cannot be opened against a plan another tab is creating at that instant.
+create or replace function public.checkout_intent_open(
+  p_student_profile_id uuid,
+  p_kind               public.checkout_intent_kind,
+  p_items              jsonb,
+  p_order              text,
+  p_ttl_minutes        int default 1440
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner uuid;
+  v_q     jsonb;
+  v_due   numeric(12,2);
+  v_sub   uuid;
+  v_id    uuid;
+  v_ttl   int;
+  v_exp   timestamptz;
+  v_norm  jsonb;
+begin
+  -- The kill switch first: an intent is the first step of a paid write, and a
+  -- session opened while payments are off is a charge waiting to happen.
+  perform public.assert_payments_enabled();
+
+  -- The gateway's own ORDER shape, mirrored from lib/payments/azericard/format
+  -- (6..32 digits; we mint 14). Stated as a range rather than the exact minted
+  -- length so this refuses garbage without pinning the mint format, which the
+  -- protocol layer owns.
+  if p_order is null or p_order !~ '^[0-9]{6,32}$' then
+    raise exception 'checkout: malformed order'
+      using errcode = 'check_violation', hint = 'bad_order';
+  end if;
+
+  select created_by_parent_profile_id into v_owner
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then
+    raise exception 'checkout: child has no owning parent'
+      using errcode = 'check_violation', hint = 'bad_student';
+  end if;
+
+  -- Bounded, and bounded on BOTH sides: a five-minute floor keeps a caller from
+  -- opening a session that expires before the bank's own page can be filled in,
+  -- and a 24-hour ceiling is what stops a forgotten pending session from being
+  -- redeemable by a replayed callback weeks later.
+  v_ttl := least(greatest(coalesce(p_ttl_minutes, 1440), 5), 1440);
+  v_exp := now() + make_interval(mins => v_ttl);
+
+  perform pg_advisory_xact_lock(hashtextextended(v_owner::text, 42));
+
+  if p_kind = 'plan_start' then
+    if exists (
+      select 1 from public.child_subscriptions
+      where student_profile_id = p_student_profile_id
+        and status in ('trialing', 'active', 'past_due')
+    ) then
+      raise exception 'checkout: child already has a live subscription'
+        using errcode = 'unique_violation', hint = 'already_subscribed';
+    end if;
+    v_q   := public.quote_child_plan(p_student_profile_id, p_items);
+    v_due := (v_q->>'due_now')::numeric;
+    v_sub := null;
+  else
+    -- Raises no_data_found when there is no live subscription to change.
+    v_q   := public.quote_plan_change(p_student_profile_id, p_items);
+    v_due := (v_q->>'due_now')::numeric;
+    v_sub := (v_q->>'subscription_id')::uuid;
+  end if;
+
+  -- A checkout for nothing must not exist. A free change (a removal, a
+  -- reinstatement, a scheduled cycle move, a plan that rides a trial) is applied
+  -- directly by its own action; routing it through a payment would invent a
+  -- charge, and a zero-amount signed request is not a thing the gateway accepts.
+  if v_due is null or v_due <= 0 then
+    raise exception 'checkout: nothing is due for this change'
+      using errcode = 'check_violation', hint = 'nothing_due';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'subject_id', n.subject_id, 'interval', n.interval)), '[]'::jsonb)
+    into v_norm
+  from public.plan_items_normalize(p_items) n;
+
+  insert into public.checkout_sessions
+    (owner_parent_profile_id, kind, child_subscription_id, amount, currency,
+     status, provider, provider_session_id,
+     intent_kind, student_profile_id, intent_items, intent_quote, expires_at)
+  values
+    (v_owner, 'subscription', v_sub, v_due, coalesce(v_q->>'currency', 'AZN'),
+     'pending', 'azericard', p_order,
+     p_kind, p_student_profile_id, v_norm, v_q, v_exp)
+  returning id into v_id;
+
+  return jsonb_build_object(
+    'checkout_session_id', v_id,
+    'order',      p_order,
+    'amount',     v_due,
+    'currency',   coalesce(v_q->>'currency', 'AZN'),
+    'expires_at', v_exp,
+    'quote',      v_q);
+end;
+$$;
+
+comment on function public.checkout_intent_open(uuid, public.checkout_intent_kind, jsonb, text, int) is
+  'Migration 125: opens a PENDING checkout carrying the intent (child, frozen basket) and the quote RPC''s OWN due_now. Mutates nothing else -- the plan is applied only by checkout_redeem_plan after a verified payment. Raises check_violation/nothing_due for a free change and unique_violation/already_subscribed for a plan_start on a child who already has one.';
+
+revoke all on function public.checkout_intent_open(uuid, public.checkout_intent_kind, jsonb, text, int)
+  from public, anon, authenticated;
+grant execute on function public.checkout_intent_open(uuid, public.checkout_intent_kind, jsonb, text, int)
+  to service_role;
+
+-- -----------------------------------------------------------------------------
+-- 7. Re-pricing an intent, read-only  (backport -> 011)
+-- -----------------------------------------------------------------------------
+-- Used at SIGNING time, before the parent is sent to the bank, so a stale
+-- pending session is never signed for a number that no longer stands. It is the
+-- same computation redeem runs; running it here only means the mismatch is
+-- caught before money moves instead of after.
+create or replace function public.checkout_intent_price(p_order text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_s   public.checkout_sessions%rowtype;
+  v_q   jsonb;
+  v_due numeric(12,2);
+  v_sub uuid;
+begin
+  select * into v_s from public.checkout_sessions
+  where provider = 'azericard' and provider_session_id = p_order;
+  if not found or v_s.intent_kind is null then
+    return jsonb_build_object('ok', false, 'reason', 'not_found');
+  end if;
+  if v_s.student_profile_id is null then
+    return jsonb_build_object('ok', false, 'reason', 'student_gone');
+  end if;
+  if v_s.expires_at is not null and now() > v_s.expires_at then
+    return jsonb_build_object('ok', false, 'reason', 'expired');
+  end if;
+
+  begin
+    if v_s.intent_kind = 'plan_start' then
+      if exists (
+        select 1 from public.child_subscriptions
+        where student_profile_id = v_s.student_profile_id
+          and status in ('trialing', 'active', 'past_due')
+      ) then
+        return jsonb_build_object('ok', false, 'reason', 'plan_already_live');
+      end if;
+      v_q := public.quote_child_plan(v_s.student_profile_id, v_s.intent_items);
+    else
+      v_q   := public.quote_plan_change(v_s.student_profile_id, v_s.intent_items);
+      v_sub := (v_q->>'subscription_id')::uuid;
+      if v_s.child_subscription_id is distinct from v_sub then
+        return jsonb_build_object('ok', false, 'reason', 'subscription_changed');
+      end if;
+    end if;
+  exception when others then
+    return jsonb_build_object('ok', false, 'reason', 'reprice_failed');
+  end;
+
+  v_due := (v_q->>'due_now')::numeric;
+  if v_due is distinct from v_s.amount then
+    return jsonb_build_object('ok', false, 'reason', 'price_changed',
+                              'amount', v_s.amount, 'quoted', v_due);
+  end if;
+  return jsonb_build_object('ok', true, 'amount', v_s.amount, 'quoted', v_due);
+end;
+$$;
+
+comment on function public.checkout_intent_price(text) is
+  'Migration 125: read-only re-quote of a stored intent, for the moment before the redirect is signed. Returns {ok,reason,amount,quoted}; mutates nothing.';
+
+revoke all on function public.checkout_intent_price(text) from public, anon, authenticated;
+grant execute on function public.checkout_intent_price(text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- 8. Redeeming a PAID intent -- the step that grants  (backport -> 011)
+-- -----------------------------------------------------------------------------
+-- Called from the AzeriCard callback AFTER the signature verified, the TRTYPE=90
+-- status query agreed, the transaction identity matched, and the outcome was
+-- recorded as approved (which is what sets checkout_sessions.status = 'paid').
+-- It refuses to do anything for a session that is not 'paid', so it cannot be
+-- turned into a grant path by calling it early.
+--
+-- EXACTLY ONCE: the row is locked FOR UPDATE and `redeemed_at` is the claim.
+-- Both terminal outcomes set it, so a gateway retry, a double callback or a
+-- refresh finds a decided row and returns what was decided.
+--
+-- NOTHING HERE WRITES `entitlements`. It calls create_child_plan /
+-- apply_plan_change like every other caller and lets migration 124's producer
+-- triggers mirror the result. A rail that wrote access directly would be the
+-- first drift, with no invoice and no ledger row to reconcile against.
+create or replace function public.checkout_redeem_plan(p_order text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_s       public.checkout_sessions%rowtype;
+  v_q       jsonb;
+  v_due     numeric(12,2);
+  v_res     jsonb := '{}'::jsonb;
+  v_note    text;
+  v_live    uuid;
+  v_sub     uuid;
+  v_outcome text;
+begin
+  select * into v_s from public.checkout_sessions
+  where provider = 'azericard' and provider_session_id = p_order
+  for update;
+
+  if not found then
+    return jsonb_build_object('outcome', 'unknown_order');
+  end if;
+  if v_s.intent_kind is null then
+    -- The owner's protocol test, or a pre-125 row. Nothing to deliver, and
+    -- inventing an intent for it would be worse than doing nothing.
+    return jsonb_build_object('outcome', 'no_intent');
+  end if;
+
+  if v_s.redeemed_at is not null then
+    return jsonb_build_object(
+      'outcome', 'already',
+      'redemption_status', v_s.redemption_status,
+      'note', v_s.redemption_note,
+      'student_profile_id', v_s.student_profile_id);
+  end if;
+
+  -- NOT PAID IS NOT A FAILURE. A pending or failed session is simply not
+  -- redeemable yet; saying so without touching the row keeps a later genuine
+  -- callback able to redeem it.
+  if v_s.status <> 'paid' then
+    return jsonb_build_object('outcome', 'not_paid', 'status', v_s.status);
+  end if;
+
+  if v_s.student_profile_id is null then
+    v_note := 'student_gone';
+  elsif v_s.expires_at is not null and now() > v_s.expires_at then
+    -- Money was taken against an intent whose window closed. Never silently
+    -- deliver it (the world has had a day to move) and never silently drop it
+    -- (we are holding the family's money): record it and stop.
+    v_note := 'expired';
+  end if;
+
+  if v_note is null then
+    begin
+      if v_s.intent_kind = 'plan_start' then
+        select id into v_live from public.child_subscriptions
+        where student_profile_id = v_s.student_profile_id
+          and status in ('trialing', 'active', 'past_due')
+        order by created_at desc
+        limit 1;
+        if v_live is not null then
+          v_note := 'plan_already_live';
+        else
+          v_q   := public.quote_child_plan(v_s.student_profile_id, v_s.intent_items);
+          v_due := (v_q->>'due_now')::numeric;
+        end if;
+      else
+        v_q   := public.quote_plan_change(v_s.student_profile_id, v_s.intent_items);
+        v_due := (v_q->>'due_now')::numeric;
+        v_sub := (v_q->>'subscription_id')::uuid;
+        if v_s.child_subscription_id is distinct from v_sub then
+          v_note := 'subscription_changed';
+        end if;
+      end if;
+    exception when others then
+      -- A subject withdrawn from the catalog, pricing deactivated, the
+      -- subscription cancelled in another tab: all land here.
+      v_note := 'reprice_failed:' || sqlstate;
+    end;
+  end if;
+
+  -- EXACT EQUALITY OR A HUMAN. See the header: every way of differing has a
+  -- different correct resolution, and delivering a DIFFERENT plan than the one
+  -- that was paid for is the failure this whole migration exists to prevent.
+  if v_note is null and v_due is distinct from v_s.amount then
+    v_note := 'price_changed';
+  end if;
+
+  if v_note is null then
+    begin
+      if v_s.intent_kind = 'plan_start' then
+        v_res := public.create_child_plan(v_s.student_profile_id, v_s.intent_items);
+        v_sub := (v_res->>'subscription_id')::uuid;
+      else
+        -- Keyed on the ORDER, not on the interactive path's 5-minute bucket: an
+        -- order is stable across every retry this callback can receive.
+        v_res := public.apply_plan_change(
+                   v_s.student_profile_id, v_s.intent_items, 'checkout:' || p_order);
+      end if;
+    exception when others then
+      -- assert_payments_enabled() flipped between the charge and the callback,
+      -- a last_subject guard, a lost race: money is held, nothing was applied.
+      v_note := 'apply_failed:' || sqlstate;
+    end;
+  end if;
+
+  v_outcome := case when v_note is null then 'applied' else 'needs_review' end;
+
+  update public.checkout_sessions
+     set redeemed_at       = now(),
+         redemption_status = v_outcome::public.checkout_redemption_status,
+         redemption_note   = left(v_note, 200),
+         child_subscription_id = coalesce(child_subscription_id, v_sub)
+   where id = v_s.id
+     and redeemed_at is null;
+
+  if v_outcome = 'applied' and v_sub is not null then
+    -- Close the loop the ledger was missing: which subscription this money
+    -- bought, and which order paid for these subject changes. Both were
+    -- unanswerable before, and a reconciliation report that cannot answer them
+    -- is a report nobody can act on.
+    update public.payments
+       set child_subscription_id = v_sub,
+           updated_at = now()
+     where provider = 'azericard'
+       and provider_ref = p_order
+       and child_subscription_id is null;
+
+    update public.subscription_changes
+       set provider = 'azericard',
+           provider_payment_id = p_order
+     where idempotency_key = 'checkout:' || p_order
+       and student_profile_id = v_s.student_profile_id;
+  end if;
+
+  -- The ledger copy. Amounts and enum values only: no card data exists here and
+  -- none is ever added.
+  insert into public.payment_events (provider, event_id, payload_json, processed_at)
+  values ('azericard', 'redeem:' || p_order,
+          jsonb_build_object(
+            'order', p_order,
+            'intent_kind', v_s.intent_kind,
+            'outcome', v_outcome,
+            'note', v_note,
+            'amount_paid', v_s.amount,
+            'amount_repriced', v_due,
+            'subscription_id', v_sub),
+          now())
+  on conflict do nothing;
+
+  return jsonb_build_object(
+    'outcome',            v_outcome,
+    'note',               v_note,
+    'student_profile_id', v_s.student_profile_id,
+    'subscription_id',    v_sub,
+    -- create_child_plan allocates the deferred 8-digit login ID; the caller has
+    -- to finish that by setting the synthetic auth email, which is an Auth-admin
+    -- call no SQL function can make.
+    'new_child_unique_id', v_res->>'new_child_unique_id',
+    'auth_user_id',        v_res->>'auth_user_id');
+end;
+$$;
+
+comment on function public.checkout_redeem_plan(text) is
+  'Migration 125: the ONLY path from a verified AzeriCard payment to an applied plan. Requires checkout_sessions.status = ''paid'', locks the row, re-prices the frozen intent and demands exact equality with the amount paid; anything else is recorded as needs_review with a reason. Sets redeemed_at exactly once, so retries and double callbacks are no-ops. Writes no entitlement row -- it calls create_child_plan / apply_plan_change and lets migration 124''s producer triggers mirror them.';
+
+revoke all on function public.checkout_redeem_plan(text) from public, anon, authenticated;
+grant execute on function public.checkout_redeem_plan(text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- 9. Flagging a redemption that needs a human  (backport -> 011)
+-- -----------------------------------------------------------------------------
+-- The one follow-up SQL cannot perform is the Supabase Auth admin call that
+-- turns a freshly allocated 8-digit id into a login. When that fails the plan IS
+-- applied and paid for, and the child still cannot sign in. That is a human's
+-- problem, not a silent one -- so the caller writes the reason here.
+--
+-- IT WRITES THE NOTE AND NOTHING ELSE. Flipping the status to 'needs_review'
+-- would be the obvious move and would be a lie: the plan WAS delivered, and
+-- 'needs_review' is this schema's word for "we are holding money we have not
+-- delivered on". Two different problems that need two different answers must not
+-- share one word. 013 check 118 therefore treats a decided redemption carrying a
+-- note as needing a human REGARDLESS of which status it holds, and the ledger
+-- (payment_events 'redeem:<order>') keeps the fact that it applied.
+create or replace function public.checkout_flag_redemption(
+  p_order text,
+  p_note  text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_ok boolean := false;
+begin
+  update public.checkout_sessions
+     set redemption_note = left(coalesce(p_note, 'flagged'), 200)
+   where provider = 'azericard'
+     and provider_session_id = p_order
+     and intent_kind is not null
+     -- A DECIDED redemption only. There is no follow-up to report on one that
+     -- has not happened, and inventing a note for it would put a row in front of
+     -- a human that nothing has gone wrong with yet.
+     and redeemed_at is not null
+  returning true into v_ok;
+  return coalesce(v_ok, false);
+end;
+$$;
+
+comment on function public.checkout_flag_redemption(text, text) is
+  'Migration 125: record why a DECIDED redemption still needs a human -- for the follow-up steps SQL cannot perform (the Auth-admin call that activates a child login). Writes redemption_note only: the status keeps saying what happened to the money, and 013 check 118 surfaces any decided redemption carrying a note.';
+
+revoke all on function public.checkout_flag_redemption(text, text) from public, anon, authenticated;
+grant execute on function public.checkout_flag_redemption(text, text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- 4. The purchase-silent surface: apply ONLY what costs nothing (migration 126)
+-- -----------------------------------------------------------------------------
+-- WHY THESE EXIST. The mobile apps are purchase-silent BY ARCHITECTURE
+-- (docs/STORE_PAYMENTS_COMPLIANCE.md section 4): purchasing happens on the WEB,
+-- in a browser, and the app reflects entitlement. That guarantee was true of
+-- everything the app RENDERS and false of what its BFF could CALL -- both
+-- routes reached the apply RPCs directly, so a parent bearer token could start
+-- a full paid plan with no checkout anywhere the moment the mode became `real`.
+--
+-- WHY A WRAPPER AND NOT A PRE-CHECK. "Quote, see zero, then apply" cannot be
+-- made safe from outside the transaction: prices, the sibling tier and
+-- launch_promo_config.trial_days can all move between the two calls, and READ
+-- COMMITTED gives each statement its own snapshot. So the verdict is taken from
+-- the apply's OWN return value, in the SAME statement, and a refusal RAISES --
+-- which rolls back the apply, the ledger rows and the entitlement rows the
+-- producer triggers wrote. There is no window in which a priced change exists.
+--
+-- WHY NOT A BOOLEAN PARAMETER ON THE APPLY ITSELF. Adding one would create a
+-- second overload of a function this codebase calls from five places, and the
+-- OLD signature would keep existing as a bypass. A separately named function
+-- cannot be reached by accident: a route that wants the priced behaviour has to
+-- name the priced function, which is a thing a reviewer can see.
+--
+-- WHAT STAYS LEGAL, and why it must. A removal, a reinstatement (migration
+-- 120), a scheduled cycle change, an active giveaway window, an admin
+-- free-access interval and a running trial all price at ZERO, and every one of
+-- them is a thing a parent must be able to do from the app. Never trap a family
+-- inside a plan they are trying to leave because the payment rail is elsewhere.
+create or replace function public.create_child_plan_if_free(
+  p_student_profile_id uuid,
+  p_items              jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_res jsonb;
+  v_due numeric(12,2);
+begin
+  v_res := public.create_child_plan(p_student_profile_id, p_items);
+
+  -- NULL IS A REFUSAL, not a zero. An answer with no due_now is an answer we
+  -- cannot price, and "we could not tell what this costs" must never resolve to
+  -- "so it is probably free".
+  v_due := (v_res->>'due_now')::numeric;
+  if v_due is null or v_due > 0 then
+    raise exception 'plan: this change has to be paid for'
+      using errcode = 'check_violation', hint = 'payment_required';
+  end if;
+
+  return v_res;
+end;
+$$;
+
+comment on function public.create_child_plan_if_free(uuid, jsonb) is
+  'Migration 126: create_child_plan for the PURCHASE-SILENT surface (the mobile BFF). Applies the plan and then rolls the whole statement back with check_violation/payment_required if the plan RPC priced it above zero -- so a bearer token can start a trial or a genuinely free plan and can never reach a paid one. The verdict comes from the apply''s own return value inside the same statement, which is why no re-quote race can defeat it.';
+
+revoke all on function public.create_child_plan_if_free(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.create_child_plan_if_free(uuid, jsonb) to service_role;
+
+create or replace function public.apply_plan_change_if_free(
+  p_student_profile_id uuid,
+  p_items              jsonb,
+  p_idempotency_key    text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_res jsonb;
+  v_due numeric(12,2);
+begin
+  v_res := public.apply_plan_change(p_student_profile_id, p_items, p_idempotency_key);
+
+  -- A REPLAY IS NOT A PURCHASE. apply_plan_change short-circuits a repeated
+  -- idempotency key with {idempotent, applied_at} and applies nothing, so there
+  -- is no charge to refuse -- and refusing it would turn a harmless retry into
+  -- an error the parent has to interpret.
+  if coalesce((v_res->>'idempotent')::boolean, false) then
+    return v_res;
+  end if;
+
+  v_due := (v_res->>'due_now')::numeric;
+  if v_due is null or v_due > 0 then
+    raise exception 'plan: this change has to be paid for'
+      using errcode = 'check_violation', hint = 'payment_required';
+  end if;
+
+  return v_res;
+end;
+$$;
+
+comment on function public.apply_plan_change_if_free(uuid, jsonb, text) is
+  'Migration 126: apply_plan_change for the PURCHASE-SILENT surface (the mobile BFF). Removals, reinstatements, scheduled cycle changes and trial-time adds price at zero and pass; anything the quote prices above zero raises check_violation/payment_required, which rolls back the apply, its ledger rows and the entitlement rows the producer triggers wrote. An idempotent replay is returned untouched -- it applied nothing.';
+
+revoke all on function public.apply_plan_change_if_free(uuid, jsonb, text) from public, anon, authenticated;
+grant execute on function public.apply_plan_change_if_free(uuid, jsonb, text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- 5. Reconciliation for a lost callback  (migration 126)
+-- -----------------------------------------------------------------------------
+-- A payment authorised at the bank whose BACKREF POST never reaches us leaves
+-- the family CHARGED with no record, no plan and no alarm. The gateway answers
+-- a TRTYPE=90 status query for 24 HOURS, so the window in which that is
+-- recoverable is exactly one day wide and then closes forever.
+--
+-- WHY THIS IS TWO FUNCTIONS AND NOT ONE JOB. Asking the gateway requires a MAC
+-- signed with the merchant private key. That key lives in the web app's
+-- environment and MUST NOT enter the database (CLAUDE.md, secret handling), and
+-- this deployment has no pg_net, so a pg_cron job cannot make the call even in
+-- principle. The split follows the constraint:
+--   * checkout_reconcile_candidates() names the orders worth asking about;
+--     the web-app sweep asks, and records the answer through recordOutcome and
+--     checkout_redeem_plan -- the SAME code the callback runs, so there is one
+--     implementation of "money becomes a plan" rather than a second copy that
+--     can drift from it.
+--   * checkout_redeem_sweep() is the half that needs no network: sessions the
+--     ledger ALREADY says are `paid` whose redemption never ran. It is the
+--     pg_cron backstop, and it is what makes the guarantee survive an outage of
+--     whatever schedules the web sweep.
+create or replace function public.checkout_reconcile_candidates(p_limit int default 50)
+returns table (
+  provider_order text,
+  amount         numeric(12,2),
+  currency       text,
+  created_at     timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select cs.provider_session_id, cs.amount, cs.currency, cs.created_at
+  from public.checkout_sessions cs
+  where cs.provider = 'azericard'
+    and cs.intent_kind is not null
+    and cs.status = 'pending'
+    and cs.redeemed_at is null
+    and cs.amount is not null
+    -- INSIDE THE GATEWAY'S OWN WINDOW. Beyond 24 hours a status query cannot be
+    -- answered, so listing the row would only produce a network call that
+    -- always fails; 013 check 118 keeps counting it instead.
+    and cs.created_at > now() - interval '24 hours'
+    -- ...and not so fresh that the parent may still be ON the bank's page. A
+    -- sweep that raced a live checkout would query a transaction that has not
+    -- happened yet and record a 'pending' answer as though it were news.
+    and cs.created_at < now() - interval '5 minutes'
+  order by cs.created_at asc
+  limit least(greatest(coalesce(p_limit, 50), 1), 200);
+$$;
+
+comment on function public.checkout_reconcile_candidates(int) is
+  'Migration 126: the work list for the lost-callback sweep -- PENDING intents inside the gateway''s 24-hour TRTYPE=90 window and at least five minutes old. Read-only; it decides nothing and grants nothing. The caller asks the gateway (the MAC key is web-app-only and never enters the database) and records the answer through the same path the callback uses.';
+
+revoke all on function public.checkout_reconcile_candidates(int) from public, anon, authenticated;
+grant execute on function public.checkout_reconcile_candidates(int) to service_role;
+
+create or replace function public.checkout_redeem_sweep(p_limit int default 50)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_row      record;
+  v_res      jsonb;
+  v_seen     int := 0;
+  v_applied  int := 0;
+  v_review   int := 0;
+  v_other    int := 0;
+begin
+  for v_row in
+    select cs.provider_session_id as ord
+    from public.checkout_sessions cs
+    where cs.provider = 'azericard'
+      and cs.intent_kind is not null
+      and cs.status = 'paid'
+      and cs.redeemed_at is null
+      -- Five minutes of grace, because the ordinary case is a callback whose
+      -- redeem step is still in flight in another transaction. Sweeping it now
+      -- would only contend on the row lock checkout_redeem_plan takes.
+      and cs.created_at < now() - interval '5 minutes'
+      -- ONLY WHAT SQL CAN FINISH. A plan_start for a child with no 8-digit ID
+      -- yet ends with a Supabase Auth admin call that no SQL function can make,
+      -- and redeeming it here would leave a paid-for child unable to log in
+      -- with nothing saying so. The web-app sweep -- which CAN make that call --
+      -- owns those; this job takes the rest, and if the web sweep never runs
+      -- 013 check 118 still reports them as money taken and not delivered.
+      and (cs.intent_kind = 'plan_change'
+           or exists (select 1 from public.students st
+                       where st.profile_id = cs.student_profile_id
+                         and st.child_unique_id is not null))
+    order by cs.created_at asc
+    limit least(greatest(coalesce(p_limit, 50), 1), 200)
+  loop
+    v_seen := v_seen + 1;
+    -- ONE implementation of "money becomes a plan". Everything that makes it
+    -- safe -- the row lock, the status = 'paid' requirement, the re-price
+    -- against the amount actually confirmed, redeemed_at written in the same
+    -- transaction as the apply -- is inside that function, so this loop cannot
+    -- weaken any of it and a concurrent callback cannot double-apply.
+    begin
+      v_res := public.checkout_redeem_plan(v_row.ord);
+    exception when others then
+      -- One unhappy session must not abort the sweep for the rest. The handler
+      -- SETS A VALUE rather than jumping: leaving a block that has an exception
+      -- handler from inside that handler is exactly the sort of control flow
+      -- that behaves differently across versions, and this loop holds money.
+      v_res := jsonb_build_object('outcome', 'error');
+    end;
+    if v_res->>'outcome' = 'applied' then
+      v_applied := v_applied + 1;
+    elsif v_res->>'outcome' = 'needs_review' then
+      v_review := v_review + 1;
+    else
+      v_other := v_other + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'examined', v_seen, 'applied', v_applied,
+    'needs_review', v_review, 'other', v_other);
+end;
+$$;
+
+comment on function public.checkout_redeem_sweep(int) is
+  'Migration 126: the no-network half of lost-callback recovery -- redeems checkout sessions the ledger already says are PAID whose redemption never ran, through checkout_redeem_plan (never a second copy of that logic). Idempotent: a decided session answers ''already'' and is counted, not re-applied. Skips a plan_start whose child has no 8-digit ID yet, because finishing one needs a Supabase Auth admin call SQL cannot make.';
+
+revoke all on function public.checkout_redeem_sweep(int) from public, anon, authenticated;
+grant execute on function public.checkout_redeem_sweep(int) to service_role;
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

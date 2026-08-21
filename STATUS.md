@@ -6,6 +6,309 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — EVERY REMAINING ROUTE TO A FREE PAID PLAN, CLOSED (migration 126, 2026-08-20) — CODE ONLY, NOT RUN
+
+Migration `125` inverted **one** path — the web manage-subjects checkout. Review found three more
+doors, all the same shape: something reached an **apply** with money owed and no money taken.
+Payment mode is `off` in production, so none of it was exploitable; that is why it was fixed
+properly rather than hot-patched later.
+
+### A — the mobile BFF could buy (HIGH)
+
+`api/mobile/v1/children/[id]/subscribe` called `subscribeChildCore` and `.../subjects` called
+`updateSubscriptionSubjectsCore` — the **apply cores** — with no checkout intent anywhere. A parent
+bearer token therefore reached a full paid plan for free the moment the mode became `real`. It is a
+**store-policy** failure as much as a money one: `docs/STORE_PAYMENTS_COMPLIANCE.md` section 4 makes
+the apps purchase-silent BY ARCHITECTURE, and Google's consumption-only test is **app-wide**. The
+same reasoning applies to `api/mobile/v1/olympiads/[pkg]/purchase`, which was not in the findings
+and is closed here too.
+
+**The refusal point is inside the apply's own transaction.** New `create_child_plan_if_free` /
+`apply_plan_change_if_free` call the real function and then RAISE `check_violation` /
+`payment_required` if its **own return value** priced the change above zero — which rolls back the
+apply, its `subscription_changes` rows and the `entitlements` rows migration `124`'s producer
+triggers wrote. A "quote, see zero, then apply" pre-check cannot be made safe from the app server:
+prices, the sibling tier and `launch_promo_config.trial_days` can all move between the two calls,
+and READ COMMITTED gives each statement its own snapshot.
+
+**Separate names, not a boolean parameter.** A parameter would have created a second overload of a
+function called from five places while the OLD signature survived as a bypass. A differently named
+function has to be typed out, which is a thing a reviewer sees in a diff. On the TypeScript side the
+cores take a **required, defaultless** `paidChanges: "allow" | "refuse"`, so a new route cannot
+inherit a posture it never chose.
+
+**Refusal copy:** `gate.notInApp`, az/en/ru — "Bu dəyişiklik tətbiqdə tamamlana bilmir. Abunəliklər
+bu tətbiqdə idarə olunmur." Deliberately **not** "manage it on your web account": section 5's copy
+table lists that exact wording as the WRONG form (audit finding I6 — a plan or price plus a named
+destination reads as a call to action without a link). It states a fact and names no price, no
+destination, no URL and no purchase verb. It is a `gate.*` key, so `statusForErrorKey` already maps
+it to 409.
+
+### B — a running trial made every addition free forever (HIGH)
+
+`quote_plan_change` prices an addition at **zero** while the plan is trialing and documents it as
+"the adds ride the trial like every other subject". `apply_plan_change` did not honour that: it
+anchored every add at `now()` plus its **full** cycle whatever the status. **Adding a yearly subject
+on day one of a seven-day trial bought a year of access for nothing** — repeatable, with no
+obligation recorded and nothing that could ever collect it (there is no renewal path at all, and
+card-on-file is not approved by the bank — ticket AZCDF-100303).
+
+**Decision, and why.** The trial is NOT disabled and additions are NOT charged mid-trial. A
+trial-time add now **ends at the trial end**, exactly as `create_child_plan` already writes the
+opening basket, so the platform has one rule: *while trialing, every subject period ends at the
+trial end.* Defence:
+
+- It makes the code do what the quote already **says**, instead of making the quote say what the
+  code did. The alternative — charging for an addition in the middle of a free trial — would need a
+  checkout mid-trial whose redemption then writes a period outliving the trial while every other
+  subject dies with it. That is a worse shape, not a safer one.
+- It satisfies the bar as stated: *never grant a paid period we have no way to charge for.* A
+  trial-bounded window is not a paid period. It is **self-terminating**, so the absence of a renewal
+  path costs nothing — access simply stops, and the parent's next plan is charged (`v_had_any` means
+  no second trial per child).
+- It keeps the product's trial, which is an owner-approved business rule, rather than quietly
+  retiring one out of a bug fix.
+- The `coalesce` chain **fails closed**: a legacy trialing row with no `trial_ends_at` and no period
+  lands on `now()` and grants nothing.
+
+`quote_plan_change`'s renewal date for a trialing add moves to the trial end too — H7 covers the
+**dates**, not only the amounts, and "renews in a year" under a subject that dies with the trial is
+the sentence that made the free add look legitimate.
+
+**The `trial_days = 0` half.** `create_child_plan` took the `trialing` branch on `v_had_any` alone,
+so with the config at 0 it wrote `trial_ends_at = now()`: a period that had **already ended**, while
+the quote read the same 0 and charged the **full total**. A plan is now `trialing` only when it has
+trial days left to run; everything else is `active` with real, full-length, paid periods.
+
+**Free changes still work, untouched:** removals, reinstatements (migration `120`), scheduled cycle
+changes, an active giveaway window and admin free-access intervals all price at zero and all still
+apply with no payment, from web and app alike. That is the whole reason the `due_now === 0` branch
+exists, and `apply_plan_change_if_free` refuses on a **price** and on nothing else.
+
+### C — the Add-Child wizard was not inverted (MEDIUM)
+
+Its primary button still said "İndi ödə" / "Pay now", charged nothing, and the real departure button
+appeared underneath afterwards — two asks for one plan, the first of them false. It also printed
+`quote.total` under a row captioned "due today", which is a **different number** whenever a trial
+applies. The button now reads `pay.continue` when the server quote says something is due and
+`pay.confirmNoCharge` when it does not, the figure is `quote.dueNow` on both the review and payment
+steps, a zero is explained by `sub.trialNoChargeToday`, and the button is disabled until the
+authoritative quote arrives rather than guessing. Same flow as manage-subjects: quote, intent,
+redirect, verified payment applies.
+
+### D — no reconciliation for a lost callback (MEDIUM)
+
+A payment authorised at the bank whose BACKREF POST never arrives leaves the family **charged** with
+no record, no plan and no alarm. The gateway answers `TRTYPE=90` for **24 hours**, so it is
+recoverable only inside that window.
+
+**Two halves, and the split is forced by a secret.** The status query needs a MAC signed with the
+merchant private key, which lives only in the web app's environment and must never enter the
+database — and there is no `pg_net` here, so a pg_cron job cannot make the call even in principle.
+
+- `checkout_reconcile_candidates()` (SQL) names pending intents inside the window and at least five
+  minutes old. `web-app/src/lib/payments/reconcileCore.ts` asks, records through the **same**
+  `recordOutcome` the callback uses, and redeems through the **same** `checkout_redeem_plan` — never
+  a second copy of "money becomes a plan". Driven by `POST/GET /api/payments/azericard/reconcile`
+  (`x-reconcile-key`, or Vercel Cron's bearer `CRON_SECRET`), closed when its secret is unset.
+- `checkout_redeem_sweep()` is the **no-network floor**: sessions the ledger already records as
+  `paid` whose redemption never ran. Scheduled in `016` as `olympiq_checkout_redeem_sweep` every 10
+  minutes, inside the existing `pg_cron` guard, so an environment without pg_cron skips with a
+  NOTICE. It deliberately skips a `plan_start` whose child has no 8-digit ID yet — finishing one
+  needs a Supabase Auth admin call SQL cannot make, and the web sweep owns those.
+
+Idempotent throughout, never grants on an unreconciled answer (a failed or mismatched status query
+leaves the session pending for the next pass), and anything that cannot be delivered stays
+`needs_review` by `checkout_redeem_plan`'s own judgement. 013 check **118** is the alarm for both.
+
+### E — the intent-open path had no rate limit (LOW)
+
+The resume action was throttled and the open path beside it was not, so the cheaper way to sign an
+order was the guarded one. `startPlanPayment` now draws on the **same named budget**
+(`CHECKOUT_RATE_SCOPE`, 20 per 15 min per parent) — two buckets would let a caller take the full
+allowance twice by alternating screens. It also stopped minting a fresh `checkout_sessions` row per
+click: a pending intent for the **same** kind and the **same** frozen basket is re-priced and
+re-signed under its existing ORDER, which is also the safer half (two orders are two transactions to
+the acquirer, and its duplicate protection is per-ORDER).
+
+### Files
+
+**SQL** — `supabase/sql/migrations/2026_08_20_126_free_only_and_reconcile.sql` (new,
+self-transacting, LF), backported into `011` (three re-issued functions plus four new ones, every
+revoke/grant carried explicitly), `016` (the sweep job) and `013` (new checks **119** and **120**).
+
+**web-app** — `lib/auth/subscriptionCore.ts`, `lib/auth/subscriptionService.ts`,
+`lib/auth/olympiadCore.ts`, `lib/auth/olympiadService.ts`, `lib/payments/checkoutCore.ts`,
+`lib/payments/checkoutService.ts`, `lib/payments/reconcileCore.ts` (new),
+`app/api/payments/azericard/reconcile/route.ts` (new), `lib/payments/azericard/store.ts`,
+`lib/planBasket.ts`, `components/AddChildWizard.tsx`, `app/(parent)/children/new/page.tsx`,
+`app/api/mobile/v1/children/[id]/subscribe/route.ts`,
+`app/api/mobile/v1/children/[id]/subjects/route.ts`,
+`app/api/mobile/v1/olympiads/[pkg]/purchase/route.ts`, `i18n/messages.ts`, `.env.local.example`.
+Tests: `lib/payments/__tests__/purchaseSilent.test.ts` (new, 37 cases) plus three existing suites
+re-pointed at what actually changed.
+
+### Known and tracked, NOT fixed here
+
+- **The WEB olympiad purchase still runs on the mock payment seam** (`processOlympiadPayment` always
+  approves), i.e. it grants lifetime access without taking money. That is the same defect `125`
+  fixed for plans and it needs the same treatment — its own checkout intent kind — which is a piece
+  of work, not a line. Only the MOBILE half is closed here, because that half is also a store
+  violation.
+- **There is still no renewal path.** Nothing charges at a period end. After this change a trial can
+  no longer be used to manufacture a paid period, so the gap is a lapse rather than a leak — but
+  recurring billing remains blocked on the bank (AZCDF-100303).
+
+### Validation
+
+`npx tsc --noEmit` clean; `npm test` **467/467** (22 files). `next build` not run, per instruction.
+No `psql`, no AzeriCard call, no commit, no `mobile-app/` file touched.
+
+**One new SHARED i18n key — `gate.notInApp`.** The mobile catalog is generated from the web one, so
+after this merges: `cd mobile-app && npm run sync-i18n` (plus the usual `expo.version` bump if that
+regeneration is committed alongside mobile changes).
+
+Migrations `124`, `125` and `126` are all **written and not applied**. Run `124`, then `125`, then
+`126` against **staging** first, then production, then `013`.
+
+## PINNED — THE PAYMENT NOW CAUSES THE GRANT (migration 125, 2026-08-20) — CODE ONLY, NOT RUN
+
+### The defect
+
+The parent checkout applied the plan change **first** and asked for money **afterwards**, so the
+money was optional. `subscribeChild` / `updateSubscriptionSubjectsAction` called
+`create_child_plan` / `apply_plan_change`, which write `subscription_subjects.current_period_end
+= now() + cycle` unconditionally; migration `124`'s mirror turns that into a **live entitlement**
+immediately; and only then did `openCheckoutForApplied()` open a charge — a helper documented as
+"can only return null — it never fails the change". No cron expires an unpaid subscription.
+
+Concretely: a parent adds a 90 AZN yearly subject, confirms, closes the tab before paying. The
+child has a live year of access, no `payments` row is ever written, and repeating after each
+lapse makes it indefinite. Payment mode is `off` in production, so no real parent could reach it.
+
+Two review findings were downstream of the same mistake and are fixed by the flow, not patched:
+the confirm sheet's primary button said "Pay now" and charged nothing (the real payment step came
+afterwards — two asks for one change), and the start-a-plan screen's "due today" and trial row
+were computed independently of what would be charged (invariant **H7** broken in both directions).
+
+### Why it could not simply be reordered
+
+`checkout_sessions` recorded an **amount** and never a **purchase**: no student, no subject list,
+no cycles. A verified payment had nothing to act on.
+
+### The fix
+
+1. Parent picks subjects/cycles → **quote only, no mutation**.
+2. `checkout_intent_open()` opens a pending session carrying the child, the frozen basket and the
+   quote RPC's **own** `due_now` — quote and insert in ONE transaction, so no parameter exists
+   through which a price could travel.
+3. Full-page redirect to the hosted page (unchanged).
+4. Verified callback → TRTYPE=90 status query → `recordOutcome` → **then**
+   `checkout_redeem_plan()`, which re-prices and applies.
+
+Abandonment is harmless **by construction**: step 4 never runs and step 2 granted nothing.
+
+### Decisions worth re-reading before changing any of it
+
+- **Intent COLUMNS, not a `checkout_session_items` child table.** The intent and its price must be
+  one indivisible row; the jsonb payload IS `plan_items_normalize`'s existing input contract;
+  freezing a column set is one trigger where freezing a child collection is three; and an FK from
+  items to `subjects` would either CASCADE (silently shrinking a signed basket — delivering a plan
+  nobody authorised) or RESTRICT (a stale pending checkout blocking a subject deletion).
+- **Re-price at redeem, EXACT equality or a human.** A price change, a withdrawn subject, a
+  sibling plan started in another tab and a payments-off flip all land in `needs_review` with a
+  reason. Never "grant anyway if it got cheaper", never a partial basket: each way of differing
+  has a different correct resolution and only a person can pick it.
+- **Exactly once** = a row lock plus `redeemed_at` stamped in the same transaction as the apply,
+  over the existing `payments` / `payment_events` unique keys and `apply_plan_change`'s replay
+  guard — keyed here on the ORDER, not the interactive 5-minute bucket.
+- **`needs_review` is terminal**, so a replayed callback does not re-attempt an apply already
+  judged unsafe. A DELIVERED redemption whose follow-up failed (only
+  `child_login_email_failed` today) keeps status `applied` and carries a **note** instead: two
+  problems that need two different answers must not share one word.
+- **A second intent is safe.** Once the first payment is redeemed, a second `plan_start` raises
+  `already_subscribed` and a second `plan_change` for the same basket prices at zero and raises
+  `nothing_due`. The only window left — paid twice before the first callback lands — fails into
+  `needs_review` with the money recorded.
+- **`quote_child_plan` now applies `create_child_plan`'s own one-trial-per-child rule and returns
+  `due_now`**, so the preview and the charge are one computation (H7).
+
+### Also fixed, from the same review
+
+- **013 check `114`** turned FAIL on the first legitimate `manual` / `apple_iap` /
+  `school_license` entitlement and stayed FAIL, masking real drift. Both `new_*` sides are now
+  scoped to producer-linked rows, so it measures the MIRROR (what the triggers and the hourly
+  reconciler write) instead of the existence of grants it was never measuring.
+- The two guarded-deletion hints `subject_has_entitlements` / `package_has_entitlements` had no
+  admin-panel mapping and no az/en/ru copy, so the panel silently dropped them. Both added.
+
+### Files
+
+- `supabase/sql/migrations/2026_08_20_125_checkout_intent.sql` — **WRITTEN, NOT APPLIED**.
+  Backported into `001` (2 enums), `007` (8 intent columns inline + `ck_checkout_intent_shape` /
+  `ck_checkout_redemption` + column comments), `011` (3 partial indexes,
+  `fn_checkout_intent_immutable` + trigger, re-issued `quote_child_plan`, the 4 intent functions
+  with their revoke/grant lines), `013` (new checks `117`, `118`; amendment to `114`).
+- `web-app/src/lib/payments/checkoutIntent.ts` (new) — open / re-open / re-price / redeem.
+- `web-app/src/lib/payments/checkoutCore.ts` — `openPlanCheckout` and `liveSubscriptionIdFor`
+  removed; `startPlanPayment` (open + sign in one step) and a re-price before every signature.
+- `web-app/src/lib/payments/azericard/store.ts` — session row carries the intent;
+  `findOutstandingSession` keys on the CHILD (a first plan has no subscription yet) and excludes
+  expired / redeemed rows.
+- `web-app/src/lib/auth/subscriptionService.ts` — the `due_now > 0` branch: payable → intent,
+  free → apply. `web-app/src/lib/auth/subscriptionCore.ts` — `dueNow` on the quote,
+  `resolveDesiredBasketCore`.
+- `web-app/src/app/api/payments/azericard/callback/route.ts` — redeems after recording, and only
+  says "ok" when the redemption applied.
+- `SubscribeForm`, `ManageSubjects`, `PlanChangeConfirmModal`, `CheckoutRedirect`, the subscribe
+  page, `messages.ts` (az/en/ru), and the two test suites.
+- `admin-panel/src/lib/admin/deletion-hints.ts` + `admin-panel/src/i18n/messages.ts` — the only
+  admin-panel edit in this round.
+
+### Verification pass (same day) — four follow-ups found and fixed
+
+1. **`next build` was broken.** `store.ts` carried `// eslint-disable-next-line prettier/prettier`
+   over the `SESSION_COLUMNS` literal. There is no prettier in this project (no dep, no config,
+   `.eslintrc.json` is just `next/core-web-vitals`), and naming a rule ESLint cannot resolve is an
+   **error**, not a warning: `Definition for rule 'prettier/prettier' was not found` failed the
+   production build outright. The directive is gone; the comment now says why the line stays long.
+2. **The add-child wizard still assumed apply-then-pay.** `AddChildWizard.confirmPayment` read only
+   `res.result` and jumped to the DONE step announcing `pay.success`. When a plan is PAYABLE —
+   `launch_promo_config.trial_days = 0`, so even a first plan is charged — `subscribeChild` now
+   returns `checkout` and applies nothing, and the wizard claimed a payment that had not happened,
+   with no 8-digit ID (`create_child_plan` had not run) and no charge. It now renders
+   `CheckoutRedirect` on the payment step and stays there; a response carrying neither `result` nor
+   `checkout` is an error, never a success.
+3. **A failed quote fell through to a free apply.** In `updateSubscriptionSubjectsAction`, `quoted.ok
+   === false` skipped the payable branch and called `updateSubscriptionSubjectsCore` anyway. Every
+   deterministic refusal is one the apply core repeats word for word, so nothing changes for a
+   parent — but a TRANSIENT `quote_plan_change` failure could land an add with no charge behind it,
+   which is the original defect wearing a different hat. A resolvable basket that will not quote now
+   stops with the quote's own error.
+4. **`already_subscribed` was swallowed by the order-mint retry.** `checkout_intent_open` raises it
+   with SQLSTATE **23505**, and `openPlanIntent` treated every 23505 as an ORDER collision: eight
+   fresh orders, eight family advisory locks, then the generic "not available" — while
+   `intentErrorKey`'s mapping to `checkout.err.planChanged` was dead code. Only an *unhinted* unique
+   violation is the index now.
+
+### Validation
+
+**web-app:** `npx tsc --noEmit` clean, `npm test` **430/430**, `npx next build` **succeeds**
+(`/checkout/result` builds as a dynamic route). **admin-panel:** `npx tsc --noEmit` clean,
+`npm test` **581/581**, `npx next build` succeeds.
+
+The two admin-panel failures reported before this pass are fixed. They were real: that suite pins
+canonical `011`/`015` character-for-character against migration **111**, and migration **124**
+legitimately extended `subject_deletion_blocks` / `olympiad_package_deletion_blocks` with the
+entitlement blocks. Pinning to `111` forever would mean a canonical file can never be legitimately
+extended again, so the comparison now asks which migration **owns** each function (a one-line
+`owner()` helper, the pattern the file already uses for `SUPERSEDED`) and compares those two against
+`124`. Verified independently: both function bodies are byte-identical between migration `124` and
+the canonical files.
+
+No `psql`, no AzeriCard call, no commit. Migrations `124` and `125` are both **written and not
+applied**; run `124` then `125` against staging first, then production, then `013`.
+
 ## PINNED — AZERICARD/ABB PROTOCOL LAYER (migration 123, 2026-08-19) — CODE ONLY, NOT RUN
 
 ABB issued a **TEST terminal** and asked us to run a transaction and report back. This round

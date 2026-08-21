@@ -6,6 +6,48 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — FROM-ZERO REBUILD PROOF: DISCHARGED (2026-08-21)
+
+**Canonical SQL reproduces production. Proven, not assumed.**
+
+Bootstrapped `OlympIQ Staging` (empty, PostgreSQL 17.6) from canonical
+`001`-`012`,`014`,`015`,`016` in one uninterrupted pass — all 15 files exit 0 — then ran `013`:
+**126/127 PASS**.
+
+The single failure is `102_curriculum_translations`, and it is EXPECTED on a schema-only
+database: that check asserts CONTENT coverage (>= 260 exam topics and >= 1077 subtopics carrying
+`en` + `ru` translations). Staging has 0/0 because no curriculum was imported; production has
+exactly 260/1077. Its three diagnostic columns — `rpc_misconfigured`, `failed_invariants`,
+`stale_overloads` — are all `0` on staging, which is the SCHEMA half of that same check passing.
+
+This closes a gap that stood from the start of the project through migration 127. Migrations
+117-127 were applied to production with no fresh-bootstrap proof behind them because there was
+nowhere safe to run one. There is now, and canonical SQL is confirmed to match.
+
+### Two procedural facts learned doing it, now in CLAUDE.md
+
+1. **`013` is not purely a schema check.** A from-zero rebuild is proven by 126/127 with ONLY
+   `102` failing. Any other failing check on a fresh build is a real divergence.
+2. **A canonical file must be sourced in one uninterrupted run.** `011` takes over two minutes
+   and no canonical file self-transacts, so a client timeout mid-file leaves its statements
+   COMMITTED. Re-running it then fails on its own half-finished work
+   (`function ... already exists`) and reads exactly like a canonical defect — it is not. If a
+   rebuild is interrupted, `drop schema public cascade` and start over rather than resuming.
+   This happened on the first attempt here and briefly looked like a real bug.
+
+### Environment
+
+`OLIMPIADA_PROD_DB_URL` (ref `napx...rygn`) and `OLIMPIADA_STAGING_DB_URL` (ref `jzzw...rfqx`)
+are confirmed DIFFERENT Supabase projects. `OLIMPIADA_DEV_DB_URL` is deleted.
+
+### Known nit, deliberately not fixed
+
+`011` line ~5901 uses bare `create function` for
+`bulk_insert_olympiad_package_questions` where the rest of the file uses `create or replace`.
+A from-zero build runs each file once so this is harmless, and changing it risks the
+migration-to-canonical byte-parity tests (`olympiad-dup-key.test.ts` and friends) for no benefit
+to the documented procedure. Recorded so nobody rediscovers it as a bug.
+
 ## PINNED — APPLIED: 124-127 + STAGING EXISTS (2026-08-21)
 
 **Migrations 124, 125, 126 and 127 are APPLIED to production. Validation `013` = 127/127 PASS.**

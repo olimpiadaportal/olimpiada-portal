@@ -37,6 +37,18 @@ Never proceed with large implementation work without updating `STATUS.md`.
   1. Before any rebuild, grep every file to be sourced for `^\s*(begin|commit|rollback)\s*;` and abort if a canonical file self-transacts. Never `\i` a migration inside a rebuild.
   2. If `OLIMPIADA_STAGING_DB_URL` is unset, **do not run the rebuild at all** — say so and continue. A skipped proof is a tracked gap; a rebuild against production is unrecoverable. *(It was unset from the start of the project until 2026-08-21, which is why migrations 117–127 landed on production with no from-zero proof behind them. It is set now: the proof is owed, not optional.)*
 - Run read-only validation (`013_validation_queries.sql`) against **either** database; it mutates nothing.
+- **`013` IS NOT PURELY A SCHEMA CHECK.** Check `102_curriculum_translations` asserts CONTENT
+  coverage — at least 260 exam topics and 1077 subtopics carrying `en` and `ru` translations —
+  so it CANNOT pass on a freshly bootstrapped, schema-only database and its failure there is
+  expected, not a divergence. A from-zero rebuild is therefore proven by **126/127 with only
+  `102` failing**; check its three reported columns (`rpc_misconfigured`, `failed_invariants`,
+  `stale_overloads`) are all `0`, which is the schema half of that same check. Any OTHER failing
+  check on a fresh build is a real divergence between canonical SQL and production.
+- **Source the canonical files ONE AT A TIME and let each finish.** `011` alone takes over two
+  minutes and no canonical file self-transacts, so a client timeout mid-file leaves its
+  statements COMMITTED. Re-running the file then fails on its own half-finished work
+  (`function ... already exists`) and looks exactly like a canonical defect. If a rebuild is
+  interrupted, `drop schema public cascade` and start again rather than resuming.
 - **MIGRATIONS APPLY BEFORE THE CODE THAT NEEDS THEM DEPLOYS.** Vercel auto-deploys on push, so
   a commit reaches production the moment it is pushed. On 2026-08-21 a push carried code selecting
   `checkout_sessions.intent_items` (and five sibling columns) while the migration creating them was

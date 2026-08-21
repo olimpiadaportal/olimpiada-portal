@@ -93,21 +93,47 @@ by checking the production row counts before applying rather than after — 7 ac
 purchases against 14 existing notifications is what made the asymmetry visible.
 Fixed, re-applied to staging, then applied to both.
 
-### NEW — the safety nets are not running (found this round, NOT fixed)
+### THE SAFETY NETS NOW RUN (migration 129, 2026-08-22 — APPLIED)
 
-**Nothing drives `/api/payments/azericard/reconcile` in production.**
-`web-app/vercel.json` was deleted on 2026-07-19 because Vercel **Hobby** caps
-crons at once-daily and a `*/5` entry failed every deployment; `pg_net` is not
-installed, so pg_cron (11 live jobs) cannot call an HTTP route either. Pass 1
-(lost-callback recovery) and pass 3 (reversal detection — the thing migration 128
-just improved) therefore **never run at all**. `checkout_redeem_sweep` is DB-side
-and only redeems sessions already marked `paid`; it cannot talk to the bank.
+Found this round: **nothing drove `/api/payments/azericard/reconcile` in
+production**, so the two passes that need to ASK THE BANK never ran at all —
+pass 1 (a payment whose callback never arrived: family charged, nothing
+delivered, no alarm) and pass 3 (reversal detection: money back, access live
+forever — the pass migration 128 had just made correct).
 
-Consequence when payments go `real`: a callback that never arrives leaves a family
-charged with nothing delivered and no alarm until somebody runs 013 by hand, and a
-refund leaves their access live forever. **This is a launch blocker, and it is an
-owner decision** (enabling `pg_net` puts a bearer token in the database, an
-external cron puts it in a third party, Vercel Pro is a subscription).
+Why: `web-app/vercel.json` was deleted on 2026-07-19 because Vercel **Hobby**
+caps crons at once-daily and a `*/5` entry failed every deployment; `pg_net` was
+not installed, so pg_cron could not stand in. `checkout_redeem_sweep` is the
+SQL-only floor and can only redeem what the ledger already calls paid.
+
+**Fixed with pg_cron + pg_net — free, in-house, nothing leaves our
+infrastructure.** `public.azericard_reconcile_kick()` queues one POST to our own
+route every five minutes (`olympiq_azericard_reconcile`).
+
+- **The merchant private key still never enters the database.** That constraint
+  is what made this look impossible. pg_net calls OUR route, and the route signs
+  the gateway MAC with the key that lives only in the web app's environment. The
+  database carries a bearer token for our own endpoint and nothing else.
+- **Credentials live in Vault, NOT `system_settings`.** A setting the admin panel
+  can edit, that decides where the database posts a bearer token, is an
+  admin-editable exfiltration primitive. Vault has no admin-panel surface, and
+  the function additionally refuses any URL that is not https on a hardcoded host
+  — the one check a later Vault write cannot talk its way around.
+- **Fail-closed on both halves**: unset Vault secrets → NOTICE and no-op (never
+  an error — this fires every five minutes forever and a job that raises on every
+  tick trains people to ignore it); `PAYMENTS_RECONCILE_KEY` unset in Vercel →
+  every POST is 401.
+
+**Proven end to end on staging**, not assumed: pointed the Vault URL at staging,
+fired the kick, and `net._http_response` recorded `401 {"error":"unauthorized"}`
+— the request reached the route and the route's auth was correctly closed. A
+hostile URL planted in Vault (`https://evil.example/steal`) was refused by the
+allowlist. Production has the job **active** and declining while unconfigured.
+
+**Still owed:** the key itself. Minting it is the owner's step ON PURPOSE — a
+secret generated inside an agent session lands in that session's transcript. The
+one command in *Human Next Actions* generates it in the database, stores it in
+Vault and prints it once for Vercel.
 
 ### Also found this round
 

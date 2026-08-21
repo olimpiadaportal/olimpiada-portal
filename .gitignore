@@ -20,6 +20,15 @@ secrets/
 *.key
 *.p12
 *.pfx
+# Acquirer configuration handed over by the bank: terminal ids, gateway
+# endpoints, their MPI public key, registered callback URLs. Not a private
+# key, but it identifies the merchant account and belongs in the operator's
+# environment, never in the repository (CLAUDE.md, Secret Handling).
+# NB: the filename the bank's config arrived under spells its Azerbaijani
+# dotted capital I in DECOMPOSED form (I + U+0307), so a pattern written
+# with the precomposed İ does not match it. Match the ASCII stem instead.
+*PRODCONF*
+azericard_*.txt
 
 # --- Dependencies ----------------------------------------------------------
 node_modules/

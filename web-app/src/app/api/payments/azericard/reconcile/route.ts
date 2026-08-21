@@ -11,11 +11,28 @@
 //
 // WHY IT IS AN HTTP ROUTE AND NOT A pg_cron JOB. Asking the gateway requires a
 // MAC signed with the merchant private key. That key lives in this app's
-// environment and must never enter the database, and this deployment has no
-// pg_net — so a SQL job cannot make the call even in principle. What SQL CAN do
-// without a network is redeem sessions the ledger already records as paid, and
-// that is scheduled as `olympiq_checkout_redeem_sweep` (016) as the floor under
-// this route. Both are idempotent and either may run without the other.
+// environment and must never enter the database, so the SIGNING has to happen
+// here. What SQL can do without a network is redeem sessions the ledger already
+// records as paid, and that is scheduled as `olympiq_checkout_redeem_sweep`
+// (016) as the floor under this route. Both are idempotent and either may run
+// without the other.
+//
+// WHAT DRIVES IT (migration 129, 2026-08-22). pg_cron, through pg_net, calling
+// THIS ROUTE — `olympiq_azericard_reconcile`, every five minutes, via
+// `public.azericard_reconcile_kick()`. The database holds a bearer token for our
+// own endpoint (in Vault, never system_settings) and an allowlisted https host;
+// it still holds no gateway credential and signs nothing.
+//
+// Until 129 NOTHING drove this route at all. `web-app/vercel.json` was deleted on
+// 2026-07-19 because Vercel Hobby caps crons at once-daily and a */5 entry failed
+// every deployment, and pg_net was not installed, so pg_cron could not stand in.
+// For that window passes 1 and 3 — lost-callback recovery and reversal detection
+// — never ran. Payment mode was `off` throughout, which is the only reason that
+// cost nothing.
+//
+// IT IS STILL CLOSED WITHOUT ITS SECRET. `PAYMENTS_RECONCILE_KEY` unset here
+// means every POST is 401, and the kick declines when its Vault secrets are
+// missing. Both halves have to be configured for the sweep to run.
 //
 // TWO SCHEDULERS, ONE CORE — the shape lib/notifications' processor established:
 // POST with `x-reconcile-key` (an external cron), GET with

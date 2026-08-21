@@ -12413,6 +12413,89 @@ comment on function public.admin_resolve_checkout_review(text, text) is
 revoke all on function public.admin_resolve_checkout_review(text, text) from public, anon;
 grant execute on function public.admin_resolve_checkout_review(text, text) to authenticated, service_role;
 
+-- ---------------------------------------------------------------------------
+-- AZERICARD RECONCILIATION KICK (migration 129)
+--
+-- pg_cron cannot sign a gateway MAC -- the merchant private key lives only in
+-- the web app's environment and must never enter the database -- so the sweep
+-- is an HTTP route and this function is how the scheduler reaches it. The
+-- database carries a bearer token for OUR OWN endpoint and nothing else.
+--
+-- Credentials come from Vault, never system_settings: a setting the admin
+-- panel can edit and that decides where the database posts a bearer token is
+-- an exfiltration primitive. The host allowlist below is the check a Vault
+-- write cannot talk its way around.
+-- ---------------------------------------------------------------------------
+create or replace function public.azericard_reconcile_kick()
+returns bigint
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_url   text;
+  v_key   text;
+  v_host  text;
+  v_req   bigint;
+begin
+  if not exists (select 1 from pg_extension where extname = 'pg_net') then
+    raise notice 'azericard_reconcile_kick: pg_net is not installed; nothing to do.';
+    return null;
+  end if;
+
+  select decrypted_secret into v_url
+    from vault.decrypted_secrets where name = 'azericard_reconcile_url' limit 1;
+  select decrypted_secret into v_key
+    from vault.decrypted_secrets where name = 'azericard_reconcile_key' limit 1;
+
+  -- Fail CLOSED and quietly. Not configured is the ordinary state of a fresh
+  -- database, and this fires every five minutes.
+  if coalesce(v_url, '') = '' or coalesce(v_key, '') = '' then
+    raise notice 'azericard_reconcile_kick: not configured (vault secrets missing); skipping.';
+    return null;
+  end if;
+
+  -- OUR OWN ENDPOINT ONLY. The token is useless to anyone but us, but a bearer
+  -- token posted at an attacker-chosen host is still a credential leak, and a
+  -- hardcoded allowlist is the one check a later Vault write cannot talk its way
+  -- around. Anything unexpected is refused, not "cleaned up".
+  v_host := split_part(split_part(regexp_replace(v_url, '^https://', ''), '/', 1), ':', 1);
+  if v_url !~ '^https://' or v_host not in ('olympiq.ai', 'www.olympiq.ai', 'staging.olympiq.ai') then
+    raise warning 'azericard_reconcile_kick: refusing to post to an unexpected host (%).', v_host;
+    return null;
+  end if;
+
+  -- Fire and forget. pg_net queues the request and a background worker sends it;
+  -- the ROUTE does the work and records everything it decides. We deliberately
+  -- do not read the response: there is nothing here that could act on it, and a
+  -- job that waits on a network call blocks a cron worker for its duration.
+  -- Failures are visible in net._http_response, which pg_net prunes itself.
+  select net.http_post(
+           url                 => v_url,
+           body                => '{}'::jsonb,
+           params              => '{}'::jsonb,
+           headers             => jsonb_build_object(
+                                    'Content-Type',    'application/json',
+                                    'x-reconcile-key', v_key),
+           timeout_milliseconds => 55000
+         ) into v_req;
+  return v_req;
+end;
+$$;
+
+-- SERVICE-ROLE ONLY, and not even that in practice — cron runs it as the owner.
+-- 010 line 88 grants EXECUTE on new functions to anon AND authenticated by
+-- default, so all three must be named or this becomes a way for any logged-in
+-- parent to make the server hammer the acquirer.
+revoke all on function public.azericard_reconcile_kick() from public, anon, authenticated;
+grant execute on function public.azericard_reconcile_kick() to service_role;
+
+comment on function public.azericard_reconcile_kick() is
+  'Queues one POST to the web app''s AzeriCard reconciliation sweep. Credentials come from Vault; the target host is allowlisted in the body. Returns the pg_net request id, or NULL when not configured.';
+
+revoke all on function public.azericard_reconcile_kick() from public, anon, authenticated;
+grant execute on function public.azericard_reconcile_kick() to service_role;
+
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql
 -- =============================================================================

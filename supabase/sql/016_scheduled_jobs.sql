@@ -164,6 +164,43 @@ begin
 end
 $$;
 
+-- -----------------------------------------------------------------------------
+-- AZERICARD RECONCILIATION SWEEP (migration 129) — every five minutes.
+--
+-- The two passes that need to ASK THE BANK: recovering a payment whose callback
+-- never arrived, and noticing a reversal. Both were unscheduled until 129 —
+-- vercel.json was deleted because Hobby caps crons at once-daily, and pg_net was
+-- not installed, so nothing drove the route at all.
+--
+-- Guarded twice: without pg_cron nothing is scheduled, and without pg_net the
+-- function exists but declines. It also declines when its Vault secrets are
+-- unset, which is the ordinary state of a fresh database — see
+-- public.azericard_reconcile_kick() in 011.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_has_cron boolean;
+  v_has_net  boolean;
+begin
+  select exists (select 1 from pg_extension where extname = 'pg_cron') into v_has_cron;
+  select exists (select 1 from pg_extension where extname = 'pg_net')  into v_has_net;
+  if not v_has_cron then
+    raise notice '016: pg_cron absent — AzeriCard reconcile sweep not scheduled.';
+    return;
+  end if;
+  if not v_has_net then
+    raise notice '016: pg_net absent — AzeriCard reconcile sweep not scheduled.';
+    return;
+  end if;
+  perform cron.unschedule(jobid) from cron.job where jobname = 'olympiq_azericard_reconcile';
+  perform cron.schedule(
+    'olympiq_azericard_reconcile',
+    '*/5 * * * *',
+    'select public.azericard_reconcile_kick();'
+  );
+  raise notice '016: pg_cron job olympiq_azericard_reconcile scheduled (*/5).';
+end $$;
+
 -- =============================================================================
 -- End of 016_scheduled_jobs.sql
 -- =============================================================================

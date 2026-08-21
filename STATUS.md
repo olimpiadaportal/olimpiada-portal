@@ -6,6 +6,329 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — APPLIED: 124-127 + STAGING EXISTS (2026-08-21)
+
+**Migrations 124, 125, 126 and 127 are APPLIED to production. Validation `013` = 127/127 PASS.**
+Payment mode is `off`; `giveaway.duration_days = 30`, `giveaway_period = false`, never started.
+
+### The environment finally has two databases
+
+`OlympIQ Staging` (Supabase, `eu-west-1`, free tier) exists and `OLIMPIADA_STAGING_DB_URL` is
+set. `OLIMPIADA_DEV_DB_URL` — the variable that held PRODUCTION behind the word "dev" — has been
+DELETED; production is now `OLIMPIADA_PROD_DB_URL` only. CLAUDE.md updated accordingly.
+
+**The from-zero rebuild proof is still OWED, not skipped.** Migrations 117-127 all landed on
+production with no fresh-bootstrap proof behind them, because there was nowhere safe to run one.
+There is now. Run it before the next migration.
+
+### A rule learned the expensive way, now in CLAUDE.md
+
+**Migrations apply BEFORE the code that needs them deploys.** Vercel auto-deploys on push. On
+2026-08-21 a push carried code selecting `checkout_sessions.intent_items` (and five siblings)
+while the migration creating them was unapplied: every AzeriCard endpoint answered "unknown
+order" until the migration ran. Students and parents were unaffected (app code still read access
+the old way) and payments were `off`, so the blast radius was the payment endpoints only. A
+database ahead of its code is inert; code ahead of its database is broken.
+
+### Two validation checks were not checking anything
+
+- Check 122 contained `select freeze from defs`. `freeze` is a PostgreSQL keyword, so the
+  statement failed to PARSE — the check ERRORED on every run rather than failing, which reads as
+  coverage while providing none. Renamed to `freeze_def`.
+- Checks 118 and 121 counted a REFUNDED payment as "granted with no money behind it", so the
+  first genuine gateway reversal would have turned both FAIL forever with no way to clear them.
+  A permanently failing alarm hides the condition it exists to detect. `refunded` now counts as
+  billed, because the reversal path also revokes the grant.
+
+Both are the same class as check 95 (migration 120) and check 114 (migration 126): an anchor
+that describes yesterday's mechanism. When a migration changes a mechanism, re-point the check
+that pinned it in the SAME change.
+
+### Round 7 closed the delivery-truth defects
+
+The honour rule now asks whether the DELIVERY is unchanged, not whether the amount matches. Two
+concurrent-tab defects came from that one mistake: a shrunken basket charged at the larger frozen
+price (parent pays double for half), and a lapsed free reinstate delivered as a paid add (a full
+year granted free). Both now resolve to `delivery_changed` -> needs_review -> priority-1 alert.
+
+Also this round: a `plan_change` RETRY no longer re-derives a delta from the stale absolute
+basket — it refuses and sends the parent back to the editor, because re-deriving folds everything
+they did in between into a change they never authorised. `plan_start` has no such hazard and is
+unaffected.
+
+### Known gaps
+
+- **Nothing has been clicked.** No browser pass on the checkout, the olympiad purchase, the
+  needs_review queue or the admin resolution screen.
+- The paid OLYMPIAD purchase has never been exercised against ABB's test terminal — it is new in
+  127 and the bank's rule is that nothing untested reaches production.
+- Six low/medium review findings from round 7 remain open (pricing-availability blindness in the
+  delivery test, reversal-window keying, `redemption_note` overwrite, an unclassifiable reversal
+  on an unredeemed session, a free-op false positive, and a missing notification/audit row on a
+  paid olympiad purchase).
+- No renewal path. Recurring is unapproved by the bank (`AZCDF-100303`).
+- Store submission is blocked on SCREENSHOTS, not code, for both Apple and Google.
+
+## PINNED — THE LAST FREE GRANT, THE FROZEN PRICE, AND THE TWO SILENCES (migration 127, 2026-08-21) — CODE ONLY, NOT RUN
+
+Seven findings, one change, because they are one sentence: **the payment causes the grant, the
+grant is what was authorised, and neither side moves without the other.** Payment mode is `off` in
+production, so none of it was exploitable; that is why it is fixed properly rather than hot-patched
+later. **Nothing in this round has been run against any database** — see *Human Next Actions*.
+
+### 1 — the WEB olympiad purchase granted LIFETIME access for free (HIGH; the last blocker)
+
+`web-app/src/lib/auth/olympiadCore.ts` carried `processOlympiadPayment`, a documented MOCK that
+returned `{ ok: true }` unconditionally and had never been wired to anything. `purchase_olympiad`
+then wrote an ACTIVE purchase, migration `124` mirrored it into a **lifetime** entitlement, and no
+`payments` row existed anywhere. Migration `126` closed only the mobile half. This was the single
+remaining reason the payment mode could not be switched to `real`.
+
+**Fixed the way 125 fixed the subscription, on the SAME rail.** `checkout_intent_kind` gains
+`'olympiad'`; `checkout_intent_open` prices it through the new `quote_olympiad_purchase` and freezes
+`[{package_id, grade_id}]`; `checkout_redeem_plan` gains a branch. There is still exactly ONE
+function in the database that turns money into access — a second redemption path would be a second
+copy of a billing rule, and a second copy mis-bills silently the day it drifts.
+
+- **The grade is part of what is bought, not a detail.** `purchase_olympiad` SNAPSHOTS the child's
+  grade and attempts draw that pool forever, so the intent freezes it and redemption refuses
+  (`grade_changed`) if the child was promoted in between. A different pool is a different purchase.
+- **Which rail paid is recorded.** `purchase_olympiad` writes `provider = 'none'` (it cannot know),
+  and `fn_entitlement_map_purchase` reads exactly that column to choose `abb_web` vs `manual`.
+  Redemption now sets it to `azericard`, or every paid package would have been filed as comped.
+- **The duplicate purchase path is gone.** `/children/[id]/olympiads` posted to a `buyOlympiad`
+  action that called `purchase_olympiad` directly — no quote, no intent, no payment. It now links to
+  the catalogue, so there is one purchase flow.
+- **LIFETIME is untouched.** `ck_entitlement_lifetime` still forbids an end date on a package grant,
+  and `can_view_olympiad_package` still grants for an ARCHIVED package a family bought.
+
+### 2 — the frozen price is HONOURED (OWNER DECISION, 2026-08-21)
+
+Exact equality at redemption fired on ordinary behaviour: paying for child A moves child B's sibling
+tier, so B's already-signed intent re-priced differently, B's money was taken and the redemption
+landed in `needs_review` over a few AZN. **The price we quoted is the price the parent pays.**
+
+**Where the line is drawn, and why it is defensible:**
+
+- **Before the money moves we still refuse.** `checkout_intent_price` is unchanged and still returns
+  `price_changed`. Refusing there costs the parent nothing, and it is what bounds the honour rule's
+  exposure to the window between SIGNING and REDEEMING — minutes, not the day an intent may live.
+- **After the money moves a differing amount is delivered**, recorded in `payment_events` as
+  `honoured_frozen_price` with both numbers, so a settlement report can find every such charge.
+- **A DIFFERENT DELIVERY still reaches a human.** A withdrawn subject, a deactivated pricing row, a
+  package off sale, a promoted child, a subscription that vanished: none is a price difference, and
+  delivering something other than what was authorised is the failure this family of migrations
+  exists to prevent.
+- **A re-price that comes back at ZERO also reaches a human** (`no_longer_payable`). If the thing
+  the parent paid for has since become free, keeping the money is the other way to be dishonest.
+
+**The discount is now VISIBLE where the parent chooses** (the owner's second ask). `quote_plan_change`
+returns `rank` alongside `discount_percent`, and `PlanSummary` names the tier ("2-ci övlad
+endirimi"), prints the saving on its own row, and — when no discount applies yet — says that a second
+child is cheaper. That last line is the only place a one-child family learns the rule exists.
+
+### 3 — the WEB free branch used the unguarded RPC (MEDIUM)
+
+`subscribeChild` and `updateSubscriptionSubjectsAction` quoted, saw `dueNow === 0`, then called
+`create_child_plan` / `apply_plan_change` — the exact quote-then-apply race `126` declared
+indefensible from an app server, and indefensible from the web for the same reason. Both now pass
+`paidChanges: "free_only"`, which reaches the `_if_free` wrappers; a new
+`purchase_olympiad_if_free` gives the package path the same shape.
+
+**The posture no longer selects an RPC** — `"allow"` is retired. After this round **no application
+code path names a priced apply RPC at all**; `create_child_plan`, `apply_plan_change` and
+`purchase_olympiad` are reachable only from inside `checkout_redeem_plan`, behind a verified
+payment. A repo-wide sweep asserts it (`paidOlympiad.test.ts`). The posture now decides only WHICH
+SENTENCE a refusal gets: `gate.notInApp` in the app (§5 copy rules), `sub.err.priceMoved` on the web
+(the prices moved while we were saving — which is what actually happened).
+
+### 4 — two trial edges (MEDIUM)
+
+`status = 'trialing'` was read as "a trial is running", and the status is swept by a job rather than
+by the clock — so a subscription whose `trial_ends_at` had already passed priced every addition at
+ZERO and applied it as trial-time, for as long as the row stayed stale. The second edge: a
+trial-bounded add was capped at `trial_ends_at` with no check that it was still in the future, so an
+add could be applied free with an already-expired end (the parent pays nothing and receives
+nothing).
+
+Both are one predicate, computed identically in `quote_plan_change` and `apply_plan_change`: **a
+trial is running only while `trial_ends_at` is in the FUTURE.** The apply then uses that value
+directly instead of a coalesce chain, because the predicate proves it is non-null and future; a
+legacy trialing row with no dates takes the PAID branch, which is the honest answer.
+
+### 5 — a stale frozen basket could UN-CANCEL a subject (MEDIUM)
+
+The intent froze the FULL DESIRED BASKET. Resume it after the parent has cancelled a subject and
+`plan_change_states` classifies that subject as a REINSTATEMENT — a cancellation undone by a payment
+made for something else. The mirror image was true too and was never reported: a subject the parent
+ADDED after the intent was absent from the frozen basket and would have been scheduled for removal.
+
+**THE RULE: a payment authorises a CHANGE, not a WORLD.** An absolute basket is a claim about the
+whole plan at one past moment, and applying it later necessarily overwrites everything since. A
+`plan_change` intent now freezes the DELTA (`plan_change_delta` → `checkout_sessions.intent_delta`,
+covered by the freeze trigger) and redemption PROJECTS it onto coverage as it is NOW
+(`plan_delta_project`). `intent_items` is kept and still frozen — it is the evidence of what the
+parent was looking at; the delta is what is applied.
+
+- **Considered and rejected:** re-validating the frozen basket at redeem and refusing on a conflict.
+  That refuses to deliver the ADD the parent paid for because of an unrelated later decision — we
+  would be keeping money without delivering, which is the thing we must never do.
+- **Also rejected:** applying only the adds. A single Save can add (priced), un-cancel (free), move a
+  cycle (free) and drop a subject (free); delivering a quarter of it is not honouring it.
+- **One residual, stated:** a frozen `remove` still acts on a subject the parent re-acquired in
+  between. Re-acquiring is priced, so it needs its own checkout inside the same minutes-wide window,
+  and a removal is SCHEDULED for that subject's period end and is undone for free by a
+  reinstatement. Bounded and recoverable, which the un-cancel it replaces was not.
+- A pre-127 session carries no delta and falls back to the frozen basket — exactly the behaviour it
+  was signed under. 013 check 122 reports how many such rows are still redeemable.
+
+### 6 — `needs_review` reached nobody (MEDIUM)
+
+It means we are holding a family's money and have not delivered on it, and it reached exactly one
+place: 013 check 118 — a file somebody runs when they ALREADY suspect something. Two additions:
+
+- `checkout_alert_admins()` files a **priority 1** in-app notification to every administrator, from
+  redemption, from `checkout_flag_redemption` and from a reversal. Priority 1 is the level
+  `create_notification` explicitly refuses to let a recipient silence. It cannot raise, so a failed
+  alarm never rolls back the decision it is reporting.
+- **A new admin page**, `/subscriptions/checkouts` (Administrator-only, its own nav entry). It shows
+  both shapes and keeps them apart: `needs_review` (money held, nothing delivered) and `applied`
+  with a note (delivered, follow-up failed — the Auth-admin call, or a later reversal). **It grants
+  nothing**: the only write records what an operator DID.
+
+**The alarm needed an off switch, and giving it one required a decision.** There are two redemption
+statuses, both terminal, and neither means "a person settled this" — so 013 check 118 would have
+gone permanently red seven days after the first genuine case. Moving the status to `applied` would
+have been a lie about a refunded case and would destroy the record of what happened to the money.
+So `admin_resolve_checkout_review` writes `resolved:<sentence>` into the NOTE plus an audit row and
+leaves the status alone, and checks 118 and 123 skip a row carrying that prefix. A blank resolution
+is refused: "somebody clicked the button" is not an answer to "what happened to this family's money".
+
+### 7 — a gateway REVERSAL was invisible (found in the live bank test, 2026-08-21)
+
+We reversed RRN `623279219080` with TRTYPE=22 and it worked. Two undocumented facts:
+
+- the gateway acknowledges a reversal with the **single character `1`**;
+- a status query with `TRAN_TRTYPE=1` reports the ORIGINAL authorisation as `actionCode=0 /
+  Approved` **forever**. The reversal appears only in an answer to a `TRAN_TRTYPE=22` query.
+
+`queryTransactionStatus` hardcoded `TRAN_TRTYPE=1`, so reconciliation could never see a refund: the
+money went back and the entitlement stayed live.
+
+- `queryReversalStatus()` asks the second question; `reconcilePendingCheckouts` gains a third pass
+  over `checkout_reversal_candidates()` and acts **only on a reconciled answer** (our order, our
+  terminal, our amount, our currency — the same conjunctive test the sale has to pass). Revoking a
+  family's access on a maybe is its own kind of harm.
+- **What we assumed about the `1`:** `interpretReversalResponse` (pure, in `codes.ts`) maps it to
+  `accepted` because that is what it accompanied, and maps **everything else — including a body that
+  looks like a decline — to `unknown`**. It never returns "declined". Concluding a reversal failed
+  from an undocumented body would leave a family's money returned while we kept their access, so the
+  safe direction for an unreadable answer is "go and ask". Nothing acts on the acknowledgement alone.
+- `checkout_revoke_reversed()` marks the payment refunded and expresses the revocation **on the
+  PRODUCER** — an olympiad purchase becomes `refunded`, and only the subjects the frozen delta
+  BOUGHT have their period closed at `now()` — so migration `124`'s mirror revokes the entitlement.
+  A direct write to `entitlements` would be reverted by the next producer write or reconcile pass.
+- **A real limit, stated rather than papered over:** the gateway answers status queries for 24 hours.
+  A reversal performed after that is invisible to the sweep; the only evidence left is the settlement
+  report, and an operator then calls `checkout_revoke_reversed` directly.
+
+### 8 — the review of this round found seven defects; all fixed IN 127 (2026-08-21)
+
+Migration `127` had not been applied anywhere, so it was edited in place rather than stacked with a
+`128`. `124`/`125`/`126` are applied and were NOT touched.
+
+**H1 + H2 — one root cause, one fix: the honour rule compared the AMOUNT.**
+"The frozen price is the price" had been written as *"the amounts differ, therefore the price
+moved"*, which is wrong in both directions at once:
+
+- a delivery that **SHRANK** — two tabs, A froze `[add Math, add English]` at 18.00, B froze
+  `[add Math]` at 9.00 and was paid first — re-prices at 9.00, and the amount-only rule read that as
+  a price movement and charged 18.00 for a 9.00 delivery;
+- a delivery that **GREW** — a frozen FREE `reinstate` whose coverage lapsed between signing and
+  redemption is re-classified as a paid `add` — re-prices HIGHER, and the same rule honoured the
+  smaller frozen amount and handed over a brand-new full cycle for nothing.
+
+**The rule now: honour a moved price only when the DELIVERY is unchanged — the same subjects, each
+with the same nature (add / reinstate / cycle / remove) and the same cycle.** Redemption re-derives
+the change from the projection with the *same* `plan_change_delta` that froze it and requires the two
+to be identical; the amount is a consequence of that answer, never a substitute for it. Anything else
+is `delivery_changed` → `needs_review` → a priority-1 alert. `checkout_intent_price` asks the same
+question before signing, where refusing costs the parent nothing. A pre-127 session carries no delta,
+cannot answer the question at all, and is recorded for a human instead of delivered on a guess (this
+supersedes the "falls back to the frozen basket" note in finding 5 above).
+
+**M3 — a reversal revoked the INTENT, not the DELIVERY.** New column
+`checkout_sessions.delivered_items`, written exactly once by `checkout_redeem_plan` in the same
+statement that stamps `redeemed_at`, and pinned by the intent-freeze trigger afterwards.
+`checkout_revoke_reversed` reads it and nothing else, so a refund can no longer close the period of a
+subject a *different* payment paid for. A `plan_start` reversal also stopped cancelling the whole
+subscription: the test is now "is any coverage still standing", which is one rule for both plan kinds
+instead of a branch on the intent kind, so subjects added later by un-reversed payments survive. A
+redemption decided before the column existed revokes NOTHING and asks for a person.
+
+**M4 — `checkout_intent_price` compared the frozen grade with `students.grade_id`.** A legacy
+grade-less package quotes `grade_id = NULL`, so every one of them re-priced as `grade_changed`: no
+checkout could be resumed and the duplicate-purchase guard on that path went with it. It now compares
+against the QUOTE's grade, exactly as the redemption side already did.
+
+**M5 — the `provider = 'azericard'` stamp re-fired nothing.**
+`trg_entitlements_from_purchases` is column-scoped and `provider` was not on the list, so a paid
+package stayed filed as a comped `manual` entitlement. `provider` is on the list now (backported to
+`015`) — the mirror should fire when the thing it mirrors moves; the alternative (a new parameter on
+`purchase_olympiad`) would have added a way for a caller to name the wrong rail.
+
+**L6 — the purchase recorded the CATALOG price, not what was charged.** After an honoured price the
+purchase row and the `payments` row disagreed about the same money. The redemption now writes
+`amount = <the amount taken>` alongside the provider stamp — and writes NOTHING when the RPC says
+nothing was charged (an already-owned package), because that purchase belongs to somebody else's
+payment; that case becomes `already_owned` → `needs_review`.
+
+**L7 — a checkout whose child was deleted mid-flight showed SUCCESS.** The callback folded
+`student_profile_id` — the column the child-delete FK NULLs — into "is this a family checkout", so
+such a session was treated as the owner's protocol test: redemption skipped entirely, and a
+completed-payment page shown for money that delivered nothing and was never recorded as undelivered.
+The test is the INTENT alone now; `checkout_redeem_plan` answers the child question itself
+(`student_gone` → `needs_review` → alert) and the parent is told the payment is not finished.
+
+**The reversal sweep, hardened even though the mass-revoke fear was refuted.** Measured on the live
+test terminal: a `TRAN_TRTYPE=22` query about an order that WAS reversed answers `actionCode 0 /
+Approved`; the same query about one that was NOT answers `actionCode 3, rc -24, "Transaction context
+mismatch"`. So a non-reversed order errors rather than approving — and the verdict is now three-valued
+(`classifyReversalAnswer`): `reversed` only on a fully reconciled approval to the reversal question,
+`not_reversed` on the definitive `-24`, and `unreadable` for everything else, which changes NOTHING
+and flags the session for a person. A query that could not be MADE is not an answer and is not
+flagged; the next pass asks again.
+
+### Files
+
+- SQL: `supabase/sql/migrations/2026_08_21_127_paid_olympiad_and_frozen_price.sql` (self-transacting,
+  ~2 700 lines); backported to `001` (enum value), `007` (`intent_delta`, `delivered_items` + the
+  re-issued `ck_checkout_intent_shape` + column comments), `011` (9 functions re-issued, 8 added,
+  every revoke/grant carried), `013` (**NEW checks 121, 122, 123** + an amendment to 118 for the
+  `resolved:` off switch), `015` (`trg_entitlements_from_purchases` re-created with `provider` on its
+  column list). 013 is now **127 checks**.
+- web-app: `lib/auth/olympiadCore.ts` (mock removed, quote core added), `lib/auth/olympiadService.ts`
+  (intent-first; `buyOlympiad` deleted), `lib/auth/subscriptionCore.ts` + `subscriptionService.ts`
+  (`free_only`, `rank`), `lib/payments/checkoutCore.ts` (`startOlympiadPayment`),
+  `checkoutIntent.ts` (`openOlympiadIntent`, `flagCheckoutForReview`), `reconcileCore.ts` (reversal
+  pass + the three-valued verdict), `azericard/statusResponse.ts` (`classifyReversalAnswer`),
+  `azericard/{gateway,codes,store}.ts`, the AzeriCard callback route, `components/PlanSummary.tsx`,
+  `OlympiadPurchase.tsx`, `SubscribeForm.tsx`, `ManageSubjects.tsx`, `AddChildWizard.tsx`, the two
+  parent olympiad pages, `i18n/messages.ts` (8 new keys × az/en/ru) + two page KEYS arrays.
+- admin-panel: `lib/admin/checkouts.ts`, `app/(protected)/subscriptions/checkouts/{page,ResolveCheckout}.tsx`,
+  `subscriptions/labels.ts` (30 new keys × 3), `alerts/labels.ts` + `alerts/page.tsx`,
+  `lib/admin/nav.ts`, `i18n/messages.ts`.
+- tests: **NEW** `web-app/src/lib/payments/__tests__/paidOlympiad.test.ts` (36 assertions across the
+  seven findings, the backport parity and the copy); updated `purchaseSilent.test.ts`,
+  `planBasket.test.ts`, `reinstateSubject.test.ts`, `azericard/__tests__/invariants.test.ts`.
+
+### Validation run this round
+
+- `web-app`: `npx tsc --noEmit` PASS, `npm test` **514 passed** (504 before the review round).
+- `admin-panel`: `npx tsc --noEmit` PASS, `npm test` **581 passed**.
+- **NOT run:** `next build` (out of scope this round), `psql` of any kind. The migration has NOT been
+  applied to staging or production, and `013` has NOT been re-run. That is the tracked gap.
+
 ## PINNED — EVERY REMAINING ROUTE TO A FREE PAID PLAN, CLOSED (migration 126, 2026-08-20) — CODE ONLY, NOT RUN
 
 Migration `125` inverted **one** path — the web manage-subjects checkout. Review found three more
@@ -34,8 +357,10 @@ and READ COMMITTED gives each statement its own snapshot.
 **Separate names, not a boolean parameter.** A parameter would have created a second overload of a
 function called from five places while the OLD signature survived as a bypass. A differently named
 function has to be typed out, which is a thing a reviewer sees in a diff. On the TypeScript side the
-cores take a **required, defaultless** `paidChanges: "allow" | "refuse"`, so a new route cannot
-inherit a posture it never chose.
+cores take a **required, defaultless** `paidChanges`, so a new route cannot inherit a posture it
+never chose. *(Migration `127` retired the `"allow"` value entirely: the web free branch reaches the
+`_if_free` wrappers too, so no application path names a priced apply RPC at all. The posture now
+only decides which sentence a refusal gets.)*
 
 **Refusal copy:** `gate.notInApp`, az/en/ru — "Bu dəyişiklik tətbiqdə tamamlana bilmir. Abunəliklər
 bu tətbiqdə idarə olunmur." Deliberately **not** "manage it on your web account": section 5's copy

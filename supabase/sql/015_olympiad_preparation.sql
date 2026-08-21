@@ -466,13 +466,23 @@ create trigger trg_audit_olympiad_purchases
   after insert or update or delete on public.olympiad_purchases
   for each row execute function public.fn_audit_row();
 
--- The purchase half of the entitlement mirror (migration 124). Column-scoped:
--- an amount or provider_payment_id correction changes nothing about ACCESS, and
--- an unfiltered trigger would write a redundant entitlement row AND an audit row
--- on every one of them.
+-- The purchase half of the entitlement mirror (migration 124/127). Column-scoped
+-- so an amount or provider_payment_id correction does not write a redundant
+-- entitlement row AND an audit row for a change that means nothing to ACCESS.
+--
+-- `provider` IS ON THE LIST, AND IT BELONGS THERE (migration 127).
+-- fn_entitlement_map_purchase reads that column, and nothing else, to decide
+-- whether the grant is filed as `abb_web` or as a comped `manual` one. Without
+-- it the stamp checkout_redeem_plan writes after a verified payment changed the
+-- row and re-fired nothing: the purchase said AzeriCard, the entitlement still
+-- said manual, and every revenue report keyed on `source` was blind to paid
+-- money. The alternative -- stamping the provider before the grant -- would mean
+-- a new parameter on purchase_olympiad and a new way for a caller to name the
+-- rail it was NOT reached on. The column list is the smaller change and the
+-- honest one: the mirror should fire when the thing it mirrors moves.
 drop trigger if exists trg_entitlements_from_purchases on public.olympiad_purchases;
 create trigger trg_entitlements_from_purchases
-  after insert or update of status, grade_id, student_profile_id
+  after insert or update of status, grade_id, student_profile_id, provider
   on public.olympiad_purchases
   for each row execute function public.tg_entitlements_purchase();
 

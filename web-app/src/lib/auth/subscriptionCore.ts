@@ -59,27 +59,35 @@ export type GateErrorKey = "gate.paymentsOff" | "gate.giveawayFree" | "gate.free
 // BY ARCHITECTURE (docs/STORE_PAYMENTS_COMPLIANCE.md §4), and an app-reachable
 // server route that starts a paid plan is that architecture failing quietly.
 //
-// So every caller must SAY WHICH IT IS, and there is no default:
-//
-//   "allow"   the WEB. A payment has already been verified (checkout_redeem_plan
-//             is the only thing that reaches this on a priced change) or the
-//             change is free. Calls the ordinary plan RPC.
-//   "refuse"  the PURCHASE-SILENT surface. Calls the `_if_free` RPC, which
-//             applies the change and then ROLLS THE WHOLE STATEMENT BACK if the
-//             apply's own answer priced it above zero.
-//
-// WHY THE ENFORCEMENT IS IN SQL AND NOT HERE. "Quote, see zero, then apply"
-// cannot be made safe from this side of the wire: prices, the sibling tier and
+// MIGRATION 127 RETIRED "allow", AND THAT IS THE POINT OF THIS BLOCK NOW.
+// The web free branch used to pass it: quote, see `due_now === 0`, then call the
+// unguarded RPC. That is the exact quote-then-apply race migration 126 declared
+// indefensible from an app server — prices, the sibling tier and
 // `launch_promo_config.trial_days` can all move between the two calls, and READ
-// COMMITTED gives each statement its own snapshot. The `_if_free` wrappers take
-// their verdict from the apply's OWN return value inside the SAME statement, so
-// there is no window in which a priced change exists.
+// COMMITTED gives each statement its own snapshot — and it was indefensible from
+// the WEB for the same reason it was from the app. Both surfaces now name an
+// `_if_free` RPC, so NO application code path can reach a priced apply at all;
+// the priced functions are called from exactly one place, inside
+// `checkout_redeem_plan`, behind a payment the gateway confirmed.
+//
+// The posture that remains says only WHAT TO TELL THE PARENT when the guard
+// fires, and every caller must SAY WHICH IT IS — there is no default:
+//
+//   "free_only"  the WEB. It has already quoted and sent every priced change to
+//                the bank, so a refusal here means the price moved underneath
+//                that quote. The honest answer is "look again", not "not here".
+//   "refuse"     the PURCHASE-SILENT surface. A refusal is a fact about WHERE
+//                purchases are managed (§5), never a price and never a link.
+//
+// Both call the same `_if_free` RPC, which applies the change and then ROLLS THE
+// WHOLE STATEMENT BACK — the apply, its ledger rows and the entitlement rows the
+// producer triggers wrote — if the apply's own answer priced it above zero.
 //
 // Removals, reinstatements (migration 120), scheduled cycle changes, a giveaway
 // window, an admin free-access interval and a running trial all price at zero
-// and all still work from the app — never trap a family inside a plan they are
-// trying to leave because the payment rail lives somewhere else.
-export type PaidChangePosture = "allow" | "refuse";
+// and all still work from both surfaces — never trap a family inside a plan they
+// are trying to leave because the payment rail lives somewhere else.
+export type PaidChangePosture = "free_only" | "refuse";
 
 /** SQLSTATE + hint the `_if_free` wrappers raise for a change that costs money. */
 const HINT_PAYMENT_REQUIRED = "payment_required";
@@ -96,6 +104,23 @@ const HINT_PAYMENT_REQUIRED = "payment_required";
  * screenshots.
  */
 const PAID_CHANGE_REFUSED_KEY = "gate.notInApp";
+
+/**
+ * The trilingual answer for the same refusal on the WEB (migration 127).
+ *
+ * It is a DIFFERENT sentence because it is a different situation. The web
+ * already quoted this change, saw zero, and applied it; a refusal means the
+ * price moved between those two statements — a race, and a rare one. Telling a
+ * parent "purchases are managed elsewhere" there would be false, and telling
+ * them nothing would leave a Save button that silently did nothing. "The prices
+ * changed, check again" is what actually happened.
+ */
+const WEB_PAID_CHANGE_KEY = "sub.err.priceMoved";
+
+/** Which sentence a payment_required refusal gets, by surface. */
+function paidChangeRefusalKey(posture: PaidChangePosture): string {
+  return posture === "refuse" ? PAID_CHANGE_REFUSED_KEY : WEB_PAID_CHANGE_KEY;
+}
 
 /** True when a `_if_free` wrapper refused because the change had to be paid for. */
 function isPaymentRequired(error: { code?: string; hint?: string | null }): boolean {
@@ -278,9 +303,8 @@ export async function subscribeChildCore(params: {
   items?: PlanItemInput[];
   isFreeAccessActive: FreeAccessChecker;
   /**
-   * REQUIRED, no default — see PaidChangePosture. The web passes "allow"; the
-   * mobile BFF passes "refuse" and can therefore start a trial or a genuinely
-   * free plan but never a paid one.
+   * REQUIRED, no default — see PaidChangePosture. Both surfaces reach the
+   * free-only RPC; this decides only which sentence a priced refusal gets.
    */
   paidChanges: PaidChangePosture;
 }): Promise<SubscribeCoreResult> {
@@ -321,8 +345,13 @@ export async function subscribeChildCore(params: {
   // name rather than by a boolean parameter is deliberate — a route that wants
   // the priced behaviour has to write the priced function's name, which is a
   // thing a reviewer can see in a diff.
+  // Migration 126/127: BOTH surfaces name the free-only RPC. The posture only
+  // decides which sentence a refusal gets. Choosing the function by NAME rather
+  // than by a boolean parameter is deliberate — the priced RPC now has no caller
+  // in this codebase at all, which is a thing a reviewer can see in a diff and a
+  // grep can assert.
   const { data, error } = await admin.rpc(
-    params.paidChanges === "refuse" ? "create_child_plan_if_free" : "create_child_plan",
+    "create_child_plan_if_free",
     {
       p_student_profile_id: studentId,
       p_items: planItems,
@@ -340,7 +369,7 @@ export async function subscribeChildCore(params: {
     // The plan priced above zero on a surface that may not take money. The
     // whole statement was rolled back by the RPC, so nothing was granted.
     if (isPaymentRequired(error as { code?: string; hint?: string | null })) {
-      return { ok: false, errorKey: PAID_CHANGE_REFUSED_KEY };
+      return { ok: false, errorKey: paidChangeRefusalKey(params.paidChanges) };
     }
     return { ok: false, errorKey: "sub.err.failed" };
   }
@@ -416,6 +445,14 @@ export type QuoteCoreResult =
        */
       trial_days: number;
       /**
+       * WHICH CHILD this is, for the sibling discount (migration 127). 1 = the
+       * first child on a live plan, 2 = the second (10% off), 3+ = 15%. The
+       * PERCENT alone cannot say why it applies, and the owner asked for the
+       * saving to be something a parent can SEE at the moment they choose rather
+       * than a smaller number they have to trust.
+       */
+      rank: number;
+      /**
        * What the family owes RIGHT NOW: 0 while a trial applies, the plan total
        * otherwise. The SAME number `create_child_plan` charges, from the SAME
        * RPC (audit invariant H7: the preview and the charge are one
@@ -486,6 +523,7 @@ export async function quoteSubscriptionCore(params: {
     base: Number(r.base ?? 0),
     discount_percent: Number(r.discount_percent ?? 0),
     discount: Number(r.discount ?? 0),
+    rank: Number(r.rank ?? 1),
     total,
     trial_days: trialDays,
     // The RPC's own number since migration 125. The fallback restates the same
@@ -625,6 +663,12 @@ export type SubjectChangeQuote = {
   interval: string;
   currency: string;
   discountPercent: number;
+  /**
+   * The sibling rank behind that percent (migration 127) — 2 = second child,
+   * 3+ = third and beyond. Shown so the saving is named rather than silently
+   * applied; see QuoteCoreResult.rank.
+   */
+  rank: number;
   currentRecurringTotal: number;
   newRecurringTotal: number;
   /**
@@ -744,6 +788,7 @@ export async function quoteSubjectChangeCore(params: {
       interval: String(r.interval ?? ""),
       currency: String(r.currency ?? "AZN"),
       discountPercent: Number(r.discount_percent ?? 0),
+      rank: Number(r.rank ?? 1),
       currentRecurringTotal: Number(r.current_recurring_total ?? 0),
       newRecurringTotal: Number(r.new_recurring_total ?? 0),
       dueNow: Number(r.due_now ?? 0),
@@ -873,11 +918,13 @@ export async function updateSubscriptionSubjectsCore(params: {
   items?: PlanItemInput[];
   isFreeAccessActive: FreeAccessChecker;
   /**
-   * REQUIRED, no default — see PaidChangePosture. The web passes "allow" (and
-   * only ever reaches this once a payment was verified, or when the diff is
-   * free); the mobile BFF passes "refuse", so a removal, a reinstatement, a
-   * scheduled cycle change and a trial-time add all still work from the app
-   * while anything priced is rolled back by the RPC itself.
+   * REQUIRED, no default — see PaidChangePosture. Migration 127 retired
+   * "allow": the web passes "free_only" (it has already quoted, and anything
+   * priced went to checkout), the mobile BFF passes "refuse". Both name the
+   * same `_if_free` RPC and differ only in the sentence a refusal gets, so a
+   * removal, a reinstatement, a scheduled cycle change and a trial-time add
+   * all still work from either surface while anything priced is rolled back by
+   * the RPC itself.
    */
   paidChanges: PaidChangePosture;
 }): Promise<SubjectsUpdateCoreResult> {
@@ -989,10 +1036,10 @@ export async function updateSubscriptionSubjectsCore(params: {
     [...reinstated].sort().join(","),
   );
 
-  // Migration 126 — see the create_child_plan call above for why the posture
-  // picks a FUNCTION NAME rather than passing a flag into one.
+  // Migration 126/127 — see the create_child_plan call above. The priced
+  // apply_plan_change is reachable only from checkout_redeem_plan now.
   const { data: applied, error } = await admin.rpc(
-    params.paidChanges === "refuse" ? "apply_plan_change_if_free" : "apply_plan_change",
+    "apply_plan_change_if_free",
     {
       p_student_profile_id: studentId,
       p_items: planItems,
@@ -1006,7 +1053,7 @@ export async function updateSubscriptionSubjectsCore(params: {
     // rolled back the apply, its ledger rows and the entitlement rows the
     // producer triggers wrote, so nothing was granted and nothing is owed.
     if (isPaymentRequired(error as { code?: string; hint?: string | null })) {
-      return { ok: false, errorKey: PAID_CHANGE_REFUSED_KEY };
+      return { ok: false, errorKey: paidChangeRefusalKey(params.paidChanges) };
     }
     // check_violation + hint 'last_subject' = the diff would leave zero
     // subjects on the plan (the RPC's own guard — the client cap above already

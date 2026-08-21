@@ -73,6 +73,41 @@ export function outcomeFromCodes(
   }
 }
 
+/**
+ * What a REVERSAL response body means — and what we refuse to conclude from it.
+ *
+ * THE SPEC DOES NOT DOCUMENT THIS AT ALL. What we know comes from the live test
+ * on 2026-08-21, where we reversed RRN 623279219080 with TRTYPE=22 and the
+ * gateway answered with the single character "1". That is the whole evidence
+ * base: one successful reversal, one one-character body.
+ *
+ * SO THIS IS DELIBERATELY NOT A VERDICT. "1" reports as `accepted` because that
+ * is what it accompanied, and EVERYTHING else — including a body that looks like
+ * a decline — reports as `unknown`. It never returns "declined", and that
+ * asymmetry is the point: concluding "the reversal failed" from an undocumented
+ * body would leave a family's money returned at the bank while we kept their
+ * access, which is the exact state migration 127 finding 7 is about. The safe
+ * direction for an unreadable answer is "go and ask".
+ *
+ * NOTHING ACTS ON THIS ALONE. Whether a transaction was really reversed is
+ * established the way every other payment fact is: by a status query WE
+ * initiate — and, for a reversal, one carrying TRAN_TRTYPE=22, because a
+ * TRAN_TRTYPE=1 query keeps reporting the original authorisation as
+ * actionCode=0 / Approved forever (also learned on 2026-08-21, also
+ * undocumented).
+ */
+export type ReversalAcknowledgement = "accepted" | "unknown";
+
+/** The one-character acknowledgement the live gateway returned for TRTYPE=22. */
+const REVERSAL_ACK = "1";
+
+export function interpretReversalResponse(body: string): ReversalAcknowledgement {
+  if (typeof body !== "string") return "unknown";
+  // A JSON / form / XML body carrying ACTION=0 would also be an acceptance, but
+  // we have never seen one and will not guess at a shape. Ask instead.
+  return body.trim() === REVERSAL_ACK ? "accepted" : "unknown";
+}
+
 /** The `payment_status` enum value (SQL 001) for an outcome. */
 export function paymentStatusFor(
   outcome: PaymentOutcome,

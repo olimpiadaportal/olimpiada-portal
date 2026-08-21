@@ -294,14 +294,14 @@ export function SubscribeForm({
                 {quote.base} {quote.currency}
               </span>
             </div>
-            {quote.discount_percent === 0 && (
-              <p className="muted">{tt("sub.noSibling")}</p>
-            )}
             <PlanSummary
               quote={localQuote}
               server={{
                 discountPercent: quote.discount_percent,
                 discount: quote.discount,
+                // Migration 127: the TIER, so the saving is named rather than
+                // silently applied.
+                rank: quote.rank,
                 // `due_now`, NOT `total` (migration 125, audit invariant H7).
                 // These are different numbers whenever a trial applies, and the
                 // screen used to print the total beside a trial row — telling a

@@ -684,6 +684,11 @@ export function ManageSubjects({
                 quote
                   ? {
                       discountPercent: quote.discountPercent,
+                      // Migration 127: the sibling TIER travels with the
+                      // percent, so this screen names the saving exactly as the
+                      // subscribe screen does. It used to print a discounted
+                      // number with nothing to say why.
+                      rank: quote.rank,
                       // The sibling discount ON THE DESIRED BASKET, summed from
                       // the same per-cycle groups the subtotals above come from
                       // — the RPC rounds per cycle, so re-deriving it from a

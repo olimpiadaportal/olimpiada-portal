@@ -292,7 +292,7 @@ export default async function ParentOlympiadCatalogPage() {
     modalTitle: t("poly.modal.title"),
     modalPackage: t("poly.modal.package"),
     modalChild: t("poly.modal.child"),
-    modalMockNote: t("poly.modal.mockNote"),
+    modalPayNote: t("poly.modal.payNote"),
     modalConfirm: t("poly.modal.confirm"),
     modalCancel: t("poly.modal.cancel"),
     modalClose: t("poly.modal.close"),

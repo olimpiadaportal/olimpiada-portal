@@ -35,6 +35,9 @@ const STRINGS: Record<Locale, Dict> = {
     "alerts.type.admin_new_purchase": "Yeni satış",
     "alerts.type.admin_new_subscription": "Yeni abunəlik",
     "alerts.type.olympiad_package_published": "Paket dərc edildi",
+    // Migration 127 — priority 1, and the only alert here that means money is
+    // sitting with us undelivered.
+    "alerts.type.checkout_needs_review": "Ödəniş baxışı",
     "alerts.type.default": "Bildiriş",
   },
   en: {
@@ -58,6 +61,7 @@ const STRINGS: Record<Locale, Dict> = {
     "alerts.type.admin_new_purchase": "New sale",
     "alerts.type.admin_new_subscription": "New subscription",
     "alerts.type.olympiad_package_published": "Package published",
+    "alerts.type.checkout_needs_review": "Checkout review",
     "alerts.type.default": "Notification",
   },
   ru: {
@@ -81,6 +85,7 @@ const STRINGS: Record<Locale, Dict> = {
     "alerts.type.admin_new_purchase": "Новая продажа",
     "alerts.type.admin_new_subscription": "Новая подписка",
     "alerts.type.olympiad_package_published": "Пакет опубликован",
+    "alerts.type.checkout_needs_review": "Проверка платежа",
     "alerts.type.default": "Уведомление",
   },
 };

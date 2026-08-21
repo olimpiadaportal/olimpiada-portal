@@ -27,7 +27,11 @@ import {
   generateNonce,
   isQueryableOrder,
 } from "./format";
-import { authMacSource, callbackMacSource, statusMacSource } from "./mac";
+import {
+  interpretReversalResponse,
+  type ReversalAcknowledgement,
+} from "./codes";
+import { authMacSource, callbackMacSource, reversalMacSource, statusMacSource } from "./mac";
 import { signMacSource, verifyMacSignature } from "./signing";
 import type { CallbackShape } from "./callback";
 import {
@@ -280,4 +284,128 @@ export async function queryTransactionStatus(
 export function getConfiguredTerminal(): string | null {
   const config: AzericardConfig | null = getAzericardConfig();
   return config?.terminal ?? null;
+}
+
+
+// ---------------------------------------------------------------------------
+// TRTYPE 22 — online reversal
+// ---------------------------------------------------------------------------
+
+export type ReversalInput = {
+  /** The ORDER of the transaction being reversed. */
+  order: string;
+  /** Formatted exactly as it was authorised, e.g. "1.00". */
+  amount: string;
+  currency: string;
+  /** Both references come from the AUTHORISED transaction, not from a client. */
+  rrn: string;
+  intRef: string;
+};
+
+export type ReversalResult =
+  | {
+      ok: true;
+      status: number;
+      body: string;
+      /**
+       * What the body means, as far as anything is known (migration 127).
+       * "accepted" only for the single character the live gateway actually
+       * returned; everything else is "unknown", never "declined". See
+       * interpretReversalResponse in codes.ts for why the asymmetry is the
+       * point rather than an omission — and note that NOTHING may act on this
+       * alone: only a TRAN_TRTYPE=22 status query establishes a reversal.
+       */
+      acknowledgement: ReversalAcknowledgement;
+    }
+  | {
+      ok: false;
+      error: "not_configured" | "invalid_input" | "sign_failed" | "network" | "http_error";
+    };
+
+/**
+ * Reverse an authorised transaction (§2.1.2 / §2.2.3).
+ *
+ * The MAC covers AMOUNT, CURRENCY, TERMINAL, TRTYPE, ORDER, RRN, INT_REF —
+ * note that TIMESTAMP and NONCE are SENT but are NOT part of the signature,
+ * unlike the authorisation request. That asymmetry is the spec's, not a
+ * mistake here; `MAC_FIELDS_REVERSAL` is the authority.
+ *
+ * This moves money BACK, so both references must come from the authorised
+ * transaction we recorded — never from a request body. The caller is
+ * responsible for having established which transaction is being reversed;
+ * this function does not decide that.
+ */
+export async function reverseTransaction(input: ReversalInput): Promise<ReversalResult> {
+  const config = getAzericardConfig();
+  const privateKeyPem = getPrivateKeyPem();
+  if (!config || !privateKeyPem) return { ok: false, error: "not_configured" };
+  if (!input.order || !input.amount || !input.rrn || !input.intRef) {
+    return { ok: false, error: "invalid_input" };
+  }
+
+  const fields: Record<string, string> = {
+    AMOUNT: input.amount,
+    CURRENCY: input.currency,
+    ORDER: input.order,
+    RRN: input.rrn,
+    INT_REF: input.intRef,
+    TERMINAL: config.terminal,
+    TRTYPE: TRTYPE.REVERSAL_ONLINE,
+    TIMESTAMP: formatTimestamp(),
+    NONCE: generateNonce(),
+  };
+
+  try {
+    fields.P_SIGN = signMacSource(privateKeyPem, reversalMacSource(fields));
+  } catch {
+    return { ok: false, error: "sign_failed" };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(config.gatewayUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams(fields).toString(),
+      redirect: "manual",
+      signal: AbortSignal.timeout(STATUS_QUERY_TIMEOUT_MS),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, error: "network" };
+  }
+
+  if (!response.ok) return { ok: false, error: "http_error" };
+  // The body is returned to the CALLER, which is a server-side diagnostic —
+  // it is never rendered to a parent, and §8.2 warns these bodies can carry a
+  // masked card number, so it must not be persisted or logged wholesale.
+  const body = await response.text();
+  return {
+    ok: true,
+    status: response.status,
+    body,
+    acknowledgement: interpretReversalResponse(body),
+  };
+}
+
+/**
+ * Ask whether OUR order carries a completed REVERSAL (TRTYPE=22).
+ *
+ * This exists as its own function rather than as a flag on the caller because
+ * the question is genuinely different from "was this order paid?": the gateway
+ * answers the ordinary status query about the AUTHORISATION, which stays
+ * `Approved` for good even after the money has been sent back. Only a query
+ * keyed on TRAN_TRTYPE=22 mentions the reversal at all.
+ *
+ * The expectation is matched exactly as the sale is — our order, our terminal,
+ * our amount, our currency — so a reply that does not demonstrably describe this
+ * transaction never counts as a reversal.
+ */
+export async function queryReversalStatus(
+  input: Omit<StatusQueryInput, "tranTrtype">,
+): Promise<StatusQueryResult> {
+  return queryTransactionStatus({ ...input, tranTrtype: TRTYPE.REVERSAL_ONLINE });
 }

@@ -44,6 +44,12 @@ const KEYS = [
   "cfg.add", "cfg.addAria", "cfg.allAdded", "cfg.unpriced", "cfg.emptySelection",
   "cfg.warnAllUnpriced", "cfg.warnSomeUnpriced", "sub.trial", "sub.days",
   "sub.discount",
+  // Migration 127 — the sibling discount is NAMED where the parent chooses:
+  // which child earned it, what it saves, and — when none applies yet — that
+  // a second child is cheaper. A silent smaller number is not a discount a
+  // parent can see.
+  "sub.discount.rank2", "sub.discount.rank3", "sub.discount.saved",
+  "sub.discount.hint",
   "pricing.plan.weekly.note", "pricing.plan.monthly.note",
   "pricing.plan.yearly.note",
   // payment confirmation (step 4) + the result

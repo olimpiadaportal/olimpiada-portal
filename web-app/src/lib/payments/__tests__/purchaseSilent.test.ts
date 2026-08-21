@@ -57,6 +57,12 @@ const CANONICAL_016 = join(SQL, "016_scheduled_jobs.sql");
 const MIGRATION_126 = join(
   SQL, "migrations", "2026_08_20_126_free_only_and_reconcile.sql",
 );
+const MIGRATION_127 = join(
+  SQL, "migrations", "2026_08_21_127_paid_olympiad_and_frozen_price.sql",
+);
+const OLY_SERVICE = join(SRC, "lib", "auth", "olympiadService.ts");
+const CHECKOUT_INTENT = join(SRC, "lib", "payments", "checkoutIntent.ts");
+const GATEWAY = join(SRC, "lib", "payments", "azericard", "gateway.ts");
 
 function read(abs: string): string {
   return readFileSync(abs, "utf8").split("\r\n").join("\n");
@@ -153,22 +159,46 @@ describe("the purchase-silent surface cannot buy", () => {
     }
   });
 
-  it("selects the free-only RPC from the posture, in both plan cores", () => {
+  it("names ONLY the free-only RPCs, on every surface", () => {
+    // MIGRATION 127 WENT FURTHER THAN 126, and this is the assertion that says
+    // how far. The posture used to SELECT the RPC — priced for the web, free-only
+    // for the app — which meant the web still ran the quote-then-apply race:
+    // prices, the sibling tier and launch_promo_config.trial_days can all move
+    // between a quote and an apply, and READ COMMITTED gives each statement its
+    // own snapshot. Both surfaces now name the free-only function
+    // unconditionally, so the priced RPCs have NO caller in this codebase at all
+    // — they are reached only from inside checkout_redeem_plan, behind a payment
+    // the gateway confirmed.
     const src = code(read(SUB_CORE));
-    expect(src).toContain(
-      'params.paidChanges === "refuse" ? "create_child_plan_if_free" : "create_child_plan"',
-    );
-    expect(src).toContain(
-      'params.paidChanges === "refuse" ? "apply_plan_change_if_free" : "apply_plan_change"',
-    );
+    expect(src).toContain('"create_child_plan_if_free"');
+    expect(src).toContain('"apply_plan_change_if_free"');
+    expect(code(read(OLY_CORE))).toContain('"purchase_olympiad_if_free"');
   });
 
-  it("refuses a priced olympiad package BEFORE the payment seam", () => {
+  it("has no priced apply RPC caller ANYWHERE in the app", () => {
+    // The property above, swept over the whole source tree rather than two
+    // files. This is what makes "a grant happened" and "a payment happened" the
+    // same event by construction: the only thing that can name a priced apply is
+    // SQL, inside the redemption function.
+    const offenders: string[] = [];
+    for (const file of filesUnder(SRC)) {
+      if (/__tests__/.test(file)) continue;
+      const src = code(read(file));
+      for (const priced of ["create_child_plan", "apply_plan_change", "purchase_olympiad"]) {
+        if (src.includes('rpc("' + priced + '"') || src.includes("rpc('" + priced + "'")) {
+          offenders.push(relative(REPO, file) + " :: " + priced);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("refuses a priced olympiad package BEFORE the RPC, from the app", () => {
     const src = code(read(OLY_CORE));
     const refusalAt = src.indexOf('paidChanges === "refuse"');
-    const seamAt = src.indexOf("processOlympiadPayment({");
+    const rpcAt = src.indexOf('rpc("purchase_olympiad_if_free"');
     expect(refusalAt).toBeGreaterThan(-1);
-    expect(seamAt).toBeGreaterThan(refusalAt);
+    expect(rpcAt).toBeGreaterThan(refusalAt);
     // A price we cannot read is not a price of zero.
     expect(src).toContain("Number.isFinite(amount) && amount <= 0");
   });
@@ -210,6 +240,7 @@ describe("the purchase-silent surface cannot buy", () => {
 
 describe("a trial is a bounded free window, never a free paid period", () => {
   const migration = read(MIGRATION_126);
+  const migration127 = read(MIGRATION_127);
   const canonical = read(CANONICAL_011);
 
   it("ends a trial-time addition at the TRIAL END, not a full cycle", () => {
@@ -219,15 +250,37 @@ describe("a trial is a bounded free window, never a free paid period", () => {
     // therefore bought a year for nothing — repeatable, unrecorded, and
     // uncollectable, because nothing charges at a trial end or a period end.
     for (const [label, sql] of [
-      ["migration 126", migration],
+      ["migration 127", migration127],
       ["canonical 011", canonical],
     ] as const) {
       const body = sqlCode(sqlFunction(sql, "apply_plan_change"));
-      // Inside the ADD loop's period expression, and fail-closed on a legacy
-      // trialing row with no dates at all.
+      // Inside the ADD loop's period expression. Migration 127 replaced the
+      // coalesce chain with the trial end itself, because the predicate it now
+      // branches on PROVES that value is non-null and in the future — a legacy
+      // trialing row with no dates takes the PAID branch instead, which is the
+      // honest answer rather than a zero-length period granted for free.
       expect(body, label).toContain(
-        "case when v_sub.status = 'trialing'\n              then coalesce(v_sub.trial_ends_at, v_sub.current_period_end, now())",
+        "case when v_trialing\n              then v_sub.trial_ends_at",
       );
+    }
+  });
+
+  it("counts a trial as running only while its END is in the FUTURE", () => {
+    // MIGRATION 127, the other half of the same line. The raw status was read as
+    // "a trial is running", and the status is swept by a job rather than by the
+    // clock: a subscription whose trial_ends_at had already passed therefore
+    // priced every addition at ZERO and applied it as trial-time, for as long as
+    // the row stayed stale.
+    for (const [label, sql] of [
+      ["migration 127", migration127],
+      ["canonical 011", canonical],
+    ] as const) {
+      for (const fn of ["quote_plan_change", "apply_plan_change"] as const) {
+        const body = sqlCode(sqlFunction(sql, fn));
+        expect(body, label + " " + fn).toContain("v_sub.trial_ends_at > now()");
+        // The raw-status branch must be GONE, not merely shadowed.
+        expect(body, label + " " + fn).not.toContain("v_sub.status <> 'trialing'");
+      }
     }
   });
 
@@ -236,11 +289,11 @@ describe("a trial is a bounded free window, never a free paid period", () => {
     // DATES. "Renews in a year" under a subject that dies with the trial is the
     // sentence that made the free-forever add look legitimate.
     for (const [label, sql] of [
-      ["migration 126", migration],
+      ["migration 127", migration127],
       ["canonical 011", canonical],
     ] as const) {
       const body = sqlCode(sqlFunction(sql, "quote_plan_change"));
-      expect(body, label).toContain("when s.state = 'add' and v_sub.status = 'trialing'");
+      expect(body, label).toContain("when s.state = 'add' and v_trialing");
     }
   });
 
@@ -309,13 +362,15 @@ describe("genuinely free changes still apply with no payment", () => {
   });
 
   it("still routes a zero-due web change straight to the apply", () => {
-    // The seam migration 125 built. `due_now === 0` is applied on the spot, and
+    // The seam migration 125 built. A zero due_now is applied on the spot, and
     // it has to stay that way or a removal would need a payment that does not
-    // exist. What changed in 126 is what a ZERO can mean, not what happens to
-    // one.
+    // exist. What changed in 126 is what a ZERO can mean; what changed in 127 is
+    // WHO decides it — the RPC, inside the apply's own transaction, instead of
+    // this branch a statement earlier.
     const src = code(read(SUB_SERVICE));
     expect(src).toContain("quoted.dueNow > 0");
-    expect(src).toContain('paidChanges: "allow"');
+    expect(src).toContain('paidChanges: "free_only"');
+    expect(src).not.toContain('paidChanges: "allow"');
   });
 });
 

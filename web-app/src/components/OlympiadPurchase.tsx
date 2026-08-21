@@ -8,13 +8,26 @@
 // Flow: pick a child (segmented buttons) — Round 40: the selection FILTERS the
 // grid to that child's packages (grade match / owned / legacy grade-less) and
 // scopes each card's question count — each card shows OWNED pill or a
-// "Buy for <child>" button → button opens the modal (package / child / price +
-// mock-payment note) → Confirm runs purchaseOlympiadForChild (useActionState)
-// → success (or "already owned" after a race) INSIDE the modal; the card flips
-// to owned without a full reload (local state + router.refresh()).
+// "Buy for <child>" button → button opens the modal (package / child / price) →
+// Confirm runs purchaseOlympiadForChild (useActionState).
+//
+// WHAT CONFIRM DOES NOW (migration 127). It used to run a MOCK payment that
+// always succeeded and hand the child a LIFETIME package with no payments row
+// anywhere. The action now QUOTES server-side and answers one of two ways:
+//
+//   * WITH A CHECKOUT — a real AZN payment is required, so nothing has been
+//     granted. The modal renders the departure form and the parent leaves for
+//     the bank; the package is written only when the verified callback redeems
+//     the intent.
+//   * WITHOUT ONE — the package is free (priced at zero) or the child already
+//     owns it, so it was activated on the spot. The card flips to owned.
+//
+// The branch is the SERVER'S: this component never sees a price it can act on
+// and never decides whether money is owed.
 import { useCallback, useEffect, useMemo, useRef, useState, useActionState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { CheckoutRedirect } from "@/components/CheckoutRedirect";
 import { Modal } from "@/components/Modal";
 import { OlympiadCover } from "@/components/OlympiadCover";
 import { Segmented } from "@/components/Segmented";
@@ -88,7 +101,13 @@ export type PolyDict = {
   modalTitle: string;
   modalPackage: string;
   modalChild: string;
-  modalMockNote: string;
+  /**
+   * What happens on Confirm (migration 127). It used to be the MOCK-payment
+   * note — "no real charge is made" — because none was. It now says the truth:
+   * the next step is the bank's own page, and the package opens only once the
+   * payment is confirmed.
+   */
+  modalPayNote: string;
   modalConfirm: string;
   modalCancel: string;
   modalClose: string;
@@ -254,15 +273,54 @@ function PurchaseDialogBody({
     null,
   );
 
-  // On success (including the "already owned" race) flip the card to owned —
-  // exactly once per mounted attempt (the ref guards against effect re-runs).
+  // Flip the card to owned — exactly once per mounted attempt (the ref guards
+  // against effect re-runs).
+  //
+  // A CHECKOUT IS NOT AN ACTIVATION (migration 127). `ok` used to mean "the
+  // package is theirs", because the mock payment always succeeded. It now also
+  // covers "here is the signed redirect, go and pay" — nothing has been granted
+  // in that branch, and flipping the card to owned there would tell a parent
+  // they own something they have not paid for, in the same moment we are asking
+  // them to pay for it.
   const doneFired = useRef(false);
   useEffect(() => {
-    if (state?.ok && !doneFired.current) {
+    if (state?.ok && !state.checkout && !doneFired.current) {
       doneFired.current = true;
       onDone(child.id, pkg.id);
     }
   }, [state, child.id, pkg.id, onDone]);
+
+  // A REAL PAYMENT IS REQUIRED. Nothing has been granted — the package exists
+  // only after the bank confirms it — so this is a departure form, not a
+  // success screen. <CheckoutRedirect> owns the wording, the amount row and the
+  // full-page POST to the acquirer's own origin (never an iframe, PCI SAQ A).
+  if (state?.ok && state.checkout) {
+    const c = state.checkout;
+    return (
+      <div>
+        <dl className="poly-rows">
+          <div className="poly-row">
+            <dt>{dict.modalPackage}</dt>
+            <dd>{pkg.title}</dd>
+          </div>
+          <div className="poly-row">
+            <dt>{dict.modalChild}</dt>
+            <dd>{child.name}</dd>
+          </div>
+        </dl>
+        <CheckoutRedirect
+          order={c.order}
+          amount={c.amount}
+          signed={{ action: c.action, fields: c.fields, amount: c.amount }}
+        />
+        <div className="poly-actions">
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            {dict.modalCancel}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (state?.ok) {
     return (
@@ -327,7 +385,7 @@ function PurchaseDialogBody({
           <circle cx="12" cy="12" r="9" />
           <path d="M12 11v5M12 8h.01" />
         </svg>
-        <span>{dict.modalMockNote}</span>
+        <span>{dict.modalPayNote}</span>
       </p>
 
       {state && !state.ok && <p className="poly-error">{state.error}</p>}

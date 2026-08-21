@@ -65,6 +65,14 @@ import { startPlanPayment, type StartCheckoutResult } from "@/lib/payments/check
 // statement back if their own answer priced it above zero. A removal, a
 // reinstatement, a scheduled cycle change and a trial-time add still work from
 // the app; nothing priced can.
+//
+// AND CLOSED HERE TOO (migration 127). The `dueNow === 0` branch below used to
+// call the UNGUARDED RPC — the same quote-then-apply race, on the web, with the
+// same three moving parts (a price, the sibling tier, the trial length) and the
+// same READ COMMITTED snapshot per statement. It now passes
+// `paidChanges: "free_only"`, which reaches the same `_if_free` wrapper. After
+// this change NO application code path names a priced apply RPC: they are
+// reachable only from inside checkout_redeem_plan, behind a verified payment.
 
 /** What the client is handed when a real AZN payment is required. */
 export type PlanCheckout = {
@@ -186,10 +194,14 @@ export async function subscribeChild(
       items: items.length > 0 ? items : undefined,
       // Web free-access probe: caller-scoped RPC via the cookie client.
       isFreeAccessActive: isChildFreeAccessActive,
-      // The WEB may reach a priced apply — but only ever gets here when the
-      // quote said nothing is due (step 2 above). A payable plan takes branch 3
-      // and is applied later, by checkout_redeem_plan, on a verified payment.
-      paidChanges: "allow",
+      // Migration 127: the WEB takes the free-only RPC too. The quote above said
+      // nothing is due, but a quote and an apply are two statements under READ
+      // COMMITTED — prices, the sibling tier and the trial length can all move
+      // between them. The wrapper takes its verdict from the apply's OWN answer
+      // inside the same statement, and rolls the whole thing back if it turns out
+      // to have been priced. A payable plan never reaches here at all: it takes
+      // branch 3 and is applied by checkout_redeem_plan on a verified payment.
+      paidChanges: "free_only",
     });
     if (!res.ok) return { ok: false, error: t(res.errorKey) };
     return { ok: true, result: res.result };
@@ -225,6 +237,13 @@ export type QuoteResult =
       total: number;
       /** The EFFECTIVE trial for THIS child (migration 125), not the default. */
       trial_days: number;
+      /**
+       * WHICH CHILD earned the sibling discount (migration 127): 2 = second,
+       * 3+ = third and beyond. The screen names the saving instead of quietly
+       * applying it — the owner's call: a parent should be able to SEE the
+       * discount at the moment they choose, not infer it from a smaller number.
+       */
+      rank: number;
       /**
        * What is charged today — 0 while a trial applies, the total otherwise.
        * The SAME number the checkout is opened for (audit invariant H7). The
@@ -429,9 +448,11 @@ export async function updateSubscriptionSubjectsAction(
     subjectIds,
     items: items.length > 0 ? items : undefined,
     isFreeAccessActive: isChildFreeAccessActive,
-    // Reached only on a FREE diff (step 2 sent every payable one to the bank),
-    // so "allow" is the posture and never the outcome.
-    paidChanges: "allow",
+    // Reached only on a FREE diff (step 2 sent every payable one to the bank) —
+    // but the guard is still the RPC's, not this branch's. See the subscribe
+    // action above: a quote and an apply are two statements, and only the
+    // wrapper can decide "this was free" without a race.
+    paidChanges: "free_only",
   });
   if (!res.ok) return { ok: false, error: t(res.errorKey) };
 

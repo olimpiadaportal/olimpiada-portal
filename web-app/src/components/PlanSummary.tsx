@@ -63,6 +63,17 @@ export type PlanSummaryServer = {
   discountPercent: number;
   discount: number;
   /**
+   * WHICH CHILD earned the discount (migration 127): 2 = second child, 3+ =
+   * third and beyond. Optional so the public configurator — which has no parent
+   * context and therefore no rank — is unchanged.
+   *
+   * The owner's call, and worth stating: the sibling discount used to be a
+   * silent adjustment. A smaller number appeared and nothing said why. Naming
+   * the tier and printing the saving turns it into something the parent can SEE
+   * at the moment they choose, which is the point of having it.
+   */
+  rank?: number;
+  /**
    * What the server will actually charge. `null` = the CALLER prints the
    * aggregate rows itself, so this component prints none — two "due today"
    * figures on one card (the caller's discounted server amount and this
@@ -142,12 +153,30 @@ export function PlanSummary({
       })}
 
       {server && server.discountPercent > 0 && (
-        <div className="psum-row psum-discount">
-          <span>{t("sub.discount")}</span>
-          <span className="psum-val mono">
-            −{server.discountPercent}% (−{formatAzn(server.discount, locale)})
-          </span>
-        </div>
+        <>
+          <div className="psum-row psum-discount">
+            {/* The TIER, named. "Sibling discount" alone could not say why this
+                family gets 10% and another gets 15%. */}
+            <span>
+              {t(
+                (server.rank ?? 2) >= 3
+                  ? "sub.discount.rank3"
+                  : "sub.discount.rank2",
+              )}
+            </span>
+            <span className="psum-val mono">−{server.discountPercent}%</span>
+          </div>
+          <div className="psum-row psum-discount">
+            <span>{t("sub.discount.saved")}</span>
+            <span className="psum-val mono">−{formatAzn(server.discount, locale)}</span>
+          </div>
+        </>
+      )}
+      {/* No discount YET is worth a sentence too: it is the only place a parent
+          with one child learns that a second one is cheaper. Shown only where a
+          parent context exists, never on the public configurator. */}
+      {server && server.discountPercent === 0 && (
+        <p className="psum-note">{t("sub.discount.hint")}</p>
       )}
 
       {showAggregates && (

@@ -9,7 +9,8 @@
 // (docs/STORE_PAYMENTS_COMPLIANCE.md §4.1, migration 124), and the rail that
 // produces an entitlement row is the SUBSCRIPTION, mirrored by a trigger.
 //
-// Since 125 a verified payment DOES cause a plan to be applied — but not here.
+// Since 125 a verified payment DOES cause a plan — or, since 127, an olympiad
+// package — to be applied, but not here.
 // This module records the money and advances the session to `paid`; the
 // redemption is a separate, later, separately-recorded step
 // (`checkout_redeem_plan`, reached through lib/payments/checkoutIntent). Keeping
@@ -49,6 +50,17 @@ export type CheckoutKind = "subscription" | "olympiad" | "protocol_test";
  * union, so the callback and the checkout core cannot drift on the literal.
  */
 export const PLAN_CHECKOUT_KIND: CheckoutKind = "subscription";
+
+/**
+ * The kind a PARENT olympiad-package payment carries (migration 127).
+ *
+ * It is its own value and not a second use of `subscription` for one reason
+ * that matters more than tidiness: a settlement report has to be able to say
+ * what was sold. Folding a lifetime package purchase into the subscription kind
+ * would make every reconciliation answer "a subscription" to a question the
+ * accountant asked about a package.
+ */
+export const OLYMPIAD_CHECKOUT_KIND: CheckoutKind = "olympiad";
 
 export type CreateSessionInput = {
   ownerParentProfileId: string;
@@ -225,10 +237,18 @@ export async function findSessionByOrder(order: string): Promise<CheckoutSession
  * The parent id is part of the WHERE clause, not a post-filter — the caller has
  * already authorized, and this keeps a mistyped student id from ever returning
  * another family's row.
+ *
+ * SCOPED BY KIND (migration 127), and that parameter is REQUIRED. A family can
+ * now have an unfinished subscription checkout AND an unfinished olympiad one at
+ * the same time for the same child. Without the filter the subscribe page would
+ * offer to "finish paying" a package, and the package modal would offer to
+ * finish paying a plan — each showing the other's amount. A default would be the
+ * same bug waiting for the next caller to inherit it.
  */
 export async function findOutstandingSession(
   ownerParentProfileId: string,
   studentProfileId: string,
+  kind: CheckoutKind,
 ): Promise<CheckoutSessionRow | null> {
   if (!isServiceRoleConfigured) return null;
   if (!isUuid(ownerParentProfileId) || !isUuid(studentProfileId)) return null;
@@ -239,6 +259,7 @@ export async function findOutstandingSession(
     .eq("provider", PROVIDER)
     .eq("owner_parent_profile_id", ownerParentProfileId)
     .eq("student_profile_id", studentProfileId)
+    .eq("kind", kind)
     .not("intent_kind", "is", null)
     .is("redeemed_at", null)
     .gt("expires_at", new Date().toISOString())

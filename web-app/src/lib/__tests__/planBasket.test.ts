@@ -262,12 +262,20 @@ describe("proration is retired everywhere, not just on the happy path", () => {
       expect(CORE).not.toContain(`rpc("${name}"`);
       expect(CORE).not.toContain(`rpc('${name}'`);
     }
-    // Both surviving calls are the plan pair. Migration 126 made the APPLY name
-    // depend on the caller's posture — `apply_plan_change_if_free` for the
-    // purchase-silent surface — so the assertion is that the plan pair is what
-    // is reached, not that one exact literal is present.
+    // Both surviving calls are the plan pair. Migration 127 went further than
+    // 126: the posture no longer selects the RPC at all, because there is only
+    // one to select. The core names the FREE-ONLY apply unconditionally, and the
+    // priced apply_plan_change has no caller in this codebase — it is reached
+    // exclusively from inside checkout_redeem_plan, behind a verified payment.
     expect(CORE).toContain('rpc("quote_plan_change"');
-    expect(CORE).toContain('"apply_plan_change_if_free" : "apply_plan_change"');
+    expect(CORE).toContain('"apply_plan_change_if_free"');
+    expect(CORE).toContain('"create_child_plan_if_free"');
+    // ...and the priced names appear nowhere as an RPC target.
+    for (const priced of ["apply_plan_change", "create_child_plan"]) {
+      expect(CORE).not.toContain(`rpc("${priced}"`);
+      expect(CORE).not.toContain(`rpc(
+    "${priced}",`);
+    }
   });
 
   it("a subject-ids-only caller is derived server-side rather than routed elsewhere", () => {

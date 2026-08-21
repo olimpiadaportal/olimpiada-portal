@@ -420,6 +420,7 @@ begin
 
   if new.intent_kind             is distinct from old.intent_kind
      or new.intent_items         is distinct from old.intent_items
+     or new.intent_delta         is distinct from old.intent_delta
      or new.amount               is distinct from old.amount
      or new.currency             is distinct from old.currency
      or new.kind                 is distinct from old.kind
@@ -436,6 +437,12 @@ begin
 
   if old.redeemed_at is not null
      and (new.redeemed_at is null
+          -- delivered_items is written EXACTLY ONCE, by the statement that
+          -- stamps redeemed_at. After that it is the record a reversal revokes
+          -- from, so an UPDATE that moved it would let a refund take back a
+          -- subject some other payment paid for -- the mirror of the defect
+          -- the column exists to close.
+          or new.delivered_items is distinct from old.delivered_items
           or (old.redemption_status = 'applied'
               and new.redemption_status is distinct from old.redemption_status))
   then
@@ -448,10 +455,12 @@ end;
 $$;
 
 comment on function public.fn_checkout_intent_immutable() is
-  'Migration 125. Freezes the signed intent (child, basket, amount, currency, '
-  'order, expiry, owner) and forbids un-deciding a redemption. Two one-way '
-  'exceptions: the FK cascade may NULL student_profile_id, and an operator may '
-  'move a needs_review to applied.';
+  'Migration 125/127. Freezes the signed intent (child, basket, DELTA, amount, '
+  'currency, order, expiry, owner), forbids un-deciding a redemption, and pins '
+  'delivered_items once written -- it is what a reversal takes back, so moving '
+  'it would let a refund revoke a subject another payment paid for. Two '
+  'one-way exceptions: the FK cascade may NULL student_profile_id, and an '
+  'operator may move a needs_review to applied.';
 
 -- A trigger function is never called directly. Line 88 of 010 default-grants
 -- EXECUTE to anon AND authenticated, so all three are named here.
@@ -5130,13 +5139,144 @@ grant execute on function public.grade_practice_attempt(uuid, jsonb) to authenti
 -- Olimpiada Preparation engine (Stage 14, increment 1).
 -- Backported from migrations/2026_06_28_014_olympiad_engine.sql. Parent one-time
 -- LIFETIME purchase + child olympiad attempts (25 random from the package's
--- curated pool, reusing get_/grade_practice_attempt). Real charge is provider-
--- specific and stubbed (purchase marked active immediately) until a provider is
--- chosen. purchase_olympiad is service-role (parent action authorizes the parent);
+-- curated pool, reusing get_/grade_practice_attempt).
+-- purchase_olympiad is service-role (parent action authorizes the parent);
 -- start_olympiad_attempt is the authenticated child (purchase-gated). Placed at
 -- the END so the function REVOKEs run AFTER 010's blanket grants — otherwise
 -- anon/authenticated's EXECUTE grant on purchase_olympiad would remain.
+--
+-- THE CHARGE IS NO LONGER STUBBED (migration 127). It used to be: the web app
+-- called a MOCK that returned success unconditionally, purchase_olympiad wrote
+-- an ACTIVE purchase, and migration 124 mirrored that into a LIFETIME
+-- entitlement with no `payments` row anywhere. The package now runs on the same
+-- intent-first rail as the subscription — quote, intent, redirect, verified
+-- payment, grant — through checkout_intent_open / checkout_redeem_plan.
 -- -----------------------------------------------------------------------------
+
+-- -----------------------------------------------------------------------------
+-- Migration 127: the olympiad package becomes a PAID product on the same rail
+-- as the subscription. quote_olympiad_purchase is the one computation the
+-- preview, the intent and the charge all read (audit H7);
+-- purchase_olympiad_if_free is what every APPLICATION caller uses, so the
+-- priced purchase_olympiad below is reachable only from checkout_redeem_plan,
+-- behind a payment the gateway confirmed.
+-- -----------------------------------------------------------------------------
+
+create or replace function public.quote_olympiad_purchase(
+  p_student_profile_id uuid,
+  p_package_id         uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_owner       uuid;
+  v_child_grade uuid;
+  v_price       numeric(10,2);
+  v_currency    text;
+  v_status      public.catalog_status;
+  v_starts      timestamptz;
+  v_ends        timestamptz;
+  v_grades      uuid[];
+  v_buy_grade   uuid;
+  v_ex_status   text;
+begin
+  select created_by_parent_profile_id, grade_id into v_owner, v_child_grade
+  from public.students where profile_id = p_student_profile_id;
+  if v_owner is null then
+    raise exception 'olympiad quote: child has no owning parent'
+      using errcode = 'check_violation', hint = 'bad_student';
+  end if;
+
+  select price_amount, currency, status, sale_starts_at, sale_ends_at
+    into v_price, v_currency, v_status, v_starts, v_ends
+  from public.olympiad_packages where id = p_package_id;
+  if v_price is null then
+    raise exception 'olympiad quote: package not found'
+      using errcode = 'check_violation', hint = 'package_not_found';
+  end if;
+
+  if not public.olympiad_package_on_sale(v_status, v_starts, v_ends) then
+    raise exception 'olympiad quote: package not on sale'
+      using errcode = 'check_violation', hint = 'package_not_on_sale';
+  end if;
+
+  select array_agg(g.grade_id) into v_grades
+  from public.olympiad_package_grades g
+  where g.olympiad_package_id = p_package_id;
+  if v_grades is not null then
+    if v_child_grade is null or not (v_child_grade = any(v_grades)) then
+      raise exception 'olympiad quote: package does not cover the child''s grade'
+        using errcode = 'check_violation', hint = 'package_not_for_grade';
+    end if;
+    v_buy_grade := v_child_grade;
+  end if;
+
+  select status into v_ex_status from public.olympiad_purchases
+  where student_profile_id = p_student_profile_id
+    and olympiad_package_id = p_package_id;
+  if v_ex_status = 'active' then
+    -- Lifetime access is already held. Opening a checkout for it would take
+    -- money for something the family owns, which is the mirror of the defect
+    -- this migration closes.
+    raise exception 'olympiad quote: package already owned'
+      using errcode = 'unique_violation', hint = 'already_owned';
+  end if;
+
+  return jsonb_build_object(
+    'package_id',         p_package_id,
+    'student_profile_id', p_student_profile_id,
+    'grade_id',           v_buy_grade,
+    'price',              v_price,
+    'due_now',            v_price,
+    'currency',           coalesce(v_currency, 'AZN'));
+end;
+$$;
+
+comment on function public.quote_olympiad_purchase(uuid, uuid) is
+  'Migration 127: the read-only price of ONE olympiad package for ONE child, and the single computation the intent, the re-price and the charge all read (audit H7). Re-states purchase_olympiad''s guards in the same order and raises the same hints (bad_student / package_not_found / package_not_on_sale / package_not_for_grade / already_owned). Returns the ENTITLED GRADE beside the price, because purchase_olympiad snapshots it and attempts draw that pool forever -- so the grade is part of what is bought, not a detail.';
+
+revoke all on function public.quote_olympiad_purchase(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.quote_olympiad_purchase(uuid, uuid) to service_role;
+
+
+create or replace function public.purchase_olympiad_if_free(
+  p_student_profile_id uuid,
+  p_package_id         uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_res jsonb;
+  v_due numeric(12,2);
+begin
+  v_res := public.purchase_olympiad(p_student_profile_id, p_package_id);
+
+  -- NULL IS A REFUSAL, not a zero -- the same sentence the two plan wrappers
+  -- carry, for the same reason: "we could not tell what this costs" must never
+  -- resolve to "so it is probably free".
+  v_due := (v_res->>'due_now')::numeric;
+  if v_due is null or v_due > 0 then
+    raise exception 'olympiad: this package has to be paid for'
+      using errcode = 'check_violation', hint = 'payment_required';
+  end if;
+
+  return v_res;
+end;
+$$;
+
+comment on function public.purchase_olympiad_if_free(uuid, uuid) is
+  'Migration 127: purchase_olympiad for every APPLICATION caller -- the web action and the purchase-silent mobile BFF alike. Grants the package and then rolls the whole statement back with check_violation/payment_required if the RPC''s own answer priced it above zero, so a priced package can only ever be delivered by checkout_redeem_plan behind a verified payment. A zero-priced package and a repeated click on an already-owned one both answer due_now = 0 and pass.';
+
+revoke all on function public.purchase_olympiad_if_free(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.purchase_olympiad_if_free(uuid, uuid) to service_role;
+
 create or replace function public.purchase_olympiad(
   p_student_profile_id uuid,
   p_package_id         uuid
@@ -5202,7 +5342,14 @@ begin
   where student_profile_id = p_student_profile_id and olympiad_package_id = p_package_id;
   if v_existing is not null then
     if v_ex_status = 'active' then
-      return jsonb_build_object('purchase_id', v_existing, 'status', 'active', 'existing', true);
+      -- MIGRATION 127: due_now = 0 and charged = false. NOTHING HAPPENED --
+      -- the child already owns it, no money is owed and none was taken. The
+      -- _if_free wrapper reads exactly this key, so a harmless re-click from
+      -- the purchase-silent surface is not mistaken for an attempted purchase.
+      return jsonb_build_object('purchase_id', v_existing, 'status', 'active',
+                                'existing', true, 'grade_id', v_buy_grade,
+                                'amount', v_price, 'currency', v_currency,
+                                'due_now', 0::numeric(12,2), 'charged', false);
     end if;
     -- Audit L17 (migration 035): re-buying after a refund records the CURRENT
     -- price/date — and now also the CURRENT grade entitlement.
@@ -5211,7 +5358,13 @@ begin
            grade_id = coalesce(v_buy_grade, grade_id),
            purchased_at = now(), updated_at = now()
      where id = v_existing;
-    return jsonb_build_object('purchase_id', v_existing, 'status', 'active', 'existing', true);
+    -- A RE-BUY AFTER A REFUND IS A PURCHASE. It records today's price and
+    -- today's grade, so due_now is that price and charged is true -- the row
+    -- is `existing` only in the sense that it is reused in place.
+    return jsonb_build_object('purchase_id', v_existing, 'status', 'active',
+                              'existing', true, 'grade_id', v_buy_grade,
+                              'amount', v_price, 'currency', v_currency,
+                              'due_now', v_price, 'charged', true);
   end if;
 
   insert into public.olympiad_purchases
@@ -5221,16 +5374,23 @@ begin
     (p_package_id, v_owner, p_student_profile_id, v_price, v_currency, 'active', now(), 'none', v_buy_grade)
   returning id into v_id;
 
-  return jsonb_build_object('purchase_id', v_id, 'status', 'active', 'existing', false);
+  return jsonb_build_object('purchase_id', v_id, 'status', 'active',
+                            'existing', false, 'grade_id', v_buy_grade,
+                            'amount', v_price, 'currency', v_currency,
+                            'due_now', v_price, 'charged', true);
 end;
 $$;
 
 comment on function public.purchase_olympiad(uuid, uuid) is
   'Parent one-time LIFETIME purchase of an olympiad package for a child. '
-  'service_role only (payment stubbed). Migration 070: only packages passing '
+  'service_role only. Migration 070: only packages passing '
   'olympiad_package_on_sale are purchasable (hint package_not_on_sale). '
   'Round 34: the child''s grade must be a package target grade (hint '
-  'package_not_for_grade) and is SNAPSHOTTED on the purchase row.';
+  'package_not_for_grade) and is SNAPSHOTTED on the purchase row. '
+  'Migration 127: the answer carries amount / currency / grade_id / due_now / '
+  'charged, and since 127 the ONLY caller that may reach it with money owed is '
+  'checkout_redeem_plan, behind a verified payment -- every application path '
+  'goes through purchase_olympiad_if_free.';
 
 
 -- Migration 047: olympiad attempts run on the TIMED test engine (jsonb return,
@@ -9398,6 +9558,159 @@ $$;
 comment on function public.plan_change_states(uuid, jsonb) is
   'Migration 120: classifies each desired basket entry against the live subscription as covered / reinstate / add, and returns the coverage end it keeps. A row SCHEDULED for removal whose period has not lapsed is a REINSTATEMENT (un-cancel): clear remove_at and nothing else, charge zero. Read by BOTH quote_plan_change and apply_plan_change so the preview and the charge cannot disagree about what is an add.';
 
+-- -----------------------------------------------------------------------------
+-- Migration 127: a payment authorises a CHANGE, not a WORLD.
+-- plan_change_delta names the change a desired basket represents;
+-- plan_delta_project replays it against coverage as it is NOW. Together they
+-- are why a checkout redeemed an hour later can no longer un-cancel a subject
+-- the parent has since cancelled, or remove one they have since added.
+-- -----------------------------------------------------------------------------
+
+create or replace function public.plan_change_delta(
+  p_child_subscription_id uuid,
+  p_items                 jsonb
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  with sub as (
+    -- ALIASED, not `cs.interval`. The implicit output name would be `interval`,
+    -- which the parser also reads as the start of a type in several positions;
+    -- plan_items_normalize already had to quote it in a RETURNS TABLE for that
+    -- reason. Naming it here costs nothing and removes the question.
+    select cs.id, cs.interval as default_iv
+    from public.child_subscriptions cs
+    where cs.id = p_child_subscription_id
+  ), st as (
+    select s.subject_id, s.interval, s.state
+    from public.plan_change_states(p_child_subscription_id, p_items) s
+  ), live as (
+    -- Coverage as it stands: a row scheduled for removal is NOT live, which is
+    -- what makes an un-cancel a 'reinstate' op below rather than a no-op.
+    select ss.subject_id,
+           coalesce(ss.pending_interval, ss.interval, (select sub.default_iv from sub)) as eff
+    from public.subscription_subjects ss
+    where ss.child_subscription_id = p_child_subscription_id
+      and ss.remove_at is null
+  ), ops as (
+    -- What the parent asked to GAIN. 'add' is the priced half; 'reinstate' is
+    -- free (migration 120) and carries the DESIRED cycle, so un-cancelling onto
+    -- another cycle survives the round trip.
+    select st.subject_id, st.interval::text as iv,
+           case when st.state = 'add' then 'add' else 'reinstate' end as op
+    from st
+    where st.state in ('add', 'reinstate')
+    union all
+    -- A cycle move on a subject that stays. Scheduled, never charged.
+    select st.subject_id, st.interval::text, 'cycle'
+    from st
+    join live on live.subject_id = st.subject_id
+    where st.state = 'covered'
+      and st.interval::text is distinct from live.eff::text
+    union all
+    -- What the parent asked to DROP: live now and absent from the desired set.
+    select live.subject_id, null::text, 'remove'
+    from live
+    where not exists (
+      select 1 from public.plan_items_normalize(p_items) n
+      where n.subject_id = live.subject_id)
+  )
+  select coalesce(
+           jsonb_agg(jsonb_build_object(
+             'subject_id', ops.subject_id, 'op', ops.op, 'interval', ops.iv)
+             order by ops.op, ops.subject_id),
+           '[]'::jsonb)
+  from ops;
+$$;
+
+comment on function public.plan_change_delta(uuid, jsonb) is
+  'Migration 127: the CHANGE a desired basket represents against the live subscription, as [{subject_id, op, interval}] with op in add|reinstate|cycle|remove. Derived from plan_change_states, the same classifier quote_plan_change and apply_plan_change read, so the frozen change and the priced change are one thing. Frozen on checkout_sessions.intent_delta and replayed by plan_delta_project.';
+
+revoke all on function public.plan_change_delta(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.plan_change_delta(uuid, jsonb) to service_role;
+
+
+create or replace function public.plan_delta_project(
+  p_child_subscription_id uuid,
+  p_delta                 jsonb
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  with sub as (
+    -- See plan_change_delta: aliased so the CTE never exposes a column literally
+    -- called `interval`.
+    select cs.id, cs.interval as default_iv
+    from public.child_subscriptions cs
+    where cs.id = p_child_subscription_id
+  ), d as materialized (
+    -- Shape-validated on the way in. A malformed entry is DROPPED rather than
+    -- guessed at: the delta is our own frozen writing, so anything unreadable is
+    -- corruption, and acting on corruption is how a payment delivers a plan
+    -- nobody chose. The empty result then fails loudly in apply_plan_change
+    -- (last_subject) instead of quietly doing something else.
+    --
+    -- MATERIALIZED, deliberately. The uuid cast sits in the target list and the
+    -- shape test sits in the WHERE, and "the WHERE runs first" is a planner
+    -- behaviour rather than a promise. Pinning the CTE keeps the filter and the
+    -- cast in the order they are written, so a corrupt entry is dropped instead
+    -- of raising 22P02 out of a redemption.
+    select (e.v ->> 'subject_id')::uuid as subject_id,
+           nullif(e.v ->> 'interval', '') as iv,
+           e.v ->> 'op' as op
+    from jsonb_array_elements(coalesce(p_delta, '[]'::jsonb)) as e(v)
+    where jsonb_typeof(e.v) = 'object'
+      and coalesce(e.v ->> 'subject_id', '')
+          ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      and coalesce(e.v ->> 'op', '') in ('add', 'reinstate', 'cycle', 'remove')
+      and (e.v ->> 'op' = 'remove'
+           or coalesce(e.v ->> 'interval', '') in ('week', 'month', 'year'))
+  ), live as (
+    select ss.subject_id,
+           coalesce(ss.pending_interval, ss.interval, (select sub.default_iv from sub))::text as eff
+    from public.subscription_subjects ss
+    where ss.child_subscription_id = p_child_subscription_id
+      and ss.remove_at is null
+  ), kept as (
+    select live.subject_id,
+           coalesce((select d.iv from d
+                      where d.subject_id = live.subject_id
+                        and d.op in ('cycle', 'add', 'reinstate')
+                      limit 1),
+                    live.eff) as iv
+    from live
+    where not exists (
+      select 1 from d where d.subject_id = live.subject_id and d.op = 'remove')
+  ), regained as (
+    select d.subject_id, d.iv
+    from d
+    where d.op in ('add', 'reinstate')
+      and d.iv is not null
+      and not exists (select 1 from live where live.subject_id = d.subject_id)
+  ), basket as (
+    select subject_id, iv from kept
+    union all
+    select subject_id, iv from regained
+  )
+  select coalesce(
+           jsonb_agg(jsonb_build_object('subject_id', basket.subject_id,
+                                        'interval',   basket.iv)),
+           '[]'::jsonb)
+  from basket;
+$$;
+
+comment on function public.plan_delta_project(uuid, jsonb) is
+  'Migration 127: replays a frozen plan_change delta against coverage AS IT IS NOW and returns the absolute basket the plan RPCs take. Live subjects are kept (so a subject added after the intent is never removed by it), a frozen remove drops one only while it is still live, and a frozen add/reinstate is re-injected -- so a cancellation the parent made after opening the checkout survives the payment instead of being silently withdrawn by it.';
+
+revoke all on function public.plan_delta_project(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.plan_delta_project(uuid, jsonb) to service_role;
+
 create or replace function public.quote_plan_change(
   p_student_profile_id uuid,
   p_items              jsonb
@@ -9425,6 +9738,11 @@ declare
   v_changes    jsonb;
   v_ivs        int;
   v_remaining  int;
+  -- Migration 127: a trial is running only while its end is in the FUTURE.
+  v_trialing   boolean;
+  -- Migration 127: the ADDS, named, so an intent can freeze the CHANGE the
+  -- parent authorised instead of a snapshot of the whole plan.
+  v_adds       jsonb;
 begin
   select * into v_sub
   from public.child_subscriptions
@@ -9436,6 +9754,24 @@ begin
     raise exception 'subject_change: no active subscription' using errcode = 'no_data_found';
   end if;
   v_owner := v_sub.owner_parent_profile_id;
+
+  -- MIGRATION 127 -- A LAPSED TRIAL IS NOT A TRIAL.
+  --
+  -- `status = 'trialing'` alone was read as "a trial is running", and the
+  -- status is swept by a job rather than by the clock. A subscription whose
+  -- trial_ends_at had already passed therefore priced every addition at ZERO
+  -- and applied it as trial-time, for as long as the row stayed stale -- a
+  -- free paid period bounded by nothing but a cron schedule.
+  --
+  -- It also closes the second edge in the same line: apply_plan_change caps a
+  -- trial-time add at trial_ends_at, and with this predicate that value is
+  -- proven non-null and in the future, so an add can no longer be applied
+  -- free with an end date that has already gone by (paid nothing, received
+  -- nothing). apply_plan_change computes the SAME predicate, which is what
+  -- keeps the preview and the charge one computation (audit H7).
+  v_trialing := v_sub.status = 'trialing'
+                and v_sub.trial_ends_at is not null
+                and v_sub.trial_ends_at > now();
 
   select count(distinct cs.student_profile_id) + 1 into v_rank
   from public.child_subscriptions cs
@@ -9506,7 +9842,7 @@ begin
   -- it. The apply now ends a trial-time add at the TRIAL END, which is what
   -- 'rides the trial' has always said. The trial stays a bounded free window;
   -- it can no longer become a free PAID period.
-  if v_sub.status <> 'trialing' then
+  if not v_trialing then
     with g as (
       select s.interval as iv, coalesce(sum(sp.price_amount), 0)::numeric(12,2) as base
       from public.plan_change_states(v_sub.id, p_items) s
@@ -9536,8 +9872,8 @@ begin
            -- subject added on day two of a seven-day trial was the sentence
            -- that made the free-forever add look legitimate.
            min(case
-                 when s.state = 'add' and v_sub.status = 'trialing'
-                   then coalesce(v_sub.trial_ends_at, v_sub.current_period_end, now())
+                 when s.state = 'add' and v_trialing
+                   then v_sub.trial_ends_at
                  when s.state = 'add'
                    then now() + case s.interval
                                   when 'week'  then interval '7 days'
@@ -9607,6 +9943,20 @@ begin
   where s.state in ('covered', 'reinstate')
     and s.interval is distinct from coalesce(ss.pending_interval, ss.interval, v_sub.interval);
 
+  -- MIGRATION 127 -- WHAT THIS SAVE ACTUALLY BUYS, as its own list.
+  -- checkout_intent_open freezes it (plan_change_delta), and redemption
+  -- projects it onto CURRENT coverage. Derived from the SAME classifier the
+  -- pricing above uses, so the thing that is delivered and the thing that was
+  -- priced cannot be two different sets.
+  select jsonb_agg(jsonb_build_object(
+           'subject_id', s.subject_id, 'interval', s.interval,
+           'price', sp.price_amount))
+    into v_adds
+  from public.plan_change_states(v_sub.id, p_items) s
+  join public.subjects_pricing sp
+    on sp.subject_id = s.subject_id and sp.interval = s.interval and sp.status = 'active'
+  where s.state = 'add';
+
   v_remaining := greatest(0, ceil(
     extract(epoch from (coalesce(v_sub.next_renewal_at, v_sub.current_period_end, now()) - now())) / 86400.0)::int);
 
@@ -9619,6 +9969,12 @@ begin
     -- already-shipped parsers whitelist the fields they read and ignore it.
     'reinstatements', coalesce(v_restores, '[]'::jsonb),
     'plan_changes', coalesce(v_changes, '[]'::jsonb),
+    -- Migration 127, both additive: the TRUE adds this save buys, and the
+    -- sibling RANK behind discount_percent -- the parent is shown the saving
+    -- and which child earned it, never a silently smaller number.
+    'adds', coalesce(v_adds, '[]'::jsonb),
+    'rank', v_rank,
+    'trialing', v_trialing,
     'mixed', coalesce(v_ivs, 0) > 1,
     -- Legacy contract keys: the web/BFF/mobile parsers still read these.
     'subscription_id',        v_sub.id,
@@ -9652,7 +10008,7 @@ end;
 $$;
 
 comment on function public.quote_plan_change(uuid, jsonb) is
-  'Migration 109/120/126: diffs a DESIRED full per-subject basket against the live subscription into adds / reinstatements / removes / plan_changes and prices it. due_now = the TRUE adds'' full first cycles at the sibling rate (proration retired); un-cancelling a scheduled removal before its period lapses costs nothing, and a cycle change costs nothing now and applies at that subject''s renewal. Migration 126: while the plan is trialing an add renews at the TRIAL END, matching what apply_plan_change writes.';
+  'Migration 109/120/126/127: diffs a DESIRED full per-subject basket against the live subscription into adds / reinstatements / removes / plan_changes and prices it. due_now = the TRUE adds'' full first cycles at the sibling rate (proration retired); un-cancelling a scheduled removal before its period lapses costs nothing, and a cycle change costs nothing now and applies at that subject''s renewal. Migration 127: a trial counts as running only while trial_ends_at is in the FUTURE (a swept-late status can no longer make every addition free), and the answer additionally carries adds[], rank and trialing -- the first so a checkout can freeze the CHANGE rather than a snapshot, the second so the parent sees which child earned the discount.';
 
 create or replace function public.apply_plan_change(
   p_student_profile_id uuid,
@@ -9677,6 +10033,8 @@ declare
   v_restores int;
   v_changes  int;
   v_row      record;
+  -- Migration 127: the same predicate quote_plan_change computes.
+  v_trialing boolean;
 begin
   -- Replay guard: the same batch key returns the original outcome untouched.
   -- A reinstatement participates: it writes a ledger row under the same key, so
@@ -9717,6 +10075,15 @@ begin
   select * into v_sub from public.child_subscriptions
   where id = (v_quote->>'subscription_id')::uuid
   for update;
+
+  -- MIGRATION 127 -- A LAPSED TRIAL IS NOT A TRIAL. Identical to the
+  -- predicate quote_plan_change uses; see the long note there. Computing it
+  -- once here also proves trial_ends_at is non-null and in the FUTURE, which
+  -- is what lets the ADD loop below use it directly instead of a coalesce
+  -- chain that could land on an already-expired date.
+  v_trialing := v_sub.status = 'trialing'
+                and v_sub.trial_ends_at is not null
+                and v_sub.trial_ends_at > now();
 
   v_pct    := (v_quote->>'discount_percent')::numeric;
   v_before := (v_quote->>'current_recurring_total')::numeric;
@@ -9828,11 +10195,14 @@ begin
        -- so the rule is now uniform and one sentence long: WHILE TRIALING,
        -- EVERY SUBJECT PERIOD ENDS AT THE TRIAL END.
        --
-       -- The coalesce chain FAILS CLOSED. A legacy trialing row carrying no
-       -- trial_ends_at and no period lands on now(), i.e. grants nothing --
-       -- the safe direction for a period we could not establish.
-       case when v_sub.status = 'trialing'
-              then coalesce(v_sub.trial_ends_at, v_sub.current_period_end, now())
+       -- MIGRATION 127: v_trialing, not the raw status -- and therefore
+       -- trial_ends_at directly. The coalesce chain this replaces existed to
+       -- fail closed on a legacy trialing row with no dates; the predicate now
+       -- excludes exactly those rows, so they take the paid branch and are
+       -- priced, which is the honest answer rather than a period of zero
+       -- length granted for free.
+       case when v_trialing
+              then v_sub.trial_ends_at
             else now() + case v_row.iv
                            when 'week'  then interval '7 days'
                            when 'month' then interval '1 month'
@@ -9907,7 +10277,7 @@ end;
 $$;
 
 comment on function public.apply_plan_change(uuid, jsonb, text) is
-  'Migration 109/120/126: applies a DESIRED full per-subject basket atomically — true adds open their own now()-anchored cycle, a subject whose scheduled removal has not yet lapsed is REINSTATED (remove_at cleared, period and price untouched, nothing charged), removals are scheduled for THAT subject''s own period end, cycle changes write pending_interval only. quote_plan_change is the single source of the numbers and plan_change_states of the add/reinstate/covered split; assert_payments_enabled() gates adds and cycle changes while removals and reinstatements stay legal. Migration 126: while the subscription is trialing an add period ends at the TRIAL END, never a full cycle -- a zero the platform has no way to bill later may only buy a window that closes on its own.';
+  'Migration 109/120/126/127: applies a DESIRED full per-subject basket atomically — true adds open their own now()-anchored cycle, a subject whose scheduled removal has not yet lapsed is REINSTATED (remove_at cleared, period and price untouched, nothing charged), removals are scheduled for THAT subject''s own period end, cycle changes write pending_interval only. quote_plan_change is the single source of the numbers and plan_change_states of the add/reinstate/covered split; assert_payments_enabled() gates adds and cycle changes while removals and reinstatements stay legal. Migration 127: an add rides the trial only while the trial is genuinely still running (trial_ends_at in the future), so a stale trialing row can neither make an addition free nor open a period that has already ended.';
 
 -- ---- the boundary job: a scheduled cycle actually takes effect --------------
 -- Without this, pending_interval is WRITE-ONLY: apply_plan_change stores the
@@ -10657,9 +11027,16 @@ revoke all on function public.notify_question_report_status_tg()
 --   checkout_intent_open   quote + insert in ONE transaction, so the stored
 --                          amount is provably the RPC's own number
 --   checkout_intent_price  read-only re-quote, run before the redirect is signed
---   checkout_redeem_plan   the ONLY path from a verified payment to an applied
---                          plan: re-price, demand exact equality, apply once
+--   checkout_redeem_plan   the ONLY path from a verified payment to a delivered
+--                          plan OR olympiad package: re-price, HONOUR the price
+--                          that was quoted (migration 127, owner decision),
+--                          apply once
 --   checkout_flag_redemption  the caller's way to say a follow-up failed
+--   checkout_alert_admins  migration 127: the alarm, so "we are holding money we
+--                          have not delivered on" reaches a person
+--   checkout_reversal_candidates / checkout_revoke_reversed
+--                          migration 127: money given BACK must take back what
+--                          it bought (see the end of this file)
 --
 -- NONE OF THEM WRITES `entitlements`. Redemption calls create_child_plan /
 -- apply_plan_change like every other caller and lets migration 124's producer
@@ -10671,7 +11048,60 @@ revoke all on function public.notify_question_report_status_tg()
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 6. Opening an intent  (backport -> 011)
+-- Migration 127: a redemption that needs a human must reach one. 013 check 118
+-- counts them, but 013 is a file somebody runs when they already suspect
+-- something -- and money we are holding cannot wait for a suspicion.
+-- -----------------------------------------------------------------------------
+
+create or replace function public.checkout_alert_admins(
+  p_order  text,
+  p_reason text
+)
+returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_admin uuid;
+  v_n     int := 0;
+begin
+  if p_order is null then return 0; end if;
+  begin
+    for v_admin in
+      select a.profile_id from public.lb_notify_audience('administrators', '{}'::jsonb) a
+    loop
+      perform public.create_notification(
+        v_admin,
+        'checkout_needs_review',
+        'Ödəniş baxış tələb edir',
+        'Sifariş ' || p_order || ' — səbəb: ' || coalesce(p_reason, 'naməlum') ||
+          '. Valideynin ödənişi bizdədir; nəyin çatdırıldığını yoxlayın.',
+        jsonb_build_object('order', p_order, 'reason', p_reason),
+        array['in_app'],
+        'ckrev:' || p_order || ':' || coalesce(p_reason, 'x'),
+        1,
+        '/subscriptions/checkouts',
+        'billing',
+        null);
+      v_n := v_n + 1;
+    end loop;
+  exception when others then
+    -- Never let the alarm break the thing it is reporting.
+    raise warning 'checkout_alert_admins failed: %', sqlerrm;
+  end;
+  return v_n;
+end;
+$$;
+
+comment on function public.checkout_alert_admins(text, text) is
+  'Migration 127: files a PRIORITY 1 in-app notification to every administrator when a checkout redemption needs a human — money taken and not delivered on, a follow-up that failed after delivery, or a reversal. Priority 1 because create_notification deliberately refuses to let a recipient silence that level. Idempotent per (order, reason, admin); never raises, so a failed notice cannot roll back the decision it reports.';
+
+revoke all on function public.checkout_alert_admins(text, text) from public, anon, authenticated;
+grant execute on function public.checkout_alert_admins(text, text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- Opening an intent.
 -- -----------------------------------------------------------------------------
 -- THE ONLY WAY A PAYABLE SESSION COMES INTO EXISTENCE. It quotes and inserts in
 -- ONE transaction, so the stored amount is provably the RPC's own number and
@@ -10682,6 +11112,7 @@ revoke all on function public.notify_question_report_status_tg()
 --
 -- It takes the SAME family advisory lock create_child_plan takes, so an intent
 -- cannot be opened against a plan another tab is creating at that instant.
+-- -----------------------------------------------------------------------------
 create or replace function public.checkout_intent_open(
   p_student_profile_id uuid,
   p_kind               public.checkout_intent_kind,
@@ -10703,6 +11134,9 @@ declare
   v_ttl   int;
   v_exp   timestamptz;
   v_norm  jsonb;
+  v_delta jsonb;
+  v_kind  text;
+  v_pkg   uuid;
 begin
   -- The kill switch first: an intent is the first step of a paid write, and a
   -- session opened while payments are off is a charge waiting to happen.
@@ -10733,7 +11167,34 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended(v_owner::text, 42));
 
-  if p_kind = 'plan_start' then
+  v_kind := 'subscription';
+
+  if p_kind = 'olympiad' then
+    -- A DIFFERENT PRODUCT, RECORDED AS ONE. checkout_sessions.kind is what a
+    -- reconciliation report reads to tell a subscription from a package from the
+    -- owner's protocol test, and a report that cannot tell them apart is a
+    -- report nobody can act on.
+    v_kind := 'olympiad';
+    if p_items is null
+       or jsonb_typeof(p_items) <> 'array'
+       or jsonb_array_length(p_items) <> 1
+       or coalesce(p_items -> 0 ->> 'package_id', '')
+          !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    then
+      raise exception 'checkout: malformed olympiad intent'
+        using errcode = 'check_violation', hint = 'bad_items';
+    end if;
+    v_pkg  := (p_items -> 0 ->> 'package_id')::uuid;
+    v_q    := public.quote_olympiad_purchase(p_student_profile_id, v_pkg);
+    v_due  := (v_q->>'due_now')::numeric;
+    v_sub  := null;
+    -- The frozen intent is built from the QUOTE, never echoed from the caller:
+    -- the grade is ours to decide, and a caller that could name it could buy a
+    -- pool the package does not sell to this child.
+    v_norm := jsonb_build_array(jsonb_build_object(
+                'package_id', v_pkg,
+                'grade_id',   v_q -> 'grade_id'));
+  elsif p_kind = 'plan_start' then
     if exists (
       select 1 from public.child_subscriptions
       where student_profile_id = p_student_profile_id
@@ -10745,35 +11206,45 @@ begin
     v_q   := public.quote_child_plan(p_student_profile_id, p_items);
     v_due := (v_q->>'due_now')::numeric;
     v_sub := null;
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'subject_id', n.subject_id, 'interval', n.interval)), '[]'::jsonb)
+      into v_norm
+    from public.plan_items_normalize(p_items) n;
   else
     -- Raises no_data_found when there is no live subscription to change.
-    v_q   := public.quote_plan_change(p_student_profile_id, p_items);
-    v_due := (v_q->>'due_now')::numeric;
-    v_sub := (v_q->>'subscription_id')::uuid;
+    v_q    := public.quote_plan_change(p_student_profile_id, p_items);
+    v_due  := (v_q->>'due_now')::numeric;
+    v_sub  := (v_q->>'subscription_id')::uuid;
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'subject_id', n.subject_id, 'interval', n.interval)), '[]'::jsonb)
+      into v_norm
+    from public.plan_items_normalize(p_items) n;
+    -- MIGRATION 127 -- THE CHANGE, NOT THE WORLD. See plan_change_delta. The
+    -- basket above is kept as EVIDENCE of what the parent was looking at; this
+    -- is what redemption will actually deliver, projected onto whatever the plan
+    -- looks like when the money lands.
+    v_delta := public.plan_change_delta(v_sub, p_items);
   end if;
 
   -- A checkout for nothing must not exist. A free change (a removal, a
-  -- reinstatement, a scheduled cycle move, a plan that rides a trial) is applied
-  -- directly by its own action; routing it through a payment would invent a
-  -- charge, and a zero-amount signed request is not a thing the gateway accepts.
+  -- reinstatement, a scheduled cycle move, a plan that rides a trial, a
+  -- zero-priced package) is applied directly by its own action; routing it
+  -- through a payment would invent a charge, and a zero-amount signed request is
+  -- not a thing the gateway accepts.
   if v_due is null or v_due <= 0 then
     raise exception 'checkout: nothing is due for this change'
       using errcode = 'check_violation', hint = 'nothing_due';
   end if;
 
-  select coalesce(jsonb_agg(jsonb_build_object(
-           'subject_id', n.subject_id, 'interval', n.interval)), '[]'::jsonb)
-    into v_norm
-  from public.plan_items_normalize(p_items) n;
-
   insert into public.checkout_sessions
     (owner_parent_profile_id, kind, child_subscription_id, amount, currency,
      status, provider, provider_session_id,
-     intent_kind, student_profile_id, intent_items, intent_quote, expires_at)
+     intent_kind, student_profile_id, intent_items, intent_delta, intent_quote,
+     expires_at)
   values
-    (v_owner, 'subscription', v_sub, v_due, coalesce(v_q->>'currency', 'AZN'),
+    (v_owner, v_kind, v_sub, v_due, coalesce(v_q->>'currency', 'AZN'),
      'pending', 'azericard', p_order,
-     p_kind, p_student_profile_id, v_norm, v_q, v_exp)
+     p_kind, p_student_profile_id, v_norm, v_delta, v_q, v_exp)
   returning id into v_id;
 
   return jsonb_build_object(
@@ -10787,7 +11258,7 @@ end;
 $$;
 
 comment on function public.checkout_intent_open(uuid, public.checkout_intent_kind, jsonb, text, int) is
-  'Migration 125: opens a PENDING checkout carrying the intent (child, frozen basket) and the quote RPC''s OWN due_now. Mutates nothing else -- the plan is applied only by checkout_redeem_plan after a verified payment. Raises check_violation/nothing_due for a free change and unique_violation/already_subscribed for a plan_start on a child who already has one.';
+  'Migration 125/127: opens a PENDING checkout carrying the intent (child, frozen basket, and for a plan_change the frozen CHANGE) and the quote RPC''s OWN due_now. Mutates nothing else — the plan or package is delivered only by checkout_redeem_plan after a verified payment. Migration 127 adds the ''olympiad'' kind, priced by quote_olympiad_purchase and freezing [{package_id, grade_id}]. Raises check_violation/nothing_due for a free change, unique_violation/already_subscribed for a plan_start on a child who already has one, and unique_violation/already_owned for a package the child already holds.';
 
 revoke all on function public.checkout_intent_open(uuid, public.checkout_intent_kind, jsonb, text, int)
   from public, anon, authenticated;
@@ -10809,10 +11280,14 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_s   public.checkout_sessions%rowtype;
-  v_q   jsonb;
-  v_due numeric(12,2);
-  v_sub uuid;
+  v_s      public.checkout_sessions%rowtype;
+  v_q      jsonb;
+  v_due    numeric(12,2);
+  v_sub    uuid;
+  v_basket jsonb;
+  v_pkg    uuid;
+  v_grade  uuid;
+  v_cur    uuid;
 begin
   select * into v_s from public.checkout_sessions
   where provider = 'azericard' and provider_session_id = p_order;
@@ -10827,7 +11302,30 @@ begin
   end if;
 
   begin
-    if v_s.intent_kind = 'plan_start' then
+    if v_s.intent_kind = 'olympiad' then
+      v_pkg   := nullif(v_s.intent_items -> 0 ->> 'package_id', '')::uuid;
+      v_grade := nullif(v_s.intent_items -> 0 ->> 'grade_id', '')::uuid;
+      if v_pkg is null then
+        return jsonb_build_object('ok', false, 'reason', 'reprice_failed');
+      end if;
+      v_q := public.quote_olympiad_purchase(v_s.student_profile_id, v_pkg);
+      -- AGAINST THE QUOTE'S OWN GRADE, NEVER students.grade_id. A LEGACY
+      -- GRADE-LESS package quotes grade_id = NULL -- it sells one pool, not a
+      -- grade -- so reading the child's grade column here compared NULL with a
+      -- real grade and reported grade_changed for EVERY such purchase: the
+      -- parent could never resume a checkout, and the duplicate-purchase guard
+      -- (which only fires on the resume path) was defeated with it. Quoting
+      -- first makes both sides the same computation, which is also what catches
+      -- the mirror case: a package whose target grades moved under a grade-less
+      -- intent. checkout_redeem_plan already compares this way.
+      v_cur := nullif(v_q ->> 'grade_id', '')::uuid;
+      if v_grade is distinct from v_cur then
+        -- The child was promoted, or the package's grades moved. Either way the
+        -- purchase would snapshot a DIFFERENT pool than the one that was
+        -- quoted, and that is a different purchase, not a different price.
+        return jsonb_build_object('ok', false, 'reason', 'grade_changed');
+      end if;
+    elsif v_s.intent_kind = 'plan_start' then
       if exists (
         select 1 from public.child_subscriptions
         where student_profile_id = v_s.student_profile_id
@@ -10837,10 +11335,29 @@ begin
       end if;
       v_q := public.quote_child_plan(v_s.student_profile_id, v_s.intent_items);
     else
-      v_q   := public.quote_plan_change(v_s.student_profile_id, v_s.intent_items);
-      v_sub := (v_q->>'subscription_id')::uuid;
-      if v_s.child_subscription_id is distinct from v_sub then
+      select cs.id into v_sub from public.child_subscriptions cs
+      where cs.student_profile_id = v_s.student_profile_id
+        and cs.status in ('trialing', 'active', 'past_due')
+      order by cs.created_at desc
+      limit 1;
+      if v_sub is null or v_s.child_subscription_id is distinct from v_sub then
         return jsonb_build_object('ok', false, 'reason', 'subscription_changed');
+      end if;
+      v_basket := case when v_s.intent_delta is null
+                       then v_s.intent_items
+                       else public.plan_delta_project(v_sub, v_s.intent_delta) end;
+      v_q := public.quote_plan_change(v_s.student_profile_id, v_basket);
+      -- IS IT STILL THE SAME DELIVERY? Re-derive the change from the projection
+      -- and compare it with the one that was frozen. The amount cannot answer
+      -- this: a basket that shrank because another tab already delivered half
+      -- of it, and one that grew because a lapsed reinstatement turned into a
+      -- paid add, are both "a different number" and neither is a price
+      -- movement. Asking HERE costs the parent nothing; the alternative is
+      -- taking their money and then telling them a human will be in touch.
+      -- A pre-127 session carries no delta, cannot answer the question at all,
+      -- and is refused for exactly that reason.
+      if public.plan_change_delta(v_sub, v_basket) is distinct from v_s.intent_delta then
+        return jsonb_build_object('ok', false, 'reason', 'delivery_changed');
       end if;
     end if;
   exception when others then
@@ -10857,7 +11374,7 @@ end;
 $$;
 
 comment on function public.checkout_intent_price(text) is
-  'Migration 125: read-only re-quote of a stored intent, for the moment before the redirect is signed. Returns {ok,reason,amount,quoted}; mutates nothing.';
+  'Migration 125/127: read-only re-quote of a stored intent, for the moment before the redirect is signed. Deliberately STRICT — refusing here costs a parent nothing, which is what makes it safe for redemption to honour a frozen price afterwards. Migration 127 re-prices what redemption will actually deliver (the PROJECTED delta, or the package), refuses a delivery that is no longer the one that was authorised (delivery_changed), and compares the frozen grade against the QUOTE''S grade rather than students.grade_id — reading the column there reported grade_changed for every legacy grade-less package. Returns {ok,reason,amount,quoted}; mutates nothing.';
 
 revoke all on function public.checkout_intent_price(text) from public, anon, authenticated;
 grant execute on function public.checkout_intent_price(text) to service_role;
@@ -10886,14 +11403,25 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_s       public.checkout_sessions%rowtype;
-  v_q       jsonb;
-  v_due     numeric(12,2);
-  v_res     jsonb := '{}'::jsonb;
-  v_note    text;
-  v_live    uuid;
-  v_sub     uuid;
-  v_outcome text;
+  v_s        public.checkout_sessions%rowtype;
+  v_q        jsonb;
+  v_due      numeric(12,2);
+  v_res      jsonb := '{}'::jsonb;
+  v_note     text;
+  v_live     uuid;
+  v_sub      uuid;
+  v_outcome  text;
+  v_basket   jsonb;
+  v_pkg      uuid;
+  v_grade    uuid;
+  v_cur      uuid;
+  v_honoured boolean := false;
+  -- Migration 127: WHAT THIS PAYMENT WILL DELIVER, computed by the redemption
+  -- itself from the world as it is now. It answers the only question that
+  -- matters before anything is applied -- is this still the delivery the parent
+  -- authorised? -- and is then PERSISTED, because a reversal has to take back
+  -- what was DELIVERED and not what was once intended.
+  v_delivering jsonb;
 begin
   select * into v_s from public.checkout_sessions
   where provider = 'azericard' and provider_session_id = p_order
@@ -10934,7 +11462,41 @@ begin
 
   if v_note is null then
     begin
-      if v_s.intent_kind = 'plan_start' then
+      if v_s.intent_kind = 'olympiad' then
+        v_pkg   := nullif(v_s.intent_items -> 0 ->> 'package_id', '')::uuid;
+        v_grade := nullif(v_s.intent_items -> 0 ->> 'grade_id', '')::uuid;
+        if v_pkg is null then
+          v_note := 'reprice_failed:noitem';
+        else
+          v_q   := public.quote_olympiad_purchase(v_s.student_profile_id, v_pkg);
+          v_due := (v_q->>'due_now')::numeric;
+          -- WHAT WAS BOUGHT vs WHAT WOULD BE BOUGHT NOW. The entitled grade is
+          -- snapshotted onto the purchase and attempts draw that pool forever,
+          -- so a promoted child is a DIFFERENT PURCHASE, not a different price,
+          -- and is never silently delivered.
+          --
+          -- Compared against the QUOTE'S OWN ANSWER rather than students.grade_id,
+          -- because a LEGACY GRADE-LESS package quotes grade_id = NULL -- it
+          -- sells the whole pool, not a grade. Reading the child's grade column
+          -- there compared NULL against a real grade, so EVERY such purchase
+          -- reported grade_changed and held the family's money for a change that
+          -- had not happened. Quoting first makes both sides the same
+          -- computation, which also catches the mirror case: a package whose
+          -- target grades moved under a grade-less intent.
+          v_cur := nullif(v_q ->> 'grade_id', '')::uuid;
+          if v_grade is distinct from v_cur then
+            v_note := 'grade_changed';
+          else
+            -- THE DELIVERY, NAMED. For a package it is the package and the
+            -- entitled grade and there is nothing else it could be, so the two
+            -- lines above ARE this product's delivery test -- the same question
+            -- the plan branch below asks with a delta. Recorded so a reversal
+            -- takes back THIS purchase rather than re-deriving one.
+            v_delivering := jsonb_build_array(jsonb_build_object(
+                              'package_id', v_pkg, 'grade_id', v_grade));
+          end if;
+        end if;
+      elsif v_s.intent_kind = 'plan_start' then
         select id into v_live from public.child_subscriptions
         where student_profile_id = v_s.student_profile_id
           and status in ('trialing', 'active', 'past_due')
@@ -10943,41 +11505,138 @@ begin
         if v_live is not null then
           v_note := 'plan_already_live';
         else
-          v_q   := public.quote_child_plan(v_s.student_profile_id, v_s.intent_items);
+          v_basket := v_s.intent_items;
+          v_q   := public.quote_child_plan(v_s.student_profile_id, v_basket);
           v_due := (v_q->>'due_now')::numeric;
+          -- THE DELIVERY IS THE FROZEN BASKET, and for this kind it cannot be
+          -- anything else: there is no coverage to compose with, quote_child_plan
+          -- RAISES when any entry has no active price (so the set cannot quietly
+          -- shrink), and create_child_plan writes every entry it is given. Named
+          -- as adds, because that is what each one is and it is what a reversal
+          -- will close.
+          select coalesce(jsonb_agg(jsonb_build_object(
+                   'subject_id', n.subject_id, 'op', 'add',
+                   'interval', n.interval::text) order by n.subject_id), '[]'::jsonb)
+            into v_delivering
+          from public.plan_items_normalize(v_basket) n;
         end if;
       else
-        v_q   := public.quote_plan_change(v_s.student_profile_id, v_s.intent_items);
-        v_due := (v_q->>'due_now')::numeric;
-        v_sub := (v_q->>'subscription_id')::uuid;
-        if v_s.child_subscription_id is distinct from v_sub then
+        select cs.id into v_sub from public.child_subscriptions cs
+        where cs.student_profile_id = v_s.student_profile_id
+          and cs.status in ('trialing', 'active', 'past_due')
+        order by cs.created_at desc
+        limit 1;
+        if v_sub is null or v_s.child_subscription_id is distinct from v_sub then
           v_note := 'subscription_changed';
+        else
+          -- MIGRATION 127: the CHANGE, projected onto coverage as it is NOW.
+          v_basket := case when v_s.intent_delta is null
+                           then v_s.intent_items
+                           else public.plan_delta_project(v_sub, v_s.intent_delta) end;
+          v_q   := public.quote_plan_change(v_s.student_profile_id, v_basket);
+          v_due := (v_q->>'due_now')::numeric;
+
+          -- IS THIS STILL THE DELIVERY THE PARENT AUTHORISED?
+          --
+          -- Re-derive the change from the projection, with the SAME function
+          -- that froze it, and require the two to be identical: the same
+          -- subjects, each with the same nature (add / reinstate / cycle /
+          -- remove) and the same cycle. THE PRICE IS NOT THE TEST. It cannot
+          -- be, and the two ways an amount-only test fails are mirror images:
+          --
+          --   * the delivery SHRANK. Two tabs: A froze [add Math, add English]
+          --     at 18.00, B froze [add Math] at 9.00 and was paid first, so
+          --     Math is already live. A now re-prices at 9.00 -- and an
+          --     amount-only rule reads that as "the price moved, honour the
+          --     frozen one" and charges 18.00 for a delivery worth 9.00.
+          --   * the delivery GREW. A frozen FREE reinstate whose coverage
+          --     lapsed in the meantime is re-classified as a paid add, so the
+          --     re-price comes back HIGHER -- and the same amount-only rule
+          --     honours the smaller frozen price and hands over a brand-new
+          --     full cycle for nothing.
+          --
+          -- Both are one sentence: the honour rule is about a price MOVING and
+          -- never about delivering something else. So the SET is what is
+          -- compared, and the amount is a consequence -- honoured while the
+          -- delivery is unchanged (the owner's decision), a human's problem
+          -- when it is not.
+          --
+          -- A pre-127 session carries no delta, so it cannot answer this
+          -- question at all; answering it on the session's behalf would be
+          -- inventing an authorisation. It lands here too.
+          v_delivering := public.plan_change_delta(v_sub, v_basket);
+          if v_delivering is distinct from v_s.intent_delta then
+            v_note := 'delivery_changed';
+          end if;
         end if;
       end if;
     exception when others then
-      -- A subject withdrawn from the catalog, pricing deactivated, the
-      -- subscription cancelled in another tab: all land here.
+      -- A subject withdrawn from the catalog, pricing deactivated, a package
+      -- taken off sale, the subscription cancelled in another tab, a package the
+      -- child already owns: all land here.
       v_note := 'reprice_failed:' || sqlstate;
     end;
   end if;
 
-  -- EXACT EQUALITY OR A HUMAN. See the header: every way of differing has a
-  -- different correct resolution, and delivering a DIFFERENT plan than the one
-  -- that was paid for is the failure this whole migration exists to prevent.
-  if v_note is null and v_due is distinct from v_s.amount then
-    v_note := 'price_changed';
+  -- THE FROZEN PRICE (finding 2), and it is reached ONLY once the delivery has
+  -- been shown to be the one that was authorised -- every branch above sets
+  -- v_note otherwise. That ordering IS the rule: the amount is honoured because
+  -- the delivery is the same, never instead of asking whether it is.
+  --
+  -- A zero re-price is still not a cheap delivery: it means the thing that was
+  -- paid for has become free, and keeping money for something we would now give
+  -- away is the other way to be dishonest.
+  if v_note is null then
+    if v_due is null or v_due <= 0 then
+      v_note := 'no_longer_payable';
+    elsif v_due is distinct from v_s.amount then
+      v_honoured := true;
+    end if;
   end if;
 
   if v_note is null then
     begin
-      if v_s.intent_kind = 'plan_start' then
-        v_res := public.create_child_plan(v_s.student_profile_id, v_s.intent_items);
+      if v_s.intent_kind = 'olympiad' then
+        v_res := public.purchase_olympiad(v_s.student_profile_id, v_pkg);
+        if not coalesce((v_res->>'charged')::boolean, false) then
+          -- NOTHING WAS BOUGHT. The only way here is a child who already owned
+          -- the package (the quote raises `already_owned`, so this is a race
+          -- rather than an ordinary path) -- and we are holding money for it.
+          -- Stamping the existing purchase would misattribute somebody else's
+          -- payment, so nothing is written and a person is told.
+          v_note := 'already_owned';
+        else
+          -- WHICH RAIL PAID FOR IT, AND WHAT THE PARENT WAS CHARGED.
+          --
+          -- purchase_olympiad writes provider = 'none' (it has no idea how it
+          -- was reached) and fn_entitlement_map_purchase reads exactly that
+          -- column to decide whether the grant is abb_web or manual, so leaving
+          -- it files every paid package as a COMPED one. It also records the
+          -- CURRENT CATALOG price, which is not necessarily what was taken: a
+          -- frozen price that was honoured leaves the purchase row and the
+          -- payments row disagreeing about the same money, and the purchase row
+          -- is the one a family and an accountant read. Both are corrected here
+          -- rather than through a new parameter, so purchase_olympiad's
+          -- signature -- and every caller of it -- stays as it is.
+          --
+          -- `provider` is on trg_entitlements_from_purchases' column list
+          -- (migration 127), so this statement re-fires the mirror and the grant
+          -- is re-filed as abb_web instead of staying a comped one.
+          update public.olympiad_purchases
+             set provider   = 'azericard',
+                 amount     = v_s.amount,
+                 currency   = coalesce(v_s.currency, 'AZN'),
+                 updated_at = now()
+           where id = (v_res->>'purchase_id')::uuid;
+        end if;
+      elsif v_s.intent_kind = 'plan_start' then
+        v_res := public.create_child_plan(v_s.student_profile_id, v_basket);
         v_sub := (v_res->>'subscription_id')::uuid;
       else
         -- Keyed on the ORDER, not on the interactive path's 5-minute bucket: an
         -- order is stable across every retry this callback can receive.
         v_res := public.apply_plan_change(
-                   v_s.student_profile_id, v_s.intent_items, 'checkout:' || p_order);
+                   v_s.student_profile_id, v_basket, 'checkout:' || p_order);
       end if;
     exception when others then
       -- assert_payments_enabled() flipped between the charge and the callback,
@@ -10992,6 +11651,12 @@ begin
      set redeemed_at       = now(),
          redemption_status = v_outcome::public.checkout_redemption_status,
          redemption_note   = left(v_note, 200),
+         -- WRITTEN EXACTLY ONCE, in the statement that decides the redemption,
+         -- and only when something really was delivered. checkout_revoke_reversed
+         -- reads THIS and nothing else, so a reversal takes back what this money
+         -- bought instead of what the intent once described -- which after an
+         -- honoured price, or after the world moved, are two different sets.
+         delivered_items   = case when v_outcome = 'applied' then v_delivering end,
          child_subscription_id = coalesce(child_subscription_id, v_sub)
    where id = v_s.id
      and redeemed_at is null;
@@ -11016,25 +11681,38 @@ begin
   end if;
 
   -- The ledger copy. Amounts and enum values only: no card data exists here and
-  -- none is ever added.
+  -- none is ever added. honoured_frozen_price is what makes the owner's decision
+  -- auditable rather than invisible — a settlement report can find every charge
+  -- that was delivered at a price the catalog had since moved off.
   insert into public.payment_events (provider, event_id, payload_json, processed_at)
   values ('azericard', 'redeem:' || p_order,
           jsonb_build_object(
             'order', p_order,
             'intent_kind', v_s.intent_kind,
+            'checkout_kind', v_s.kind,
             'outcome', v_outcome,
             'note', v_note,
             'amount_paid', v_s.amount,
             'amount_repriced', v_due,
-            'subscription_id', v_sub),
+            'honoured_frozen_price', v_honoured,
+            'subscription_id', v_sub,
+            'olympiad_purchase_id', v_res->>'purchase_id'),
           now())
   on conflict do nothing;
+
+  -- FINDING 6: somebody is told. After the row is decided and the ledger is
+  -- written, so an alarm that fails cannot cost us the record.
+  if v_outcome = 'needs_review' then
+    perform public.checkout_alert_admins(p_order, coalesce(v_note, 'unknown'));
+  end if;
 
   return jsonb_build_object(
     'outcome',            v_outcome,
     'note',               v_note,
     'student_profile_id', v_s.student_profile_id,
     'subscription_id',    v_sub,
+    'purchase_id',        v_res->>'purchase_id',
+    'honoured_frozen_price', v_honoured,
     -- create_child_plan allocates the deferred 8-digit login ID; the caller has
     -- to finish that by setting the synthetic auth email, which is an Auth-admin
     -- call no SQL function can make.
@@ -11044,7 +11722,7 @@ end;
 $$;
 
 comment on function public.checkout_redeem_plan(text) is
-  'Migration 125: the ONLY path from a verified AzeriCard payment to an applied plan. Requires checkout_sessions.status = ''paid'', locks the row, re-prices the frozen intent and demands exact equality with the amount paid; anything else is recorded as needs_review with a reason. Sets redeemed_at exactly once, so retries and double callbacks are no-ops. Writes no entitlement row -- it calls create_child_plan / apply_plan_change and lets migration 124''s producer triggers mirror them.';
+  'Migration 125/127: the ONLY path from a verified AzeriCard payment to a delivered plan OR olympiad package. Requires checkout_sessions.status = ''paid'', locks the row, and re-prices the frozen intent. The price it was quoted at is HONOURED (owner decision) — but only once the DELIVERY has been shown to be the authorised one: the re-derived change must equal the frozen delta, subject for subject, nature for nature, cycle for cycle, so neither a basket that shrank nor a reinstatement that lapsed into a paid add can ride the honour rule. Anything else — delivery_changed, grade_changed, subscription_changed, plan_already_live, a re-price that FAILS, or one that comes back at zero (no_longer_payable) — is recorded as needs_review with a reason and files a priority-1 admin notification. It writes what it DELIVERED onto delivered_items, which is what a reversal revokes from. Sets redeemed_at exactly once. Writes no entitlement row.';
 
 revoke all on function public.checkout_redeem_plan(text) from public, anon, authenticated;
 grant execute on function public.checkout_redeem_plan(text) to service_role;
@@ -11086,12 +11764,16 @@ begin
      -- a human that nothing has gone wrong with yet.
      and redeemed_at is not null
   returning true into v_ok;
+
+  if coalesce(v_ok, false) then
+    perform public.checkout_alert_admins(p_order, coalesce(p_note, 'flagged'));
+  end if;
   return coalesce(v_ok, false);
 end;
 $$;
 
 comment on function public.checkout_flag_redemption(text, text) is
-  'Migration 125: record why a DECIDED redemption still needs a human -- for the follow-up steps SQL cannot perform (the Auth-admin call that activates a child login). Writes redemption_note only: the status keeps saying what happened to the money, and 013 check 118 surfaces any decided redemption carrying a note.';
+  'Migration 125/127: record why a DECIDED redemption still needs a human — for the follow-up steps SQL cannot perform (the Auth-admin call that activates a child login) — and, since 127, notify the administrators. Writes redemption_note only: the status keeps saying what happened to the money, and 013 check 118 surfaces any decided redemption carrying a note.';
 
 revoke all on function public.checkout_flag_redemption(text, text) from public, anon, authenticated;
 grant execute on function public.checkout_flag_redemption(text, text) to service_role;
@@ -11283,13 +11965,11 @@ begin
       -- redeem step is still in flight in another transaction. Sweeping it now
       -- would only contend on the row lock checkout_redeem_plan takes.
       and cs.created_at < now() - interval '5 minutes'
-      -- ONLY WHAT SQL CAN FINISH. A plan_start for a child with no 8-digit ID
-      -- yet ends with a Supabase Auth admin call that no SQL function can make,
-      -- and redeeming it here would leave a paid-for child unable to log in
-      -- with nothing saying so. The web-app sweep -- which CAN make that call --
-      -- owns those; this job takes the rest, and if the web sweep never runs
-      -- 013 check 118 still reports them as money taken and not delivered.
-      and (cs.intent_kind = 'plan_change'
+      -- ONLY WHAT SQL CAN FINISH. See the header: the web-app sweep -- which CAN
+      -- make the Auth-admin call -- owns a plan_start whose child has no login
+      -- ID yet; this job takes the rest, and if the web sweep never runs 013
+      -- check 118 still reports them as money taken and not delivered.
+      and (cs.intent_kind in ('plan_change', 'olympiad')
            or exists (select 1 from public.students st
                        where st.profile_id = cs.student_profile_id
                          and st.child_unique_id is not null))
@@ -11327,10 +12007,296 @@ end;
 $$;
 
 comment on function public.checkout_redeem_sweep(int) is
-  'Migration 126: the no-network half of lost-callback recovery -- redeems checkout sessions the ledger already says are PAID whose redemption never ran, through checkout_redeem_plan (never a second copy of that logic). Idempotent: a decided session answers ''already'' and is counted, not re-applied. Skips a plan_start whose child has no 8-digit ID yet, because finishing one needs a Supabase Auth admin call SQL cannot make.';
+  'Migration 126/127: the no-network half of lost-callback recovery -- redeems checkout sessions the ledger already says are PAID whose redemption never ran, through checkout_redeem_plan (never a second copy of that logic). Idempotent: a decided session answers ''already'' and is counted, not re-applied. Skips only a plan_start whose child has no 8-digit ID yet, because finishing one needs a Supabase Auth admin call SQL cannot make; plan_change and olympiad redemptions have no such tail and are swept here.';
 
 revoke all on function public.checkout_redeem_sweep(int) from public, anon, authenticated;
 grant execute on function public.checkout_redeem_sweep(int) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- Migration 127: a reversal must not leave access standing. The gateway only
+-- reveals one to a TRAN_TRTYPE=22 status query -- a TRAN_TRTYPE=1 query keeps
+-- reporting the original authorisation as approved forever -- so without
+-- these two the money went back and the entitlement stayed live.
+-- -----------------------------------------------------------------------------
+
+create or replace function public.checkout_reversal_candidates(p_limit int default 50)
+returns table (
+  provider_order text,
+  amount         numeric(12,2),
+  currency       text,
+  created_at     timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select cs.provider_session_id, cs.amount, cs.currency, cs.created_at
+  from public.checkout_sessions cs
+  join public.payments p
+    on p.provider = cs.provider
+   and p.provider_ref = cs.provider_session_id
+  where cs.provider = 'azericard'
+    and cs.intent_kind is not null
+    and cs.status = 'paid'
+    -- A payment we still believe succeeded. Once checkout_revoke_reversed has
+    -- run it is 'refunded' and drops out of this list, which is what keeps the
+    -- sweep from asking about the same order forever.
+    and p.status = 'succeeded'
+    -- INSIDE THE GATEWAY'S OWN WINDOW. Beyond 24 hours a status query cannot be
+    -- answered at all, so listing the row would only produce a network call that
+    -- always fails. THIS IS A REAL LIMIT AND IT IS WORTH SAYING PLAINLY: a
+    -- reversal performed after the window closes is invisible to us, and the
+    -- only evidence left is the settlement report. That is the acquirer's
+    -- constraint, not a choice made here.
+    and cs.created_at > now() - interval '24 hours'
+    and cs.created_at < now() - interval '5 minutes'
+  order by cs.created_at asc
+  limit least(greatest(coalesce(p_limit, 50), 1), 200);
+$$;
+
+comment on function public.checkout_reversal_candidates(int) is
+  'Migration 127: the work list for the reversal sweep — settled checkout payments inside the gateway''s 24-hour status window. Read-only; it decides nothing. The caller asks the gateway with TRAN_TRTYPE=22 (the ONLY query that reveals a reversal — a TRAN_TRTYPE=1 query reports the original authorisation as approved forever) and records the answer through checkout_revoke_reversed. Beyond 24 hours a reversal is invisible to us; that is the acquirer''s window, not a choice.';
+
+revoke all on function public.checkout_reversal_candidates(int) from public, anon, authenticated;
+grant execute on function public.checkout_reversal_candidates(int) to service_role;
+
+
+create or replace function public.checkout_revoke_reversed(
+  p_order  text,
+  p_reason text default 'gateway_reversal'
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_s     public.checkout_sessions%rowtype;
+  v_pkg   uuid;
+  v_note  text;
+  v_n     int := 0;
+  v_rows  int := 0;
+  v_row   record;
+begin
+  select * into v_s from public.checkout_sessions
+  where provider = 'azericard' and provider_session_id = p_order
+  for update;
+  if not found or v_s.intent_kind is null then
+    return jsonb_build_object('outcome', 'unknown_order');
+  end if;
+
+  v_note := left('reversed:' || coalesce(p_reason, 'gateway'), 200);
+
+  -- IDEMPOTENT. A sweep that runs twice, or a reversal the operator repeats,
+  -- must not revoke twice or file two alarms.
+  if exists (
+    select 1 from public.payments
+    where provider = 'azericard' and provider_ref = p_order and status = 'refunded'
+  ) then
+    return jsonb_build_object('outcome', 'already', 'note', v_s.redemption_note);
+  end if;
+
+  -- 1. The ledger first: the money went back.
+  update public.payments
+     set status = 'refunded', updated_at = now()
+   where provider = 'azericard' and provider_ref = p_order;
+
+  -- 2. Take back what it bought.
+  if v_s.redeemed_at is null then
+    -- Nothing was ever delivered, and now nothing may be: close the session so a
+    -- late callback cannot redeem a payment that has been returned.
+    update public.checkout_sessions
+       set redeemed_at       = now(),
+           redemption_status = 'needs_review',
+           redemption_note   = v_note
+     where id = v_s.id and redeemed_at is null;
+  elsif v_s.redemption_status = 'applied' then
+    if v_s.delivered_items is null then
+      -- WE DO NOT KNOW WHAT THIS PAYMENT DELIVERED, so we take nothing back.
+      -- The only rows in this state are redemptions decided before
+      -- delivered_items existed. Guessing from the intent is exactly the defect
+      -- this column closes, and of the two ways to be wrong here — leaving
+      -- access standing for money that went back, or cutting a paying family
+      -- off from something a different payment bought — only the first one is
+      -- recoverable by the person this note reaches.
+      v_note := left('reversed:unknown_delivery:' || coalesce(p_reason, 'gateway'), 200);
+    elsif v_s.intent_kind = 'olympiad' then
+      v_pkg := nullif(v_s.delivered_items -> 0 ->> 'package_id', '')::uuid;
+      update public.olympiad_purchases
+         set status = 'refunded', updated_at = now()
+       where student_profile_id = v_s.student_profile_id
+         and olympiad_package_id = v_pkg
+         and status = 'active';
+      get diagnostics v_n = row_count;
+    else
+      -- ONLY THE SUBJECTS THIS MONEY BOUGHT, read from what the redemption
+      -- actually APPLIED and never from the frozen intent. The two are the same
+      -- set only when nothing moved between signing and redeeming; whenever
+      -- they differ, the intent names a subject some OTHER payment paid for,
+      -- and closing its period would be revoking access a family is owed.
+      --
+      -- `add` alone, in both plan kinds: a reinstatement, a cycle move and a
+      -- removal cost nothing, so they are not this payment's to take back, and
+      -- a plan_start's delivery is written as adds for exactly this reason.
+      for v_row in
+        select (e.v ->> 'subject_id')::uuid as sid
+        from jsonb_array_elements(v_s.delivered_items) as e(v)
+        where jsonb_typeof(e.v) = 'object'
+          and e.v ->> 'op' = 'add'
+          and coalesce(e.v ->> 'subject_id', '')
+              ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      loop
+        update public.subscription_subjects
+           set current_period_end = now(),
+               remove_at = now()
+         where child_subscription_id = v_s.child_subscription_id
+           and subject_id = v_row.sid
+           and (current_period_end is null or current_period_end > now());
+        get diagnostics v_rows = row_count;
+        v_n := v_n + v_rows;
+      end loop;
+
+      -- ...AND THE SUBSCRIPTION ITSELF ONLY WHEN NOTHING IS LEFT OF IT. A
+      -- plan_start reversal used to cancel the subscription outright, which
+      -- also killed every subject bought on it later by payments nobody
+      -- reversed. The honest test is not "which kind of intent was this" but
+      -- "is any coverage still standing", and it is the same test for both plan
+      -- kinds — one rule instead of two.
+      if v_s.child_subscription_id is not null
+         and not exists (
+           select 1 from public.subscription_subjects ss
+            where ss.child_subscription_id = v_s.child_subscription_id
+              and (ss.remove_at is null or ss.remove_at > now())
+              and (ss.current_period_end is null or ss.current_period_end > now()))
+      then
+        update public.child_subscriptions
+           set status = 'canceled', updated_at = now()
+         where id = v_s.child_subscription_id
+           and status in ('trialing', 'active', 'past_due');
+      end if;
+    end if;
+
+    -- The status keeps saying what happened to the money at REDEMPTION time
+    -- ('applied' — it was delivered). The NOTE is what says a person is needed
+    -- now, which is the same split checkout_flag_redemption uses and the same
+    -- one 013 check 118 reads.
+    update public.checkout_sessions
+       set redemption_note = v_note
+     where id = v_s.id;
+  end if;
+
+  -- 3. The ledger copy, and the alarm.
+  insert into public.payment_events (provider, event_id, payload_json, processed_at)
+  values ('azericard', 'reversed:' || p_order,
+          jsonb_build_object(
+            'order', p_order,
+            'intent_kind', v_s.intent_kind,
+            'reason', p_reason,
+            'was_redeemed', v_s.redeemed_at is not null,
+            'producers_revoked', v_n),
+          now())
+  on conflict do nothing;
+
+  perform public.checkout_alert_admins(p_order, v_note);
+
+  return jsonb_build_object(
+    'outcome', 'reversed',
+    'note', v_note,
+    'producers_revoked', v_n,
+    'student_profile_id', v_s.student_profile_id);
+end;
+$$;
+
+comment on function public.checkout_revoke_reversed(text, text) is
+  'Migration 127: records that a settled checkout payment was REVERSED at the gateway and takes back what it bought. Marks the payment refunded, then expresses the revocation ON THE PRODUCER — an olympiad purchase becomes refunded, and the subjects named by checkout_sessions.delivered_items (what the redemption ACTUALLY applied, never the frozen intent) have their period closed at now() — so migration 124''s mirror revokes the entitlement instead of this function writing access directly. The subscription is cancelled only when no coverage is left on it, so a reversal cannot kill a subject a later payment bought. A redemption decided before delivered_items existed revokes nothing and asks for a person. A payment reversed before it was ever redeemed closes the session so a late callback cannot deliver it. Idempotent on payments.status = ''refunded''; always notifies the administrators.';
+
+revoke all on function public.checkout_revoke_reversed(text, text) from public, anon, authenticated;
+grant execute on function public.checkout_revoke_reversed(text, text) to service_role;
+
+
+-- -----------------------------------------------------------------------------
+-- Migration 127: an operator says what they did about a needs_review.
+-- -----------------------------------------------------------------------------
+-- THE ALARM HAD NO OFF SWITCH, and that is a real defect rather than a missing
+-- convenience. `checkout_redemption_status` has exactly TWO values, both
+-- terminal, and neither of them means "a person has dealt with this". So 013
+-- check 118 would have gone permanently red seven days after the first genuine
+-- needs_review, and a board that is always red is a board nobody reads.
+--
+-- MOVING THE STATUS WOULD HAVE BEEN A LIE. 'applied' means the plan was
+-- delivered. An operator who REFUNDED the family instead has not applied
+-- anything, and overwriting the status would destroy the only record of what
+-- happened to the money at redemption time.
+--
+-- So the resolution is written where a resolution belongs: the NOTE, prefixed
+-- `resolved:`. The status keeps saying what happened, the note says a human
+-- settled it, and the audit row says HOW. 013 checks 118 and 123 skip a row
+-- carrying that prefix and count every other one.
+--
+-- IT DEMANDS A SENTENCE. A blank resolution is refused, because "somebody
+-- clicked the button" is not an answer to "what happened to this family's
+-- money".
+create or replace function public.admin_resolve_checkout_review(
+  p_order      text,
+  p_resolution text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor uuid := public.current_profile_id();
+  v_s     public.checkout_sessions%rowtype;
+  v_note  text;
+begin
+  if not public.is_admin() then
+    raise exception 'checkout: forbidden' using errcode = 'insufficient_privilege';
+  end if;
+  if p_resolution is null or btrim(p_resolution) = '' then
+    raise exception 'checkout: say what was done'
+      using errcode = 'check_violation', hint = 'resolution_required';
+  end if;
+
+  select * into v_s from public.checkout_sessions
+  where provider = 'azericard' and provider_session_id = p_order
+  for update;
+  if not found or v_s.intent_kind is null or v_s.redeemed_at is null then
+    raise exception 'checkout: no decided redemption for this order'
+      using errcode = 'no_data_found', hint = 'not_found';
+  end if;
+
+  -- 180, not 200: `resolved:` costs nine characters and the column is capped at
+  -- 200 by ck_checkout_redemption. Truncating the OPERATOR'S sentence rather
+  -- than the prefix keeps the prefix — which is what the checks key on — intact.
+  v_note := 'resolved:' || left(btrim(p_resolution), 180);
+
+  update public.checkout_sessions
+     set redemption_note = v_note
+   where id = v_s.id;
+
+  insert into public.audit_logs
+    (actor_profile_id, action, target_table, target_id, metadata_json, severity, success)
+  values
+    (v_actor, 'admin.checkout.redemption_resolved', 'checkout_sessions', v_s.id,
+     jsonb_build_object(
+       'order', p_order,
+       'intent_kind', v_s.intent_kind,
+       'redemption_status', v_s.redemption_status,
+       'previous_note', v_s.redemption_note,
+       'resolution', left(btrim(p_resolution), 180)),
+     'info', true);
+
+  return jsonb_build_object('ok', true, 'note', v_note);
+end;
+$$;
+
+comment on function public.admin_resolve_checkout_review(text, text) is
+  'Migration 127: an administrator records what they DID about a redemption that needed a human — delivered by hand, refunded, contacted the family. Writes redemption_note = ''resolved:<sentence>'' and an audit row, and deliberately leaves redemption_status alone: the status says what happened to the MONEY at redemption time, and overwriting it with ''applied'' would be a lie about a refunded case. 013 checks 118 and 123 skip a row carrying the prefix. Refuses a blank resolution and anyone who is not an administrator.';
+
+revoke all on function public.admin_resolve_checkout_review(text, text) from public, anon;
+grant execute on function public.admin_resolve_checkout_review(text, text) to authenticated, service_role;
 
 -- =============================================================================
 -- End of 011_indexes_constraints_functions_triggers.sql

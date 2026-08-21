@@ -4722,3 +4722,40 @@ a.qpage-link:hover {
 .qrep-reply-sent {
   margin: 0 0 16px;
 }
+
+/* ---------------------------------------------------------------------------
+   CHECKOUT REVIEW (migration 127) — the queue of payments we took and could not
+   deliver on. One narrow column in a wide table, so the outcome box stacks its
+   input above its button rather than fighting the row for width.
+   --------------------------------------------------------------------------- */
+/* Order ids, amounts and the machine reason. Scoped rather than a global
+   `.mono` utility: the panel has no such rule today, and inventing one here
+   would silently restyle every other page that already writes the class. */
+.ckrev-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.ckrev-resolve {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+}
+.ckrev-resolve input[type="text"] {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.86rem;
+}
+.ckrev-resolve .muted {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+.ckrev-resolve .form-error {
+  margin: 0;
+}

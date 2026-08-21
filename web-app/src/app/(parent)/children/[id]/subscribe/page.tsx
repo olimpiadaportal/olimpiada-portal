@@ -15,6 +15,15 @@ const KEYS = [
   "sub.submit", "sub.submitting", "sub.done", "sub.base", "sub.discount",
   "sub.total", "sub.trial", "sub.days", "sub.totalNow", "sub.previewHint",
   "sub.calculating", "sub.noSibling", "sub.noSubjectsAvailable",
+  // Migration 127 — the sibling discount is NAMED where the parent chooses:
+  // which child earned it, what it saves, and — when none applies yet — that
+  // a second child is cheaper. A silent smaller number is not a discount a
+  // parent can see.
+  "sub.discount.rank2", "sub.discount.rank3", "sub.discount.saved",
+  "sub.discount.hint",
+  // Migration 127 — the web free branch reaches the free-only RPC now, so a
+  // change that turns out to be priced is refused rather than applied.
+  "sub.err.priceMoved",
   "sub.err.invalid", "sub.err.noSubjects", "sub.err.notYourChild",
   "parent.child.idLabel", "parent.child.idNote",
   "pricing.weekly", "pricing.monthly", "pricing.yearly", "parent.dash.title",

@@ -739,6 +739,9 @@ export function AddChildWizard({
                     ? {
                         discountPercent: quote.discount_percent,
                         discount: quote.discount,
+                        // Migration 127: the sibling TIER, so the wizard names
+                        // the saving the same way the subscribe screen does.
+                        rank: quote.rank,
                         // `due_now`, NOT `total` (migration 126, audit
                         // invariant H7). They are different numbers whenever a
                         // trial applies, and this row is captioned "due today".

@@ -1736,7 +1736,14 @@ select '91_per_subject_billing_interval' as check_name,
                    'public.quote_plan_change(uuid,jsonb)', 'EXECUTE') = false
              and to_regprocedure('public.quote_child_subscription(uuid,public.plan_interval,uuid[])') is not null
              and to_regprocedure('public.create_child_subscription(uuid,public.plan_interval,uuid[])') is not null
-             and position('coalesce(ss.current_period_end' in
+             -- Migration 124 re-pointed this anchor. The RULE is unchanged --
+             -- a practice attempt must consult the subject's OWN coverage end,
+             -- not the subscription's -- but the mechanism moved: the gate now
+             -- reads `entitlements`, the single access authority, instead of
+             -- reaching into subscription_subjects. Pinning the retired text
+             -- would have made this check FAIL on every database the moment 124
+             -- landed, which is exactly what it did.
+             and position('entitlements' in
                    replace(pg_get_functiondef(
                      'public.start_practice_attempt(uuid,int)'::regprocedure), chr(13), '')) > 0
             then 'PASS' else 'FAIL' end as status,
@@ -3162,7 +3169,16 @@ with idx as (
     from pg_constraint c
    where c.conrelid = to_regclass('public.checkout_sessions')
      and c.contype  = 'c'
-     and pg_get_constraintdef(c.oid) like '%kind%'
+     -- Matched on the COLUMN, not on the word 'kind' anywhere in the text.
+     -- The substring form counted migration 125's ck_checkout_intent_shape and
+     -- ck_checkout_redemption too, because both legitimately mention
+     -- `intent_kind` -- so this check turned FAIL on a correct change and would
+     -- have masked the real thing it exists for: a SECOND constraint on `kind`
+     -- itself, left behind by a bad backport, silently enforcing the old
+     -- narrower list alongside the new one.
+     and c.conkey = array[
+           (select a.attnum from pg_attribute a
+             where a.attrelid = c.conrelid and a.attname = 'kind')]
 ), namedchk as (
   select count(*) as n
     from pg_constraint c
@@ -3702,15 +3718,37 @@ with granted_unpaid as (
      and not exists (select 1 from public.payments p
                       where p.provider = cs.provider
                         and p.provider_ref = cs.provider_session_id
-                        and p.status = 'succeeded')
+                        -- 'refunded' counts as BILLED. A payment that was taken
+                        -- and later reversed is a completed, correct lifecycle:
+                        -- checkout_revoke_reversed marks the payment refunded
+                        -- AND revokes the grant. Requiring 'succeeded' alone
+                        -- made the FIRST genuine gateway reversal turn this
+                        -- check FAIL forever, with no way to clear it — and a
+                        -- permanently failing alarm hides the thing it exists
+                        -- to catch: a grant with NO money behind it at all.
+                        and p.status in ('succeeded', 'refunded'))
 ), stuck as (
   select count(*) as n from public.checkout_sessions
    where status = 'paid' and intent_kind is not null and redeemed_at is null
      and created_at < now() - interval '30 minutes'
 ), needs_human as (
+  -- MIGRATION 127 amends this CTE with the `resolved:` exclusion, and the
+  -- reason is that without one this alarm could never be switched off. There
+  -- are only TWO redemption statuses, both terminal, and neither of them means
+  -- "a person has dealt with this" — so an operator settling a case (delivering
+  -- by hand, or refunding) had no way to say so, and every settled case would
+  -- have gone permanently red at the seven-day mark. Moving the STATUS to
+  -- 'applied' would have been the other option and would have been a lie: the
+  -- status records what happened to the MONEY at redemption time, and a refunded
+  -- case is not an applied one.
+  --
+  -- The admin action therefore writes `resolved:<what was done>` into the note
+  -- and leaves the status alone; the audit row and payment_events keep the
+  -- detail. A row is counted here until a human has written that sentence.
   select redeemed_at from public.checkout_sessions
-   where redemption_status = 'needs_review'
-      or (redemption_status = 'applied' and redemption_note is not null)
+   where (redemption_status = 'needs_review'
+          or (redemption_status = 'applied' and redemption_note is not null))
+     and coalesce(redemption_note, '') not like 'resolved:%'
 ), stale_review as (
   select count(*) as n from needs_human
    where redeemed_at < now() - interval '7 days'
@@ -3842,6 +3880,371 @@ select '120_trial_is_not_a_free_paid_period' as check_name,
        (select n from over_trial)      as periods_outliving_their_trial,
        (select n from dead_on_arrival) as trials_that_ended_when_they_started,
        (select n from no_end)          as trialing_without_a_trial_end;
+
+-- -----------------------------------------------------------------------------
+-- 121) THE OLYMPIAD PACKAGE IS PAID FOR (migration 127).
+--      The structural half of finding 1. Until 127 the WEB olympiad purchase ran
+--      on a mock that returned success unconditionally: purchase_olympiad wrote
+--      an ACTIVE purchase, migration 124 mirrored it into a LIFETIME
+--      entitlement, and no `payments` row existed anywhere. Migration 126 closed
+--      only the mobile half, so this was the single remaining reason the payment
+--      mode could not be switched to `real`.
+--
+--      THE SEVEN FUNCTIONS ARE THE FIX. quote_olympiad_purchase is the one
+--      computation the preview, the intent and the charge all read (audit H7);
+--      purchase_olympiad_if_free is what every APPLICATION caller names, which
+--      is what makes the priced purchase_olympiad reachable only from
+--      checkout_redeem_plan; plan_change_delta / plan_delta_project are finding
+--      5; checkout_alert_admins is finding 6; the reversal pair is finding 7.
+--      Every one of them is a grant path or a revoke path, so an EXECUTE grant
+--      to anon or authenticated on any of them is this migration undone.
+--
+--      THE BODY PROBES ARE NOT DECORATION. "The olympiad kind exists" and
+--      "redemption knows what to do with it" are different claims, and only the
+--      second one delivers a package.
+--
+--      THE LIFETIME RULE IS ASSERTED HERE TOO, deliberately. Making the package
+--      payable is exactly the change most likely to tempt someone into giving a
+--      package grant an expiry (a "subscription-shaped" product usually has
+--      one). ck_entitlement_lifetime makes that unrepresentable, and CLAUDE.md
+--      makes it non-negotiable.
+--
+--      paid_without_a_payments_row is the behavioural half: an olympiad
+--      redemption marked applied whose money nobody can find.
+--
+--      THE MIRROR MUST NOTICE THE RAIL. fn_entitlement_map_purchase reads
+--      olympiad_purchases.provider, and nothing else, to choose between an
+--      `abb_web` grant and a comped `manual` one -- and
+--      trg_entitlements_from_purchases is COLUMN-SCOPED. With `provider` off
+--      that list the stamp checkout_redeem_plan writes after a verified payment
+--      changes the row and re-fires nothing: the purchase says AzeriCard, the
+--      entitlement still says manual, and every revenue report keyed on
+--      `source` is blind to paid money. entitlement_filed_as_comped is the same
+--      statement from the data's side.
+-- -----------------------------------------------------------------------------
+with sigs (sig) as (values
+  ('public.quote_olympiad_purchase(uuid,uuid)'),
+  ('public.purchase_olympiad_if_free(uuid,uuid)'),
+  ('public.plan_change_delta(uuid,jsonb)'),
+  ('public.plan_delta_project(uuid,jsonb)'),
+  ('public.checkout_alert_admins(text,text)'),
+  ('public.checkout_reversal_candidates(int)'),
+  ('public.checkout_revoke_reversed(text,text)')
+), locked as (
+  -- to_regprocedure() rather than the text form of has_function_privilege():
+  -- the text form ERRORS on a missing function, and this check has to REPORT
+  -- that rather than abort the file.
+  select count(*) as n from sigs s
+   where to_regprocedure(s.sig) is not null
+     and not has_function_privilege('anon',          to_regprocedure(s.sig)::oid, 'EXECUTE')
+     and not has_function_privilege('authenticated', to_regprocedure(s.sig)::oid, 'EXECUTE')
+), label as (
+  select count(*) as n
+    from pg_enum e join pg_type t on t.oid = e.enumtypid
+   where t.typname = 'checkout_intent_kind' and e.enumlabel = 'olympiad'
+), bodies as (
+  select coalesce((select replace(pg_get_functiondef(
+                     to_regprocedure('public.checkout_redeem_plan(text)')), chr(13), '')
+                    where to_regprocedure('public.checkout_redeem_plan(text)') is not null), '') as redeem,
+         coalesce((select replace(pg_get_functiondef(to_regprocedure(
+                     'public.checkout_intent_open(uuid,public.checkout_intent_kind,jsonb,text,int)')), chr(13), '')
+                    where to_regprocedure(
+                     'public.checkout_intent_open(uuid,public.checkout_intent_kind,jsonb,text,int)') is not null), '') as opened,
+         coalesce((select replace(pg_get_functiondef(
+                     to_regprocedure('public.purchase_olympiad(uuid,uuid)')), chr(13), '')
+                    where to_regprocedure('public.purchase_olympiad(uuid,uuid)') is not null), '') as buy
+), lifetime as (
+  select count(*) as n from pg_constraint
+   where conrelid = to_regclass('public.entitlements')
+     and conname = 'ck_entitlement_lifetime'
+), unpaid as (
+  select count(*) as n
+    from public.checkout_sessions cs
+   where cs.redemption_status = 'applied'
+     and cs.kind = 'olympiad'
+     and not exists (select 1 from public.payments p
+                      where p.provider = cs.provider
+                        and p.provider_ref = cs.provider_session_id
+                        -- 'refunded' counts as BILLED. A payment that was taken
+                        -- and later reversed is a completed, correct lifecycle:
+                        -- checkout_revoke_reversed marks the payment refunded
+                        -- AND revokes the grant. Requiring 'succeeded' alone
+                        -- made the FIRST genuine gateway reversal turn this
+                        -- check FAIL forever, with no way to clear it — and a
+                        -- permanently failing alarm hides the thing it exists
+                        -- to catch: a grant with NO money behind it at all.
+                        and p.status in ('succeeded', 'refunded'))
+), mirror as (
+  select count(*) as n
+   where position(' provider' in coalesce((
+           select pg_get_triggerdef(t.oid) from pg_trigger t
+            where t.tgrelid = to_regclass('public.olympiad_purchases')
+              and t.tgname = 'trg_entitlements_from_purchases'), '')) > 0
+), comped as (
+  select count(*) as n
+    from public.olympiad_purchases pu
+    join public.entitlements e on e.olympiad_purchase_id = pu.id
+   where pu.provider = 'azericard'
+     and e.source <> 'abb_web'
+)
+select '121_olympiad_purchase_is_paid_for' as check_name,
+       case when (select n from locked) = (select count(*) from sigs)
+             and (select n from label) = 1
+             and (select n from lifetime) = 1
+             and (select n from unpaid) = 0
+             and (select n from mirror) = 1
+             and (select n from comped) = 0
+             and position('quote_olympiad_purchase' in (select redeem from bodies)) > 0
+             and position('quote_olympiad_purchase' in (select opened from bodies)) > 0
+             and position('due_now' in (select buy from bodies)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from sigs) - (select n from locked) as functions_missing_or_open,
+       case when (select n from label) = 1 then 'present' else 'MISSING' end as olympiad_intent_kind,
+       case when position('quote_olympiad_purchase' in (select redeem from bodies)) > 0
+             and position('quote_olympiad_purchase' in (select opened from bodies)) > 0
+            then 'wired' else 'NOT WIRED' end as intent_and_redeem,
+       case when (select n from lifetime) = 1 then 'lifetime' else 'NOT ENFORCED' end as package_grant_expiry,
+       case when (select n from mirror) = 1 then 'follows provider' else 'IGNORES PROVIDER' end as entitlement_mirror,
+       (select n from comped) as entitlement_filed_as_comped,
+       (select n from unpaid) as paid_without_a_payments_row;
+
+
+-- -----------------------------------------------------------------------------
+-- 122) THE PRICE WE QUOTED, THE CHANGE WE FROZE, THE TRIAL WE MEANT
+--      (migration 127). Three findings, one check, because all three are single
+--      lines inside functions this repository re-issues often — and a
+--      `create or replace` from an older copy of 011 would undo any of them in
+--      silence, with every other check still green.
+--
+--      honoured_frozen_price (finding 2, OWNER DECISION 2026-08-21). Redemption
+--      used to demand EXACT EQUALITY between the re-price and the amount paid,
+--      and send anything else to a human. That fired on ordinary behaviour:
+--      paying for child A moves child B's sibling tier, so B's already-signed
+--      intent re-priced differently, B's money was taken and a family waited on
+--      a person over a few AZN. The rule is now "the price we quoted is the
+--      price the parent pays". `price_changed` must therefore be ABSENT from
+--      the redemption body — its presence means the old rule came back.
+--
+--      AND THE HONOUR RULE IS GATED ON THE DELIVERY, which is the half that is
+--      easy to lose. Implemented as "the amounts differ, so the price moved" it
+--      is wrong in both directions: a delivery that SHRANK (a second tab
+--      delivered part of the basket first) re-prices lower and gets charged the
+--      larger frozen amount, and one that GREW (a free reinstatement whose
+--      coverage lapsed is now a paid add) re-prices higher and is handed over
+--      at the smaller. So redemption must re-derive the change with
+--      plan_change_delta and refuse `delivery_changed`; the amount is honoured
+--      as a CONSEQUENCE of that answer, never in place of it. The same question
+--      is asked before signing, where refusing costs the parent nothing.
+--
+--      delivered_items is the other side of the same sentence: what a payment
+--      DELIVERED, written once at redemption, because a reversal that revokes
+--      the frozen intent takes back a subject a DIFFERENT payment paid for.
+--
+--      WHAT MUST STILL REACH A HUMAN is asserted by its absence from that
+--      sentence and by check 118: a re-price that FAILS, one that names a
+--      different delivery, and one that comes back at zero are not price
+--      differences.
+--
+--      plan_delta_project (finding 5). A plan_change intent froze the FULL
+--      desired basket — an absolute claim about the whole plan at a past moment.
+--      Redeeming it later un-cancelled a subject the parent had since cancelled,
+--      and would have removed one they had since added. Redemption must project
+--      the frozen CHANGE onto coverage as it is now.
+--
+--      The trial predicate (finding 4). `status = 'trialing'` alone was read as
+--      "a trial is running", and the status is swept by a job rather than by the
+--      clock — so a subscription whose trial had already ended priced every
+--      addition at ZERO for as long as the row stayed stale. Both the quote and
+--      the apply must test the CLOCK.
+--
+--      intent_delta must also be inside the FREEZE. It is now the field that
+--      decides what is delivered; an UPDATE that moved it would let a signed
+--      payment deliver something else with the signature still verifying.
+--
+--      Report-only: pre_127_intents_still_redeemable. A plan_change intent
+--      opened before 127 carries no delta and falls back to its old behaviour,
+--      which is correct — but it is the population finding 5 does not protect,
+--      so the number is reported rather than assumed to be zero.
+-- -----------------------------------------------------------------------------
+with defs as (
+  select coalesce((select replace(pg_get_functiondef(
+                     to_regprocedure('public.checkout_redeem_plan(text)')), chr(13), '')
+                    where to_regprocedure('public.checkout_redeem_plan(text)') is not null), '') as redeem,
+         coalesce((select replace(pg_get_functiondef(
+                     to_regprocedure('public.quote_plan_change(uuid,jsonb)')), chr(13), '')
+                    where to_regprocedure('public.quote_plan_change(uuid,jsonb)') is not null), '') as quote,
+         coalesce((select replace(pg_get_functiondef(
+                     to_regprocedure('public.apply_plan_change(uuid,jsonb,text)')), chr(13), '')
+                    where to_regprocedure('public.apply_plan_change(uuid,jsonb,text)') is not null), '') as applied,
+         coalesce((select replace(pg_get_functiondef(
+                     to_regprocedure('public.fn_checkout_intent_immutable()')), chr(13), '')
+                    where to_regprocedure('public.fn_checkout_intent_immutable()') is not null), '') as freeze_def,
+         coalesce((select replace(pg_get_functiondef(
+                     to_regprocedure('public.checkout_intent_price(text)')), chr(13), '')
+                    where to_regprocedure('public.checkout_intent_price(text)') is not null), '') as priced
+), col as (
+  select count(*) as n from information_schema.columns
+   where table_schema = 'public' and table_name = 'checkout_sessions'
+     and column_name in ('intent_delta', 'delivered_items')
+), legacy as (
+  select count(*) as n from public.checkout_sessions
+   where intent_kind is not null and redeemed_at is null
+     and status in ('pending', 'paid') and intent_delta is null
+)
+select '122_frozen_price_frozen_change_real_trial' as check_name,
+       case when (select n from col) = 2
+             and position('honoured_frozen_price' in (select redeem from defs)) > 0
+             and position('price_changed'         in (select redeem from defs)) = 0
+             and position('plan_delta_project'    in (select redeem from defs)) > 0
+             and position('delivery_changed'      in (select redeem from defs)) > 0
+             and position('public.plan_change_delta(' in (select redeem from defs)) > 0
+             and position('delivered_items'       in (select redeem from defs)) > 0
+             and position('delivery_changed'      in (select priced from defs)) > 0
+             and position('v_sub.trial_ends_at > now()' in (select quote   from defs)) > 0
+             and position('v_sub.trial_ends_at > now()' in (select applied from defs)) > 0
+             and position('intent_delta' in (select freeze_def from defs)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       case when position('honoured_frozen_price' in (select redeem from defs)) > 0
+             and position('price_changed' in (select redeem from defs)) = 0
+            then 'honoured' else 'NOT HONOURED' end as frozen_price,
+       case when position('delivery_changed' in (select redeem from defs)) > 0
+             and position('public.plan_change_delta(' in (select redeem from defs)) > 0
+             and position('delivery_changed' in (select priced from defs)) > 0
+            then 'checked' else 'AMOUNT ONLY' end as delivery_test,
+       case when (select n from col) = 2
+             and position('delivered_items' in (select redeem from defs)) > 0
+            then 'recorded' else 'NOT RECORDED' end as delivered_set,
+       case when position('plan_delta_project' in (select redeem from defs)) > 0
+            then 'projected' else 'NOT PROJECTED' end as frozen_change,
+       case when position('v_sub.trial_ends_at > now()' in (select quote from defs)) > 0
+             and position('v_sub.trial_ends_at > now()' in (select applied from defs)) > 0
+            then 'clock' else 'STATUS ONLY' end as trial_predicate,
+       case when (select n from col) = 2
+             and position('intent_delta' in (select freeze_def from defs)) > 0
+             and position('delivered_items' in (select freeze_def from defs)) > 0
+            then 'frozen' else 'NOT FROZEN' end as delta_column,
+       (select n from legacy) as pre_127_intents_still_redeemable;
+
+
+-- -----------------------------------------------------------------------------
+-- 123) SILENCE IS THE FAILURE MODE (migration 127, findings 6 and 7).
+--      Everything asserted here is 0 in a healthy system.
+--
+--      a_human_was_never_told. `needs_review` means we are holding a family's
+--      money and have not delivered on it, and until 127 it reached exactly one
+--      place: 013 check 118 — a file somebody runs when they ALREADY suspect
+--      something. checkout_alert_admins now files a PRIORITY 1 notification (the
+--      one level create_notification refuses to let a recipient silence) from
+--      redemption, from a flagged follow-up and from a reversal. A decided
+--      session that needs a human with no notification naming its order means
+--      the alarm did not fire.
+--
+--      Scoped to the last 30 days ON PURPOSE: prune_notifications() removes old
+--      rows, so an older session would fail this check for the wrong reason.
+--
+--      money_returned_access_kept is finding 7, and it is the one the live bank
+--      test surfaced. We reversed a real transaction (RRN 623279219080,
+--      TRTYPE=22) and discovered two undocumented facts: the gateway answers a
+--      reversal with the single character `1`, and a status query with
+--      TRAN_TRTYPE=1 keeps reporting the ORIGINAL authorisation as approved
+--      FOREVER — the reversal is visible only to a TRAN_TRTYPE=22 query. So
+--      reconciliation could never see one, and an entitlement stayed live for
+--      money that had gone back. A refunded payment whose redemption still has
+--      a LIVE entitlement behind it is that state, restated as a query.
+--
+--      the three call sites are structural: an alarm nothing calls is the same
+--      silence with more code.
+-- -----------------------------------------------------------------------------
+with needs_human as (
+  select cs.provider_session_id as ord
+    from public.checkout_sessions cs
+   where cs.redeemed_at > now() - interval '30 days'
+     and (cs.redemption_status = 'needs_review'
+          or (cs.redemption_status = 'applied' and cs.redemption_note is not null))
+     -- Same exclusion check 118 makes: once an operator has written what they
+     -- did, the row is settled and is not waiting on an alarm.
+     and coalesce(cs.redemption_note, '') not like 'resolved:%'
+), unalarmed as (
+  select count(*) as n from needs_human h
+   where not exists (
+     select 1 from public.notifications n
+      where n.type = 'checkout_needs_review'
+        and n.data_json ->> 'order' = h.ord)
+), reversed_live as (
+  select count(*) as n
+    from public.payments p
+    join public.checkout_sessions cs
+      on cs.provider = p.provider and cs.provider_session_id = p.provider_ref
+   where p.provider = 'azericard'
+     and p.status = 'refunded'
+     and cs.redemption_status = 'applied'
+     and (
+       -- a package the reversed money bought, still granted
+       (cs.kind = 'olympiad' and exists (
+          select 1 from public.entitlements e
+           where e.scope = 'olympiad_package'
+             and e.student_profile_id = cs.student_profile_id
+             and e.package_id = nullif(
+                   coalesce(cs.delivered_items, cs.intent_items) -> 0 ->> 'package_id', '')::uuid
+             and e.revoked_at is null))
+       -- ...or a subject it bought, still inside its period. READ FROM WHAT WAS
+       -- DELIVERED, never from the frozen intent: the two differ whenever the
+       -- world moved between signing and redeeming, and the intent then names a
+       -- subject a DIFFERENT payment paid for -- so reading it would both miss
+       -- the access this refund left standing and accuse a payment nobody
+       -- reversed.
+       or exists (
+          select 1
+            from jsonb_array_elements(coalesce(cs.delivered_items, '[]'::jsonb)) as d(v)
+            join public.entitlements e
+              on e.scope = 'subject'
+             and e.child_subscription_id = cs.child_subscription_id
+             and e.subject_id = (d.v ->> 'subject_id')::uuid
+           where d.v ->> 'op' = 'add'
+             and e.revoked_at is null
+             and (e.ends_at is null or e.ends_at > now()))
+     )
+), offswitch as (
+  -- The alarm needs a way to be switched off by a person, or it goes red seven
+  -- days after the first genuine case and stays red. Admin-only, and it must
+  -- CHECK that itself rather than trust the panel.
+  select count(*) as n
+   where to_regprocedure('public.admin_resolve_checkout_review(text,text)') is not null
+     and not has_function_privilege('anon',
+           to_regprocedure('public.admin_resolve_checkout_review(text,text)')::oid, 'EXECUTE')
+     and position('is_admin()' in replace(pg_get_functiondef(
+           to_regprocedure('public.admin_resolve_checkout_review(text,text)')), chr(13), '')) > 0
+), callers as (
+  select
+    (select coalesce((select replace(pg_get_functiondef(
+              to_regprocedure('public.checkout_redeem_plan(text)')), chr(13), '')
+             where to_regprocedure('public.checkout_redeem_plan(text)') is not null), '')) as redeem,
+    (select coalesce((select replace(pg_get_functiondef(
+              to_regprocedure('public.checkout_flag_redemption(text,text)')), chr(13), '')
+             where to_regprocedure('public.checkout_flag_redemption(text,text)') is not null), '')) as flag,
+    (select coalesce((select replace(pg_get_functiondef(
+              to_regprocedure('public.checkout_revoke_reversed(text,text)')), chr(13), '')
+             where to_regprocedure('public.checkout_revoke_reversed(text,text)') is not null), '')) as revoked
+)
+select '123_needs_review_reaches_a_person' as check_name,
+       case when (select n from unalarmed)     = 0
+             and (select n from reversed_live) = 0
+             and (select n from offswitch)     = 1
+             and position('checkout_alert_admins' in (select redeem  from callers)) > 0
+             and position('checkout_alert_admins' in (select flag    from callers)) > 0
+             and position('checkout_alert_admins' in (select revoked from callers)) > 0
+            then 'PASS' else 'FAIL' end as status,
+       (select n from unalarmed)     as a_human_was_never_told,
+       (select n from reversed_live) as money_returned_access_kept,
+       case when position('checkout_alert_admins' in (select redeem from callers)) > 0
+            then 'wired' else 'SILENT' end as redemption_alarm,
+       case when position('checkout_alert_admins' in (select flag from callers)) > 0
+            then 'wired' else 'SILENT' end as follow_up_alarm,
+       case when position('checkout_alert_admins' in (select revoked from callers)) > 0
+            then 'wired' else 'SILENT' end as reversal_alarm,
+       case when (select n from offswitch) = 1
+            then 'admin only' else 'MISSING OR OPEN' end as resolve_action;
+
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

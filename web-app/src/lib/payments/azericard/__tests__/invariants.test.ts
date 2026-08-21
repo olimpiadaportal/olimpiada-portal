@@ -127,7 +127,17 @@ describe("the callback grants nothing", () => {
     expect(flow).toContain("parentResultUrl(");
     expect(flow).not.toMatch(/parentResultUrl\([^)]*(shape|url|params|fields)/);
     // WHO gets redirected is decided from OUR OWN row, not from the request.
-    expect(flow).toContain("session.kind === PLAN_CHECKOUT_KIND");
+    // Migration 127: the test is the INTENT, and ONLY the intent. Carrying one
+    // is exactly what makes a session redeemable, and it is precisely what the
+    // owner's protocol test lacks — whereas `kind` gained a third value
+    // (olympiad) whose payer needs the same route back into the product.
+    expect(flow).toContain("session.intentKind !== null");
+    // ...and it must NOT also require a live child profile. That is the column
+    // the child-delete FK NULLs, so a child deleted mid-checkout would turn a
+    // paid family checkout into "the protocol test": redemption skipped, and a
+    // SUCCESS page shown for money that delivered nothing. Whether the child is
+    // still there is checkout_redeem_plan's question ('student_gone').
+    expect(flow).not.toContain("session.studentProfileId !== null");
     // 303 specifically: it turns the cross-site POST into a same-origin GET, so
     // the parent's SameSite=Lax session cookie rides along and they land signed
     // in. A 307 would replay the POST at our own page with the bank's body.

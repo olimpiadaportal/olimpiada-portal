@@ -109,8 +109,8 @@ const MIGRATION_120 = read(
 // canonical body has to match whichever migration wrote it last, not whichever
 // one this suite happens to be about — a backport check pinned to a superseded
 // migration would fail on every correct future change and pass on none.
-const MIGRATION_126 = read(
-  "supabase/sql/migrations/2026_08_20_126_free_only_and_reconcile.sql",
+const MIGRATION_127 = read(
+  "supabase/sql/migrations/2026_08_21_127_paid_olympiad_and_frozen_price.sql",
 );
 const CORE = read("web-app/src/lib/auth/subscriptionCore.ts");
 
@@ -164,7 +164,11 @@ describe("a reinstatement is not billed", () => {
   it("due_now is built from TRUE adds only", () => {
     // Both the due_now CTE and the added_base sum filter on state = 'add', so a
     // subject whose removal is merely scheduled can never enter the amount.
-    const dueNow = quote.slice(quote.indexOf("if v_sub.status <> 'trialing' then"));
+    // Migration 127: the branch tests the CLOCK, not the raw status — a
+    // subscription whose trial_ends_at has already passed is no longer treated
+    // as trialing, so an addition is priced instead of being free until a sweep
+    // job happens to run.
+    const dueNow = quote.slice(quote.indexOf("if not v_trialing then"));
     expect(dueNow).toContain("public.plan_change_states(v_sub.id, p_items) s");
     expect(dueNow).toContain("where s.state = 'add'");
     expect(quote).toContain("'reinstatements', coalesce(v_restores, '[]'::jsonb)");
@@ -265,7 +269,7 @@ describe("migration 120 and its validation check", () => {
     // which capped a trial-time addition at the trial end.
     expect(SQL_011).toContain(fnBody(MIGRATION_120, "plan_change_states"));
     for (const name of ["quote_plan_change", "apply_plan_change"]) {
-      expect(SQL_011, name).toContain(fnBody(MIGRATION_126, name));
+      expect(SQL_011, name).toContain(fnBody(MIGRATION_127, name));
     }
   });
 

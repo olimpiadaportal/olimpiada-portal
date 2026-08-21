@@ -202,14 +202,17 @@ exception when duplicate_object then null; end $$;
 -- is RECORDED at intent time rather than inferred at redeem time: a parent who
 -- authorised "start a plan with these three subjects" must never have that
 -- quietly become "change the existing plan" because a subscription appeared in
--- between.
+-- between. Migration 127 adds 'olympiad': the parent-purchased package rail
+-- runs on the SAME intent machinery and the SAME redemption function, because
+-- a second implementation of "money becomes access" mis-bills silently on the
+-- day it drifts from the first.
 --
 -- `checkout_redemption_status` deliberately has no 'pending' value. Absence of a
 -- status IS pending; both values below are TERMINAL and are written together
 -- with redeemed_at, which is what makes "exactly once" a single NULL test.
 -- -----------------------------------------------------------------------------
 do $$ begin
-  create type public.checkout_intent_kind as enum ('plan_start', 'plan_change');
+  create type public.checkout_intent_kind as enum ('plan_start', 'plan_change', 'olympiad');
 exception when duplicate_object then null; end $$;
 
 do $$ begin

@@ -148,6 +148,38 @@ const STRINGS: Record<Locale, Dict> = {
       "Bu uşağın artıq aktiv abunəliyi var — eyni anda yalnız bir aktiv abunəlik ola bilər.",
     "subs.noServiceKey":
       "Server SUPABASE_SERVICE_ROLE_KEY açarını tapmır. Abunəlikləri idarə etmək üçün onu admin-panel/.env.local faylına (yalnız server) əlavə edin və yenidən başladın.",
+
+    // Migration 127 — the CHECKOUT REVIEW queue. `needs_review` is the
+    // database's way of saying "we are holding a family's money and have not
+    // delivered on it"; until 127 it reached only 013 check 118.
+    "ckrev.title": "Ödəniş baxışı",
+    "ckrev.subtitle":
+      "Ödənişi alınmış, lakin çatdırıla bilməmiş sifarişlər — və çatdırılmış, amma sonradan problem yaranmış olanlar. Hər sətir ya ailəyə aldığı şeyi, ya da pulunu qaytarmağı tələb edir.",
+    "ckrev.nav": "Ödəniş baxışı",
+    "ckrev.empty": "Baxış gözləyən ödəniş yoxdur.",
+    "ckrev.openCount": "{n} açıq",
+    "ckrev.col.order": "Sifariş",
+    "ckrev.col.what": "Nə alınıb",
+    "ckrev.col.family": "Ailə",
+    "ckrev.col.amount": "Məbləğ",
+    "ckrev.col.reason": "Səbəb",
+    "ckrev.col.decidedAt": "Qərar tarixi",
+    "ckrev.col.action": "Nəticə",
+    "ckrev.kind.plan_start": "Yeni abunəlik",
+    "ckrev.kind.plan_change": "Abunəlik dəyişikliyi",
+    "ckrev.kind.olympiad": "Olimpiada paketi",
+    "ckrev.status.needs_review": "Pul bizdədir, çatdırılmayıb",
+    "ckrev.status.applied": "Çatdırılıb, sonrakı addım alınmadı",
+    "ckrev.resolved": "Həll olunub",
+    "ckrev.resolvePlaceholder": "Nə etdiniz? (məs. pul geri qaytarıldı, ailə ilə danışıldı)",
+    "ckrev.resolve": "Nəticəni yaz",
+    "ckrev.resolving": "Yazılır…",
+    "ckrev.resolveHint":
+      "Statusu dəyişmir — status pulun taleyini saxlayır. Yalnız nə etdiyinizi qeyd edir və audit jurnalına yazılır.",
+    "ckrev.err.needResolution": "Nə etdiyinizi yazın.",
+    "ckrev.err.notFound": "Bu sifariş üzrə qərar verilmiş ödəniş tapılmadı.",
+    "ckrev.noServiceKey":
+      "Server SUPABASE_SERVICE_ROLE_KEY açarını tapmır. Ödəniş baxışını görmək üçün onu admin-panel/.env.local faylına (yalnız server) əlavə edin və yenidən başladın.",
   },
   en: {
     "subs.subtitle":
@@ -278,6 +310,35 @@ const STRINGS: Record<Locale, Dict> = {
       "This child already has a live subscription — only one can be active at a time.",
     "subs.noServiceKey":
       "The server is missing SUPABASE_SERVICE_ROLE_KEY. Add it to admin-panel/.env.local (server-only) and restart to manage subscriptions.",
+
+    "ckrev.title": "Checkout review",
+    "ckrev.subtitle":
+      "Orders whose money was taken but could not be delivered — and ones that were delivered and then hit a problem. Every row is a family owed either the thing they paid for or their money back.",
+    "ckrev.nav": "Checkout review",
+    "ckrev.empty": "Nothing is waiting for review.",
+    "ckrev.openCount": "{n} open",
+    "ckrev.col.order": "Order",
+    "ckrev.col.what": "What was bought",
+    "ckrev.col.family": "Family",
+    "ckrev.col.amount": "Amount",
+    "ckrev.col.reason": "Reason",
+    "ckrev.col.decidedAt": "Decided",
+    "ckrev.col.action": "Outcome",
+    "ckrev.kind.plan_start": "New subscription",
+    "ckrev.kind.plan_change": "Subscription change",
+    "ckrev.kind.olympiad": "Olympiad package",
+    "ckrev.status.needs_review": "Money held, nothing delivered",
+    "ckrev.status.applied": "Delivered, follow-up failed",
+    "ckrev.resolved": "Resolved",
+    "ckrev.resolvePlaceholder": "What did you do? (e.g. refunded, spoke to the family)",
+    "ckrev.resolve": "Record outcome",
+    "ckrev.resolving": "Saving…",
+    "ckrev.resolveHint":
+      "This does not change the status — the status records what happened to the money. It only writes down what you did, and it is audited.",
+    "ckrev.err.needResolution": "Say what you did.",
+    "ckrev.err.notFound": "No decided payment was found for this order.",
+    "ckrev.noServiceKey":
+      "The server is missing SUPABASE_SERVICE_ROLE_KEY. Add it to admin-panel/.env.local (server-only) and restart to see the checkout review queue.",
   },
   ru: {
     "subs.subtitle":
@@ -408,6 +469,35 @@ const STRINGS: Record<Locale, Dict> = {
       "У этого ребёнка уже есть активная подписка — одновременно может быть только одна.",
     "subs.noServiceKey":
       "На сервере нет ключа SUPABASE_SERVICE_ROLE_KEY. Добавьте его в admin-panel/.env.local (только сервер) и перезапустите, чтобы управлять подписками.",
+
+    "ckrev.title": "Проверка платежей",
+    "ckrev.subtitle":
+      "Заказы, деньги по которым получены, но доставить купленное не удалось, — и те, что были доставлены, но потом возникла проблема. За каждой строкой семья, которой должны либо покупку, либо возврат.",
+    "ckrev.nav": "Проверка платежей",
+    "ckrev.empty": "Ничего не ждёт проверки.",
+    "ckrev.openCount": "{n} открытых",
+    "ckrev.col.order": "Заказ",
+    "ckrev.col.what": "Что куплено",
+    "ckrev.col.family": "Семья",
+    "ckrev.col.amount": "Сумма",
+    "ckrev.col.reason": "Причина",
+    "ckrev.col.decidedAt": "Решение",
+    "ckrev.col.action": "Итог",
+    "ckrev.kind.plan_start": "Новая подписка",
+    "ckrev.kind.plan_change": "Изменение подписки",
+    "ckrev.kind.olympiad": "Олимпиадный пакет",
+    "ckrev.status.needs_review": "Деньги у нас, ничего не доставлено",
+    "ckrev.status.applied": "Доставлено, следующий шаг не прошёл",
+    "ckrev.resolved": "Решено",
+    "ckrev.resolvePlaceholder": "Что вы сделали? (например: вернули деньги, связались с семьёй)",
+    "ckrev.resolve": "Записать итог",
+    "ckrev.resolving": "Сохраняем…",
+    "ckrev.resolveHint":
+      "Статус не меняется — он хранит судьбу денег. Записывается только то, что вы сделали, и это попадает в журнал аудита.",
+    "ckrev.err.needResolution": "Напишите, что вы сделали.",
+    "ckrev.err.notFound": "Решённый платёж по этому заказу не найден.",
+    "ckrev.noServiceKey":
+      "На сервере нет ключа SUPABASE_SERVICE_ROLE_KEY. Добавьте его в admin-panel/.env.local (только сервер) и перезапустите, чтобы видеть очередь проверки платежей.",
   },
 };
 

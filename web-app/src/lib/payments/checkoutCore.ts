@@ -1,10 +1,11 @@
 // PARENT CHECKOUT — the cookie-free core. SERVER ONLY, WEB ONLY.
 //
-// This is the layer that turns a plan a parent has CHOSEN — and has NOT been
-// given — into a real AZN payment on the ABB / AzeriCard rail. It sits between
-// the subscription RPCs (which decide what is owed), lib/payments/checkoutIntent
-// (which opens and redeems the intent) and lib/payments/azericard (which knows
-// the protocol), and it owns exactly two jobs:
+// This is the layer that turns something a parent has CHOSEN — and has NOT been
+// given — into a real AZN payment on the ABB / AzeriCard rail: a subscription
+// plan, and since migration 127 an olympiad package too. It sits between the
+// pricing RPCs (which decide what is owed), lib/payments/checkoutIntent (which
+// opens and redeems the intent) and lib/payments/azericard (which knows the
+// protocol), and it owns exactly two jobs:
 //
 //   1. open a payable checkout for an amount THE DATABASE computed, and
 //   2. turn an order the parent names back into a signed, full-page redirect
@@ -31,7 +32,8 @@
 //     There is no card input anywhere in this codebase and there must never be.
 //   * It grants nothing. Opening and signing a charge are all that happen here;
 //     the grant is the callback's redemption step, and access itself is
-//     `entitlements`' job (§4.1), mirrored from the subscription by a trigger.
+//     `entitlements`' job (§4.1), mirrored from the subscription — or from the
+//     olympiad purchase — by a trigger.
 //   * It is NOT reachable from the mobile app. Every mobile BFF route builds its
 //     JSON field-by-field and none of them imports this module; the apps are
 //     purchase-silent by architecture, not by a flag (§4 / §5 NEVER-list).
@@ -46,11 +48,13 @@ import { isServiceRoleConfigured } from "@/lib/supabase/admin";
 import {
   findOutstandingSession,
   findSessionByOrder,
+  OLYMPIAD_CHECKOUT_KIND,
   PLAN_CHECKOUT_KIND,
   type CheckoutSessionRow,
 } from "@/lib/payments/azericard/store";
 import { rateLimitAllow } from "@/lib/rateLimit";
 import {
+  openOlympiadIntent,
   openPlanIntent,
   reopenPlanIntent,
   repricePlanIntent,
@@ -61,13 +65,13 @@ import { isUuid } from "@/lib/uuid";
 import { storedBasketMatches, type PlanItemInput } from "@/lib/planBasket";
 import type { Locale } from "@/i18n/config";
 
-// The `checkout_sessions.kind` a parent plan payment carries lives in store.ts,
-// beside the union it belongs to, and is re-exported here so a caller working on
-// the checkout does not have to reach into the protocol module for it. It is not
-// 'protocol_test' (the owner's sandbox route owns that one) and not 'olympiad' —
-// a reconciliation report that cannot tell the three apart is a report nobody
-// can act on.
-export { PLAN_CHECKOUT_KIND };
+// The two `checkout_sessions.kind` values a FAMILY payment can carry live in
+// store.ts, beside the union they belong to, and are re-exported here so a
+// caller working on the checkout does not have to reach into the protocol module
+// for them. Neither is 'protocol_test' (the owner's sandbox route owns that one),
+// and the plan and the package are deliberately kept apart: a settlement report
+// that cannot tell the three apart is a report nobody can act on.
+export { PLAN_CHECKOUT_KIND, OLYMPIAD_CHECKOUT_KIND };
 export type { PlanIntentKind };
 
 /**
@@ -96,6 +100,13 @@ export const CHECKOUT_RATE_SCOPE = "checkoutstart";
  * page is not a place to publish who in the family is studying what.
  */
 const CHECKOUT_DESCRIPTION = "OlympIQ subscription";
+
+/**
+ * The same, for a package purchase. Also generic on purpose: no package title,
+ * no child name, no grade. What appears on a bank statement is not a place to
+ * publish which olympiad a family's child is preparing for.
+ */
+const OLYMPIAD_DESCRIPTION = "OlympIQ olympiad package";
 
 export type StartCheckoutResult =
   | {
@@ -196,7 +207,7 @@ export async function startPlanPayment(params: {
   // parallel order. Re-priced first, so the parent is never sent to the bank
   // with yesterday's number, and a stale one stops here with a sentence they can
   // act on rather than becoming a `needs_review` after the charge.
-  const open = await findOutstandingSession(parentProfileId, studentId);
+  const open = await findOutstandingSession(parentProfileId, studentId, PLAN_CHECKOUT_KIND);
   if (open && open.status === "pending" && matchesRequestedIntent(open, kind, items)) {
     const repriced = await repricePlanIntent(open.order);
     if (repriced.ok && isChargeableAmount(repriced.amount)) {
@@ -241,6 +252,108 @@ export async function startPlanPayment(params: {
 }
 
 /**
+ * Open a checkout for ONE OLYMPIAD PACKAGE and hand back the SIGNED redirect.
+ *
+ * WHY THIS FUNCTION EXISTS AT ALL. Until migration 127 the web olympiad purchase
+ * ran on a MOCK: `processOlympiadPayment` returned `{ ok: true }` unconditionally
+ * and had never been wired to anything, so `purchase_olympiad` wrote an ACTIVE
+ * purchase, migration 124 mirrored it into a LIFETIME entitlement, and no
+ * `payments` row existed anywhere. Migration 126 closed the mobile half of that;
+ * this closes the web half, which was the single remaining reason the payment
+ * mode could not be switched to `real`.
+ *
+ * It is startPlanPayment's twin down to the reasoning, and deliberately so: one
+ * rate-limit budget, one signing function, one intent table, one redemption RPC.
+ * Two purchase flows that price differently is how a platform starts mis-billing
+ * one of its products without anyone noticing.
+ *
+ * NOTHING IS GRANTED HERE. The package is delivered by `checkout_redeem_plan`
+ * after the callback has verified the payment twice over — and the LIFETIME rule
+ * is untouched: `ck_entitlement_lifetime` still forbids an end date on a package
+ * grant, so a purchased package outlives the sale window, the catalog listing,
+ * and archival.
+ *
+ * The caller must have authorized the parent AND proven they own this child.
+ */
+export async function startOlympiadPayment(params: {
+  parentProfileId: string;
+  studentId: string;
+  packageId: string;
+  locale: Locale;
+}): Promise<StartCheckoutResult> {
+  const { parentProfileId, studentId, packageId, locale } = params;
+  if (!isServiceRoleConfigured) return { ok: false, errorKey: "checkout.err.unavailable" };
+  if (!isUuid(parentProfileId) || !isUuid(studentId) || !isUuid(packageId)) {
+    return { ok: false, errorKey: "checkout.err.unavailable" };
+  }
+
+  // Read HERE as well as in the caller's own gate. Note the asymmetry with the
+  // plan flow, and that it is the historical rule rather than an oversight: a
+  // GIVEAWAY window grants free SUBJECT access only, and olympiad packages have
+  // always stayed purchase-only at full price through it. Only 'off' stops a
+  // package sale.
+  const { mode } = await getPaymentModeInfo();
+  if (mode === "off") return { ok: false, errorKey: "gate.paymentsOff" };
+
+  // The SAME budget as every other checkout entrypoint: opening a plan checkout
+  // and opening a package checkout both end in a signature and an audit row, so
+  // two buckets would let a caller take the full allowance twice by alternating.
+  if (!rateLimitAllow(CHECKOUT_RATE_SCOPE, parentProfileId, 20, 15 * 60_000)) {
+    return { ok: false, errorKey: "checkout.err.tooMany" };
+  }
+
+  const config = getAzericardConfig();
+  if (!config) {
+    console.error("[checkout] refusing to open a session: gateway not configured");
+    return { ok: false, errorKey: "checkout.err.unavailable" };
+  }
+
+  // An unfinished checkout for THIS package? Re-sign it rather than mint a
+  // parallel order — a second order for a payment that might still be in flight
+  // is how a family gets charged twice, and the acquirer's duplicate protection
+  // is per-ORDER.
+  const open = await findOutstandingSession(parentProfileId, studentId, OLYMPIAD_CHECKOUT_KIND);
+  if (open && open.status === "pending" && matchesRequestedPackage(open, packageId)) {
+    const repriced = await repricePlanIntent(open.order);
+    if (repriced.ok && isChargeableAmount(repriced.amount)) {
+      if (open.currency !== config.currency) {
+        console.error("[checkout] session currency does not match the terminal currency");
+        return { ok: false, errorKey: "checkout.err.unavailable" };
+      }
+      return signOrder({
+        parentProfileId,
+        checkoutSessionId: open.id,
+        order: open.order,
+        amount: repriced.amount,
+        currency: open.currency,
+        locale,
+        description: OLYMPIAD_DESCRIPTION,
+      });
+    }
+    // The stored intent no longer prices — the package went off sale, the child
+    // was promoted, the family already owns it. Fall through and open a fresh
+    // one, which fails with the real reason if that is still true.
+  }
+
+  const opened = await openOlympiadIntent({ studentId, packageId });
+  if (!opened.ok) return { ok: false, errorKey: opened.errorKey };
+  if (opened.currency !== config.currency) {
+    console.error("[checkout] package currency does not match the terminal currency");
+    return { ok: false, errorKey: "checkout.err.unavailable" };
+  }
+
+  return signOrder({
+    parentProfileId,
+    checkoutSessionId: null,
+    order: opened.order,
+    amount: opened.amount,
+    currency: opened.currency,
+    locale,
+    description: OLYMPIAD_DESCRIPTION,
+  });
+}
+
+/**
  * The unfinished checkout a parent still has open for a child, if there is one.
  *
  * `pending` = opened and never completed (the parent closed the tab, or never
@@ -264,7 +377,7 @@ export async function findOutstandingPlanCheckout(params: {
 }): Promise<{ order: string; amount: number; currency: string; status: string } | null> {
   const { ownerParentProfileId, studentId } = params;
   if (!isUuid(ownerParentProfileId) || !isUuid(studentId)) return null;
-  const row = await findOutstandingSession(ownerParentProfileId, studentId);
+  const row = await findOutstandingSession(ownerParentProfileId, studentId, PLAN_CHECKOUT_KIND);
   if (!row || !isChargeableAmount(row.amount)) return null;
   return {
     order: row.order,
@@ -412,6 +525,8 @@ async function signOrder(params: {
   currency: string;
   locale: Locale;
   retryOf?: string;
+  /** What the cardholder sees. Defaults to the subscription wording. */
+  description?: string;
 }): Promise<StartCheckoutResult> {
   const { parentProfileId, order, amount, currency, locale, retryOf } = params;
   if (!isChargeableAmount(amount)) {
@@ -422,7 +537,7 @@ async function signOrder(params: {
   const built = buildAuthRequest({
     order,
     amount,
-    description: CHECKOUT_DESCRIPTION,
+    description: params.description ?? CHECKOUT_DESCRIPTION,
     lang: locale,
   });
   if (!built) {
@@ -461,6 +576,23 @@ function matchesRequestedIntent(
   if (session.intentKind !== kind) return false;
   if (session.expiresAt && Date.parse(session.expiresAt) <= Date.now()) return false;
   return storedBasketMatches(session.intentItems, items);
+}
+
+/**
+ * Is this pending session an unfinished checkout for THIS package?
+ *
+ * The olympiad twin of the check above, and just as narrow. A pending checkout
+ * for a DIFFERENT package is a different purchase, so it is left alone and a
+ * fresh order is minted — re-signing it would take money for something the
+ * parent did not just ask for.
+ */
+function matchesRequestedPackage(session: CheckoutSessionRow, packageId: string): boolean {
+  if (session.intentKind !== "olympiad") return false;
+  if (session.expiresAt && Date.parse(session.expiresAt) <= Date.now()) return false;
+  const items = session.intentItems;
+  if (!Array.isArray(items) || items.length !== 1) return false;
+  const stored = (items[0] ?? {}) as Record<string, unknown>;
+  return typeof stored.package_id === "string" && stored.package_id === packageId;
 }
 
 /** Finite, positive, representable, and inside the sanity ceiling. */

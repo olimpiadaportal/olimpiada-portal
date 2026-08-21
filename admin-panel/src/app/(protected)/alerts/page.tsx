@@ -31,6 +31,9 @@ export default async function AlertsPage() {
     "alerts.type.admin_new_purchase",
     "alerts.type.admin_new_subscription",
     "alerts.type.olympiad_package_published",
+    // Migration 127 — a decided redemption that needs a person. Priority 1, so
+    // it reaches an inbox even when in-app notices are switched off.
+    "alerts.type.checkout_needs_review",
     "alerts.type.default",
   ] as const;
   const strings: Record<string, string> = {};

@@ -413,3 +413,88 @@ export function settledOutcome(reconciliation: StatusReconciliation): PaymentOut
   if (reconciliation.mismatches.length > 0) return "unknown";
   return reconciliation.outcome === "approved" ? "unknown" : reconciliation.outcome;
 }
+
+/**
+ * What a TRAN_TRTYPE=22 status answer says about a REVERSAL.
+ *
+ * THREE VALUES, NOT TWO, and that is the whole point. `reversed` takes a
+ * family's access away, so it may only be returned on POSITIVE EVIDENCE — never
+ * on the absence of an error, which is what "anything that is not a decline is a
+ * reversal" would amount to.
+ *
+ * THE EVIDENCE BASE IS THE LIVE TERMINAL, 2026-08-21, and it is small enough to
+ * write out in full. Two orders, each asked both questions:
+ *
+ *   order that WAS reversed      TRAN_TRTYPE=1  -> actionCode 0, the original
+ *                                                  authorisation, forever
+ *                                TRAN_TRTYPE=22 -> actionCode 0, "Approved"
+ *   order that was NOT reversed  TRAN_TRTYPE=1  -> actionCode 2, rc 51 (declined)
+ *                                TRAN_TRTYPE=22 -> actionCode 3, rc -24,
+ *                                                  "Transaction context mismatch"
+ *
+ * Two things follow, and both are load-bearing here. A reversal is INVISIBLE to
+ * the ordinary query, so this second question has to be asked at all. And an
+ * order with no reversal answers the second question with an ERROR — so an
+ * APPROVAL to it is a positive statement that the reversal exists, rather than
+ * silence we would be reading as consent.
+ *
+ * `not_reversed` is therefore definitive, from rc -24 or the message that comes
+ * with it: it is the gateway saying "there is no such transaction to tell you
+ * about", and the row can be left alone until it ages out of the window.
+ *
+ * EVERYTHING ELSE IS `unreadable`, which is a REFUSAL TO DECIDE and not a soft
+ * no. A body we cannot classify is a body we do not understand about money, so
+ * the caller changes nothing and puts it in front of a person. Revoking a paying
+ * family's access on a maybe is worse than a refund that is recorded late.
+ */
+export type ReversalVerdict = "reversed" | "not_reversed" | "unreadable";
+
+/**
+ * The response code the gateway answers a reversal query with when the order has
+ * no reversal on it. Learned from the live terminal, not from the spec.
+ */
+export const NO_REVERSAL_RC = "-24";
+
+/** ...and the message that accompanied it, matched case-insensitively. */
+const NO_REVERSAL_MESSAGE = "context mismatch";
+
+export function classifyReversalAnswer(
+  parsed: ParsedStatusResponse,
+  reconciliation: StatusReconciliation,
+  /**
+   * The TRAN_TRTYPE we asked with (`TRTYPE.REVERSAL_ONLINE`). Passed in rather
+   * than imported so this module keeps its one direction of dependency — the
+   * protocol constants live beside the request builder, and the parser must not
+   * reach back into it.
+   */
+  askedTranTrtype: string,
+): ReversalVerdict {
+  const f = parsed.fields;
+
+  // 1. THE DEFINITIVE NO. Checked first, because an answer carrying it is an
+  //    answer we DO understand and it must not fall through to `unreadable` and
+  //    raise an alarm on every ordinary settled payment, forever.
+  const rc = (f.RC ?? "").trim();
+  const message = (f.STATUSMSG ?? "").toLowerCase();
+  if (rc === NO_REVERSAL_RC || message.includes(NO_REVERSAL_MESSAGE)) {
+    return "not_reversed";
+  }
+
+  // 2. THE POSITIVE YES. `approved` is the same conjunctive test a sale has to
+  //    pass — an explicit ACTION=0 (a missing one is never approved), our
+  //    terminal, our amount, our currency, and no contradicted reference — in
+  //    answer to the question that only a reversal can answer.
+  if (reconciliation.approved) {
+    // ...and if the reply does name a transaction type, it must be the one we
+    // asked about. A reply describing some other transaction is not evidence
+    // about this reversal, whatever its action code says.
+    const tran = (f.TRAN_TRTYPE ?? "").trim();
+    if (tran === "" || tran === askedTranTrtype) return "reversed";
+    return "unreadable";
+  }
+
+  // 3. ANYTHING ELSE. An empty body, a shape we could not parse, an approval
+  //    that did not match our order, a decline we have never seen before: we do
+  //    not know, so we do nothing and say so.
+  return "unreadable";
+}

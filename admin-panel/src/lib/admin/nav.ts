@@ -77,6 +77,11 @@ export const NAV: NavGroup[] = [
       // that the module is built. The "nav.payments" placeholder stays in
       // comingSoon, untouched — a separate future module.
       { label: "nav.subscriptions", href: "/subscriptions", adminOnly: true },
+      // Migration 127: the queue of payments we took and could not deliver on.
+      // It has its own entry rather than living inside /subscriptions because a
+      // family waiting on their money is not a subscription-lifecycle task, and
+      // because an alarm reached through two clicks is an alarm people miss.
+      { label: "nav.checkoutReview", href: "/subscriptions/checkouts", adminOnly: true },
       { label: "nav.leaderboard", href: "/leaderboard", adminOnly: true },
       // Administrator-only (requires notifications.send, which only admins hold —
       // Content Managers never see or reach it, same posture as News/Olympiad).

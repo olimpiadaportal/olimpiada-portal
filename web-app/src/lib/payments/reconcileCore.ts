@@ -12,6 +12,13 @@
 // only evidence left is on a settlement report and in a support ticket. That is
 // the entire reason this runs on a schedule rather than on demand.
 //
+// AND, SINCE MIGRATION 127, A SECOND QUESTION THE CALLBACK NEVER ASKS. A
+// payment REVERSED at the bank is invisible to the ordinary status query: it
+// answers about the AUTHORISATION, which stays `Approved` forever. Only a query
+// carrying TRAN_TRTYPE=22 mentions the reversal at all — learned from the live
+// test on 2026-08-21, not from the spec — so without the third pass below the
+// family's money went back and their entitlement stayed live.
+//
 // IT IS THE CALLBACK'S OWN PATH, MINUS THE CALLBACK. Same status query, same
 // `recordOutcome`, same `checkout_redeem_plan`. Deliberately not a second
 // implementation of "money becomes a plan": the guarantees that matter — the
@@ -34,15 +41,19 @@
 //     app/api/mobile imports it.
 import "server-only";
 import { getAzericardConfig } from "@/lib/payments/azericard/config";
-import { queryTransactionStatus } from "@/lib/payments/azericard/gateway";
+import {
+  queryReversalStatus,
+  queryTransactionStatus,
+  TRTYPE,
+} from "@/lib/payments/azericard/gateway";
+import { classifyReversalAnswer } from "@/lib/payments/azericard/statusResponse";
 import { formatAmount, isValidOrder } from "@/lib/payments/azericard/format";
 import {
   findSessionByOrder,
   recordOutcome,
-  PLAN_CHECKOUT_KIND,
   PROVIDER,
 } from "@/lib/payments/azericard/store";
-import { redeemPlanCheckout } from "@/lib/payments/checkoutIntent";
+import { flagCheckoutForReview, redeemPlanCheckout } from "@/lib/payments/checkoutIntent";
 import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 
 /**
@@ -60,8 +71,22 @@ export type ReconcileSummary = {
   queried: number;
   /** Of those, the ones the gateway confirmed and we recorded as paid. */
   settled: number;
-  /** Redemptions that applied a plan (from either half of the sweep). */
+  /** Redemptions that applied a plan or a package (from either half of the sweep). */
   applied: number;
+  /**
+   * Settled payments the gateway says were REVERSED, whose producers we have
+   * now revoked (migration 127). Money returned with access still standing is
+   * the one state a status query could never reveal before, because the ordinary
+   * TRAN_TRTYPE=1 query reports the original authorisation as approved forever.
+   */
+  reversed: number;
+  /**
+   * Reversal answers we could not classify, left EXACTLY as they were and put
+   * in front of a person. Separate from `unresolved` because it is a different
+   * problem: not "we have not settled this yet" but "the gateway said something
+   * about money that we do not understand".
+   */
+  unreadable: number;
   /** Sessions left exactly as they were, for the next pass or for a human. */
   unresolved: number;
 };
@@ -86,7 +111,14 @@ export type ReconcileSummary = {
 export async function reconcilePendingCheckouts(
   batch: number = RECONCILE_BATCH,
 ): Promise<ReconcileSummary> {
-  const summary: ReconcileSummary = { queried: 0, settled: 0, applied: 0, unresolved: 0 };
+  const summary: ReconcileSummary = {
+    queried: 0,
+    settled: 0,
+    applied: 0,
+    reversed: 0,
+    unreadable: 0,
+    unresolved: 0,
+  };
   if (!isServiceRoleConfigured) return summary;
 
   const config = getAzericardConfig();
@@ -155,10 +187,12 @@ export async function reconcilePendingCheckouts(
     }
     summary.settled++;
 
-    // The money is real and now recorded. Deliver what it bought — but only for
-    // a plan checkout; the owner's protocol test carries no intent and
-    // `checkout_redeem_plan` answers 'no_intent' for it rather than improvising.
-    if (session.kind !== PLAN_CHECKOUT_KIND) continue;
+    // The money is real and now recorded. Deliver what it bought — a plan or,
+    // since migration 127, an olympiad package. The test is the INTENT, not the
+    // kind: carrying one is exactly what makes a session redeemable, and the
+    // owner's protocol test is the thing that lacks it (`checkout_redeem_plan`
+    // answers 'no_intent' for it rather than improvising).
+    if (!session.intentKind) continue;
     if ((await redeemPlanCheckout(session.order)) === "applied") summary.applied++;
     else summary.unresolved++;
   }
@@ -170,13 +204,128 @@ export async function reconcilePendingCheckouts(
     else summary.unresolved++;
   }
 
+  // ---- 3. Settled, then REVERSED at the bank -------------------------------
+  const reversals = await sweepReversals(batch, config.terminal);
+  summary.reversed = reversals.reversed;
+  summary.unreadable = reversals.unreadable;
+
   // Counts only. No order id, no amount, no family — a scheduled job's log is a
   // place identifiers accumulate, and this one runs every few minutes forever.
   console.info(
     `[azericard] reconciliation queried=${summary.queried} settled=${summary.settled} ` +
-      `applied=${summary.applied} unresolved=${summary.unresolved}`,
+      `applied=${summary.applied} reversed=${summary.reversed} ` +
+      `unreadable=${summary.unreadable} unresolved=${summary.unresolved}`,
   );
   return summary;
+}
+
+/**
+ * Find money that went BACK, and take back what it bought.
+ *
+ * WHY THIS PASS EXISTS, and why it could not have been written before the live
+ * bank test on 2026-08-21. We reversed a real transaction (RRN 623279219080,
+ * TRTYPE=22) and learned two things the spec does not say:
+ *
+ *   * the gateway acknowledges a reversal with the single character `1`;
+ *   * a status query with TRAN_TRTYPE=1 keeps reporting the ORIGINAL
+ *     authorisation as actionCode=0 / Approved FOREVER. The reversal appears
+ *     only in an answer to a TRAN_TRTYPE=22 query.
+ *
+ * `queryTransactionStatus` hardcoded TRAN_TRTYPE=1, so reconciliation could
+ * never notice a refund: the family's money was returned and their entitlement
+ * stayed live. This asks the second question.
+ *
+ * IT DECIDES ON EVIDENCE, IN THREE VALUES, AND ONLY ONE OF THEM ACTS.
+ * `classifyReversalAnswer` is where the rule lives; the reason it is three-valued
+ * rather than two is that "not a decline" and "a reversal" are not the same
+ * claim, and taking access away needs the second one:
+ *
+ *   reversed      the gateway APPROVED the TRAN_TRTYPE=22 question for OUR
+ *                 order, on OUR terminal, for OUR amount and currency — and an
+ *                 order with no reversal cannot answer that question with an
+ *                 approval (it answers rc -24). So this is a positive statement
+ *                 that the money went back, not silence read as consent.
+ *   not_reversed  rc -24 / "Transaction context mismatch" — the gateway saying
+ *                 there is no such transaction to describe. Definitive, and it
+ *                 has to be checked FIRST, or every ordinary settled payment
+ *                 would fall through to the alarm below on every pass.
+ *   unreadable    anything else. We do not understand what was said about this
+ *                 money, so NOTHING CHANGES and a person is told.
+ *
+ * A query that could not be made at all (network, HTTP, an empty body) is not an
+ * answer and is not flagged: the next pass asks again while the window is open.
+ * Only an ANSWER we cannot classify raises the alarm.
+ *
+ * THE 24-HOUR LIMIT IS REAL AND IS NOT WORKED AROUND HERE. The gateway answers
+ * status queries about an order for one day. A reversal performed after that is
+ * invisible to this sweep, and the only evidence left is the settlement report —
+ * an operator then uses `checkout_revoke_reversed` directly. Pretending
+ * otherwise would be worse than saying it.
+ */
+async function sweepReversals(
+  batch: number,
+  terminal: string,
+): Promise<{ reversed: number; unreadable: number }> {
+  let revoked = 0;
+  let unreadable = 0;
+  for (const row of await listReversalCandidates(batch)) {
+    const expectedAmount = formatAmount(row.amount);
+    if (!expectedAmount) continue;
+
+    const status = await queryReversalStatus({
+      order: row.order,
+      expectation: {
+        order: row.order,
+        terminal,
+        amount: expectedAmount,
+        currency: row.currency,
+        // No rrn / intRef: there is no signed callback for a reversal we did not
+        // initiate from this process. The answer is matched on what we hold.
+      },
+    });
+    if (!status.ok) {
+      // We could not ASK. Explicitly not a reason to assume a reversal, not a
+      // reason to assume its absence, and not a reason to wake anybody: the next
+      // pass asks again while the window is open.
+      continue;
+    }
+
+    const verdict = classifyReversalAnswer(
+      status.parsed,
+      status.reconciliation,
+      TRTYPE.REVERSAL_ONLINE,
+    );
+    if (verdict === "not_reversed") continue;
+    if (verdict === "unreadable") {
+      // An answer about money that we cannot classify. Change nothing — the
+      // family keeps what they have — and put it in front of a person, who can
+      // read the settlement report. The note is idempotent per (order, reason),
+      // so a row that stays unreadable for the rest of the window produces one
+      // notification and not one per pass.
+      unreadable++;
+      await flagCheckoutForReview(row.order, "reversal_unreadable");
+      continue;
+    }
+
+    if (await markReversed(row.order)) revoked++;
+  }
+  return { reversed: revoked, unreadable };
+}
+
+/** Record the reversal and revoke through the producer. Never throws upward. */
+async function markReversed(order: string): Promise<boolean> {
+  if (!isServiceRoleConfigured) return false;
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("checkout_revoke_reversed", {
+    p_order: order,
+    p_reason: "gateway_reversal",
+  });
+  if (error) {
+    console.error("[azericard] reversal revoke failed", error.code ?? "unknown");
+    return false;
+  }
+  const outcome = (data as { outcome?: unknown } | null)?.outcome;
+  return outcome === "reversed";
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +401,43 @@ async function listPaidUnredeemedOrders(limit: number): Promise<string[]> {
   return (data ?? [])
     .map((row) => (row as { provider_session_id?: unknown }).provider_session_id)
     .filter((o): o is string => typeof o === "string" && isValidOrder(o));
+}
+
+/**
+ * Settled payments worth asking the reversal question about.
+ *
+ * The window and the "still believed to have succeeded" test live in SQL
+ * (`checkout_reversal_candidates`), beside the tables they describe, for the
+ * same reason the other work list does: a second caller cannot get it subtly
+ * wrong, and once `checkout_revoke_reversed` has run the row drops out of the
+ * list by itself rather than being asked about forever.
+ */
+async function listReversalCandidates(
+  limit: number,
+): Promise<{ order: string; amount: number; currency: string }[]> {
+  if (!isServiceRoleConfigured) return [];
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("checkout_reversal_candidates", {
+    p_limit: clampSweepLimit(limit),
+  });
+  if (error) {
+    console.error("[azericard] reversal candidate query failed", error.code ?? "unknown");
+    return [];
+  }
+  const out: { order: string; amount: number; currency: string }[] = [];
+  for (const raw of Array.isArray(data) ? data : []) {
+    const row = (raw ?? {}) as Record<string, unknown>;
+    const order = row.provider_order;
+    const amount = Number(row.amount);
+    if (typeof order !== "string" || !isValidOrder(order)) continue;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    out.push({
+      order,
+      amount,
+      currency: typeof row.currency === "string" ? row.currency : "AZN",
+    });
+  }
+  return out;
 }
 
 /** A sweep batch is bounded on both sides; an unbounded one is an outage. */

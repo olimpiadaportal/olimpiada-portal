@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
-import { buyOlympiad } from "@/lib/auth/olympiadService";
 import { pickTranslation } from "@/lib/localizedName";
 
 export default async function ParentOlympiadsPage({
@@ -112,11 +111,16 @@ export default async function ParentOlympiadsPage({
                 ) : isOffSale(p) ? (
                   <span className="pill">{t("poly.notOnSale")}</span>
                 ) : paymentsOn ? (
-                  <form action={buyOlympiad}>
-                    <input type="hidden" name="student_id" value={id} />
-                    <input type="hidden" name="package_id" value={p.id} />
-                    <button className="btn" type="submit">{t("oly3.buy")}</button>
-                  </form>
+                  // THE BUY BUTTON LEFT THIS PAGE (migration 127). It used to
+                  // post to a `buyOlympiad` action that called purchase_olympiad
+                  // DIRECTLY — a second purchase path beside the catalog modal,
+                  // with no quote, no intent and no payment. Two implementations
+                  // of one billing rule mis-bill silently the day they drift, so
+                  // there is now one: the catalog, which quotes and takes the
+                  // parent to the bank.
+                  <Link className="btn" href="/olympiads">
+                    {t("oly3.buy")}
+                  </Link>
                 ) : null}
               </div>
             ))}

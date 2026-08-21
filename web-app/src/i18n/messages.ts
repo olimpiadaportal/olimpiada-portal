@@ -209,7 +209,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "poly.modal.title": "Alışı təsdiqləyin",
     "poly.modal.package": "Paket",
     "poly.modal.child": "Övlad",
-    "poly.modal.mockNote": "Bu, sınaq ödənişidir — real ödəniş tutulmur. Rəsmi ödəniş sistemi qoşulanda bu addımda həqiqi ödəniş aparılacaq.",
+    "poly.modal.payNote": "Növbəti addımda bankın ödəniş səhifəsinə keçəcəksiniz. Paket yalnız ödəniş təsdiqləndikdən sonra açılır və girişi ömürlükdür.",
     "poly.modal.confirm": "Təsdiqlə və al",
     "poly.modal.cancel": "İmtina et",
     "poly.modal.close": "Bağla",
@@ -220,6 +220,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Sale window (olympiad_packages.sale_starts_at/sale_ends_at)
     "poly.err.notOnSale": "Bu paketin satış müddəti artıq bitib.",
     "poly.err.notForGrade": "Bu paket seçilmiş şagirdin sinfi üçün nəzərdə tutulmayıb.",
+    // Migration 127 — the package became a PAID product on the checkout rail.
+    "poly.err.alreadyOwned": "Bu paket bu övlad üçün artıq alınıb — giriş ömürlükdür.",
+    "poly.err.priceMoved":
+      "Qiymət yeniləndi. Səhifəni yeniləyib yeni qiymətə baxın.",
     "oly5.errNotForGrade": "Bu olimpiada sənin sinfin üçün nəzərdə tutulmayıb.",
     "poly.notOnSale": "Satış bitib",
     // ---- Olympiad card "Ətraflı" details (Round 43) ----
@@ -736,6 +740,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.previewHint": "Qiyməti görmək üçün ən az bir fənn seçin.",
     "sub.calculating": "Hesablanır…",
     "sub.noSibling": "endirim yoxdur",
+    // Migration 127 — the saving is named, not just applied: the parent sees
+    // WHICH child earned it and how much it is worth.
+    "sub.discount.rank2": "2-ci övlad endirimi",
+    "sub.discount.rank3": "3-cü və sonrakı övlad endirimi",
+    "sub.discount.hint":
+      "İkinci övlad üçün 10%, üçüncü və sonrakılar üçün 15% endirim avtomatik tətbiq olunur.",
+    "sub.discount.saved": "Qənaətiniz",
     "sub.noSubjectsAvailable": "Hələ aktiv qiymətli fənn yoxdur.",
     "sub.err.invalid": "Ödəniş dövrünü seçin.",
     "sub.err.noSubjects": "Ən az bir fənn seçin.",
@@ -750,6 +761,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.notYourChild": "Bu uşaq sizin hesabınıza aid deyil.",
     "sub.err.idFailed": "Giriş ID-si təyin edilə bilmədi. Yenidən cəhd edin.",
     "sub.err.failed": "Əməliyyat alınmadı. Zəhmət olmasa yenidən cəhd edin.",
+    // Migration 127 — the web free branch now goes through the free-only RPC, so
+    // a change that turns out to be priced is refused instead of applied. Rare,
+    // and it means the prices moved while we were saving.
+    "sub.err.priceMoved":
+      "Qiymətlər dəyişdi. Səhifəni yeniləyib seçiminizi yenidən təsdiqləyin.",
     "gate.paymentsOff":
       "Ödənişlər müvəqqəti olaraq dayandırılıb. Yeni abunə və satınalmalar hazırda mümkün deyil.",
     "gate.giveawayFree":
@@ -1812,6 +1828,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Qiymət dəyişib. Seçiminizi yenidən nəzərdən keçirin — yeni məbləği göstərəcəyik.",
     "checkout.err.expired":
       "Bu ödənişin vaxtı bitib. Fənləri yenidən seçib davam edin.",
+    "checkout.err.retryFromEditor":
+      "Ödəniş alınmadı. Dəyişikliyi yenidən yadda saxlayın — planınız bu arada dəyişmiş ola bilər, ona görə məbləği yenidən hesablayacağıq.",
     "checkout.err.planChanged":
       "Plan başqa bir yerdə dəyişdirilib. Səhifəni yeniləyin və yenidən cəhd edin.",
     "checkout.err.tooMany": "Çox sayda cəhd oldu. Bir neçə dəqiqədən sonra yenidən yoxlayın.",
@@ -1821,8 +1839,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     // took but could not turn into a plan lands on "pending", which is what it
     // is from the payer's side: taken, not finished, and in front of a human.
     "checkout.res.ok.title": "Ödəniş təsdiqləndi",
+    // Migration 127: the rail carries a PACKAGE now as well as a plan, so the
+    // sentence names neither. "the plan is now active" would have been false on
+    // every olympiad purchase.
     "checkout.res.ok.body":
-      "Ödənişiniz təsdiqləndi və plan aktivləşdirildi. Valideyn panelində baxa bilərsiniz.",
+      "Ödənişiniz təsdiqləndi və aldığınız giriş aktivləşdirildi. Valideyn panelində baxa bilərsiniz.",
     "checkout.res.pending.title": "Ödəniş hələ təsdiqlənməyib",
     "checkout.res.pending.body":
       "Bank hələ yekun cavab verməyib. Bu adətən bir neçə dəqiqə çəkir.",
@@ -2017,7 +2038,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "poly.modal.title": "Confirm purchase",
     "poly.modal.package": "Package",
     "poly.modal.child": "Child",
-    "poly.modal.mockNote": "This is a test payment — no real charge is made. Once the official payment provider is connected, this step will process a real payment.",
+    "poly.modal.payNote": "The next step takes you to the bank's payment page. The package is unlocked only after the payment is confirmed, and access is then for life.",
     "poly.modal.confirm": "Confirm and buy",
     "poly.modal.cancel": "Cancel",
     "poly.modal.close": "Close",
@@ -2028,6 +2049,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Sale window (olympiad_packages.sale_starts_at/sale_ends_at)
     "poly.err.notOnSale": "Sales for this package have ended.",
     "poly.err.notForGrade": "This package is not intended for the selected student's grade.",
+    "poly.err.alreadyOwned": "This child already has this package — access is for life.",
+    "poly.err.priceMoved":
+      "The price has been updated. Refresh the page to see the new one.",
     "oly5.errNotForGrade": "This olympiad isn't intended for your grade.",
     "poly.notOnSale": "Sales ended",
     // ---- Olympiad card "Details" (Round 43) ----
@@ -2540,6 +2564,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.previewHint": "Select at least one subject to see the price.",
     "sub.calculating": "Calculating…",
     "sub.noSibling": "no discount",
+    "sub.discount.rank2": "Second child discount",
+    "sub.discount.rank3": "Third and further child discount",
+    "sub.discount.hint":
+      "A second child gets 10% off automatically, a third and any after that 15%.",
+    "sub.discount.saved": "You save",
     "sub.noSubjectsAvailable": "No subjects with active pricing yet.",
     "sub.err.invalid": "Please choose a billing period.",
     "sub.err.noSubjects": "Select at least one subject.",
@@ -2554,6 +2583,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.notYourChild": "This child is not on your account.",
     "sub.err.idFailed": "Could not assign the login ID. Please try again.",
     "sub.err.failed": "The operation could not be completed. Please try again.",
+    "sub.err.priceMoved":
+      "The prices changed. Refresh the page and confirm your choice again.",
     "gate.paymentsOff":
       "Payments are temporarily paused. New subscriptions and purchases are unavailable right now.",
     "gate.giveawayFree":
@@ -3600,6 +3631,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "The price has changed. Please review your selection — we will show you the new amount.",
     "checkout.err.expired":
       "This payment has expired. Choose the subjects again to continue.",
+    "checkout.err.retryFromEditor":
+      "The payment did not go through. Save the change again — your plan may have moved in the meantime, so we will re-calculate the amount.",
     "checkout.err.planChanged":
       "The plan was changed somewhere else. Refresh the page and try again.",
     "checkout.err.tooMany": "Too many attempts. Please check again in a few minutes.",
@@ -3610,7 +3643,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // is from the payer's side: taken, not finished, and in front of a human.
     "checkout.res.ok.title": "Payment confirmed",
     "checkout.res.ok.body":
-      "Your payment is confirmed and the plan is now active. You can see it in the parent panel.",
+      "Your payment is confirmed and what you bought is now active. You can see it in the parent panel.",
     "checkout.res.pending.title": "Payment not confirmed yet",
     "checkout.res.pending.body":
       "The bank has not given a final answer yet. This usually takes a few minutes.",
@@ -3805,7 +3838,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "poly.modal.title": "Подтверждение покупки",
     "poly.modal.package": "Пакет",
     "poly.modal.child": "Ребёнок",
-    "poly.modal.mockNote": "Это тестовый платёж — реальные деньги не списываются. Когда будет подключена официальная платёжная система, на этом шаге будет проводиться настоящая оплата.",
+    "poly.modal.payNote": "На следующем шаге вы перейдёте на страницу оплаты банка. Пакет открывается только после подтверждения платежа, и доступ остаётся навсегда.",
     "poly.modal.confirm": "Подтвердить и купить",
     "poly.modal.cancel": "Отмена",
     "poly.modal.close": "Закрыть",
@@ -3816,6 +3849,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Sale window (olympiad_packages.sale_starts_at/sale_ends_at)
     "poly.err.notOnSale": "Продажи этого пакета уже завершены.",
     "poly.err.notForGrade": "Этот пакет не предназначен для класса выбранного ученика.",
+    "poly.err.alreadyOwned": "У этого ребёнка уже есть этот пакет — доступ пожизненный.",
+    "poly.err.priceMoved":
+      "Цена обновилась. Обновите страницу, чтобы увидеть новую.",
     "oly5.errNotForGrade": "Эта олимпиада не предназначена для твоего класса.",
     "poly.notOnSale": "Продажи завершены",
     // ---- Olympiad card "Подробнее" (Round 43) ----
@@ -4331,6 +4367,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.previewHint": "Выберите хотя бы один предмет, чтобы увидеть цену.",
     "sub.calculating": "Расчёт…",
     "sub.noSibling": "без скидки",
+    "sub.discount.rank2": "Скидка за второго ребёнка",
+    "sub.discount.rank3": "Скидка за третьего и следующих детей",
+    "sub.discount.hint":
+      "За второго ребёнка автоматически 10%, за третьего и последующих — 15%.",
+    "sub.discount.saved": "Ваша экономия",
     "sub.noSubjectsAvailable": "Пока нет предметов с активной ценой.",
     "sub.err.invalid": "Выберите период оплаты.",
     "sub.err.noSubjects": "Выберите хотя бы один предмет.",
@@ -4345,6 +4386,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.notYourChild": "Этот ребёнок не привязан к вашему аккаунту.",
     "sub.err.idFailed": "Не удалось назначить ID для входа. Попробуйте ещё раз.",
     "sub.err.failed": "Не удалось выполнить операцию. Пожалуйста, попробуйте ещё раз.",
+    "sub.err.priceMoved":
+      "Цены изменились. Обновите страницу и подтвердите выбор ещё раз.",
     "gate.paymentsOff":
       "Платежи временно приостановлены. Новые подписки и покупки сейчас недоступны.",
     "gate.giveawayFree":
@@ -5392,6 +5435,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Цена изменилась. Проверьте свой выбор — мы покажем новую сумму.",
     "checkout.err.expired":
       "Срок этого платежа истёк. Выберите предметы заново, чтобы продолжить.",
+    "checkout.err.retryFromEditor":
+      "Платёж не прошёл. Сохраните изменение заново — ваш план мог измениться, поэтому мы пересчитаем сумму.",
     "checkout.err.planChanged":
       "План был изменён в другом месте. Обновите страницу и попробуйте снова.",
     "checkout.err.tooMany": "Слишком много попыток. Проверьте ещё раз через несколько минут.",
@@ -5402,7 +5447,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // is from the payer's side: taken, not finished, and in front of a human.
     "checkout.res.ok.title": "Платёж подтверждён",
     "checkout.res.ok.body":
-      "Ваш платёж подтверждён, план активирован. Его можно увидеть в родительской панели.",
+      "Ваш платёж подтверждён, купленный доступ активирован. Его можно увидеть в родительской панели.",
     "checkout.res.pending.title": "Платёж ещё не подтверждён",
     "checkout.res.pending.body":
       "Банк пока не дал окончательного ответа. Обычно это занимает несколько минут.",

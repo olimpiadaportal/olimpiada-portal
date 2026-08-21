@@ -349,6 +349,15 @@ create table if not exists public.checkout_sessions (
   -- stale pending checkout block a subject deletion. Redeem re-prices instead,
   -- and fails loudly.
   intent_items             jsonb,
+  -- Migration 127. The CHANGE the parent authorised, per subject:
+  -- [{subject_id, op, interval}] with op in add|reinstate|cycle|remove. The
+  -- basket above is an ABSOLUTE claim about the whole plan at one past moment,
+  -- and applying it later overwrites everything that happened since -- which is
+  -- how an abandoned checkout could UN-CANCEL a subject the parent had since
+  -- cancelled, and could REMOVE one they had since added. A delta composes with
+  -- whatever the plan looks like when the money lands; a snapshot cannot.
+  -- NULL for plan_start, for an olympiad intent, and for pre-127 rows.
+  intent_delta             jsonb,
   -- The quote the amount came from, kept as evidence.
   intent_quote             jsonb,
   -- Bounded redeemability. A forgotten pending session must not be redeemable
@@ -359,6 +368,14 @@ create table if not exists public.checkout_sessions (
   redeemed_at              timestamptz,
   redemption_status        public.checkout_redemption_status,
   redemption_note          text,
+  -- Migration 127. What this payment ACTUALLY delivered, written once by
+  -- checkout_redeem_plan in the same statement that stamps redeemed_at. It is
+  -- a SEPARATE column from intent_delta and has to stay one: the two differ
+  -- whenever the world moved between signing and redeeming, and a reversal
+  -- that revokes from the INTENT closes the period of a subject a DIFFERENT
+  -- payment paid for. NULL = nothing was delivered, or the redemption predates
+  -- this column; a reversal then takes nothing back and asks for a human.
+  delivered_items          jsonb,
 
   -- WHAT THIS CHECK DELIBERATELY OMITS: `student_profile_id is not null`. A
   -- CHECK is re-evaluated on every UPDATE and the FK's ON DELETE SET NULL is an
@@ -373,7 +390,13 @@ create table if not exists public.checkout_sessions (
         and jsonb_array_length(intent_items) between 1 and 20
         and expires_at is not null
         and amount is not null
-        and amount > 0)),
+        and amount > 0
+        and (intent_delta is null
+             or (jsonb_typeof(intent_delta) = 'array'
+                 and jsonb_array_length(intent_delta) <= 40))
+        and (delivered_items is null
+             or (jsonb_typeof(delivered_items) = 'array'
+                 and jsonb_array_length(delivered_items) <= 40)))),
 
   -- A redemption is DECIDED or it has not happened. The two columns move
   -- together, and neither can exist without an intent to redeem.
@@ -392,15 +415,42 @@ comment on column public.checkout_sessions.intent_items is
   'through plan_items_normalize. Re-priced at redeem time by the same RPC that '
   'priced it here; never edited, and deliberately carrying no foreign key, so a '
   'deleted subject cannot silently shrink what was bought.';
+comment on column public.checkout_sessions.intent_delta is
+  'Migration 127. The CHANGE the parent authorised, per subject: '
+  '[{subject_id, op, interval}] with op in add|reinstate|cycle|remove. Frozen '
+  'with the rest of the intent and PROJECTED onto current coverage at redeem '
+  '(plan_delta_project), so a payment delivers the change that was paid for '
+  'instead of restoring a snapshot of the whole plan -- which is how an '
+  'abandoned checkout could un-cancel a subject the parent had since cancelled. '
+  'NULL for plan_start (there is no coverage to compose with), for an olympiad '
+  'intent, and for every plan_change row written before 127 -- a row with no '
+  'delta cannot be shown to deliver what it authorised, so redemption refuses '
+  'it rather than guessing.';
+comment on column public.checkout_sessions.delivered_items is
+  'Migration 127. What this payment ACTUALLY delivered, recorded by '
+  'checkout_redeem_plan in the same statement that stamps redeemed_at: '
+  '[{subject_id, op, interval}] for a plan (the change as it was applied), '
+  '[{package_id, grade_id}] for an olympiad package. A REVERSAL revokes from '
+  'THIS and never from the frozen intent -- revoking from the intent takes '
+  'back a subject some other payment paid for. NULL means nothing was '
+  'delivered, or the redemption predates this column; either way a reversal '
+  'must take nothing back and ask for a human instead.';
 comment on column public.checkout_sessions.intent_quote is
   'The quote the amount came from, kept as evidence. The charge is '
   'checkout_sessions.amount; this is what it was computed from.';
 comment on column public.checkout_sessions.redemption_note is
   'Why a redemption needs a human: expired | student_gone | plan_already_live | '
-  'subscription_changed | price_changed | reprice_failed:<sqlstate> | '
-  'apply_failed:<sqlstate> | child_login_email_failed. The last one sits on an '
-  'APPLIED row -- the plan was delivered and only the child login needs '
-  'repairing -- so a note is what marks "a human is needed", not the status.';
+  'subscription_changed | grade_changed | delivery_changed | already_owned | '
+  'no_longer_payable | reprice_failed:<sqlstate> | apply_failed:<sqlstate> | '
+  'child_login_email_failed | reversed:<reason>. The last two sit on an APPLIED '
+  'row -- the plan was delivered and only the child login needs repairing, or '
+  'the payment was later reversed at the gateway -- so a note is what marks "a '
+  'human is needed", not the status. An operator closes one with '
+  'admin_resolve_checkout_review, which rewrites it as resolved:<what they '
+  'did>. Migration 127 removed price_changed: a moved price is HONOURED at the '
+  'amount that was quoted (owner decision), and only a DIFFERENT DELIVERY -- '
+  'the re-derived change differing from the frozen delta -- still needs a '
+  'person.';
 
 -- -----------------------------------------------------------------------------
 -- sibling_discounts : audit of the automatic discount applied.

@@ -60,7 +60,6 @@ import {
   findSessionByOrder,
   hasReferenceConflict,
   recordOutcome,
-  PLAN_CHECKOUT_KIND,
 } from "@/lib/payments/azericard/store";
 import { formatAmount } from "@/lib/payments/azericard/format";
 import {
@@ -172,15 +171,29 @@ export async function POST(request: Request): Promise<Response> {
     return page("failed", locale, 404);
   }
 
-  // WHO CAME BACK. A plan checkout belongs to a signed-in parent, who needs a
+  // WHO CAME BACK. A FAMILY checkout belongs to a signed-in parent, who needs a
   // route back into the product; the owner's protocol test belongs to nobody and
   // keeps the bare, chrome-free page. The decision comes from OUR OWN row, never
   // from a request field — the callback cannot ask to be redirected anywhere.
   //
-  // Every answer from here on goes through `respond`, so a parent lands on the
-  // result screen whichever way the transaction settles, including the ones that
-  // settle badly.
-  const parentFlow = session.kind === PLAN_CHECKOUT_KIND;
+  // KEYED ON THE INTENT, AND ON NOTHING ELSE (migration 127). It used to test
+  // `kind === PLAN_CHECKOUT_KIND`, which was the same thing right up until the
+  // olympiad package became payable: a package checkout would then have landed
+  // on the bare page AND never been redeemed, so a parent would have paid for a
+  // package that never arrived. "Does this session carry an intent" is the
+  // property that actually matters — it is precisely what makes a session
+  // redeemable, and precisely what the owner's protocol test lacks.
+  //
+  // AND IT NO LONGER ALSO DEMANDS A LIVE CHILD PROFILE. `student_profile_id` is
+  // the column the child-delete FK NULLs, so a child deleted mid-checkout turned
+  // a paid family checkout into "the owner's protocol test": redemption was
+  // skipped entirely and the parent was shown a SUCCESS page for money that
+  // delivered nothing and was never even recorded as undelivered. Whether the
+  // child is still there is not this route's question — `checkout_redeem_plan`
+  // answers it, records `student_gone`, and files a priority-1 alert, which is
+  // the difference between money we know we are holding and money nobody knows
+  // about.
+  const parentFlow = session.intentKind !== null;
   const respond = (result: ResultKind, status = 200): Response =>
     parentFlow ? seeOther(parentResultUrl(result)) : page(result, locale, status);
 

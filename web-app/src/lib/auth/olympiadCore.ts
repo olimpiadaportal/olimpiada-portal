@@ -31,7 +31,6 @@ import { revalidatePath } from "next/cache";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
-import { notifyOlympiadPurchased } from "@/lib/notifications/events";
 import { writeAuditLog } from "@/lib/audit";
 import { isUuid } from "@/lib/uuid";
 
@@ -232,13 +231,16 @@ export async function purchaseOlympiadForChildCore(params: {
     }
   }
 
-  // Notify the child + the owning parent (best-effort; idempotency keys dedupe a
-  // re-purchase of an already-owned package, so this never double-notifies).
-  await notifyOlympiadPurchased({
-    studentProfileId: studentId,
-    parentProfileId,
-    packageId,
-  });
+  // The child + owning parent notification is NOT emitted here any more. It
+  // moved onto the table as `trg_notify_olympiad_purchased` (migration 128),
+  // because migration 127 routed the PAID purchase through
+  // checkout_redeem_plan and straight past this line — so the only purchases
+  // that notified were the free ones, and a family that actually paid heard
+  // nothing. Same reasoning, and the same shape, as the attempt_graded move in
+  // migration 068. The trigger reproduces this emitter's exact contract (type,
+  // az copy, {student_profile_id, package_id, …} data, priority 4, category
+  // 'olympiad', action URLs and the `oly:<student>:<package>:child|parent`
+  // idempotency keys), so nothing about what a family sees changed.
 
   const existing =
     error != null ||

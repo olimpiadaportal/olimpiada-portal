@@ -40,8 +40,8 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - **`013` IS NOT PURELY A SCHEMA CHECK.** Check `102_curriculum_translations` asserts CONTENT
   coverage — at least 260 exam topics and 1077 subtopics carrying `en` and `ru` translations —
   so it CANNOT pass on a freshly bootstrapped, schema-only database and its failure there is
-  expected, not a divergence. A from-zero rebuild is therefore proven by **126/127 with only
-  `102` failing**; check its three reported columns (`rpc_misconfigured`, `failed_invariants`,
+  expected, not a divergence. A from-zero rebuild is therefore proven by **127/128 with only
+  `102` failing** (it was 126/127 until migration 128 added check 124); check its three reported columns (`rpc_misconfigured`, `failed_invariants`,
   `stale_overloads`) are all `0`, which is the schema half of that same check. Any OTHER failing
   check on a fresh build is a real divergence between canonical SQL and production.
 - **Source the canonical files ONE AT A TIME and let each finish.** `011` alone takes over two

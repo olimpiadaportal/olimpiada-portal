@@ -68,76 +68,17 @@ async function childFirstName(studentProfileId: string): Promise<string> {
   }
 }
 
-async function packageTitleAz(packageId: string): Promise<string> {
-  try {
-    const admin = getAdminClient();
-    const { data } = await admin
-      .from("olympiad_packages")
-      .select("olympiad_package_translations(locale, title)")
-      .eq("id", packageId)
-      .maybeSingle();
-    const rows =
-      ((data as { olympiad_package_translations?: { locale: string; title: string }[] } | null)
-        ?.olympiad_package_translations) ?? [];
-    const az = rows.find((r) => r.locale === "az")?.title?.trim();
-    const any = rows.find((r) => (r.title ?? "").trim().length > 0)?.title?.trim();
-    return (az && az.length > 0 ? az : any) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Olympiad package purchased → notify BOTH the child (their arena inbox) and the
- * owning parent. Distinct idempotency suffixes so both rows are created (the key
- * is globally unique). Best-effort; failures are swallowed.
- */
-export async function notifyOlympiadPurchased(input: {
-  studentProfileId: string;
-  parentProfileId: string;
-  packageId: string;
-}): Promise<void> {
-  const [child, pkg] = await Promise.all([
-    childFirstName(input.studentProfileId),
-    packageTitleAz(input.packageId),
-  ]);
-  const pkgLabel = pkg || "Olimpiada paketi";
-  const base = `oly:${input.studentProfileId}:${input.packageId}`;
-  const data = {
-    student_profile_id: input.studentProfileId,
-    package_id: input.packageId,
-    package_title: pkg,
-    child_name: child,
-  };
-
-  // Child (informal, arena voice).
-  await safeCreate({
-    recipient: input.studentProfileId,
-    type: "olympiad_purchased",
-    title: "Yeni olimpiada paketi",
-    body: `${pkgLabel} paketi artıq sənin üçün açıqdır.`,
-    data,
-    idempotencyKey: `${base}:child`,
-    priority: 4,
-    actionUrl: "/child/olympiads",
-    category: "olympiad",
-  });
-
-  // Parent.
-  await safeCreate({
-    recipient: input.parentProfileId,
-    type: "olympiad_purchased",
-    title: "Olimpiada paketi alındı",
-    body: child
-      ? `${pkgLabel} paketi ${child} üçün aktivdir.`
-      : `${pkgLabel} paketi övladınız üçün aktivdir.`,
-    data,
-    idempotencyKey: `${base}:parent`,
-    priority: 4,
-    actionUrl: `/children/${input.studentProfileId}/olympiads`,
-    category: "olympiad",
-  });
-}
+// NOTE: the former notifyOlympiadPurchased emitter was retired — an olympiad
+// purchase now notifies via the DB trigger trg_notify_olympiad_purchased
+// (migration 128), which mirrors its exact contract (type 'olympiad_purchased',
+// az title/body for child and parent, {student_profile_id, package_id,
+// package_title, child_name} data, priority 4, category 'olympiad', the
+// '/child/olympiads' and '/children/<id>/olympiads' action URLs and the
+// identical 'oly:<student>:<package>:child' / ':parent' idempotency keys). It
+// moved for the reason below: migration 127 put the PAID purchase on the
+// checkout rail, which never reached this emitter, so only free activations
+// notified and a family that paid heard nothing. On the table, every producer —
+// free activation, bank callback, redeem sweep, admin grant — notifies once.
 
 // NOTE: the former notifyAttemptGraded emitter was retired — grading now
 // notifies via the DB trigger trg_notify_attempt_graded (migration 068), which

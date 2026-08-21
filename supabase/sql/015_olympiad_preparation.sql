@@ -517,6 +517,103 @@ create trigger trg_notify_package_published
   execute function public.notify_package_published_tg();
 
 -- -----------------------------------------------------------------------------
+-- 6 — A PAID OLYMPIAD PURCHASE NOTIFIES THE FAMILY.
+--
+-- Before 127 every purchase went through purchaseOlympiadForChildCore, which
+-- called notifyOlympiadPurchased. 127 split the surface: due_now > 0 now opens a
+-- checkout intent and the grant happens inside checkout_redeem_plan, which never
+-- called the emitter. So the ONLY purchases that notified were the free ones,
+-- and a family that actually paid heard nothing.
+--
+-- The emit moves onto the TABLE, exactly as migration 068 did for attempt_graded
+-- (see the note in web-app/src/lib/notifications/events.ts). A trigger cannot be
+-- routed around by a new producer, and there are already four: free activation,
+-- the bank callback, checkout_redeem_sweep, and an admin grant.
+--
+-- The copy is AZ-ONLY and that is deliberate, not an oversight. profiles.preferred_locale
+-- is never written by web-app or mobile-app, and the purchase row has no locale
+-- of its own (purchase_olympiad does not populate checkout_session_id), so
+-- "localising" here would be a trilingual gesture that ships one language anyway.
+-- The text is carried over verbatim from the TypeScript emitter it replaces, so
+-- the two can never disagree during the deploy window.
+--
+-- WHEN references NEW only. `old.status is distinct from new.status` is illegal
+-- on a trigger that includes INSERT and would abort this migration; the
+-- idempotency key already makes a repeat a no-op, which is why the key exists.
+--
+-- CONSEQUENCE FOR WHOEVER RESTORES THIS TABLE: a bulk write into
+-- olympiad_purchases that touches `status` now emits notifications, and this
+-- repository bans both escape hatches (ALTER TABLE ... DISABLE TRIGGER and
+-- session_replication_role = replica). Purchases are never bulk-created today.
+-- The grade backfills in 015 update grade_id only and do not fire this trigger.
+-- -----------------------------------------------------------------------------
+create or replace function public.notify_olympiad_purchased_tg()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_title text;
+  v_child text;
+  v_label text;
+  v_base  text;
+  v_data  jsonb;
+begin
+  begin
+    select coalesce(nullif(btrim(t.title), ''), '') into v_title
+      from public.olympiad_package_translations t
+      where t.olympiad_package_id = new.olympiad_package_id and t.locale = 'az'
+      limit 1;
+    select coalesce(nullif(btrim(s.first_name), ''), '') into v_child
+      from public.students s
+      where s.profile_id = new.student_profile_id
+      limit 1;
+
+    v_label := coalesce(nullif(v_title, ''), 'Olimpiada paketi');
+    v_base  := 'oly:' || new.student_profile_id::text || ':' || new.olympiad_package_id::text;
+    -- `package_id`, not the column name, so the payload stays byte-compatible
+    -- with the retired TypeScript emitter's shape.
+    v_data  := jsonb_build_object(
+      'student_profile_id', new.student_profile_id,
+      'package_id', new.olympiad_package_id,
+      'package_title', nullif(v_title, ''),
+      'child_name', nullif(v_child, ''));
+
+    -- The child, in the arena voice.
+    perform public.create_notification(
+      new.student_profile_id, 'olympiad_purchased', 'Yeni olimpiada paketi',
+      v_label || ' paketi artıq sənin üçün açıqdır.',
+      v_data, array['in_app'], v_base || ':child', 4, '/child/olympiads', 'olympiad', null);
+
+    -- The parent who paid.
+    if new.owner_parent_profile_id is not null then
+      perform public.create_notification(
+        new.owner_parent_profile_id, 'olympiad_purchased', 'Olimpiada paketi alındı',
+        case when v_child <> ''
+             then v_label || ' paketi ' || v_child || ' üçün aktivdir.'
+             else v_label || ' paketi övladınız üçün aktivdir.' end,
+        v_data, array['in_app'], v_base || ':parent', 4,
+        '/children/' || new.student_profile_id::text || '/olympiads', 'olympiad', null);
+    end if;
+  exception when others then
+    -- `raise warning`, never `null`: a silently broken notifier — a renamed
+    -- column, a dropped FK — is invisible forever, which is the same class of
+    -- failure this migration exists to close. Warning is equally rollback-safe.
+    raise warning 'notify_olympiad_purchased failed for purchase %: %', new.id, sqlerrm;
+  end;
+  return new;
+end; $$;
+
+-- 010 line 88 runs `alter default privileges ... grant execute on functions to
+-- anon, authenticated, service_role`, so a NEW function is EXECUTE-able by anon
+-- AND authenticated unless all three are named. Revoking from `public, anon`
+-- alone has shipped as a hole in this repository before (migration 117).
+revoke all on function public.notify_olympiad_purchased_tg() from public, anon, authenticated;
+
+drop trigger if exists trg_notify_olympiad_purchased on public.olympiad_purchases;
+create trigger trg_notify_olympiad_purchased
+  after insert or update of status on public.olympiad_purchases
+  for each row when (new.status = 'active')
+  execute function public.notify_olympiad_purchased_tg();
+
+-- -----------------------------------------------------------------------------
 -- Baseline privileges (RLS gates rows). Pool + purchases are NOT anon-readable.
 -- -----------------------------------------------------------------------------
 grant select on public.olympiad_packages, public.olympiad_package_translations

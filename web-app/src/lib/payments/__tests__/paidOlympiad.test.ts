@@ -59,6 +59,9 @@ const MIGRATION_124 = join(SQL, "migrations", "2026_08_20_124_entitlements.sql")
 const MIGRATION_127 = join(
   SQL, "migrations", "2026_08_21_127_paid_olympiad_and_frozen_price.sql",
 );
+const MIGRATION_128 = join(
+  SQL, "migrations", "2026_08_22_128_reversal_delivery_and_pricing.sql",
+);
 
 function read(abs: string): string {
   return readFileSync(abs, "utf8").split("\r\n").join("\n");
@@ -766,54 +769,110 @@ describe("a gateway reversal", () => {
 // The migration and the canonical file say the SAME thing
 // =============================================================================
 
-describe("migration 127 and its backport", () => {
+describe("the payment migrations and their backport", () => {
   const migration = read(MIGRATION_127);
+  const migration128 = read(MIGRATION_128);
   const canonical = read(CANONICAL_011);
 
-  /** Every function 127 writes or re-issues. */
-  const FUNCTIONS = [
-    "fn_checkout_intent_immutable",
-    "plan_change_delta",
-    "plan_delta_project",
-    "quote_plan_change",
-    "apply_plan_change",
-    "quote_olympiad_purchase",
-    "purchase_olympiad",
-    "purchase_olympiad_if_free",
-    "checkout_alert_admins",
-    "checkout_intent_open",
-    "checkout_intent_price",
-    "checkout_redeem_plan",
-    "checkout_flag_redemption",
-    "checkout_redeem_sweep",
-    "checkout_reversal_candidates",
-    "checkout_revoke_reversed",
-    "admin_resolve_checkout_review",
-  ] as const;
+  /**
+   * Every function on the checkout rail, mapped to the migration that wrote it
+   * LAST.
+   *
+   * This has to be a map and not a flat list. `toContain` asks whether the
+   * canonical body still contains the MIGRATION's body, so the moment a later
+   * migration re-issues a function, checking it against the older file fails
+   * however correct the backport is — and would keep failing forever. Round 8
+   * moved five of these onto 128; the rest are still 127's.
+   */
+  const FUNCTIONS: Record<string, string> = {
+    fn_checkout_intent_immutable: migration,
+    plan_change_delta: migration,
+    plan_delta_project: migration,
+    quote_plan_change: migration128,
+    apply_plan_change: migration,
+    quote_olympiad_purchase: migration,
+    purchase_olympiad: migration,
+    purchase_olympiad_if_free: migration,
+    checkout_alert_admins: migration128,
+    checkout_intent_open: migration,
+    checkout_intent_price: migration,
+    checkout_redeem_plan: migration,
+    checkout_flag_redemption: migration128,
+    checkout_redeem_sweep: migration,
+    checkout_reversal_candidates: migration128,
+    checkout_revoke_reversed: migration128,
+    admin_resolve_checkout_review: migration,
+  };
 
   it("carries every body VERBATIM into 011", () => {
     // A backport that paraphrases is a second implementation with extra steps,
     // and the two only have to disagree once — on a live database that took the
     // migration and a from-zero rebuild that took the canonical file — for the
     // schema to stop being one thing.
-    for (const name of FUNCTIONS) {
-      expect(canonical, name).toContain(sqlFunction(migration, name));
+    for (const [name, source] of Object.entries(FUNCTIONS)) {
+      expect(canonical, name).toContain(sqlFunction(source, name));
     }
   });
 
   it("restates every revoke, because create-or-replace preserves ACLs", () => {
     // The single most expensive thing to forget: replacing a function keeps its
     // grants, so a body that becomes reachable by `authenticated` stays that way
-    // silently. Every function is named in both files.
-    for (const name of FUNCTIONS) {
+    // silently. Every function is named in the migration that last issued it AND
+    // in the canonical file.
+    for (const [name, source] of Object.entries(FUNCTIONS)) {
       for (const [label, sql] of [
-        ["migration 127", migration],
+        ["its migration", source],
         ["canonical 011", canonical],
       ] as const) {
         expect(sql, `${label} ${name}`).toContain(
           `revoke all on function public.${name}(`,
         );
       }
+    }
+  });
+
+  it("128 self-transacts and closes the round-8 defects", () => {
+    // Same rule as 127: the migration wraps itself, the canonical file never
+    // does (CLAUDE.md's migration-095 rule — a self-transacting file sourced
+    // inside a from-zero rebuild committed the OUTER transaction).
+    expect(migration128.match(/^[ 	]*(begin|commit|rollback)[ 	]*;/gm)).toEqual([
+      "begin;",
+      "commit;",
+    ]);
+
+    for (const [what, needle] of [
+      // An add whose pricing row was deactivated is refused, not priced at zero
+      // and dropped while the delivery test still matches.
+      ["pricing availability", "hint = 'missing_pricing'"],
+      // The gateway's 24-hour clock runs from the authorisation, not from the
+      // moment the intent was opened.
+      ["reversal window", "and p.updated_at > now() - interval '24 hours'"],
+      // The third arm: decided, delivered nothing, money returned.
+      ["decided-but-undelivered arm", "'|prev:' || coalesce(v_s.redemption_note, '-')"],
+      // The note a writer replaced is kept in the append-only ledger.
+      ["note history", "'previous_note', v_prev"],
+      // The purchase notification that migration 127 routed around.
+      ["purchase notifier", "trg_notify_olympiad_purchased"],
+    ] as const) {
+      for (const [label, sql] of [
+        ["migration 128", migration128],
+        ["canonical", `${canonical}${read(CANONICAL_015)}`],
+      ] as const) {
+        expect(sql, `${label}: ${what}`).toContain(needle);
+      }
+    }
+  });
+
+  it("does not assert where the money is in an alarm a REVERSAL also files", () => {
+    // checkout_alert_admins has three callers and one of them is the gateway
+    // reversal, filed AFTER the money has gone back. The old sentence said the
+    // parent's payment was with us, which tells the operator to go and deliver.
+    for (const [label, sql] of [
+      ["migration 128", migration128],
+      ["canonical 011", canonical],
+    ] as const) {
+      const body = sqlFunction(sql, "checkout_alert_admins");
+      expect(body, `${label} alarm copy`).not.toContain("ödənişi bizdədir");
     }
   });
 

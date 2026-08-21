@@ -6,13 +6,138 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — ROUND 8: THE REVERSAL THAT TOLD NOBODY (migration 128, 2026-08-22) — APPLIED, 128/128
+
+The six findings left open at the end of round 7 were investigated and each one
+adversarially re-checked against the code. **Five were real; one was not.** They
+are one sentence: **what we tell a human about a family's money must be true.**
+
+### What was wrong
+
+1. **(HIGH) A reversal on a DECIDED-but-undelivered checkout told nobody.**
+   `checkout_revoke_reversed` had arms for "never redeemed" and "applied" and no
+   `else`. The third state — `redeemed_at` set, `redemption_status =
+   'needs_review'` — is reachable and stayed a reversal candidate, so the money
+   went back and the session was never touched. The admin queue went on saying
+   *"money held, nothing delivered"* about a refund, and the obvious response to
+   that sentence is to grant the access by hand — giving the purchase away free
+   **after** refunding it.
+2. **The reversal window was anchored on the INTENT.** An intent lives 24 hours
+   (`INTENT_TTL_MINUTES`), so a checkout opened at 09:00 and paid at 20:00 went
+   unwatched from 09:00 the next morning while the gateway answered until 20:00.
+   *The review refuted the first proposed fix:* `p.created_at` is no better,
+   because the reconcile sweep writes a `pending` payments row five minutes after
+   the intent opens and the real authorisation takes the UPDATE branch. The
+   anchor is **`p.updated_at`** — when the approval was recorded — and nothing
+   moves it backwards inside the candidate list.
+3. **`quote_plan_change` priced an unavailable ADD at zero and dropped it.**
+   Every pricing read is an inner join wrapped in `coalesce(sum(), 0)`, so a
+   deactivated `subjects_pricing` row vanished silently while `plan_change_delta`
+   (which never reads pricing) still matched — delivery test passes, honour rule
+   fires, family pays for two subjects and receives one. `quote_child_plan` has
+   raised on this since it was written; the sibling never did. Scoped to
+   `state = 'add'` and nothing wider, so a withdrawn price can still be cancelled.
+4. **`redemption_note` is one last-writer-wins slot holding three orthogonal
+   facts** — why redemption could not deliver, what an operator DID, whether the
+   money came back. The slot keeps meaning "the current state"; the history now
+   goes to `payment_events`, which is append-only and already this rail's ledger.
+5. **`checkout_alert_admins` asserted "the parent's payment is with us"** in an
+   alarm a REVERSAL also files, after the money has gone back.
+6. **A paid olympiad purchase notified nobody.** 127 routed the paid path through
+   `checkout_redeem_plan`, past the only `notifyOlympiadPurchased` call site, so
+   only FREE activations notified. The emit moved onto the table
+   (`trg_notify_olympiad_purchased`), following migration 068's `attempt_graded`
+   precedent, with a one-shot backfill for purchases already delivered. The AUDIT
+   half was never missing — `fn_audit_row` covers it.
+
+**Finding 5 (the "free-op false positive") is NOT REAL and is closed.** Both
+passes independently verified that all three `_if_free` wrappers read `due_now`
+and nothing else, and that every genuinely free operation returns `due_now = 0`.
+No SQL change. The one real item it surfaced is a comment in
+`api/mobile/v1/olympiads/[pkg]/purchase/route.ts` promising an `already:true`
+answer the code does not give for a priced package.
+
+### The three constraints the review caught before they shipped red
+
+- **`paidOlympiad.test.ts` asserts canonical 011 CONTAINS migration 127's bodies.**
+  Backporting a changed body makes 011 stop containing 127's — the test fails
+  however byte-perfect the backport is. `FUNCTIONS` is now a name→source map and
+  the five round-8 functions point at 128. `reinstateSubject.test.ts` was split
+  the same way (`quote_plan_change` → 128, `apply_plan_change` stays 127).
+- **Adding a 013 check changes the rebuild-proof criterion.** 013 is now **128
+  checks**; CLAUDE.md and this file say **127/128 with only `102` failing**.
+- **`checkout_sessions.status` must stay `'paid'` in every arm** — it is what
+  `checkout_reversal_candidates` and check 118's `granted_unpaid` read.
+
+### Validation
+
+- Migration `128` applied to **staging** then **production**, both from the identical
+  file, both with all self-checks passing.
+- `013` against **production: 128/128 PASS**, zero failures, zero errors. Against
+  staging: **127/128**, the sole failure `102_curriculum_translations` (data
+  coverage — schema-only database; its three schema columns read `0|0|0`).
+- New check **124** PASS on both: `asserted | authorisation | handled | kept |
+  neutral | attached | 0 | 0`.
+- **The backfill was a clean no-op on production**: 7 active purchases visited,
+  0 notifications created, 14 rows and 14 distinct idempotency keys before and
+  after. The pre-127 purchases had all notified through the TypeScript emitter
+  under the same keys, which is exactly what the keys are for.
+- web-app: `tsc --noEmit` PASS, **533 tests** (531 before). admin-panel: `tsc` PASS,
+  **581 tests**.
+- **The code is not pushed yet.** The database is now AHEAD of the code, which is
+  the safe direction (a database ahead of its code is inert).
+
+**One defect caught in this migration before it reached production:** the backfill
+notified only the CHILD while the trigger notifies child AND parent. It was found
+by checking the production row counts before applying rather than after — 7 active
+purchases against 14 existing notifications is what made the asymmetry visible.
+Fixed, re-applied to staging, then applied to both.
+
+### NEW — the safety nets are not running (found this round, NOT fixed)
+
+**Nothing drives `/api/payments/azericard/reconcile` in production.**
+`web-app/vercel.json` was deleted on 2026-07-19 because Vercel **Hobby** caps
+crons at once-daily and a `*/5` entry failed every deployment; `pg_net` is not
+installed, so pg_cron (11 live jobs) cannot call an HTTP route either. Pass 1
+(lost-callback recovery) and pass 3 (reversal detection — the thing migration 128
+just improved) therefore **never run at all**. `checkout_redeem_sweep` is DB-side
+and only redeems sessions already marked `paid`; it cannot talk to the bank.
+
+Consequence when payments go `real`: a callback that never arrives leaves a family
+charged with nothing delivered and no alarm until somebody runs 013 by hand, and a
+refund leaves their access live forever. **This is a launch blocker, and it is an
+owner decision** (enabling `pg_net` puts a bearer token in the database, an
+external cron puts it in a third party, Vercel Pro is a subscription).
+
+### Also found this round
+
+- **`staging.olympiq.ai` was fully indexable** — no `noindex`, no `robots.txt`,
+  serving a byte-identical copy of the marketing site. **FIXED**: middleware now
+  serves `X-Robots-Tag: noindex, nofollow, noarchive` on every host that is not
+  `olympiq.ai` / `www.olympiq.ai` (`web-app/src/lib/indexing.ts`, 17 tests).
+  Keyed on the request host, not an env var: `VERCEL_ENV` reads "production" on
+  the staging project, and a stale `NEXT_PUBLIC_SITE_URL` would deindex the real site.
+- **Production returns HTTP 200 for a page that does not exist** (a soft 404).
+  `notFound()` is called correctly, but the route streams behind `loading.tsx`, so
+  the status is committed before the not-found path is reached. Crawlers read 200
+  as "this page exists". Not fixed — needs its own decision.
+- **`api/mobile/v1/children/[id]/subscribe` returns AZN amounts** (`base`,
+  `discount`, `total`) while line 23 of the same file promises none, and on a trial
+  `total` is the full plan price. Latent (no mobile caller today) but it is the
+  Store & Payments rule. Not fixed.
+- **Staging seed**: `supabase/seed/staging_smoke_seed.sql` — a synthetic
+  administrator, one 5.00 AZN olympiad package and 30 published 5-option questions
+  in the 5th-grade pool, so the paid olympiad rail can be exercised. Refuses to run
+  against any database holding students or payments. Idempotent.
+
 ## PINNED — FROM-ZERO REBUILD PROOF: DISCHARGED (2026-08-21)
 
 **Canonical SQL reproduces production. Proven, not assumed.**
 
 Bootstrapped `OlympIQ Staging` (empty, PostgreSQL 17.6) from canonical
 `001`-`012`,`014`,`015`,`016` in one uninterrupted pass — all 15 files exit 0 — then ran `013`:
-**126/127 PASS**.
+**126/127 PASS** (013 had 127 checks then; migration 128 added check 124, so the
+criterion is now **127/128**).
 
 The single failure is `102_curriculum_translations`, and it is EXPECTED on a schema-only
 database: that check asserts CONTENT coverage (>= 260 exam topics and >= 1077 subtopics carrying
@@ -26,7 +151,7 @@ nowhere safe to run one. There is now, and canonical SQL is confirmed to match.
 
 ### Two procedural facts learned doing it, now in CLAUDE.md
 
-1. **`013` is not purely a schema check.** A from-zero rebuild is proven by 126/127 with ONLY
+1. **`013` is not purely a schema check.** A from-zero rebuild is proven by 127/128 with ONLY
    `102` failing. Any other failing check on a fresh build is a real divergence.
 2. **A canonical file must be sourced in one uninterrupted run.** `011` takes over two minutes
    and no canonical file self-transacts, so a client timeout mid-file leaves its statements

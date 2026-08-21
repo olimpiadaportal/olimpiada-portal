@@ -71,6 +71,24 @@ export type CheckoutReviewRow = {
   parentEmail: string | null;
   /** True once an operator has written what they did. */
   resolved: boolean;
+  /**
+   * The money went back to the family.
+   *
+   * Derived from the PAYMENT row, never from the note. A gateway reversal on a
+   * session that was decided but delivered nothing (redeemed with
+   * `needs_review`) marks the payment refunded and — until round 8 — wrote
+   * nothing at all onto the session, because `checkout_revoke_reversed` only
+   * had arms for "never redeemed" and "applied". This queue therefore went on
+   * telling an operator "we are holding this family's money and have not
+   * delivered" about money that had already been returned, and the obvious
+   * response to that sentence — grant the access by hand — gives the package
+   * away for free.
+   *
+   * Reading the payment rather than the note also repairs every historical row
+   * without a migration: `payments.status = 'refunded'` has been written
+   * unconditionally, before the branch, since the reversal path existed.
+   */
+  refunded: boolean;
 };
 
 export type CheckoutReviewList = {
@@ -119,8 +137,11 @@ export async function listCheckoutReviews(): Promise<CheckoutReviewList> {
   const parentIds = raw
     .map((r) => r.owner_parent_profile_id)
     .filter((v): v is string => typeof v === "string");
+  const orders = raw
+    .map((r) => r.provider_session_id)
+    .filter((v): v is string => typeof v === "string");
 
-  const [children, parents] = await Promise.all([
+  const [children, parents, paid] = await Promise.all([
     childIds.length
       ? admin
           .from("students")
@@ -129,6 +150,15 @@ export async function listCheckoutReviews(): Promise<CheckoutReviewList> {
       : Promise.resolve({ data: [] as unknown[] }),
     parentIds.length
       ? admin.from("profiles").select("id, email").in("id", parentIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    // The money half of each row. READ-ONLY, service-role, and the ONLY source
+    // for "did the family get their money back" — see the `refunded` field.
+    orders.length
+      ? admin
+          .from("payments")
+          .select("provider_ref, status")
+          .eq("provider", "azericard")
+          .in("provider_ref", orders)
       : Promise.resolve({ data: [] as unknown[] }),
   ]);
 
@@ -143,11 +173,19 @@ export async function listCheckoutReviews(): Promise<CheckoutReviewList> {
   for (const p of (parents.data ?? []) as Record<string, unknown>[]) {
     if (typeof p.email === "string") parentEmail.set(String(p.id), p.email);
   }
+  const refundedOrders = new Set<string>();
+  for (const p of (paid.data ?? []) as Record<string, unknown>[]) {
+    if (p.status === "refunded" && typeof p.provider_ref === "string") {
+      refundedOrders.add(p.provider_ref);
+    }
+  }
 
   const rows: CheckoutReviewRow[] = raw.map((r) => {
     const note = typeof r.redemption_note === "string" ? r.redemption_note : null;
+    const order = String(r.provider_session_id ?? "");
     return {
-      order: String(r.provider_session_id ?? ""),
+      order,
+      refunded: refundedOrders.has(order),
       status: String(r.redemption_status ?? ""),
       note,
       intentKind: typeof r.intent_kind === "string" ? r.intent_kind : null,

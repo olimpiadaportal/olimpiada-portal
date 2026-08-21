@@ -81,9 +81,20 @@ export default async function CheckoutReviewPage() {
                       {kindLabel(r.intentKind)}
                       <br />
                       <span className="muted">
-                        {r.status === "needs_review"
-                          ? lt("ckrev.status.needs_review")
-                          : lt("ckrev.status.applied")}
+                        {/* REFUNDED WINS OVER THE REDEMPTION STATUS. A reversal
+                            on a row that was decided but delivered nothing
+                            leaves redemption_status = 'needs_review', and that
+                            label reads "we are holding this family's money and
+                            have not delivered" — which invites the operator to
+                            grant the access by hand, for money that has already
+                            gone home. The payment row is the truth about the
+                            money; the redemption status is only the truth about
+                            the delivery. */}
+                        {r.refunded
+                          ? lt("ckrev.status.refunded")
+                          : r.status === "needs_review"
+                            ? lt("ckrev.status.needs_review")
+                            : lt("ckrev.status.applied")}
                       </span>
                     </td>
                     <td>

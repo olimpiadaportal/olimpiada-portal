@@ -4246,6 +4246,97 @@ select '123_needs_review_reaches_a_person' as check_name,
             then 'admin only' else 'MISSING OR OPEN' end as resolve_action;
 
 
+-- -----------------------------------------------------------------------------
+-- 124 - ROUND 8 (migration 128): the reversal that told nobody, the price that
+--       was not there, and the purchase that notified no one.
+--
+-- Five function invariants plus one trigger, all provable from the catalog, so a
+-- FROM-ZERO build proves the CANONICAL files carry round 8 -- rather than the
+-- migration having been applied to a live database and then forgotten in 011
+-- and 015, which is the drift this file exists to catch.
+--
+-- BOUNDED ON PURPOSE. The counters below scope to 30 days, following check 123's
+-- `reversed_live`, whose comment records why: an unbounded counter with no way
+-- to reach zero goes permanently red on a historical backlog, and a permanently
+-- failing alarm hides the condition it exists to detect. That lesson is already
+-- written into checks 118, 121 and 122.
+-- -----------------------------------------------------------------------------
+with defs as (
+  select pg_get_functiondef('public.quote_plan_change(uuid,jsonb)'::regprocedure)       as quote_def,
+         pg_get_functiondef('public.checkout_reversal_candidates(int)'::regprocedure)   as window_def,
+         pg_get_functiondef('public.checkout_revoke_reversed(text,text)'::regprocedure) as revoke_def,
+         pg_get_functiondef('public.checkout_flag_redemption(text,text)'::regprocedure) as flag_def,
+         pg_get_functiondef('public.checkout_alert_admins(text,text)'::regprocedure)    as alarm_def
+),
+notifier as (
+  select count(*) as n
+  from pg_trigger t
+  join pg_proc p on p.oid = t.tgfoid
+  where t.tgrelid = 'public.olympiad_purchases'::regclass
+    and t.tgname  = 'trg_notify_olympiad_purchased'
+    and not t.tgisinternal
+    and p.prosecdef
+    and p.proconfig @> array['search_path=public, pg_temp']
+    and not has_function_privilege('anon',          p.oid, 'execute')
+    and not has_function_privilege('authenticated', p.oid, 'execute')
+),
+-- Money returned, and the session never said so. This is the state that told an
+-- operator "money held, nothing delivered" about a refund -- the exact sentence
+-- that invites a manual grant after the money has already gone home.
+silent_refund as (
+  select count(*) as n
+  from public.payments p
+  join public.checkout_sessions cs
+    on cs.provider = p.provider and cs.provider_session_id = p.provider_ref
+  where p.status = 'refunded'
+    and cs.intent_kind is not null
+    and coalesce(cs.redemption_note, '') not like 'reversed:%'
+    and coalesce(cs.redemption_note, '') not like 'resolved:%'
+    and p.updated_at > now() - interval '30 days'
+),
+-- An ADD standing in a frozen intent whose price has since been withdrawn.
+-- REPORTED, NOT ASSERTED: the guard refuses these at quote time from now on, but
+-- a session signed before 128 can still redeem through the old hole until it
+-- expires. Reported so that exposure is visible rather than assumed to be zero.
+stale_priced_intent as (
+  select count(*) as n
+  from public.checkout_sessions cs
+  cross join lateral jsonb_array_elements(coalesce(cs.intent_delta, '[]'::jsonb)) as e(v)
+  where cs.intent_kind = 'plan_change'
+    and cs.redeemed_at is null
+    and cs.status in ('pending', 'paid')
+    and jsonb_typeof(e.v) = 'object'
+    and e.v ->> 'op' = 'add'
+    and not exists (
+      select 1 from public.subjects_pricing sp
+      where sp.subject_id::text = e.v ->> 'subject_id'
+        and sp.interval::text   = e.v ->> 'interval'
+        and sp.status = 'active')
+)
+select '124_round8_reversal_delivery_and_pricing' as check_name,
+       case when position('missing_pricing'       in (select quote_def  from defs)) > 0
+             and position('p.updated_at > now()'  in (select window_def from defs)) > 0
+             and position('|prev:'                in (select revoke_def from defs)) > 0
+             and position('previous_note'         in (select flag_def   from defs)) > 0
+             and position('bizdədir'                in (select alarm_def  from defs)) = 0
+             and (select n from notifier)      = 1
+             and (select n from silent_refund) = 0
+            then 'PASS' else 'FAIL' end as status,
+       case when position('missing_pricing' in (select quote_def from defs)) > 0
+            then 'asserted' else 'BLIND' end as add_pricing_available,
+       case when position('p.updated_at > now()' in (select window_def from defs)) > 0
+            then 'authorisation' else 'INTENT (stale)' end as reversal_window_anchor,
+       case when position('|prev:' in (select revoke_def from defs)) > 0
+            then 'handled' else 'MISSING' end as decided_but_undelivered,
+       case when position('previous_note' in (select flag_def from defs)) > 0
+            then 'kept' else 'LOST' end as replaced_note_history,
+       case when position('bizdədir' in (select alarm_def from defs)) = 0
+            then 'neutral' else 'ASSERTS MONEY HELD' end as alarm_copy,
+       case when (select n from notifier) = 1
+            then 'attached' else 'MISSING OR OPEN' end as purchase_notifier,
+       (select n from silent_refund)       as refund_not_on_session,
+       (select n from stale_priced_intent) as pending_adds_now_unpriced;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

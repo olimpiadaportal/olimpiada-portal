@@ -112,6 +112,14 @@ const MIGRATION_120 = read(
 const MIGRATION_127 = read(
   "supabase/sql/migrations/2026_08_21_127_paid_olympiad_and_frozen_price.sql",
 );
+// Round 8 re-issued quote_plan_change ONLY — to refuse an add whose pricing row
+// has been deactivated instead of quietly pricing it at zero and dropping it.
+// apply_plan_change is untouched and stays pinned to 127. This split is the
+// convention the comment above describes: each name follows the migration that
+// wrote it LAST.
+const MIGRATION_128 = read(
+  "supabase/sql/migrations/2026_08_22_128_reversal_delivery_and_pricing.sql",
+);
 const CORE = read("web-app/src/lib/auth/subscriptionCore.ts");
 
 /** The body of one `create or replace function public.<name>(` block in 011. */
@@ -268,9 +276,12 @@ describe("migration 120 and its validation check", () => {
     // plan_change_states is still 120's; the other two were re-issued by 126,
     // which capped a trial-time addition at the trial end.
     expect(SQL_011).toContain(fnBody(MIGRATION_120, "plan_change_states"));
-    for (const name of ["quote_plan_change", "apply_plan_change"]) {
-      expect(SQL_011, name).toContain(fnBody(MIGRATION_127, name));
-    }
+    expect(SQL_011, "apply_plan_change").toContain(
+      fnBody(MIGRATION_127, "apply_plan_change"),
+    );
+    expect(SQL_011, "quote_plan_change").toContain(
+      fnBody(MIGRATION_128, "quote_plan_change"),
+    );
   });
 
   it("restates every revoke/grant, because create-or-replace preserves ACLs", () => {

@@ -9743,6 +9743,8 @@ declare
   -- Migration 127: the ADDS, named, so an intent can freeze the CHANGE the
   -- parent authorised instead of a snapshot of the whole plan.
   v_adds       jsonb;
+  -- Round 8: how many of the ADDS have no active price. See the guard below.
+  v_missing    int;
 begin
   select * into v_sub
   from public.child_subscriptions
@@ -9754,6 +9756,42 @@ begin
     raise exception 'subject_change: no active subscription' using errcode = 'no_data_found';
   end if;
   v_owner := v_sub.owner_parent_profile_id;
+
+  -- ROUND 8 -- AN ADD WITH NO PRICE MUST NOT BE PRICED AT ZERO AND DROPPED.
+  --
+  -- Every pricing read below is an INNER JOIN on subjects_pricing wrapped in
+  -- coalesce(sum(...), 0), so a subject whose pricing row is missing or has
+  -- been deactivated does not raise -- it silently vanishes from items, adds,
+  -- added_base and due_now. The sibling function quote_child_plan has always
+  -- RAISED on exactly this condition, which is why the plan_start branch of
+  -- redemption was safe and this one was not.
+  --
+  -- What that asymmetry cost, in the window between SIGNING an intent and
+  -- REDEEMING it: the frozen delta names [add Math, add English] and the
+  -- English price is deactivated in between. plan_change_delta re-derives the
+  -- SAME delta (it reads coverage and cycles, never pricing), so the delivery
+  -- test passes; the re-price comes back at half, which is neither null nor
+  -- zero, so no_longer_payable does not fire either; the honour rule then
+  -- charges the frozen full price and apply_plan_change delivers one subject.
+  -- The family pays for two and receives one, and delivered_items records both.
+  --
+  -- Scoped to state = 'add' AND NOTHING WIDER. A live subject whose price was
+  -- later withdrawn must still be removable, renewable and reinstatable -- a
+  -- parent who cannot even CANCEL because we withdrew a price is a worse
+  -- failure than the one being fixed. reinstate, cycle and remove never read
+  -- subjects_pricing in the quote or in the apply, so they are unaffected.
+  select count(*) into v_missing
+  from public.plan_change_states(v_sub.id, p_items) s
+  where s.state = 'add'
+    and not exists (
+      select 1 from public.subjects_pricing sp
+      where sp.subject_id = s.subject_id
+        and sp.interval   = s.interval
+        and sp.status     = 'active');
+  if v_missing > 0 then
+    raise exception 'plan_change: missing pricing for % subject(s)', v_missing
+      using errcode = 'check_violation', hint = 'missing_pricing';
+  end if;
 
   -- MIGRATION 127 -- A LAPSED TRIAL IS NOT A TRIAL.
   --
@@ -11075,8 +11113,13 @@ begin
         v_admin,
         'checkout_needs_review',
         'Ödəniş baxış tələb edir',
+        -- ROUND 8: the old sentence asserted "the parent's money is with
+        -- us", and this function has three callers, one of which is a
+        -- gateway REVERSAL -- filed after the money has gone back. An
+        -- alarm that states the wrong fact about the money is worse than
+        -- one that states none: it tells the operator to go and deliver.
         'Sifariş ' || p_order || ' — səbəb: ' || coalesce(p_reason, 'naməlum') ||
-          '. Valideynin ödənişi bizdədir; nəyin çatdırıldığını yoxlayın.',
+          '. Ödənişin və çatdırılmanın vəziyyətini yoxlayın.',
         jsonb_build_object('order', p_order, 'reason', p_reason),
         array['in_app'],
         'ckrev:' || p_order || ':' || coalesce(p_reason, 'x'),
@@ -11752,7 +11795,8 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_ok boolean := false;
+  v_ok   boolean := false;
+  v_prev text;
 begin
   update public.checkout_sessions
      set redemption_note = left(coalesce(p_note, 'flagged'), 200)
@@ -11763,9 +11807,30 @@ begin
      -- has not happened, and inventing a note for it would put a row in front of
      -- a human that nothing has gone wrong with yet.
      and redeemed_at is not null
-  returning true into v_ok;
+  returning true, redemption_note into v_ok, v_prev;
 
   if coalesce(v_ok, false) then
+    -- ROUND 8 -- KEEP THE NOTE THAT WAS REPLACED. redemption_note is a single
+    -- slot and every writer overwrites it, so an operator arriving later sees
+    -- only the newest condition and no way to learn what the redemption
+    -- originally could not deliver. The slot stays the CURRENT state -- that is
+    -- what the admin queue and 013 checks 118 and 123 read -- and the history
+    -- goes where this rail already keeps history: the append-only ledger.
+    --
+    -- Best-effort, in its own block: failing to record history must never roll
+    -- back the flag it describes, which is the whole point of flagging.
+    begin
+      insert into public.payment_events (provider, event_id, payload_json, processed_at)
+      values ('azericard', 'note:' || p_order || ':' || md5(coalesce(v_prev, '')),
+              jsonb_build_object(
+                'order', p_order,
+                'previous_note', v_prev,
+                'new_note', left(coalesce(p_note, 'flagged'), 200)),
+              now())
+      on conflict do nothing;
+    exception when others then
+      raise warning 'checkout_flag_redemption: note history not kept for %: %', p_order, sqlerrm;
+    end;
     perform public.checkout_alert_admins(p_order, coalesce(p_note, 'flagged'));
   end if;
   return coalesce(v_ok, false);
@@ -12049,9 +12114,30 @@ as $$
     -- reversal performed after the window closes is invisible to us, and the
     -- only evidence left is the settlement report. That is the acquirer's
     -- constraint, not a choice made here.
-    and cs.created_at > now() - interval '24 hours'
-    and cs.created_at < now() - interval '5 minutes'
-  order by cs.created_at asc
+    --
+    -- ROUND 8 -- THE CLOCK RUNS FROM THE AUTHORISATION, and neither created_at
+    -- is that moment.
+    --   cs.created_at is when the INTENT WAS OPENED, and an intent lives for a
+    --   full day (INTENT_TTL_MINUTES = 24 * 60). A checkout opened at 09:00,
+    --   abandoned and resumed at 20:00 re-signs the SAME order in place, so
+    --   this sweep went blind at 09:00 the next morning while the gateway went
+    --   on answering until 20:00 -- eleven hours in which a refund was
+    --   invisible and the family kept access nobody was paying for.
+    --   p.created_at is no better and fails on the same case: the reconcile
+    --   sweep asks about a still-pending order five minutes after it opens, an
+    --   unpaid order answers without an AMOUNT, that reconciles to 'unknown',
+    --   and a payments row is written with status 'pending'. The real
+    --   authorisation then takes the UPDATE branch of the upsert, and
+    --   created_at stays at 09:05.
+    -- p.updated_at is when we recorded the APPROVAL, and nothing moves it
+    -- backwards inside this list: the revoke that moves it also sets status =
+    -- 'refunded', which the conjunct above has already excluded, and the
+    -- redemption's child_subscription_id write only moves it FORWARD. Forward
+    -- over-asks, and an out-of-window query is not a money event -- it fails,
+    -- classifies as unreadable, changes nothing, and is asked again next pass.
+    and p.updated_at > now() - interval '24 hours'
+    and p.updated_at < now() - interval '5 minutes'
+  order by p.updated_at asc
   limit least(greatest(coalesce(p_limit, 50), 1), 200);
 $$;
 
@@ -12184,6 +12270,27 @@ begin
     update public.checkout_sessions
        set redemption_note = v_note
      where id = v_s.id;
+  else
+    -- ROUND 8 -- DECIDED, AND DELIVERED NOTHING. The third reachable state, and
+    -- until now the one with no arm at all: redeemed_at is set and the
+    -- redemption ended in `needs_review`, so the money was taken and nothing
+    -- was ever granted.
+    --
+    -- REVOKE NOTHING -- there is nothing to revoke, and delivered_items is NULL
+    -- for exactly that reason. What was missing is the SENTENCE. With no arm
+    -- here the reversal left the session untouched, so the review queue went on
+    -- telling an operator "we are holding this family's money and have not
+    -- delivered" about money that had already gone home -- and the obvious
+    -- response to that sentence is to grant the access by hand, which gives the
+    -- purchase away for free after the refund.
+    --
+    -- The previous note is carried in the tail rather than overwritten: it is
+    -- the only record of WHY the redemption could not deliver, and left(...)
+    -- truncates the tail, never the `reversed:` prefix the checks match on.
+    update public.checkout_sessions
+       set redemption_note = left('reversed:' || coalesce(p_reason, 'gateway') ||
+                                  '|prev:' || coalesce(v_s.redemption_note, '-'), 200)
+     where id = v_s.id;
   end if;
 
   -- 3. The ledger copy, and the alarm.
@@ -12194,6 +12301,14 @@ begin
             'intent_kind', v_s.intent_kind,
             'reason', p_reason,
             'was_redeemed', v_s.redeemed_at is not null,
+            -- ROUND 8: the note this reversal replaced. redemption_note is one
+            -- last-writer-wins slot carrying three orthogonal facts -- why the
+            -- redemption could not deliver, what an operator DID, and whether
+            -- the money came back -- so every write destroys the previous
+            -- answer. payment_events is append-only and is where the history
+            -- belongs; the slot keeps meaning "the current state".
+            'previous_note', v_s.redemption_note,
+            'redemption_status', v_s.redemption_status,
             'producers_revoked', v_n),
           now())
   on conflict do nothing;

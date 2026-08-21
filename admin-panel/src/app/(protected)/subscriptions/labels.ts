@@ -170,12 +170,16 @@ const STRINGS: Record<Locale, Dict> = {
     "ckrev.kind.olympiad": "Olimpiada paketi",
     "ckrev.status.needs_review": "Pul bizdədir, çatdırılmayıb",
     "ckrev.status.applied": "Çatdırılıb, sonrakı addım alınmadı",
+    // Bankdan geri qaytarılma: pul artıq ailədədir. Bu sətir "pul bizdədir"
+    // yazısını əvəz edir — yoxsa operator geri qaytarılmış ödəniş üçün girişi
+    // əl ilə açar.
+    "ckrev.status.refunded": "Pul geri qaytarılıb — borcumuz yoxdur",
     "ckrev.resolved": "Həll olunub",
     "ckrev.resolvePlaceholder": "Nə etdiniz? (məs. pul geri qaytarıldı, ailə ilə danışıldı)",
     "ckrev.resolve": "Nəticəni yaz",
     "ckrev.resolving": "Yazılır…",
     "ckrev.resolveHint":
-      "Statusu dəyişmir — status pulun taleyini saxlayır. Yalnız nə etdiyinizi qeyd edir və audit jurnalına yazılır.",
+      "Statusu dəyişmir — status pulun taleyini saxlayır. Yalnız nə etdiyinizi qeyd edir və audit jurnalına yazılır. Pul geri qaytarılıbsa da bir cümlə yazın: sıra yalnız bundan sonra bağlanır.",
     "ckrev.err.needResolution": "Nə etdiyinizi yazın.",
     "ckrev.err.notFound": "Bu sifariş üzrə qərar verilmiş ödəniş tapılmadı.",
     "ckrev.noServiceKey":
@@ -329,12 +333,13 @@ const STRINGS: Record<Locale, Dict> = {
     "ckrev.kind.olympiad": "Olympiad package",
     "ckrev.status.needs_review": "Money held, nothing delivered",
     "ckrev.status.applied": "Delivered, follow-up failed",
+    "ckrev.status.refunded": "Money returned — nothing is owed",
     "ckrev.resolved": "Resolved",
     "ckrev.resolvePlaceholder": "What did you do? (e.g. refunded, spoke to the family)",
     "ckrev.resolve": "Record outcome",
     "ckrev.resolving": "Saving…",
     "ckrev.resolveHint":
-      "This does not change the status — the status records what happened to the money. It only writes down what you did, and it is audited.",
+      "This does not change the status — the status records what happened to the money. It only writes down what you did, and it is audited. Write a sentence even when the money has already been returned: that is what closes the row.",
     "ckrev.err.needResolution": "Say what you did.",
     "ckrev.err.notFound": "No decided payment was found for this order.",
     "ckrev.noServiceKey":
@@ -488,12 +493,13 @@ const STRINGS: Record<Locale, Dict> = {
     "ckrev.kind.olympiad": "Олимпиадный пакет",
     "ckrev.status.needs_review": "Деньги у нас, ничего не доставлено",
     "ckrev.status.applied": "Доставлено, следующий шаг не прошёл",
+    "ckrev.status.refunded": "Деньги возвращены — мы ничего не должны",
     "ckrev.resolved": "Решено",
     "ckrev.resolvePlaceholder": "Что вы сделали? (например: вернули деньги, связались с семьёй)",
     "ckrev.resolve": "Записать итог",
     "ckrev.resolving": "Сохраняем…",
     "ckrev.resolveHint":
-      "Статус не меняется — он хранит судьбу денег. Записывается только то, что вы сделали, и это попадает в журнал аудита.",
+      "Статус не меняется — он хранит судьбу денег. Записывается только то, что вы сделали, и это попадает в журнал аудита. Напишите фразу и тогда, когда деньги уже вернули: только так строка закрывается.",
     "ckrev.err.needResolution": "Напишите, что вы сделали.",
     "ckrev.err.notFound": "Решённый платёж по этому заказу не найден.",
     "ckrev.noServiceKey":

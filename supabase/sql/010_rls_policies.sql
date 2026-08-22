@@ -420,13 +420,34 @@ create policy "aopttrans_write" on public.answer_option_translations for all to 
          or exists (select 1 from public.answer_options o join public.questions q on q.id = o.question_id
                     where o.id = option_id and q.created_by = public.current_profile_id()));
 
--- explanations: app should reveal only after result; RLS allows published/owner/admin.
+-- explanations: a solution is visible only to a reader who EARNED it (migration
+-- 132). The previous comment here said "app should reveal only after result;
+-- RLS allows published/owner/admin" -- the rule was written down and left to the
+-- UI, so a direct PostgREST call returned every solution in the bank, including
+-- tomorrow's rated round. The predicate now enforces what the comment promised.
 drop policy if exists "qexpl_select" on public.question_explanations;
 create policy "qexpl_select" on public.question_explanations for select to authenticated
-  using (exists (
-    select 1 from public.questions q where q.id = question_id
-      and (q.status = 'published' or q.created_by = public.current_profile_id()
-           or public.is_admin() or public.has_permission('content.review'))));
+  using (
+    -- Staff and the question's own author: unchanged.
+    exists (
+      select 1 from public.questions q
+      where q.id = question_explanations.question_id
+        and (q.created_by = public.current_profile_id()
+             or public.is_admin()
+             or public.has_permission('content.review')))
+    -- ...or the reader ANSWERED this question in an attempt of their own that
+    -- has been graded. `status = 'graded'` and not 'submitted', to match
+    -- get_test_review exactly: a child whose attempt is still being graded gets
+    -- the same answer from both paths instead of two different ones.
+    or exists (
+      select 1
+      from public.test_attempt_answers a
+      join public.test_attempts t on t.id = a.attempt_id
+      where a.question_id = question_explanations.question_id
+        and t.student_profile_id = public.current_profile_id()
+        and t.status = 'graded')
+  );
+
 drop policy if exists "qexpl_write" on public.question_explanations;
 create policy "qexpl_write" on public.question_explanations for all to authenticated
   using (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')

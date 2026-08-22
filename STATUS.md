@@ -6,6 +6,66 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — SOLUTIONS ARE EARNED, NOT BROWSABLE (migration 132, 2026-08-22 — APPLIED)
+
+`question_explanations` holds the WORKED SOLUTION per question. The old policy let
+ANY signed-in user read it for ANY published question, so a child on their own
+account could `GET /rest/v1/question_explanations?select=*` and receive every
+solution in the bank -- including tomorrow's rated daily round, which is one
+attempt per subject per day and feeds the leaderboards.
+
+**The old policy knew.** Its own comment read *"explanations: app should reveal
+only after result; RLS allows published/owner/admin"* -- the rule was written down
+and then left to the UI to enforce, which is precisely the gap a direct API call
+walks through.
+
+Measured as a real signed-in child: **90 explanation rows readable with no
+attempt at all**. (`answer_options.is_correct` was already correctly protected --
+0 rows -- so only the prose solution leaked.)
+
+### The rule (owner decision, 2026-08-22)
+
+**A child sees a solution ONLY for questions in one of their OWN GRADED
+attempts.** Daily rounds, topic practice and olympiad packages alike, since all
+three are `test_attempts` rows. Before answering, nothing.
+
+That is the rule `get_test_review` ALREADY enforced -- it raises `forbidden` for
+someone else's attempt and `review: attempt not graded yet` for an unfinished one.
+The table was simply more permissive than the function meant to be its front door;
+132 makes them agree. `graded` and not `submitted`, deliberately, so both paths
+answer identically.
+
+### Why the review screen still works
+
+- The explanation TEXT comes from `get_test_review`, a SECURITY DEFINER RPC that
+  bypasses RLS and does its own ownership + graded checks.
+- The one direct table read on that page selects `question_id, locale` ONLY -- no
+  body -- to decide whether a ru/en reader is seeing an az fallback. Those
+  questions are in the child's own graded attempt, so the new predicate covers it.
+- No PARENT surface reads explanations (zero hits under `web-app/src/app/(parent)`),
+  so no parent branch exists. **A future parent result-view will need its own
+  branch here -- it will not inherit one.**
+- Both sides of the new EXISTS are indexed (`idx_answers_question`,
+  `idx_attempts_student`).
+
+### A bug in the verification, caught because it reported success
+
+The probe first selected its fixture with
+`exists (select 1 from question_explanations e where e.question_id = id)` -- and
+the bare `id` resolved to `question_explanations.id`, because the INNER table has
+that column too. The EXISTS was self-referential, matched nothing, and the whole
+probe skipped while the migration reported success. Fixed by aliasing the outer
+table. **A verification block that tests nothing is worse than none, because it
+reads as coverage** -- the same lesson as the `freeze` keyword in 013 check 122.
+
+### Validation
+
+Applied to staging then production. The migration's own probe: `before=0`,
+own-question explanations visible, `others=0`. Independently re-probed as a child
+with no attempts: readable rows went **90 -> 0**. `013` on production **128/128**;
+web-app 546 tests, `tsc` clean. Backported into canonical `010`, policy count
+unchanged (129).
+
 ## PINNED — A CHILD COULD UNLOCK THEIR OWN PAID ACCESS (migration 131, 2026-08-22 — FIXED)
 
 Found by a documentation-vs-code audit, then **confirmed empirically** against

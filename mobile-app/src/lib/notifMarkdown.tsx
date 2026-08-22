@@ -1,14 +1,31 @@
 // RN port of the web's XSS-safe minimal-markdown renderer for admin
 // notification bodies (`**bold**`, `*italic*`, `[label](url)`). React Native
 // has no innerHTML, so instead of escape-then-format we PARSE into typed
-// segments and render <Text> nodes — nothing can ever become markup. The link
+// segments and render <Text> nodes — nothing can ever become markup. The PARSER
 // whitelist is identical to the web (http(s) or root-relative; backslashes and
 // protocol-relative //host rejected); disallowed links stay literal text.
+//
+// WHERE THIS DIVERGES FROM THE WEB: parsing and RENDERING are two decisions, and
+// only the parser is shared. An external http(s) link is still parsed as a link
+// (so the label reads correctly) but is rendered NON-TAPPABLE here — see the
+// note on RichBody. The web twin keeps them live; a website is governed by
+// neither app store.
 import React from "react";
-import { Linking } from "react-native";
 import { AppText } from "@/components/AppText";
 import { useTheme } from "@/theme/ThemeProvider";
 import { isSafeRelativeUrl } from "./deeplink";
+
+/**
+ * A link this app may follow ITSELF: root-relative only.
+ *
+ * `Linking` is deliberately NOT imported into this module. Nothing here may
+ * open an external URL, and removing the import is what makes that structural
+ * rather than a rule someone has to remember — a future edit has to add the
+ * import back, which is visible in a diff.
+ */
+export function isInAppPath(url: string): boolean {
+  return url[0] === "/" && url[1] !== "/" && !url.includes("\\");
+}
 
 export type MarkdownSegment = {
   text: string;
@@ -53,7 +70,28 @@ export function parseNotificationMarkdown(text: string | null | undefined): Mark
 
 /**
  * Render parsed segments. Root-relative links go through `onOpenPath` (the
- * caller routes them via the deep-link allowlist); https links open externally.
+ * caller routes them via the deep-link allowlist).
+ *
+ * EXTERNAL http(s) LINKS ARE NOT TAPPABLE IN THIS APP. They render as plain
+ * text — no underline, no accent colour, no press handler.
+ *
+ * This is a STORE rule, not a style choice (docs/STORE_PAYMENTS_COMPLIANCE.md
+ * §5 and finding I5). Notification bodies are ADMIN-SUPPLIED and arrive after
+ * review, and this renderer is used on the STUDENT notification screen. Opening
+ * them meant:
+ *   * Apple 3.1.1(a) — an admin could push `[Abunə ol](https://olympiq.ai/…)`
+ *     and steer users to a non-IAP purchase page that the reviewer never saw.
+ *     Dynamic steering is the violation whether or not money moves.
+ *   * a child-safety problem — an ungated link-out to an arbitrary website,
+ *     from a screen a MINOR reads.
+ *
+ * The label still renders, so the sentence an administrator wrote still makes
+ * sense; only the tap is removed. Relative paths are unaffected and still route
+ * through `isSafeRelativeUrl`.
+ *
+ * NOTE: the WEB twin of this renderer deliberately keeps external links live.
+ * A website is governed by neither store; this restriction belongs to the
+ * binary and must not be "tidied up" into the shared web version.
  */
 export function RichBody({
   text,
@@ -68,17 +106,18 @@ export function RichBody({
   return (
     <AppText>
       {segments.map((s, i) => {
-        if (s.url) {
+        // Tappable ONLY for a root-relative path we can route ourselves. An
+        // external URL falls through to the plain-text branch below — see the
+        // note on this component.
+        if (s.url && isInAppPath(s.url)) {
           const url = s.url;
-          const external = /^https?:\/\//i.test(url);
           return (
             <AppText
               key={i}
               color={tokens.accent}
               style={{ textDecorationLine: "underline" }}
               onPress={() => {
-                if (external) void Linking.openURL(url);
-                else if (onOpenPath && isSafeRelativeUrl(url)) onOpenPath(url);
+                if (onOpenPath && isSafeRelativeUrl(url)) onOpenPath(url);
               }}
             >
               {s.text}

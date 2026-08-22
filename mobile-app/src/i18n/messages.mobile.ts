@@ -17,6 +17,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // consumption-only test is app-wide. Overriding beats deleting the slides:
     // the onboarding still explains the product, it just stops selling it.
     "carousel.i2.body": "Riyaziyyat, Elm, Məntiq və İngilis dilindən övladınıza lazım olanları seçin. Fənləri istənilən vaxt dəyişə bilərsiniz.",
+    // The 2026-08-18 pass overrode this slide's BODY and missed its TITLE, which
+    // still read "start the trial" -- a commerce promise in the onboarding
+    // headline of a purchase-silent binary.
+    "carousel.i2.title": "Övladınızın fənlərini seçin",
     "carousel.i3.body": "Fənlər aktivləşdikdən sonra sistem unikal 8 rəqəmli giriş ID-si verir. Övladınız bu ID və sizin təyin etdiyiniz parolla daxil olur — e-poçt lazım deyil.",
     "carousel.i5.body": "Olimpiada paketləri övladınıza seçilmiş mövzular üzrə ömürlük giriş verir. Sualınız olsa, Əlaqə səhifəsindən bizə yazın.",
     "parent.dash.choosePlan": "Fənləri seç",
@@ -24,6 +28,15 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a3": "Hər fənn üzrə giriş valideyn hesabı vasitəsilə açılır. Şagird heç vaxt özü giriş aça bilmir.",
     "faq.q6": "Fənn girişi nə qədər davam edir?",
     "faq.a6": "Hər fənnin öz dövrü var və dövr bitdikdə giriş bağlanır. Bitmə tarixindən əvvəl valideynə bildiriş göndərilir.",
+    // Round 8 store-compliance pass: the 2026-08-18 rewrite covered q3/a3 and
+    // q6/a6 and MISSED these two. faq.a7 shipped the sibling-discount schedule
+    // ("10% / 15%") in the binary, and the FAQ row in the account sheet is not
+    // role-gated, so a signed-in CHILD reached a discount table in two taps.
+    // Rewritten in access language, with no percentages and no purchase verbs.
+    "faq.q5": "Şagird özü giriş aça bilərmi?",
+    "faq.a5": "Xeyr. Fənn girişi yalnız valideyn hesabı vasitəsilə açılır.",
+    "faq.q7": "Bir ailədən bir neçə uşaq üçün necə işləyir?",
+    "faq.a7": "Valideyn bir hesabdan bir neçə uşaq əlavə edə bilər. Hər uşağın öz 8 rəqəmli ID-si və öz fənn girişi olur.",
     "mob.welcome.tagline": "Olimpiadalara hazırlaşmağın ən əyləncəli yolu",
     "mob.welcome.studentLogin": "Şagird girişi",
     "mob.update.title": "Yeniləmə tələb olunur",
@@ -150,6 +163,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // consumption-only test is app-wide. Overriding beats deleting the slides:
     // the onboarding still explains the product, it just stops selling it.
     "carousel.i2.body": "Pick the subjects your child needs from Math, Science, Logic, and English. You can change them at any time.",
+    "carousel.i2.title": "Choose your child's subjects",
     "carousel.i3.body": "Once the subjects are active, the system issues a unique 8-digit login ID. Your child signs in with that ID and the password you set — no email needed.",
     "carousel.i5.body": "Olympiad packages give your child lifetime access to the topics they cover. Have a question? Reach us from the Contact page.",
     "parent.dash.choosePlan": "Choose subjects",
@@ -157,6 +171,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a3": "Access to each subject is opened through the parent account. A student can never open access themselves.",
     "faq.q6": "How long does access to a subject last?",
     "faq.a6": "Each subject has its own period, and access closes when that period ends. The parent is notified before the end date.",
+    "faq.q5": "Can a student open access themselves?",
+    "faq.a5": "No. Subject access is opened only through the parent account.",
+    "faq.q7": "How does it work for several children in one family?",
+    "faq.a7": "A parent can add several children from one account. Each child gets their own 8-digit ID and their own subject access.",
     "mob.welcome.tagline": "The most fun way to prepare for olympiads",
     "mob.welcome.studentLogin": "Student sign-in",
     "mob.update.title": "Update required",
@@ -275,6 +293,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // consumption-only test is app-wide. Overriding beats deleting the slides:
     // the onboarding still explains the product, it just stops selling it.
     "carousel.i2.body": "Выберите предметы, нужные вашему ребёнку: математика, наука, логика, английский. Их можно изменить в любой момент.",
+    "carousel.i2.title": "Выберите предметы для ребёнка",
     "carousel.i3.body": "После активации предметов система выдаёт уникальный 8-значный ID для входа. Ребёнок входит по этому ID и заданному вами паролю — эл. почта не нужна.",
     "carousel.i5.body": "Олимпиадные пакеты дают ребёнку пожизненный доступ к охваченным темам. Есть вопрос? Напишите нам со страницы «Контакты».",
     "parent.dash.choosePlan": "Выбрать предметы",
@@ -282,6 +301,10 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a3": "Доступ к каждому предмету открывается через родительский аккаунт. Ученик никогда не открывает доступ сам.",
     "faq.q6": "Сколько длится доступ к предмету?",
     "faq.a6": "У каждого предмета свой период, и по его окончании доступ закрывается. Родитель получает уведомление до даты окончания.",
+    "faq.q5": "Может ли ученик сам открыть доступ?",
+    "faq.a5": "Нет. Доступ к предметам открывается только через родительский аккаунт.",
+    "faq.q7": "Как это работает для нескольких детей в одной семье?",
+    "faq.a7": "Родитель может добавить нескольких детей из одного аккаунта. У каждого ребёнка свой 8-значный ID и свой доступ к предметам.",
     "mob.welcome.tagline": "Самый увлекательный способ готовиться к олимпиадам",
     "mob.welcome.studentLogin": "Вход для ученика",
     "mob.update.title": "Требуется обновление",

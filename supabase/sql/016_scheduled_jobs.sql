@@ -201,6 +201,37 @@ begin
   raise notice '016: pg_cron job olympiq_azericard_reconcile scheduled (*/5).';
 end $$;
 
+-- -----------------------------------------------------------------------------
+-- GIVEAWAY RESTORE (migration 134) — hourly.
+--
+-- Switching `giveaway_period` on force-disables `payments`, and the window then
+-- expires LAZILY: the flag stays on, is_giveaway_active() simply starts
+-- returning false, and the resolved mode becomes `off` rather than `real`. At
+-- that moment the whole campaign cohort loses access AND nobody can buy their
+-- way back. Nothing used to turn payments on again, so the outage lasted until
+-- an administrator happened to open Settings — driven by the clock, with no
+-- mistake required from anyone.
+--
+-- The restore is idempotent and refuses to act while a window is still running.
+-- -----------------------------------------------------------------------------
+do $$
+declare v_has_cron boolean;
+begin
+  select exists (select 1 from pg_extension where extname = 'pg_cron') into v_has_cron;
+  if not v_has_cron then
+    raise notice '016: pg_cron absent — giveaway restore not scheduled.';
+    return;
+  end if;
+  perform cron.unschedule(jobid) from cron.job
+   where jobname = 'olympiq_restore_payments_after_giveaway';
+  perform cron.schedule(
+    'olympiq_restore_payments_after_giveaway',
+    '9 * * * *',
+    'select public.restore_payments_after_giveaway();'
+  );
+  raise notice '016: pg_cron job olympiq_restore_payments_after_giveaway scheduled (hourly at :09).';
+end $$;
+
 -- =============================================================================
 -- End of 016_scheduled_jobs.sql
 -- =============================================================================

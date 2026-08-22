@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { getLocale, getT } from "@/i18n/server";
+import { PATHNAME_HEADER } from "@/lib/supabase/middleware";
 import { getChild, getParent, maySeePurchaseUi } from "@/lib/auth/session";
 import { getLocaleSettings, getPublicSiteSettings } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
@@ -126,6 +128,29 @@ export default async function PublicLayout({
   // priced basket violates "children never see purchase UI". /services and
   // /olympiad-packages* additionally redirect children server-side.
   const nav = mayPurchase ? NAV : NAV.filter(([href]) => href !== "/services");
+
+  // ACCOUNT-RECOVERY PAGES CARRY NO MARKETING CHROME (compliance finding I8).
+  //
+  // These three are never NAVIGATED to — they are arrived at from a password
+  // reset email, an email-confirmation link, or the mobile app's "forgot
+  // password" button, which opens this site in the system browser.
+  //
+  // That last one is why this matters beyond tidiness. An App Store reviewer
+  // testing account recovery taps that button, lands here, and — with the full
+  // header — sees a "Qiymətlər" link one tap from real AZN prices. The apps are
+  // purchase-silent by architecture precisely so a reviewer never meets a
+  // non-IAP purchase path; a link-out that re-opens the marketing nav undoes
+  // that in one hop. `maySeePurchaseUi()` does not help here: it only suppresses
+  // /services for a signed-in CHILD, and a reviewer is anonymous.
+  //
+  // Stripping the nav, the login/register CTA and the footer columns leaves the
+  // page doing exactly its job. The brand link, theme toggle and language picker
+  // stay — they are not steering, and the page still has to be usable in three
+  // languages.
+  const pathname = (await headers()).get(PATHNAME_HEADER) ?? "";
+  const bareChrome = ["/forgot-password", "/reset-password", "/verify-email"].some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
   const footerCols = mayPurchase
     ? FOOTER_COLS
     : FOOTER_COLS.map((col) => ({
@@ -162,23 +187,27 @@ export default async function PublicLayout({
         {/* Client island: only the link row needs the pathname, so the rest of
             this header stays server-rendered. It marks the current section
             (aria-current="page" + a sliding accent underline). */}
-        <PublicNavLinks items={nav.map(([href, key]) => ({ href, label: t(key) }))} />
-        <div className="site-cta">
-          {panelHref ? (
-            <Link className="btn" href={panelHref}>
-              {t("nav.myPanel")}
-            </Link>
-          ) : (
-            <>
-              <Link className="btn-ghost" href="/login">
-                {t("nav.login")}
+        {bareChrome ? null : (
+          <PublicNavLinks items={nav.map(([href, key]) => ({ href, label: t(key) }))} />
+        )}
+        {bareChrome ? null : (
+          <div className="site-cta">
+            {panelHref ? (
+              <Link className="btn" href={panelHref}>
+                {t("nav.myPanel")}
               </Link>
-              <Link className="btn" href="/register">
-                {t("nav.register")}
-              </Link>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <Link className="btn-ghost" href="/login">
+                  {t("nav.login")}
+                </Link>
+                <Link className="btn" href="/register">
+                  {t("nav.register")}
+                </Link>
+              </>
+            )}
+          </div>
+        )}
         <div className="navbar-controls">
           <ThemeToggle locale={locale} />
           <LanguageDropdown current={locale} available={enabledLocales} />
@@ -200,16 +229,18 @@ export default async function PublicLayout({
             </Link>
             <CmsProse className="site-foot-tagline" text={t("footer.tagline")} />
           </div>
-          {footerCols.map((col) => (
-            <div className="site-foot-col" key={col.head}>
-              <p className="site-foot-h">{t(col.head)}</p>
-              {col.links.map(([href, key]) => (
-                <Link key={href} href={href}>
-                  {t(key)}
-                </Link>
+          {bareChrome
+            ? null
+            : footerCols.map((col) => (
+                <div className="site-foot-col" key={col.head}>
+                  <p className="site-foot-h">{t(col.head)}</p>
+                  {col.links.map(([href, key]) => (
+                    <Link key={href} href={href}>
+                      {t(key)}
+                    </Link>
+                  ))}
+                </div>
               ))}
-            </div>
-          ))}
         </div>
         <div className="site-foot-bottom">
           <div className="site-foot-bottom-inner">

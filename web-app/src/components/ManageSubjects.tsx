@@ -372,7 +372,19 @@ export function ManageSubjects({
 
   // Payments off → adds AND cycle changes are refused server-side
   // (assert_payments_enabled); mirror that here. Removals stay available.
-  const addsDisabled = paymentMode === "off";
+  // SPEC §1: during a campaign the platform is free for everyone, so there is
+  // nothing to select and nothing to charge — plan selection, upgrades and cycle
+  // changes are all disabled. REMOVALS AND CANCELLATIONS STAY LEGAL, exactly as
+  // they do in payments-off mode: a parent must never be trapped in a plan they
+  // want to leave, and §7 requires an existing paid subscription to remain fully
+  // manageable while a campaign runs on top of it.
+  //
+  // The server refuses these writes independently (paidMutationGateKey →
+  // gate.giveawayFree), so this is the courtesy half of a rule enforced in two
+  // places — §11: never rely on a disabled button alone.
+  const addsDisabled = paymentMode === "off" || paymentMode === "giveaway";
+  const disabledReason =
+    paymentMode === "giveaway" ? "gate.giveawaySubsPaused" : "gate.paymentsOff";
 
   function onSaveClick() {
     if (!hasDiff || saving) return;
@@ -520,7 +532,7 @@ export function ManageSubjects({
                         )
                       }
                       disabled={saving || addsDisabled}
-                      title={addsDisabled ? tt("gate.paymentsOff") : undefined}
+                      title={addsDisabled ? tt(disabledReason) : undefined}
                       aria-label={tt("cfg.addAria").replace(
                         "{subject}",
                         subjectLabel(t, s.code, s.name),

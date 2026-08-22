@@ -770,6 +770,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Ödənişlər müvəqqəti olaraq dayandırılıb. Yeni abunə və satınalmalar hazırda mümkün deyil.",
     "gate.giveawayFree":
       "Hazırda pulsuz kampaniya dövrü davam edir — bütün imkanlar ödənişsiz açıqdır, ödəniş tələb olunmur.",
+    "gate.giveawaySubsPaused":
+      "Kampaniya dövründə platforma tam pulsuzdur, ona görə abunə seçimi müvəqqəti bağlıdır. Kampaniya bitdikdən sonra planları yenidən seçmək mümkün olacaq.",
     "gate.freeAccess":
       "Sizin üçün pulsuz giriş dövrü aktivdir — bütün abunə imkanları hazırda ödənişsiz açıqdır.",
     // Migration 126 — a change that costs money, asked for on a surface that
@@ -2589,6 +2591,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Payments are temporarily paused. New subscriptions and purchases are unavailable right now.",
     "gate.giveawayFree":
       "A free giveaway period is running — everything is unlocked at no cost, so no payment is needed right now.",
+    "gate.giveawaySubsPaused":
+      "Subscriptions are temporarily disabled because the platform is completely free during the campaign. Plans become selectable again when the campaign ends.",
     "gate.freeAccess":
       "A free-access period is active for you — all subscription features are unlocked at no cost right now.",
     // Migration 126 — a change that costs money, asked for on a surface that
@@ -3734,6 +3738,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pay.cancel": "Отмена",
     "billing.selectChild": "Выберите ребёнка",
     "addchild.giveawayGranted": "Сейчас идёт бесплатный акционный период — все возможности для вашего ребёнка открыты сразу!",
+    "gate.giveawaySubsPaused":
+      "Подписки временно недоступны: во время акции платформа полностью бесплатна. Планы снова можно будет выбрать после её окончания.",
     "addchild.freeAccessGranted": "Для вас действует период бесплатного доступа — все возможности для вашего ребёнка открыты сразу!",
     "freeact.note": "У этого ребёнка ещё нет ID для входа. Пока действует бесплатный период, вы можете активировать его бесплатно.",
     "freeact.cta": "Активировать бесплатно",

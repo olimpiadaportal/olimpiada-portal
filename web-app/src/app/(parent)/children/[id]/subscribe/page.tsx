@@ -230,6 +230,23 @@ export default async function SubscribePage({
           {!sub?.id && !(child as any).child_unique_id && (
             <FreeActivation studentId={id} dict={dict} />
           )}
+          {/* SPEC §4 and §7: the plans stay VISIBLE during a campaign — a parent
+              should be able to see what will exist afterwards — but selection,
+              upgrades and cycle changes are disabled inside the editor and
+              explained there. Hiding it entirely (the previous behaviour) also
+              took away REMOVAL and CANCELLATION from families who were already
+              paying when the campaign started, which §7 forbids: their
+              subscription must stay intact and manageable. Same shape as the
+              payments-off branch above. */}
+          {sub?.id && (
+            <ManageSubjects
+              studentId={id}
+              subjects={subjects}
+              covered={covered}
+              paymentMode={mode}
+              dict={dict}
+            />
+          )}
         </>
       ) : sub?.id ? (
         <ManageSubjects

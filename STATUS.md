@@ -66,6 +66,114 @@ with no attempts: readable rows went **90 -> 0**. `013` on production **128/128*
 web-app 546 tests, `tsc` clean. Backported into canonical `010`, policy count
 unchanged (129).
 
+## PINNED — THE GIVEAWAY LIFECYCLE + THE FEATURE TOGGLES (migrations 133-134, 2026-08-22 — APPLIED)
+
+**The owner's giveaway specification, implemented on the model the platform
+already had: BLANKET FREE ACCESS, never zero-amount subscription records.**
+`has_subject_access()` returns true for any subject while a campaign runs and
+writes nothing, so an existing paid subscription is untouched -- no period moves,
+no metadata is rewritten, nothing is cancelled (spec §2, §7).
+
+### The two money defects
+
+1. **A CAMPAIGN COULD NOT END CLEANLY.** Switching `giveaway_period` on
+   force-disables `payments` (the exclusivity trigger). The window then expires
+   LAZILY -- the flag stays on, `is_giveaway_active()` simply starts returning
+   false -- so the resolved mode became `off`, NOT `real`. At that instant every
+   family in the cohort lost subject access AND nobody could buy their way back
+   (`assert_payments_enabled` raises inside `create_child_plan`; every checkout
+   gate answers `gate.paymentsOff`). Nothing anywhere turned `payments` back on.
+   **The outage is driven by the CLOCK -- nobody has to make a mistake -- and it
+   lasted until an administrator happened to open Settings.**
+   Fixed: the trigger records that it paused payments
+   (`payments.paused_by_giveaway`), and `restore_payments_after_giveaway()`
+   -- scheduled hourly -- hands it back the moment the window is over. Proven on
+   staging: `campaign ON -> payments=f`, `window over -> restored=t, payments=t,
+   giveaway=f`, `second run -> f` (idempotent).
+
+2. **"LAUNCH PROMOTION" DID NOT CONTROL THE TRIAL.** `quote_child_plan` read
+   `launch_promo_config.trial_days` unconditionally, so switching the toggle off
+   stopped ADVERTISING the trial on the public pricing page while the platform
+   kept granting it -- copy and behaviour diverging in the worse direction. There
+   was no other control: no admin editor for `trial_days` exists anywhere, so
+   ending the trial meant raw SQL against production. Proven on staging:
+   `launch_promo ON -> trial 7 days`, `OFF -> 0 days and due_now 9.00`.
+
+### The toggles now gate behaviour, not just the UI
+
+- **`notifications`** is a real master switch: enforced in `create_notification`,
+  the one insert path every producer uses. Before, every row was still written,
+  the admin composer still reported "sent", and the mobile inbox stayed reachable.
+  **Priority 1 is exempt**, like the recipient's own mute -- that level is
+  reserved for payment and security, and a display toggle must not suppress
+  "we are holding your money".
+- **`leaderboard`** gates the DATA: `get_leaderboard` and `get_public_leaderboard`
+  return no rows when it is off. It was presentation-only, and the public reader
+  serves `anon`.
+- **`giveaway.started_at`** is now an UPSERT. A bare UPDATE against a missing row
+  matched nothing, so the flag switched on and the campaign was silently INERT.
+
+### The campaign warns three times (spec §5, §10)
+
+`notify_giveaway_ending` keyed idempotency on `gvw:<parent>:<window end>` -- **no
+rung** -- so the daily job produced exactly ONE notice per campaign and every
+later day was discarded by `on conflict do nothing`. Identical defect, identical
+shape, to the one migration 130 fixed for subscription lapses.
+
+Now 3 / 2 / 1 whole calendar days, the rung in the key, priority escalating
+3 -> 2 -> 1. Proven on staging: `4 days out -> 0`, then `3, 2, 1 -> 1 each`, every
+re-run `0`.
+
+**The lapse reminders go quiet during a campaign.** They told parents access would
+stop on a date when it would not, and to act while every payment rail was
+refusing them.
+
+### One deliberate deviation from the spec's wording
+
+The final rung does NOT say "review the available subscription plans". These rows
+render inside the purchase-silent mobile binaries, where a notification directing
+a user toward a purchase surface is Apple 3.1.1(a) steering. It states the same
+fact -- premium sections need a subscription once the campaign ends -- without
+instructing anyone to buy.
+
+### Plan selection during a campaign (spec §1, §4, §7)
+
+`ManageSubjects` now disables adds, upgrades and cycle changes during a campaign
+(it only checked `off`), explains why (`gate.giveawaySubsPaused`, az/en/ru), and
+**the editor is rendered instead of hidden** -- hiding it took REMOVAL and
+CANCELLATION away from families who were already paying when the campaign
+started, which §7 forbids. The server refuses these writes independently
+(`gate.giveawayFree`), so it is enforced twice (§11).
+
+**§3 needed no work**: `GiveawayBanner` already derives remaining time from the
+campaign's `endsAt`, ticks live, and disappears when the window closes.
+
+### One clock (spec §8)
+
+`is_giveaway_active()` parsed `giveaway.duration_days` more loosely than
+`current_payment_mode()`, so the two could disagree about one campaign -- one
+granting access while the other resolved a different payment mode. It now
+delegates. No recursion: `current_payment_mode()` parses independently and has
+never called it.
+
+### Validation
+
+Applied to staging then production; `013` on production **128/128**. Every claim
+above was proven by running it against staging in a rolled-back transaction, not
+by reading the code. web-app **568 tests**, admin-panel **581**, mobile-app
+**458**, all typechecks clean.
+
+### Known, and NOT changed
+
+- **Olympiad packages are excluded from the campaign** (owner decision,
+  2026-08-22): they are always bought. `start_olympiad_attempt` says so in its
+  own comment. Note that `startOlympiadPayment` blocks only mode `off` while its
+  two siblings also block `giveaway` -- so during a campaign the admin panel
+  shows "Payments: OFF" while olympiad purchases still reach the bank. The
+  CHARGING is intended; the panel's claim is what is wrong. Left for an owner
+  decision: stop the giveaway force-disabling `payments`, or correct the copy.
+- The campaign's own notifications are AZ-only, like every DB-emitted notice.
+
 ## PINNED — A CHILD COULD UNLOCK THEIR OWN PAID ACCESS (migration 131, 2026-08-22 — FIXED)
 
 Found by a documentation-vs-code audit, then **confirmed empirically** against

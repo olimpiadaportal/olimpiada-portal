@@ -35,6 +35,13 @@ import { describe, expect, it } from "vitest";
 const REPO = resolve(process.cwd(), "..");
 const SQL = join(REPO, "supabase", "sql");
 const MIGRATION_130 = join(SQL, "migrations", "2026_08_22_130_manual_renewal_reminders.sql");
+// Migration 134 RE-ISSUED notify_expiring_subscriptions (it goes silent during a
+// giveaway campaign), so the canonical file now carries 134's body, not 130's.
+// A backport check pinned to a superseded migration fails on every correct
+// future change and passes on none — the same trap that caught 013 checks 91,
+// 95, 110 and 114. Behaviour is still asserted against the LIVE body below;
+// only the parity comparison follows the migration that wrote it last.
+const MIGRATION_134 = join(SQL, "migrations", "2026_08_22_134_giveaway_lifecycle.sql");
 const CANONICAL_011 = join(SQL, "011_indexes_constraints_functions_triggers.sql");
 
 function read(abs: string): string {
@@ -149,14 +156,28 @@ describe("the copy is legal inside a purchase-silent app", () => {
   });
 });
 
-describe("migration 130 and its backport", () => {
-  it("carries the body VERBATIM into 011", () => {
-    expect(canonical).toContain(fn.trimEnd());
+describe("the reminder chain and its backport", () => {
+  const migration134 = read(MIGRATION_134);
+
+  it("carries migration 134's body VERBATIM into 011", () => {
+    // 134 is the migration that wrote this function LAST. Comparing against 130
+    // would fail however correct the backport is.
+    expect(canonical).toContain(sqlFunction(migration134, "notify_expiring_subscriptions").trimEnd());
+  });
+
+  it("goes silent while the platform is free", () => {
+    // A campaign makes access free platform-wide, so "access stops on <date>,
+    // and nothing renews it" is false in both halves — and every payment rail
+    // refuses a plan change anyway, so the parent is told to act and then
+    // prevented from acting. The campaign has its own three-rung chain.
+    expect(sqlCode(sqlFunction(canonical, "notify_expiring_subscriptions"))).toContain(
+      "is_giveaway_active()",
+    );
   });
 
   it("restates the revoke, because create-or-replace preserves ACLs", () => {
     for (const [label, sql] of [
-      ["migration 130", migration],
+      ["migration 134", migration134],
       ["canonical 011", canonical],
     ] as const) {
       expect(sql, label).toContain(

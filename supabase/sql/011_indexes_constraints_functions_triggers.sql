@@ -3148,6 +3148,22 @@ begin
   select coalesce(trial_days, 7) into v_trial from public.launch_promo_config where id = 1;
   v_trial := coalesce(v_trial, 7);
 
+  -- MIGRATION 133 -- THE "LAUNCH PROMOTION" TOGGLE NOW MEANS SOMETHING.
+  --
+  -- It used to gate exactly one sentence on the public pricing page while the
+  -- trial was granted regardless, so switching it OFF stopped ADVERTISING the
+  -- promotion and carried on giving it away -- the copy and the behaviour
+  -- diverging in the worst of the two directions. There is no other control:
+  -- the admin panel has no editor for trial_days, so ending the trial meant raw
+  -- SQL against production.
+  --
+  -- A zero trial is already safe: migration 126's guard routes trial_days = 0
+  -- into the ACTIVE/paid branch instead of writing a trial that has already
+  -- ended.
+  if not coalesce((select enabled from public.feature_flags where key = 'launch_promo'), false) then
+    v_trial := 0;
+  end if;
+
   -- MIGRATION 125 -- audit invariant H7 (the preview and the charge are one
   -- computation). The free trial is granted ONCE PER CHILD: create_child_plan
   -- reads exactly this predicate (any prior subscription row, canceled and
@@ -3760,35 +3776,63 @@ grant execute on function public.admin_upsert_subject_price(uuid, text, numeric)
 -- flag is still on — expiry needs no job.
 create or replace function public.is_giveaway_active()
 returns boolean
-language plpgsql
+language sql
 stable
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  v_enabled boolean;
-  v_started timestamptz;
-  v_days    int;
-begin
-  select enabled into v_enabled from public.feature_flags where key = 'giveaway_period';
-  if not coalesce(v_enabled, false) then return false; end if;
-
-  begin
-    select nullif(value_json #>> '{}', '')::timestamptz into v_started
-    from public.system_settings where key = 'giveaway.started_at';
-    select floor((value_json #>> '{}')::numeric)::int into v_days
-    from public.system_settings where key = 'giveaway.duration_days';
-  exception when others then
-    return false;
-  end;
-
-  if v_started is null or coalesce(v_days, 0) < 1 then return false; end if;
-  return now() < v_started + make_interval(days => v_days);
-end;
+  -- MIGRATION 134: delegate, so a campaign can never be "running" for access and
+  -- "not running" for the payment mode. current_payment_mode() parses the flag,
+  -- the start and the duration itself and does NOT call this function, so this
+  -- is a one-way dependency and cannot recurse.
+  select public.current_payment_mode() = 'giveaway';
 $$;
 
 comment on function public.is_giveaway_active() is
   'True while the admin giveaway window (giveaway_period flag + giveaway.started_at + giveaway.duration_days) is running. Elapsed window = false even if the flag is still on.';
+
+create or replace function public.restore_payments_after_giveaway()
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_flag_on boolean;
+  v_paused  boolean;
+begin
+  select enabled into v_flag_on from public.feature_flags where key = 'giveaway_period';
+  -- Only act once the campaign is genuinely OVER: the flag still on but the
+  -- window elapsed. A running giveaway must not be interrupted.
+  if not coalesce(v_flag_on, false) or public.is_giveaway_active() then
+    return false;
+  end if;
+
+  select coalesce((value_json #>> '{}')::boolean, false) into v_paused
+  from public.system_settings where key = 'payments.paused_by_giveaway';
+
+  -- Switching the giveaway flag off lets the exclusivity trigger settle; the
+  -- payments flag is then set on its own so the trigger sees a normal UPDATE.
+  update public.feature_flags
+     set enabled = false, updated_at = now()
+   where key = 'giveaway_period' and enabled;
+
+  if coalesce(v_paused, false) then
+    update public.feature_flags
+       set enabled = true, updated_at = now()
+     where key = 'payments' and not enabled;
+  end if;
+
+  update public.system_settings
+     set value_json = to_jsonb(false), updated_at = now()
+   where key = 'payments.paused_by_giveaway';
+
+  return true;
+end;
+$$;
+
+revoke all on function public.restore_payments_after_giveaway() from public, anon, authenticated;
+grant execute on function public.restore_payments_after_giveaway() to service_role;
 
 revoke all on function public.is_giveaway_active() from public, anon, authenticated;
 grant execute on function public.is_giveaway_active() to service_role;
@@ -4739,6 +4783,17 @@ begin
     return new;
   end if;
 
+  -- MIGRATION 133: remember whether PAYMENTS was the thing we just switched off
+  -- to make room for a giveaway. Without this the campaign ends into `off`
+  -- rather than back into selling, and only a human noticing can undo it.
+  if new.key = 'giveaway_period' and new.enabled then
+    insert into public.system_settings (key, value_json)
+    values ('payments.paused_by_giveaway',
+            to_jsonb(exists (select 1 from public.feature_flags
+                             where key = 'payments' and enabled)))
+    on conflict (key) do update set value_json = excluded.value_json, updated_at = now();
+  end if;
+
   update public.feature_flags
      set enabled = false, updated_at = now()
    where key in ('payments', 'giveaway_period')
@@ -4746,9 +4801,13 @@ begin
      and enabled;
 
   if new.key = 'giveaway_period' then
-    update public.system_settings
-       set value_json = to_jsonb(now()), updated_at = now()
-     where key = 'giveaway.started_at';
+    -- MIGRATION 133: UPSERT, not a bare UPDATE. A missing settings row used to
+    -- match nothing, so the flag switched on and the campaign was completely
+    -- inert — is_giveaway_active() has no start date to measure from and simply
+    -- returns false, with no signal anywhere that the window never began.
+    insert into public.system_settings (key, value_json)
+    values ('giveaway.started_at', to_jsonb(now()))
+    on conflict (key) do update set value_json = excluded.value_json, updated_at = now();
   end if;
 
   return new;
@@ -8038,7 +8097,7 @@ grant execute on function public.lb_rows(text, text, uuid, text) to service_role
 
 -- get_leaderboard is unchanged (reads is_provisional from lb_rows) but must be
 -- recreated because lb_rows was dropped/recreated above.
-create function public.get_leaderboard(
+create or replace function public.get_leaderboard(
   p_board    text,
   p_scope    text default 'global',
   p_scope_id uuid default null,
@@ -8057,6 +8116,16 @@ declare
   v_me    uuid := public.current_profile_id();
   v_limit int := least(greatest(coalesce(p_limit, 100), 1), 100);
 begin
+  -- MIGRATION 133 -- the `leaderboard` toggle gates the DATA, not just the menu.
+  -- It was presentation-only: the UI hid while these readers kept serving, and
+  -- get_public_leaderboard serves `anon`. An administrator switching a
+  -- leaderboard off is usually acting on a fairness or privacy concern.
+  -- Returns NO ROWS rather than raising: every caller already renders an empty
+  -- board, and an exception would surface as a broken page.
+  if coalesce((select enabled from public.feature_flags where key = 'leaderboard'), true) = false then
+    return;
+  end if;
+
   if v_me is null then
     raise exception 'leaderboard: not authenticated';
   end if;
@@ -8093,6 +8162,7 @@ begin
     order by u.ord;
 end;
 $$;
+
 comment on function public.get_leaderboard(text, text, uuid, text, int) is
   'Live percentage board: competition rank (ties share) on the unrounded value; '
   'provisional rows (fewer than min_attempts rounds) listed after ranked ones with '
@@ -8215,6 +8285,16 @@ as $$
 declare
   v_limit int := least(greatest(coalesce(p_limit, 10), 1), 10);
 begin
+  -- MIGRATION 133 -- the `leaderboard` toggle gates the DATA, not just the menu.
+  -- It was presentation-only: the UI hid while these readers kept serving, and
+  -- get_public_leaderboard serves `anon`. An administrator switching a
+  -- leaderboard off is usually acting on a fairness or privacy concern.
+  -- Returns NO ROWS rather than raising: every caller already renders an empty
+  -- board, and an exception would surface as a broken page.
+  if coalesce((select enabled from public.feature_flags where key = 'leaderboard'), true) = false then
+    return;
+  end if;
+
   -- Overall board = global all-time percentage; provisional (low-sample)
   -- results never appear on the public site. Names are anonymized server-side:
   -- 'Şagird XXXX' (last 4 digits of the 8-digit child id, leading zeros kept).
@@ -8234,6 +8314,7 @@ begin
     order by r.ord;
 end;
 $$;
+
 comment on function public.get_public_leaderboard(int) is
   'PUBLIC landing-page board (Round 36): top-10 global all-time PERCENTAGE, ranked '
   '(non-provisional) students only, competition ranks, anonymized "Şagird XXXX" names. '
@@ -8722,6 +8803,21 @@ declare
   v_push  boolean;
 begin
   if p_recipient is null then return null; end if;
+
+  -- MIGRATION 133 -- `notifications` IS A MASTER SWITCH, and this is the only
+  -- place that can make it one: every producer in the platform inserts through
+  -- this function. Before, the toggle hid some web surfaces while every row was
+  -- still written, the admin composer still reported "sent", and the mobile
+  -- inbox stayed fully reachable.
+  --
+  -- PRIORITY 1 IS EXEMPT, exactly as the recipient's own mute is below. That
+  -- level is reserved for payment and security -- "we are holding your money
+  -- and have not delivered" -- and a platform-wide DISPLAY toggle must not be
+  -- able to suppress it.
+  if coalesce(p_priority, 5) > 1
+     and coalesce((select enabled from public.feature_flags where key = 'notifications'), true) = false then
+    return null;
+  end if;
   -- Respect the recipient's IN-APP preference; missing prefs = enabled.
   if coalesce((select in_app_enabled from public.notification_preferences where profile_id = p_recipient), true) = false
      and coalesce(p_priority, 5) > 1 then
@@ -8761,6 +8857,7 @@ begin
   return v_id;
 end;
 $$;
+
 revoke all on function public.create_notification(uuid, text, text, text, jsonb, text[], text, int, text, text, timestamptz) from public, anon, authenticated;
 grant execute on function public.create_notification(uuid, text, text, text, jsonb, text[], text, int, text, text, timestamptz) to service_role;
 
@@ -9268,6 +9365,16 @@ declare
   v_sent     uuid;
   v_n        int := 0;
 begin
+  -- MIGRATION 134 -- SILENT DURING A CAMPAIGN. These warnings say "access stops
+  -- on <date>, and nothing renews it automatically". During a giveaway BOTH
+  -- halves are false: access is not stopping, and every payment rail refuses a
+  -- plan change anyway (gate.giveawayFree), so the parent is told to act and
+  -- then prevented from acting. The campaign has its own three-rung warning
+  -- chain -- notify_giveaway_ending -- which is the one that is true right now.
+  if public.is_giveaway_active() then
+    return 0;
+  end if;
+
   for v_row in
     select cs.id,
            cs.owner_parent_profile_id,
@@ -9359,36 +9466,82 @@ begin
   return v_n;
 end;
 $$;
+
 revoke all on function public.notify_expiring_subscriptions() from public, anon, authenticated;
 grant execute on function public.notify_expiring_subscriptions() to service_role;
 
 -- Giveaway-ending scanner (cron): warn all parents in the final 2 days of an
 -- active giveaway. Idempotency keyed by (parent, window end) → once per window.
 create or replace function public.notify_giveaway_ending()
-returns int language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_start timestamptz; v_dur int; v_end timestamptz; v_days int; v_parent uuid; v_n int := 0;
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_start  timestamptz;
+  v_dur    int;
+  v_end    timestamptz;
+  v_days   int;
+  v_parent uuid;
+  v_title  text;
+  v_body   text;
+  v_prio   int;
+  v_sent   uuid;
+  v_n      int := 0;
 begin
   if not public.is_giveaway_active() then return 0; end if;
+
   select nullif(value_json #>> '{}', '')::timestamptz into v_start
     from public.system_settings where key = 'giveaway.started_at';
   select nullif(value_json #>> '{}', '')::int into v_dur
     from public.system_settings where key = 'giveaway.duration_days';
   if v_start is null or coalesce(v_dur, 0) <= 0 then return 0; end if;
   v_end := v_start + make_interval(days => v_dur);
-  if now() < v_end - interval '2 days' or now() >= v_end then return 0; end if;
-  v_days := greatest(1, ceil(extract(epoch from (v_end - now())) / 86400.0)::int);
-  for v_parent in select profile_id from public.parents loop
-    perform public.create_notification(
-      v_parent, 'giveaway_ending', 'Kampaniya bitir',
-      'Pulsuz kampaniya ' || v_days::text || ' gün sonra başa çatır.',
+
+  -- WHOLE CALENDAR DAYS, like migration 130. An epoch-based rung depends on what
+  -- time the cron happens to fire and can skip a step entirely.
+  v_days := v_end::date - now()::date;
+  if v_days not in (3, 2, 1) then return 0; end if;
+
+  if v_days = 3 then
+    v_prio  := 3;
+    v_title := 'Pulsuz giriş 3 gün sonra bitir';
+    v_body  := 'Kampaniya dövrü başa çatmaq üzrədir. 3 gün sonra platforma adi abunə sisteminə qayıdır.';
+  elsif v_days = 2 then
+    v_prio  := 2;
+    v_title := 'Pulsuz giriş 2 gün sonra bitir';
+    v_body  := 'Tam pulsuz girişə cəmi 2 gün qalıb. Kampaniya bitdikdən sonra premium bölmələr üçün abunəlik tələb olunacaq.';
+  else
+    v_prio  := 1;
+    v_title := 'Son xəbərdarlıq: pulsuz giriş sabah bitir';
+    v_body  := 'Kampaniya sabah başa çatır. Pulsuz giriş dövrü bitdikdə platforma abunə sisteminə qayıdır və premium bölmələr üçün abunəlik tələb olunur.';
+  end if;
+
+  for v_parent in select profile_id from public.parents
+  loop
+    -- THE RUNG IS IN THE KEY. Without it the second and third warnings collide
+    -- with the first on `on conflict (idempotency_key) do nothing` and are
+    -- thrown away in silence -- which is exactly what the old key did. The
+    -- window END stays in the key too, so a LATER campaign starts a fresh series
+    -- rather than being permanently muted by the previous one (spec §10).
+    select public.create_notification(
+      v_parent, 'giveaway_ending', v_title, v_body,
       jsonb_build_object('ends_at', v_end, 'days', v_days),
       array['in_app'],
-      'gvw:' || v_parent::text || ':' || v_end::text,
-      4, '/services', 'announcement', null);
-    v_n := v_n + 1;
+      'gvw:' || v_parent::text || ':' || v_end::text || ':d' || v_days::text,
+      v_prio, '/services', 'announcement', null) into v_sent;
+    -- Count what was SENT, not what was considered: create_notification returns
+    -- NULL on a deduped write, and a counter that ignores that reports a full
+    -- run every day while sending nothing.
+    if v_sent is not null then
+      v_n := v_n + 1;
+    end if;
   end loop;
   return v_n;
-end; $$;
+end;
+$$;
+
 revoke all on function public.notify_giveaway_ending() from public, anon, authenticated;
 grant execute on function public.notify_giveaway_ending() to service_role;
 

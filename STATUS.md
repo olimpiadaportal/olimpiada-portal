@@ -6,6 +6,84 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — NO RECURRING: THREE WARNINGS, THEN ACCESS STOPS (migration 130, 2026-08-22 — APPLIED)
+
+**The bank will not enable card-on-file at launch.** ABB confirmed recurring is a
+paid capability on their side and they are not carrying it for a new merchant
+(ticket AZCDF-100303). So **every renewal is an act a parent performs by hand**,
+and nothing in the platform can charge anybody.
+
+That inverts what the expiry notice is FOR. It used to be a courtesy before a
+charge; it is now the only thing between a family and the silent loss of access
+they are still paying for.
+
+### The old notice could only ever fire once
+
+`notify_expiring_subscriptions` keyed idempotency on
+`subexp:<subscription>:<period_end>` -- fixed for the whole period. The job runs
+daily, so the first day inside the three-day window produced a notification and
+every day after was silently discarded by `create_notification`'s
+`on conflict (idempotency_key) do nothing`. **One warning per period, ever**, with
+no error and no log. Defensible when a card was going to be charged; not now.
+
+### The chain
+
+Three calendar days out, two, one -- the key gains the day bucket so each rung
+lands exactly once. "Only if they have not renewed" needs no flag: renewing moves
+`current_period_end`, which drops the row out of the window *and* changes the key,
+so a renewed subject goes quiet by construction.
+
+- **One notification per child per rung, not per subject.** Subjects bill on their
+  own cycles (118), so a per-subject design would send a four-subject family twelve
+  notifications over three days. Grouped by (subscription, end date), subjects named
+  in the body.
+- **Whole calendar days.** `ceil(epoch/86400)` makes the rung depend on what time
+  the cron fires and can skip one entirely.
+- **Priority escalates 3 -> 2 -> 1, and only the last overrides a mute.** Priority 1
+  is the level `create_notification` refuses to let a recipient silence. Done once,
+  because the alternative is a parent who muted months ago losing paid access with
+  no warning they could have seen.
+- **The copy is a FACT, not a call to action** -- a store-compliance constraint, not
+  style. These render in the purchase-silent apps, so: no price, no purchase verb,
+  no destination, no URL ("manage it on your web account" is the wrong form, audit
+  finding I6). Pinned by 13 tests in `web-app/src/lib/__tests__/renewalReminders.test.ts`.
+- **AZ-only**, consistent with every DB-emitted notice: `notification_templates` is
+  the admin composer's reference text, not a render path, and `preferred_locale` is
+  never written. *(A real product gap -- a Russian-speaking parent gets Azerbaijani
+  notifications. Recorded, not fixed here.)*
+
+### Two defects caught by testing rather than by review
+
+1. **The return value lied.** `create_notification` returns NULL on a deduped
+   write; the function `perform`ed it and incremented regardless, so a run that
+   sent nothing reported one per candidate row. Found by running the chain twice
+   on staging: second run said 3, should have said 0. The old code had the same
+   flaw. Nothing reads the number today -- which is exactly how a lying counter
+   survives until somebody debugging a missing reminder trusts it.
+2. **The backport ate two unrelated functions.** The old body ends `end; $$;` on
+   ONE line, so a splice bound on a newline-plus-dollar-quote terminator walked
+   past it and removed `notify_giveaway_ending` and
+   `admin_manage_child_subscription` from canonical 011. A from-zero rebuild would
+   have been missing both and nothing else would have noticed. Caught by counting
+   `create or replace function` before and after (150 -> 148). **Rule: bound a
+   canonical splice on the following `revoke` line, never on a dollar-quote
+   terminator** -- bodies in 011 use both styles.
+
+### Validation
+
+- Applied to staging then production; `013` on production **128/128 PASS**.
+- **Functionally proven on staging** in a rolled-back transaction: three
+  subscriptions ending in 3/2/1 days produced exactly three notifications with
+  priorities 3/2/1 and the escalating copy; a second run produced **0**.
+- web-app **546 tests** (533 before), `tsc` clean.
+
+### Still open
+
+- No "your access has now stopped" notice after the period ends. The three
+  warnings were what was asked for; a post-lapse notice is a small addition and
+  probably worth it.
+- Renewal itself is the existing paid checkout -- no code change was needed for it.
+
 ## PINNED — ROUND 8: THE REVERSAL THAT TOLD NOBODY (migration 128, 2026-08-22) — APPLIED, 128/128
 
 The six findings left open at the end of round 7 were investigated and each one

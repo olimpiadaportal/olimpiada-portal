@@ -9208,37 +9208,113 @@ create trigger trg_notify_progress_milestones
 -- notice while a weekly subject can never silence a yearly one's. Idempotency
 -- keyed by (subscription, period_end) → once per period.
 create or replace function public.notify_expiring_subscriptions()
-returns int language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_row record; v_days int; v_name text; v_n int := 0;
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_row      record;
+  v_name     text;
+  v_subjects text;
+  v_when     text;
+  v_title    text;
+  v_body     text;
+  v_prio     int;
+  v_sent     uuid;
+  v_n        int := 0;
 begin
   for v_row in
-    select cs.id, cs.owner_parent_profile_id, ss.current_period_end as period_end,
-           s.first_name, s.last_name
+    select cs.id,
+           cs.owner_parent_profile_id,
+           cs.student_profile_id,
+           ss.current_period_end::date                                     as end_date,
+           (ss.current_period_end::date - now()::date)                     as days_left,
+           s.first_name,
+           s.last_name,
+           string_agg(distinct coalesce(nullif(btrim(subj.name), ''), '—'), ', ')
+             as subject_names
     from public.child_subscriptions cs
     join public.subscription_subjects ss on ss.child_subscription_id = cs.id
-    join public.students s on s.profile_id = cs.student_profile_id
+    join public.students s              on s.profile_id = cs.student_profile_id
+    left join public.subjects subj      on subj.id = ss.subject_id
     where cs.status in ('trialing', 'active')
+      -- A subject the parent has ALREADY chosen to drop is not lapsing, it is
+      -- ending on purpose. Warning about it would be nagging.
       and ss.remove_at is null
       and ss.current_period_end is not null
-      and ss.current_period_end > now()
-      and ss.current_period_end <= now() + interval '3 days'
+      -- WHOLE CALENDAR DAYS. See the header: an epoch-based rung depends on what
+      -- time the cron happens to fire and can skip a step entirely.
+      and (ss.current_period_end::date - now()::date) in (3, 2, 1)
       and cs.owner_parent_profile_id is not null
-    group by cs.id, cs.owner_parent_profile_id, ss.current_period_end,
-             s.first_name, s.last_name
+    group by cs.id, cs.owner_parent_profile_id, cs.student_profile_id,
+             ss.current_period_end::date, s.first_name, s.last_name
   loop
-    v_days := greatest(1, ceil(extract(epoch from (v_row.period_end - now())) / 86400.0)::int);
-    v_name := coalesce(nullif(btrim(coalesce(v_row.first_name, '') || ' ' || coalesce(v_row.last_name, '')), ''), 'övladınız');
-    perform public.create_notification(
-      v_row.owner_parent_profile_id, 'subject_expiring', 'Abunə bitmək üzrədir',
-      v_name || ' üçün abunə ' || v_days::text || ' gün sonra bitir.',
-      jsonb_build_object('child_name', v_name, 'days', v_days, 'subscription_id', v_row.id),
+    v_name := coalesce(
+      nullif(btrim(coalesce(v_row.first_name, '') || ' ' || coalesce(v_row.last_name, '')), ''),
+      'övladınız');
+    v_subjects := coalesce(nullif(btrim(v_row.subject_names), ''), 'abunəlik');
+    v_when := to_char(v_row.end_date, 'DD.MM.YYYY');
+
+    -- Three rungs, three sentences. Each states WHAT ends, WHEN, and that
+    -- nothing renews it automatically. None names a price, a place or an action.
+    if v_row.days_left = 3 then
+      v_prio  := 3;
+      v_title := 'Abunə 3 gün sonra bitir';
+      v_body  := v_name || ' üçün ' || v_subjects || ' abunəliyi ' || v_when ||
+                 ' tarixində başa çatır. Abunəlik avtomatik yenilənmir.';
+    elsif v_row.days_left = 2 then
+      v_prio  := 2;
+      v_title := 'Abunə 2 gün sonra bitir';
+      v_body  := v_name || ' üçün ' || v_subjects || ' abunəliyi ' || v_when ||
+                 ' tarixində başa çatır. Abunəlik avtomatik yenilənmir; uzadılmasa, giriş həmin tarixdə dayanacaq.';
+    else
+      -- The last one a parent will get. Priority 1 reaches an inbox that has
+      -- been muted, because there is no fourth chance and nothing charges a card.
+      v_prio  := 1;
+      v_title := 'Son xəbərdarlıq: abunə sabah bitir';
+      v_body  := v_name || ' üçün ' || v_subjects || ' abunəliyi sabah — ' || v_when ||
+                 ' — başa çatır. Uzadılmadığı təqdirdə həmin gün giriş dayanacaq.';
+    end if;
+
+    -- COUNT WHAT WAS ACTUALLY SENT, not what was considered. create_notification
+    -- returns NULL when its `on conflict (idempotency_key) do nothing` discards a
+    -- duplicate, and the old code `perform`ed it and incremented regardless -- so
+    -- a run that sent nothing still reported one per candidate row. Nothing reads
+    -- this number today, which is exactly how a lying counter survives until the
+    -- day somebody debugging a missing reminder trusts it.
+    select public.create_notification(
+      v_row.owner_parent_profile_id,
+      'subject_expiring',
+      v_title,
+      v_body,
+      jsonb_build_object(
+        'child_name', v_name,
+        'student_profile_id', v_row.student_profile_id,
+        'subjects', v_subjects,
+        'days', v_row.days_left,
+        'ends_on', v_when,
+        'subscription_id', v_row.id),
       array['in_app'],
-      'subexp:' || v_row.id::text || ':' || v_row.period_end::text,
-      3, '/subscription', 'billing', null);
-    v_n := v_n + 1;
+      -- THE DAY BUCKET IS WHAT MAKES THE CHAIN WORK. Without it the second and
+      -- third warnings collide with the first on `on conflict (idempotency_key)
+      -- do nothing` and are silently discarded — which is exactly what the old
+      -- key did. period_end stays in the key so a RENEWED subject starts a fresh
+      -- series rather than being permanently muted by the old one.
+      'subexp:' || v_row.id::text || ':' || v_row.end_date::text || ':d' || v_row.days_left::text,
+      v_prio,
+      -- A RELATIVE path. §5 forbids opening an external https URL from
+      -- notification content; the mobile client allowlists relative routes.
+      '/subscription',
+      'billing',
+      null) into v_sent;
+    if v_sent is not null then
+      v_n := v_n + 1;
+    end if;
   end loop;
   return v_n;
-end; $$;
+end;
+$$;
 revoke all on function public.notify_expiring_subscriptions() from public, anon, authenticated;
 grant execute on function public.notify_expiring_subscriptions() to service_role;
 

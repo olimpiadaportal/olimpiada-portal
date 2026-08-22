@@ -7580,21 +7580,65 @@ returns trigger
 language plpgsql
 as $$
 begin
-  if current_user in ('anon', 'authenticated') and (
-       new.points_all_time  is distinct from old.points_all_time
-    or new.points_month     is distinct from old.points_month
-    or new.points_month_key is distinct from old.points_month_key
-    or new.last_points_at   is distinct from old.last_points_at
-    or new.current_streak   is distinct from old.current_streak
-    or new.best_streak      is distinct from old.best_streak
-    or new.last_active_date is distinct from old.last_active_date
-    or new.streak_tz        is distinct from old.streak_tz
-  ) then
-    raise exception 'students: leaderboard columns are server-managed' using errcode = 'check_violation';
+  -- The guard applies to CLIENT TOKENS only. Every legitimate writer of these
+  -- columns uses the service-role client and is unaffected.
+  if current_user in ('anon', 'authenticated') then
+    -- 1. Cached leaderboard/progress columns (original scope, unchanged).
+    if (   new.points_all_time  is distinct from old.points_all_time
+        or new.points_month     is distinct from old.points_month
+        or new.points_month_key is distinct from old.points_month_key
+        or new.last_points_at   is distinct from old.last_points_at
+        or new.current_streak   is distinct from old.current_streak
+        or new.best_streak      is distinct from old.best_streak
+        or new.last_active_date is distinct from old.last_active_date
+        or new.streak_tz        is distinct from old.streak_tz
+        or new.pct_num_month    is distinct from old.pct_num_month
+        or new.pct_den_month    is distinct from old.pct_den_month
+        or new.pct_num_all      is distinct from old.pct_num_all
+        or new.pct_den_all      is distinct from old.pct_den_all
+        or new.lb_correct_month is distinct from old.lb_correct_month
+        or new.lb_correct_all   is distinct from old.lb_correct_all
+        or new.lb_presented_month is distinct from old.lb_presented_month
+        or new.lb_presented_all   is distinct from old.lb_presented_all
+        or new.lb_attempts_month  is distinct from old.lb_attempts_month
+        or new.lb_attempts_all    is distinct from old.lb_attempts_all
+    ) then
+      raise exception 'students: leaderboard columns are server-managed'
+        using errcode = 'check_violation';
+    end if;
+
+    -- 2. MIGRATION 131 — ACCESS AND IDENTITY. The paywall, the server-issued
+    --    login id, and the ownership/context that decides what a child may see
+    --    and whom they compete against.
+    if (   new.access_status is distinct from old.access_status
+        or new.child_unique_id is distinct from old.child_unique_id
+        or new.created_by_parent_profile_id is distinct from old.created_by_parent_profile_id
+        or new.graduated is distinct from old.graduated
+    ) then
+      raise exception 'students: access and identity columns are server-managed'
+        using errcode = 'check_violation', hint = 'server_owned_column';
+    end if;
+
+    -- 3. MIGRATION 131 — ACADEMIC CONTEXT. A parent changes a child's grade or
+    --    school through the Edit-Child action, which runs service-role; nothing
+    --    legitimate writes these with a client token.
+    if (   new.grade_id is distinct from old.grade_id
+        or new.school_id is distinct from old.school_id
+        or new.district_id is distinct from old.district_id
+        or new.city_district_id is distinct from old.city_district_id
+        or new.class_grade is distinct from old.class_grade
+        or new.school_name is distinct from old.school_name
+        or new.city is distinct from old.city
+        or new.birth_year_optional is distinct from old.birth_year_optional
+    ) then
+      raise exception 'students: academic context is server-managed'
+        using errcode = 'check_violation', hint = 'server_owned_column';
+    end if;
   end if;
   return new;
 end;
 $$;
+
 drop trigger if exists trg_protect_student_progress on public.students;
 create trigger trg_protect_student_progress
   before update on public.students

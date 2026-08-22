@@ -6,6 +6,92 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — A CHILD COULD UNLOCK THEIR OWN PAID ACCESS (migration 131, 2026-08-22 — FIXED)
+
+Found by a documentation-vs-code audit, then **confirmed empirically** against
+staging acting as a real signed-in child (JWT claims set, `role authenticated`,
+RLS live) -- not inferred from reading policies:
+
+    access_status:   locked -> active     *** PAYWALL BYPASS ***
+    child_unique_id: WRITABLE by the child
+    grade_id:        WRITABLE by the child
+    points_all_time: refused (already guarded)
+
+`students_write` is a ROW policy and RLS has no column granularity, so a child
+holding their own token could rewrite **every column on their own row** through
+PostgREST, which Supabase exposes publicly. The exploit is one PATCH. Payments
+being OFF is the only reason it has cost nothing.
+
+What each column was worth: `access_status` is the paywall; `child_unique_id` is
+the server-issued 8-digit login id that is collision-safe *because* the server
+issues it; `grade_id` decides which olympiad pool an attempt draws from and which
+leaderboard bracket the child competes in -- setting it lower is undetectable
+cheating; `school_id`/`district_id`/`city_district_id` are the leaderboard's
+school and rayon context; `graduated` and `created_by_parent_profile_id` are
+promotion state and OWNERSHIP.
+
+### The fix extended the guard that already existed
+
+`protect_student_progress_cols()` was written for exactly this reason -- its own
+comment says *"students_write is a ROW policy (child/parent can update their own
+row), so the cached score/streak columns need their own guard"* -- and it stopped
+at the score columns. Right idea, line drawn in the wrong place. 131 extends the
+same trigger to access/identity and academic-context columns, so there is one
+list and one place to look.
+
+**It breaks nothing**, verified by reading every `.from("students").update(` call
+site in web-app/src: the only columns a CLIENT TOKEN writes are `palette`,
+`theme_pref`, `first_name`, `last_name`. Everything else -- parentCore's
+Edit-Child (grade, school, rayon), childAvatarCore, subscriptionCore's expiry
+write, `create_child_account`, `advance_student_grades`,
+`recompute_child_access` -- goes through the SERVICE-ROLE client, where
+`current_user` is not `anon`/`authenticated` and the guard does not fire.
+
+### The migration re-runs the attack instead of asserting on its own text
+
+Its verification block creates a locked child, becomes that child with
+`set local role authenticated`, attempts the bypass, and raises unless it is
+refused AND the status is still `locked` -- then checks a legitimate `theme_pref`
+write still succeeds, and deletes the probe. Asserting the function text contains
+the right words would have proven only that the words are there.
+
+Confirmed closed by re-running the original independent probe: all four columns
+now refused. Applied to staging then production; `013` **128/128**.
+
+## PINNED — DOC-VS-CODE AUDIT (2026-08-22): 34 gaps, ZERO launch blockers
+
+Fourteen agents cross-checked every promise in the master plans, the module plans
+and the July backlog against today's code, each finding then adversarially
+re-verified. **55 documented promises were confirmed BUILT**, including several
+the July backlog still lists as missing -- notably the access-recompute job that
+backlog called a launch blocker: `olympiq_recompute_child_access` now runs hourly
+and succeeded 24/24 in the last day.
+
+**Nothing is a launch blocker.** The most consequential open items:
+
+1. **Explanations readable without an attempt.** Probed as a child:
+   `answer_options.is_correct` returns 0 rows (correctly protected) but
+   `question_explanations` returns every published row, and a worked solution
+   usually contains the answer. A cheating vector on rated rounds; needs a product
+   decision about when a solution becomes visible.
+2. **Suspending an account does nothing.** `account_status = 'suspended'` exists
+   and the admin panel offers the button in all three languages, but no policy,
+   function or guard reads it -- the suspended parent keeps a valid session and
+   full access, and the operator sees a success toast for a no-op.
+3. **No parent payment history, and the Invoices copy actively lies.** The panel
+   promises in az/en/ru that invoices "will appear here once your first payment
+   goes through"; no code path can ever produce a row. Harmless while payments are
+   off; a support problem the day they are on.
+4. **Admin login is not audited** -- neither success nor failure -- so the panel's
+   own /audit page shows nothing for a password spray or an account compromise.
+5. **No admin payments/finance view.** The only admin read of `payments` is the
+   needs-review queue; nobody can answer "what did this family pay".
+
+The remaining ~29 are genuine but smaller (child Mistakes/Progress screens, an
+`/unauthorized` route, rejection reasons on content review, notification delivery
+retry, rank-movement deltas, durable rate limiting, audit `ip_address`/`user_agent`).
+Nothing there blocks launch.
+
 ## PINNED — NO RECURRING: THREE WARNINGS, THEN ACCESS STOPS (migration 130, 2026-08-22 — APPLIED)
 
 **The bank will not enable card-on-file at launch.** ABB confirmed recurring is a

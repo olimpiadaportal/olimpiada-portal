@@ -66,6 +66,103 @@ with no attempts: readable rows went **90 -> 0**. `013` on production **128/128*
 web-app 546 tests, `tsc` clean. Backported into canonical `010`, policy count
 unchanged (129).
 
+## PINNED — THE CAMPAIGN RUNS ON TOP OF PAYMENTS (migration 135, 2026-08-22 — APPLIED)
+
+**Owner decision, 2026-08-22: `payments` and `giveaway_period` are no longer
+mutually exclusive.** The campaign is a MODIFIER on an open payment rail, not an
+alternative to one.
+
+    payments OFF                      -> 'off'.  Nothing new can be bought;
+                                         a campaign CANNOT be started.
+    payments ON,  giveaway OFF        -> 'real'. Everything charges normally.
+    payments ON,  giveaway ON+running -> 'giveaway'. SUBSCRIPTIONS free;
+                                         olympiad packages still charge.
+
+### What it fixes
+
+The old exclusivity produced a panel that lied about money: starting a campaign
+force-disabled `payments`, so the admin saw **"Payments: OFF" while olympiad
+purchases were still reaching the bank and charging real cards** (a campaign only
+ever covered SUBJECT access; `startOlympiadPayment` blocks only mode `off`). The
+new model resolves that without touching the olympiad rail — payments really is
+on, so the panel is telling the truth.
+
+It also **retires the repair machinery**. Migration 133 had to record what a
+campaign had paused and hand it back hourly, because the window elapsing left the
+platform in `off` — unable to sell, cohort locked out. Payments are never
+switched off now, so the window elapsing just moves the mode from `giveaway` to
+`real`. `restore_payments_after_giveaway()` and its job are DROPPED rather than
+left as dead code that rewrites feature flags on a schedule.
+
+**Turning payments off ends a running campaign.** The kill switch must always
+win: refusing the change would trap an operator who needs it during an incident.
+
+### A bug the migration's own verification caught
+
+The trigger's WHEN clause was
+`new.enabled = true and new.key in ('payments','giveaway_period')` — it fired
+ONLY when a flag was switched ON. Correct for the old model, whose only job was
+forcing the sibling off; under the new rules the moment that matters is payments
+being switched OFF, which that clause skips entirely. **The cascade would never
+have run**, and a campaign would have kept resolving with no rail beneath it.
+Found because the migration exercises the rule instead of asserting on its text.
+
+### 013 check 108 was pinned to the retired rule
+
+It asserted `count(enabled) <= 1` over the pair — exactly the exclusivity that is
+now gone — and required the function to contain the force-disable list. Left
+alone it would have failed forever the first time a campaign ran. Re-pointed at
+the DEPENDENCY that replaced it: a campaign may not run with payments off. Same
+class as checks 91, 95, 110, 114 and the migration-130 parity test. **When a
+migration changes a mechanism, re-point the check that pinned it in the SAME
+change.**
+
+### Also this round
+
+- **`gate.paymentsOff` rewritten** (az/en/ru): payments-off is now purely a kill
+  switch, so the copy apologises, says nothing new can be opened, and says
+  everything already open keeps working.
+- **The admin payment-mode note rewritten** in three locales — it still told the
+  operator the two switches were mutually exclusive.
+
+### Validation
+
+Applied to staging then production. `013`: production **128/128**, staging
+127/128 (the data-coverage check). The migration proves all three rules by
+exercising them: a campaign is refused while the rail is closed, both flags run
+together as mode `giveaway`, and turning payments off ends the campaign and
+resolves to `off`. web-app **571**, admin-panel **581**, mobile-app **458**.
+
+## PINNED — THE ADMIN PANEL COULD NOT CREATE A CHILD IN BAKU (2026-08-22 — FIXED)
+
+Creating a demo child from admin `/free-access` failed with the generic "Could
+not create the child account". The real error, reproduced in one run against
+staging:
+
+    create_child_account: district is required for city ...   (SQLSTATE 23514)
+
+**Round 21 made the RAYON mandatory for a child whose city has any, and the admin
+panel never collected or passed it.** It sends `p_district_id` (city) and
+`p_school_id` but not `p_city_district_id`, so child creation failed for every
+child in Baku — which is every child. The web parent Add-Child flow has had the
+step since Round 21; the panel never gained it.
+
+**Deriving the rayon from the school does not work**: `schools.city_district_id`
+exists and the DB guard even auto-fills from it, but **no school on either
+database has one set** (0 of 320, and all 320 are in the one rayon-city). The
+Locations explorer has a "schools with no rayon" view, so the gap is known.
+
+Fixed by giving the panel the step the web flow has: the form renders a rayon
+select **only when the chosen city has rayons**, the server re-asks the database
+whether one is required rather than trusting the form, and the RPC re-checks it
+independently. The select deliberately does NOT filter the school list — no
+school carries a rayon, so filtering by it would empty the list, and the DB guard
+only rejects a CONTRADICTION.
+
+Proven end to end against staging: **without rayon -> refused with the owner's
+exact error; with rayon -> student created, 8-digit ID issued, subscription
+created.** That is the App Review demo family unblocked.
+
 ## PINNED — THE GIVEAWAY LIFECYCLE + THE FEATURE TOGGLES (migrations 133-134, 2026-08-22 — APPLIED)
 
 **The owner's giveaway specification, implemented on the model the platform

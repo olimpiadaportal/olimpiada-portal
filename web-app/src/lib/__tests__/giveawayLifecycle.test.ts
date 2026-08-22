@@ -48,23 +48,61 @@ const M134 = read(join(SQL, "migrations", "2026_08_22_134_giveaway_lifecycle.sql
 const C011 = read(join(SQL, "011_indexes_constraints_functions_triggers.sql"));
 const C016 = read(join(SQL, "016_scheduled_jobs.sql"));
 
-describe("the campaign ends by itself", () => {
-  it("records what it paused when it starts", () => {
-    // Without this the restore cannot know whether payments were on BEFORE the
-    // campaign, and would have to guess — turning payments on for an owner who
-    // deliberately had them off.
-    expect(sqlCode(C011)).toContain("payments.paused_by_giveaway");
+describe("a campaign is a modifier on an open payment rail", () => {
+  // MIGRATION 135 replaced mutual exclusivity with a dependency. Under the old
+  // model, starting a campaign force-disabled `payments` — so the admin panel
+  // read "Payments: OFF" while olympiad packages (never covered by a campaign)
+  // went on charging real cards, and the window elapsing left the platform
+  // unable to sell at all.
+  const M135 = read(
+    join(SQL, "migrations", "2026_08_22_135_giveaway_requires_payments.sql"),
+  );
+
+  it("refuses to start a campaign while the rail is closed", () => {
+    expect(sqlCode(C011)).toContain("giveaway_requires_payments");
   });
 
-  it("restores payments only once the window is genuinely over", () => {
-    const fn = sqlCode(sqlFunction(C011, "restore_payments_after_giveaway"));
-    expect(fn).toContain("public.is_giveaway_active()");
-    expect(fn).toContain("return false");
+  it("no longer switches payments off to make room for a campaign", () => {
+    // The tell-tale of the old model: an UPDATE that disabled the sibling key.
+    const fn = sqlCode(
+      C011.slice(
+        C011.indexOf("create or replace function public.fn_payment_mode_exclusivity()"),
+      ).slice(0, 3000),
+    );
+    expect(fn).not.toContain("key <> new.key");
   });
 
-  it("is scheduled, so no administrator has to notice", () => {
-    expect(C016).toContain("olympiq_restore_payments_after_giveaway");
-    expect(M134).toContain("olympiq_restore_payments_after_giveaway");
+  it("lets the kill switch win, ending any running campaign", () => {
+    const fn = sqlCode(
+      C011.slice(
+        C011.indexOf("create or replace function public.fn_payment_mode_exclusivity()"),
+      ).slice(0, 3000),
+    );
+    expect(fn).toContain("new.key = 'payments' and not new.enabled");
+  });
+
+  it("fires the trigger on every enabled-change, not only on switching ON", () => {
+    // The old WHEN clause was `new.enabled = true and ...`, which skipped the
+    // one moment that now matters — payments being switched OFF — so the
+    // cascade above would never have run. Caught by migration 135's own
+    // verification block rather than in production.
+    const ddl = C011.slice(C011.indexOf("create trigger trg_payment_mode_exclusivity"));
+    expect(sqlCode(ddl.slice(0, 900))).not.toContain("new.enabled = true");
+  });
+
+  it("resolves a campaign only while payments are on", () => {
+    expect(sqlCode(sqlFunction(C011, "current_payment_mode"))).toContain(
+      "if v_real and v_gvw_flag",
+    );
+  });
+
+  it("retires the repair machinery the old model needed", () => {
+    // Payments are never switched off now, so the window elapsing simply moves
+    // the mode from 'giveaway' to 'real'. A scheduled job that rewrites feature
+    // flags is not something to leave lying around once it can never be needed.
+    expect(C011).not.toContain("restore_payments_after_giveaway");
+    expect(C016).not.toContain("olympiq_restore_payments_after_giveaway");
+    expect(M135).toContain("drop function if exists public.restore_payments_after_giveaway()");
   });
 
   it("upserts the start stamp, so a campaign cannot begin inert", () => {
@@ -74,9 +112,9 @@ describe("the campaign ends by itself", () => {
     //
     // Read by TEXT, not via sqlFunction: this is a TRIGGER function, so no
     // `revoke ... from` line follows it to bound on.
-    const start = M133.indexOf("create or replace function public.fn_payment_mode_exclusivity()");
+    const start = C011.indexOf("create or replace function public.fn_payment_mode_exclusivity()");
     expect(start).toBeGreaterThan(-1);
-    const fn = sqlCode(M133.slice(start, M133.indexOf("\n$$;", start)));
+    const fn = sqlCode(C011.slice(start, C011.indexOf("\n$$;", start)));
     expect(fn).toContain("insert into public.system_settings");
     expect(fn).toContain("giveaway.started_at");
     expect(fn).toContain("on conflict (key) do update");

@@ -25,6 +25,9 @@ export type GradeOption = { id: string; name: string };
 // intervals = plan intervals this subject has ACTIVE pricing for.
 export type SubjectOption = { id: string; name: string; intervals: string[] };
 export type CityOption = { id: string; name: string };
+/** A rayon within a city (DB: city_districts). Round 21 made it MANDATORY
+ *  for a child whose city has any, and create_child_account enforces it. */
+export type CityDistrictOption = { id: string; name: string; city_id: string };
 export type SchoolOpt = {
   id: string;
   name: string;
@@ -53,6 +56,8 @@ export type CreateChildStrings = {
   school: string;
   schoolChoose: string;
   cityFirst: string;
+  rayon: string;
+  rayonChoose: string;
   privateSchools: string;
   publicSchools: string;
   grant: string;
@@ -81,6 +86,7 @@ export function CreateChildForm({
   grades,
   subjects,
   cities,
+  cityDistricts,
   schools,
   strings,
   lockedParent,
@@ -91,6 +97,7 @@ export function CreateChildForm({
   grades: GradeOption[];
   subjects: SubjectOption[];
   cities: CityOption[];
+  cityDistricts: CityDistrictOption[];
   schools: SchoolOpt[];
   strings: CreateChildStrings;
   // When set, the parent is fixed (its picker is hidden) — used by the
@@ -124,6 +131,7 @@ export function CreateChildForm({
       subjects={subjects}
       cities={cities}
       schools={schools}
+      cityDistricts={cityDistricts}
       strings={strings}
       lockedParent={lockedParent}
       embedded={embedded}
@@ -242,6 +250,7 @@ function InnerForm({
   grades,
   subjects,
   cities,
+  cityDistricts,
   schools,
   strings,
   lockedParent,
@@ -253,6 +262,7 @@ function InnerForm({
   grades: GradeOption[];
   subjects: SubjectOption[];
   cities: CityOption[];
+  cityDistricts: CityDistrictOption[];
   schools: SchoolOpt[];
   strings: CreateChildStrings;
   lockedParent?: { id: string; name: string };
@@ -284,6 +294,13 @@ function InnerForm({
   // City -> School cascade (schools arrive pre-ordered private-first + numeric).
   const [districtId, setDistrictId] = useState("");
   const [schoolId, setSchoolId] = useState("");
+  const [cityDistrictId, setCityDistrictId] = useState("");
+  // Rayons belonging to the chosen city. When a city has NONE the step is
+  // hidden entirely and create_child_account does not require one.
+  const cityRayons = useMemo(
+    () => (districtId ? cityDistricts.filter((d) => d.city_id === districtId) : []),
+    [cityDistricts, districtId],
+  );
   const citySchools = useMemo(
     () => (districtId ? schools.filter((s) => s.district_id === districtId) : []),
     [schools, districtId],
@@ -397,6 +414,7 @@ function InnerForm({
             onChange={(e) => {
               setDistrictId(e.target.value);
               setSchoolId("");
+              setCityDistrictId("");
             }}
           >
             <option value="" disabled>
@@ -409,6 +427,31 @@ function InnerForm({
             ))}
           </select>
         </label>
+        {/* RAYON — rendered only when the chosen city has any. Deliberately
+            NOT used to filter the school list: no school currently carries a
+            city_district_id, so filtering by it would empty the list. The DB
+            guard only rejects a CONTRADICTION, and a school with no rayon
+            contradicts nothing. */}
+        {cityRayons.length > 0 && (
+          <label className="field">
+            <span>{strings.rayon}</span>
+            <select
+              name="city_district_id"
+              required
+              value={cityDistrictId}
+              onChange={(e) => setCityDistrictId(e.target.value)}
+            >
+              <option value="" disabled>
+                {strings.rayonChoose}
+              </option>
+              {cityRayons.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field">
           <span>{strings.school}</span>
           <select

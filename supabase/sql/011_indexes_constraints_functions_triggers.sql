@@ -3403,31 +3403,30 @@ set search_path = public, pg_temp
 as $$
 declare
   v_flags      jsonb;
-  v_real       boolean := false;
-  v_gvw_flag   boolean := false;
+  v_real       boolean;
+  v_gvw_flag   boolean;
+  v_gvw_active boolean := false;
   v_gvw_days   int := 0;
   v_gvw_start  timestamptz;
-  v_gvw_active boolean := false;
   v_setting    jsonb;
 begin
   select jsonb_object_agg(key, enabled) into v_flags
-  from public.feature_flags
-  where key in ('payments', 'giveaway_period');
-  v_flags := coalesce(v_flags, '{}'::jsonb);
+    from public.feature_flags
+   where key in ('payments', 'giveaway_period');
 
-  -- Missing row → OFF for every flag (fail closed; F1).
   v_real     := coalesce((v_flags ->> 'payments')::boolean, false);
   v_gvw_flag := coalesce((v_flags ->> 'giveaway_period')::boolean, false);
 
-  -- Giveaway window — the EXACT parsing rules of get_mobile_config (F2):
-  -- duration must be an explicit positive number (no invented 30-day default),
-  -- started_at must be a non-empty string that parses, and a bad value NEVER
-  -- raises out of a money gate — it just means "no active window".
   select value_json into v_setting from public.system_settings
    where key = 'giveaway.duration_days';
-  if v_setting is not null and jsonb_typeof(v_setting) = 'number' then
-    v_gvw_days := greatest(0, floor((v_setting)::text::numeric)::int);
+  if v_setting is not null then
+    begin
+      v_gvw_days := floor((v_setting #>> '{}')::numeric)::int;
+    exception when others then
+      v_gvw_days := 0;
+    end;
   end if;
+
   select value_json into v_setting from public.system_settings
    where key = 'giveaway.started_at';
   if v_setting is not null and jsonb_typeof(v_setting) = 'string'
@@ -3438,7 +3437,10 @@ begin
       v_gvw_start := null;
     end;
   end if;
-  if v_gvw_flag and v_gvw_start is not null and v_gvw_days > 0 then
+
+  -- MIGRATION 135: `v_real and` is the whole change. A campaign is a modifier on
+  -- an open rail; without the rail there is no campaign, only 'off'.
+  if v_real and v_gvw_flag and v_gvw_start is not null and v_gvw_days > 0 then
     v_gvw_active := now() < v_gvw_start + make_interval(days => v_gvw_days);
   end if;
 
@@ -3790,49 +3792,6 @@ $$;
 
 comment on function public.is_giveaway_active() is
   'True while the admin giveaway window (giveaway_period flag + giveaway.started_at + giveaway.duration_days) is running. Elapsed window = false even if the flag is still on.';
-
-create or replace function public.restore_payments_after_giveaway()
-returns boolean
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_flag_on boolean;
-  v_paused  boolean;
-begin
-  select enabled into v_flag_on from public.feature_flags where key = 'giveaway_period';
-  -- Only act once the campaign is genuinely OVER: the flag still on but the
-  -- window elapsed. A running giveaway must not be interrupted.
-  if not coalesce(v_flag_on, false) or public.is_giveaway_active() then
-    return false;
-  end if;
-
-  select coalesce((value_json #>> '{}')::boolean, false) into v_paused
-  from public.system_settings where key = 'payments.paused_by_giveaway';
-
-  -- Switching the giveaway flag off lets the exclusivity trigger settle; the
-  -- payments flag is then set on its own so the trigger sees a normal UPDATE.
-  update public.feature_flags
-     set enabled = false, updated_at = now()
-   where key = 'giveaway_period' and enabled;
-
-  if coalesce(v_paused, false) then
-    update public.feature_flags
-       set enabled = true, updated_at = now()
-     where key = 'payments' and not enabled;
-  end if;
-
-  update public.system_settings
-     set value_json = to_jsonb(false), updated_at = now()
-   where key = 'payments.paused_by_giveaway';
-
-  return true;
-end;
-$$;
-
-revoke all on function public.restore_payments_after_giveaway() from public, anon, authenticated;
-grant execute on function public.restore_payments_after_giveaway() to service_role;
 
 revoke all on function public.is_giveaway_active() from public, anon, authenticated;
 grant execute on function public.is_giveaway_active() to service_role;
@@ -4770,6 +4729,8 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_payments_on boolean;
 begin
   -- Migration 121: the demo payment mode was DELETED. Nothing resolves it any
   -- more, so a row carrying this key must never exist again — fail loudly
@@ -4779,32 +4740,33 @@ begin
       using errcode = 'check_violation', hint = 'demo_payments_removed';
   end if;
 
-  if tg_op = 'UPDATE' and old.enabled = true then
-    return new;
-  end if;
-
-  -- MIGRATION 133: remember whether PAYMENTS was the thing we just switched off
-  -- to make room for a giveaway. Without this the campaign ends into `off`
-  -- rather than back into selling, and only a human noticing can undo it.
+  -- MIGRATION 135: a campaign is a MODIFIER on an open payment rail, not an
+  -- alternative to one. Free subscriptions still need the rail available for
+  -- everything a campaign does NOT cover — olympiad packages — and an operator
+  -- must never see "Payments: OFF" while cards are being charged.
   if new.key = 'giveaway_period' and new.enabled then
-    insert into public.system_settings (key, value_json)
-    values ('payments.paused_by_giveaway',
-            to_jsonb(exists (select 1 from public.feature_flags
-                             where key = 'payments' and enabled)))
-    on conflict (key) do update set value_json = excluded.value_json, updated_at = now();
+    select coalesce(enabled, false) into v_payments_on
+      from public.feature_flags where key = 'payments';
+    if not coalesce(v_payments_on, false) then
+      raise exception 'payment mode: a giveaway needs payments to be on'
+        using errcode = 'check_violation', hint = 'giveaway_requires_payments';
+    end if;
   end if;
 
-  update public.feature_flags
-     set enabled = false, updated_at = now()
-   where key in ('payments', 'giveaway_period')
-     and key <> new.key
-     and enabled;
+  -- THE KILL SWITCH ALWAYS WINS. Turning payments off during a campaign ends the
+  -- campaign rather than being refused: an operator reaching for the kill switch
+  -- in an incident must not be blocked by a promotion, and leaving the campaign
+  -- on with no rail beneath it is a state no resolver expects.
+  if new.key = 'payments' and not new.enabled then
+    update public.feature_flags
+       set enabled = false, updated_at = now()
+     where key = 'giveaway_period' and enabled;
+  end if;
 
-  if new.key = 'giveaway_period' then
-    -- MIGRATION 133: UPSERT, not a bare UPDATE. A missing settings row used to
-    -- match nothing, so the flag switched on and the campaign was completely
-    -- inert — is_giveaway_active() has no start date to measure from and simply
-    -- returns false, with no signal anywhere that the window never began.
+  if new.key = 'giveaway_period' and new.enabled then
+    -- UPSERT, not a bare UPDATE (migration 133). A missing settings row matched
+    -- nothing, so the flag switched on and the campaign was silently INERT:
+    -- is_giveaway_active() has no start date to measure from.
     insert into public.system_settings (key, value_json)
     values ('giveaway.started_at', to_jsonb(now()))
     on conflict (key) do update set value_json = excluded.value_json, updated_at = now();
@@ -4813,6 +4775,17 @@ begin
   return new;
 end;
 $$;
+
+-- THE TRIGGER ITSELF HAS TO BE WIDENED, and this is not cosmetic. Its WHEN
+-- clause was
+--     new.key = 'demo_payments'
+--     OR (new.enabled = true AND new.key in ('payments','giveaway_period'))
+-- so it fired ONLY when a flag was switched ON — correct for the old model,
+-- where the only job was to force the sibling off. Under the new rules the
+-- important moment is payments being switched OFF, which that clause skips
+-- entirely: the cascade below would never have run and a campaign would have
+-- kept resolving with no rail beneath it. Caught by this migration's own
+-- verification block rather than in production.
 
 comment on function public.fn_payment_mode_exclusivity() is
   'Migration 121: DB-layer guarantee that payments / giveaway_period are never '
@@ -4826,8 +4799,13 @@ drop trigger if exists trg_payment_mode_exclusivity on public.feature_flags;
 create trigger trg_payment_mode_exclusivity
   after insert or update of enabled on public.feature_flags
   for each row
+  -- MIGRATION 135: fires on EVERY enabled-change for these keys, not only when
+  -- one is switched ON. The old clause (`new.enabled = true and ...`) was right
+  -- when the trigger's only job was forcing the sibling off; under the current
+  -- rules the important moment is payments being switched OFF, which that clause
+  -- skipped — so the cascade that ends a running campaign would never have run.
   when (new.key = 'demo_payments'
-        or (new.enabled = true and new.key in ('payments', 'giveaway_period')))
+        or new.key in ('payments', 'giveaway_period'))
   execute function public.fn_payment_mode_exclusivity();
 
 -- Allocate the deferred 8-digit login ID WITHOUT a subscription (giveaway

@@ -7,6 +7,7 @@ import {
   type GradeOption,
   type SubjectOption,
   type CityOption,
+  type CityDistrictOption,
   type SchoolOpt,
   type CreateChildStrings,
 } from "@/components/CreateChildForm";
@@ -39,15 +40,25 @@ export default async function FreeAccessPage() {
   let childGrades: GradeOption[] = [];
   let childSubjects: SubjectOption[] = [];
   let childCities: CityOption[] = [];
+  let childCityDistricts: CityDistrictOption[] = [];
   let childSchools: SchoolOpt[] = [];
   if (serviceReady) {
-    const [gradesRes, pricingRes, citiesRes, schoolsRes] = await Promise.all([
+    const [gradesRes, pricingRes, citiesRes, cityDistrictsRes, schoolsRes] =
+      await Promise.all([
       supabase.from("grades").select("id, name, level").order("level"),
       supabase
         .from("subjects_pricing")
         .select("subject_id, interval, subjects(name)")
         .eq("status", "active"),
       supabase.from("districts").select("id, name").eq("status", "active").order("name"),
+      // Round 21: a child in a city that HAS rayons must be given one, and
+      // create_child_account enforces it. Without this list the form could
+      // not offer the step and every Baku child failed to create.
+      supabase
+        .from("city_districts")
+        .select("id, name, city_id")
+        .eq("status", "active")
+        .order("name"),
       supabase
         .from("schools")
         .select("id, name, district_id, is_private, school_number")
@@ -63,6 +74,11 @@ export default async function FreeAccessPage() {
     childCities = ((citiesRes.data ?? []) as any[]).map((c) => ({
       id: c.id,
       name: c.name,
+    }));
+    childCityDistricts = ((cityDistrictsRes.data ?? []) as any[]).map((d) => ({
+      id: d.id,
+      name: d.name,
+      city_id: d.city_id,
     }));
     childSchools = ((schoolsRes.data ?? []) as any[]).map((s) => ({
       id: s.id,
@@ -124,6 +140,8 @@ export default async function FreeAccessPage() {
     school: t("accounts.child.create.school"),
     schoolChoose: t("accounts.child.create.schoolChoose"),
     cityFirst: t("accounts.child.create.cityFirst"),
+    rayon: t("accounts.child.create.rayon"),
+    rayonChoose: t("accounts.child.create.rayonChoose"),
     privateSchools: t("accounts.child.create.privateSchools"),
     publicSchools: t("accounts.child.create.publicSchools"),
     grant: t("accounts.child.create.grant"),
@@ -219,6 +237,7 @@ export default async function FreeAccessPage() {
           grades={childGrades}
           subjects={childSubjects}
           cities={childCities}
+          cityDistricts={childCityDistricts}
           schools={childSchools}
           intervals={intervals}
           locale={locale}

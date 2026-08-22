@@ -30,6 +30,7 @@ import {
   type GradeOption,
   type SubjectOption,
   type CityOption,
+  type CityDistrictOption,
   type SchoolOpt,
   type CreateChildStrings,
 } from "@/components/CreateChildForm";
@@ -79,6 +80,7 @@ export function FreeAccessWizard({
   grades,
   subjects,
   cities,
+  cityDistricts,
   schools,
   intervals,
   locale,
@@ -90,6 +92,7 @@ export function FreeAccessWizard({
   grades: GradeOption[];
   subjects: SubjectOption[];
   cities: CityOption[];
+  cityDistricts: CityDistrictOption[];
   schools: SchoolOpt[];
   intervals: FreeAccessRow[];
   locale: string;
@@ -176,6 +179,7 @@ export function FreeAccessWizard({
             grades={grades}
             subjects={subjects}
             cities={cities}
+            cityDistricts={cityDistricts}
             schools={schools}
             childStrings={childStrings}
             freeAccessStrings={freeAccessStrings}
@@ -473,6 +477,7 @@ function ChildStep({
   grades,
   subjects,
   cities,
+  cityDistricts,
   schools,
   childStrings,
   freeAccessStrings,
@@ -483,6 +488,7 @@ function ChildStep({
   grades: GradeOption[];
   subjects: SubjectOption[];
   cities: CityOption[];
+  cityDistricts: CityDistrictOption[];
   schools: SchoolOpt[];
   childStrings: CreateChildStrings;
   freeAccessStrings: FreeAccessStrings;
@@ -521,6 +527,7 @@ function ChildStep({
           grades={grades}
           subjects={subjects}
           cities={cities}
+          cityDistricts={cityDistricts}
           schools={schools}
           strings={childStrings}
           lockedParent={parent}

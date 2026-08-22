@@ -767,7 +767,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.priceMoved":
       "Qiymətlər dəyişdi. Səhifəni yeniləyib seçiminizi yenidən təsdiqləyin.",
     "gate.paymentsOff":
-      "Ödənişlər müvəqqəti olaraq dayandırılıb. Yeni abunə və satınalmalar hazırda mümkün deyil.",
+      "Qısa fasilə üçün üzr istəyirik — tezliklə geri qayıdırıq. Hazırda yeni abunə və paketlər açıla bilmir. Artıq açıq olan hər şey işləməyə davam edir.",
     "gate.giveawayFree":
       "Hazırda pulsuz kampaniya dövrü davam edir — bütün imkanlar ödənişsiz açıqdır, ödəniş tələb olunmur.",
     "gate.giveawaySubsPaused":
@@ -2588,7 +2588,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.priceMoved":
       "The prices changed. Refresh the page and confirm your choice again.",
     "gate.paymentsOff":
-      "Payments are temporarily paused. New subscriptions and purchases are unavailable right now.",
+      "Sorry for the short interruption — we will be back soon. New subscriptions and packages cannot be opened right now. Everything you already have keeps working.",
     "gate.giveawayFree":
       "A free giveaway period is running — everything is unlocked at no cost, so no payment is needed right now.",
     "gate.giveawaySubsPaused":
@@ -4395,7 +4395,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sub.err.priceMoved":
       "Цены изменились. Обновите страницу и подтвердите выбор ещё раз.",
     "gate.paymentsOff":
-      "Платежи временно приостановлены. Новые подписки и покупки сейчас недоступны.",
+      "Извините за короткий перерыв — мы скоро вернёмся. Сейчас нельзя открыть новые подписки и пакеты. Всё, что уже открыто, продолжает работать.",
     "gate.giveawayFree":
       "Сейчас идёт бесплатный акционный период — все возможности открыты бесплатно, оплата не требуется.",
     "gate.freeAccess":

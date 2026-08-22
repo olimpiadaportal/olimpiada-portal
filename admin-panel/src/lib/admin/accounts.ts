@@ -361,6 +361,19 @@ export async function createChildForParent(
   if (!UUID_RE.test(districtId) || !UUID_RE.test(schoolId)) {
     return { error: t("accounts.child.create.err.cityschool") };
   }
+  // ROUND 21 RAYON — mandatory when the chosen city has any, and the reason
+  // admin child creation failed outright for every Baku child: the panel
+  // never collected it, so create_child_account raised
+  // `district is required for city ...` (23514) and the saga reported the
+  // generic "could not create the child account". Validated here rather than
+  // trusted from the form, and re-checked by the RPC itself.
+  const cityDistrictId = f(formData, "city_district_id");
+  if (cityDistrictId && !UUID_RE.test(cityDistrictId)) {
+    return { error: t("accounts.child.create.err.cityschool") };
+  }
+  // The "is a rayon required for this city" question needs the DB, so it is
+  // asked further down, next to the existing city/school validation — the
+  // service-role client does not exist yet at this point in the function.
 
   // Grant fields are validated only when the bypass grant is requested.
   let interval = "";
@@ -432,6 +445,23 @@ export async function createChildForParent(
   const cityName = (cityRow as { name: string }).name;
   const schoolName = (schoolRow as { name: string }).name;
 
+  // ROUND 21 RAYON — mandatory when the chosen city has any, and the reason
+  // admin child creation failed outright for every Baku child: the panel never
+  // collected it, so create_child_account raised `district is required for
+  // city …` (23514) and the saga reported the generic "could not create the
+  // child account". Asked of the DB rather than assumed from the form, and
+  // re-checked by the RPC itself — a disabled/absent select is not a guarantee.
+  {
+    const { count } = await admin
+      .from("city_districts")
+      .select("id", { count: "exact", head: true })
+      .eq("city_id", districtId)
+      .eq("status", "active");
+    if ((count ?? 0) > 0 && !cityDistrictId) {
+      return { error: t("accounts.child.create.err.rayon") };
+    }
+  }
+
   // ---- 1) Auth user (temporary pending email, parent-chosen password) -------
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email: `pending-${crypto.randomUUID()}@children.invalid`,
@@ -463,6 +493,7 @@ export async function createChildForParent(
         p_grade_id: gradeId || null,
         p_district_id: districtId,
         p_school_id: schoolId,
+        p_city_district_id: cityDistrictId || null,
       },
     );
     if (rpcErr) throw new Error(rpcErr.message);

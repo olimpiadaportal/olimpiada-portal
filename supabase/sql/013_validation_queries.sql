@@ -2992,8 +2992,14 @@ with defs as (
 select '108_demo_payment_mode_removed' as check_name,
        case when not exists (select 1 from public.feature_flags
                               where key = 'demo_payments')
-             -- (b) exclusivity is over the PAIR, and the guard is armed
-             and position($q$key in ('payments', 'giveaway_period')$q$
+             -- (b) MIGRATION 135: the pair is no longer mutually exclusive —
+             --     a campaign is a MODIFIER on an open payment rail, so the
+             --     guard asserted here is the DEPENDENCY that replaced the
+             --     exclusivity: a giveaway may not start while payments are
+             --     off. (The old assertion required the force-disable list
+             --     that used to switch the sibling off; keeping it would
+             --     fail forever.)
+             and position('giveaway_requires_payments'
                    in (select excl from defs)) > 0
              and position($q$'payments', 'demo_payments'$q$
                    in (select excl from defs)) = 0
@@ -3008,8 +3014,16 @@ select '108_demo_payment_mode_removed' as check_name,
              and public.current_payment_mode() in ('real','giveaway','off')
              and public.current_payment_mode()
                  = (public.get_mobile_config()->'payment'->>'mode')
-             and (select count(*) from public.feature_flags
-                   where key in ('payments','giveaway_period') and enabled) <= 1
+             -- MIGRATION 135: BOTH flags may now be enabled at once — that is
+             -- the point of the change. What must never hold is a campaign
+             -- running with no payment rail beneath it: subscriptions would be
+             -- free while olympiad packages had no way to be bought, and the
+             -- panel would be describing a state no resolver produces.
+             and not (
+               (select coalesce(enabled, false) from public.feature_flags
+                 where key = 'giveaway_period')
+               and not (select coalesce(enabled, false) from public.feature_flags
+                         where key = 'payments'))
             then 'PASS' else 'FAIL' end as status,
        public.current_payment_mode() as resolved_mode;
 

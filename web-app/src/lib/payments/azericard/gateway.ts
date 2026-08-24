@@ -71,15 +71,19 @@ function asciiField(value: string, max: number): string {
     .slice(0, max);
 }
 
-function backrefWithLang(base: string, lang: "az" | "en" | "ru"): string {
-  try {
-    const url = new URL(base);
-    url.searchParams.set("lang", lang);
-    return url.toString();
-  } catch {
-    return base;
-  }
-}
+// BACKREF IS SENT EXACTLY AS CONFIGURED — no query string appended.
+//
+// It used to carry `?lang=` so the result page knew which language to render
+// (the callback is a cross-site POST, so our SameSite locale cookie never
+// arrives with it). AzeriCard registers a callback URL per terminal, and we
+// asked whether BACKREF is matched against it as an exact string. Their answer
+// (2026-08-23) directed us to the LANG field for the page language and did not
+// promise the registered URL tolerates a query string — so the parameter is
+// gone, and the locale is persisted on the checkout row instead
+// (migration 136, read back by the callback via ORDER).
+//
+// LANG still governs the language of the BANK'S hosted payment page and is sent
+// below, unchanged.
 
 export type AuthRequestInput = {
   /** Our minted merchant order id. */
@@ -142,7 +146,7 @@ export function buildAuthRequest(input: AuthRequestInput): AuthRequest | null {
     // our `locale` cookie is SameSite-protected and will not be sent with it,
     // so the result page would otherwise have to guess. A query parameter we
     // wrote ourselves, whitelisted on the way back in, is the honest fix.
-    BACKREF: backrefWithLang(config.backrefUrl, input.lang),
+    BACKREF: config.backrefUrl,
     LANG: input.lang.toUpperCase(),
   };
   if (config.merchGmt) fields.MERCH_GMT = config.merchGmt;

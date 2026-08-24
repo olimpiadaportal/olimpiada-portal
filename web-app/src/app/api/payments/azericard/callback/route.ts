@@ -112,9 +112,23 @@ function seeOther(location: string): Response {
 
 export async function POST(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  // The locale rides on BACKREF (we put it there when building the request):
-  // this is a CROSS-SITE POST, so our SameSite `locale` cookie is not sent.
-  const locale = safeLocale(url.searchParams.get("lang"));
+  // MIGRATION 136 — THE LOCALE COMES FROM THE CHECKOUT ROW, NOT THE URL.
+  //
+  // It used to ride on BACKREF as `?lang=`, because this is a CROSS-SITE POST
+  // and our SameSite `locale` cookie is never sent with it. AzeriCard registers
+  // one callback URL per terminal and directed us to the LANG field for the
+  // page language (2026-08-23), so BACKREF is now sent exactly as registered and
+  // the language is read back from the session the ORDER identifies.
+  //
+  // It also stops being client-reachable input: `?lang=` was a query parameter
+  // on a route that grants access, and this is a value only our own server ever
+  // wrote.
+  //
+  // `let`, not `const`: the bails ABOVE the session lookup (rate limit,
+  // oversized body, unparseable shape) happen before we know whose payment this
+  // is, and render in the default language. Those are abuse and malformed-input
+  // paths, never a paying parent's flow.
+  let locale = safeLocale(null);
 
   // ---- 0. Bound the work before doing any of it --------------------------
   const xff = request.headers.get("x-forwarded-for") ?? "";
@@ -166,6 +180,8 @@ export async function POST(request: Request): Promise<Response> {
 
   // ---- 3. Our order, or nothing -------------------------------------------
   const session = await findSessionByOrder(shape.order);
+  // From here on the result page speaks the parent's language.
+  if (session?.locale) locale = safeLocale(session.locale);
   if (!session) {
     console.warn("[azericard] callback named an order we never minted");
     return page("failed", locale, 404);

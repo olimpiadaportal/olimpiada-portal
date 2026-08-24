@@ -377,6 +377,20 @@ create table if not exists public.checkout_sessions (
   -- this column; a reversal then takes nothing back and asks for a human.
   delivered_items          jsonb,
 
+  -- MIGRATION 136: the language the parent opened this checkout in, so the
+  -- gateway CALLBACK can render its result page in it. That request is a
+  -- cross-site POST, so the SameSite `locale` cookie never arrives with it, and
+  -- BACKREF carries no `?lang=` any more: AzeriCard matches BACKREF against the
+  -- URL registered for the terminal, and directed us to the LANG field for the
+  -- language of THEIR hosted page (2026-08-23). NULL on pre-136 rows, which
+  -- renders in the default language exactly as they were built.
+  --
+  -- NOT in the intent-freeze trigger's column list, deliberately: the locale is
+  -- a rendering detail, not part of what the parent authorised, and freezing it
+  -- would make a language change look like intent tampering.
+  locale                   text
+    constraint ck_checkout_locale check (locale is null or locale in ('az', 'en', 'ru')),
+
   -- WHAT THIS CHECK DELIBERATELY OMITS: `student_profile_id is not null`. A
   -- CHECK is re-evaluated on every UPDATE and the FK's ON DELETE SET NULL is an
   -- UPDATE, so requiring it here would make deleting a child fail on any old

@@ -44,7 +44,7 @@ import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { buildAuthRequest } from "@/lib/payments/azericard/gateway";
 import { getAzericardConfig } from "@/lib/payments/azericard/config";
 import { formatAmount, isValidOrder } from "@/lib/payments/azericard/format";
-import { isServiceRoleConfigured } from "@/lib/supabase/admin";
+import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import {
   findOutstandingSession,
   findSessionByOrder,
@@ -545,6 +545,33 @@ async function signOrder(params: {
     // input. Neither is something to explain to a payer.
     console.error("[checkout] could not build the authorisation request");
     return { ok: false, errorKey: "checkout.err.unavailable" };
+  }
+
+  // MIGRATION 136 — RECORD THE PARENT'S LANGUAGE FOR THE RESULT PAGE.
+  //
+  // The gateway's callback is a CROSS-SITE POST, so our SameSite `locale`
+  // cookie never arrives with it. It used to ride on BACKREF as `?lang=`, but
+  // AzeriCard matches BACKREF against the URL registered for the terminal and
+  // directed us to the LANG field for their own page's language (Vusal
+  // Abdullayev, 2026-08-23) — so BACKREF is now sent exactly as registered and
+  // the language is persisted here instead.
+  //
+  // THIS FUNCTION IS THE RIGHT PLACE precisely because it is, as the note above
+  // says, the single line where an order becomes a signable request: every
+  // redirect passes through it, first attempt and retry alike, so the language
+  // cannot be recorded for some checkouts and missed for others.
+  //
+  // Best-effort. A failure leaves the result page on the default language,
+  // and refusing a payment because we could not record a language would be
+  // absurd.
+  try {
+    await getAdminClient()
+      .from("checkout_sessions")
+      .update({ locale })
+      .eq("provider", "azericard")
+      .eq("provider_session_id", order);
+  } catch {
+    // fall through — the result page renders in the default language
   }
 
   // Section 8.3 rule 8 — chargeback evidence from day one: who authorised what,

@@ -63,6 +63,8 @@ export const PLAN_CHECKOUT_KIND: CheckoutKind = "subscription";
 export const OLYMPIAD_CHECKOUT_KIND: CheckoutKind = "olympiad";
 
 export type CreateSessionInput = {
+  /** Language the parent was using; renders the result page (migration 136). */
+  locale?: "az" | "en" | "ru" | null;
   ownerParentProfileId: string;
   kind: CheckoutKind;
   /** Major units. Always server-computed; a client-supplied amount is a bug. */
@@ -113,6 +115,10 @@ export async function createCheckoutSession(
         status: "pending",
         provider: PROVIDER,
         provider_session_id: order,
+        // Migration 136: the language to render the RESULT page in. Written
+        // once, by us, at the only moment we still know it — the callback
+        // arrives cross-site with no cookie and no reliable echo.
+        locale: input.locale ?? null,
       })
       .select("id")
       .maybeSingle();
@@ -165,6 +171,14 @@ export type CheckoutSessionRow = {
   redeemedAt: string | null;
   /** 'applied' | 'needs_review' once decided. */
   redemptionStatus: string | null;
+  /**
+   * The language the parent opened this checkout in (migration 136). The
+   * callback renders its result page in it: that request is a cross-site POST,
+   * so the SameSite locale cookie never arrives, and BACKREF no longer carries
+   * a ?lang= parameter now that it must match the URL registered with the
+   * acquirer byte for byte. NULL on pre-136 rows -> the default language.
+   */
+  locale: string | null;
 };
 
 /** The row shape both readers below select. One list, so they cannot drift. */
@@ -174,7 +188,10 @@ export type CheckoutSessionRow = {
 // therefore left long on purpose; there is no formatter in this project to
 // disable, and naming one that is not installed fails `next build` outright
 // ("Definition for rule 'prettier/prettier' was not found").
-const SESSION_COLUMNS = "id, owner_parent_profile_id, kind, child_subscription_id, amount, currency, status, provider_session_id, intent_kind, student_profile_id, intent_items, expires_at, redeemed_at, redemption_status";
+// `locale` (migration 136) is here so the CALLBACK can render its result page
+// in the language the parent opened the checkout in — it arrives cross-site
+// with no cookie, and BACKREF no longer carries a ?lang= query parameter.
+const SESSION_COLUMNS = "id, owner_parent_profile_id, kind, child_subscription_id, amount, currency, status, provider_session_id, intent_kind, student_profile_id, intent_items, expires_at, redeemed_at, redemption_status, locale";
 
 function toSessionRow(data: Record<string, unknown>): CheckoutSessionRow {
   return {
@@ -192,6 +209,7 @@ function toSessionRow(data: Record<string, unknown>): CheckoutSessionRow {
     expiresAt: (data.expires_at as string | null) ?? null,
     redeemedAt: (data.redeemed_at as string | null) ?? null,
     redemptionStatus: (data.redemption_status as string | null) ?? null,
+    locale: (data.locale as string | null) ?? null,
   };
 }
 

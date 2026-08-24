@@ -2,7 +2,7 @@
   "expo": {
     "name": "OlympIQ",
     "slug": "olympiq",
-    "version": "1.11.1",
+    "version": "1.11.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "olympiq",
@@ -17,8 +17,8 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false
         },
-        "NSPhotoLibraryUsageDescription": "OlympIQ needs access to your photos so you can choose a profile picture for your account or for your child's profile.",
-        "NSCameraUsageDescription": "OlympIQ does not use the camera. This permission is declared only because the image library component requires it; the app never opens the camera.",
+        "NSPhotoLibraryUsageDescription": "OlympIQ uses this only when you choose a profile picture — for example, picking a photo for your child's profile so they can recognise their own account. The photo is stored only as a profile image and is never used for anything else.",
+        "NSCameraUsageDescription": "OlympIQ uses this only for profile pictures — for example, adding a photo to your child's profile so they can recognise their own account. Photos are stored only as a profile image and are never used for anything else.",
         "CFBundleLocalizations": ["az", "en", "ru"],
         "ITSAppUsesNonExemptEncryption": false
       }

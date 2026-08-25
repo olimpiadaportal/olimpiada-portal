@@ -4705,12 +4705,16 @@ create trigger trg_entitlements_from_sub_subjects
 -- subject once trg_sync_subscription_period has settled the container.
 drop trigger if exists trg_entitlements_from_child_subs on public.child_subscriptions;
 create trigger trg_entitlements_from_child_subs
-  after update of status, current_period_end, current_period_start
+  after update of status, current_period_end, current_period_start, provider
   on public.child_subscriptions
   for each row
-  when (old.status               is distinct from new.status
-     or old.current_period_end   is distinct from new.current_period_end
-     or old.current_period_start is distinct from new.current_period_start)
+  when (old.status is distinct from new.status
+        or old.current_period_end is distinct from new.current_period_end
+        or old.current_period_start is distinct from new.current_period_start
+        -- MIGRATION 137: the mirror must move when the thing it mirrors moves.
+        -- Without `provider` here the paid-rail stamp updates the subscription
+        -- and leaves the entitlement filed as a comped grant.
+        or old.provider is distinct from new.provider)
   execute function public.tg_entitlements_subscription();
 
 -- Enabling either flag disables the other; enabling giveaway_period (re)stamps
@@ -11972,6 +11976,29 @@ begin
            provider_payment_id = p_order
      where idempotency_key = 'checkout:' || p_order
        and student_profile_id = v_s.student_profile_id;
+
+    -- MIGRATION 137 -- WHICH RAIL PAID FOR THIS SUBSCRIPTION.
+    --
+    -- create_child_plan writes `provider = 'none'` because it genuinely cannot
+    -- know: it is reached from a comped admin grant, a free change and a paid
+    -- redemption alike. Only THIS function knows a card was charged, and until
+    -- now only the OLYMPIAD branch above said so.
+    --
+    -- The consequence was measured, not predicted. The first real end-to-end
+    -- AzeriCard payment (order 20260825782482, RRN 623779222092, 9.00 AZN) left
+    -- the subscription at 'none', so fn_entitlement_map_subject took its
+    -- `else` arm and filed the grant as `source = 'manual'` -- the value that
+    -- means COMPED. Every card-paid subscription would have been indistinguishable
+    -- from a free one, and a settlement or revenue report keyed on `source` would
+    -- have shown no ABB income at all.
+    --
+    -- Exactly the shape migration 127 fixed for purchases (finding M5), on the
+    -- half it did not reach.
+    update public.child_subscriptions
+       set provider   = 'azericard',
+           updated_at = now()
+     where id = v_sub
+       and provider is distinct from 'azericard';
   end if;
 
   -- The ledger copy. Amounts and enum values only: no card data exists here and
@@ -12014,9 +12041,6 @@ begin
     'auth_user_id',        v_res->>'auth_user_id');
 end;
 $$;
-
-comment on function public.checkout_redeem_plan(text) is
-  'Migration 125/127: the ONLY path from a verified AzeriCard payment to a delivered plan OR olympiad package. Requires checkout_sessions.status = ''paid'', locks the row, and re-prices the frozen intent. The price it was quoted at is HONOURED (owner decision) — but only once the DELIVERY has been shown to be the authorised one: the re-derived change must equal the frozen delta, subject for subject, nature for nature, cycle for cycle, so neither a basket that shrank nor a reinstatement that lapsed into a paid add can ride the honour rule. Anything else — delivery_changed, grade_changed, subscription_changed, plan_already_live, a re-price that FAILS, or one that comes back at zero (no_longer_payable) — is recorded as needs_review with a reason and files a priority-1 admin notification. It writes what it DELIVERED onto delivered_items, which is what a reversal revokes from. Sets redeemed_at exactly once. Writes no entitlement row.';
 
 revoke all on function public.checkout_redeem_plan(text) from public, anon, authenticated;
 grant execute on function public.checkout_redeem_plan(text) to service_role;

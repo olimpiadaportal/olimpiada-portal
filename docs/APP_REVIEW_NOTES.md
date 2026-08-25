@@ -29,11 +29,19 @@ Shoot this order — it covers every flow they listed:
 1. **Launch** the app from the home screen (start recording before you tap).
 2. **Register** a brand-new parent account (email + password + phone). Show the
    confirmation screen.
-3. **Log in** as that parent.
-4. **Add a child** — name, city, rayon, school, grade, password. Show the
-   8-digit ID the app returns.
-5. **Log out**, then **log in as the child** using the 8-digit ID + the password
-   the parent set. This is the flow a reviewer cannot guess; show it slowly.
+3. **Log in as the DEMO PARENT** — the account whose credentials are in App
+   Store Connect, not the one you just registered. From here on the recording
+   matches exactly what the reviewer can reproduce.
+4. **Log in as the DEMO CHILD** — log out, choose the Student tab, and sign in
+   with the 8-digit ID + password. Go slowly; this is the flow a reviewer
+   cannot guess.
+
+   DO NOT record "add a child, then sign in as that child". New-subscription
+   purchasing is currently switched off platform-wide, and in that state the
+   Add-Child flow creates the child but does not issue an 8-digit login ID
+   (`app/(parent)/add-child.tsx`: "off -> Info -> Done: child created,
+   gate.paymentsOff"). The recording would end on a dead end. The demo child
+   already has an ID and active access.
 6. **Start a daily round**, answer two or three questions, submit, and open the
    **result screen with an explanation expanded**.
 7. Open **Leaderboard** and **Profile** as the child.
@@ -121,6 +129,21 @@ nothing but a false claim is a bad look.
 > child from the home screen, and view progress and subject status.
 
 ---
+
+## 4a. Why "add a child" shows a notice instead of a login ID
+
+Include this so a reviewer who explores beyond the demo credentials is not
+surprised — it is expected behaviour, not a defect.
+
+> Purchasing is not available in the app for any account type, and new
+> subscription activation is currently switched off platform-wide while our
+> payment provider integration is being finalised. If you create an additional
+> child from the parent account, the child is created but no 8-digit login ID is
+> issued yet, and the app explains this on the final step.
+>
+> The demo child account listed above already has an active subscription and a
+> login ID, so every student feature is fully reachable with the credentials
+> provided.
 
 ## 5. External services used
 

@@ -62,6 +62,13 @@ const MIGRATION_127 = join(
 const MIGRATION_128 = join(
   SQL, "migrations", "2026_08_22_128_reversal_delivery_and_pricing.sql",
 );
+// 137 re-issued checkout_redeem_plan so a card-paid subscription is filed as
+// `abb_web` rather than `manual`. Each name follows the migration that wrote it
+// LAST — a parity check pinned to a superseded migration fails on every correct
+// future change and passes on none.
+const MIGRATION_137 = join(
+  SQL, "migrations", "2026_08_25_137_paid_subscription_provenance.sql",
+);
 
 function read(abs: string): string {
   return readFileSync(abs, "utf8").split("\r\n").join("\n");
@@ -772,6 +779,7 @@ describe("a gateway reversal", () => {
 describe("the payment migrations and their backport", () => {
   const migration = read(MIGRATION_127);
   const migration128 = read(MIGRATION_128);
+  const migration137 = read(MIGRATION_137);
   const canonical = read(CANONICAL_011);
 
   /**
@@ -796,7 +804,7 @@ describe("the payment migrations and their backport", () => {
     checkout_alert_admins: migration128,
     checkout_intent_open: migration,
     checkout_intent_price: migration,
-    checkout_redeem_plan: migration,
+    checkout_redeem_plan: migration137,
     checkout_flag_redemption: migration128,
     checkout_redeem_sweep: migration,
     checkout_reversal_candidates: migration128,

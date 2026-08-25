@@ -13649,3 +13649,336 @@ body[data-site-typography] .btn-ghost {
   --seg-fill: var(--lang-active-bg);
   --seg-shadow: 0 1px 2px var(--shadow);
 }
+
+/* ===========================================================================
+   1-DAY FREE TRIAL (migrations 139-141)
+   ---------------------------------------------------------------------------
+   Token-driven throughout, so light, dark and all 26 child palettes work with
+   no per-theme rule: `.arena` and the palettes redefine neither --accent nor
+   --accent-2, and the hero aliases both locally with fallbacks.
+
+   NEVER `var(--card)` here -- it is undefined in this codebase and resolves to
+   transparent (see the note at the top of this file). Surfaces use --surface.
+   =========================================================================== */
+
+.ftrial {
+  display: grid;
+  gap: 18px;
+}
+
+/* Hero — the .gvw-banner recipe, prefixed. White text is safe on this gradient
+   in every theme because the gradient itself is theme-independent. */
+.ftrial-hero {
+  --ftrial-a: var(--accent, #7c3aed);
+  --ftrial-b: var(--accent-2, #ff8a00);
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background:
+    radial-gradient(420px 140px at 12% -40%, rgba(255, 255, 255, 0.22), transparent 70%),
+    linear-gradient(120deg, var(--ftrial-a), var(--ftrial-b));
+  color: #ffffff;
+  box-shadow: 0 8px 22px var(--shadow-md, rgba(42, 26, 62, 0.12));
+}
+.ftrial-hero-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ftrial-hero-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.ftrial-hero-pill {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ftrial-hero-body {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  opacity: 0.95;
+}
+.ftrial-hero-points {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+.ftrial-hero-points li::before {
+  content: "✓";
+  margin-inline-end: 8px;
+  font-weight: 700;
+}
+
+.ftrial-pick-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.ftrial-pick-hint {
+  margin: 4px 0 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+/* Container queries only. A viewport media query for card columns is
+   deliberately not reintroduced here (see the note further up this file). */
+.ftrial-grid {
+  container-type: inline-size;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+  margin-top: 12px;
+}
+@container (min-width: 460px) {
+  .ftrial-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.ftrial-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+.ftrial-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.ftrial-card:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.ftrial-card.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  /* NOT --accent-soft: in dark that token is near-white and would wash out the
+     surface. A low-percentage mix of the accent INTO the surface reads as a
+     tint in both themes. */
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+/* There is no generic button:disabled rule in this codebase — every disabled
+   treatment is per-class, so this one has to be written. Recipe copied from
+   .ana-tab:disabled. */
+.ftrial-card:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: var(--chip-bg);
+  border-color: var(--border);
+  opacity: 0.75;
+}
+.ftrial-card-name {
+  font-weight: 600;
+}
+.ftrial-card-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ftrial-card-lock {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.ftrial-caphint {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.ftrial-summary {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.ftrial-summary-title {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+.ftrial-summary-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-size: 0.92rem;
+}
+.ftrial-summary-list li::before {
+  content: "✓";
+  margin-inline-end: 8px;
+  color: var(--accent);
+  font-weight: 700;
+}
+.ftrial-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.ftrial-submit {
+  justify-self: start;
+}
+
+/* Countdown — monospace digits so the row does not jitter as values tick. */
+.ftrial-countdown {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 700;
+}
+.ftrial-countdown.is-over {
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ftrial-tick {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.ftrial-tick i {
+  font-style: normal;
+  font-size: 0.72em;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+/* Status panel */
+.ftrial-status {
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: grid;
+  gap: 10px;
+}
+.ftrial-status.is-over {
+  background: var(--chip-bg);
+}
+.ftrial-status-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ftrial-badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.ftrial-status-title {
+  margin: 0;
+  font-size: 1rem;
+}
+.ftrial-status-body {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+.ftrial-status-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.ftrial-status-list.is-muted {
+  font-weight: 500;
+  color: var(--muted);
+}
+.ftrial-status-endsin {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: 0.92rem;
+}
+.ftrial-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+/* Success screen */
+.ftrial-done {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 22px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.ftrial-done-mark {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent);
+}
+.ftrial-done-title {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.ftrial-done-body {
+  margin: 0;
+  color: var(--muted);
+}
+.ftrial-done-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-weight: 600;
+}
+.ftrial-done-list li::before {
+  content: "✓";
+  margin-inline-end: 8px;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ftrial-card {
+    transition: none;
+  }
+}

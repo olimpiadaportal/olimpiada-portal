@@ -304,9 +304,21 @@ job does not reap it.
       activation) + `notify_free_trial_ending` + `olympiq_notify_free_trial_ending`
       on `*/5`. Production `013`: **0 failures.**
 - [ ] Retire the old subscription trial so both cannot apply — migration 142
-- [ ] Frontend: hero card, selection states, summary, confirm modal, success
-      screen, countdown, active badges, expired state, `trial.*` i18n in az/en/ru
-- [ ] Server action layer (`freeTrialCore.ts`, `freeTrialActions.ts`, `freeTrial.ts`)
+- [x] **Server action layer** — `lib/freeTrialShared.ts` (pure: the cap, the h/m/s
+      split, the parser), `lib/freeTrial.ts` (server-only reads),
+      `lib/auth/freeTrialCore.ts` (maps RPC hints to i18n KEYS, never Postgres
+      text), `lib/auth/freeTrialActions.ts` (`requireParent()` first, rate-limited,
+      translates the key because `state.error` is printed raw).
+- [x] **Frontend** — `FreeTrialActivation` (hero → picker → summary → confirm →
+      success), `FreeTrialSubjectCard` (default / selected / disabled-with-lock),
+      `FreeTrialCountdown`, `FreeTrialStatusPanel`, a shared `icons/LockIcon`
+      extracted from `AnalyticsDashboard` (it was module-local and unexported),
+      the `.ftrial-*` CSS block, and the subscribe page wired with five branches.
+      **46 `trial.*` keys × 3 locales in one edit**, asserted to be the same key
+      set in each — a missing key renders as the raw key on screen.
+- [ ] Remaining wiring: dashboard pill, `childSubjects.ts` trial arm, child
+      dashboard + test page, `is_free_trial` filter on the two client analytics
+      queries, notification icons
 - [ ] Mobile: entitlement display only, compliant wording
 - [ ] Vitest coverage
 
@@ -373,6 +385,16 @@ Proven on staging by a rolled-back probe (`scratchpad/trial_notif_probe.sql`),
 **8/8**: the three rungs fire and a 20-hour trial stays silent; each trial is
 notified in ITS OWN language; a second run sends nothing; no price, purchase verb
 or URL reaches any body in any language; only parents are notified, never children.
+
+### A build-only failure worth remembering
+
+`tsc --noEmit` passed while the production build FAILED: `FreeTrialCountdown` is a
+client component and imported the pure helpers from `lib/freeTrial.ts`, which
+carries `import "server-only"`. TypeScript has no opinion about that boundary;
+only webpack does. Hence the split — `freeTrialShared.ts` holds everything the
+browser needs (the cap, the h/m/s split, the parser) and `freeTrial.ts` re-exports
+it so server callers keep one import site. **Typecheck is not a substitute for
+`next build` when a module crosses the server/client line.**
 
 ### Two pre-existing defects a 2-subject unlimited-retake trial will expose
 

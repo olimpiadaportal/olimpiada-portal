@@ -5,6 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
+import { getChildFreeTrial } from "@/lib/freeTrial";
+import { getLocale } from "@/i18n/server";
+import { formatShortDate } from "@/lib/formatDate";
+import { FreeTrialActivation } from "@/components/FreeTrialActivation";
+import { FreeTrialStatusPanel } from "@/components/FreeTrialStatusPanel";
 import { SubscribeForm } from "@/components/SubscribeForm";
 import { ManageSubjects, type CoveredSubject } from "@/components/ManageSubjects";
 import { FreeActivation } from "@/components/FreeActivation";
@@ -24,6 +29,24 @@ const KEYS = [
   // Migration 127 — the web free branch reaches the free-only RPC now, so a
   // change that turns out to be priced is refused rather than applied.
   "sub.err.priceMoved",
+  // Migration 139-141 — the 1-day Free Trial. Every one of these is handed to a
+  // client component through `dict`, so a missing entry renders as the raw key.
+  "trial.hero.title", "trial.hero.body", "trial.hero.duration",
+  "trial.hero.p1", "trial.hero.p2", "trial.hero.p3", "trial.hero.p4",
+  "trial.cta.activate", "trial.cta.pending",
+  "trial.pick.title", "trial.pick.hint", "trial.pick.cap", "trial.pick.selected",
+  "trial.pick.locked", "trial.pick.aria.select", "trial.pick.aria.selected",
+  "trial.pick.done",
+  "trial.summary.title", "trial.summary.count", "trial.summary.endsAt",
+  "trial.confirm.title", "trial.confirm.body", "trial.confirm.ok", "trial.confirm.cancel",
+  "trial.done.title", "trial.done.body", "trial.done.next",
+  "trial.status.active", "trial.status.endsIn", "trial.badge.active",
+  "trial.time.h", "trial.time.m", "trial.time.s",
+  "trial.expired.title", "trial.expired.body", "trial.expired.cta",
+  "trial.used.note", "trial.note.unrated",
+  "trial.err.alreadyUsed", "trial.err.tooMany", "trial.err.noSubjects",
+  "trial.err.badSubject", "trial.err.alreadyFree", "trial.err.alreadyCovered",
+  "trial.err.generic",
   "sub.err.invalid", "sub.err.noSubjects", "sub.err.notYourChild",
   "parent.child.idLabel", "parent.child.idNote",
   "pricing.weekly", "pricing.monthly", "pricing.yearly", "parent.dash.title",
@@ -163,6 +186,15 @@ export default async function SubscribePage({
   // like a giveaway (scoped per-child so a sibling's window doesn't affect this one).
   const freeIntervalActive = await isChildFreeAccessActive(id);
 
+  // Migration 139-141 — the one-time 1-day Free Trial for THIS child. Read
+  // server-side so `endsAt` is authoritative; the countdown re-derives from it
+  // and never stores anything client-side.
+  const trial = await getChildFreeTrial(id);
+  const locale = await getLocale();
+  // What the parent would get if they activated right now. Preview only — the
+  // RPC computes the real window from its own clock.
+  const trialEndsPreview = formatShortDate(new Date(Date.now() + 24 * 3600 * 1000), locale);
+
   // An unfinished payment for THIS CHILD - a checkout that was opened and never
   // completed, or one the gateway declined. Resolved here, server-side, so the
   // parent finds it again on the next visit instead of only in the tab where it
@@ -248,6 +280,27 @@ export default async function SubscribePage({
             />
           )}
         </>
+      ) : trial.active ? (
+        <>
+          <FreeTrialStatusPanel trial={trial} d={dict} />
+          {sub?.id ? (
+            <ManageSubjects
+              studentId={id}
+              subjects={subjects}
+              covered={covered}
+              paymentMode={mode}
+              outstandingCheckout={outstandingCheckout}
+              dict={dict}
+            />
+          ) : (
+            <SubscribeForm
+              studentId={id}
+              subjects={subjects}
+              outstandingCheckout={outstandingCheckout}
+              dict={dict}
+            />
+          )}
+        </>
       ) : sub?.id ? (
         <ManageSubjects
           studentId={id}
@@ -257,13 +310,27 @@ export default async function SubscribePage({
           outstandingCheckout={outstandingCheckout}
           dict={dict}
         />
-      ) : (
-        <SubscribeForm
+      ) : !trial.used ? (
+        // Never used: the trial is offered INSTEAD of the paid form. Asking a
+        // parent to pay before showing them the free day would waste the one
+        // thing most likely to convert them.
+        <FreeTrialActivation
           studentId={id}
-          subjects={subjects}
-          outstandingCheckout={outstandingCheckout}
-          dict={dict}
+          childName={`${(child as any).first_name ?? ""} ${(child as any).last_name ?? ""}`.trim()}
+          subjects={subjects.map((s: any) => ({ id: s.id, name: s.name }))}
+          endsAtPreview={trialEndsPreview}
+          d={dict}
         />
+      ) : (
+        <>
+          <FreeTrialStatusPanel trial={trial} d={dict} />
+          <SubscribeForm
+            studentId={id}
+            subjects={subjects}
+            outstandingCheckout={outstandingCheckout}
+            dict={dict}
+          />
+        </>
       )}
     </section>
   );

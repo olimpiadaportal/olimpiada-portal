@@ -223,34 +223,232 @@ first, idempotency (one reversal per payment), amount and state validation
 and an audit row. The gateway's reversal response body can carry a masked card
 number and must never be persisted or logged wholesale.
 
-### PENDING — trial period (owner, 2026-08-25 — SPEC INCOMING)
+## IN PROGRESS — THE 1-DAY FREE TRIAL (owner spec, 2026-08-25)
 
-**One fixed trial length for ALL intervals** (owner, 2026-08-25, correcting an
-earlier per-interval idea): weekly, monthly and yearly all get the same trial --
-e.g. 1 or 2 days. Detailed spec to come from the owner.
+**This supersedes the earlier "one fixed trial length per interval" note.** The
+trial is now a PRE-PURCHASE trial, not a payment-deferred one: no card, no charge,
+taken before any plan is selected.
 
-That is the shape the code ALREADY has: a single global trial value, repriced
-server-side by `quote_child_plan` (the client never decides it). So this is
-expected to be a settings value plus copy, not a schema change. Note the
-`launch_promo` feature flag zeroes the trial outright (migration 133) and is
-currently **ON in production** -- it and the trial cannot both be in effect.
+### The spec, in one paragraph
 
-**The question the spec must answer:** does the trial capture money up front, or
-not? ABB recurring is not approved (ticket AZCDF-100303), so nothing can charge the
-card automatically when a trial ends. If the trial takes no payment, the parent
-must come back and pay MANUALLY -- and the only channel that reaches them is the
-3/2/1 reminder chain, which today reaches the in-app bell only. Decide this
+Every child gets ONE 24-hour free trial. The parent picks a MAXIMUM OF 2 SUBJECTS
+(further cards go disabled/greyed with a lock), confirms in a modal, and lands on a
+success screen. A live countdown -- derived from a stored expiry so it survives
+logout/login -- shows per subject. Notifications fire at 3h, 2h and 1h before
+expiry and once at expiry. On expiry the subjects lock again. Trial activity must
+not affect score, rankings, competitions or analytics, and must not count as an
+official attempt. During the trial the "one attempt per day" restriction must not
+apply. One trial per child, not restartable.
+
+### CONFLICTS WITH EXISTING RULES — recorded before any code change
+
+**1. Spec §7 vs the Round 42/43 rated rule.** The spec says the one-attempt-per-day
+restriction "must be changed". That rule is investor-approved and enforced by a DB
+unique index: one live/graded RATED attempt per subject per day, consumed at
+creation, feeding the percentage boards and the streak.
+
+*Working resolution (being verified before implementation):* the two requirements
+reconcile WITHOUT touching the rated rule, because the daily limit only ever
+applied to RATED rounds, and the platform already has unlimited UNRATED practice
+(topic tests, previous-day replays, olympiad attempts -- all `is_rated=false`,
+none of which touch points, percentage, streak or boards). A trial that grants
+unlimited UNRATED practice satisfies §7 and §8 simultaneously. **If that proves
+wrong, the rated rule wins and the owner is asked before anything is relaxed** --
+the daily limit is the product, not an obstacle.
+
+**2. The old subscription trial vs the new pre-purchase trial.** `trial_days`
+exists today inside `quote_child_plan`, and the `launch_promo` flag (migration 133)
+zeroes it. Both must not apply, or a child gets 1 trial day PLUS N subscription
+trial days. The new trial replaces the old concept; the reconciliation is part of
+the implementation.
+
+**3. Mobile purchase-silence vs the spec's copy.** The spec's expired-state CTA is
+"View Subscription Plans" and the expiry notification says "Subscribe now to
+continue access." Notification bodies render in the MOBILE app, and the store
+builds must contain no Subscribe CTA, no price and no purchasing link (Apple
+3.1.1(a) / Google Play Payments; Azerbaijan gets no anti-steering relief, and the
+penalty is developer-account termination). The web keeps the real CTA; the mobile
+wording must use access/activation language. Existing purchase-silence tests will
+police this.
+
+**4. `entitlements_reconcile()` runs hourly at :22** and undoes entitlement rows it
+cannot trace to a subscription or purchase. A trial grant must be modelled so that
+job does not reap it.
+
+### Owner decisions taken 2026-08-25
+
+1. **Entitlement source = a new `'trial'` enum value** (migration 139). `abb_web`
+   would name a card rail that was never used; `manual` means "somebody comped
+   this", the exact conflation migration 137 removed a day earlier.
+2. **Notification rungs = 12h + 1h + expired, clamped to 08:00-22:00 Asia/Baku.**
+   The specced 3h/2h/1h fires at 06:00/07:00/08:00 for a trial activated at 09:00,
+   so roughly half of all activations would spend their entire warning budget
+   while the parent slept, and the parent's first contact would be "it ended".
+3. **Duration stays 24 hours** as specced.
+
+### Status
+
+- [x] Investigation + design (55/64 findings independently verified)
+- [x] **Migration 139 — the `'trial'` entitlement source.** APPLIED to staging +
+      production. Standalone by necessity: a new enum label cannot be USED until
+      its transaction commits, and "used" includes a CHECK, an index predicate, a
+      `do $$` block and any `language sql` body.
+- [x] **Migration 140 — the Free Trial core.** APPLIED to staging + production.
+      `free_trials` ledger (once-per-child unique constraint, 1-2 subject CHECK),
+      `test_attempts.is_free_trial`, RLS mirroring `entitlements_select`,
+      `subject_access_is_trial_only`, `activate_free_trial`, `child_free_trial` /
+      `my_free_trial`, the new today/unrated attempt branch, and analytics
+      exclusions. Production `013`: **0 failures.**
+- [ ] Notification chain (12h/1h/expired), cron, trilingual bodies — migration 141
+- [ ] Retire the old subscription trial so both cannot apply — migration 142
+- [ ] Frontend: hero card, selection states, summary, confirm modal, success
+      screen, countdown, active badges, expired state, `trial.*` i18n in az/en/ru
+- [ ] Server action layer (`freeTrialCore.ts`, `freeTrialActions.ts`, `freeTrial.ts`)
+- [ ] Mobile: entitlement display only, compliant wording
+- [ ] Vitest coverage
+
+### How the §7 conflict actually resolved
+
+**The rated rule was NOT weakened, and must never be.** `uq_rated_daily_live_per_day`
+carries `and is_rated` in its predicate, so an unrated attempt is outside the index
+entirely, and `award_attempt_points` returns before writing anything when an
+attempt is unrated — one early return guards the points ledger, `student_activity_days`,
+the `students` cache columns, every leaderboard scope, the streak board and the
+month rollover.
+
+**What was actually missing** was expressiveness, not permission: `is_rated` was
+computed as `(coalesce(p_day,'today') = 'today')` — ONE boolean carrying two
+meanings, which also selected the round DATE and the set-selection BRANCH. "Today,
+fresh draw, unrated" was literally inexpressible. 140 separates `v_today` from
+`v_rated` and adds a third branch. That is the entire change to the attempt path.
+
+**`is_free_trial` is provenance, never a gate.** `is_rated` stays the single thing
+scoring reads. Two booleans that both answer "does this count" disagree eventually,
+and one missed filter would put trial scores on a leaderboard. The new column
+exists so ANALYTICS can exclude trial play — filtering analytics on `is_rated`
+instead would also strip the topic tests and replays of every PAYING family, which
+is a different feature nobody asked for.
+
+### Proven on staging, not merely applied
+
+A rolled-back functional probe (`scratchpad/trial_probe.sql`) — **11/11 passing**:
+3 subjects refused · a non-owner refused · activation grants exactly 2 entitlements ·
+access granted and classified trial-only · unchosen subjects stay locked · a second
+activation refused · **paid access wins so a paying child's round stays rated** ·
+`entitlements_reconcile()` leaves the trial alone · the parent can read the
+countdown · a stranger cannot.
+
+**This probe earned its keep.** The migration applied cleanly while
+`activate_free_trial` still referenced `sp.is_active` on a table whose column is
+`status` — plpgsql does not column-check a body until it runs, so a clean apply
+proved nothing. Only executing it found that.
+
+### Two pre-existing defects a 2-subject unlimited-retake trial will expose
+
+Both are older than this feature and are **deliberately not fixed here**, because
+fixing them changes behaviour for every child:
+
+1. **`uq_test_attempts_open_test` is scoped to `student_profile_id` only, not
+   student+subject** (`011:142-144`, `where kind='test' and status='in_progress'`).
+   A child with an open topic test in trial subject A who starts one in subject B
+   is silently handed the subject-A attempt back. The trial UI must submit-or-
+   discard an open attempt before offering the second subject.
+2. **A previous-day replay serves the IDENTICAL 25 questions every time**, because
+   `daily_practice_sets` is unique on (student, subject, for_date). This is why the
+   trial branch draws fresh rather than reusing the yesterday path.
+
+### The splice hazard bit a third time
+
+Extracting `start_topic_test_attempt` by bounding on its `revoke` line swept up
+SEVEN unrelated functions, because this file groups ACL statements at the END of a
+block rather than after each function — its revoke sits ~740 lines below its
+definition. Caught by counting `create or replace function` in the output.
+**The bound must be the FIRST of (this function's revoke, the next function's
+CREATE)**, and every extraction must assert it captured exactly one function.
+Third occurrence in this repository; the rule is now encoded in the generator. Decide this
 deliberately rather than discovering it at the first trial expiry.
 
 ### Also pending from this round
 
+- [ ] **E-KASSA FISCAL RECEIPTS: MANDATORY, ZERO IMPLEMENTATION.** Verified
+      2026-08-25 -- `ekassa|e-kassa|fiscal|kassa` returns **no hits at all** in
+      `web-app/src`, `admin-panel/src` or `supabase/sql`. It appears only in docs.
+      `docs/STORE_PAYMENTS_COMPLIANCE.md:351`: B2C sales require a receipt through
+      an e-kassa connected to the State Tax Service, with QR code and fiscal
+      identifier, **in addition to** the terminal slip; this includes automatic
+      renewals; an in-app confirmation email is NOT sufficient fiscal
+      documentation; **financial sanctions apply.** This is the largest single gap
+      between "the rail works" and "we may lawfully sell", and it is a
+      legal/commercial integration, not a bank one.
 - [ ] **`payments` flag is OFF** on production -- turned off for the cutover, not yet
       restored. Production is not selling.
-- [ ] **Renewal reminders reach only the in-app bell.** `brevo.ts` already ships
-      (migration 116) and `delivery.ts` delegates to it, but the producers request
-      `array['in_app']` only, so no email delivery row is ever created and turning
-      `notifications_email` on sends exactly zero. With renewals MANUAL, this chain
-      is the entire retention mechanism.
+- [ ] **Disclose the no-refund/cancellation policy at checkout and in the T&C**
+      before selling (see the no-refund section above -- undisclosed, a chargeback
+      is lost by default).
+- [ ] **The redemption path has never run on production.** Prove it with one real
+      3.00 AZN weekly purchase on a throwaway child, and confirm
+      `entitlements.source='abb_web'`. Note `launch_promo` is ON in production, so
+      the trial is zeroed and the card is charged immediately.
+- [ ] **A settled payment is never revisited.** A bank-side reversal or a
+      card-scheme chargeback goes unnoticed (proven 2026-08-25 -- see the reversal
+      reference above). Needs either a re-query of settled payments inside the
+      24-hour window or a settlement-report reconciliation.
+- [ ] Housekeeping: 4 `protocol_test` sessions and 2 `pending` payment rows (2.00
+      AZN) left by cutover diagnostics. Harmless, never paid, but they are noise in
+      any first finance report.
+- [ ] `subject_charge_failed` notification is still deliberately UNWIRED
+      (`011:9277`). **Not needed yet:** with renewals MANUAL there is no automatic
+      charge that can fail, and a checkout failure is shown to the parent directly.
+      It becomes required the day ABB approves recurring.
+
+### FUTURE, NOT NOW — recurring billing (owner, 2026-08-25)
+
+**Dropped from the current scope by owner decision.** ABB will not enable
+card-on-file recurring until the platform has been live and trading for roughly
+one to two months and has proven its volume (ticket AZCDF-100303). Until then
+renewals are MANUAL by design and the 3/2/1-day reminder chain is the entire
+retention mechanism -- which is why email delivery matters more than it looks.
+
+Do not build a dormant recurring path in the meantime. When ABB approves it, the
+seam already exists and is deliberately inert: `config.tokenUrl`
+(`AZERICARD_TOKEN_URL`) is carried but read by nothing, and the protocol side is
+`TOKEN_ACTION=REGISTER` / `MERCH_TRAN_STATE` / `TOKEN` / `EXT_NET_REF`. The first
+charge of a series must be flagged as the initial transaction of a recurring series
+under CBAR enhanced-authentication rules (NOT PSD2) or renewals silently die. Wiring
+`subject_charge_failed` becomes required at the same time.
+- [ ] Admin finance surface: nav placeholders exist, but there is still no
+      read-only subscriptions/payments/events view for support work.
+- [ ] Parent Invoices panel still shows an honest "none yet" -- real invoice rows
+      (id/date/amount/status plus the e-kassa receipt link) are owed once fiscal
+      receipts exist.
+- [ ] **STALE BACKLOG ENTRY, corrected 2026-08-25:**
+      `docs/PRODUCT_COMPLETION_BACKLOG.md:52` still calls the olympiad purchase a
+      mock seam. It is not -- `processOlympiadPayment` is GONE (a test asserts the
+      source no longer contains it) and olympiad purchases run through the real
+      AzeriCard rail via the olympiad branch of `checkout_redeem_plan`.
+- [x] **Renewal reminders reached only the in-app bell -- migration 138, APPLIED
+      to staging + production 2026-08-25.** `notification_deliveries` held ZERO
+      rows for two independent reasons, either sufficient alone: (1) every
+      producer passed `array['in_app']`, so `create_notification` never wrote an
+      email row and turning the flag on would have sent exactly nothing and looked
+      like a broken provider; (2) `/api/notifications/process` had **no caller at
+      all** -- no `vercel.json` (Hobby caps crons at once daily), no pg_cron job,
+      no external cron. A queue with no consumer.
+      138 adds the email channel to the two chains that mean *"your child's access
+      is about to change"* (renewal 3/2/1 and giveaway-ending) and adds
+      `notifications_process_kick()` + `olympiq_notifications_process` (*/5),
+      mirroring the proven `azericard_reconcile_kick` pattern.
+      **Deliberately NOT emailed:** progress milestones, streak achievements and
+      report-status updates. An email per personal best trains parents to ignore
+      our mail, which costs us the one message that matters. A test now asserts
+      milestones stay in-app.
+      Production `013`: **0 failures.** web-app 573 tests pass.
+      **Owner steps still required before a single email sends** -- see
+      "Human Next Actions": `notifications_processor_key` in Vault must equal
+      `NOTIFICATIONS_PROCESSOR_KEY` in Vercel, `BREVO_API_KEY` /
+      `BREVO_SENDER_EMAIL` / `BREVO_SENDER_NAME` set, then the
+      `notifications_email` flag turned on. `notifications_process_url` is already
+      created in Vault.
 - [ ] `AZERICARD_TEST_TOKEN` was set for the cutover and **has been deleted** (done
       2026-08-25). It must never be left set: that route mints real payable orders up
       to 50 AZN against any parent profile and does NOT consult the payments kill switch.

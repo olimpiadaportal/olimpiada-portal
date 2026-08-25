@@ -176,12 +176,18 @@ exception when duplicate_object then null; end $$;
 -- -----------------------------------------------------------------------------
 -- ENTITLEMENT vocabulary (migration 124; docs/STORE_PAYMENTS_COMPLIANCE.md
 -- §4.1). `scope` says WHAT was granted; `source` says WHICH RAIL produced the
--- grant -- the producer, never the commercial flavour. There is deliberately no
--- 'trial', 'promo' or 'giveaway_window' value: a trial is an abb_web grant with
--- a short period, and the giveaway is a COMPUTED window that owns no rows at
--- all. The source list is §4.1's, verbatim and in order; extending it is an
--- owner decision, because every value is a rail somebody has to reconcile
--- money for.
+-- grant -- the producer, never the commercial flavour. The giveaway is a
+-- COMPUTED window that owns no rows at all, so it appears here only for grants
+-- an admin materialises. The source list is §4.1's, verbatim and in order.
+--
+-- MIGRATION 139 added 'trial', by owner decision, and retired this comment's old
+-- claim that "a trial is an abb_web grant with a short period". That was written
+-- for the PAID subscription trial, where money eventually changes hands. The
+-- 1-day PRE-PURCHASE trial moves none: 'abb_web' would name a card rail that was
+-- never used, and 'manual' means "somebody comped this" -- the exact conflation
+-- migration 137 had just removed. Extending this list remains an owner decision,
+-- because every value is a rail somebody has to reconcile money for; 'trial'
+-- reconciles against nothing, which is precisely why it needed its own label.
 -- -----------------------------------------------------------------------------
 do $$ begin
   create type public.entitlement_scope as enum ('subject', 'olympiad_package');
@@ -189,7 +195,8 @@ exception when duplicate_object then null; end $$;
 
 do $$ begin
   create type public.entitlement_source as enum
-    ('abb_web', 'apple_iap', 'google_play', 'giveaway', 'manual', 'school_license');
+    ('abb_web', 'apple_iap', 'google_play', 'giveaway', 'manual', 'school_license',
+     'trial');
 exception when duplicate_object then null; end $$;
 
 -- -----------------------------------------------------------------------------

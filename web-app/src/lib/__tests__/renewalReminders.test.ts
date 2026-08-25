@@ -42,6 +42,12 @@ const MIGRATION_130 = join(SQL, "migrations", "2026_08_22_130_manual_renewal_rem
 // 95, 110 and 114. Behaviour is still asserted against the LIVE body below;
 // only the parity comparison follows the migration that wrote it last.
 const MIGRATION_134 = join(SQL, "migrations", "2026_08_22_134_giveaway_lifecycle.sql");
+// 138 re-issued this producer to request the email channel. Each name follows the
+// migration that wrote it LAST -- a parity check pinned to a superseded migration
+// fails on every correct future change and passes on none.
+const MIGRATION_138 = join(
+  SQL, "migrations", "2026_08_25_138_notification_email_delivery.sql",
+);
 const CANONICAL_011 = join(SQL, "011_indexes_constraints_functions_triggers.sql");
 
 function read(abs: string): string {
@@ -157,12 +163,20 @@ describe("the copy is legal inside a purchase-silent app", () => {
 });
 
 describe("the reminder chain and its backport", () => {
-  const migration134 = read(MIGRATION_134);
+  const migration138 = read(MIGRATION_138);
 
-  it("carries migration 134's body VERBATIM into 011", () => {
-    // 134 is the migration that wrote this function LAST. Comparing against 130
-    // would fail however correct the backport is.
-    expect(canonical).toContain(sqlFunction(migration134, "notify_expiring_subscriptions").trimEnd());
+  it("carries migration 138's body VERBATIM into 011", () => {
+    // 138 is the migration that wrote this function LAST. Comparing against 130
+    // or 134 would fail however correct the backport is.
+    expect(canonical).toContain(sqlFunction(migration138, "notify_expiring_subscriptions").trimEnd());
+  });
+
+  it("asks for the email channel, because in-app alone reaches nobody", () => {
+    // Renewals are MANUAL, so this chain IS the retention mechanism -- and the
+    // parent is the payer while the child is the daily user.
+    expect(sqlCode(sqlFunction(canonical, "notify_expiring_subscriptions"))).toContain(
+      "array['in_app', 'email']",
+    );
   });
 
   it("goes silent while the platform is free", () => {
@@ -177,7 +191,7 @@ describe("the reminder chain and its backport", () => {
 
   it("restates the revoke, because create-or-replace preserves ACLs", () => {
     for (const [label, sql] of [
-      ["migration 134", migration134],
+      ["migration 138", migration138],
       ["canonical 011", canonical],
     ] as const) {
       expect(sql, label).toContain(

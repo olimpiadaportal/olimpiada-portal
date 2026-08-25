@@ -605,3 +605,48 @@ comment on column public.entitlements.source is
 -- =============================================================================
 -- End of 007_subscriptions_payments_coupons.sql
 -- =============================================================================
+
+
+-- ---------------------------------------------------------------------------
+-- MIGRATION 140 - the one-time 1-day pre-purchase Free Trial.
+-- ---------------------------------------------------------------------------
+create table if not exists public.free_trials (
+  id                       uuid primary key default gen_random_uuid(),
+  student_profile_id       uuid not null references public.students(profile_id) on delete cascade,
+  owner_parent_profile_id  uuid not null references public.profiles(id) on delete cascade,
+  subject_ids              uuid[] not null,
+  activated_at             timestamptz not null default now(),
+  ends_at                  timestamptz not null,
+  locale                   text not null default 'az',
+  cancelled_at             timestamptz,
+  created_at               timestamptz not null default now(),
+  updated_at               timestamptz not null default now(),
+  -- ONCE PER CHILD, guaranteed by the database rather than by a check the
+  -- application might skip. A second activation raises unique_violation, which
+  -- activate_free_trial catches and reports as trial_already_used.
+  --
+  -- HONEST LIMIT, stated rather than implied: deleting and recreating the child
+  -- resets this, because every per-child table cascades from the auth user. The
+  -- existing paid trial has the same hole. The ceiling here is friction, not
+  -- prevention, and a per-PARENT lifetime cap was deliberately NOT added -- it
+  -- would punish large families to stop an attack nobody has attempted.
+  constraint uq_free_trials_student unique (student_profile_id),
+  -- The 2-subject cap, in the one place a hand-crafted request cannot route
+  -- around. The RPC checks it too; this is the layer that cannot be bypassed.
+  constraint ck_free_trial_subjects check (cardinality(subject_ids) between 1 and 2),
+  constraint ck_free_trial_window   check (ends_at > activated_at),
+  constraint ck_free_trial_locale   check (locale in ('az', 'en', 'ru'))
+);
+
+comment on table public.free_trials is
+  'The one-time 1-day pre-purchase Free Trial (migration 140). One row per child, '
+  'ever. ends_at is the SINGLE source of truth for the countdown and every '
+  'notification rung; expiry is DERIVED from it and never written by a job. The '
+  'entitlements rows it grants are the access authority -- subject_ids is this '
+  'ledger''s own record of what was chosen.';
+
+create index if not exists idx_free_trials_ends_at
+  on public.free_trials (ends_at) where cancelled_at is null;
+create index if not exists idx_free_trials_parent
+  on public.free_trials (owner_parent_profile_id);
+

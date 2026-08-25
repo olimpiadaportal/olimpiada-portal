@@ -4616,6 +4616,278 @@ comment on function public.has_subject_access(uuid, uuid) is
 revoke all on function public.has_subject_access(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.has_subject_access(uuid, uuid) to service_role;
 
+
+-- ---------------------------------------------------------------------------
+-- MIGRATION 140 - the Free Trial: its gate, its activation and its reads.
+-- ---------------------------------------------------------------------------
+create or replace function public.subject_access_is_trial_only(
+  p_student uuid,
+  p_subject uuid
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if p_student is null or p_subject is null then return false; end if;
+
+  -- EVERY branch below fails toward RATED, which is the safe direction. A bug
+  -- that lets a trial child score shows up on a leaderboard and gets noticed; a
+  -- bug that wrongly reports "trial" would silently void a PAYING child's one
+  -- rated round of the day, which nobody would report because nothing looks
+  -- broken.
+  if not exists (
+    select 1 from public.entitlements e
+    where e.student_profile_id = p_student
+      and e.scope = 'subject'
+      and e.subject_id = p_subject
+      and e.source = 'trial'
+      and e.revoked_at is null
+      and e.starts_at <= now()
+      and e.ends_at   >  now()
+  ) then
+    return false;
+  end if;
+
+  -- A platform-wide campaign makes everyone's rounds rated; the trial must not
+  -- silently downgrade a child who would otherwise be scoring.
+  if public.is_giveaway_active() then return false; end if;
+  if public.is_free_access_active_for_student(p_student) then return false; end if;
+
+  -- PAID ALWAYS WINS. A child who holds a live subscription for this subject
+  -- scores, even if a trial grant is also live -- which happens naturally when a
+  -- parent buys during the trial day.
+  if exists (
+    select 1 from public.entitlements e
+    where e.student_profile_id = p_student
+      and e.scope = 'subject'
+      and e.subject_id = p_subject
+      and e.source <> 'trial'
+      and e.revoked_at is null
+      and e.starts_at <= now()
+      and e.ends_at   >  now()
+  ) then
+    return false;
+  end if;
+
+  return true;
+end;
+$$;
+
+comment on function public.subject_access_is_trial_only(uuid, uuid) is
+  'Migration 140: is this subject reachable ONLY through the Free Trial? The '
+  'single reader that decides whether today''s round scores. Fails toward RATED '
+  'in every branch -- paid, giveaway and admin free-access all win. Takes an '
+  'arbitrary student id, so EXECUTE is service_role only (the same split as '
+  'has_subject_access).';
+
+revoke all on function public.subject_access_is_trial_only(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.subject_access_is_trial_only(uuid, uuid) to service_role;
+create or replace function public.activate_free_trial(
+  p_parent      uuid,
+  p_student     uuid,
+  p_subject_ids uuid[],
+  p_locale      text default 'az'
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  c_hours  constant int := 24;
+  c_max    constant int := 2;
+  v_ends   timestamptz;
+  v_locale text := case when p_locale in ('az','en','ru') then p_locale else 'az' end;
+  v_subj   uuid;
+  v_n      int;
+begin
+  if p_parent is null or p_student is null then
+    raise exception 'trial: missing ids' using errcode = 'check_violation';
+  end if;
+
+  -- OWNERSHIP FIRST. entitlement_grant performs no ownership check at all -- it
+  -- constrains p_student only by the foreign key -- so this cannot be delegated
+  -- to it. The parent id arrives from requireParent(), never from a request body.
+  if not exists (
+    select 1 from public.students s
+    where s.profile_id = p_student
+      and s.created_by_parent_profile_id = p_parent
+  ) then
+    raise exception 'trial: not your child' using errcode = 'check_violation',
+      hint = 'not_your_child';
+  end if;
+
+  v_n := coalesce(cardinality(p_subject_ids), 0);
+  if v_n < 1 or v_n > c_max then
+    raise exception 'trial: choose between 1 and % subjects', c_max
+      using errcode = 'check_violation', hint = 'too_many_subjects';
+  end if;
+  if v_n <> (select count(distinct x) from unnest(p_subject_ids) x) then
+    raise exception 'trial: duplicate subject' using errcode = 'check_violation',
+      hint = 'bad_subject';
+  end if;
+
+  -- Every chosen subject must be a real, actively priced subject. A subject
+  -- nobody can buy afterwards is not a trial, it is a dead end.
+  if exists (
+    select 1 from unnest(p_subject_ids) x
+    where not exists (
+      select 1 from public.subjects s
+      join public.subjects_pricing sp on sp.subject_id = s.id and sp.status = 'active'
+      where s.id = x
+    )
+  ) then
+    raise exception 'trial: unknown or unpriced subject'
+      using errcode = 'check_violation', hint = 'bad_subject';
+  end if;
+
+  -- DO NOT BURN THE ONE TRIAL ON A CHILD WHO ALREADY HAS EVERYTHING FREE.
+  if public.is_giveaway_active()
+     or public.is_free_access_active_for_student(p_student) then
+    raise exception 'trial: access is already free'
+      using errcode = 'check_violation', hint = 'already_free';
+  end if;
+
+  if exists (
+    select 1 from public.entitlements e
+    where e.student_profile_id = p_student
+      and e.scope = 'subject'
+      and e.subject_id = any(p_subject_ids)
+      and e.source <> 'trial'
+      and e.revoked_at is null
+      and e.starts_at <= now()
+      and e.ends_at   >  now()
+  ) then
+    raise exception 'trial: already covered'
+      using errcode = 'check_violation', hint = 'already_covered';
+  end if;
+
+  v_ends := now() + make_interval(hours => c_hours);
+
+  -- The unique constraint is the once-only enforcement, not this insert's
+  -- success. Two tabs racing collapse onto one row.
+  begin
+    insert into public.free_trials
+      (student_profile_id, owner_parent_profile_id, subject_ids, ends_at, locale)
+    values (p_student, p_parent, p_subject_ids, v_ends, v_locale);
+  exception when unique_violation then
+    raise exception 'trial: already used' using errcode = 'unique_violation',
+      hint = 'trial_already_used';
+  end;
+
+  -- NOTE the deliberate omissions: no child_subscription_id and no
+  -- olympiad_purchase_id, which is what makes these rows invisible to
+  -- entitlements_reconcile() -- it only reaps grants it can trace back to a
+  -- subscription or a purchase. And assert_payments_enabled() is never called,
+  -- so the trial still works while the payments kill switch is off, which is
+  -- exactly the pre-launch period when a free trial is most wanted.
+  foreach v_subj in array p_subject_ids loop
+    perform public.entitlement_grant(
+      p_student, 'subject', 'trial',
+      'trial:' || p_student::text || ':' || v_subj::text,
+      p_subject_id => v_subj,
+      p_starts_at  => now(),
+      p_ends_at    => v_ends,
+      p_granted_by => p_parent,
+      p_note       => 'free_trial');
+  end loop;
+
+  insert into public.audit_logs
+    (actor_profile_id, action, target_table, target_id, metadata_json, severity, success)
+  values
+    (p_parent, 'free_trial.activate', 'free_trials', p_student,
+     jsonb_build_object('subjects', cardinality(p_subject_ids), 'ends_at', v_ends),
+     'info', true);
+
+  return jsonb_build_object('ends_at', v_ends, 'subject_ids', p_subject_ids);
+end;
+$$;
+
+comment on function public.activate_free_trial(uuid, uuid, uuid[], text) is
+  'Migration 140: activate the one-time 1-day Free Trial for a child. Ownership '
+  'is checked HERE because entitlement_grant checks none. Never calls '
+  'assert_payments_enabled (the trial must work while payments are off), never '
+  'writes students.access_status, and never creates a child_subscriptions row.';
+
+revoke all on function public.activate_free_trial(uuid, uuid, uuid[], text) from public, anon, authenticated;
+grant execute on function public.activate_free_trial(uuid, uuid, uuid[], text) to service_role;
+create or replace function public.child_free_trial(p_student uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_me  uuid := public.current_profile_id();
+  v_row public.free_trials;
+begin
+  if v_me is null or p_student is null then
+    return jsonb_build_object('active', false);
+  end if;
+
+  -- Same reader set as the free_trials RLS policy, restated because this is a
+  -- definer function and RLS does not apply to it.
+  if not (
+    p_student = v_me
+    or public.is_parent_linked_to_student(p_student)
+    or exists (select 1 from public.students s
+               where s.profile_id = p_student
+                 and s.created_by_parent_profile_id = v_me)
+    or public.is_admin()
+    or public.has_permission('subscriptions.manage')
+  ) then
+    return jsonb_build_object('active', false);
+  end if;
+
+  select * into v_row from public.free_trials
+   where student_profile_id = p_student and cancelled_at is null;
+  if not found then
+    return jsonb_build_object('active', false, 'used', false);
+  end if;
+
+  -- EXPIRY IS DERIVED. Nothing flips a status when the clock passes ends_at, so
+  -- there is no window in which a job has not yet run and access is wrong.
+  return jsonb_build_object(
+    'active',   v_row.ends_at > now(),
+    'used',     true,
+    'ends_at',  v_row.ends_at,
+    'subjects', coalesce((
+      select jsonb_agg(jsonb_build_object('id', s.id, 'code', s.code, 'name', s.name)
+                       order by s.name)
+      from public.subjects s where s.id = any(v_row.subject_ids)), '[]'::jsonb));
+end;
+$$;
+
+comment on function public.child_free_trial(uuid) is
+  'Migration 140: Free Trial state for one child, for the parent countdown and '
+  'the dashboard pill. Caller-scoped and fails closed to {active:false}. Expiry '
+  'is DERIVED from ends_at, never from a stored status.';
+
+revoke all on function public.child_free_trial(uuid) from public, anon;
+grant execute on function public.child_free_trial(uuid) to authenticated, service_role;
+
+
+create or replace function public.my_free_trial()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public.child_free_trial(public.current_profile_id());
+$$;
+
+comment on function public.my_free_trial() is
+  'Migration 140: the signed-in child''s own Free Trial state. Delegates to '
+  'child_free_trial so the two can never disagree.';
+
+revoke all on function public.my_free_trial() from public, anon;
+grant execute on function public.my_free_trial() to authenticated, service_role;
+
 -- live_package_entitlement: THE olympiad rule. Consults NO window, which is how
 -- the migration-038 owner ruling (giveaway / free access cover SUBJECTS only)
 -- becomes structural instead of something to remember not to add.
@@ -6291,6 +6563,11 @@ begin
       from public.test_attempts ta
      where ta.student_profile_id = p_student_profile_id
        and ta.status = 'graded'
+        -- MIGRATION 140: trial play is not this child's performance. Filtering
+        -- on is_free_trial rather than is_rated is deliberate -- is_rated would
+        -- also strip topic tests and replays out of every PAYING family's
+        -- analytics, which is a different feature nobody asked for.
+        and not ta.is_free_trial
        and ta.submitted_at >= now() - make_interval(days => v_days)
        and (p_subject_id is null or ta.subject_id = p_subject_id)
        -- Module scope (migration 051): olympiad attempts never mix into the
@@ -6465,14 +6742,15 @@ begin
     ),
     'attempts_30d', (
       select count(*) from public.test_attempts
-       where status = 'graded' and submitted_at >= now() - interval '30 days'
+       where status = 'graded' and not is_free_trial   -- MIGRATION 140
+         and submitted_at >= now() - interval '30 days'
     ),
     'platform_accuracy_30d', (
       select round(count(*) filter (where a.is_correct)::numeric
                    / nullif(count(*), 0) * 100, 1)
         from public.test_attempt_answers a
         join public.test_attempts ta on ta.id = a.attempt_id
-       where ta.status = 'graded'
+       where ta.status = 'graded' and not ta.is_free_trial   -- MIGRATION 140
          and ta.submitted_at >= now() - interval '30 days'
     ),
     'questions_published', (
@@ -6496,7 +6774,8 @@ begin
         from generate_series(current_date - 13, current_date, interval '1 day') d
         left join (select submitted_at::date dt, count(*) n
                      from public.test_attempts
-                    where status = 'graded' group by 1) c on c.dt = d::date
+                    where status = 'graded' and not is_free_trial   -- MIGRATION 140
+                    group by 1) c on c.dt = d::date
     )
   ) into v_result;
 
@@ -6727,10 +7006,16 @@ begin
   -- UNTIMED practice (migration 057): no deadline, never rated.
   insert into public.test_attempts
     (student_profile_id, subject_id, kind, status,
-     question_ids, deadline_at, duration_seconds, topic_ids, subtopic_ids, is_rated)
+     question_ids, deadline_at, duration_seconds, topic_ids, subtopic_ids, is_rated,
+     is_free_trial)
   values
     (v_student, p_subject_id, 'test', 'in_progress',
-     v_qids, null, null, v_topics, v_subs, false)
+     v_qids, null, null, v_topics, v_subs, false,
+     -- MIGRATION 140: provenance only. Ratedness is already a literal false
+     -- above and stays that way; this records WHY the attempt happened so the
+     -- analytics filter can exclude trial play without excluding the practice
+     -- of every paying family.
+     public.subject_access_is_trial_only(v_student, p_subject_id))
   returning id into v_attempt;
 
   insert into public.test_attempt_answers (attempt_id, question_id)
@@ -6750,6 +7035,7 @@ comment on function public.start_topic_test_attempt(uuid, uuid[], uuid[]) is
 -- saved answers + flags, server deadline → remaining seconds). Migration 057:
 -- daily-round attempts render from the round's immutable snapshot; every
 -- payload carries the question 'image' ({bucket,path}, locale-aware, az fallback).
+
 create or replace function public.get_test_attempt(
   p_attempt_id uuid,
   p_locale     text default 'az'
@@ -7457,7 +7743,12 @@ declare
   v_student  uuid := public.current_profile_id();
   v_grade    uuid;
   v_date     date;
+  -- MIGRATION 140: v_rated used to carry TWO meanings at once -- "is this
+  -- today's round" AND "does it score" -- which is why a today/unrated round
+  -- was inexpressible before the Free Trial needed one.  They are separate now.
+  v_today    boolean := (coalesce(p_day, 'today') = 'today');
   v_rated    boolean := (coalesce(p_day, 'today') = 'today');
+  v_trial    boolean := false;
   v_qids     uuid[];
   v_set      public.daily_practice_sets;
   v_existing record;
@@ -7487,7 +7778,26 @@ begin
     raise exception 'daily: no active access' using errcode = 'check_violation';
   end if;
 
-  v_date := (now() at time zone 'Asia/Baku')::date - (case when v_rated then 0 else 1 end);
+  -- MIGRATION 140 -- DOES TODAY'S ROUND SCORE?
+  --
+  -- A child whose only access to this subject is the 1-day Free Trial plays
+  -- TODAY's fresh set, unlimited, but it must not touch points, percentage,
+  -- streak or any leaderboard.  is_rated=false delivers all of that by
+  -- construction: uq_rated_daily_live_per_day carries `and is_rated` in its
+  -- predicate, so an unrated row is outside the index entirely, and
+  -- award_attempt_points returns before writing anything when the attempt is
+  -- unrated.  The Round-42/43 rule is untouched -- NOTHING here weakens it.
+  --
+  -- subject_access_is_trial_only fails toward RATED in every branch: paid
+  -- access wins, a giveaway wins, an admin free-access window wins.  A bug that
+  -- makes a trial child score is visible on a board; the inverse would silently
+  -- void a paying child's only round of the day.
+  if v_today then
+    v_trial := public.subject_access_is_trial_only(v_student, p_subject_id);
+    v_rated := not v_trial;
+  end if;
+
+  v_date := (now() at time zone 'Asia/Baku')::date - (case when v_today then 0 else 1 end);
 
   if v_rated then
     -- Round 43: the day is consumed AT CREATION. Look at today's live/graded
@@ -7512,6 +7822,38 @@ begin
 
     -- Fresh per-student subtopic-balanced draw. A short pool raises HERE, so
     -- the day is never consumed on a failed draw.
+    v_qids := public.draw_daily_questions(p_subject_id, v_grade, c_count);
+    if coalesce(cardinality(v_qids), 0) < c_count then
+      raise exception 'daily round: not enough eligible questions (subject %, grade %: have %, need %)',
+        p_subject_id, v_grade, coalesce(cardinality(v_qids), 0), c_count
+        using errcode = 'no_data_found';
+    end if;
+  elsif v_trial then
+    -- MIGRATION 140 -- TODAY, UNRATED (Free Trial).
+    --
+    -- Deliberately NOT the yesterday branch: that one serves the LOCKED
+    -- daily_practice_sets row, which replays the identical 25 questions every
+    -- time.  A trial is meant to show what the product is like, so each entry
+    -- draws a fresh subtopic-balanced set from today's pool.
+    --
+    -- An in-progress row is resumed (refresh, second tab) but a COMPLETED one
+    -- never blocks -- that is what "unlimited during the trial" means, and it
+    -- costs nothing because none of these rows score.
+    select id, question_ids into v_existing
+    from public.test_attempts
+    where student_profile_id = v_student and subject_id = p_subject_id
+      and kind = 'daily' and not is_rated and round_date = v_date
+      and status = 'in_progress'
+    order by started_at desc limit 1;
+    if v_existing.id is not null then
+      return jsonb_build_object(
+        'attempt_id', v_existing.id, 'resumed', true, 'rated', false,
+        'deadline_at', null, 'duration_seconds', null,
+        'count', cardinality(v_existing.question_ids));
+    end if;
+
+    -- A short pool raises HERE, before any row exists, exactly as the rated
+    -- branch does.
     v_qids := public.draw_daily_questions(p_subject_id, v_grade, c_count);
     if coalesce(cardinality(v_qids), 0) < c_count then
       raise exception 'daily round: not enough eligible questions (subject %, grade %: have %, need %)',
@@ -7581,10 +7923,10 @@ begin
 
   insert into public.test_attempts
     (student_profile_id, subject_id, kind, status, question_ids,
-     deadline_at, duration_seconds, is_rated, round_date)
+     deadline_at, duration_seconds, is_rated, round_date, is_free_trial)
   values
     (v_student, p_subject_id, 'daily', 'in_progress', v_qids,
-     null, null, v_rated, v_date)
+     null, null, v_rated, v_date, v_trial)
   returning id into v_attempt;
 
   insert into public.test_attempt_answers (attempt_id, question_id)
@@ -7605,7 +7947,11 @@ comment on function public.start_daily_round_attempt(uuid, text) is
   'subject+day — resume in-progress, block when completed); a <25 pool raises '
   'before any row is created. yesterday = unlimited UNTIMED practice on the '
   'student''s LOCKED set (own -> peer country-wide by grade -> legacy round -> '
-  'generated), never rated.';
+  'generated), never rated. MIGRATION 140: a child whose only access is the '
+  '1-day Free Trial plays TODAY unlimited and UNRATED -- a fresh draw each '
+  'entry, is_free_trial stamped, outside uq_rated_daily_live_per_day and '
+  'invisible to award_attempt_points. The rated rule itself is unchanged.';
+
 revoke all on function public.start_daily_round_attempt(uuid, text) from public, anon;
 grant execute on function public.start_daily_round_attempt(uuid, text) to authenticated, service_role;
 
@@ -9428,7 +9774,19 @@ begin
         'days', v_row.days_left,
         'ends_on', v_when,
         'subscription_id', v_row.id),
-      array['in_app'],
+      -- MIGRATION 138: the EMAIL channel is requested here.
+      --
+      -- Renewals are MANUAL (ABB has not approved recurring), so this chain is
+      -- the entire retention mechanism -- and the parent is the payer while the
+      -- CHILD is the daily user. A parent may not open the portal for weeks, so
+      -- an in-app-only warning is a warning nobody reads: access lapses quietly
+      -- and the family finds out from a locked-out child.
+      --
+      -- Nothing is sent until BOTH the notifications_email flag is on AND the
+      -- recipient's email_enabled preference allows it; create_notification
+      -- checks both before it writes a delivery row. Asking for the channel is
+      -- therefore safe on its own and inert until deliberately enabled.
+      array['in_app', 'email'],
       -- THE DAY BUCKET IS WHAT MAKES THE CHAIN WORK. Without it the second and
       -- third warnings collide with the first on `on conflict (idempotency_key)
       -- do nothing` and are silently discarded — which is exactly what the old
@@ -9510,7 +9868,12 @@ begin
     select public.create_notification(
       v_parent, 'giveaway_ending', v_title, v_body,
       jsonb_build_object('ends_at', v_end, 'days', v_days),
-      array['in_app'],
+      -- MIGRATION 138: the EMAIL channel is requested here, for the same
+      -- reason as the renewal chain -- this is the other notification that
+      -- means "your child's access is about to change", and it is the only
+      -- warning before a free period ends and subjects start costing money.
+      -- Gated by the notifications_email flag and the recipient's preference.
+      array['in_app', 'email'],
       'gvw:' || v_parent::text || ':' || v_end::text || ':d' || v_days::text,
       v_prio, '/services', 'announcement', null) into v_sent;
     -- Count what was SENT, not what was considered: create_notification returns
@@ -12764,6 +13127,73 @@ $$;
 -- parent to make the server hammer the acquirer.
 revoke all on function public.azericard_reconcile_kick() from public, anon, authenticated;
 grant execute on function public.azericard_reconcile_kick() to service_role;
+
+
+-- ---------------------------------------------------------------------------
+-- MIGRATION 138 - the notification queue's consumer, mirroring the sweep above.
+-- ---------------------------------------------------------------------------
+create or replace function public.notifications_process_kick()
+returns bigint
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_url   text;
+  v_key   text;
+  v_host  text;
+  v_req   bigint;
+begin
+  if not exists (select 1 from pg_extension where extname = 'pg_net') then
+    raise notice 'notifications_process_kick: pg_net is not installed; nothing to do.';
+    return null;
+  end if;
+
+  select decrypted_secret into v_url
+    from vault.decrypted_secrets where name = 'notifications_process_url' limit 1;
+  select decrypted_secret into v_key
+    from vault.decrypted_secrets where name = 'notifications_processor_key' limit 1;
+
+  -- Fail CLOSED and quietly. Not configured is the ordinary state of a fresh
+  -- database, and this fires every five minutes.
+  if coalesce(v_url, '') = '' or coalesce(v_key, '') = '' then
+    raise notice 'notifications_process_kick: not configured (vault secrets missing); skipping.';
+    return null;
+  end if;
+
+  -- OUR OWN ENDPOINT ONLY, exactly as azericard_reconcile_kick does it. The
+  -- shared secret is useless to anyone but us, but a secret posted at an
+  -- attacker-chosen host is still a credential leak, and a hardcoded allowlist
+  -- is the one check a later Vault write cannot talk its way around.
+  v_host := split_part(split_part(regexp_replace(v_url, '^https://', ''), '/', 1), ':', 1);
+  if v_url !~ '^https://' or v_host not in ('olympiq.ai', 'www.olympiq.ai', 'staging.olympiq.ai') then
+    raise warning 'notifications_process_kick: refusing to post to an unexpected host (%).', v_host;
+    return null;
+  end if;
+
+  -- Fire and forget. The ROUTE claims pending deliveries and records every
+  -- outcome; a cron job that waits on a network call blocks a worker for its
+  -- duration. Failures land in net._http_response.
+  --
+  -- KNOWN LIMITATION, stated rather than hidden: like the reconcile kick, this
+  -- never reads the HTTP result, so a wrong key produces 401s that pg_cron still
+  -- records as successful runs. On 2026-08-25 exactly that hid a 75-minute
+  -- reconcile outage. Watch net._http_response, not cron.job_run_details.
+  select net.http_post(
+           url                  => v_url,
+           body                 => '{}'::jsonb,
+           params               => '{}'::jsonb,
+           headers              => jsonb_build_object(
+                                     'Content-Type',    'application/json',
+                                     'x-processor-key', v_key),
+           timeout_milliseconds => 55000
+         ) into v_req;
+  return v_req;
+end $$;
+revoke all on function public.notifications_process_kick() from public, anon, authenticated;
+grant execute on function public.notifications_process_kick() to service_role;
+comment on function public.notifications_process_kick() is
+  'Migration 138: pg_cron entrypoint that asks the web app to drain notification_deliveries. Vault-configured, host-allowlisted, fire-and-forget.';
 
 comment on function public.azericard_reconcile_kick() is
   'Queues one POST to the web app''s AzeriCard reconciliation sweep. Credentials come from Vault; the target host is allowlisted in the body. Returns the pg_net request id, or NULL when not configured.';

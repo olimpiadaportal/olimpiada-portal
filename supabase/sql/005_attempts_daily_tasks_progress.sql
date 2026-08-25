@@ -132,6 +132,20 @@ create unique index if not exists uq_rated_daily_live_per_day
 
 create index if not exists idx_attempts_round on public.test_attempts (daily_round_id);
 
+-- MIGRATION 140 - Free Trial provenance on an attempt.
+alter table public.test_attempts
+  add column if not exists is_free_trial boolean not null default false;
+
+comment on column public.test_attempts.is_free_trial is
+  'Migration 140: this attempt happened under the Free Trial. PROVENANCE ONLY -- '
+  'is_rated remains the single gate that decides whether an attempt scores, and '
+  'nothing in the leaderboard, points or streak path reads this column. Two '
+  'booleans that both answered "does this count" would disagree eventually. It '
+  'exists so analytics can exclude trial play WITHOUT excluding the ordinary '
+  'practice of paying families. Not in the 010 column grant, so a child cannot '
+  'set it.';
+
+
 -- -----------------------------------------------------------------------------
 -- daily_practice_sets (Round 38, migration 083): the LOCKED per-student
 -- practice set for one yesterday (subject+date). Locked once on first open

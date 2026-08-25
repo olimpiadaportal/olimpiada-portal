@@ -202,6 +202,40 @@ begin
 end $$;
 
 
+-- -----------------------------------------------------------------------------
+-- MIGRATION 138 - drain the queue every five minutes.
+--
+-- Nothing called /api/notifications/process before this. There is no vercel.json
+-- (a Hobby plan caps crons at once daily), no pg_cron job and no external
+-- caller, so notification_deliveries was a queue with no consumer -- which is
+-- why it holds ZERO rows despite the engine being complete. Mirrors the proven
+-- olympiq_azericard_reconcile pattern rather than inventing a second one.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_has_cron boolean;
+  v_has_net  boolean;
+begin
+  select exists (select 1 from pg_extension where extname = 'pg_cron') into v_has_cron;
+  select exists (select 1 from pg_extension where extname = 'pg_net')  into v_has_net;
+  if not v_has_cron then
+    raise notice '138: pg_cron absent - notification processor not scheduled.';
+    return;
+  end if;
+  if not v_has_net then
+    raise notice '138: pg_net absent - notification processor not scheduled.';
+    return;
+  end if;
+  perform cron.unschedule(jobid) from cron.job where jobname = 'olympiq_notifications_process';
+  perform cron.schedule(
+    'olympiq_notifications_process',
+    '*/5 * * * *',
+    'select public.notifications_process_kick();'
+  );
+  raise notice '138: pg_cron job olympiq_notifications_process scheduled (*/5).';
+end $$;
+
+
 -- =============================================================================
 -- End of 016_scheduled_jobs.sql
 -- =============================================================================

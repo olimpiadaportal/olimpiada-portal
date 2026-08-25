@@ -713,6 +713,27 @@ create policy "entitlements_select" on public.entitlements for select to authent
   );
 -- NO insert/update/delete policy, for anyone, ever. Not even admins.
 
+-- free_trials: the same reader set as entitlements (migration 140).
+alter table public.free_trials enable row level security;
+
+drop policy if exists "free_trials_select" on public.free_trials;
+create policy "free_trials_select" on public.free_trials for select to authenticated
+  using (
+    student_profile_id = public.current_profile_id()
+    or public.is_parent_linked_to_student(student_profile_id)
+    or exists (select 1 from public.students s
+               where s.profile_id = student_profile_id
+                 and s.created_by_parent_profile_id = public.current_profile_id())
+    or public.is_admin()
+    or public.has_permission('subscriptions.manage')
+  );
+-- NO insert/update/delete policy, for anyone, ever. Not even admins. Writes go
+-- through activate_free_trial() only, exactly as entitlements does it.
+
+revoke all on public.free_trials from anon, authenticated;
+grant select on public.free_trials to authenticated;
+
+
 -- checkout_sessions + sibling_discounts: owner reads; writes admin/service only.
 drop policy if exists "checkout_select" on public.checkout_sessions;
 create policy "checkout_select" on public.checkout_sessions for select to authenticated

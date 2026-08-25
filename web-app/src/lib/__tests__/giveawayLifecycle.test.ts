@@ -45,6 +45,9 @@ function sqlFunction(text: string, name: string): string {
 
 const M133 = read(join(SQL, "migrations", "2026_08_22_133_connect_feature_flags.sql"));
 const M134 = read(join(SQL, "migrations", "2026_08_22_134_giveaway_lifecycle.sql"));
+// 138 re-issued notify_giveaway_ending to request the email channel, so the
+// parity check must follow it there.
+const M138 = read(join(SQL, "migrations", "2026_08_25_138_notification_email_delivery.sql"));
 const C011 = read(join(SQL, "011_indexes_constraints_functions_triggers.sql"));
 const C016 = read(join(SQL, "016_scheduled_jobs.sql"));
 
@@ -173,7 +176,13 @@ describe("three warnings, each landing once", () => {
   });
 
   it("carries its body VERBATIM into 011", () => {
-    expect(C011).toContain(sqlFunction(M134, "notify_giveaway_ending").trimEnd());
+    expect(C011).toContain(sqlFunction(M138, "notify_giveaway_ending").trimEnd());
+  });
+
+  it("asks for the email channel", () => {
+    // The only warning before a free period ends and subjects start costing
+    // money. In-app alone reaches a parent who has not opened the portal.
+    expect(fn).toContain("array['in_app', 'email']");
   });
 });
 

@@ -6,6 +6,257 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — THE PRODUCTION RAIL IS PROVEN; REFUNDS ARE NOT (2026-08-25 — IN PROGRESS)
+
+### What is proven
+
+The first real charge on the **production** terminal `17205829` succeeded end to
+end on 2026-08-25: order `20260825281545`, RRN `623780367803`, 1.00 AZN, paid from
+the owner's own card through a genuine 3-D Secure OTP.
+
+Four checks, all passing:
+
+| check | result |
+| --- | --- |
+| `checkout_sessions` | `kind=protocol_test`, `intent_kind` NULL, `status=paid` |
+| `payments` | `succeeded`, 1.00 AZN |
+| `payment_events` | **`cb:20260825281545`** |
+| entitlements created | **0** |
+
+**The `cb:` prefix is the load-bearing evidence.** It means the bank's SIGNED
+callback verified against `AZERICARD_MPI_PUBLIC_KEY_B64`. Had that key been the
+sandbox one, the callback would have been refused before touching the database and
+only a `recon:` row from the sweep would exist. So both halves of the key pair are
+confirmed: the PRIVATE key by the bank accepting our signed request and charging
+the card, the PUBLIC key by us accepting theirs.
+
+`protocol_test` carries `intent_kind IS NULL` and therefore cannot grant anything
+-- which is why the test cost 1 AZN and left nothing to clean up.
+
+### Two defects found on the way, both fixed
+
+**1. The sandbox key pair almost went live.** `web-app/.env.local` is the TEST
+config (terminal `17205223`, `testmpi.3dsecure.az`), and both key variables were
+sourced from it. A hash comparison against the repo-root pems showed
+`AZERICARD_PRIVATE_KEY_B64` -> `olympiq_test_private_key.pem` and
+`AZERICARD_MPI_PUBLIC_KEY_B64` -> `azericard_mpi_test_public_key.pem`.
+
+**Config validation could not have caught this.** `computeConfigProblems()` checks
+only that each value is a well-formed RSA PEM of sufficient modulus -- a TEST key
+passes every one of those checks and the endpoint reports `configured: true`. A
+wrong-but-valid key is invisible to us; only the bank can reject it. The correct
+sources are `olympiq_prod_private_key.pem` and `azericard_prod_mpi_public.pem`,
+the latter verified byte-for-byte against the key the bank sent in
+`OLYMPIQ_PRODCONFİG.txt`.
+
+*Second-order lesson:* the variable names end in **`_B64`**, not `_B`. A grep
+pattern of `AZERICARD_[A-Z_]*` truncates at the digit and yields the wrong names,
+which would have produced inert variables that break nothing visibly.
+
+**2. The reconcile sweep was dead for 75 minutes and said nothing.**
+Regenerating `PAYMENTS_RECONCILE_KEY` updated Vercel but not the Vault secret
+`azericard_reconcile_key`. `net._http_response` shows 62 x `200` up to 10:45 UTC,
+then `401 {"error":"unauthorized"}` every 5 minutes from 10:50 to 12:00.
+
+The failure is **silent by construction**: `azericard_reconcile_kick()` fires the
+request through `pg_net` and never reads the HTTP result, so pg_cron records every
+poisoned run as a success and the job stays `active`. The only evidence is
+`net._http_response`, which pg_net prunes. **Nothing alarms.**
+
+*And the repair had its own trap.* `vault.update_secret(id, new_secret)` accepted
+an EMPTY string when the psql variable was unset and reported `(1 row)` -- the
+secret decrypted fine at **length 0**, and the kick then failed closed with
+`not configured (vault secrets missing)`. A write that stores nothing and reports
+success is the same class of defect as the migration-132 probe that tested nothing:
+**it reads as coverage.** Always re-read the length after writing a secret.
+
+*Mechanical note:* `psql -c` does NOT interpolate `:'var'`; piping the SQL through
+stdin does.
+
+### What is NOT proven
+
+- **The redemption path has never run on production.** `protocol_test` carries no
+  intent, so subscription -> entitlement -> `source='abb_web'` is proven on STAGING
+  only. Production differs in one live way: `launch_promo` is ON there, which zeroes
+  the trial and charges immediately. Worth one 3.00 AZN purchase with a throwaway
+  child before real families arrive.
+- **Refunds do not exist.** See below.
+- One successful charge proves one card, one issuer, one 3DS flow. It does not
+  prove concurrency, a declined card's UX, a duplicate callback, an abandoned
+  checkout resumed later, or the `needs_review` path.
+
+### NO-REFUND POLICY (owner decision, 2026-08-25) — supersedes the refund-capability build
+
+**The platform does not refund.** A parent who cancels keeps access until the end
+of the period they already paid for, and no money is returned. Olympiad packages
+are lifetime and are never refunded once delivered. Design work on an admin refund
+feature was started on 2026-08-25 and **stopped on the same day** by this decision.
+
+**The code already implements exactly this rule** -- no change was required:
+
+- `cancelChildSubscriptionCore` (`web-app/src/lib/auth/subscriptionCore.ts:570-576`)
+  flips the live subscription to `canceled`, keeps access until
+  `current_period_end`, and states in its own comment that *"a cancellation refunds
+  nothing by rule"*. `recompute_child_access()` downgrades access once the period
+  passes.
+- The subject editor already tells the parent, in all three locales:
+  `subjedit.noteNoRefund` -- *"Silinən fənlərə görə geri ödəniş edilmir. Qalan
+  fənlər öz dövrləri ilə davam edir."*
+- Purchased olympiad packages are already never deleted (listings archive only;
+  purchasers keep lifetime access via the purchase branch of
+  `can_view_olympiad_package()`).
+
+**What is still owed, and it is NOT a feature -- it is disclosure.**
+
+- [ ] **State the no-refund and cancellation policy in the Terms & Conditions, and
+      show it at checkout before the parent confirms.** Visa and Mastercard both
+      require a merchant's refund/cancellation policy to be disclosed at the point
+      of sale; an UNDISCLOSED no-refund policy is a chargeback the merchant loses
+      by default. This is the single highest-value item attached to this decision.
+- [x] **Manual reversal runbook -- WRITTEN AND PROVEN on the production terminal,
+      2026-08-25.** See the reference section below. Refund policy and reversal
+      capability are different things: a duplicate charge, a charge against the
+      wrong child, or a card-scheme chargeback still needs correcting, and those
+      are error correction, not refunds.
+- [x] Order `20260825281545` (1.00 AZN) **REVERSED 2026-08-25**, money confirmed
+      received back by the owner. `payments.status` corrected to `refunded`.
+
+## REFERENCE — HOW TO REVERSE A CHARGE (proven 2026-08-25, production terminal)
+
+Keep this. It is the whole procedure, with the traps already paid for. Under the
+no-refund policy this is for ERROR CORRECTION -- a duplicate charge, a charge
+against the wrong child, a card-scheme chargeback -- not for customer refunds.
+
+### The one thing that matters most
+
+`reverseTransaction()` returns an `acknowledgement` that is **never conclusive**.
+On the real reversal of `20260825281545` it returned **`unknown` on HTTP 200** --
+and the reversal had in fact SUCCEEDED. The value is only ever `accepted` or
+`unknown`, never `declined`, by deliberate design (`interpretReversalResponse`).
+
+> Nothing may act on the acknowledgement alone; only a `TRAN_TRTYPE=22` status
+> query establishes a reversal.
+
+An implementation that treats the first response as the answer will report failure
+on successful reversals and may retry into a DOUBLE reversal. **Always issue
+`queryReversalStatus()` and believe only that.** It returned
+`outcome=approved, approved=true, rc=00, action=0, mismatches=[]`.
+
+Also: do NOT confirm a reversal with `GET .../test-initiate?order=` -- that path
+queries `TRAN_TRTYPE=1`, which reports the ORIGINAL authorisation as approved
+forever, even after the money has gone back.
+
+### Inputs, and where they live
+
+A reversal needs `order`, `amount` (formatted exactly as authorised, e.g. `1.00`),
+`currency`, `rrn` and `intRef`. **RRN and INT_REF must come from the authorised
+transaction we recorded, never from a request body.** They are in
+`payment_events` on the `cb:<ORDER>` row:
+
+```sql
+select payload_json->'callback'->>'RRN'      as rrn,
+       payload_json->'callback'->>'INT_REF'  as int_ref,
+       payload_json->'callback'->>'AMOUNT'   as amount
+  from public.payment_events where event_id = 'cb:<ORDER>';
+```
+
+The reversal MAC covers `AMOUNT, CURRENCY, TERMINAL, TRTYPE, ORDER, RRN, INT_REF`.
+`TIMESTAMP` and `NONCE` are SENT but NOT signed -- asymmetric with the
+authorisation MAC. That is the spec's asymmetry; `MAC_FIELDS_REVERSAL` is the
+authority.
+
+### Running it locally (four obstacles, all solved)
+
+1. **`web-app/.env.local` holds the SANDBOX pair** and cannot sign against the
+   production terminal. Build a temporary env file OUTSIDE the repository with the
+   production values (terminal `17205829`, gateway
+   `https://mpi.3dsecure.az/cgi-bin/cgi_link`, base64 of
+   `olympiq_prod_private_key.pem` and `azericard_prod_mpi_public.pem`).
+   **Delete it the moment you are done** -- it contains the production private key.
+2. **`import "server-only"` throws under plain Node.** Run with
+   `NODE_OPTIONS="--conditions=react-server"`.
+3. **`server-only` is not a real dependency** -- Next.js aliases it at build time,
+   so it does not exist in `node_modules`. Create a throwaway stub at
+   `node_modules/server-only/` (untracked, and `npm install` clears it anyway).
+4. **Config memoises env at module load**, so `process.loadEnvFile(...)` must run
+   BEFORE the config module is imported -- use a dynamic `await import()`, not a
+   static one, or the static import hoists above the env load.
+
+Then: `npx --yes tsx@4 <script>.mts`. Gate the actual send behind a `--go` flag so
+the dry run is genuinely dry, and verify `describeConfigProblems()` is empty and
+the terminal reads `17205829` before sending anything.
+
+### Correcting the ledger afterwards
+
+- `public.checkout_revoke_reversed('<ORDER>', '<reason>')` is the proper path and
+  the only writer of `payments.status='refunded'` for a REAL order. It revokes the
+  produced entitlements as a side effect.
+- **It refuses a `protocol_test` order** (`intent_kind IS NULL` -> `unknown_order`),
+  which is why `20260825281545` needed a direct
+  `update public.payments set status='refunded' ...`. That is safe: there is no
+  CHECK constraint (status is an enum: `pending, succeeded, failed, refunded,
+  canceled`), `trg_set_updated_at` maintains the timestamp and `trg_audit_payments`
+  records the change automatically.
+- **Never hand-edit `public.entitlements`.** `entitlement_revoke` raises
+  `mirrored_grant`, and `entitlements_reconcile()` undoes raw UPDATEs at :22 past
+  every hour.
+
+### A gap this exercise exposed
+
+**The reconcile sweep does not detect the reversal of an already-settled payment.**
+Immediately after a confirmed reversal the sweep still reported
+`{"queried":0,...,"reversed":0}` and `payments.status` stayed `succeeded` until
+corrected by hand -- because the sweep only reconciles UNRESOLVED sessions and
+never revisits a settled one. Consequence: a bank-side reversal or a card-scheme
+chargeback on a settled payment goes unnoticed indefinitely. Closing that would
+mean periodically re-querying settled payments inside the 24-hour window, or
+reading the settlement report.
+
+### If a refund feature is ever built
+
+The primitives are done and proven; only the surface is missing. Note that
+`admin-panel` and `web-app` are SEPARATE deployments and only `web-app` holds the
+`AZERICARD_*` credentials, so an admin-panel server action cannot sign a reversal
+itself -- it must call a web-app route handler. Required guards: authorization
+first, idempotency (one reversal per payment), amount and state validation
+(never more than charged, never an already-refunded or never-succeeded payment),
+and an audit row. The gateway's reversal response body can carry a masked card
+number and must never be persisted or logged wholesale.
+
+### PENDING — trial period (owner, 2026-08-25 — SPEC INCOMING)
+
+**One fixed trial length for ALL intervals** (owner, 2026-08-25, correcting an
+earlier per-interval idea): weekly, monthly and yearly all get the same trial --
+e.g. 1 or 2 days. Detailed spec to come from the owner.
+
+That is the shape the code ALREADY has: a single global trial value, repriced
+server-side by `quote_child_plan` (the client never decides it). So this is
+expected to be a settings value plus copy, not a schema change. Note the
+`launch_promo` feature flag zeroes the trial outright (migration 133) and is
+currently **ON in production** -- it and the trial cannot both be in effect.
+
+**The question the spec must answer:** does the trial capture money up front, or
+not? ABB recurring is not approved (ticket AZCDF-100303), so nothing can charge the
+card automatically when a trial ends. If the trial takes no payment, the parent
+must come back and pay MANUALLY -- and the only channel that reaches them is the
+3/2/1 reminder chain, which today reaches the in-app bell only. Decide this
+deliberately rather than discovering it at the first trial expiry.
+
+### Also pending from this round
+
+- [ ] **`payments` flag is OFF** on production -- turned off for the cutover, not yet
+      restored. Production is not selling.
+- [ ] **Renewal reminders reach only the in-app bell.** `brevo.ts` already ships
+      (migration 116) and `delivery.ts` delegates to it, but the producers request
+      `array['in_app']` only, so no email delivery row is ever created and turning
+      `notifications_email` on sends exactly zero. With renewals MANUAL, this chain
+      is the entire retention mechanism.
+- [ ] `AZERICARD_TEST_TOKEN` was set for the cutover and **has been deleted** (done
+      2026-08-25). It must never be left set: that route mints real payable orders up
+      to 50 AZN against any parent profile and does NOT consult the payments kill switch.
+- [ ] Add an alarm for a non-200 reconcile response, and a `013` check that the job
+      exists and is being answered. Today's outage proves nothing else will notice.
+
 ## PINNED — SOLUTIONS ARE EARNED, NOT BROWSABLE (migration 132, 2026-08-22 — APPLIED)
 
 `question_explanations` holds the WORKED SOLUTION per question. The old policy let

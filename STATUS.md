@@ -299,7 +299,10 @@ job does not reap it.
       `subject_access_is_trial_only`, `activate_free_trial`, `child_free_trial` /
       `my_free_trial`, the new today/unrated attempt branch, and analytics
       exclusions. Production `013`: **0 failures.**
-- [ ] Notification chain (12h/1h/expired), cron, trilingual bodies — migration 141
+- [x] **Migration 141 — the ending chain.** APPLIED to staging + production.
+      `free_trial_notice` (trilingual az/en/ru, keyed on the locale captured at
+      activation) + `notify_free_trial_ending` + `olympiq_notify_free_trial_ending`
+      on `*/5`. Production `013`: **0 failures.**
 - [ ] Retire the old subscription trial so both cannot apply — migration 142
 - [ ] Frontend: hero card, selection states, summary, confirm modal, success
       screen, countdown, active badges, expired state, `trial.*` i18n in az/en/ru
@@ -342,6 +345,34 @@ countdown · a stranger cannot.
 `activate_free_trial` still referenced `sp.is_active` on a table whose column is
 `status` — plpgsql does not column-check a body until it runs, so a clean apply
 proved nothing. Only executing it found that.
+
+### Why the rungs fire every 5 minutes and not hourly
+
+Migration 130 established that a rung must not depend on the instant the job
+fires. That principle is KEPT here; only the UNIT changed. At DAY grain a bucket
+lasts a day, so one sample per day is safe against jitter. At HOUR grain a bucket
+lasts an hour, so an hourly job samples it 1:1 and **one delayed run swallows a
+whole rung with no error anywhere.** Two things make it safe and both are
+required: fire finer than the rung (`*/5`, twelve samples per bucket), and use a
+monotone due-and-unsent predicate (`<=`) rather than equality. The unique
+idempotency key makes each rung at-most-once; `<=` makes it at-least-once across
+any outage that ends before the rung expires.
+
+**The trap the waking-hours clamp created.** Deferring a "1 hour left" notice to
+08:00 would announce time that no longer exists — a trial ending at 02:00 would
+produce "1 hour left" at 08:00, six hours after it ended. Both time-remaining
+rungs therefore carry `ends_at > now()`: a rung whose window passed during the
+quiet hours is DROPPED and the parent gets the honest "ended" notice instead.
+Never a late lie.
+
+**Priority is never 1.** Priority 1 overrides both the recipient's mute and the
+platform-wide `notifications` master switch. Migration 130 spent that override
+once, on a parent about to lose access they had PAID for. Nobody paid for this.
+
+Proven on staging by a rolled-back probe (`scratchpad/trial_notif_probe.sql`),
+**8/8**: the three rungs fire and a 20-hour trial stays silent; each trial is
+notified in ITS OWN language; a second run sends nothing; no price, purchase verb
+or URL reaches any body in any language; only parents are notified, never children.
 
 ### Two pre-existing defects a 2-subject unlimited-retake trial will expose
 

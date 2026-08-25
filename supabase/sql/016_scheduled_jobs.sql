@@ -236,6 +236,30 @@ begin
 end $$;
 
 
+-- ---------------------------------------------------------------------------
+-- MIGRATION 141 - the Free Trial ending chain. */5 rather than hourly: at HOUR
+-- grain an hourly job samples a bucket 1:1, so one delayed run swallows a whole
+-- rung with no error anywhere. Twelve samples per bucket plus a monotone
+-- due-and-unsent predicate makes a delayed run deliver LATE rather than NEVER.
+-- ---------------------------------------------------------------------------
+do $$
+declare v_has_cron boolean;
+begin
+  select exists (select 1 from pg_extension where extname = 'pg_cron') into v_has_cron;
+  if not v_has_cron then
+    raise notice '141: pg_cron absent — the Free Trial chain is not scheduled.';
+    return;
+  end if;
+  perform cron.unschedule(jobid) from cron.job where jobname = 'olympiq_notify_free_trial_ending';
+  perform cron.schedule(
+    'olympiq_notify_free_trial_ending',
+    '*/5 * * * *',
+    'select public.notify_free_trial_ending();'
+  );
+  raise notice '141: pg_cron job olympiq_notify_free_trial_ending scheduled (*/5).';
+end $$;
+
+
 -- =============================================================================
 -- End of 016_scheduled_jobs.sql
 -- =============================================================================

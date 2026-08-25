@@ -9890,6 +9890,192 @@ $$;
 revoke all on function public.notify_giveaway_ending() from public, anon, authenticated;
 grant execute on function public.notify_giveaway_ending() to service_role;
 
+
+-- ---------------------------------------------------------------------------
+-- MIGRATION 141 - the Free Trial ending chain (12h / 1h / ended).
+-- ---------------------------------------------------------------------------
+create or replace function public.free_trial_notice(
+  p_locale   text,
+  p_rung     int,
+  p_child    text,
+  p_subjects text,
+  p_ends_at  timestamptz
+)
+returns table (title text, body text)
+language plpgsql
+immutable
+set search_path = public, pg_temp
+as $$
+declare
+  v_loc  text := case when p_locale in ('az','en','ru') then p_locale else 'az' end;
+  v_when text := to_char(p_ends_at at time zone 'Asia/Baku', 'DD.MM.YYYY HH24:MI');
+begin
+  if p_rung = 12 then
+    if v_loc = 'en' then
+      title := 'Half of the free day is gone';
+      body  := 'Free access to ' || p_subjects || ' for ' || p_child ||
+               ' ends on ' || v_when || '. There is still time.';
+    elsif v_loc = 'ru' then
+      title := 'Половина бесплатного дня позади';
+      body  := 'Бесплатный доступ к предметам ' || p_subjects || ' для ' || p_child ||
+               ' заканчивается ' || v_when || '. Время ещё есть.';
+    else
+      title := 'Pulsuz günün yarısı keçdi';
+      body  := p_child || ' üçün ' || p_subjects || ' fənlərinə pulsuz giriş ' ||
+               v_when || ' tarixində bitir. Hələ vaxt var.';
+    end if;
+  elsif p_rung = 1 then
+    if v_loc = 'en' then
+      title := 'Free access ends in an hour';
+      body  := 'Access to ' || p_subjects || ' for ' || p_child ||
+               ' closes at ' || v_when || '.';
+    elsif v_loc = 'ru' then
+      title := 'Бесплатный доступ закончится через час';
+      body  := 'Доступ к предметам ' || p_subjects || ' для ' || p_child ||
+               ' закроется ' || v_when || '.';
+    else
+      title := 'Pulsuz giriş bir saatdan sonra bitir';
+      body  := p_child || ' üçün ' || p_subjects || ' fənlərinə giriş ' ||
+               v_when || ' tarixində bağlanacaq.';
+    end if;
+  else
+    if v_loc = 'en' then
+      title := 'Free access has ended';
+      body  := 'Access to ' || p_subjects || ' for ' || p_child || ' is now closed.';
+    elsif v_loc = 'ru' then
+      title := 'Бесплатный доступ завершён';
+      body  := 'Доступ к предметам ' || p_subjects || ' для ' || p_child || ' закрыт.';
+    else
+      title := 'Pulsuz giriş başa çatdı';
+      body  := p_child || ' üçün ' || p_subjects || ' fənlərinə giriş bağlandı.';
+    end if;
+  end if;
+  return next;
+end;
+$$;
+
+comment on function public.free_trial_notice(text, int, text, text, timestamptz) is
+  'Migration 141: the trilingual Free Trial notice bodies (az/en/ru), keyed on '
+  'the locale captured on the free_trials row. Names no price, no purchase verb, '
+  'no destination and no URL — these strings render verbatim inside the '
+  'purchase-silent store binaries.';
+
+revoke all on function public.free_trial_notice(text, int, text, text, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.free_trial_notice(text, int, text, text, timestamptz)
+  to service_role;
+
+
+create or replace function public.notify_free_trial_ending()
+returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_row      record;
+  v_note     record;
+  v_rung     int;
+  v_prio     int;
+  v_type     text;
+  v_expires  timestamptz;
+  v_sent     uuid;
+  v_n        int := 0;
+  v_hour     int;
+begin
+  -- During a campaign or an admin free-access window the trial ends and NOTHING
+  -- changes, so every one of these sentences would be false. The renewal chain
+  -- opens with the same guard for the same reason.
+  if public.is_giveaway_active() then return 0; end if;
+
+  -- WAKING HOURS, in the child's own timezone. A rung due at 03:00 is not
+  -- emitted; the monotone predicate below re-offers it from 08:00.
+  v_hour := extract(hour from (now() at time zone 'Asia/Baku'))::int;
+  if v_hour < 8 or v_hour > 21 then return 0; end if;
+
+  for v_row in
+    select ft.id, ft.student_profile_id, ft.owner_parent_profile_id,
+           ft.subject_ids, ft.ends_at, ft.locale,
+           trim(both from coalesce(s.first_name, '') || ' ' || coalesce(s.last_name, '')) as child_name
+    from public.free_trials ft
+    join public.students s on s.profile_id = ft.student_profile_id
+    where ft.cancelled_at is null
+      -- Bounded by idx_free_trials_ends_at. The backward reach is 14 hours so an
+      -- expiry that happened during the quiet window is still reportable at 08:00.
+      and ft.ends_at >  now() - interval '14 hours'
+      and ft.ends_at <= now() + interval '12 hours'
+  loop
+    begin
+      -- One family must not be able to silence every family: a raise inside this
+      -- loop would abort the whole run, so each row is wrapped.
+      if public.is_free_access_active_for_student(v_row.student_profile_id) then
+        continue;
+      end if;
+
+      -- WHICH RUNG IS DUE. Ordered most-urgent-first so a single pass emits at
+      -- most one notice per trial per run.
+      if v_row.ends_at <= now() then
+        v_rung := 0;  v_prio := 2;  v_type := 'free_trial_ended';  v_expires := null;
+      elsif v_row.ends_at - now() <= interval '1 hour' then
+        v_rung := 1;  v_prio := 2;  v_type := 'free_trial_ending'; v_expires := v_row.ends_at;
+      elsif v_row.ends_at - now() <= interval '12 hours' then
+        v_rung := 12; v_prio := 3;  v_type := 'free_trial_ending'; v_expires := v_row.ends_at;
+      else
+        continue;
+      end if;
+
+      select * into v_note from public.free_trial_notice(
+        v_row.locale, v_rung,
+        nullif(v_row.child_name, ''),
+        coalesce((select string_agg(sub.name, ', ' order by sub.name)
+                  from public.subjects sub where sub.id = any(v_row.subject_ids)), ''),
+        v_row.ends_at);
+
+      -- ends_at is IN the key, so a reissued trial would start a fresh series
+      -- rather than being muted by the old one.
+      select public.create_notification(
+        v_row.owner_parent_profile_id,
+        v_type,
+        v_note.title,
+        v_note.body,
+        jsonb_build_object('student_profile_id', v_row.student_profile_id,
+                           'ends_at', v_row.ends_at,
+                           'hours', v_rung),
+        -- The email channel, per migration 138's rule: only the chains that mean
+        -- "your child's access is about to change". Inert until the flag is on.
+        array['in_app', 'email'],
+        'trial:' || v_row.id::text || ':' || v_row.ends_at::text || ':h' || v_rung::text,
+        v_prio,
+        -- NEVER a pricing route. /children is allowlisted; /services and the
+        -- auth routes deliberately are not.
+        '/children/' || v_row.student_profile_id::text,
+        'announcement',
+        v_expires
+      ) into v_sent;
+
+      -- Count what was SENT, not what was considered. Under the monotone
+      -- predicate a suppressed rung is re-offered every five minutes; those are
+      -- harmless no-ops and must not inflate the counter.
+      if v_sent is not null then v_n := v_n + 1; end if;
+    exception when others then
+      raise warning 'notify_free_trial_ending: trial % failed: %', v_row.id, sqlerrm;
+    end;
+  end loop;
+
+  return v_n;
+end;
+$$;
+
+comment on function public.notify_free_trial_ending() is
+  'Migration 141: warns the OWNING PARENT that a Free Trial is ending — 12 hours '
+  'left, 1 hour left, and ended. Runs */5 with a monotone due-and-unsent '
+  'predicate so a delayed run delivers late rather than never. Emits only between '
+  '08:00 and 21:00 Asia/Baku, and never announces remaining time after ends_at '
+  'has passed. Priority never 1: nobody paid for this.';
+
+revoke all on function public.notify_free_trial_ending() from public, anon, authenticated;
+grant execute on function public.notify_free_trial_ending() to service_role;
+
 -- =============================================================================
 -- Admin subscription lifecycle (migration 077): the ONE centralized, self-
 -- auditing entry point the Admin Panel uses to manage comped / admin-granted

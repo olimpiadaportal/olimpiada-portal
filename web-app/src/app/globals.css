@@ -13982,3 +13982,51 @@ body[data-site-typography] .btn-ghost {
     transition: none;
   }
 }
+
+/* ===========================================================================
+   PURCHASE TERMS — the refund and renewal disclosure.
+   Shown on the pricing page and, compact, above the pay button. Muted on
+   purpose: it must be legible and findable, not shouted.
+   =========================================================================== */
+.pterms {
+  margin: 22px 0 0;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.pterms.is-compact {
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: var(--chip-bg);
+}
+.pterms-title {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+.pterms-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.pterms-list li {
+  position: relative;
+  padding-inline-start: 16px;
+}
+.pterms-list li::before {
+  content: "•";
+  position: absolute;
+  inset-inline-start: 2px;
+  color: var(--accent);
+}
+.pterms-ack {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--fg, inherit);
+}

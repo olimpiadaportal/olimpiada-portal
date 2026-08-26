@@ -47,8 +47,12 @@ export async function fetchSubjectAccess(
   profileId: string,
   giveawayActive: boolean,
 ): Promise<SubjectAccess> {
-  const [freeAccessRes, studentRes, subsRes] = await Promise.all([
+  const [freeAccessRes, trialRes, studentRes, subsRes] = await Promise.all([
     supabase.rpc("my_free_access_active"),
+    // A trial writes NO access_status -- it grants subject-scoped entitlements
+    // and nothing else -- so without this a trial-only child reads as inactive
+    // and is offered no subjects at all, while the server happily allows them.
+    supabase.rpc("my_free_trial"),
     supabase
       .from("students")
       .select("access_status")
@@ -68,7 +72,10 @@ export async function fetchSubjectAccess(
   const access =
     ((studentRes.data as { access_status?: string | null } | null)?.access_status ??
       "inactive") as string;
-  const hasAccess = access === "trialing" || access === "active" || freeNow;
+  const trial = (trialRes.data ?? null) as { active?: boolean; subjects?: unknown } | null;
+  const trialNow = !trialRes.error && trial?.active === true;
+  const hasAccess =
+    access === "trialing" || access === "active" || freeNow || trialNow;
 
   // Per-subject periods: the subscription outlives its shortest-cycle
   // subject, so the status filter alone would offer a lapsed one that
@@ -93,6 +100,20 @@ export async function fetchSubjectAccess(
       }
     }
   }
+  // EXACTLY the trial's subjects. Unlike a giveaway or an admin free-access
+  // window, a trial is subject-scoped -- merging the whole priced catalogue
+  // would offer subjects the start RPC then refuses.
+  if (trialNow && Array.isArray(trial?.subjects)) {
+    for (const row of trial.subjects as Record<string, unknown>[]) {
+      const id = typeof row.id === "string" ? row.id : "";
+      if (!id) continue;
+      subjMap.set(id, {
+        code: typeof row.code === "string" ? row.code : null,
+        name: typeof row.name === "string" ? row.name : "",
+      });
+    }
+  }
+
   const subjects: ChildSubject[] = Array.from(subjMap, ([id, v]) => ({
     id,
     code: v.code,

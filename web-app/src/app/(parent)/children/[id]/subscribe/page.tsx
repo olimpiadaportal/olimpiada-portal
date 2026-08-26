@@ -10,6 +10,7 @@ import { getLocale } from "@/i18n/server";
 import { formatShortDate } from "@/lib/formatDate";
 import { FreeTrialActivation } from "@/components/FreeTrialActivation";
 import { FreeTrialStatusPanel } from "@/components/FreeTrialStatusPanel";
+import { PurchaseTerms } from "@/components/PurchaseTerms";
 import { SubscribeForm } from "@/components/SubscribeForm";
 import { ManageSubjects, type CoveredSubject } from "@/components/ManageSubjects";
 import { FreeActivation } from "@/components/FreeActivation";
@@ -47,6 +48,10 @@ const KEYS = [
   "trial.err.alreadyUsed", "trial.err.tooMany", "trial.err.noSubjects",
   "trial.err.badSubject", "trial.err.alreadyFree", "trial.err.alreadyCovered",
   "trial.err.generic",
+  // Migration 144 - the refund/renewal disclosure shown at the point of
+  // sale. Undisclosed, a chargeback is lost by default.
+  "terms.title", "terms.norefund", "terms.manual", "terms.percycle",
+  "terms.olympiad", "terms.currency", "terms.ack",
   "sub.err.invalid", "sub.err.noSubjects", "sub.err.notYourChild",
   "parent.child.idLabel", "parent.child.idNote",
   "pricing.weekly", "pricing.monthly", "pricing.yearly", "parent.dash.title",
@@ -332,6 +337,13 @@ export default async function SubscribePage({
           />
         </>
       )}
+
+      {/* THE DISCLOSURE. Rendered for every branch that can lead to a charge -
+          the card schemes require the refund and cancellation policy to be
+          visible at the point of sale, and an undisclosed no-refund policy loses
+          the dispute by default. Deliberately outside the branch tree so a
+          future branch cannot forget it. */}
+      {mode === "real" ? <PurchaseTerms d={dict} compact /> : null}
     </section>
   );
 }

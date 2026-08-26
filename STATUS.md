@@ -391,6 +391,58 @@ product rule to fix a symptom that does not exist — and the Free Trial never
 touches that path anyway, because its branch draws a fresh set. **Left alone
 deliberately.**
 
+### THE NO-REFUND DISCLOSURE — SHIPPED (2026-08-26)
+
+`docs/STORE_PAYMENTS_COMPLIANCE.md` §8.4: **no EU-style cooling-off right exists
+in Azerbaijan**, so the refund policy is CONTRACTUAL and "must be written
+explicitly ... in Azerbaijani, before the parent authorises the first charge".
+Visa and Mastercard separately require the refund/cancellation policy at the
+point of sale — undisclosed, a chargeback is lost by default, plus a dispute fee.
+
+`components/PurchaseTerms.tsx`, rendered in TWO places for two different reasons:
+the public pricing page (durable, linkable) and, compact, **above the pay button
+on the subscribe page**, outside the branch tree so a future branch cannot forget
+it. Seven `terms.*` keys × 3 locales. Every line states something the code
+already does: no refunds, access kept to the paid period end, manual renewal,
+per-subject cycles, lifetime olympiad access, AZN.
+
+### A LIVE FALSEHOOD THIS ROUND CAUGHT
+
+The public pricing page still promised **"7 günlük pulsuz sınaq" / "a 7-day free
+trial" / "7-дневного бесплатного периода"** in all three languages — a promise
+migration 142 had removed the day before by setting `trial_days = 0`. The
+Azerbaijani version additionally claimed **card details were required**, which was
+never true of the pre-purchase trial either.
+
+**I created this by applying 142 without sweeping the marketing copy for what it
+invalidated.** `pricing.trialLine` now describes the real offer: once per child,
+24 hours, 2 subjects, no card. The lesson generalises — a migration that changes
+what the product DOES can silently falsify what the site SAYS, and nothing in the
+build catches it.
+
+### STILL OWED — deferred by the owner, 2026-08-26
+
+- [ ] **E-KASSA FISCAL RECEIPTS — the one true blocker on lawful selling.**
+      Still zero implementation. It is a separate integration with a fiscal
+      operator connected to the State Tax Service, NOT with ABB, so it needs a
+      commercial decision (which operator) before any code. Note this is OUR
+      DOCUMENT'S claim, relayed — not independently verified against Azerbaijani
+      tax law. Two neighbouring items in §8.4 deserve the same accountant's
+      attention: whether educational services are VAT-exempt (an **18% swing on
+      every price**), and billing through an Azerbaijani-RESIDENT entity.
+- [ ] **`payments` flag is OFF** on production. Nothing sells until it is on.
+- [ ] **The redemption path has never run on production.** One real ~3.00 AZN
+      weekly purchase on a throwaway child, confirming
+      `entitlements.source='abb_web'`. Owner deferred this to last, deliberately.
+- [ ] Settled payments are never revisited, so a bank-side reversal or a
+      card-scheme chargeback goes unnoticed indefinitely.
+- [ ] No alarm on a non-200 reconcile response; no `013` check that the job is
+      being answered. The 2026-08-25 outage proves nothing else notices.
+- [ ] Housekeeping: 4 stray `protocol_test` sessions and 2 pending payment rows
+      (2.00 AZN) from cutover diagnostics.
+- [ ] Admin finance surface: nav placeholders exist, no read-only
+      subscriptions/payments/events view for support work.
+
 ### PINNED LIMIT the compliance test cannot cover
 
 The runtime chain is CMS override (`site_content` via `get_mobile_content`) ->

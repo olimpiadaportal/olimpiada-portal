@@ -1090,7 +1090,21 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pricing.plan.yearly.unit": "ildə / fənn",
     "pricing.plan.yearly.note": "Bütün il üçün ən sərfəli qiymət.",
     "pricing.plan.yearly.save": "Aylıq plandan daha sərfəli",
-    "pricing.trialLine": "Hər yeni fənn 7 günlük pulsuz sınaqla başlayır — kart məlumatı tələb olunur, sınaq bitənə qədər ödəniş yoxdur.",
+    "pricing.trialLine": "Hər uşaq üçün bir dəfə: 2 fənnə 24 saat pulsuz giriş. Kart tələb olunmur.",
+    // ---- Purchase terms (migration 144) -------------------------------------
+    // Shown on the pricing page AND above the pay button, because the card
+    // schemes require the refund/cancellation policy at the point of sale.
+    "terms.title": "Ödəniş şərtləri",
+    "terms.norefund":
+      "Ödənişlər geri qaytarılmır. Abunəliyi ləğv etsəniz, ödədiyiniz dövrün sonunadək girişiniz saxlanılır, lakin məbləğ geri ödənilmir.",
+    "terms.manual":
+      "Abunəlik avtomatik yenilənmir. Dövr bitdikdə giriş dayanır; davam etmək üçün yenidən ödəniş etməlisiniz. Bitməzdən əvvəl sizə xəbərdarlıq göndəririk.",
+    "terms.percycle":
+      "Hər fənnin öz dövrü və öz qiyməti var. Bir fənni silsəniz, digərləri öz dövrləri ilə davam edir.",
+    "terms.olympiad":
+      "Olimpiada paketləri birdəfəlik alınır və ömürlük qalır. Onlar da geri qaytarılmır.",
+    "terms.currency": "Bütün ödənişlər Azərbaycan manatı (AZN) ilə aparılır.",
+    "terms.ack": "Ödənişə keçməklə yuxarıdakı şərtləri qəbul etmiş olursunuz.",
     "pricing.siblingTitle": "Avtomatik qardaş/bacı endirimi",
     "pricing.siblingBody":
       "Birdən çox uşaq əlavə etdikdə endirim avtomatik tətbiq olunur: 2-ci uşaq üçün −10%, 3-cü və sonrakı uşaqlar üçün −15%. Heç bir kod lazım deyil.",
@@ -2962,7 +2976,19 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pricing.plan.yearly.unit": "per year / subject",
     "pricing.plan.yearly.note": "Best value for the whole year.",
     "pricing.plan.yearly.save": "Better value than monthly",
-    "pricing.trialLine": "Every new subject starts with a 7-day free trial — no charge until the trial ends.",
+    "pricing.trialLine": "Once per child: 24 hours of free access to 2 subjects. No card required.",
+    // ---- Purchase terms (migration 144) -------------------------------------
+    "terms.title": "Payment terms",
+    "terms.norefund":
+      "Payments are not refunded. If you cancel, access continues until the end of the period you have paid for, but the amount is not returned.",
+    "terms.manual":
+      "Subscriptions do not renew automatically. Access stops when the period ends; to continue you pay again. We warn you before it ends.",
+    "terms.percycle":
+      "Each subject has its own period and its own price. Removing one subject leaves the others running on their own cycles.",
+    "terms.olympiad":
+      "Olympiad packages are bought once and stay yours for life. They are not refunded either.",
+    "terms.currency": "All payments are made in Azerbaijani manat (AZN).",
+    "terms.ack": "By continuing to payment you accept the terms above.",
     "pricing.siblingTitle": "Automatic sibling discount",
     "pricing.siblingBody":
       "When you add more than one child, the discount is applied automatically: −10% for the 2nd child, −15% for the 3rd and beyond. No code required.",
@@ -4818,7 +4844,19 @@ export const messages: Record<Locale, Record<string, string>> = {
     "pricing.plan.yearly.unit": "в год / предмет",
     "pricing.plan.yearly.note": "Самая выгодная цена на весь год.",
     "pricing.plan.yearly.save": "Выгоднее месячного плана",
-    "pricing.trialLine": "Каждый новый предмет начинается с 7-дневного бесплатного периода — оплата не списывается до его окончания.",
+    "pricing.trialLine": "Один раз для каждого ребёнка: 24 часа бесплатного доступа к 2 предметам. Карта не нужна.",
+    // ---- Purchase terms (migration 144) -------------------------------------
+    "terms.title": "Условия оплаты",
+    "terms.norefund":
+      "Платежи не возвращаются. При отмене доступ сохраняется до конца оплаченного периода, но сумма не возвращается.",
+    "terms.manual":
+      "Подписка не продлевается автоматически. По окончании периода доступ прекращается; чтобы продолжить, нужно оплатить заново. Мы предупредим вас заранее.",
+    "terms.percycle":
+      "У каждого предмета свой период и своя цена. Удаление одного предмета не влияет на остальные.",
+    "terms.olympiad":
+      "Олимпиадные пакеты покупаются один раз и остаются навсегда. Они также не подлежат возврату.",
+    "terms.currency": "Все платежи производятся в азербайджанских манатах (AZN).",
+    "terms.ack": "Переходя к оплате, вы принимаете условия выше.",
     "pricing.siblingTitle": "Автоматическая скидка за нескольких детей",
     "pricing.siblingBody":
       "Когда вы добавляете больше одного ребёнка, скидка применяется автоматически: −10% за 2-го ребёнка и −15% за 3-го и последующих. Промокод не нужен.",

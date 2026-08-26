@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { PurchaseTerms } from "@/components/PurchaseTerms";
 import { redirect } from "next/navigation";
 import { getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
@@ -146,6 +147,21 @@ export default async function ServicesPage({
       <Suspense fallback={<ConfiguratorSkeleton />}>
         <ConfiguratorSection search={search} />
       </Suspense>
+
+      {/* The refund and renewal rules, stated where a visitor decides. No
+          cooling-off right exists in Azerbaijan, so these terms are contractual
+          and have to be written down rather than implied. */}
+      <PurchaseTerms
+        d={{
+          "terms.title": t("terms.title"),
+          "terms.norefund": t("terms.norefund"),
+          "terms.manual": t("terms.manual"),
+          "terms.percycle": t("terms.percycle"),
+          "terms.olympiad": t("terms.olympiad"),
+          "terms.currency": t("terms.currency"),
+          "terms.ack": t("terms.ack"),
+        }}
+      />
 
       <aside className="sibling-box">
         <span className="sibling-icon" aria-hidden="true">

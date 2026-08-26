@@ -1105,6 +1105,25 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Olimpiada paketləri birdəfəlik alınır və ömürlük qalır. Onlar da geri qaytarılmır.",
     "terms.currency": "Bütün ödənişlər Azərbaycan manatı (AZN) ilə aparılır.",
     "terms.ack": "Ödənişə keçməklə yuxarıdakı şərtləri qəbul etmiş olursunuz.",
+    "terms.page.title": "Ödəniş şərtləri",
+    "terms.page.intro":
+      "Bu səhifə OlympIQ abunəliklərinin və olimpiada paketlərinin ödəniş qaydalarını izah edir. Ödəniş etməzdən əvvəl oxumağınızı xahiş edirik.",
+    "terms.page.updated": "Son yenilənmə",
+    "terms.h.refund": "Geri ödəniş",
+    "terms.h.renewal": "Yenilənmə və ləğv",
+    "terms.h.cycles": "Fənlər və dövrlər",
+    "terms.h.olympiad": "Olimpiada paketləri",
+    "terms.h.payment": "Ödəniş və valyuta",
+    "terms.cancel.how":
+      "Abunəliyi istənilən vaxt valideyn hesabınızdan ləğv edə bilərsiniz. Ləğv etdikdən sonra ödədiyiniz dövr bitənə qədər giriş açıq qalır, dövr bitdikdə isə avtomatik dayanır.",
+    "terms.payment.who":
+      "Ödənişləri yalnız valideyn hesabı edə bilər. Uşaq hesabından heç bir alış mümkün deyil.",
+    "terms.payment.card":
+      "Ödənişlər bankın təhlükəsiz səhifəsində aparılır. Kart məlumatlarınız OlympIQ serverlərində saxlanılmır.",
+    "terms.contact.title": "Sualınız var?",
+    "terms.contact.body":
+      "Ödənişlə bağlı sualınız olarsa, Əlaqə səhifəsindən bizə yazın.",
+    "terms.contact.cta": "Əlaqə",
     "pricing.siblingTitle": "Avtomatik qardaş/bacı endirimi",
     "pricing.siblingBody":
       "Birdən çox uşaq əlavə etdikdə endirim avtomatik tətbiq olunur: 2-ci uşaq üçün −10%, 3-cü və sonrakı uşaqlar üçün −15%. Heç bir kod lazım deyil.",
@@ -2989,6 +3008,25 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Olympiad packages are bought once and stay yours for life. They are not refunded either.",
     "terms.currency": "All payments are made in Azerbaijani manat (AZN).",
     "terms.ack": "By continuing to payment you accept the terms above.",
+    "terms.page.title": "Payment terms",
+    "terms.page.intro":
+      "This page explains how payment works for OlympIQ subscriptions and olympiad packages. Please read it before you pay.",
+    "terms.page.updated": "Last updated",
+    "terms.h.refund": "Refunds",
+    "terms.h.renewal": "Renewal and cancellation",
+    "terms.h.cycles": "Subjects and periods",
+    "terms.h.olympiad": "Olympiad packages",
+    "terms.h.payment": "Payment and currency",
+    "terms.cancel.how":
+      "You can cancel a subscription at any time from your parent account. After cancelling, access stays open until the period you have paid for ends, and stops automatically when it does.",
+    "terms.payment.who":
+      "Only a parent account can pay. No purchase is possible from a child account.",
+    "terms.payment.card":
+      "Payments are made on the bank's secure page. Your card details are never stored on OlympIQ servers.",
+    "terms.contact.title": "Questions?",
+    "terms.contact.body":
+      "If you have a question about payment, write to us from the Contact page.",
+    "terms.contact.cta": "Contact",
     "pricing.siblingTitle": "Automatic sibling discount",
     "pricing.siblingBody":
       "When you add more than one child, the discount is applied automatically: −10% for the 2nd child, −15% for the 3rd and beyond. No code required.",
@@ -4857,6 +4895,25 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Олимпиадные пакеты покупаются один раз и остаются навсегда. Они также не подлежат возврату.",
     "terms.currency": "Все платежи производятся в азербайджанских манатах (AZN).",
     "terms.ack": "Переходя к оплате, вы принимаете условия выше.",
+    "terms.page.title": "Условия оплаты",
+    "terms.page.intro":
+      "На этой странице описано, как работает оплата подписок и олимпиадных пакетов OlympIQ. Пожалуйста, прочитайте её перед оплатой.",
+    "terms.page.updated": "Последнее обновление",
+    "terms.h.refund": "Возврат средств",
+    "terms.h.renewal": "Продление и отмена",
+    "terms.h.cycles": "Предметы и периоды",
+    "terms.h.olympiad": "Олимпиадные пакеты",
+    "terms.h.payment": "Оплата и валюта",
+    "terms.cancel.how":
+      "Подписку можно отменить в любой момент в родительском аккаунте. После отмены доступ сохраняется до конца оплаченного периода и прекращается автоматически по его завершении.",
+    "terms.payment.who":
+      "Оплачивать может только родительский аккаунт. Из детского аккаунта покупка невозможна.",
+    "terms.payment.card":
+      "Оплата проходит на защищённой странице банка. Данные вашей карты не хранятся на серверах OlympIQ.",
+    "terms.contact.title": "Есть вопросы?",
+    "terms.contact.body":
+      "Если у вас есть вопрос об оплате, напишите нам со страницы «Контакты».",
+    "terms.contact.cta": "Контакты",
     "pricing.siblingTitle": "Автоматическая скидка за нескольких детей",
     "pricing.siblingBody":
       "Когда вы добавляете больше одного ребёнка, скидка применяется автоматически: −10% за 2-го ребёнка и −15% за 3-го и последующих. Промокод не нужен.",

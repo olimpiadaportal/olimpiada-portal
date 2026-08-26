@@ -112,7 +112,12 @@ export default async function RegisterPage({
       <p className="muted" style={{ marginTop: 14 }}>
         {t("privacy.consentPre")}{" "}
         <Link href="/privacy">{t("privacy.consentLink")}</Link>
-        {t("privacy.consentPost")}
+        {t("privacy.consentPost")}{" "}
+        {/* The PAYMENT terms belong at the same tap depth as the privacy
+            policy: a parent registering is about to create children and then
+            pay for them, and the refund rule is contractual here (no statutory
+            cooling-off right exists in Azerbaijan). */}
+        <Link href="/terms">{t("terms.page.title")}</Link>
       </p>
 
       <p className="muted" style={{ marginTop: 18 }}>

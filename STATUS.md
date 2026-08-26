@@ -406,6 +406,34 @@ it. Seven `terms.*` keys × 3 locales. Every line states something the code
 already does: no refunds, access kept to the paid period end, manual renewal,
 per-subject cycles, lifetime olympiad access, AZN.
 
+### THE DURABLE TERMS PAGE — `/terms` (2026-08-26)
+
+The 2026-08-26 disclosure shipped the refund rule at the POINT OF SALE (pricing
+page + above the pay button). What was still missing was a **permanent document a
+parent, or a bank in a dispute, can open by URL months later**. There was no terms
+page in this repository at all — only the privacy policy.
+
+`web-app/src/app/(public)/terms/page.tsx`, reachable without a session, linked
+from the **register form beside the privacy policy** (same tap depth — a parent
+registering is about to create children and then pay for them) and from the
+compact block above the pay button. 21 `terms.*` keys × 3 locales in total.
+
+**Refund terms are deliberately NOT inside the privacy policy.** That document
+explains what personal data we hold and who may see it; refund and renewal rules
+are COMMERCIAL terms. Folding one into the other weakens both — a parent hunting
+for the refund rule would never think to open a privacy policy, and a regulator
+reading the privacy policy should not have to wade through billing. Two documents,
+two purposes, linked side by side.
+
+Every sentence on the page is something the code enforces: no refunds
+(`cancelChildSubscriptionCore`), access to the paid period end
+(`recompute_child_access`), manual renewal (ABB has not approved card-on-file),
+per-subject periods (migration 109), lifetime olympiad access (purchases are never
+deleted), parent-only purchasing, and that card details never touch our servers.
+
+**Note for whoever writes the full Terms of Service later:** this page covers
+PAYMENT only. It is not a complete ToS and does not pretend to be.
+
 ### A LIVE FALSEHOOD THIS ROUND CAUGHT
 
 The public pricing page still promised **"7 günlük pulsuz sınaq" / "a 7-day free

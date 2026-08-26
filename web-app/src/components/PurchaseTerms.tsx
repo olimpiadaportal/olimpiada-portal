@@ -49,7 +49,14 @@ export function PurchaseTerms({
           <li key={i}>{line}</li>
         ))}
       </ul>
-      {compact ? <p className="pterms-ack">{d["terms.ack"]}</p> : null}
+      {compact ? (
+        <p className="pterms-ack">
+          {d["terms.ack"]}{" "}
+          <a href="/terms" target="_blank" rel="noopener noreferrer">
+            {d["terms.page.title"]}
+          </a>
+        </p>
+      ) : null}
     </section>
   );
 }

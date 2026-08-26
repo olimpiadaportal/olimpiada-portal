@@ -51,7 +51,7 @@ const KEYS = [
   // Migration 144 - the refund/renewal disclosure shown at the point of
   // sale. Undisclosed, a chargeback is lost by default.
   "terms.title", "terms.norefund", "terms.manual", "terms.percycle",
-  "terms.olympiad", "terms.currency", "terms.ack",
+  "terms.olympiad", "terms.currency", "terms.ack", "terms.page.title",
   "sub.err.invalid", "sub.err.noSubjects", "sub.err.notYourChild",
   "parent.child.idLabel", "parent.child.idNote",
   "pricing.weekly", "pricing.monthly", "pricing.yearly", "parent.dash.title",

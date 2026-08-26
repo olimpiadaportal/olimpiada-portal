@@ -6,6 +6,128 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — THREE THINGS THAT WERE FALSE ON SCREEN (2026-08-26)
+
+A round of audits turned up the same defect shape three times: **a migration
+changed what the product DOES and nothing swept the copy it had just falsified.**
+Recorded together because the pattern matters more than any one instance.
+
+1. **The pricing page promised a 7-day free trial** that migration 142 had removed
+   the previous day, in all three languages, with the Azerbaijani version also
+   claiming card details were required -- never true of the pre-purchase trial.
+2. **The subscription detail page told admins "no real payment provider is
+   connected yet -- no money moved for this access"**, rendered UNCONDITIONALLY,
+   directly beneath a green pill naming the card rail. Since migration 137 stamps
+   `provider='azericard'`, the FIRST REAL CUSTOMER would have produced a screen
+   telling an admin their payment was comped -- an invitation to revoke access
+   somebody paid for. Also `KNOWN_PROVIDERS` omitted `azericard`, so the filter
+   silently discarded that value and an admin could not list card-paid
+   subscriptions at all.
+3. **The Notifications page said email sending "is not connected yet"** -- stale
+   since migration 116 shipped the Brevo transport, and actively misleading once
+   138 wired the channel.
+
+All three fixed. **There is no test that catches this class.** A migration touches
+SQL; the copy lives in three `messages.ts` files and a dozen `labels.ts` files, and
+nothing links them. The only defence is to sweep the copy for what a migration
+invalidates, in the same change.
+
+### NEWS LINKS — clickable on the web, deliberately inert in the app
+
+Owner report: an admin pastes a URL into a news body and it renders as plain
+text. The obvious fix -- render the body as HTML -- was REJECTED, and not on
+taste:
+
+- `script-src` carries `'unsafe-inline'` because Next hydration needs it, so an
+  injected `<img src=x onerror=...>` **executes**. The CSP is not a backstop here.
+- Supabase auth cookies are **not httpOnly** (the browser client reads them from
+  `document.cookie`), so a stored payload in a news body is **token theft**.
+- One component (`NewsArticleView`) serves anonymous visitors, a payment-bearing
+  parent session and a minor's screen.
+
+`web-app/src/lib/cmsLinkify.ts` produces **DATA, never HTML**: text segments
+become React children (React escapes them) and the only element the code
+constructs is an `<a>`. The single attacker-influenced value in the whole path is
+an `href`, which reduces the review to URL-scheme whitelisting. The app's HTML
+sink count stays at ONE (the notification markdown renderer, which escapes first).
+
+**A data migration was rejected** for a reason worth keeping: `BODY_MAX` is 20000
+and rewriting URLs into markdown roughly DOUBLES them. A link-heavy article would
+cross the cap, be silently truncated at render on both platforms, and then never
+be savable again -- the edit form reloads the oversized body and every save fails
+validation. Render-time linkification fixes every existing article, in every
+locale, at deploy, with no database work at all.
+
+**MOBILE STAYS INERT, and this is not a scoping preference.** A news body is an
+ADMIN-CONTROLLED STRING, and a store build may not open an external https link
+from one (Apple 3.1.1(a) dynamic steering; the body renders on STUDENT screens,
+so a tappable admin URL is an ungated link-out to a minor). `sync-i18n.mjs` now
+carries an ALLOWLIST -- mobile receives only the NINE `trial.*` keys it renders;
+108 web-only strings are dropped at sync time -- and `store-copy.test.ts` derives
+its sweep from the catalogue instead of a hand-written list. **It caught the leak
+on its first run:** `trial.hero.body` reads "Try the platform before you
+subscribe" in English.
+
+33 web tests (every hostile input: `javascript:`, `data:`, `blob:`, mixed-script
+homographs, userinfo smuggling, `evil-olympiq.ai`), 8 mobile structural tests.
+**v1 limit, by design:** bare URLs only -- `[label](url)` renders literally.
+
+### MIGRATION 144 — ARCHIVING COULD SILENTLY SHORTEN A PAID OLYMPIAD
+
+APPLIED to staging + production, backported, production `013` **128/0**.
+
+`admin_delete_olympiad_questions` was carefully guarded. **Archiving had none of
+those guards** -- `setOlympiadPoolQuestionStatus` was a bare
+`update questions set status='archived'` with no purchase check, no floor check,
+no demotion, and no trigger covering it. Yet archiving removes a question from
+play EXACTLY as deleting does, because every draw path filters
+`status = 'published'`.
+
+**And it was silent.** `start_olympiad_attempt` draws
+`least(questions_per_attempt, |pool|)` and does NOT raise on a short pool -- it
+serves a shorter olympiad. So archiving a purchased grade's pool gave a paying
+family fewer questions than they bought and told nobody: not the child, not the
+parent, not the admin who did it.
+
+A per-row hazard becomes a ONE-CLICK hazard the moment it is bulk-enabled, which
+is why the RPC exists before the UI does. Archive now carries the delete path's
+guards: package lock, confirmation code re-checked under it, all-or-nothing scope
+proof, the SHARED purchased-grade predicate (never a second copy), auto-demotion.
+**8/8 probes**, including the decisive one -- and the probe earned its keep twice
+by failing first on my own fixtures rather than on the code.
+
+### OWNER DECISIONS, 2026-08-26 (olympiad bulk management)
+
+1. **"Replace" = APPEND FIRST, THEN RETIRE**, as two separately-audited steps.
+   Order is load-bearing: append-first keeps the published pool above the floor
+   throughout, so neither the purchase refusal nor the auto-demotion fires.
+   Retire-first is UNCONDITIONALLY IMPOSSIBLE on a purchased grade and silently
+   demotes an active package on an unpurchased one. A one-click replace is not
+   available: `trg_question_delete_guard` aborts the whole transaction on the
+   first answered row, and the uploader cannot gain a mode parameter without
+   minting a second overload that breaks PostgREST resolution and 013 check 79.
+2. **Bulk Archive is BLOCKED below the floor**, same terms as Delete.
+3. **Fix the topic filter, CUT bulk Edit** -- it would touch answer options,
+   where changing ids invalidates the answer history pointing at them, for a
+   workflow nobody has described a concrete need for.
+
+### A LIVE BUG THE POOL WORK UNCOVERED
+
+**The pool fetch was unbounded.** PostgREST caps one response at max-rows (1000),
+so a larger pool rendered SILENTLY TRUNCATED -- and the header checkbox promising
+*"select every question on screen"* selected the first 1000 while the admin
+believed they had all of them. Every bulk action would have inherited that. Now
+pages until a short page arrives, and carries `topic_id` so the filter can exist.
+
+### Still to build
+
+- Finance view: three screens designed, not built. Its landing item is the gap
+  only it can see -- **a family whose money landed but whose basket was never
+  delivered never reaches the review queue**, because `listCheckoutReviews`
+  filters `redeemed_at is not null`.
+- Olympiad: bulk archive/restore BUTTONS and the pre-flight floor preview. The
+  RPC, the action and the filter are done.
+
 ## PINNED — THE PRODUCTION RAIL IS PROVEN; REFUNDS ARE NOT (2026-08-25 — IN PROGRESS)
 
 ### What is proven

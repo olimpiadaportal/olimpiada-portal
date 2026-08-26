@@ -13,7 +13,7 @@ type Dict = Record<string, string>;
 const STRINGS: Record<Locale, Dict> = {
   az: {
     "subs.subtitle":
-      "Uşaq abunəliklərini idarə et: komplimentar və ya inzibatçı tərəfindən verilmiş girişləri fəallaşdır, uzat, ləğv et və ya bitir. Ödəniş provayderi hələ qoşulmayıb.",
+      "Uşaq abunəliklərini idarə et: kartla ödənilmiş, komplimentar və ya inzibatçı tərəfindən verilmiş girişləri fəallaşdır, uzat, ləğv et və ya bitir.",
 
     // Filters
     "subs.filter.search": "Uşaq və ya valideyn (ad / e-poçt)",
@@ -100,7 +100,7 @@ const STRINGS: Record<Locale, Dict> = {
       "Bu abunəlik üçün ayrıca bacı/qardaş endirim qeydi yoxdur.",
     "subs.detail.paymentTitle": "Ödəniş əməliyyatı",
     "subs.detail.paymentNote":
-      "Real ödəniş provayderi hələ qoşulmayıb — bu giriş üçün heç bir pul əməliyyatı olmayıb (inzibatçı tərəfindən verilmiş və ya komplimentar giriş). Heç bir ödəniş qeydi yaradılmayıb.",
+      "Bu giriş üçün pul əməliyyatı olmayıb — inzibatçı tərəfindən verilmiş və ya komplimentar girişdir, ona görə ödəniş qeydi yoxdur. Kartla ödənilmiş abunəliklərdə bu qeyd göstərilmir.",
     "subs.detail.actionsSection": "Əməliyyatlar",
     "subs.detail.noActions":
       "Bu status üçün mövcud əməliyyat yoxdur (son vəziyyət).",
@@ -187,7 +187,7 @@ const STRINGS: Record<Locale, Dict> = {
   },
   en: {
     "subs.subtitle":
-      "Manage child subscriptions: activate, extend, cancel or expire comped and admin-granted access. No real payment provider is wired up yet.",
+      "Manage child subscriptions: activate, extend, cancel or expire card-paid, comped and admin-granted access.",
 
     "subs.filter.search": "Child or parent (name / email)",
     "subs.filter.status": "Status",
@@ -268,7 +268,7 @@ const STRINGS: Record<Locale, Dict> = {
       "No separate sibling-discount record for this subscription.",
     "subs.detail.paymentTitle": "Payment transaction",
     "subs.detail.paymentNote":
-      "No real payment provider is connected yet — no money moved for this access (admin-granted or comped). No payment record was created.",
+      "No money moved for this access — it is admin-granted or comped, so there is no payment record. This note is not shown for card-paid subscriptions.",
     "subs.detail.actionsSection": "Actions",
     "subs.detail.noActions":
       "No actions are available for this status (terminal state).",
@@ -347,7 +347,7 @@ const STRINGS: Record<Locale, Dict> = {
   },
   ru: {
     "subs.subtitle":
-      "Управляйте подписками детей: активируйте, продлевайте, отменяйте или завершайте льготный и выданный администратором доступ. Реальный платёжный провайдер пока не подключён.",
+      "Управляйте подписками детей: активируйте, продлевайте, отменяйте или завершайте оплаченный картой, льготный и выданный администратором доступ.",
 
     "subs.filter.search": "Ребёнок или родитель (имя / email)",
     "subs.filter.status": "Статус",

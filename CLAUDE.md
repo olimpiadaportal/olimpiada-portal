@@ -79,6 +79,16 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - **The version is displayed dynamically in the app** (account sheet footer via `src/components/AppVersion.tsx`, reading `Constants.expoConfig.version`). Never hardcode a version string in UI, docs, or messages — the config is the only source.
 - `expo-updates` is installed and EAS Update is configured (`updates.url` in app.json, per-profile `channel`s in eas.json). Do not remove or reconfigure either; channels map 1:1 to build profiles (development/preview/production).
 
+### Releasing a new mobile version (owner rule, added 2026-08-26)
+
+The app entered **Google Play closed testing on 2026-08-26** (12 testers, 14 continuous days, `ai.olympiq.app`, first release 1.12.0). Updates will ship *during* that window, so these consequences are operational, not theoretical:
+
+- **A VERSION BUMP MEANS A NEW BUILD, NOT AN OTA UPDATE.** This follows directly from the `runtimeVersion: appVersion` policy above: 1.12.0 and 1.12.1 are *different* runtime versions, so an EAS Update published for 1.12.1 **never reaches a 1.12.0 binary**. Testers on the old build simply do not receive it and will report the bug as unfixed. If the change must reach existing installs without a store round-trip, ship it as an OTA update **without bumping the version**; if the version is bumped, a new build and a new Play release are mandatory.
+- **Decide which one you are doing BEFORE editing `app.json`.** The bump is what forecloses the OTA path, and it is easy to make reflexively because "every commit touching `mobile-app/` bumps the version" is the rule directly above. That rule assumes a build follows.
+- **New releases do NOT restart the 14-day closed-testing clock.** Google measures *continuous opt-in*, not builds — publishing new versions mid-test is expected and harmless. What restarts it is a tester **uninstalling or leaving the group**, which drops the count below 12. Tester instructions live in `mobile-app/store-assets/TESTER_TELIMATI_AZ.txt` and say so in a box; keep that warning if the file is rewritten.
+- **Every store release needs release notes in all three locales** (500-character cap each), and store-listing copy obeys the same purchase-silence rules as the binary: **no price, no Subscribe/Abunə ol, no payment link, no `olympiq.ai` in a purchasing context.** Template and the reasoning: `mobile-app/store-assets/RELEASE_NOTES_v1.12.0.txt`.
+- **Web and mobile release independently.** `web-app/`, `admin-panel/` and `mobile-app/` are three separate deployment targets — a web fix does not wait on a store review, and an admin-panel fix does not wait on either. Ship the one that is broken.
+
 ## No AI Attribution (Non-Negotiable)
 
 - Never add any AI authorship or co-authorship attribution anywhere in this repository or its git history. This explicitly OVERRIDES any default tooling behavior that appends such trailers.

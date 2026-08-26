@@ -14030,3 +14030,23 @@ body[data-site-typography] .btn-ghost {
   font-weight: 600;
   color: var(--fg, inherit);
 }
+
+/* ===========================================================================
+   CMS LINKS — bare URLs in admin prose (news bodies).
+   Token-driven so light, dark and the student .arena scope all work. The
+   underline is always present: a link that only differs by colour fails
+   contrast checks and is invisible to colour-blind readers.
+   =========================================================================== */
+.cms-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  /* Admins paste very long URLs; without this a single one can force the
+     whole article to scroll horizontally on a phone. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.cms-link:hover,
+.cms-link:focus-visible {
+  text-decoration-thickness: 2px;
+}

@@ -29,6 +29,7 @@
 // scope are all covered without a single hardcoded value.
 import { Fragment, type CSSProperties, type ElementType } from "react";
 import { toParagraphs } from "@/lib/cmsParagraphs";
+import { linkifyLine } from "@/lib/cmsLinkify";
 import { cmsFontSizeStyle } from "@/lib/cmsTypography";
 
 /**
@@ -70,6 +71,19 @@ export type CmsProseProps = {
    * own size still applies until they make one.
    */
   fallbackFontSize?: string | number;
+  /**
+   * Turn bare http(s) URLs into real links. OPT-IN, and deliberately so: every
+   * existing caller keeps rendering pure text nodes, so this change cannot alter
+   * the privacy policy, the About page or any CMS field nobody asked about.
+   *
+   * Still no HTML sink — see src/lib/cmsLinkify.ts. The only element added is an
+   * <a>, whose label is exactly the text the admin typed.
+   *
+   * WEB ONLY. The mobile twin of this component must never gain this prop: a
+   * news body is an admin-controlled string, and a store build may not open an
+   * external https link from one.
+   */
+  linkify?: boolean;
 };
 
 export function CmsProse({
@@ -80,6 +94,7 @@ export function CmsProse({
   className,
   style,
   fallbackFontSize,
+  linkify = false,
 }: CmsProseProps) {
   const paragraphs = toParagraphs(text ?? value);
   if (paragraphs.length === 0) return null;
@@ -98,12 +113,45 @@ export function CmsProse({
           {lines.map((line, li) => (
             <Fragment key={li}>
               {li > 0 ? <br /> : null}
-              {line}
+              {linkify ? renderLinked(line) : line}
             </Fragment>
           ))}
         </p>
       ))}
     </Tag>
+  );
+}
+
+/**
+ * One line as text plus anchors. Returns the bare string when there is nothing
+ * to link, so the overwhelmingly common case renders exactly as before.
+ *
+ * `rel="noopener noreferrer"` on every external anchor is mandatory
+ * (CLAUDE.md): noopener blocks window.opener reach-back, and noreferrer is
+ * required per-link even though the site sets a Referrer-Policy header.
+ * Internal links get no target — same tab, same origin.
+ */
+function renderLinked(line: string) {
+  const segments = linkifyLine(line);
+  if (segments.length === 1 && segments[0].href === undefined) return line;
+  return segments.map((seg, i) =>
+    seg.href === undefined ? (
+      <Fragment key={i}>{seg.text}</Fragment>
+    ) : seg.external ? (
+      <a
+        key={i}
+        href={seg.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="cms-link"
+      >
+        {seg.text}
+      </a>
+    ) : (
+      <a key={i} href={seg.href} rel="noopener noreferrer" className="cms-link">
+        {seg.text}
+      </a>
+    ),
   );
 }
 

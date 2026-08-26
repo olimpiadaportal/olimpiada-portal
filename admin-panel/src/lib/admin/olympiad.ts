@@ -2847,6 +2847,99 @@ export async function deleteOlympiadQuestionsAction(
 }
 
 /**
+ * Archive or re-publish a SELECTION of pool questions (migration 144).
+ *
+ * WHY THIS EXISTS RATHER THAN A LOOP OVER setOlympiadPoolQuestionStatus.
+ * Archiving removes a question from every future attempt exactly as deleting
+ * does -- every draw path filters `status = 'published'` -- but the per-row
+ * status writer had none of the delete path's guards: no purchase check, no
+ * floor check, no demotion, and no trigger covering it. And the attempt engine
+ * draws `least(questions_per_attempt, |pool|)` WITHOUT raising, so an unguarded
+ * archive hands a paying family a shorter olympiad and tells nobody.
+ *
+ * A per-row hazard becomes a one-click hazard the moment it is bulk-enabled, so
+ * the RPC carries the same guards as the delete path and this action is a thin
+ * wrapper over it.
+ *
+ * The confirmation code is passed even though the archive dialog does not ask
+ * the admin to type it: the DATABASE re-checks it under the package lock, which
+ * is what makes a hand-crafted POST unable to skip the check. Archiving is
+ * reversible, so the UI friction is not earned -- the server contract is not
+ * negotiable either way.
+ */
+export async function setOlympiadPoolQuestionsStatusAction(
+  _prev: OlympiadDeletionState,
+  fd: FormData,
+): Promise<OlympiadDeletionState> {
+  // Guard FIRST -- before any client-supplied FormData is read.
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const pkgId = s(fd, "__package_id");
+  const raw = s(fd, "ids");
+  const code = s(fd, "__code").slice(0, CODE_MAX);
+  const next = s(fd, "__status");
+
+  if (!UUID_RE.test(pkgId)) return { ok: false, error: t("err.server"), blocks: [] };
+  // Enum whitelist, never a client string passed through to the database.
+  if (next !== "archived" && next !== "published") {
+    return { ok: false, error: t("err.server"), blocks: [] };
+  }
+  if (code.length === 0) return await tokenRefusal();
+
+  const parts = raw
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+  if (parts.length === 0) return await hintRefusal("empty_selection", 0);
+  // Checked BEFORE the shape loop and before any query, same as the delete
+  // path: an unbounded list is a denial-of-service shape.
+  if (parts.length > BULK_MAX) return await hintRefusal("too_many_questions", parts.length);
+  if (parts.some((x) => !UUID_RE.test(x))) {
+    return { ok: false, error: t("err.server"), blocks: [] };
+  }
+  const ids = Array.from(new Set(parts));
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("admin_set_olympiad_questions_status", {
+    p_package_id: pkgId,
+    p_question_ids: ids,
+    p_status: next,
+    p_expected_code: code,
+  });
+  if (error || !data) return await toDeletionFailure(error, "olympiad pool bulk status");
+
+  const r = data as Record<string, any>;
+  const demoted = Boolean(r.package_demoted);
+  await afterOlympiadDestructiveCall({
+    actorProfileId: ctx.profileId,
+    action:
+      next === "archived"
+        ? "admin.olympiad.questions_archive"
+        : "admin.olympiad.questions_restore",
+    packageId: pkgId,
+    metadata: {
+      requested: num(r.requested),
+      changed: num(r.changed),
+      already_in_status: num(r.already_in_status),
+      status: next,
+      package_demoted: demoted,
+    },
+    // A status change orphans no media. Routed through the same helper anyway so
+    // the audit path has exactly one definition; it sweeps an empty array.
+    orphanedMediaIds: [],
+  });
+
+  // Reports what actually happened, not what was asked for: a button that says
+  // "20 archived" when 15 were already archived reads as broken.
+  const base = fillTemplate(
+    t(next === "archived" ? "olyq.bulk.archived" : "olyq.bulk.restored"),
+    { changed: num(r.changed), already: num(r.already_in_status) },
+  );
+  return { ok: true, message: demoted ? `${base} ${t("del.done.demoted")}` : base };
+}
+
+/**
  * Restores an ARCHIVED package to INACTIVE. The one non-destructive operation
  * in this family, and the reason it lands on `inactive` rather than `active` is
  * in the RPC comment: restoring to active re-fires the activation pool guard —

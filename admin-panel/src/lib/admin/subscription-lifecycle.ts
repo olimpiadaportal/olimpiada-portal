@@ -28,7 +28,11 @@ export type PlanIntervalValue = (typeof PLAN_INTERVALS)[number];
 // the filter dropdown; an unforeseen future provider still displays (just
 // falls back to its raw value), it is simply not offered as a filter option
 // until added here.
-export const KNOWN_PROVIDERS = ["none", "admin_grant"] as const;
+// MIGRATION 137 made `azericard` a REAL stored value: checkout_redeem_plan
+// stamps it on every card-paid subscription. Until it was listed here the
+// filter silently discarded it (subscriptions.ts drops unknown values), so an
+// admin could not list card-paid subscriptions at all.
+export const KNOWN_PROVIDERS = ["none", "admin_grant", "azericard"] as const;
 
 export const SUBSCRIPTION_ACTIONS = [
   "activate",
@@ -80,15 +84,19 @@ export function statusPillClass(status: string): string {
 // mode was deleted on 2026-08-18 and the label would now name something that
 // does not exist, while the fact it describes (no provider transaction) is
 // unchanged.
-export type ProviderKind = "none" | "comped" | "other";
+export type ProviderKind = "none" | "comped" | "card" | "other";
 
 export function providerKind(provider: string | null | undefined): ProviderKind {
   if (!provider || provider === "none") return "none";
   if (provider === "admin_grant") return "comped";
+  // A real charge settled through the ABB/AzeriCard web rail. Distinct from
+  // "other" because the UI must NOT tell the reader that no money moved.
+  if (provider === "azericard") return "card";
   return "other";
 }
 
 export function providerBadgeClass(kind: ProviderKind): string {
+  if (kind === "card") return "pill-ok"; // money actually moved
   if (kind === "comped") return "pill-ok";
   if (kind === "other") return "pill-ok"; // a real provider = a real transaction
   return "pill-muted"; // no provider transaction

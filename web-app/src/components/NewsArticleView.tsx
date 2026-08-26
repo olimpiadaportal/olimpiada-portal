@@ -147,7 +147,10 @@ export async function NewsArticleView({
             this replaces used /\n{2,}/ on a body the admin <form> POST had
             already CRLF-normalised, so "\r\n\r\n" never matched and the whole
             article collapsed into a single pre-wrap block. */}
-        <CmsProse className="news-detail-body" text={tr?.body ?? ""} />
+        {/* linkify: a news article is the one CMS surface where admins
+            routinely paste URLs, and where a dead URL is a real defect.
+            Opt-in, so every other CmsProse caller is untouched. */}
+        <CmsProse className="news-detail-body" text={tr?.body ?? ""} linkify />
       </div>
     </article>
   );

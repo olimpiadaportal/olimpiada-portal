@@ -53,6 +53,27 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.topic": "Mövzu (istəyə bağlı)",
     "olyq.subtopic": "Alt mövzu (istəyə bağlı)",
     "olyq.noTopics": "Bu fənn üçün olimpiada mövzusu yoxdur.",
+    // ---- Bulk pool management (migration 144) --------------------------------
+    "olyq.filter.topic": "Mövzu",
+    "olyq.filter.topicAll": "Bütün mövzular",
+    "olyq.filter.topicNone": "— mövzusuz —",
+    "olyq.filter.showing": "{shown} / {total} sual göstərilir",
+    "olyq.bulk.archive": "Arxivləşdir",
+    "olyq.bulk.restore": "Bərpa et",
+    "olyq.bulk.archived": "{changed} sual arxivləndi ({already} sual artıq arxivdə idi).",
+    "olyq.bulk.restored": "{changed} sual bərpa olundu ({already} sual artıq nəşrdə idi).",
+    "olyq.bulk.archiveTitle": "Seçilmiş sualları arxivləşdirmək?",
+    "olyq.bulk.archiveBody":
+      "Arxivlənən suallar bundan sonra heç bir girişdə çıxmayacaq — silinmiş kimi. Fərq: keçmiş nəticələr oxunaqlı qalır və hər sualı geri qaytara bilərsiniz.",
+    "olyq.bulk.restoreTitle": "Seçilmiş sualları bərpa etmək?",
+    "olyq.bulk.restoreBody": "Bu suallar yenidən nəşr olunacaq və girişlərdə çıxacaq.",
+    "olyq.floor.ok": "{grade}: {before} → {after} nəşrdə (minimum {min})",
+    "olyq.floor.blocked":
+      "{grade}: {before} → {after} nəşrdə (minimum {min}) — bu sinif satılıb, əməliyyat rədd ediləcək.",
+    "olyq.floor.demote":
+      "{grade}: {before} → {after} nəşrdə (minimum {min}) — paket «Deaktiv» olacaq və əl ilə yenidən aktivləşdirilməlidir.",
+    "olyq.replaceHint":
+      "Sual hovuzunu dəyişmək üçün: ƏVVƏLCƏ yeni sualları yükləyin, SONRA köhnələri seçib arxivləşdirin. Bu ardıcıllıq vacibdir — əks halda hovuz bir anlıq minimumdan aşağı düşür.",
     "olyq.none": "— seçilməyib —",
     "olyq.trilingualNote":
       "Azərbaycan dili mütləqdir; ingilis və rus dilləri istəyə bağlıdır. Dil əlavə etmək üçün həmin dilin mətnini doldurun.",
@@ -129,6 +150,27 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.topic": "Topic (optional)",
     "olyq.subtopic": "Subtopic (optional)",
     "olyq.noTopics": "No olympiad topics exist for this subject.",
+    // ---- Bulk pool management (migration 144) --------------------------------
+    "olyq.filter.topic": "Topic",
+    "olyq.filter.topicAll": "All topics",
+    "olyq.filter.topicNone": "— no topic —",
+    "olyq.filter.showing": "Showing {shown} of {total}",
+    "olyq.bulk.archive": "Archive",
+    "olyq.bulk.restore": "Restore",
+    "olyq.bulk.archived": "{changed} archived ({already} were already archived).",
+    "olyq.bulk.restored": "{changed} restored ({already} were already published).",
+    "olyq.bulk.archiveTitle": "Archive the selected questions?",
+    "olyq.bulk.archiveBody":
+      "Archived questions stop appearing in every attempt — the same as deleting them. The difference: past results stay readable and each question can be restored.",
+    "olyq.bulk.restoreTitle": "Restore the selected questions?",
+    "olyq.bulk.restoreBody": "These questions will be published again and appear in attempts.",
+    "olyq.floor.ok": "{grade}: {before} → {after} published (minimum {min})",
+    "olyq.floor.blocked":
+      "{grade}: {before} → {after} published (minimum {min}) — this grade has been purchased, so the operation will be refused.",
+    "olyq.floor.demote":
+      "{grade}: {before} → {after} published (minimum {min}) — the package will be set to Inactive and must be re-activated by hand.",
+    "olyq.replaceHint":
+      "To swap a question pool: upload the new questions FIRST, then select the old ones and archive them. The order matters — the other way round the pool briefly drops below its minimum.",
     "olyq.none": "— none —",
     "olyq.trilingualNote":
       "Azerbaijani is required; English and Russian are optional. To add a language, fill in its text.",
@@ -201,6 +243,27 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.topic": "Тема (необязательно)",
     "olyq.subtopic": "Подтема (необязательно)",
     "olyq.noTopics": "Для этого предмета нет олимпиадных тем.",
+    // ---- Bulk pool management (migration 144) --------------------------------
+    "olyq.filter.topic": "Тема",
+    "olyq.filter.topicAll": "Все темы",
+    "olyq.filter.topicNone": "— без темы —",
+    "olyq.filter.showing": "Показано {shown} из {total}",
+    "olyq.bulk.archive": "В архив",
+    "olyq.bulk.restore": "Восстановить",
+    "olyq.bulk.archived": "В архив отправлено: {changed} ({already} уже были в архиве).",
+    "olyq.bulk.restored": "Восстановлено: {changed} ({already} уже были опубликованы).",
+    "olyq.bulk.archiveTitle": "Отправить выбранные вопросы в архив?",
+    "olyq.bulk.archiveBody":
+      "Архивные вопросы перестают появляться в попытках — как если бы их удалили. Разница: прошлые результаты остаются читаемыми, и каждый вопрос можно вернуть.",
+    "olyq.bulk.restoreTitle": "Восстановить выбранные вопросы?",
+    "olyq.bulk.restoreBody": "Эти вопросы снова будут опубликованы и появятся в попытках.",
+    "olyq.floor.ok": "{grade}: {before} → {after} опубликовано (минимум {min})",
+    "olyq.floor.blocked":
+      "{grade}: {before} → {after} опубликовано (минимум {min}) — этот класс уже куплен, операция будет отклонена.",
+    "olyq.floor.demote":
+      "{grade}: {before} → {after} опубликовано (минимум {min}) — пакет станет «Неактивен» и потребует ручной повторной активации.",
+    "olyq.replaceHint":
+      "Чтобы заменить пул вопросов: СНАЧАЛА загрузите новые вопросы, ЗАТЕМ выберите старые и отправьте их в архив. Порядок важен — иначе пул на короткое время опускается ниже минимума.",
     "olyq.none": "— не выбрано —",
     "olyq.trilingualNote":
       "Азербайджанский обязателен; английский и русский необязательны. Чтобы добавить язык, заполните его текст.",

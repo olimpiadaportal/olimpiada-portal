@@ -1,0 +1,89 @@
+===========================================================
+  OlympIQ — Google Play, İLK BURAXILIŞ
+  Version: 1.12.0
+===========================================================
+
+-----------------------------------------------------------
+RELEASE NAME  (yalnız Play Console-da görünür, istifadəçiyə YOX)
+-----------------------------------------------------------
+
+1.12.0 — İlk buraxılış
+
+  Qeyd: Play Console adətən bunu avtomatik "1 (1.12.0)"
+  formasında doldurur. İstəsəniz olduğu kimi saxlaya
+  bilərsiniz — bu ad yalnız daxili istifadə üçündür.
+  Limit: 50 simvol.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — AZƏRBAYCAN  (az-AZ)
+-----------------------------------------------------------
+
+OlympIQ-un ilk buraxılışı.
+
+• Valideyn hesabı: uşaq profili yaradın və inkişafını izləyin
+• Şagird girişi: 8 rəqəmli nömrə və valideyn şifrəsi ilə
+• Gündəlik raund: hər fənn üzrə gündə bir dəfə, 25 sual
+• Mövzu testləri: istədiyiniz qədər məşq edin
+• Olimpiada hazırlığı: paket sualları üzrə çalışın
+• Reytinq: şəhər, rayon, məktəb və sinif üzrə
+• Xəbərlər və bildirişlər
+• Üç dil: Azərbaycan, English, Русский
+
+Rəy və təkliflərinizi gözləyirik.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — ENGLISH  (en-US)
+-----------------------------------------------------------
+
+The first release of OlympIQ.
+
+• Parent account: create a child profile and follow their progress
+• Student sign-in: 8-digit ID and the parent's password
+• Daily round: once per subject each day, 25 questions
+• Topic tests: practise as much as you like
+• Olympiad preparation: work through package questions
+• Rankings: by city, district, school and grade
+• News and notifications
+• Three languages: Azerbaijani, English, Russian
+
+We would love to hear your feedback.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — РУССКИЙ  (ru-RU)
+-----------------------------------------------------------
+
+Первый выпуск OlympIQ.
+
+• Родительский аккаунт: создайте профиль ребёнка и следите за прогрессом
+• Вход ученика: 8-значный номер и пароль родителя
+• Ежедневный раунд: один раз в день по каждому предмету, 25 вопросов
+• Тесты по темам: занимайтесь сколько хотите
+• Подготовка к олимпиадам: задания из приобретённых пакетов
+• Рейтинг: по городу, району, школе и классу
+• Новости и уведомления
+• Три языка: азербайджанский, английский, русский
+
+Будем рады вашим отзывам.
+
+
+===========================================================
+  NƏYƏ GÖRƏ BURADA QİYMƏT VƏ "ABUNƏ OL" YOXDUR
+===========================================================
+
+Tətbiqin içində alış-veriş yoxdur — abunəlik və olimpiada
+paketləri yalnız sayt üzərindən alınır. Buraxılış qeydləri
+mağaza siyahısının bir hissəsidir, ona görə burada da qiymət,
+"Abunə ol" çağırışı və ya ödəniş linki yazılmır.
+
+Bu, təsadüf deyil: Apple 3.1.1(a) və Google Play Payments
+qaydaları Azərbaycan üçün tam qüvvədədir və bu qaydaların
+pozulmasının cəzası tətbiqin rədd edilməsi deyil, developer
+hesabının bağlanmasıdır.
+
+  Limit: hər dil üçün 500 simvol.
+  Yuxarıdakı mətnlərin hamısı bu limitin içindədir.
+
+===========================================================

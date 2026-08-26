@@ -203,7 +203,13 @@ export default async function SubscriptionDetailPage({
             {lt("subs.detail.providerSubId")}: {sub.providerSubscriptionId}
           </p>
         )}
-        <p className="hint">{lt("subs.detail.paymentNote")}</p>
+        {/* MIGRATION 137: this note describes a COMPED grant. Rendered
+            unconditionally it told the reader "no money moved for this
+            access" underneath a pill naming the card rail -- for a real
+            customer, an invitation to revoke access they paid for. */}
+        {providerKind(sub.provider) !== "card" && (
+          <p className="hint">{lt("subs.detail.paymentNote")}</p>
+        )}
       </section>
 
       <section className="card" style={{ marginBottom: 20 }}>

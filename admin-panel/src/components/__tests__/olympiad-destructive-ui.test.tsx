@@ -90,6 +90,9 @@ function row(id: string, num: number, gradeId: string, gradeName: string): Olymp
     num,
     gradeId,
     gradeName,
+    // Empty = no topic set, which is the ordinary case for an olympiad pool
+    // imported without topic metadata.
+    topicId: "",
     excerpt: `question ${num}`,
     search: `question ${num}`.toLowerCase(),
     optionCount: 5,
@@ -171,7 +174,12 @@ describe("olympiad pool — selection", () => {
     const user = userEvent.setup();
     renderManager();
 
-    await user.selectOptions(screen.getByRole("combobox"), G7);
+    // Scoped to the GRADE select by name: the pool toolbar now also carries a
+    // topic filter, so a bare combobox query is ambiguous.
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "olyq.grade" }),
+      G7,
+    );
     await user.click(headBox());
 
     expect(rowBoxes()).toHaveLength(1);
@@ -190,7 +198,12 @@ describe("olympiad pool — selection", () => {
     // …then filtered off screen. They must not survive: the count would stop
     // describing the table, and a confirmed delete would take rows the admin
     // can no longer read.
-    await user.selectOptions(screen.getByRole("combobox"), G7);
+    // Scoped to the GRADE select by name: the pool toolbar now also carries a
+    // topic filter, so a bare combobox query is ambiguous.
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "olyq.grade" }),
+      G7,
+    );
     expect(screen.queryByText("2 selected")).toBeNull();
     expect(rowBoxes()[0].checked).toBe(false);
   });

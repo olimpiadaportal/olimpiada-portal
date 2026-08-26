@@ -41,6 +41,37 @@ const FORM_KEYS = [
 // Round 49: an attempt serves exactly questions_per_attempt questions, drawn
 // per student on a non-repeating cycle over that grade's pool — so the pool
 // total and the per-attempt count are two different numbers on this page.
+/**
+ * The ENTIRE private pool for a package, in creation order.
+ *
+ * Pages until a short page arrives. A package with more than `FETCH_PAGE`
+ * questions used to render silently truncated, which made "select all on
+ * screen" select a subset the admin could not see they were missing.
+ */
+const POOL_FETCH_PAGE = 1000;
+
+async function fetchWholePool(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  packageId: string,
+) {
+  const cols =
+    "id, status, grade_id, topic_id, subtopic_id, primary_locale, updated_at, question_translations(locale, body, media_asset_id), answer_options(count)";
+  const all: any[] = [];
+  for (let from = 0; ; from += POOL_FETCH_PAGE) {
+    const { data, error } = await supabase
+      .from("questions")
+      .select(cols)
+      .eq("olympiad_package_id", packageId)
+      .order("created_at", { ascending: true })
+      .range(from, from + POOL_FETCH_PAGE - 1);
+    if (error) return { data: all, error };
+    const page = data ?? [];
+    all.push(...page);
+    if (page.length < POOL_FETCH_PAGE) break;
+  }
+  return { data: all, error: null };
+}
+
 export default async function EditOlympiadPage({
   params,
 }: {
@@ -133,13 +164,16 @@ export default async function EditOlympiadPage({
       supabase.from("grades").select("id, name, level").order("level"),
       // PRIVATE pool: questions owned by THIS package only, with what the
       // list needs (az/primary body excerpt, option count, image flag).
-      supabase
-        .from("questions")
-        .select(
-          "id, status, grade_id, primary_locale, updated_at, question_translations(locale, body, media_asset_id), answer_options(count)",
-        )
-        .eq("olympiad_package_id", id)
-        .order("created_at", { ascending: true }),
+      // Paged, NOT a bare select: PostgREST caps one response at max-rows
+      // (1000), and a truncated pool makes the header checkbox's promise --
+      // "select every question on screen" -- quietly false. Every bulk action
+      // stands on this array being the whole pool. Same pattern as
+      // lib/admin/question-options.ts.
+      //
+      // topic_id/subtopic_id ride along so the pool can be filtered by topic.
+      // Both are nullable by design for olympiad questions, which is why the
+      // filter needs an explicit "no topic" option.
+      fetchWholePool(supabase, id),
       // Optional taxonomy for the editor: OLYMPIAD-scoped topics of the
       // package's subject (module separation — never exam topics).
       supabase
@@ -220,6 +254,10 @@ export default async function EditOlympiadPage({
       id: String(q.id),
       num: i + 1,
       gradeId: q.grade_id ? String(q.grade_id) : "",
+      // Nullable BY DESIGN for olympiad questions, which is why the
+      // filter needs an explicit "no topic" option rather than treating
+      // an empty value as "match everything".
+      topicId: q.topic_id ? String(q.topic_id) : "",
       gradeName: String(gradeName),
       excerpt: body.length > 90 ? `${body.slice(0, 90)}…` : body,
       search: trs

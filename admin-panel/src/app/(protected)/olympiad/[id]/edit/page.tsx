@@ -387,6 +387,15 @@ export default async function EditOlympiadPage({
         <p className="hint">{poolDict["olyq.manageNote"]}</p>
         <p className="hint">{poolDict["olyq.archivedNote"]}</p>
         <OlympiadQuestionManager
+          // Per-grade floors, for the pre-flight preview only. The SERVER
+          // always re-decides -- this exists so an admin is told BEFORE
+          // clicking that an archive will be refused or will demote the
+          // package, instead of discovering it from an error.
+          floors={targetGrades.map((g) => ({
+            gradeId: g.id,
+            label: g.name,
+            perAttempt: Number(g.perAttempt || (pkg as any).questions_per_attempt || 0),
+          }))}
           dict={{ ...poolDict, "pend.loading": t("pend.loading"), "pend.processing": t("pend.processing"), "pend.deleting": t("pend.deleting") }}
           // Selection + bulk delete (migration 112). The package code IS asked
           // for — admin_delete_olympiad_questions compares it under the

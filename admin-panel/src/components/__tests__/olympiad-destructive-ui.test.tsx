@@ -127,6 +127,12 @@ function renderManager() {
       topics={[]}
       subtopics={[]}
       rows={ROWS}
+      // Both grades carry a floor of 2, so a selection of 2 grade-6 rows is a
+      // shortfall and the preview has something real to say.
+      floors={[
+        { gradeId: G6, label: "6", perAttempt: 2 },
+        { gradeId: G7, label: "7", perAttempt: 2 },
+      ]}
     />,
   );
 }

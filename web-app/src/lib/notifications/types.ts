@@ -83,6 +83,13 @@ export function iconForType(type: string): string {
       return "\u{1F9FE}"; // receipt
     case "subject_charge_failed":
       return "\u{1F4B3}"; // card
+    // Migration 141 -- the Free Trial chain. The hourglass matches
+    // subject_expiring because it means the same thing to a parent:
+    // access with a clock on it.
+    case "free_trial_ending":
+      return "\u{23F3}"; // hourglass
+    case "free_trial_ended":
+      return "\u{1F512}"; // lock
     case "subject_expiring":
       return "\u{23F3}"; // hourglass
     case "giveaway_ending":

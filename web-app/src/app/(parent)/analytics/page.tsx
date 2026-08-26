@@ -192,7 +192,10 @@ export default async function ParentAnalytics({
           .from("test_attempts")
           .select("score, max_score")
           .in("student_profile_id", childIds)
-          .eq("status", "graded");
+          .eq("status", "graded")
+          // Migration 140: the Free Trial is a preview, not
+          // performance. The DB analytics RPC filters the same way.
+          .eq("is_free_trial", false);
         const rows = (results ?? []) as any[];
         attempts = rows.length;
         if (rows.length > 0) {

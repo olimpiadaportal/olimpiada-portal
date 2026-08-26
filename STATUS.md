@@ -303,7 +303,16 @@ job does not reap it.
       `free_trial_notice` (trilingual az/en/ru, keyed on the locale captured at
       activation) + `notify_free_trial_ending` + `olympiq_notify_free_trial_ending`
       on `*/5`. Production `013`: **0 failures.**
-- [ ] Retire the old subscription trial so both cannot apply — migration 142
+- [x] **Migration 142 — one trial, not two.** APPLIED to staging + production.
+      `launch_promo_config.trial_days` 7 → 0. The two trials STACKED: a parent
+      would take the 1-day trial, buy a plan, and receive a further 7 free days
+      on top, so the first charge landed eight days after the family started —
+      and neither side knew about the other. Nobody had noticed because the
+      `launch_promo` flag zeroes the trial (migration 133), so it was inert; the
+      stacking would have appeared the day that flag was turned off, which is
+      exactly during a launch. Reversible: one UPDATE of one row. The migration
+      refuses to run unless 140 is already applied, so it can never leave the
+      platform with no trial at all.
 - [x] **Server action layer** — `lib/freeTrialShared.ts` (pure: the cap, the h/m/s
       split, the parser), `lib/freeTrial.ts` (server-only reads),
       `lib/auth/freeTrialCore.ts` (maps RPC hints to i18n KEYS, never Postgres
@@ -316,10 +325,25 @@ job does not reap it.
       the `.ftrial-*` CSS block, and the subscribe page wired with five branches.
       **46 `trial.*` keys × 3 locales in one edit**, asserted to be the same key
       set in each — a missing key renders as the raw key on screen.
-- [ ] Remaining wiring: dashboard pill, `childSubjects.ts` trial arm, child
-      dashboard + test page, `is_free_trial` filter on the two client analytics
-      queries, notification icons
-- [ ] Mobile: entitlement display only, compliant wording
+- [x] **Child-side wiring** — `childSubjects.ts` gained a `trialNow` arm that
+      merges EXACTLY the trial's subjects. Deliberately **not** folded into
+      `freeNow`: the giveaway and the admin free-access window are all-or-nothing
+      and merge every actively priced subject, so treating the trial as another
+      "free window" would have handed the child the whole catalogue for a day.
+      Plus the `is_free_trial` filter on the child dashboard's stats query and on
+      the parent analytics aggregate (the DB-side RPCs were already filtered by
+      140), and glyphs for both notification types — without a case they render
+      the generic bell.
+- [x] **Tests** — `web-app/src/lib/__tests__/freeTrial.test.ts`, 38 assertions.
+      The load-bearing ones: `uq_rated_daily_live_per_day` is still predicated on
+      `is_rated`; no trial migration drops it; `award_attempt_points` never reads
+      `is_free_trial` while both analytics functions do; the access gate fails
+      toward RATED; activation never calls `assert_payments_enabled` and creates
+      no subscription row; the notification copy carries no purchase language in
+      any of the three languages; and every `trial.*` key appears exactly three
+      times.
+- [ ] Mobile: entitlement display only, compliant wording — NOT STARTED
+- [ ] Mobile: entitlement display only, compliant wording — NOT STARTED
 - [ ] Vitest coverage
 
 ### How the §7 conflict actually resolved

@@ -56,6 +56,9 @@ export default async function ChildDashboard() {
         .select("id, kind, score, max_score, subject_id, subjects(code, name)")
         .eq("student_profile_id", child.profileId)
         .eq("status", "graded")
+        // Migration 140: trial play is a preview, not this
+        // child's record.
+        .eq("is_free_trial", false)
         .neq("kind", "olympiad")
         .order("submitted_at", { ascending: false })
         .limit(200),

@@ -9,6 +9,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
+import { getMyFreeTrial } from "@/lib/freeTrial";
 
 // `code` drives the locale-aware display label (subj.<code> via subjectLabel);
 // `name` stays the raw DB fallback. Ids remain the stored/submitted values.
@@ -63,10 +64,18 @@ export type ChildSubjectAccess = {
   freeNow: boolean;
   /** students.access_status (raw; 'inactive' fallback) */
   access: string;
-  /** trialing/active subscription OR freeNow */
+  /** trialing/active subscription OR freeNow OR trialNow */
   hasAccess: boolean;
   /** subjects the child can take tests in right now */
   subjects: ChildSubject[];
+  /**
+   * Migration 139-141: a live 1-day Free Trial covers this child. Kept SEPARATE
+   * from `freeNow` because it is subject-scoped, where the giveaway and the
+   * admin free-access window are all-or-nothing.
+   */
+  trialNow: boolean;
+  /** The trial's expiry, for the countdown. Null when there is no live trial. */
+  trialEndsAt: string | null;
 };
 
 export async function getChildSubjectAccess(
@@ -91,8 +100,19 @@ export async function getChildSubjectAccess(
     ]);
   const freeNow = giveawayActive || freeAccessActive;
 
+  // MIGRATION 139-141 -- the 1-day Free Trial.
+  //
+  // Deliberately NOT folded into `freeNow`: the giveaway and the admin
+  // free-access window are ALL-OR-NOTHING and merge every actively priced
+  // subject, while a trial covers exactly the one or two subjects the parent
+  // chose. Treating it as another "free window" would hand the child the whole
+  // catalogue for a day.
+  const trial = await getMyFreeTrial();
+  const trialNow = trial.active;
+
   const access = (student as any)?.access_status ?? "inactive";
-  const hasAccess = access === "trialing" || access === "active" || freeNow;
+  const hasAccess =
+    access === "trialing" || access === "active" || freeNow || trialNow;
 
   const subjMap = new Map<string, { code: string | null; name: string }>();
   for (const s of liveCoveredSubjects(subs as any[])) {
@@ -114,7 +134,16 @@ export async function getChildSubjectAccess(
       }
     }
   }
+  // The trial merges EXACTLY its own subjects. The attempt RPCs re-check access
+  // per subject anyway, so an over-generous list here would only produce a
+  // refusal the child cannot explain.
+  if (trialNow) {
+    for (const ts of trial.subjects) {
+      subjMap.set(ts.id, { code: ts.code || null, name: ts.name });
+    }
+  }
+
   const subjects = Array.from(subjMap, ([id, v]) => ({ id, code: v.code, name: v.name }));
 
-  return { freeNow, access, hasAccess, subjects };
+  return { freeNow, access, hasAccess, subjects, trialNow, trialEndsAt: trial.endsAt };
 }

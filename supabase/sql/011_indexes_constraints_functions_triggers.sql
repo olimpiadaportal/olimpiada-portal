@@ -142,6 +142,60 @@ create index if not exists idx_answers_question on public.test_attempt_answers (
 create unique index if not exists uq_test_attempts_open_test
   on public.test_attempts (student_profile_id, subject_id)
   where kind = 'test' and status = 'in_progress';
+-- ---------------------------------------------------------------------------
+-- MIGRATION 145 - indexes for the read-only finance / support view.
+-- ---------------------------------------------------------------------------
+-- payments — the view's primary object, and the least indexed table in it.
+-- Only two indexes exist today (profile_id, status), neither composite with
+-- time, and the finance list is time-ordered in every branch.
+-- -----------------------------------------------------------------------------
+create index if not exists idx_payments_created
+  on public.payments (created_at desc);
+
+-- A bare status index is a five-value enum the planner will usually decline;
+-- paired with time it serves "recent failures", which is a real support query.
+create index if not exists idx_payments_status_created
+  on public.payments (status, created_at desc);
+
+-- idx_payments_profile exists but is not composite with time, so the family
+-- timeline sorts in memory without this.
+create index if not exists idx_payments_profile_created
+  on public.payments (profile_id, created_at desc);
+
+-- Both of these are FOREIGN KEYS WITH NO INDEX. Postgres does not create one
+-- automatically, and an unindexed FK also makes every DELETE on the parent row
+-- scan this table.
+create index if not exists idx_payments_checkout_session
+  on public.payments (checkout_session_id)
+  where checkout_session_id is not null;
+
+create index if not exists idx_payments_olympiad_purchase
+  on public.payments (olympiad_purchase_id)
+  where olympiad_purchase_id is not null;
+
+-- -----------------------------------------------------------------------------
+-- checkout_sessions — idx_checkout_owner exists but is not composite with time.
+-- The three partial indexes already on this table (child filter,
+-- paid-unredeemed, needs-review) are exact matches for the attention strip and
+-- are deliberately REUSED, not duplicated.
+-- -----------------------------------------------------------------------------
+create index if not exists idx_checkout_owner_created
+  on public.checkout_sessions (owner_parent_profile_id, created_at desc);
+
+-- -----------------------------------------------------------------------------
+-- payment_events — the only usable index today is uq_payment_event, which is
+-- keyed on (provider, event_id). That serves an exact event lookup and nothing
+-- else.
+--
+-- The order detail must ALSO find rows whose event_id cannot be derived from
+-- the order string: the `note:<order>:<md5>` chain and the `rrn:` / `intref:`
+-- claim rows. Those carry the order inside the payload instead, so the
+-- expression index is what makes that query an index hit rather than a scan of
+-- every event ever recorded.
+-- -----------------------------------------------------------------------------
+create index if not exists idx_payment_events_order
+  on public.payment_events (provider, (payload_json ->> 'order'));
+
 create index if not exists idx_test_attempts_deadline
   on public.test_attempts (deadline_at)
   where status = 'in_progress';

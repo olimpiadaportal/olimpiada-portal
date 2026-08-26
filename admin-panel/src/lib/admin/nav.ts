@@ -73,10 +73,16 @@ export const NAV: NavGroup[] = [
       // below (subscription lifecycle monitoring/management).
       { label: "nav.pricing", href: "/pricing", adminOnly: true },
       // Round 31: subscription lifecycle monitoring (activate/extend/cancel/
-      // expire comped/admin-granted child subscriptions). Moved out of comingSoon now
-      // that the module is built. The "nav.payments" placeholder stays in
-      // comingSoon, untouched — a separate future module.
+      // expire comped/admin-granted child subscriptions). Moved out of comingSoon
+      // when the module was built.
       { label: "nav.subscriptions", href: "/subscriptions", adminOnly: true },
+      // Migration 145: the read-only finance / support view. Deliberately NO
+      // `permission:` field — layout.tsx returns on `adminOnly` before it ever
+      // reads one, so the field would be inert, and its existence would invite
+      // someone to grant `payments.read` to a support role. That code reaches a
+      // Content Manager through requirePermission, which CLAUDE.md forbids in
+      // payment modules. requireAdmin() inside every page is the boundary.
+      { label: "nav.payments", href: "/payments", adminOnly: true },
       // Migration 127: the queue of payments we took and could not deliver on.
       // It has its own entry rather than living inside /subscriptions because a
       // family waiting on their money is not a subscription-lifecycle task, and
@@ -128,7 +134,6 @@ export const NAV: NavGroup[] = [
       // had a page, and the review queue is already served by the Questions
       // list (in_review status filter + stat card, Round 9). A separate
       // Reviews module would just duplicate that flow.
-      { label: "nav.payments", soon: true, adminOnly: true },
     ],
   },
 ];

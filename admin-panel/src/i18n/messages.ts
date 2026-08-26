@@ -793,7 +793,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Reytinq cədvəlini göstərir; söndürüldükdə cədvəl gizlədilir.",
     "settings.flag.notifications_email.label": "E-poçt bildirişləri",
     "settings.flag.notifications_email.desc":
-      "Platformadan e-poçt bildirişlərinin göndərilməsinə icazə verir; söndürüldükdə heç bir e-poçt göndərilmir (göndərmə xidməti hələ qoşulmayıb).",
+      "Platformadan e-poçt bildirişlərinin göndərilməsinə icazə verir. Göndərmə xidməti (Brevo) qoşulub — bu açar yandarıldıqda abunəliyin bitməsi və pulsuz girişin sonu barədə xəbərdarlıqlar valideynin e-poçtuna gedir.",
     // Two contact mailboxes (migration 116): the general one and the technical
     // one sit side by side on the Support card, so each help text has to say
     // which is which.
@@ -2318,7 +2318,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Shows the leaderboard; when off, it is hidden.",
     "settings.flag.notifications_email.label": "Email notifications",
     "settings.flag.notifications_email.desc":
-      "Allows the platform to send email notifications; when off, no emails go out (email sending is not connected yet).",
+      "Allows the platform to send email notifications. The sender (Brevo) IS connected — turning this on means subscription-expiry and free-access-ending warnings reach the parent's inbox.",
     // Two contact mailboxes (migration 116): the general one and the technical
     // one sit side by side on the Support card, so each help text has to say
     // which is which.
@@ -3851,7 +3851,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Показывает таблицу лидеров; при выключении она скрыта.",
     "settings.flag.notifications_email.label": "Уведомления по эл. почте",
     "settings.flag.notifications_email.desc":
-      "Разрешает платформе отправлять уведомления по электронной почте; при выключении письма не отправляются (отправка почты ещё не подключена).",
+      "Разрешает платформе отправлять уведомления по почте. Служба отправки (Brevo) подключена — при включении предупреждения об окончании подписки и бесплатного доступа приходят родителю на почту.",
     // Two contact mailboxes (migration 116): the general one and the technical
     // one sit side by side on the Support card, so each help text has to say
     // which is which.

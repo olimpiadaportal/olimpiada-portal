@@ -1,0 +1,131 @@
+===========================================================
+  OlympIQ — QAPALI TEST (Closed Testing) TƏLİMATI
+  Test müddəti: 14 gün  |  Lazım olan test edən: 12 nəfər
+===========================================================
+
+Salam!
+
+OlympIQ mobil tətbiqini Google Play-də yayımlamaq üçün
+Google bizdən 14 gün ərzində ən azı 12 nəfərin tətbiqi
+test etməsini tələb edir.
+
+Sizdən xahiş: aşağıdakı 4 addımı yerinə yetirin.
+Cəmi 10–15 dəqiqə vaxtınız kifayətdir — amma tətbiqin
+14 gün telefonunuzda QALMASI vacibdir.
+
+
+-----------------------------------------------------------
+ADDIM 1 — TESTƏ QOŞULUN
+-----------------------------------------------------------
+
+1. Telefonunuzda hansı Google hesabından istifadə
+   etdiyinizi bizə bildirin (Gmail ünvanı).
+
+   ÖNƏMLİ: Play Store-da AKTİV olan hesabı göndərin.
+   Başqa hesab göndərsəniz dəvət linki işləməyəcək.
+
+2. Sizə göndərilən dəvət linkini telefonda açın.
+
+3. "Become a tester" (Test edici ol) düyməsini basın.
+
+4. Həmin səhifədəki "Download it on Google Play" linki
+   ilə tətbiqi yükləyin.
+
+Qeyd: Link ilk dəfə açılanda "not available" yaza bilər.
+Bu normaldır — 10–20 dəqiqə gözləyib yenidən cəhd edin.
+
+
+-----------------------------------------------------------
+ADDIM 2 — ƏN VACİB QAYDA
+-----------------------------------------------------------
+
+   >>>  14 GÜN ƏRZİNDƏ TƏTBİQİ SİLMƏYİN  <<<
+   >>>  TEST QRUPUNDAN ÇIXMAYIN          <<<
+
+Google hər gün yoxlayır. Kimsə tətbiqi silsə və ya
+testdən çıxsa, o nəfər sayılmır və 14 günlük müddət
+HAMI ÜÇÜN YENİDƏN BAŞLAYIR.
+
+Tətbiqi hər gün işlətmək məcburi deyil — sadəcə
+telefonda qalsın və qrupdan çıxmayın.
+
+
+-----------------------------------------------------------
+ADDIM 3 — TƏTBİQİ SINAYIN
+-----------------------------------------------------------
+
+Aşağıdakıları bir dəfə yoxlamağınız kifayətdir.
+
+VALİDEYN kimi:
+  • Qeydiyyatdan keçin (e-poçt + şifrə)
+  • E-poçtunuza gələn təsdiq linkini açın
+  • Uşaq profili əlavə edin (ad, sinif, şəhər/məktəb)
+  • Sistemin verdiyi 8 rəqəmli nömrəni və təyin
+    etdiyiniz şifrəni yadda saxlayın
+  • Bu bölmələrə baxın: Ana səhifə, Analitika,
+    Xəbərlər, Olimpiadalar, Abunəlik
+
+ŞAGİRD kimi:
+  • Tətbiqdən çıxın, sonra 8 rəqəmli nömrə +
+    valideyn şifrəsi ilə daxil olun
+  • "Testlər" bölməsində bir test başladın və bitirin
+  • "Reytinq" bölməsinə baxın
+  • "Xəbərlər" bölməsini açın
+
+Dil dəyişməyi də yoxlayın:
+Azərbaycan / English / Русский.
+
+
+-----------------------------------------------------------
+ADDIM 4 — RƏY BİLDİRİN (FEEDBACK)
+-----------------------------------------------------------
+
+Google bizdən "test edənlər hansı rəyi verdi?" deyə
+soruşur. Ona görə rəyiniz bizə həqiqətən lazımdır.
+
+İki yolla rəy verin:
+
+  A) Bu qrupa yazın — ən faydalısı budur:
+     • Nəyi bəyəndiniz?
+     • Nə çətin və ya anlaşılmaz oldu?
+     • Səhv, donma, boş ekran gördünüzmü?
+     • Telefon modeliniz və Android versiyanız
+
+  B) Play Store-da tətbiq səhifəsində ulduz və rəy
+     yazın. Test dövründə bu rəy İCTİMAİ DEYİL —
+     yalnız biz görürük.
+
+XAHİŞ: DÜZGÜN və SƏMİMİ rəy yazın. Problem gördünüzsə,
+yazın. "5 ulduz, hər şey əladır" tipli süni rəylər
+Google-un qaydalarına ziddir və bizə zərər verir.
+
+
+-----------------------------------------------------------
+BUNLAR SƏHV DEYİL — ƏVVƏLCƏDƏN BİLİN
+-----------------------------------------------------------
+
+1. TƏTBİQİN İÇİNDƏ ÖDƏNİŞ YOXDUR.
+   Abunəlik və olimpiada paketləri yalnız sayt
+   üzərindən alınır. Tətbiqdə qiymət və "Abunə ol"
+   düyməsi görməyəcəksiniz — bu qəsdən belədir,
+   səhv deyil.
+
+2. Ödəniş etmədiyiniz halda bəzi bölmələr kilidli
+   olacaq. Bu da normaldır.
+
+3. Push bildirişləri hələ aktiv deyil.
+
+
+-----------------------------------------------------------
+QISA XÜLASƏ
+-----------------------------------------------------------
+
+   1. Gmail ünvanınızı göndərin
+   2. Linki açın → "Become a tester" → yükləyin
+   3. 14 gün tətbiqi SİLMƏYİN, qrupdan ÇIXMAYIN
+   4. Bir dəfə sınayın və rəy yazın
+
+Sualınız olsa, birbaşa bu qrupda yazın.
+Köməyiniz üçün təşəkkür edirik!
+
+===========================================================

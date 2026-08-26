@@ -4351,6 +4351,85 @@ select '124_round8_reversal_delivery_and_pricing' as check_name,
        (select n from silent_refund)       as refund_not_on_session,
        (select n from stale_priced_intent) as pending_adds_now_unpriced;
 
+-- -----------------------------------------------------------------------------
+-- [125] The scheduled webhooks are SCHEDULED **and ANSWERED**.
+--
+-- Migration 129 gave the platform a reconcile sweep and 138 gave it a
+-- notification drainer. Both fire through pg_net and DELIBERATELY do not read
+-- the response -- a cron worker that waits on a network call blocks for its
+-- duration. The cost of that choice is that a broken key is INVISIBLE: on
+-- 2026-08-25 the reconcile endpoint answered 401 every five minutes for 75
+-- minutes, pg_cron recorded every run as successful, the job stayed `active`,
+-- and nothing alarmed. The sweep is the only automatic recovery for a lost
+-- callback, so it was silently absent exactly when it mattered.
+--
+-- This check asks the one question the job cannot ask itself: is anything
+-- coming BACK, and is it a 2xx?
+--
+-- WHAT EACH VERDICT MEANS
+--   `not_scheduled`  - pg_cron is present but the job is missing or inactive.
+--   `no_recent_calls`- scheduled, but net._http_response holds nothing from the
+--                      last hour. Either pg_net pruned it (harmless) or the job
+--                      is not really running (not harmless). Look at cron.job.
+--   `answering_4xx`  - THE 2026-08-25 SHAPE. The key in Vault and the key in
+--                      Vercel disagree. Fix both, redeploy, re-run.
+--   `answering_5xx`  - the endpoint is deployed but erroring.
+--
+-- Passes on a fresh database where pg_cron/pg_net are absent: this is a
+-- production-health check, not a schema invariant, and a bootstrap has neither
+-- extension nor any history to judge.
+-- -----------------------------------------------------------------------------
+with ext as (
+  select exists (select 1 from pg_extension where extname = 'pg_cron') as has_cron,
+         exists (select 1 from pg_extension where extname = 'pg_net')  as has_net
+),
+jobs as (
+  select
+    (select count(*) from cron.job
+      where jobname = 'olympiq_azericard_reconcile' and active) as reconcile_job,
+    (select count(*) from cron.job
+      where jobname = 'olympiq_notifications_process' and active) as notify_job,
+    (select count(*) from cron.job
+      where jobname = 'olympiq_notify_free_trial_ending' and active) as trial_job
+  where (select has_cron from ext)
+),
+recent as (
+  select
+    count(*) filter (where status_code between 200 and 299) as ok,
+    count(*) filter (where status_code between 400 and 499) as client_err,
+    count(*) filter (where status_code >= 500)              as server_err,
+    count(*)                                                as total
+  from net._http_response
+  where (select has_net from ext)
+    and created > now() - interval '1 hour'
+)
+select '125_scheduled_webhooks_answered' as check_name,
+       case
+         when not (select has_cron from ext) then 'PASS'          -- fresh bootstrap
+         when coalesce((select reconcile_job from jobs), 0) = 0
+           or coalesce((select notify_job    from jobs), 0) = 0
+           or coalesce((select trial_job     from jobs), 0) = 0   then 'FAIL'
+         when coalesce((select client_err from recent), 0) > 0    then 'FAIL'
+         when coalesce((select server_err from recent), 0) > 0    then 'FAIL'
+         else 'PASS'
+       end as status,
+       coalesce((select reconcile_job from jobs), 0) as reconcile_scheduled,
+       coalesce((select notify_job    from jobs), 0) as notifications_scheduled,
+       coalesce((select trial_job     from jobs), 0) as free_trial_scheduled,
+       case
+         when not (select has_cron from ext)                    then 'no pg_cron (fresh db)'
+         when coalesce((select reconcile_job from jobs), 0) = 0
+           or coalesce((select notify_job    from jobs), 0) = 0
+           or coalesce((select trial_job     from jobs), 0) = 0 then 'not_scheduled'
+         when coalesce((select client_err from recent), 0) > 0  then 'answering_4xx'
+         when coalesce((select server_err from recent), 0) > 0  then 'answering_5xx'
+         when coalesce((select total      from recent), 0) = 0  then 'no_recent_calls'
+         else 'answering_2xx'
+       end as verdict,
+       coalesce((select ok         from recent), 0) as responses_2xx_last_hour,
+       coalesce((select client_err from recent), 0) as responses_4xx_last_hour,
+       coalesce((select server_err from recent), 0) as responses_5xx_last_hour;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

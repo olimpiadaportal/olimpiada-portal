@@ -436,12 +436,54 @@ build catches it.
       `entitlements.source='abb_web'`. Owner deferred this to last, deliberately.
 - [ ] Settled payments are never revisited, so a bank-side reversal or a
       card-scheme chargeback goes unnoticed indefinitely.
-- [ ] No alarm on a non-200 reconcile response; no `013` check that the job is
-      being answered. The 2026-08-25 outage proves nothing else notices.
-- [ ] Housekeeping: 4 stray `protocol_test` sessions and 2 pending payment rows
-      (2.00 AZN) from cutover diagnostics.
+- [x] **013 CHECK 125 — "are the scheduled webhooks ANSWERED?" (2026-08-26).**
+      Production now reports **128 PASS / 0 FAIL**, with 125 reading
+      `answering_2xx` across 24 responses in the last hour and all three jobs
+      scheduled.
+      This closes the exact hole that hid the 2026-08-25 outage: both kick
+      functions fire through pg_net and DELIBERATELY do not read the response (a
+      cron worker must not block on a network call), so a wrong key produced 401s
+      that pg_cron recorded as successful runs for 75 minutes with nothing
+      alarming. 125 asks the question the jobs cannot ask themselves — is
+      anything coming BACK, and is it a 2xx — and names the failure shape:
+      `not_scheduled` / `no_recent_calls` / **`answering_4xx`** (the key in Vault
+      and the key in Vercel disagree) / `answering_5xx`. It PASSES on a fresh
+      bootstrap, where neither extension nor any history exists.
+- [x] **Housekeeping: DELIBERATELY NOT DONE.** The 4 stray `protocol_test`
+      sessions and 2 pending payment rows are **inert by construction** —
+      `checkoutCore.ts:71` excludes `protocol_test` from the outstanding-checkout
+      finder, so no parent ever sees them, and `status='pending'` keeps them out
+      of any revenue query. Nothing in the system transitions a pending checkout
+      to a terminal state, so "tidying" them would mean inventing a status value
+      no code reads, and mutating production rows for cosmetics is the worse
+      trade. Left, and documented rather than quietly cleaned.
 - [ ] Admin finance surface: nav placeholders exist, no read-only
       subscriptions/payments/events view for support work.
+
+### ADMIN COPY CORRECTED (2026-08-26)
+
+The Notifications page described the email switch as *"email sending is not
+connected yet"* in all three locales — stale since migration 116 shipped the
+Brevo transport, and actively misleading now that 138 wired the channel and the
+processor answers 200. The owner read it and reasonably concluded the switch was
+inert. Corrected to say the sender IS connected and what turning it on does.
+
+**The switch lives at Admin → Notifications → Settings tab → Channel switches**,
+not on the Settings page. Three switches: Notification center (master, on),
+**Email notifications**, Mobile app (push, off until the app ships).
+
+### PLAY STORE CLOSED TESTING — tester instructions
+
+`mobile-app/store-assets/TESTER_TELIMATI_AZ.txt` — plain UTF-8 text, Azerbaijani,
+written to be read on a phone and forwarded to the tester group. Covers joining
+with the Play-Store-active Google account, the 14-day rule (**if one tester
+uninstalls or leaves, the 14 days restart for EVERYONE**), a concrete
+parent-then-child walkthrough matching the real tabs, and how to give feedback.
+
+Two things it states explicitly so testers do not file them as bugs: **there is
+no purchasing inside the app** (deliberate — store compliance), and locked
+sections are expected without a subscription. It also asks for HONEST feedback
+and warns against manufactured 5-star reviews, which violate Google policy.
 
 ### PINNED LIMIT the compliance test cannot cover
 

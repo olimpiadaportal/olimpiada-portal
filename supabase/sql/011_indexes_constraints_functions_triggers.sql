@@ -140,7 +140,7 @@ create index if not exists idx_answers_attempt on public.test_attempt_answers (a
 create index if not exists idx_answers_question on public.test_attempt_answers (question_id);
 -- Timed topic tests (migration 037): one open test per child + expiry sweep.
 create unique index if not exists uq_test_attempts_open_test
-  on public.test_attempts (student_profile_id)
+  on public.test_attempts (student_profile_id, subject_id)
   where kind = 'test' and status = 'in_progress';
 create index if not exists idx_test_attempts_deadline
   on public.test_attempts (deadline_at)
@@ -6944,9 +6944,19 @@ begin
   -- Resume: one open practice test at a time. Untimed rows (056+) resume
   -- forever (the 24h cron abandons them); legacy timed rows keep the old
   -- deadline behavior.
+  -- MIGRATION 143: ... FOR THIS SUBJECT.
+  --
+  -- This query used to filter on the student alone, so a child with an open
+  -- Maths test who pressed "start" on English was handed the MATHS attempt back
+  -- -- different questions, different subject, reported as `resumed: true`. The
+  -- caller had asked for one subject and silently received another.
+  --
+  -- The index below carried the same omission, so the database could not have
+  -- caught it either.
   select id, deadline_at, duration_seconds into v_existing
   from public.test_attempts
-  where student_profile_id = v_student and kind = 'test' and status = 'in_progress'
+  where student_profile_id = v_student and subject_id = p_subject_id
+    and kind = 'test' and status = 'in_progress'
   order by started_at desc
   limit 1;
   if v_existing.id is not null then

@@ -342,8 +342,62 @@ job does not reap it.
       no subscription row; the notification copy carries no purchase language in
       any of the three languages; and every `trial.*` key appears exactly three
       times.
-- [ ] Mobile: entitlement display only, compliant wording — NOT STARTED
-- [ ] Mobile: entitlement display only, compliant wording — NOT STARTED
+- [x] **Mobile — DISPLAY ONLY (2026-08-26).** `useArenaAccess` gained a
+      `my_free_trial()` arm: a trial writes NO `access_status`, so a child whose
+      only access was a trial read as `inactive` and would have seen a LOCKED
+      arena while the database happily granted the subjects. Plus glyphs for both
+      notification types. Version 1.11.2 -> **1.12.0** (both files). 463 mobile
+      tests pass. **Activation stays web-only** — and the leak below is why that
+      is not merely a scoping preference.
+- [x] **A COPY LEAK I INTRODUCED, caught before it shipped.**
+      `scripts/sync-i18n.mjs` copies the web catalogue WHOLESALE into the binary,
+      and `store-copy.test.ts` swept only 30 hardcoded keys (20 FAQ + 10
+      carousel) — the same blind spot that once let `sub.submit` = "Start 7-day
+      free trial" ship unswept. My 46 new web `trial.*` keys included
+      `trial.hero.body` = *"Try the platform before you subscribe"* and
+      `trial.expired.cta` = *"View subscription plans"*. Both are correct on
+      olympiq.ai and both are Apple 3.1.1(a) inside a store build, where the
+      penalty is developer-account termination rather than rejection.
+      **Fix:** the sync now carries an ALLOWLIST — mobile receives only the NINE
+      keys it renders (badge, status, countdown units, the unrated note, and the
+      expired TITLE without its CTA half). 108 web-only strings are dropped at
+      sync time. An allowlist rather than a denylist, because a denylist has to
+      be right about every future key while this only has to be right about what
+      mobile actually draws. `store-copy.test.ts` now DERIVES its trial sweep
+      from the catalogue instead of a hand-written list, and separately asserts
+      the activation vocabulary is absent entirely.
+      **The test caught the leak on its first run.** That is the whole argument
+      for deriving the swept set rather than listing it by hand.
+- [x] **Migration 143 — an open topic test belongs to ONE subject.** APPLIED to
+      staging + production. The resume query filtered on the STUDENT alone, so a
+      child with an unfinished Maths test who pressed "start" on English was
+      handed the MATHS attempt back, reported as `resumed: true`.
+      `uq_test_attempts_open_test` carried the same omission, so the database was
+      enforcing the wrong rule (one open practice test per CHILD across all
+      subjects) and could not have caught the mismatch. Now per child PER
+      SUBJECT. Safe on existing data: the old index was STRICTER, so no child can
+      hold two open tests in different subjects and widening the key cannot
+      collide. Proven by a rolled-back probe, 5/5 — including that the RATED
+      daily rule is untouched and that an unrated trial round still coexists with
+      a rated one.
+
+### The second "bug" was not a bug
+
+The 2026-08-25 design flagged that a previous-day replay serves the IDENTICAL 25
+questions every time. That is the **documented Round-42 design**, not a defect:
+yesterday's replay is the student's LOCKED practice set precisely so they can
+review the round they actually sat. CLAUDE.md states it. Changing it would break a
+product rule to fix a symptom that does not exist — and the Free Trial never
+touches that path anyway, because its branch draws a fresh set. **Left alone
+deliberately.**
+
+### PINNED LIMIT the compliance test cannot cover
+
+The runtime chain is CMS override (`site_content` via `get_mobile_content`) ->
+mobile overlay -> generated catalogue. **Admin-editable copy sits ABOVE everything
+`store-copy.test.ts` inspects**, so a green test does not prove the RENDERED copy
+is clean. Anyone editing Site Content can place a price or a Subscribe CTA into a
+store binary at runtime and no test in this repository will notice.
 - [ ] Vitest coverage
 
 ### How the §7 conflict actually resolved

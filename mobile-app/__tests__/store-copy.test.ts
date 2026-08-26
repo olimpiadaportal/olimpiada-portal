@@ -95,6 +95,72 @@ describe("copy shipped in the binary sells nothing", () => {
   }
 });
 
+/**
+ * The 1-day free access strings (web migrations 139-142).
+ *
+ * WHY THESE NEED THEIR OWN SWEEP. sync-i18n.mjs copies the web catalogue
+ * WHOLESALE, so any web string lands in the binary — and the swept set above is
+ * a hardcoded 30 keys, which is exactly how "Choose subjects & start the trial"
+ * shipped unswept last time. Every `trial.*` key that survives the sync is
+ * checked here, derived from the catalogue rather than listed by hand, so a new
+ * one cannot be added without being covered.
+ */
+describe("the free-access copy sells nothing either", () => {
+  const trialKeys = Array.from(
+    new Set(
+      LOCALES.flatMap((l) => Object.keys(messages[l] ?? {})).filter((k) =>
+        k.startsWith("trial."),
+      ),
+    ),
+  ).sort();
+
+  it("has trial keys to check at all", () => {
+    // If this fails the sync has not been run since the web keys were added,
+    // and the sweep below would be vacuously green.
+    expect(trialKeys.length).toBeGreaterThan(0);
+  });
+
+  for (const locale of LOCALES) {
+    it(`${locale}: no purchase language in any trial string`, () => {
+      const failures: string[] = [];
+      for (const key of trialKeys) {
+        const value = effective(locale, key);
+        if (!value) continue;
+        for (const [pattern, why] of BANNED) {
+          if (pattern.test(value)) {
+            failures.push(`${key} contains ${why}: ${JSON.stringify(value)}`);
+          }
+        }
+      }
+      expect(failures).toEqual([]);
+    });
+  }
+
+  it("keeps the WEB-ONLY activation vocabulary out of the binary entirely", () => {
+    // Activation happens on the web. Its hero, picker, confirm, success and
+    // error strings are correct there and have no business inside a store
+    // build — `trial.hero.body` reads "before you subscribe" in English.
+    // sync-i18n.mjs drops them rather than trusting that no screen renders
+    // them; if that exclusion is removed, this fails.
+    const leaked: string[] = [];
+    for (const locale of LOCALES) {
+      for (const key of [
+        "trial.hero.body",
+        "trial.hero.title",
+        "trial.cta.activate",
+        "trial.confirm.ok",
+        "trial.expired.body",
+        "trial.expired.cta",
+      ]) {
+        if (typeof messages[locale]?.[key] === "string") {
+          leaked.push(`${locale} ${key}`);
+        }
+      }
+    }
+    expect(leaked).toEqual([]);
+  });
+});
+
 describe("the two entries the earlier compliance pass missed", () => {
   it("overrides faq.a5 and faq.a7 in all three locales", () => {
     // Pinned by NAME as well as by content: the generated catalogue is

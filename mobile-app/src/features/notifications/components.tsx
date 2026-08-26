@@ -16,6 +16,7 @@ import {
   Flame,
   Gift,
   Hourglass,
+  Lock,
   Medal,
   Megaphone,
   Newspaper,
@@ -45,6 +46,12 @@ export function typeIcon(type: string | null): LucideIcon {
       return Medal;
     case "attempt_graded":
       return ChartColumn;
+    // Migration 141 -- the free-access ending chain. Without a case both
+    // render the generic bell.
+    case "free_trial_ending":
+      return Hourglass;
+    case "free_trial_ended":
+      return Lock;
     case "personal_best":
       return Trophy;
     case "streak_milestone":

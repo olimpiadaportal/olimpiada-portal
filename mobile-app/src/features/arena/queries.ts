@@ -13,6 +13,7 @@ import { ARENA_PALETTES, type ArenaPalette } from "@/theme/tokens";
 export const QK = {
   self: (id: string) => ["arena", "self", id] as const,
   freeAccess: ["arena", "free-access"] as const,
+  freeTrial: ["arena", "free-trial"] as const,
   subjects: (id: string) => ["arena", "subjects", id] as const,
   pricedSubjects: ["arena", "priced-subjects"] as const,
   attempts: (id: string) => ["arena", "attempts", id] as const,
@@ -87,6 +88,21 @@ async function fetchMyFreeAccessActive(): Promise<boolean> {
   return data === true;
 }
 
+/**
+ * The signed-in child's 1-day free access (web migrations 139-142).
+ *
+ * A trial writes NO `access_status` -- it grants subject-scoped entitlements and
+ * nothing else -- so a child whose only access is a trial reads as `inactive`
+ * here without this. Safe fallback = no trial, so a hiccup locks rather than
+ * unlocks.
+ */
+async function fetchMyFreeTrial(): Promise<{ active: boolean; endsAt: string | null }> {
+  const { data, error } = await supabase.rpc("my_free_trial");
+  if (error || !data || typeof data !== "object") return { active: false, endsAt: null };
+  const d = data as { active?: boolean; ends_at?: string | null };
+  return { active: d.active === true, endsAt: d.ends_at ?? null };
+}
+
 export type ArenaAccess = {
   loading: boolean;
   error: boolean;
@@ -94,6 +110,14 @@ export type ArenaAccess = {
   giveawayActive: boolean;
   /** giveaway OR scheduled free-access window. */
   freeNow: boolean;
+  /**
+   * A live 1-day free access covers this child. Kept SEPARATE from `freeNow`
+   * because it is subject-scoped, where the giveaway and the admin window are
+   * all-or-nothing.
+   */
+  trialNow: boolean;
+  /** Expiry of that access, for the countdown. Null when there is none. */
+  trialEndsAt: string | null;
   accessStatus: string;
   hasAccess: boolean;
   /** Trilingual locked-state key (unknown statuses degrade to inactive, web parity). */
@@ -111,20 +135,30 @@ export function useArenaAccess(): ArenaAccess {
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
   });
+  const trial = useQuery({
+    queryKey: QK.freeTrial,
+    queryFn: fetchMyFreeTrial,
+    enabled: !!profileId,
+    staleTime: ARENA_STALE_MS,
+  });
 
   const giveawayActive = config.data?.payment.mode === "giveaway";
   const freeNow = giveawayActive || free.data === true;
   const accessStatus = self.data?.accessStatus ?? "inactive";
-  const hasAccess = accessStatus === "trialing" || accessStatus === "active" || freeNow;
+  const trialNow = trial.data?.active === true;
+  const hasAccess =
+    accessStatus === "trialing" || accessStatus === "active" || freeNow || trialNow;
   const lockedKey = ["inactive", "locked", "expired"].includes(accessStatus)
     ? `child.locked.${accessStatus}`
     : "child.locked.inactive";
 
   return {
-    loading: self.isPending || free.isPending || config.isPending,
+    loading: self.isPending || free.isPending || trial.isPending || config.isPending,
     error: self.isError,
     giveawayActive,
     freeNow,
+    trialNow,
+    trialEndsAt: trial.data?.endsAt ?? null,
     accessStatus,
     hasAccess,
     lockedKey,

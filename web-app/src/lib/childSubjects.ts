@@ -89,7 +89,7 @@ export async function getChildSubjectAccess(
       getChildFreeAccessActive(),
       supabase
         .from("students")
-        .select("access_status")
+        .select("access_status, grade_id")
         .eq("profile_id", childProfileId)
         .maybeSingle(),
       supabase
@@ -132,12 +132,35 @@ export async function getChildSubjectAccess(
   // subjects_select is USING (true)), so reading it here needs no privilege and
   // matches what the database will actually allow. Archived subjects are
   // excluded — status is the admin's own switch for that.
+  //
+  // SCOPED TO THE CHILD'S GRADE. "Every active subject" was still too many:
+  // Fizika exists only for grades 7-11, so a grade-3 child was being offered a
+  // subject with no curriculum at all behind it. The investor's instruction was
+  // explicit -- "only those grades should see this subject, not below 7" -- and
+  // the honest way to honour it is by DATA rather than a hardcoded grade floor:
+  // a subject is offered when it has at least one exam topic for this child's
+  // grade. That needs no maintenance when a subject's range changes, and it is
+  // the same fact the arena uses to build a round.
   if (freeNow) {
+    const gradeId = (student as any)?.grade_id ?? null;
+    const { data: gradeTopics } = gradeId
+      ? await supabase
+          .from("topics")
+          .select("subject_id")
+          .eq("scope", "exam")
+          .eq("grade_id", gradeId)
+      : { data: [] as { subject_id: string }[] };
+    const taught = new Set(
+      ((gradeTopics ?? []) as { subject_id: string }[]).map((r) => String(r.subject_id)),
+    );
     const { data: all } = await supabase
       .from("subjects")
       .select("id, code, name")
       .eq("status", "active");
     for (const row of (all ?? []) as any[]) {
+      // A subject with no curriculum for this grade is not "locked" -- it simply
+      // does not exist for this child, so it is not listed at all.
+      if (!taught.has(String(row.id))) continue;
       subjMap.set(String(row.id), {
         code: row.code ?? null,
         name: String(row.name),

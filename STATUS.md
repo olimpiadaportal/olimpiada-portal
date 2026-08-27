@@ -6,6 +6,72 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## CURRICULUM 2026 — AZƎRBAYCAN DİLİ IMPORTED, 604 SUBTOPICS DELIBERATELY KEPT (2026-08-27)
+
+Source: `docs/investor/Kurikulum_1-11_AZ_EN_RU_UPDATED.docx` →
+`supabase/seed/curriculum_2026_updated.json` (1,165 rows). The three language
+sections were aligned **positionally and verified on grade+term**, not by matching
+text — topic names are translated, so text matching would be circular. The
+extractor asserts the three sections are parallel and aborts if they are not; its
+first run silently produced `az=1165 en=0 ru=0` because the grade heading is
+written in each section's own language (`1-ci sinif` / `Grade 1` / `1-й класс`),
+and only that assertion caught it.
+
+### What the file actually contained
+
+Almost nothing new. **1,077 of its 1,165 subtopics already existed.** The only
+subject with no taxonomy at all was **Azərbaycan dili** — 44 topics, 88 subtopics,
+grades 1–11 — which is exactly what migration 151 adds, with en/ru translations
+and 3/9/90 AZN pricing to match every other sold subject.
+
+### The finding that decided the approach
+
+The database holds **604 subtopics that are NOT in the file, and they carry 3,958
+questions** — nearly the entire bank of 4,441. The 1,077 rows that ARE in the file
+carry **483**. Every one of the 604 is untranslated, which is what identifies them:
+the earlier import created en/ru rows only for the rows it knew about.
+
+So the file is **not a superset of what the platform runs on**. The questions were
+imported against a taxonomy the file does not describe. Deleting the leftovers
+would have set `questions.subtopic_id` to NULL on 3,958 rows (the FK is
+`ON DELETE SET NULL`), detaching most of the bank from the curriculum tree while
+leaving every question still servable and untraceable — a silent, invisible loss.
+
+**Owner + investor agreed rule, and what shipped:** add what is new, keep anything
+with questions attached, report the rest. Nothing was deleted, no term was
+rewritten, and the count is printed by the migration's own verification block so
+it is on the record rather than in a chat message:
+
+    151: KEPT 604 subtopic(s) outside the 2026 file, carrying 3958 question(s).
+
+### Fizika 7–11 — enforced by DATA, not a hardcoded floor
+
+The investor's instruction was that Fizika must not appear below grade 7. It is
+correct in the database already (topics for 7–11 only). The place it could still
+leak was the SUBJECT LIST: an earlier fix this same day had the child arena list
+**every active subject** during a free window, which would have offered Fizika to a
+grade-3 child.
+
+Both call sites (`lib/childSubjects.ts`, `app/child/page.tsx`) now list a subject
+only when it has at least one exam topic **for that child's grade**. Derived from
+the topic tree, so it stays correct when any subject's range changes and needs no
+maintenance. Verified on production: grades 3 and 6 offer six subjects, grades 7
+and 11 offer seven.
+
+### Migration 151
+
+Data-only, no schema change, nothing to backport. **Idempotent by construction** —
+neither natural key has a unique constraint (checked), so every insert is guarded
+by `NOT EXISTS`; proven by running it twice on staging, the second run inserting 0
+with every assertion still passing. Conventions were copied from the 260 existing
+topics rather than invented: `name` holds the Azerbaijani text with en/ru in the
+`*_translations` tables, and `topic.term = min(subtopic.term)`, which is true of
+all 260.
+
+**Still open, deliberately:** the 604 leftovers and the term values on the 1,077
+shared rows. Reconciling either is a content decision, not a migration, and it was
+not in the approved scope.
+
 ## PINNED — RLS EVALUATED is_admin() ONCE PER ROW (2026-08-27, FIXED)
 
 **Symptom:** the admin Questions page showed "The question list could not be

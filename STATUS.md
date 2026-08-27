@@ -6,6 +6,73 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## CURRICULUM FULLY TRILINGUAL — 643 HEADINGS TRANSLATED (2026-08-27)
+
+`curriculum_translation_gaps()` on production now returns **0 / 0 / 0**. Every
+exam topic and subtopic has an English and a Russian name.
+
+### What was wrong, and what was not
+
+604 subtopics had no en/ru name. They were created BY HAND between 17 and 27
+August while the content team prepared bulk question uploads, they all sit under
+topics that ARE in the approved curriculum, and 3,958 questions — 89% of the bank
+— hang off them. Nothing was broken and nobody did anything wrong: the admin
+panel creates a subtopic in Azerbaijani and translates it in a SEPARATE later
+step, which is how the team actually works. What was missing was the NUMBER.
+Nothing surfaced the backlog, so it reached 604 in ten days unseen.
+
+**The investor's instruction was to delete them.** That was declined and the
+reasoning put in writing: `questions.subtopic_id` is `ON DELETE SET NULL`, so
+deleting the headings deletes no questions at all — all 3,958 would stay in the
+system, still served, permanently unfiled. It would have removed nothing and
+destroyed the organisation of most of the content. The instruction was based on
+a misreading (604 *headings*, not 604 *questions*) that our own earlier summary
+had caused.
+
+### How the translations were produced
+
+14 parallel agents, batched BY SUBJECT so each had the domain context that
+decides terminology — `Fotoeffekt` is the photoelectric effect, not a photo
+effect; `intensivlik` is field strength / напряжённость, not "intensity". Each
+row carried its grade and parent topic, because the parent is what disambiguates.
+
+Every row was then checked mechanically before any SQL was written: all ids
+present exactly once, no empty field, no Azerbaijani letters left in the English,
+real Cyrillic in the Russian, no heading turned into a sentence. **The generator
+refuses to emit the migration if any check fails** — a half-translated curriculum
+is worse than an untranslated one, because nobody can tell which half.
+
+Two rows tripped the "English identical to the source" check and were CORRECT:
+`Median` and `Monitor` are international terms that do not change. The check was
+narrowed rather than removed — identical English is accepted only when the
+Russian is Cyrillic and different, which is the real evidence that the row was
+considered.
+
+### The race, and the rule it produced
+
+The first production run **failed and rolled back**: it asserted that no subtopic
+anywhere was untranslated, and the content team had created 39 more in the two
+hours the translation took. That is normal work, not a defect.
+
+**A migration that cannot succeed while people are using the product is a
+migration that never succeeds.** The assertion now covers every row the file
+TARGETED; anything created afterwards is reported as a notice and shows up on the
+Curriculum page counter instead. The 39 were translated and included, so 643
+shipped in total.
+
+### Migrations
+
+- **152** — `curriculum_translation_gaps()`, surfaced on the admin Curriculum
+  page in all three languages, shown only when non-zero. This is the durable fix:
+  the next backlog is visible at row 6, not row 604.
+- **153** — the 643 translations. Idempotent (upsert on the existing
+  `(subtopic_id, locale)` key), data-only, nothing to backport.
+
+Both applied staging → production. The translations are DRAFTS in the sense that
+no human has reviewed them; every one is editable in place on the Curriculum
+page, and `docs/investor/CURRICULUM_MISSING_TRANSLATIONS.csv` holds the original
+604 for review.
+
 ## CURRICULUM 2026 — AZƎRBAYCAN DİLİ IMPORTED, 604 SUBTOPICS DELIBERATELY KEPT (2026-08-27)
 
 Source: `docs/investor/Kurikulum_1-11_AZ_EN_RU_UPDATED.docx` →

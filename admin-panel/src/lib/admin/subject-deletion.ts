@@ -25,7 +25,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { getT } from "@/i18n/server";
 import { fillTemplate } from "@/lib/admin/olympiad-per-attempt";
 import { removeMediaAssets } from "@/lib/admin/media-sweep";
-import { SUBJECT_DELETE_WORD } from "@/lib/admin/deletion-confirm";
+import { SUBJECT_DELETE_WORD } from "@/lib/admin/subject-delete-word";
 import {
   deletionBlockText,
   parseDeletionBlocks,

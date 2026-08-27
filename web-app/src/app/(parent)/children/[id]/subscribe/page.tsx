@@ -121,9 +121,15 @@ export default async function SubscribePage({
     notFound();
   }
 
+  // BOTH statuses matter, and only one of them was checked. `.eq("status",
+  // "active")` here filters the PRICING row; a subject the admin has archived
+  // or unpublished keeps its price rows, so it stayed sellable on this screen
+  // while correctly disappearing from /services and from Add-Child (which does
+  // check `subjects.status`). Admin → Subjects is the single source of truth for
+  // availability, so the subject's own status is read and enforced below.
   const { data: pricing } = await supabase
     .from("subjects_pricing")
-    .select("subject_id, interval, price_amount, subjects(code, name)")
+    .select("subject_id, interval, price_amount, subjects(code, name, status)")
     .eq("status", "active");
 
   // `code` drives the locale-aware label (subj.<code>) in the client editors;
@@ -134,6 +140,8 @@ export default async function SubscribePage({
   >();
   for (const row of (pricing ?? []) as any[]) {
     const sid = row.subject_id;
+    // Unpublished or archived in the admin panel => not offered here either.
+    if (row.subjects?.status !== "active") continue;
     if (!map.has(sid)) {
       map.set(sid, {
         id: sid,

@@ -9,6 +9,7 @@ import {
   SubjectDeleteButton,
   type SubjectDeleteStrings,
 } from "@/components/SubjectDeleteButton";
+import { SubjectLifecycle } from "@/components/SubjectLifecycle";
 import { getT, type T } from "@/i18n/server";
 import { localizeFields, resourceTitle } from "@/i18n/resources-i18n";
 import { FilterBar, type FilterBarSelect } from "@/components/FilterBar";
@@ -214,6 +215,25 @@ export default async function ManageResourcePage({
                     </td>
                   ))}
                   <td className="row-actions nowrap">
+                    {/* Publish / hide / archive inline. `subjects.status` has
+                        always been the switch that decides whether a subject is
+                        sold to families — the public Services page, Add-Child
+                        and the per-child subscribe screen all read it — but the
+                        only way to change it was to open the edit form and pick
+                        from a dropdown. Admin → Subjects is meant to BE the
+                        control, so the control lives on the row. */}
+                    {res.slug === "subjects" ? (
+                      <SubjectLifecycle
+                        id={row.id}
+                        status={String(row.status ?? "")}
+                        dict={{
+                          "subj.act.publish": t("subj.act.publish"),
+                          "subj.act.unpublish": t("subj.act.unpublish"),
+                          "subj.act.archive": t("subj.act.archive"),
+                          "pend.processing": t("pend.processing"),
+                        }}
+                      />
+                    ) : null}
                     <Link href={`/manage/${res.slug}/${row.id}/edit`}>
                       {t("action.edit")}
                     </Link>

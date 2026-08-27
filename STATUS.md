@@ -6,6 +6,109 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## SUBJECTS ARE NOW ONE SOURCE OF TRUTH (owner spec, 2026-08-27)
+
+Admin → Subjects controls what families can buy. Seven subjects, all sellable,
+all correctly labelled in three languages, with publish / hide / archive on the
+row and a delete that demands the word **SİL**.
+
+### The duplicate was a code-vs-name lie, not a duplicate row
+
+`subjects.code = 'az_language'` but that subject is NAMED **Məntiq**. The label
+map translated `subj.az_language` → "Azerbaijani", so Logic rendered as
+Azerbaijani beside the real Azərbaycan dili — two entries, one subject missing.
+Worse, `subj.science` and `subj.logic` existed as keys that NO subject uses,
+while `elm`, `fizika` and `azerbaycan_dili` had no entry at all and fell back to
+the raw Azerbaijani name for every reader.
+
+Subject names come from a hardcoded `subj.<code>` map, not from the database
+(there is no subjects-translations table), so ONE corrected map fixed every one
+of the ~12 surfaces that render a subject. The mobile catalogue is generated
+from the web one — fixing web without re-running `sync-i18n.mjs` is why the
+student app still showed the duplicate after the web fix, and it is now synced.
+
+### Elm and Fizika were missing because they had no PRICE
+
+The Services page is built from `subjects_pricing`; a subject with no price
+cannot enter a basket, so it never appeared. Both are real, active and carry
+curriculum (Elm: 64 topics / 293 subtopics / 100 published questions). Migration
+**154** prices them 3 / 9 / 90 like every other subject. Making the page list
+unpriced subjects instead would have put an unbuyable row in a basket UI and
+moved the failure to checkout.
+
+### A publication status that half the app ignored
+
+`subjects.status` (active | inactive | archived, already labelled Public /
+Private / Archived) has ALWAYS been the switch deciding what is sold. But:
+
+- it could only be changed inside the edit form's dropdown — fixed with
+  `SubjectLifecycle`, per-row publish / hide / archive, copied from
+  `transitionNews`: a whitelist map, the current status RE-READ server-side
+  before the write (a stale tab must not archive what somebody just published),
+  and an audit row;
+- **the per-child subscribe screen never checked it.** It filtered
+  `subjects_pricing.status` only, so an archived subject kept its price rows and
+  stayed sellable there while correctly vanishing from /services and Add-Child.
+  That is exactly the "inconsistent publication status" the spec set out to
+  remove. Fixed.
+
+Archive is deliberately REVERSIBLE (`publish` accepts `from: archived`). If it
+were a one-way door an admin would reach for Delete instead — and Delete is the
+action that destroys questions.
+
+### Delete: what already existed, and what changed
+
+Subjects were never one-click-deletable. The dialog already demanded a typed
+token and `admin_delete_subject` already re-compared it under a row lock, purges
+only what it safely can, and **archives the subject instead of deleting when any
+question has been answered** — purging nothing on that path, so an admin cannot
+read a soft word while the unanswered half of the bank has already gone.
+
+What changed is WHICH word: `SİL`, per the spec. And the client no longer
+carries the code at all — it posts only the word, the SERVER reads the row's own
+code and hands that to the RPC. The under-lock comparison is unchanged but is
+now unreachable from the browser, which is stronger than before.
+
+`SİL` is matched case-sensitively with U+0130 (dotted İ), so neither "sil" nor
+a dotless-I "SIL" passes; surrounding whitespace IS trimmed, because a trailing
+space from a paste is not a different intent. Both are asserted.
+
+**The honest cost, recorded so nobody re-litigates it:** a per-row code proved
+you were deleting the row you meant. A fixed word cannot. The dialog therefore
+keeps the subject name, its question count and its warnings above the input.
+
+**What deletion would do today:** İnformatika (76 answered), Məntiq (25) and
+Riyaziyyat (25) would ARCHIVE; the other four would hard-delete cleanly.
+
+### Also this round
+
+- **Checkout review** removed from the sidebar (owner). Route and page kept —
+  /payments links to it from the attention block, so nothing is stranded. This
+  reverses migration 127's reasoning on purpose; if that queue starts being
+  missed, restore the entry rather than adding a second one.
+- **Test-runner title** stopped truncating to "Günün ...": the header row now
+  wraps and the title gets two lines, with a `minWidth` forcing the wrap instead
+  of letting flexbox shrink the text to an ellipsis.
+- **Child ID is tappable to copy** (`CopyableId`, all three places it appears).
+  Copies the RAW digits, never the spaced display form — pasting "2721 0253"
+  into the login field fails and the parent blames the ID. Silent on an OS
+  refusal rather than claiming "Copied".
+- **Silent refresh on tab focus and app foreground.** Added INSIDE
+  `usePullRefresh`, the hook all 24 scrollable screens already use, so none can
+  be forgotten: app-foreground via react-query's `focusManager` driven from
+  `AppState`, tab-switch via `useFocusEffect`. No spinner and no toast on the
+  focus path — an unrequested toast on every tab switch is worse than stale
+  data. Not polling and not a socket: a timer burns battery on screens nobody is
+  looking at, and nobody else edits a parent's children while they watch.
+  NetInfo (reconnect) is the third signal and is NOT wired — it needs a native
+  module; add it next time the app is rebuilt anyway.
+- **expo-clipboard added → mobile 1.13.0 needs a NEW BUILD.** It is a native
+  module, so it cannot reach 1.12.3 as an OTA update.
+- **mobile-app `npm audit` reports 10 high** — PRE-EXISTING, verified against the
+  committed lockfile. All in `image-size` / `metro` / `js-yaml`, i.e. Metro build
+  tooling, not shipped in the binary. `npm audit fix --force` would downgrade
+  Expo, which the SDK-54 pin forbids.
+
 ## CURRICULUM FULLY TRILINGUAL — 643 HEADINGS TRANSLATED (2026-08-27)
 
 `curriculum_translation_gaps()` on production now returns **0 / 0 / 0**. Every

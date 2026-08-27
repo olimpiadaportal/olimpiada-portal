@@ -18,7 +18,7 @@ import {
   DestructiveConfirmDialog,
   type DestructiveConfirmStrings,
 } from "@/components/DestructiveConfirm";
-import { SUBJECT_DELETE_WORD } from "@/lib/admin/deletion-confirm";
+import { SUBJECT_DELETE_WORD } from "@/lib/admin/subject-delete-word";
 
 export type SubjectDeleteStrings = DestructiveConfirmStrings & {
   questions: string;

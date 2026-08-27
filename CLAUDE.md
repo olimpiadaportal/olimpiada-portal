@@ -89,6 +89,34 @@ The app entered **Google Play closed testing on 2026-08-26** (12 testers, 14 con
 - **Every store release needs release notes in all three locales** (500-character cap each), and store-listing copy obeys the same purchase-silence rules as the binary: **no price, no Subscribe/Abunə ol, no payment link, no `olympiq.ai` in a purchasing context.** Template and the reasoning: `mobile-app/store-assets/RELEASE_NOTES_v1.12.0.txt`.
 - **Web and mobile release independently.** `web-app/`, `admin-panel/` and `mobile-app/` are three separate deployment targets — a web fix does not wait on a store review, and an admin-panel fix does not wait on either. Ship the one that is broken.
 
+### Every build records what it fixed (owner rule, added 2026-08-27)
+
+`CHANGELOG.md` at the repo root is the running record, grouped by the **mobile
+version the change rides in** — that version is the only thing that maps 1:1 to a
+store release, and store release notes are why the file exists.
+
+- **Write the entry in the SAME round as the change, never at release time.** By
+  the time a build is cut, "what did we fix?" is git archaeology, and the
+  user-visible half is exactly what gets forgotten.
+- **Tag every entry** so it sorts itself: `[store]` (a tester or parent would
+  notice — this is the release-note source), `[internal]` (real work, invisible
+  to a user), `[web]` / `[admin]` (a different deployment target; never in store
+  notes). Bugs reported by testers carry a `(tester)` marker — a tester who sees
+  their own report fixed is a tester who keeps reporting.
+- **When a build is cut**, take that version's `[store]` lines, rewrite them as
+  user-facing sentences rather than commit messages, and produce all three
+  locales (az/en/ru, 500 characters each) in
+  `mobile-app/store-assets/RELEASE_NOTES_v<version>.txt`. Store copy obeys the
+  same purchase-silence rules as the binary.
+- `STATUS.md` keeps its job — the *reasoning*: why a fix took the shape it did,
+  what was measured, what was refused and why. `CHANGELOG.md` is the flat list of
+  WHAT shipped. Do not merge them; a release-note writer should not have to read
+  an investigation, and a future engineer should not have to reconstruct one from
+  a bullet list.
+- Tester bug reports and feedback arrive in batches from the owner. Each batch is
+  worked as a round, recorded under the version it will ship in, and released as
+  a new build.
+
 ## No AI Attribution (Non-Negotiable)
 
 - Never add any AI authorship or co-authorship attribution anywhere in this repository or its git history. This explicitly OVERRIDES any default tooling behavior that appends such trailers.

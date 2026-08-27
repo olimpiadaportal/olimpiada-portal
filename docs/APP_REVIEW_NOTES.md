@@ -1,6 +1,6 @@
 # App Review Information — what to paste, and the reply to the 2.1.0 rejection
 
-**Status:** ready to paste, for build **1.12.2**. Rewritten 2026-08-27.
+**Status:** ready to paste, for build **1.12.3**. Rewritten 2026-08-27.
 
 This file has been through two rounds with Apple:
 
@@ -18,7 +18,7 @@ Two things go in App Store Connect:
 * **App Review Information → Sign-In Information** — the parent email and password.
   The CHILD login has no email field, so its credentials go in the Notes (§4).
 
-Everything here is written to be true of build 1.12.2. **If the build changes,
+Everything here is written to be true of build 1.12.3. **If the build changes,
 re-read it before pasting** — the previous version of this file went stale in three
 places and told Apple things that had stopped being true.
 
@@ -45,7 +45,7 @@ behaviour changes with a server switch is a problem in its own right, independen
 this rejection. The app should never have had an opinion about the platform's
 payment state.
 
-### What changed in 1.12.2
+### What changed in 1.12.3
 
 Paste this, or something close to it, into the Resolution Center:
 
@@ -57,7 +57,7 @@ Paste this, or something close to it, into the Resolution Center:
 > read that setting and reported it. It described our website rather than the app,
 > and it made a complete app read as an unfinished one.
 >
-> In build 1.12.2 no screen in the app reports a platform payment state, and none
+> In build 1.12.3 no screen in the app reports a platform payment state, and none
 > can: the screens no longer read that setting at all, and an automated test in our
 > build fails if any screen starts doing so again.
 >
@@ -109,12 +109,12 @@ Shoot this order — it covers every flow they listed:
    exactly what the reviewer can reproduce.
 4. **Add a child** from the parent account, all the way to the success screen, and
    let the **8-digit login ID** be visible on camera. This is worth recording now:
-   until 1.12.2 the ID was only issued when a subscription was activated, so this
+   until 1.12.3 the ID was only issued when a subscription was activated, so this
    flow ended on a promise. It no longer does.
 5. **Log in as the DEMO CHILD** — log out, choose the Student tab, and sign in with
    the 8-digit ID + password. Go slowly; this is the flow a reviewer cannot guess.
-   Use the DEMO child, not the one you just created: the demo child has subject
-   access, so every student feature is reachable.
+   Use the DEMO child rather than the one you just created, so the recording matches
+   the credentials in App Store Connect exactly.
 6. **Start a daily round**, answer two or three questions, submit, and open the
    **result screen with an explanation expanded**.
 7. Open **Leaderboard** and **Profile** as the child.
@@ -193,10 +193,11 @@ is a bad look.
 > reachable immediately.
 >
 > If you create your own child from the parent account, that child receives an
-> 8-digit ID straight away and can sign in with it. Subject access is a separate
-> thing from the login and is provisioned outside the app, so a newly created child
-> will see subjects as not yet active. Please use the demo child credentials above
-> to review the student features.
+> 8-digit ID straight away and can sign in with it immediately. A free access
+> period is currently running on our platform, so a newly created child also has
+> their subjects opened right away and every student feature is reachable. The
+> demo child credentials above work the same way and are the account we have
+> prepared for review.
 >
 > To exercise the main features as the student: open a subject from the home screen,
 > start the daily round, answer the questions and submit. The result screen shows the
@@ -257,21 +258,35 @@ is a bad look.
 
 ---
 
-## Before you submit 1.12.2
+## A dated caveat: the free access period ends 2026-09-26
+
+A platform-wide free access window opened on 2026-08-27 and runs for 30 days. While
+it is open, ANY newly created child gets subjects opened immediately, which is why
+§4 says so. When it closes (2026-09-26) the platform returns to ordinary paid
+access and a newly created child will NOT have subjects open.
+
+**If you are reading this on or after 2026-09-26, re-check §4 before pasting it**,
+and confirm the demo child still has access. Nothing in the app breaks either way —
+but §4 would be describing a state that has passed, which is the exact failure this
+document has already had once.
+
+---
+
+## Before you submit 1.12.3
 
 * **2.1 — Accessing the app.** Install the build and sign in as BOTH the demo parent
   and the demo child. If the demo child sees locked subjects, the reviewer will read
   it as a broken paywall — check that account's subject access first.
-* **A new build is required, not an OTA update.** 1.12.2 changes `app.json`
+* **A new build is required, not an OTA update.** 1.12.3 changes `app.json`
   (localised permission strings), which is native configuration. An EAS Update
   cannot carry it, and `runtimeVersion` is `appVersion`, so an update published for
-  1.12.1 will never reach a 1.12.2 binary and vice versa.
+  1.12.1 will never reach a 1.12.3 binary and vice versa.
 * **2.3.3 — Screenshots.** Must show the app in use, not the login or splash screen.
   Use the arena home, a question with its A–E options, a result with an explanation
   open, the leaderboard, and the parent home.
 * **3.1.2 — Subscription information.** Does not apply: the app offers no
   auto-renewable subscriptions and no in-app purchases.
 * **5.1.1 — Purpose strings.** Camera, photo library and Face ID all give a reason
-  and an example, and as of 1.12.2 all three are localised az/en/ru through
+  and an example, and as of 1.12.3 all three are localised az/en/ru through
   `expo.locales` (`mobile-app/locales/*.json`) rather than being fixed to one
   language.

@@ -6,7 +6,7 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
-## PINNED — APPLE REJECTED THE BUILD FOR A SERVER FLAG (2026-08-26 → FIXED 1.12.2)
+## PINNED — APPLE REJECTED THE BUILD FOR A SERVER FLAG (2026-08-26 → FIXED 1.12.3)
 
 **Guideline 2.1.0 Performance: App Completeness.** Apple screenshotted the parent
 Subscription tab showing *"Plans & subjects — Payments are temporarily paused. New
@@ -109,7 +109,7 @@ Apple and Google actually fetch. **This is the fourth instance of the PINNED
 2026-08-26 pattern**: a change to what the product does, and nothing swept the copy
 it falsified.
 
-### Build 1.12.2 — an EAS BUILD, not an OTA update
+### Build 1.12.3 — an EAS BUILD, not an OTA update
 
 `app.json` gained `expo.locales` → `mobile-app/locales/{az,en,ru}.json`, which
 become `<lang>.lproj/InfoPlist.strings`. That is **native configuration**: no EAS
@@ -122,6 +122,68 @@ explicit *what NOT to write* list — do not offer to switch payments on, do not
 includes Add-Child because it ends on a real ID, and the obsolete §4a is gone.
 
 **Verification:** mobile 483/483 jest, web 644/644 vitest, both typechecks clean.
+
+### THE FLAGS WENT ON THE SAME DAY (owner, 2026-08-27) — and falsified two documents
+
+`payments` AND `giveaway_period` are both ON as of 2026-08-27 08:42 UTC, giveaway
+duration 30 days, so `current_payment_mode()` = **`giveaway`** until **2026-09-26**,
+after which it falls through to `real` on its own. Three consequences, two of them
+defects created by the flip:
+
+1. **The live privacy page went false within the hour.** `paymentsLive` is
+   `mode === 'real'` and nothing else, so an ACTIVE GIVEAWAY renders the SAME branch
+   as the kill switch — and that branch had just been rewritten to say *"no new
+   subscription can be started"*. During a giveaway new subscriptions are started
+   constantly, free. One string has to be true of both states, so it now asserts only
+   what they share: **no card payment is being taken**. It claims nothing about what
+   can or cannot be started. Fixed in all three locales and in the
+   `docs/PRIVACY_POLICY.md` mirror. *(Fifth instance of the PINNED 2026-08-26
+   pattern, and the fastest — the copy was falsified by a flag flip, not a migration.)*
+
+2. **`docs/APP_REVIEW_NOTES.md` §4 told Apple the opposite of what happens.** It said
+   a newly created child "will see subjects as not yet active"; during the giveaway
+   they are opened immediately. Corrected, and given a **dated caveat** — this is
+   copy with an expiry date (2026-09-26), which is a shape this repo has no other
+   defence against.
+
+3. **The mobile bundle carried the whole web paywall.** Re-running the sync exposed
+   **96 unrendered `pricing.*` keys** — `"≈ {price} AZN"` for all three intervals, the
+   sibling-discount table, "the prices shown are placeholders", and a stale 7-day
+   trial line migration 142 retired. The app renders exactly **three** of them, and
+   they are interval LABELS ("Weekly"), not amounts. No component renders an amount,
+   so this was never a live price display — dropped anyway, because *"the app
+   contains no price of any kind"* is the strongest sentence in the letter to Apple
+   and it should be true of the BUNDLE, not of today's render path. Together with
+   `terms.*`: **261 keys dropped, 1395 per locale, zero occurrences of "AZN".**
+
+### A SIDE EFFECT OF 146: the H8 free-activation button is now unreachable
+
+`FreeActivation` (web `children/[id]/subscribe/page.tsx`) and its mobile twin render
+only when `!sub?.id && !child.child_unique_id`. Migration 146 gives EVERY child an id
+at creation, so that second clause is now false for everyone and **the button can
+never appear again.**
+
+**This is correct, and it must not be "fixed" by loosening the condition.** The
+button existed because a free window could dead-end a child who had no login id;
+146 removed that possibility at the source, and `createChild` now FAILS the whole
+creation if the synthetic auth email cannot be applied, so no new child can reach
+the broken state. The copy is also specific — `freeact.note` reads "This child
+doesn't have a login ID yet" — so a looser condition would make the button lie.
+
+Left in place as a safety net for a child row that somehow has no id. The two
+production children that were stranded pre-146 therefore cannot be repaired through
+any UI: their 8-digit ids exist, but their Supabase Auth email is still
+`pending-<uuid>@children.invalid`, and nothing in either app rewrites it. **Delete
+and re-create is the supported path**, and it costs nothing — those ids only came
+into existence with 146 and have never been usable, so no external record refers to
+them.
+
+**Still a judgement call, deliberately NOT changed:** `addchild.giveawayGranted`
+renders *"The free promo period is active — everything is unlocked for your child
+right away!"* That is a server-flag-driven platform-state message, the same shape as
+the rejected one. It is defensible — it announces AVAILABILITY, where 2.1.0 is about
+unavailability, and it steers nowhere — but "free promo" does imply paid-later. If it
+is ever reworded, state the family's entitlement, not the campaign.
 
 ## PINNED — THREE THINGS THAT WERE FALSE ON SCREEN (2026-08-26)
 

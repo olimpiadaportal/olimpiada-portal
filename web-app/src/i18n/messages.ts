@@ -1440,7 +1440,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Ödəniş bankın öz səhifəsinə tam yönləndirmə ilə aparılır. Kart nömrəsi, CVV və digər kart məlumatları heç vaxt OlympIQ serverlərinə düşmür və bizdə saxlanılmır.\n" +
       "Verilənlər bazasında ödənişlə bağlı yalnız məbləğ, valyuta, status və təminatçının əməliyyat nömrəsi qeyd olunur.",
     "privacy.s8.statusOff":
-      "Hazırkı vəziyyət: kart ödənişləri bankla inteqrasiya olunub, lakin hazırda dayandırılıb — heç bir məbləğ silinmir və yeni abunə başladıla bilmir. Ödənişlər açıq olduğu vaxt yalnız burada, veb saytda həyata keçirilir.",
+      "Hazırkı vəziyyət: kart ödənişləri bankla inteqrasiya olunub, lakin hazırda heç bir kart ödənişi alınmır — heç kimdən məbləğ silinmir. Ödənişlər açıq olduğu vaxt yalnız burada, veb saytda həyata keçirilir və mobil tətbiqlərin içində heç vaxt tamamlanmır.",
     "privacy.s8.statusOn":
       "Hazırkı vəziyyət: ödənişlər açıqdır və yalnız burada, veb saytda, bankın öz ödəniş səhifəsi vasitəsilə həyata keçirilir. Mobil tətbiqlərin içində alış heç vaxt tamamlanmır.",
 
@@ -3328,7 +3328,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Payment uses a full redirect to the bank's own hosted page. Card numbers, CVV codes and other card details never reach OlympIQ servers and are never stored by us.\n" +
       "Our database records only the amount, the currency, the status and the provider's transaction reference.",
     "privacy.s8.statusOff":
-      "Current status: card payments are integrated with our bank, but charging is paused at the moment — nothing is being charged and no new subscription can be started. When payments are open they happen only here, on the website.",
+      "Current status: card payments are integrated with our bank, but no card payment is being taken at the moment — nobody is being charged. When charging is open it happens only here, on the website, and is never completed inside the mobile apps.",
     "privacy.s8.statusOn":
       "Current status: payments are open and happen only here, on the website, through the bank's own hosted payment page. A purchase is never completed inside the mobile apps.",
 
@@ -5217,7 +5217,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Оплата проходит полным перенаправлением на собственную страницу банка. Номер карты, код CVV и другие данные карты никогда не попадают на серверы OlympIQ и у нас не хранятся.\n" +
       "В нашей базе фиксируются только сумма, валюта, статус и номер операции у провайдера.",
     "privacy.s8.statusOff":
-      "Текущее состояние: приём карт подключён к нашему банку, но сейчас приостановлен — списаний не происходит и оформить новую подписку нельзя. Когда оплата открыта, она проходит только здесь, на сайте.",
+      "Текущее состояние: приём карт подключён к нашему банку, но сейчас оплата картой не взимается — ни с кого не списываются средства. Когда оплата открыта, она проходит только здесь, на сайте, и никогда не завершается внутри мобильных приложений.",
     "privacy.s8.statusOn":
       "Текущее состояние: оплата открыта и проходит только здесь, на сайте, через собственную платёжную страницу банка. Внутри мобильных приложений покупка не завершается никогда.",
 

@@ -822,8 +822,9 @@ This is a property of the app itself, not a setting: the mobile builds contain n
 button and no checkout, so nothing a parent or a student does inside the app can produce one.
 
 **Current status:** card payments are integrated with our acquiring bank (AzeriCard, through
-Azerbaijan-resident billing) and charging is **paused** at the moment — nothing is being charged and no
-new subscription can be started. When payments are open they happen only on the website.
+Azerbaijan-resident billing), but **no card payment is being taken at the moment** — nobody is being
+charged. Access granted during a free promotional period involves no card and no payment data at all.
+When charging is open it happens only on the website, and is never completed inside the mobile apps.
 
 ---
 

@@ -129,6 +129,22 @@ const TRIAL_KEYS_MOBILE_RENDERS = new Set([
 // Dropped as a whole prefix, with no allowlist, because unlike the trial (where
 // mobile legitimately shows the STATE of a free day) there is no member of this
 // group the app has any business displaying.
+// `pricing.*` is the web PAYWALL: "= {price} AZN" for each interval, the
+// sibling-discount table, "the prices shown are placeholders", and a stale
+// 7-day-trial line that migration 142 retired. The app renders exactly three
+// of these keys and they are interval LABELS ("Weekly"), not amounts -- so
+// those three are allowlisted and the other ~96 stay on the web.
+//
+// No mobile component renders an amount, so this was never a live price
+// display. It is dropped anyway: "the app contains no price of any kind" is
+// the strongest sentence we say to Apple, and it should be true of the
+// BUNDLE, not just of today's render path.
+const PRICING_KEYS_MOBILE_RENDERS = new Set([
+  "pricing.weekly",
+  "pricing.monthly",
+  "pricing.yearly",
+]);
+
 const WEB_ONLY_PREFIXES = ["terms."];
 
 let dropped = 0;
@@ -136,7 +152,8 @@ for (const l of locales) {
   for (const k of Object.keys(messages[l])) {
     const isWebOnly =
       WEB_ONLY_PREFIXES.some((p) => k.startsWith(p)) ||
-      (k.startsWith("trial.") && !TRIAL_KEYS_MOBILE_RENDERS.has(k));
+      (k.startsWith("trial.") && !TRIAL_KEYS_MOBILE_RENDERS.has(k)) ||
+      (k.startsWith("pricing.") && !PRICING_KEYS_MOBILE_RENDERS.has(k));
     if (isWebOnly) {
       delete messages[l][k];
       dropped += 1;

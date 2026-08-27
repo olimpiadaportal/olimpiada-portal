@@ -195,13 +195,18 @@ export default function ChildSubscribeScreen() {
     <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
       <AppText variant="muted">{childName}</AppText>
 
+      {/* No payment state here either. When nothing can be activated in
+          the app, the screen says exactly that — one sentence, no server flag,
+          no mention of what is or is not purchasable elsewhere. */}
       {posture.paymentsOff ? (
-        <GateNotice title={t("sub.title")} body={t("gate.paymentsOff")} />
+        <Card>
+          <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
+        </Card>
       ) : posture.freeFlow ? (
         <>
           <Card>
             <AppText>
-              {posture.mode === "giveaway" ? t("gate.giveawayFree") : t("gate.freeAccess")}
+              {t("mob.gate.allOpen")}
             </AppText>
           </Card>
           {revealedId ? (

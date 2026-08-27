@@ -2,7 +2,7 @@
   "expo": {
     "name": "OlympIQ",
     "slug": "olympiq",
-    "version": "1.12.0",
+    "version": "1.12.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "olympiq",

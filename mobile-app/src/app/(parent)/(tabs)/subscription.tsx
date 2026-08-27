@@ -21,7 +21,7 @@ import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { CmsProse } from "@/components/CmsProse";
-import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
+import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
@@ -223,7 +223,11 @@ export default function ParentSubscription() {
           {posture.freeFlow ? (
             <Card>
               <AppText variant="muted">
-                {posture.mode === "giveaway" ? t("billing.giveawayNote") : t("gate.freeAccess")}
+                {/* One sentence for both free windows. The web copy frames
+                    them in payment terms ("at no cost right now"), which
+                    implies a cost later — the steering shape a store build
+                    must not carry. What the family needs is what is OPEN. */}
+                {t("mob.gate.allOpen")}
               </AppText>
             </Card>
           ) : null}
@@ -237,21 +241,29 @@ export default function ParentSubscription() {
                 <Card>{planSummary}</Card>
               )}
 
-              {posture.paymentsOff ? (
-                // Payments off ≠ frozen plan: new subscriptions/adds are
-                // gated, but a live plan keeps its editor in removal-only
-                // mode (plus the cancel flow) right under the notice.
-                <>
-                  <GateNotice title={t("billing.plansTitle")} body={t("gate.paymentsOff")} />
-                  {manageBlock(true)}
-                </>
-              ) : posture.webOnly ? (
+              {/* NO PAYMENT STATE IS REPORTED HERE, EVER.
+                  This tab used to branch on `posture.paymentsOff` and render
+                  the WEB string `gate.paymentsOff` — "Payments are temporarily
+                  paused. New subscriptions and purchases are unavailable right
+                  now." Apple rejected the 2026-08-26 submission over it under
+                  2.1.0 App Completeness, and it broke this project's own rule
+                  that payment posture is a build-time constant and never a
+                  server flag.
+
+                  What a family HAS is shown above and is always real. What they
+                  cannot do here is one unchanging sentence that is true whatever
+                  the server says. An empty branch is not an option either — a
+                  blank tab reads as unfinished, which is the same rejection. */}
+              {liveSub ? (
+                // Managing a plan the family ALREADY has — removing a subject,
+                // restoring one they cancelled — is not purchasing, so it stays.
+                // Adds are gated whenever a new charge would be required.
+                manageBlock(!posture.freeFlow)
+              ) : (
                 <Card>
                   <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
                 </Card>
-              ) : liveSub ? (
-                manageBlock(false)
-              ) : null}
+              )}
             </View>
           ) : null}
 

@@ -282,16 +282,13 @@ export default function AddChildScreen() {
               >
                 <PartyPopper size={28} color={tokens.accent} strokeWidth={2} />
               </View>
-              {posture.paymentsOff ? (
-                <>
-                  <AppText variant="title" style={{ textAlign: "center" }}>
-                    {t("parent.child.created")}
-                  </AppText>
-                  <AppText variant="muted" style={{ textAlign: "center" }}>
-                    {t("gate.paymentsOff")}
-                  </AppText>
-                </>
-              ) : !posture.freeFlow ? (
+              {/* The paymentsOff branch is GONE. It rendered the web string
+                  gate.paymentsOff — "New subscriptions and packages cannot be
+                  opened right now" — inside the store binary, which is a server
+                  flag changing what a reviewer sees. The child WAS created and
+                  their id is real; that is what this screen reports now,
+                  identically whatever the platform is doing about payments. */}
+              {!posture.freeFlow ? (
                 <>
                   <AppText variant="title" style={{ textAlign: "center" }}>
                     {t("parent.child.created")}

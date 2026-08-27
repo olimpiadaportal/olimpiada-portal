@@ -2,9 +2,12 @@
 // one clean section per step + a summary card before submit). Since the demo
 // payment mode was deleted (owner, 2026-08-18) the wizard is always TWO steps —
 // the app has no purchase flow in any mode (docs/STORE_PAYMENTS_COMPLIANCE.md):
-//   giveaway / free acc → Info → (bffAddChild + bffActivateFree) → Done (instant ID)
-//   real                → Info → Done: child created, login ID pending
-//   off                 → Info → Done: child created, gate.paymentsOff
+//   giveaway / free acc → Info → (bffAddChild + bffActivateFree) → Done
+//   real / off          → Info → Done
+// ONE Done screen in every posture, and it always shows the 8-digit login ID:
+// migration 146 allocates it inside create_child_account, so there is no such
+// thing as a created child without one. Only the headline differs (free access
+// granted vs. account created + subject access not active yet).
 // Round 21: the District (rayon) field lives between City and School — shown
 // only when the city has active rayons, required then, narrows the school
 // list; city_district_id goes to the BFF (which re-validates and maps a miss
@@ -152,6 +155,10 @@ export default function AddChildScreen() {
           return;
         }
         setStudentProfileId(sid);
+        // The id comes back with the child now. Capturing it here (rather
+        // than only in the free-access branch below) is what lets the
+        // success screen be the same screen in every payment posture.
+        setDoneId(extractChildUniqueId(res.data));
         // Avatar apply is BEST-EFFORT right after creation (the endpoint needs
         // the new student id): a failed preset/photo write must NEVER block
         // the wizard — the parent can retry from the Edit screen. "default"
@@ -179,7 +186,8 @@ export default function AddChildScreen() {
         return;
       }
 
-      // 'real' and 'off': the child exists, its login ID is still pending.
+      // 'real' and 'off': the child exists AND can sign in. Nothing is
+      // pending -- subject access is inactive, which the screen says.
       setPhase("done");
     } finally {
       setPending(false);
@@ -282,59 +290,56 @@ export default function AddChildScreen() {
               >
                 <PartyPopper size={28} color={tokens.accent} strokeWidth={2} />
               </View>
-              {/* The paymentsOff branch is GONE. It rendered the web string
-                  gate.paymentsOff — "New subscriptions and packages cannot be
-                  opened right now" — inside the store binary, which is a server
-                  flag changing what a reviewer sees. The child WAS created and
-                  their id is real; that is what this screen reports now,
-                  identically whatever the platform is doing about payments. */}
-              {!posture.freeFlow ? (
-                <>
-                  <AppText variant="title" style={{ textAlign: "center" }}>
-                    {t("parent.child.created")}
+              {/* ONE SUCCESS SCREEN, NOT TWO.
+                  This used to fork on posture.freeFlow, and the fork decided
+                  whether the parent was told their child's login ID at all: the
+                  other arm rendered the web string gate.paymentsOff ("new
+                  subscriptions and packages cannot be opened right now") and
+                  then mob.addchild.idPending, promising an ID "as soon as a
+                  subject subscription is active" — which, with payments off, no
+                  screen in this app could ever bring about.
+
+                  The ID is allocated when the child is created (migration 146).
+                  It is identity, not entitlement: the child can sign in, and
+                  what they see inside is governed by their subject access, not
+                  by this screen. So the ID is shown the same way every time and
+                  only the headline differs. */}
+              <AppText variant="title" style={{ textAlign: "center" }}>
+                {!posture.freeFlow
+                  ? t("parent.child.created")
+                  : posture.mode === "giveaway"
+                    ? t("addchild.giveawayGranted")
+                    : t("addchild.freeAccessGranted")}
+              </AppText>
+              <AppText variant="muted" style={{ textAlign: "center" }}>
+                {posture.freeFlow ? t("pay.idRevealed") : t("mob.addchild.idReady")}
+              </AppText>
+              {doneId ? (
+                <View
+                  style={{
+                    maxWidth: "100%",
+                    backgroundColor: tokens.chipBg,
+                    borderRadius: radius.lg,
+                    paddingVertical: spacing.lg,
+                    paddingHorizontal: spacing.xl,
+                  }}
+                >
+                  {/* The ID is a number: on 320pt / large font scale it
+                      scales to fit, never wraps or truncates. */}
+                  <AppText
+                    variant="mono"
+                    color={tokens.accent}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    style={{ fontSize: 32, fontWeight: "800", letterSpacing: 2 }}
+                  >
+                    {groupChildId(doneId)}
                   </AppText>
-                  <AppText variant="muted" style={{ textAlign: "center" }}>
-                    {t("mob.addchild.idPending")}
-                  </AppText>
-                </>
-              ) : (
-                <>
-                  <AppText variant="title" style={{ textAlign: "center" }}>
-                    {posture.mode === "giveaway"
-                      ? t("addchild.giveawayGranted")
-                      : t("addchild.freeAccessGranted")}
-                  </AppText>
-                  <AppText variant="muted" style={{ textAlign: "center" }}>
-                    {t("pay.idRevealed")}
-                  </AppText>
-                  {doneId ? (
-                    <View
-                      style={{
-                        maxWidth: "100%",
-                        backgroundColor: tokens.chipBg,
-                        borderRadius: radius.lg,
-                        paddingVertical: spacing.lg,
-                        paddingHorizontal: spacing.xl,
-                      }}
-                    >
-                      {/* The ID is a number: on 320pt / large font scale it
-                          scales to fit, never wraps or truncates. */}
-                      <AppText
-                        variant="mono"
-                        color={tokens.accent}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        style={{ fontSize: 32, fontWeight: "800", letterSpacing: 2 }}
-                      >
-                        {groupChildId(doneId)}
-                      </AppText>
-                    </View>
-                  ) : null}
-                  <AppText variant="muted" style={{ textAlign: "center" }}>
-                    {t("parent.child.idNote")}
-                  </AppText>
-                </>
-              )}
+                </View>
+              ) : null}
+              <AppText variant="muted" style={{ textAlign: "center" }}>
+                {t("parent.child.idNote")}
+              </AppText>
               <Button
                 title={t("parent.dash.title")}
                 style={{ alignSelf: "stretch" }}

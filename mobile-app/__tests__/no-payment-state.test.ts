@@ -100,3 +100,74 @@ describe("the subscription tab always says something", () => {
     expect(code).not.toMatch(/posture\.paymentsOff\s*\?/);
   });
 });
+
+describe("the privacy screen states no platform payment status", () => {
+  // THE WORST OF THE SET, because it needs no account: login.tsx and
+  // register.tsx both link straight to it, so this is what a reviewer reads
+  // before signing in at all. It rendered, from a server flag:
+  //
+  //   statusOff -> "payments are switched off on the platform and no payment
+  //                 provider has been integrated yet"
+  //   statusOn  -> "the mobile app may show subscription prices"
+  //
+  // The first describes an unfinished product. The second is false of this
+  // binary, in the direction that gets an app rejected — every price was
+  // deliberately stripped from it. Neither belongs in the app; both are fine on
+  // the website, which still renders them.
+  const privacy = readFileSync(join(SRC, "app", "(public)", "privacy.tsx"), "utf8");
+
+  it("renders neither payment-status branch", () => {
+    expect(rendersKey(privacy, "privacy.s8.statusOn")).toBe(false);
+    expect(rendersKey(privacy, "privacy.s8.statusOff")).toBe(false);
+  });
+
+  it("still explains what happens to payment DATA", () => {
+    // Removing the status must not quietly remove the disclosure — that list is
+    // the part a privacy policy actually owes the reader, and it does not change
+    // with a feature flag.
+    expect(rendersKey(privacy, "privacy.s8.list")).toBe(true);
+  });
+});
+
+describe("a live subscription is never hidden by a payment flag", () => {
+  // Not only a review risk. In mode `off` this screen returned "not managed
+  // here" BEFORE looking at what the family had, so a real active plan was
+  // suppressed — and `off` is the client's fail-closed default, so a failed
+  // config RPC blanked it for everyone.
+  const sub = readFileSync(
+    join(SRC, "app", "(parent)", "children", "[id]", "subscribe.tsx"),
+    "utf8",
+  );
+
+  it("does not branch on paymentsOff", () => {
+    const code = sub.replace(/^\s*(\/\/|\*|\/\*).*$/gm, "");
+    expect(code).not.toMatch(/posture\.paymentsOff\s*\?/);
+  });
+});
+
+describe("no screen advertises a feature as absent", () => {
+  it("does not render stk.empty", () => {
+    // "No sticker themes yet — coming soon!" under its own heading. Production
+    // has ZERO enabled themes (a theme is created disabled and a trigger refuses
+    // enabling under six images), so this was not an edge case — it was what
+    // every reviewer saw. The section hides itself instead.
+    const offenders = FILES.filter((p) => rendersKey(readFileSync(p, "utf8"), "stk.empty")).map(
+      (p) => p.slice(SRC.length + 1),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("does not promise a login ID for later", () => {
+    // mob.addchild.idPending said the 8-digit ID "appears here as soon as a
+    // subject subscription is active" — with payments off, no screen in this app
+    // could bring that about. Migration 146 allocates the ID at creation, so the
+    // key is gone and the ID is shown immediately.
+    const mobile = readFileSync(join(SRC, "i18n", "messages.mobile.ts"), "utf8");
+    expect(mobile).not.toContain("mob.addchild.idPending");
+
+    const addChild = readFileSync(join(SRC, "app", "(parent)", "add-child.tsx"), "utf8");
+    expect(rendersKey(addChild, "mob.addchild.idReady")).toBe(true);
+    // And the ID block is outside the posture fork — one success screen.
+    expect(addChild).toContain("{doneId ? (");
+  });
+});

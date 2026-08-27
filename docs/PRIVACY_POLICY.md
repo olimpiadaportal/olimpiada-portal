@@ -812,19 +812,18 @@ deployment. If data is stored outside Azerbaijan, that must be stated openly her
 - **A purchase can never be completed in the mobile app**: there is no card form, no card entry and no
   payment step in the app at all.
 - Payments happen only **on the website, in a browser, in Azerbaijani manat**.
-- Payment will use a full redirect to the bank's own hosted page. **Card numbers, CVV codes and other card
-  details will never reach OlympIQ servers and will never be stored by us.**
-- Our database will record only the amount, the currency, the status and the provider's transaction
+- Payment uses a full redirect to the bank's own hosted page. **Card numbers, CVV codes and other card
+  details never reach OlympIQ servers and are never stored by us.**
+- Our database records only the amount, the currency, the status and the provider's transaction
   reference.
 
-**Whether prices are shown depends on the payment mode.** While payments are off, no price is displayed
-anywhere in the mobile app. If payments are switched on, the app may show subscription prices **for
-information** to a parent or a signed-out visitor; **a student session never shows a price**, and a
-purchase can never be completed inside the app in any mode.
+**No price is shown in the mobile apps, in any mode.** Prices and purchasing exist only on the website.
+This is a property of the app itself, not a setting: the mobile builds contain no price, no purchase
+button and no checkout, so nothing a parent or a student does inside the app can produce one.
 
-**Current status:** payments are **switched off** on the platform and no payment provider has been
-integrated yet. `[OWNER MUST CONFIRM: if that has changed by publication, update this section and name the
-provider.]`
+**Current status:** card payments are integrated with our acquiring bank (AzeriCard, through
+Azerbaijan-resident billing) and charging is **paused** at the moment — nothing is being charged and no
+new subscription can be started. When payments are open they happen only on the website.
 
 ---
 

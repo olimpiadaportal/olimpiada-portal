@@ -5,10 +5,13 @@
 // PURCHASE-SILENT (docs/STORE_PAYMENTS_COMPLIANCE.md): there is no subscribe
 // wizard on mobile in ANY mode since the demo payment mode was deleted (owner,
 // 2026-08-18). Every branch below is read-only or free-activation:
-//   off        → gate.paymentsOff
-//   free modes → free notice + bffActivateFree when the child has no login ID,
-//                and the price-free subjects editor when a plan is live
-//   real       → status only (mob.pay.notInApp)
+//   free modes → free notice + bffActivateFree, and the price-free subjects
+//                editor when a plan is live
+//   real / off → the live plan if there is one, otherwise status only
+//                (mob.pay.notInApp)
+// A live subscription is NEVER suppressed by the payment posture -- 'off' is
+// also the fail-closed default when the config RPC fails, and this screen used
+// to blank itself in exactly that case.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -195,14 +198,14 @@ export default function ChildSubscribeScreen() {
     <ScreenScroll onRefresh={onRefresh} refreshing={refreshing}>
       <AppText variant="muted">{childName}</AppText>
 
-      {/* No payment state here either. When nothing can be activated in
-          the app, the screen says exactly that — one sentence, no server flag,
-          no mention of what is or is not purchasable elsewhere. */}
-      {posture.paymentsOff ? (
-        <Card>
-          <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
-        </Card>
-      ) : posture.freeFlow ? (
+      {/* WHAT THIS FAMILY HAS COMES FIRST, ALWAYS.
+          This screen used to branch on posture.paymentsOff BEFORE rendering the
+          live-subscription card, so in mode `off` a family with a real active
+          plan saw only "not managed here" and their actual entitlement was
+          suppressed. `off` is also the client's fail-closed default, so a failed
+          config RPC blanked the screen for everyone. Entitlement is never
+          conditional on a payment flag. */}
+      {posture.freeFlow ? (
         <>
           <Card>
             <AppText>

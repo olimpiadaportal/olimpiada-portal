@@ -58,7 +58,13 @@ export async function POST(request: Request): Promise<Response> {
         { errors: result.errors },
       );
     }
-    return okResponse({ student_profile_id: result.studentProfileId });
+    // The ID exists from creation (migration 146), so the app can show it
+    // straight away instead of promising it for later. Null only if an older
+    // database is behind this deployment -- the screen handles that.
+    return okResponse({
+      student_profile_id: result.studentProfileId,
+      child_unique_id: result.childUniqueId ?? null,
+    });
   } catch {
     // Never leak internals (error.message) to any client.
     return errorResponse("auth.child.err.createFailed", 500, true);

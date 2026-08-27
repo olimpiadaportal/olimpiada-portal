@@ -2,13 +2,18 @@
   "expo": {
     "name": "OlympIQ",
     "slug": "olympiq",
-    "version": "1.12.1",
+    "version": "1.12.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "olympiq",
     "userInterfaceStyle": "automatic",
     "runtimeVersion": {
       "policy": "appVersion"
+    },
+    "locales": {
+      "az": "./locales/az.json",
+      "en": "./locales/en.json",
+      "ru": "./locales/ru.json"
     },
     "ios": {
       "bundleIdentifier": "ai.olympiq.app",
@@ -62,7 +67,7 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "OlympIQ istifadəçini təsdiqləmək üçün Face ID istifadə edir."
+          "faceIDPermission": "OlympIQ Face ID-dən yalnız tətbiqin kilidini açmaq üçün istifadə edir — bunu özünüz Hesab bölməsində aktivləşdirirsiniz. Üz məlumatları qurğunuzu heç vaxt tərk etmir."
         }
       ]
     ],

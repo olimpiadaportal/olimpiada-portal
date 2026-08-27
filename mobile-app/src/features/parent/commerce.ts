@@ -9,7 +9,11 @@
 //
 //   'real'     → read-only: status only, nothing is bought here.
 //   'giveaway' → subscription access is free (activation, no payment step).
-//   'off'      → gate.paymentsOff notice.
+//   'off'      → identical to 'real' on screen. NOTHING in the app reports
+//                that payments are off: that is a platform state, it reached
+//                the UI through this flag, and Apple rejected the build for it
+//                (2.1.0, 2026-08-26). `paymentsOff` survives only to compute
+//                `freeFlow`; no screen may branch on it.
 //
 // The DEMO mode is GONE (owner, 2026-08-18): the platform keeps only free and
 // real payments, so no cosmetic payment sheet exists anywhere.

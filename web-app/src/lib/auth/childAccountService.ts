@@ -101,8 +101,27 @@ export async function createChild(params: {
       targetId: studentProfileId,
     });
 
-    // childUniqueId is null until the parent chooses a plan (subscribe step).
-    return { ok: true, childUniqueId: null, studentProfileId };
+    // MIGRATION 146: the id exists NOW, not after a subscription. Set the
+    // canonical synthetic auth email from it immediately — without that the id
+    // is a number the child cannot log in with, which is the state two
+    // production accounts were left in while payments were off.
+    const childUniqueId: string | null = row?.new_child_unique_id ?? null;
+    if (childUniqueId) {
+      const applied = await applyAllocatedChildEmail({ authUserId, childUniqueId });
+      if (!applied.ok) {
+        // The DB row is committed and correct; only the login mapping failed.
+        // Reported rather than swallowed: the parent must not be told the child
+        // is ready when they cannot sign in.
+        console.error("[child] synthetic email not applied");
+        return {
+          ok: false,
+          errors: ["auth.child.err.createFailed"],
+          detail: applied.detail,
+        };
+      }
+    }
+
+    return { ok: true, childUniqueId, studentProfileId };
   } catch (e) {
     // Saga cleanup: remove the orphaned Auth user (cascades the auto-created
     // profile). The RPC transaction already rolled back any partial DB writes.

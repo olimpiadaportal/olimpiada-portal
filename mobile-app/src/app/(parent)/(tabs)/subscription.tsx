@@ -11,8 +11,10 @@
 //     the section — and the three-way switcher around it — is gone.
 //   - every amount. The card shows STATUS, the subjects and when access runs
 //     to; the web account keeps the money.
-// Posture: free modes and 'off' (removal-only) get the editor; 'real' is
-// read-only; 'off' also shows gate.paymentsOff.
+// Posture decides only whether the free-activation path is offered. It does
+// NOT decide what this tab says about payments: a live subscription is always
+// shown, and a family without one always reads the same sentence
+// (mob.pay.notInApp). See __tests__/no-payment-state.test.ts.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";

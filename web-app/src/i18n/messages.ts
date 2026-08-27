@@ -1437,12 +1437,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s8.list":
       "Mobil tətbiqdə alışı tamamlamaq mümkün deyil: kart formu, kart məlumatlarının daxil edilməsi və ödəniş addımı tətbiqdə mövcud deyil.\n" +
       "Ödənişlər yalnız veb saytda, brauzerdə və Azərbaycan manatı ilə həyata keçirilir.\n" +
-      "Ödəniş bankın öz səhifəsinə tam yönləndirmə ilə aparılacaq. Kart nömrəsi, CVV və digər kart məlumatları heç vaxt OlympIQ serverlərinə düşməyəcək və bizdə saxlanılmayacaq.\n" +
-      "Verilənlər bazasında ödənişlə bağlı yalnız məbləğ, valyuta, status və təminatçının əməliyyat nömrəsi qeyd olunacaq.",
+      "Ödəniş bankın öz səhifəsinə tam yönləndirmə ilə aparılır. Kart nömrəsi, CVV və digər kart məlumatları heç vaxt OlympIQ serverlərinə düşmür və bizdə saxlanılmır.\n" +
+      "Verilənlər bazasında ödənişlə bağlı yalnız məbləğ, valyuta, status və təminatçının əməliyyat nömrəsi qeyd olunur.",
     "privacy.s8.statusOff":
-      "Hazırkı vəziyyət: platformada ödənişlər söndürülüb və hələ heç bir ödəniş təminatçısı inteqrasiya olunmayıb. Ödənişlər söndürülü olduğu müddətdə mobil tətbiqin heç bir yerində qiymət göstərilmir.",
+      "Hazırkı vəziyyət: kart ödənişləri bankla inteqrasiya olunub, lakin hazırda dayandırılıb — heç bir məbləğ silinmir və yeni abunə başladıla bilmir. Ödənişlər açıq olduğu vaxt yalnız burada, veb saytda həyata keçirilir.",
     "privacy.s8.statusOn":
-      "Hazırkı vəziyyət: ödənişlər aktivdir və yalnız veb saytda, bankın öz ödəniş səhifəsi vasitəsilə həyata keçirilir. Mobil tətbiq valideynə və ya hesabı olmayan ziyarətçiyə abunə qiymətlərini yalnız məlumat üçün göstərə bilər; şagird sessiyasında qiymət heç vaxt göstərilmir və tətbiqin özündə alış tamamlana bilmir.",
+      "Hazırkı vəziyyət: ödənişlər açıqdır və yalnız burada, veb saytda, bankın öz ödəniş səhifəsi vasitəsilə həyata keçirilir. Mobil tətbiqlərin içində alış heç vaxt tamamlanmır.",
 
     "privacy.s9.title": "Məlumatların saxlanması və silinməsi",
     "privacy.s9.activeTitle": "Hesab aktiv olduğu müddətdə",
@@ -3325,12 +3325,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s8.list":
       "A purchase can never be completed in the mobile app: there is no card form, no card entry and no payment step in the app at all.\n" +
       "Payments happen only on the website, in a browser, in Azerbaijani manat.\n" +
-      "Payment will use a full redirect to the bank's own hosted page. Card numbers, CVV codes and other card details will never reach OlympIQ servers and will never be stored by us.\n" +
-      "Our database will record only the amount, the currency, the status and the provider's transaction reference.",
+      "Payment uses a full redirect to the bank's own hosted page. Card numbers, CVV codes and other card details never reach OlympIQ servers and are never stored by us.\n" +
+      "Our database records only the amount, the currency, the status and the provider's transaction reference.",
     "privacy.s8.statusOff":
-      "Current status: payments are switched off on the platform and no payment provider has been integrated yet. While payments are off, no price is displayed anywhere in the mobile app.",
+      "Current status: card payments are integrated with our bank, but charging is paused at the moment — nothing is being charged and no new subscription can be started. When payments are open they happen only here, on the website.",
     "privacy.s8.statusOn":
-      "Current status: payments are live and happen only on the website, through the bank's own hosted payment page. The mobile app may show subscription prices for information to a parent or a signed-out visitor; a student session never shows a price, and no purchase can be completed inside the app.",
+      "Current status: payments are open and happen only here, on the website, through the bank's own hosted payment page. A purchase is never completed inside the mobile apps.",
 
     "privacy.s9.title": "Retention and deletion",
     "privacy.s9.activeTitle": "While the account is open",
@@ -5214,12 +5214,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s8.list":
       "Завершить покупку в мобильном приложении невозможно: в нём нет ни формы карты, ни ввода данных карты, ни шага оплаты.\n" +
       "Оплата возможна только на сайте, в браузере, в азербайджанских манатах.\n" +
-      "Оплата будет проходить полным перенаправлением на собственную страницу банка. Номер карты, код CVV и другие данные карты никогда не попадут на серверы OlympIQ и у нас храниться не будут.\n" +
-      "В нашей базе будут фиксироваться только сумма, валюта, статус и номер операции у провайдера.",
+      "Оплата проходит полным перенаправлением на собственную страницу банка. Номер карты, код CVV и другие данные карты никогда не попадают на серверы OlympIQ и у нас не хранятся.\n" +
+      "В нашей базе фиксируются только сумма, валюта, статус и номер операции у провайдера.",
     "privacy.s8.statusOff":
-      "Текущее состояние: платежи на платформе отключены, и ни один платёжный провайдер пока не подключён. Пока платежи отключены, цены не показываются ни в одном разделе мобильного приложения.",
+      "Текущее состояние: приём карт подключён к нашему банку, но сейчас приостановлен — списаний не происходит и оформить новую подписку нельзя. Когда оплата открыта, она проходит только здесь, на сайте.",
     "privacy.s8.statusOn":
-      "Текущее состояние: платежи работают и проходят только на сайте, через собственную платёжную страницу банка. Мобильное приложение может показывать цены подписки для информации родителю или посетителю без аккаунта; в сессии ученика цены не показываются никогда, и завершить покупку внутри приложения нельзя.",
+      "Текущее состояние: оплата открыта и проходит только здесь, на сайте, через собственную платёжную страницу банка. Внутри мобильных приложений покупка не завершается никогда.",
 
     "privacy.s9.title": "Хранение и удаление данных",
     "privacy.s9.activeTitle": "Пока аккаунт активен",

@@ -491,6 +491,18 @@ export function StickerThemeSection({ t }: { t: T }) {
     if (!ok) setError(t("stk.err.generic"));
   }
 
+  // THE WHOLE SECTION HIDES WHEN THERE IS NOTHING IN IT.
+  //
+  // It used to render its heading and description and then "No sticker themes
+  // yet — coming soon!". Production has ZERO enabled themes (a theme is created
+  // disabled and a trigger refuses enabling under six images), so that is what
+  // every reviewer sees: a feature advertised as absent, which is precisely the
+  // App Completeness shape Apple rejected this app for elsewhere.
+  //
+  // An absent section is complete. An empty one promising a future feature is
+  // not. When themes exist the section returns exactly as before.
+  if (!themesQ.isPending && !selectionQ.isPending && themes.length === 0) return null;
+
   return (
     <Card style={{ gap: spacing.md }}>
       <SectionTitleRow
@@ -498,9 +510,7 @@ export function StickerThemeSection({ t }: { t: T }) {
         title={t("stk.sectionTitle")}
       />
       <CmsProse text={t("stk.sectionDesc")} gap={spacing.sm} style={{ fontSize: 12 }} />
-      {themesQ.isPending || selectionQ.isPending ? null : themes.length === 0 ? (
-        <AppText variant="muted">{t("stk.empty")}</AppText>
-      ) : (
+      {themesQ.isPending || selectionQ.isPending ? null : themes.length === 0 ? null : (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           {/* Off-card first (stickers must be easy to disable). */}
           <SelectableCard

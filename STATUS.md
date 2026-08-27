@@ -6,6 +6,123 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## PINNED — APPLE REJECTED THE BUILD FOR A SERVER FLAG (2026-08-26 → FIXED 1.12.2)
+
+**Guideline 2.1.0 Performance: App Completeness.** Apple screenshotted the parent
+Subscription tab showing *"Plans & subjects — Payments are temporarily paused. New
+subscriptions and purchases are unavailable right now."*
+
+That string is `gate.paymentsOff`, a **WEB** string, rendered because three parent
+screens branched on `posture.paymentsOff` — a value derived from a database row. The
+finding was correct and the wording was the symptom, not the disease:
+
+> **Payment posture is a BUILD-TIME constant, never a server flag** (CLAUDE.md).
+
+A store binary whose visible behaviour changes with a row is the problem; which
+sentence that row produced is incidental. The remediation removed the dependency,
+not the sentence.
+
+### Everything the sweep found, and what each one actually was
+
+The screen Apple named was the fourth-worst of six. Ranked by how a reviewer meets
+them:
+
+| # | Where | What it did | Severity |
+|---|---|---|---|
+| A3 | `(public)/privacy.tsx` | Rendered `privacy.s8.statusOff` — *"payments are switched off on the platform and no payment provider has been integrated yet"* | **Worst.** Reachable **pre-login**, one tap from `login.tsx` and `register.tsx`. An app telling a signed-out reviewer it is unfinished. |
+| A2 | `children/[id]/subscribe.tsx` | Checked `paymentsOff` **before** rendering the live subscription, so a family with a real active plan saw only "not managed here" | Not just review risk: **suppressed a real entitlement**, and `off` is the client's fail-closed default, so a failed config RPC blanked it for everyone |
+| A1 | `(tabs)/subscription.tsx` | The string Apple screenshotted | Fixed first |
+| A6 | `features/profile/studentSections.tsx` | `stk.empty` = *"No sticker themes yet — coming soon!"* under its own heading | Production has **zero** enabled themes (created disabled; a trigger refuses enabling under 6 images), so every reviewer saw it |
+| A7 | `add-child.tsx` + DB | `mob.addchild.idPending` promised the 8-digit ID *"as soon as a subject subscription is active"* — with payments off, **no screen in the app could bring that about** | See migration 146 below |
+| A5 | `app.json` | `faceIDPermission` Azerbaijani-only, while camera/photo were English-only, under `CFBundleLocalizations` az/en/ru | 5.1.1 hygiene |
+
+### Migration 146 — the defect that was not an Apple problem at all
+
+`create_child_account` deliberately returned a NULL login id; the 8-digit number was
+allocated later by `create_child_subscription`, on the reasoning that a child with
+no plan has nothing to log in to.
+
+That reasoning stopped holding the moment the payments kill switch was thrown. With
+payments off no subscription is ever created, so **no id is ever allocated**, and
+Add-Child completed into an account that could never be used — a child signs in with
+only that id plus the parent's password.
+
+**Measured on production before the migration: 2 of 6 children had no id.** Both
+repaired (still `inactive` — the migration grants no access).
+
+**Identity is not entitlement.** The id says who the child IS; `access_status` stays
+`inactive` and every paid gate is untouched. `allocate_child_unique_id` re-reads the
+registry before minting, so the later call inside `create_child_subscription` is a
+no-op. Probed 5/5 on staging (id shape, credential agreement, still-inactive,
+no-subject-access, idempotent re-allocation), applied to production, backported to
+canonical `011` (159 functions).
+
+**The half SQL cannot do:** a child signs in through a synthetic auth email derived
+from the id (`c<8digits>@children.invalid`), which lives in Supabase Auth, not in the
+database. The web-app half now applies it at creation and **fails the creation** if
+it cannot — a child with an id but no auth email still cannot sign in, so it is not
+best-effort. The two repaired children need theirs set through the admin API; they
+are test accounts (see Human Next Actions).
+
+### What is now structurally impossible
+
+`__tests__/no-payment-state.test.ts` — **12 source-level assertions**. It does not
+render screens; it asserts no screen *imports the vocabulary*, so a re-introduction
+shows up in a diff and a red test rather than in a rejection eight days later:
+
+- no file renders `gate.paymentsOff` / `gate.giveawayFree` / `gate.freeAccess`
+- `privacy.tsx` renders neither `s8.statusOn` nor `s8.statusOff` — **and still
+  renders `s8.list`**, so removing the status cannot quietly remove the disclosure
+- neither `subscription.tsx` nor `subscribe.tsx` branches on `posture.paymentsOff`
+- no file renders `stk.empty`; `mob.addchild.idPending` no longer exists
+
+`paymentsOff` survives in `commerce.ts` only to compute `freeFlow`. All four file
+headers that documented the old behaviour were rewritten — a stale header is how the
+next change re-introduces this in good faith.
+
+**And the catalogue was stale.** Re-running `scripts/sync-i18n.mjs` pulled **21
+`terms.*` keys** into the mobile bundle — the `/terms` purchase-terms page: *"each
+subject has its own price"*, *"by proceeding to payment you accept these terms"*,
+*"all payments are in Azerbaijani manat"*. No mobile screen renders them, which is
+exactly the state the `trial.*` keys were in before one nearly got rendered. The
+script now drops the whole `terms.` prefix (no allowlist — unlike the trial, where
+mobile legitimately shows the STATE of a free day, there is no member of this group
+the app has any business displaying). Bundle: 1446 → 1425 keys per locale.
+
+### Copy that was false, found by the same sweep
+
+The privacy policy's payments section (§8, web + mobile + `docs/PRIVACY_POLICY.md`)
+was written before the bank rail existed and never swept afterwards:
+
+- **Future tense throughout** — "payment *will* use a full redirect", "card details
+  *will never* reach our servers", "our database *will* record". All three are
+  present-tense facts since the AzeriCard production terminal cutover.
+- `statusOff` claimed **"no payment provider has been integrated yet"**. False. The
+  provider is integrated and a real 1 AZN charge was taken and reversed end-to-end.
+  One sentence describes an unfinished product; the other describes a setting.
+- `statusOn` promised **"the mobile app may show subscription prices"**. Also false,
+  in the direction that gets an app rejected — every price was deliberately stripped
+  from the mobile binary.
+
+Corrected in all three locales, and in the `docs/PRIVACY_POLICY.md` mirror that
+Apple and Google actually fetch. **This is the fourth instance of the PINNED
+2026-08-26 pattern**: a change to what the product does, and nothing swept the copy
+it falsified.
+
+### Build 1.12.2 — an EAS BUILD, not an OTA update
+
+`app.json` gained `expo.locales` → `mobile-app/locales/{az,en,ru}.json`, which
+become `<lang>.lproj/InfoPlist.strings`. That is **native configuration**: no EAS
+Update can carry it. And `runtimeVersion` is `appVersion`, so an update published for
+1.12.1 never reaches a 1.12.2 binary in either direction.
+
+`docs/APP_REVIEW_NOTES.md` rewritten: §0 is the Resolution Center reply (with an
+explicit *what NOT to write* list — do not offer to switch payments on, do not cite
+3.1.3(b), whose own proviso requires matching IAP), the recording script now
+includes Add-Child because it ends on a real ID, and the obsolete §4a is gone.
+
+**Verification:** mobile 483/483 jest, web 644/644 vitest, both typechecks clean.
+
 ## PINNED — THREE THINGS THAT WERE FALSE ON SCREEN (2026-08-26)
 
 A round of audits turned up the same defect shape three times: **a migration

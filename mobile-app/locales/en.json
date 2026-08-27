@@ -1,0 +1,5 @@
+{
+  "NSPhotoLibraryUsageDescription": "OlympIQ uses this only when you choose a profile picture — for example, picking a photo for your child's profile so they can recognise their own account. The photo is stored only as a profile image and is never used for anything else.",
+  "NSCameraUsageDescription": "OlympIQ uses this only for profile pictures — for example, adding a photo to your child's profile so they can recognise their own account. Photos are stored only as a profile image and are never used for anything else.",
+  "NSFaceIDUsageDescription": "OlympIQ uses Face ID only to unlock the app, and only if you switch that on yourself under Account. Your face data never leaves your device."
+}

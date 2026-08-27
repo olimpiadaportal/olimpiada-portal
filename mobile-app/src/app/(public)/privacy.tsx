@@ -391,11 +391,14 @@ export default function Privacy() {
         {/* 8 — payments */}
         <Section id="s8" t={t} onMeasure={measure("s8")}>
           <PolicyList text={t("privacy.s8.list")} />
-          <Prose emphasis>
-            {policy.paymentsLive
-              ? t("privacy.s8.statusOn")
-              : t("privacy.s8.statusOff")}
-          </Prose>
+          {/* NO PLATFORM PAYMENT STATUS IN THE BINARY.
+              Both branches were wrong here. `statusOff` told a pre-login
+              reviewer that no payment provider had been integrated — an app
+              describing itself as unfinished. `statusOn` claimed this app "may
+              show subscription prices", which is false: every price was
+              stripped from it deliberately. What the privacy policy owes the
+              reader is what happens to their DATA, which the list above already
+              states, and that does not change with a feature flag. */}
         </Section>
 
         {/* 9 — retention and deletion */}

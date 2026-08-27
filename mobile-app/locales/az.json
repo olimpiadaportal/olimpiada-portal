@@ -1,0 +1,5 @@
+{
+  "NSPhotoLibraryUsageDescription": "OlympIQ bundan yalnız profil şəkli seçdiyiniz zaman istifadə edir — məsələn, uşağınızın öz hesabını tanıması üçün ona şəkil təyin edərkən. Şəkil yalnız profil şəkli kimi saxlanılır və başqa heç bir məqsədlə istifadə olunmur.",
+  "NSCameraUsageDescription": "OlympIQ bundan yalnız profil şəkli üçün istifadə edir — məsələn, uşağınızın öz hesabını tanıması üçün profilinə şəkil əlavə edərkən. Şəkillər yalnız profil şəkli kimi saxlanılır və başqa heç bir məqsədlə istifadə olunmur.",
+  "NSFaceIDUsageDescription": "OlympIQ Face ID-dən yalnız tətbiqin kilidini açmaq üçün istifadə edir — bunu özünüz Hesab bölməsində aktivləşdirirsiniz. Üz məlumatları qurğunuzu heç vaxt tərk etmir."
+}

@@ -117,10 +117,27 @@ const TRIAL_KEYS_MOBILE_RENDERS = new Set([
   "trial.expired.title", // states what ended; the CTA half stays on the web
 ]);
 
+// PURCHASE TERMS ARE WHOLLY WEB-ONLY.
+//
+// `terms.*` is the /terms page: "each subject has its own price", "by proceeding
+// to payment you accept these terms", "all payments are in Azerbaijani manat".
+// Every word of it is correct on olympiq.ai and none of it can appear in a store
+// binary. No mobile screen renders any of it today — which is precisely the
+// state the trial keys were in before someone nearly rendered one, and the
+// reason this file drops keys rather than trusting that nobody will.
+//
+// Dropped as a whole prefix, with no allowlist, because unlike the trial (where
+// mobile legitimately shows the STATE of a free day) there is no member of this
+// group the app has any business displaying.
+const WEB_ONLY_PREFIXES = ["terms."];
+
 let dropped = 0;
 for (const l of locales) {
   for (const k of Object.keys(messages[l])) {
-    if (k.startsWith("trial.") && !TRIAL_KEYS_MOBILE_RENDERS.has(k)) {
+    const isWebOnly =
+      WEB_ONLY_PREFIXES.some((p) => k.startsWith(p)) ||
+      (k.startsWith("trial.") && !TRIAL_KEYS_MOBILE_RENDERS.has(k));
+    if (isWebOnly) {
       delete messages[l][k];
       dropped += 1;
     }

@@ -1087,6 +1087,7 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
+  v_child_id       text;
   v_profile_id      uuid;
   v_student_role_id uuid;
 begin
@@ -1203,11 +1204,29 @@ begin
   values (v_profile_id, v_student_role_id, p_parent_profile_id)
   on conflict do nothing;
 
-  -- 4) Record the credential mapping with a NULL ID (backfilled on allocation).
-  --    Password lives ONLY in Supabase Auth (never stored here).
+  -- 4) ALLOCATE THE LOGIN ID NOW (migration 146).
+  --
+  -- It used to be deferred to the first subscription, on the reasoning that a
+  -- child with no plan has nothing to log in to. That was wrong in a way nobody
+  -- noticed until the payments kill switch was thrown: with payments off, no
+  -- subscription is ever created, so no id was ever allocated, and the Add-Child
+  -- flow completed into an account THAT COULD NEVER BE USED. The success screen
+  -- promised "the 8-digit ID appears as soon as a subject subscription is
+  -- active" and no screen in the app could make that happen. Two production
+  -- children were left in that state.
+  --
+  -- IDENTITY IS NOT ENTITLEMENT. The id is who the child IS; access_status stays
+  -- 'inactive' and every paid gate is untouched. The child can sign in and see
+  -- the ordinary locked arena -- a complete, honest state, instead of a dead end.
+  --
+  -- allocate_child_unique_id is idempotent (it re-reads the registry before
+  -- minting), so create_child_subscription calling it again later is harmless.
+  v_child_id := public.allocate_child_unique_id(v_profile_id);
+
+  -- Password lives ONLY in Supabase Auth (never stored here).
   insert into public.child_credentials (student_profile_id, child_unique_id, auth_user_id,
                                         password_set_by_parent_profile_id, password_set_at)
-  values (v_profile_id, null, p_auth_user_id, p_parent_profile_id, now());
+  values (v_profile_id, v_child_id, p_auth_user_id, p_parent_profile_id, now());
 
   -- 5) Auto-link the child to the creating parent (active link = parent access).
   insert into public.parent_student_links (parent_profile_id, student_profile_id, status,
@@ -1216,17 +1235,19 @@ begin
   on conflict (parent_profile_id, student_profile_id)
     do update set status = 'active', verified_at = now();
 
-  -- The login ID is NULL until a plan is chosen (create_child_subscription).
-  return query select v_profile_id, null::text;
+  -- The caller sets the canonical synthetic auth email from this id; without
+  -- that step the child still cannot sign in, so it is not optional.
+  return query select v_profile_id, v_child_id;
 end;
 $$;
 
 comment on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) is
-  'Atomic parent-created child provisioning WITHOUT a login ID (allocated later on subscribe). Optional structured grade/city(district)/school stored on students; the intra-city district (rayon) is REQUIRED when the city has active rayons (Round 21). service_role EXECUTE only. Run AFTER admin.createUser (pending email).';
+  'Atomic parent-created child provisioning INCLUDING the 8-digit login ID (migration 146; it was deferred to the first subscription, which never happened while payments were off). Optional structured grade/city(district)/school stored on students; the intra-city district (rayon) is REQUIRED when the city has active rayons (Round 21). service_role EXECUTE only. Run AFTER admin.createUser (pending email).';
 
 -- service_role only (the service layer runs admin.createUser then this).
 -- Revoke anon/authenticated EXPLICITLY: Supabase ALTER DEFAULT PRIVILEGES grants
 -- EXECUTE to anon/authenticated on every new function; revoking public is not enough.
+
 revoke all on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) from public, anon, authenticated;
 grant execute on function public.create_child_account(uuid, uuid, text, text, text, text, text, uuid, uuid, uuid, uuid) to service_role;
 

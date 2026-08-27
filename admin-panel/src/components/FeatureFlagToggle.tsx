@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { toggleFeatureFlag } from "@/lib/admin/settings";
 
 // Optimistic On/Off switch. Clicking flips the visual immediately (useOptimistic)
@@ -26,15 +26,23 @@ export function FeatureFlagToggle({
 }) {
   const [isPending, startTransition] = useTransition();
   const [optimisticEnabled, setOptimisticEnabled] = useOptimistic(enabled);
+  // A refusal has to be visible. Some flags depend on others -- the
+  // giveaway cannot run while payments are off -- and without this the
+  // switch appeared to undo itself for no stated reason.
+  const [error, setError] = useState<string | null>(null);
 
   function onToggle() {
     const next = !optimisticEnabled;
+    setError(null);
     startTransition(async () => {
       setOptimisticEnabled(next);
       const fd = new FormData();
       fd.set("__key", flagKey);
       fd.set("__enabled", next ? "true" : "false");
-      await toggleFeatureFlag(fd);
+      const res = await toggleFeatureFlag(fd);
+      // The optimistic value is discarded by the transition either way; what
+      // was missing was the REASON.
+      if (res && res.ok === false) setError(res.error);
     });
   }
 
@@ -59,6 +67,14 @@ export function FeatureFlagToggle({
       >
         <span className="switch-knob" />
       </button>
+      {/* The reason, beside the switch that refused. `role="alert"` because the
+          switch has already snapped back by the time this appears, and a silent
+          revert is what made this look like a bug in the first place. */}
+      {error ? (
+        <span className="form-error" role="alert" style={{ flexBasis: "100%" }}>
+          {error}
+        </span>
+      ) : null}
     </>
   );
 }

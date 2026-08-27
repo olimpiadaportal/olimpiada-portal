@@ -78,11 +78,33 @@ function isValidForKind(kind: SettingEditorKind, parsed: unknown): boolean {
 }
 
 // Toggle a feature flag's `enabled` boolean. Plain form action (no return value).
-export async function toggleFeatureFlag(formData: FormData): Promise<void> {
+export type FlagToggleResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Map a database refusal to a translated sentence.
+ *
+ * Some flags are not independent. `fn_payment_mode_exclusivity` refuses to
+ * enable the giveaway while `payments` is off, because a campaign covers
+ * subscriptions but NOT olympiad packages — a campaign with no payment rail
+ * underneath is a state no resolver expects.
+ *
+ * Never returns the raw Postgres message: it names tables and constraints, and
+ * it is untranslatable.
+ */
+function flagRefusalKey(hint: string | null | undefined, message: string): string {
+  const h = (hint ?? "").trim();
+  if (h === "giveaway_requires_payments" || /giveaway needs payments/i.test(message)) {
+    return "settings.err.giveawayNeedsPayments";
+  }
+  return "err.server";
+}
+
+export async function toggleFeatureFlag(formData: FormData): Promise<FlagToggleResult> {
   const ctx = await requireAdmin();
+  const t = await getT();
   const key = String(formData.get("__key") ?? "").trim();
   const enabled = String(formData.get("__enabled") ?? "") === "true";
-  if (!key) return;
+  if (!key) return { ok: false, error: t("err.server") };
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -90,18 +112,29 @@ export async function toggleFeatureFlag(formData: FormData): Promise<void> {
     .update({ enabled, updated_by: ctx.profileId, updated_at: new Date().toISOString() })
     .eq("key", key);
 
-  if (!error) {
-    // Best-effort audit trail (never fails the mutation — handled inside).
-    // feature_flags keys are text, not uuid → the key goes into metadata.
-    await writeAuditLog({
-      actorProfileId: ctx.profileId,
-      action: "admin.settings.flag_toggle",
-      targetTable: "feature_flags",
-      metadata: { key, enabled },
-    });
+  if (error) {
+    // REPORTED, not swallowed. This used to fall through to revalidatePath,
+    // which snapped the optimistic switch back with no explanation — a refusal
+    // that reads as a bug, and whose obvious response is to try again.
+    console.error("[settings] flag toggle refused");
+    return {
+      ok: false,
+      error: t(flagRefusalKey((error as { hint?: string }).hint, error.message ?? "")),
+    };
   }
 
+  // Best-effort audit trail (never fails the mutation — handled inside).
+  // feature_flags keys are text, not uuid → the key goes into metadata.
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.settings.flag_toggle",
+    targetTable: "feature_flags",
+    metadata: { key, enabled },
+  });
+
   revalidatePath("/settings");
+  revalidatePath("/notifications");
+  return { ok: true };
 }
 
 export type SettingState = { error?: string; ok?: boolean; key?: string } | null;

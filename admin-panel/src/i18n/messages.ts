@@ -769,6 +769,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.err.invalidJson": "Yararsız JSON. Formatı yoxlayın.",
     "settings.err.notFound": "Parametr tapılmadı.",
     "settings.err.missing": "Dəyər tələb olunur.",
+    "settings.err.giveawayNeedsPayments":
+      "Kampaniya dövrü yalnız ödənişlər açıq olduqda başladıla bilər. Əvvəlcə «Kart ödənişləri» açın, sonra kampaniyanı başladın. Səbəb: kampaniya abunəlikləri əhatə edir, olimpiada paketlərini isə yox — onlar ancaq ödəniş reĺsi açıq olanda satıla bilər.",
     "settings.yes": "Bəli",
     "settings.no": "Xeyr",
     "settings.advanced": "Ətraflı (texniki dəyər)",
@@ -2294,6 +2296,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.err.invalidJson": "Invalid JSON. Check the format.",
     "settings.err.notFound": "Setting not found.",
     "settings.err.missing": "A value is required.",
+    "settings.err.giveawayNeedsPayments":
+      "A giveaway can only start while payments are on. Turn on “Card payments” first, then start the campaign. The reason: a campaign covers subscriptions but not olympiad packages, and those can only be sold while the payment rail is open.",
     "settings.yes": "Yes",
     "settings.no": "No",
     "settings.advanced": "Advanced (raw value)",
@@ -3827,6 +3831,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.err.invalidJson": "Некорректный JSON. Проверьте формат.",
     "settings.err.notFound": "Настройка не найдена.",
     "settings.err.missing": "Требуется значение.",
+    "settings.err.giveawayNeedsPayments":
+      "Кампанию можно запустить только при включённых платежах. Сначала включите «Оплату картой», затем запускайте кампанию. Причина: кампания охватывает подписки, но не олимпиадные пакеты — их можно продавать только при открытом платёжном канале.",
     "settings.yes": "Да",
     "settings.no": "Нет",
     "settings.advanced": "Дополнительно (техническое значение)",

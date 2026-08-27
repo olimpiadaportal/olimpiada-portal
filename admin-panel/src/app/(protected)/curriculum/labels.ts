@@ -19,6 +19,7 @@ const STRINGS: Record<Locale, Dict> = {
   az: {
     "nav.curriculum": "Kurikulum",
     "cur.title": "Kurikulum strukturu",
+    "cur.gaps": "Tərcümə gözləyir: {topics} mövzu və {subtopics} alt mövzunun ingilis/rus adı yoxdur ({questions} sual bu bölmələrdədir). Onlar rus və ingilis dilində oxuyan ailələrə azərbaycanca görünəcək.",
     "cur.subtitle":
       "Fənn, mövzu və alt mövzuları bir ağacda idarə edin. Mövzunun rübü onun bütün alt mövzularına və suallarına tətbiq olunur.",
 
@@ -129,6 +130,7 @@ const STRINGS: Record<Locale, Dict> = {
   en: {
     "nav.curriculum": "Curriculum",
     "cur.title": "Curriculum structure",
+    "cur.gaps": "Awaiting translation: {topics} topics and {subtopics} sub-topics have no English/Russian name ({questions} questions sit under them). They will appear in Azerbaijani to families reading in English or Russian.",
     "cur.subtitle":
       "Manage subjects, topics and subtopics in one tree. A topic's term applies to all of its subtopics and questions.",
 
@@ -230,6 +232,7 @@ const STRINGS: Record<Locale, Dict> = {
   ru: {
     "nav.curriculum": "Учебная программа",
     "cur.title": "Структура учебной программы",
+    "cur.gaps": "Ожидают перевода: у {topics} тем и {subtopics} подтем нет английского/русского названия (под ними {questions} вопросов). Для семей, читающих по-русски или по-английски, они будут показаны на азербайджанском.",
     "cur.subtitle":
       "Управляйте предметами, темами и подтемами в одном дереве. Четверть темы распространяется на все её подтемы и вопросы.",
 

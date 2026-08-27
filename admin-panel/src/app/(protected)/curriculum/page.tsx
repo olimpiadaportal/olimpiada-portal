@@ -159,7 +159,12 @@ export default async function CurriculumPage({
     : "";
 
   // ---- Catalogs ------------------------------------------------------------
-  const [{ data: subjectRows }, { data: gradeRows }] = await Promise.all([
+  const [{ data: gaps }, { data: subjectRows }, { data: gradeRows }] = await Promise.all([
+    // How many rows still have no en/ru name (migration 152). A subtopic is
+    // created in Azerbaijani and translated in a LATER step, which is how the
+    // team actually works — but nothing showed the backlog, so it reached 604
+    // rows in ten days unnoticed. One number, at the top, is the whole fix.
+    db.rpc("curriculum_translation_gaps"),
     db.from("subjects").select("id, name, status").order("name").range(0, 499),
     db.from("grades").select("id, name, level").order("level").range(0, 99),
   ]);
@@ -383,6 +388,23 @@ export default async function CurriculumPage({
         <h1>{lt("cur.title")}</h1>
         <p className="muted">{lt("cur.subtitle")}</p>
       </div>
+
+      {/* Shown only when there IS a backlog: a permanent "0 missing" badge is
+          noise, and noise is what a warning has to avoid to stay readable. */}
+      {(() => {
+        const g = (gaps ?? {}) as Record<string, number>;
+        const subs = Number(g.subtopics_missing ?? 0);
+        const tops = Number(g.topics_missing ?? 0);
+        if (subs + tops === 0) return null;
+        return (
+          <p className="form-hint" role="status">
+            {lt("cur.gaps")
+              .replace("{topics}", String(tops))
+              .replace("{subtopics}", String(subs))
+              .replace("{questions}", String(Number(g.questions_affected ?? 0)))}
+          </p>
+        );
+      })()}
 
       <FilterBar
         basePath="/curriculum"

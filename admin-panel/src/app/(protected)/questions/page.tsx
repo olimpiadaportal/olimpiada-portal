@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { PendingLink } from "@/components/PendingLink";
 import { redirect } from "next/navigation";
@@ -20,6 +21,7 @@ import { NewQuestionModal } from "@/components/NewQuestionModal";
 import {
   loadQuestionOptions,
   loadQuestionTaxonomy,
+  type QuestionTaxonomy,
 } from "@/lib/admin/question-options";
 import {
   mergeLocalDict,
@@ -51,6 +53,10 @@ const REVIEW_FILTERS = ["optionE", "needsTerm"] as const;
 const TERM_FILTERS = ["1", "2", "3", "4", "none"] as const;
 // Sort order. "" (default) = newest first; the Rüb column header cycles
 // term_asc → term_desc → default.
+// Shared by the shell's option-E scan and the child's text search: both cap
+// their `.in()` id lists at the same URL-safe size.
+const MAX_IN_IDS = 200;
+
 const SORTS = ["term_asc", "term_desc"] as const;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -130,38 +136,6 @@ export default async function QuestionsPage({
   // and refuses an olympiad-pool question regardless of what arrives here.
   const editQuestionId = uuidParam("edit");
 
-  // ---- Text search: resolve matching question ids first ------------------
-  // supabase-js cannot filter the parent by an embedded table reliably without
-  // an inner join, so we query question_translations directly, then .in() on
-  // the main query. Empty match list short-circuits to an empty result.
-  //
-  // Every id resolved here is sent back as a `.in()` list in the URL of the
-  // main query. A uuid costs ~37 bytes there, so 1000 matches is a ~37 KB URL —
-  // far past what the request line accepts. That is why a BROAD search used to
-  // render "0–0 of 0": the list query was rejected outright, the error was
-  // discarded, and an empty table looked like "this word appears nowhere".
-  // Capping to a URL-safe size makes the request succeed, and the cap is
-  // REPORTED rather than hidden — the old "of N" total was the count of the
-  // truncated id set, which is a number that describes nothing.
-  const MAX_IN_IDS = 200;
-  let searchIds: string[] | null = null;
-  let searchCapped = false;
-  const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
-  if (escaped) {
-    const { data: trs, error: trsErr } = await supabase
-      .from("question_translations")
-      .select("question_id")
-      .ilike("body", `%${escaped}%`)
-      .limit(MAX_IN_IDS + 1);
-    if (trsErr) console.error("[admin] question search failed", trsErr.code ?? "unknown");
-    const all = Array.from(
-      new Set(((trs ?? []) as { question_id: string }[]).map((r) => r.question_id)),
-    );
-    searchCapped = all.length > MAX_IN_IDS;
-    searchIds = all.slice(0, MAX_IN_IDS);
-  }
-  const emptySearch = searchIds !== null && searchIds.length === 0;
-
   // ---- Review chips: server-computed candidate sets -----------------------
   // "Needs option E" = in_review general-bank questions holding exactly 4
   // options (the migration-055 demotions). Computed via the embedded count so
@@ -189,82 +163,6 @@ export default async function QuestionsPage({
   }
   const emptyOptionE = review === "optionE" && optionEIds.length === 0;
 
-  const from = (page - 1) * size;
-  const to = from + size - 1;
-
-  const loadRows = async (): Promise<{
-    rows: any[];
-    count: number;
-    failed: boolean;
-  }> => {
-    if (emptySearch || emptyOptionE) return { rows: [], count: 0, failed: false };
-    let qb = supabase
-      .from("questions")
-      .select(
-        "id, status, primary_locale, term, created_at, subjects(name), grades(name), topics(name), question_translations(locale, body), question_explanations(locale)",
-        { count: "exact" },
-      )
-      // PRIVATE olympiad-package questions are excluded from the general list.
-      .is("olympiad_package_id", null);
-    if (searchIds) qb = qb.in("id", searchIds);
-    if (review === "optionE") qb = qb.in("id", optionEIds);
-    if (review === "needsTerm") qb = qb.is("term", null);
-    if (subject) qb = qb.eq("subject_id", subject);
-    if (topic) qb = qb.eq("topic_id", topic);
-    if (subtopic) qb = qb.eq("subtopic_id", subtopic);
-    if (grade) qb = qb.eq("grade_id", grade);
-    if (status) qb = qb.eq("status", status);
-    // Rüb filter (whitelisted above): "none" = the legacy NULL-term rows.
-    if (term === "none") qb = qb.is("term", null);
-    else if (term) qb = qb.eq("term", Number(term));
-    // Sorting. NULL terms always sort LAST so a term-sorted list opens on real
-    // content.
-    if (sort === "term_asc") {
-      qb = qb.order("term", { ascending: true, nullsFirst: false });
-    } else if (sort === "term_desc") {
-      qb = qb.order("term", { ascending: false, nullsFirst: false });
-    }
-    // `id` LAST, and it is not decoration. `created_at` was described here as
-    // "the tiebreaker so paging is deterministic", but it is not UNIQUE: a bulk
-    // import stamps one timestamp across the whole file, so thousands of rows
-    // tie. PostgreSQL may then order tied rows differently between the queries
-    // that serve page 3 and page 4 — the same question appears twice while
-    // another never appears at all. Reviewing a status page by page silently
-    // skipped questions forever, and no counter could reveal it. A unique final
-    // key makes the total order deterministic, which is what `.range()` needs
-    // to be a correct pager. Sorting by Rüb made it worse: a whole imported
-    // file ties on BOTH term and created_at.
-    const { data, count, error } = await qb
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, to);
-    // A discarded error rendered as "there are no questions": an RLS denial, a
-    // statement timeout or a rejected oversized request all produced a calm,
-    // confident empty state, and the admin concluded the bank was empty.
-    if (error) {
-      console.error("[admin] questions list failed", error.code ?? "unknown");
-      return { rows: [], count: 0, failed: true };
-    }
-    return { rows: (data ?? []) as any[], count: count ?? 0, failed: false };
-  };
-
-  // ONE retry, and only for the list.
-  //
-  // The failure this recovers from is a STATEMENT TIMEOUT: `authenticated` runs
-  // with statement_timeout = 8s, and a bulk import writing 100-300 questions a
-  // minute into this same table is enough to push a cold `count: exact` past it.
-  // That is transient by construction — the previous behaviour turned it into a
-  // dead end whose only escape was reloading the page by hand.
-  //
-  // Deliberately ONE retry and no backoff loop: if the second attempt also
-  // fails, something is wrong that retrying will not fix, and the admin is
-  // better served by the honest error than by a page that hangs twice as long.
-  const loadRowsWithRetry = async () => {
-    const first = await loadRows();
-    if (!first.failed) return first;
-    return await loadRows();
-  };
-
   // The eight `count: exact` helpers that used to live here are GONE, replaced
   // by the single admin_question_bank_stats() call below (migration 148).
   //
@@ -276,7 +174,6 @@ export default async function QuestionsPage({
   // that RPC, not in another round trip.
 
   const [
-    main,
     { data: subjects },
     { data: grades },
     { data: qtypes },
@@ -286,7 +183,6 @@ export default async function QuestionsPage({
     selectOptions,
     editorTaxonomy,
   ] = await Promise.all([
-    loadRowsWithRetry(),
     supabase.from("subjects").select("id, name, status").order("name"),
     supabase.from("grades").select("id, name, level").order("level"),
     supabase
@@ -319,57 +215,7 @@ export default async function QuestionsPage({
   const explEnCount = num("expl_en");
   const explRuCount = num("expl_ru");
 
-  const list = main.rows;
-  const total = main.count;
   const fullDict = mergeLocalDict(rawDict, locale);
-
-  const langName = (loc: string): string =>
-    (locales as readonly string[]).includes(loc)
-      ? localeNames[loc as Locale]
-      : loc;
-
-  const bodySnippet = (r: any): string => {
-    const tr = (r.question_translations ?? []).find(
-      (x: any) => x.locale === r.primary_locale,
-    );
-    const b: string = tr?.body ?? "";
-    if (!b) return "—";
-    return b.length > 60 ? b.slice(0, 60) + "…" : b;
-  };
-
-  // Which explanation translations a row is still missing. An empty result is
-  // reported as "no explanation" rather than "missing EN/RU": a Content Manager
-  // without content.review cannot SEE another author's in-review explanations
-  // (qexpl_select), and claiming those are untranslated would be a guess. Same
-  // rule the student-facing fallback label uses — never assert a gap we cannot
-  // observe.
-  const explMissing = (r: any): string[] => {
-    const have = new Set(
-      ((r.question_explanations ?? []) as { locale: string }[]).map((x) => x.locale),
-    );
-    if (!have.has("az")) return [];
-    return (["en", "ru"] as const).filter((l) => !have.has(l)).map((l) => l.toUpperCase());
-  };
-
-  const display: QuestionRow[] = list.map((r) => ({
-    id: r.id,
-    subject: r.subjects?.name ?? "—",
-    grade: r.grades?.name ?? "—",
-    lang: langName(r.primary_locale),
-    // Embedded topics.name via questions.topic_id (NULL topic → em dash).
-    topic: r.topics?.name ?? "—",
-    term: r.term != null ? t(`term.${r.term}`) : t("term.review"),
-    // Raw 1..4 (or null) drives the colour-coded badge class.
-    termValue: r.term == null ? null : Number(r.term),
-    needsTerm: r.term == null,
-    body: bodySnippet(r),
-    // "" = nothing observable to report; otherwise the missing locale codes.
-    explHas: ((r.question_explanations ?? []) as { locale: string }[]).some(
-      (x) => x.locale === "az",
-    ),
-    explMissing: explMissing(r),
-    status: r.status,
-  }));
 
   // The filter bar's cascade reuses loadQuestionTaxonomy's tree instead of
   // re-querying: it is already EXAM-scoped (olympiad bulk imports create
@@ -444,22 +290,6 @@ export default async function QuestionsPage({
     return qs ? `/questions?${qs}` : "/questions";
   };
 
-  // ---- Pager numbers -------------------------------------------------------
-  const totalPages = Math.max(1, Math.ceil(total / size));
-  // `page` was clamped at the BOTTOM (>= 1) but never at the top, so a bulk
-  // action that emptied the last page left the admin stranded: an empty table
-  // reading "Showing 0–2875 of 2875" with no page number highlighted, which
-  // reads as "the whole bank vanished". Send them to the last page that has
-  // rows instead — every other search param is preserved by href().
-  if (page > totalPages && total > 0) redirect(href({ page: String(totalPages) }));
-  const items = pageItems(page, totalPages);
-  const shownFrom = list.length === 0 ? 0 : from + 1;
-  const shownTo = from + list.length;
-  const showingLine = t("qpage.showing")
-    .replace("{from}", String(shownFrom))
-    .replace("{to}", String(shownTo))
-    .replace("{total}", String(total));
-
   // Strings for the filter bar (the table now receives fullDict instead — it
   // hosts the edit modal, which needs the whole question-flow dictionary).
   const keys = [
@@ -517,6 +347,7 @@ export default async function QuestionsPage({
     term: null,
     page: null,
   });
+  const resultsKey = resultsKeyOf(sp);
   const anyFilter = Boolean(q || subject || topic || subtopic || grade || status || review || term);
 
   return (
@@ -628,6 +459,322 @@ export default async function QuestionsPage({
       {/* fullDict (not the slim `dict`): the table hosts the edit modal, whose
           QuestionForm needs the complete question-flow dictionary — same one
           the create modal receives. */}
+      {/* THE LIST IS ITS OWN SUSPENSE BOUNDARY.
+
+          The route-level loading.tsx was DELETED in the same change. It wrapped
+          the entire segment, so on every page step the header, stat cards, chips
+          and filter bar were replaced by a skeleton for a query that only
+          affects 25 table rows — the outer boundary always wins over an inner
+          one. The shell no longer awaits the list, so it renders on its own
+          (single) stats call and only the table area below suspends.
+          Everything above this line — stat cards, chips, filter bar — is
+          independent of ?page, so it must not disappear when the admin steps
+          through pages. `key` is what makes the boundary re-suspend on a
+          same-route navigation: without it React keeps the resolved child
+          mounted and the previous page's rows sit there looking current. */}
+      <Suspense key={resultsKey} fallback={<ResultsSkeleton />}>
+        <QuestionResults
+          sp={sp}
+          ctx={{ isAdmin: ctx.isAdmin, permissions: ctx.permissions }}
+          taxonomy={taxonomy}
+          fullDict={fullDict}
+          selectOptions={selectOptions}
+          editorTaxonomy={editorTaxonomy}
+          optionEIds={optionEIds}
+          optionECapped={optionECapped}
+          editQuestionId={editQuestionId}
+        />
+      </Suspense>
+    </div>
+  );
+}
+
+/** Only the params the LIST depends on. A change to any of these re-suspends. */
+function resultsKeyOf(sp: SearchParams): string {
+  return [
+    "q", "subject", "topic", "subtopic", "grade", "status", "review", "term",
+    "sort", "page", "size",
+  ].map((k) => first(sp, k)).join("|");
+}
+
+/** Table-shaped placeholder. Deliberately NOT the whole-page skeleton. */
+function ResultsSkeleton() {
+  return (
+    <section className="card" aria-busy="true">
+      <div className="qrep-skel-rows">
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((row) => (
+          <div key={row} className="loc-skel loc-skel-row" />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The list, its pager, and nothing else.
+//
+// Split out of QuestionsPage so that stepping through pages re-renders THIS and
+// leaves the shell alone. It re-derives the validated params from `sp` rather
+// than receiving fifteen props: the parsing is pure, cheap, and duplicating the
+// PARSE is far safer than duplicating the VALIDATION rules in two places.
+//
+// The expensive shell-side loads (taxonomy, dictionary, editor options) arrive
+// as props because they are page-independent — re-fetching them here would put
+// back exactly the work this split removes.
+// ---------------------------------------------------------------------------
+async function QuestionResults({
+  sp,
+  ctx,
+  taxonomy,
+  fullDict,
+  selectOptions,
+  editorTaxonomy,
+  optionEIds,
+  optionECapped,
+  editQuestionId,
+}: {
+  sp: SearchParams;
+  ctx: { isAdmin: boolean; permissions: string[] };
+  taxonomy: Taxonomy;
+  fullDict: Record<string, string>;
+  selectOptions: Record<string, { value: string; label: string }[]>;
+  editorTaxonomy: QuestionTaxonomy;
+  optionEIds: string[];
+  optionECapped: boolean;
+  editQuestionId: string;
+}) {
+  const locale = await getLocale();
+  const t = withLocalStrings(await getT(), locale);
+  const supabase = await createClient();
+
+  const sizeRaw = Number(first(sp, "size"));
+  const size = (PAGE_SIZES as readonly number[]).includes(sizeRaw) ? sizeRaw : 25;
+  const pageRaw = Math.floor(Number(first(sp, "page")));
+  const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
+  const q = first(sp, "q").trim().slice(0, 200);
+  const uuidParam = (key: string): string => {
+    const v = first(sp, key).trim();
+    return UUID_RE.test(v) ? v : "";
+  };
+  const subject = uuidParam("subject");
+  const topic = uuidParam("topic");
+  const subtopic = uuidParam("subtopic");
+  const grade = uuidParam("grade");
+  const statusRaw = first(sp, "status");
+  const status = (LIFECYCLE_STATUSES as readonly string[]).includes(statusRaw) ? statusRaw : "";
+  const reviewRaw = first(sp, "review");
+  const review = (REVIEW_FILTERS as readonly string[]).includes(reviewRaw) ? reviewRaw : "";
+  const termRaw = first(sp, "term");
+  const term = (TERM_FILTERS as readonly string[]).includes(termRaw) ? termRaw : "";
+  const sortRaw = first(sp, "sort");
+  const sort = (SORTS as readonly string[]).includes(sortRaw) ? sortRaw : "";
+
+  const current: Record<string, string> = {
+    q, subject, topic, subtopic, grade, status, review, term, sort,
+    size: String(size),
+    page: String(page),
+  };
+  const href = (overrides: Record<string, string | null>): string => {
+    const merged: Record<string, string> = {};
+    for (const [k, v] of Object.entries(current)) if (v) merged[k] = v;
+    for (const [k, v] of Object.entries(overrides)) {
+      if (v === null || v === "") delete merged[k];
+      else merged[k] = v;
+    }
+    if (merged.size === "25") delete merged.size;
+    if (merged.page === "1") delete merged.page;
+    const qs = new URLSearchParams(merged).toString();
+    return qs ? `/questions?${qs}` : "/questions";
+  };
+
+  const emptyOptionE = review === "optionE" && optionEIds.length === 0;
+
+  // ---- Text search: resolve matching question ids first ------------------
+  // supabase-js cannot filter the parent by an embedded table reliably without
+  // an inner join, so we query question_translations directly, then .in() on
+  // the main query. Empty match list short-circuits to an empty result.
+  //
+  // Every id resolved here is sent back as a `.in()` list in the URL of the
+  // main query. A uuid costs ~37 bytes there, so 1000 matches is a ~37 KB URL —
+  // far past what the request line accepts. That is why a BROAD search used to
+  // render "0–0 of 0": the list query was rejected outright, the error was
+  // discarded, and an empty table looked like "this word appears nowhere".
+  // Capping to a URL-safe size makes the request succeed, and the cap is
+  // REPORTED rather than hidden — the old "of N" total was the count of the
+  // truncated id set, which is a number that describes nothing.
+  let searchIds: string[] | null = null;
+  let searchCapped = false;
+  const escaped = sanitizeSearchTerm(q); // M18: shared sanitizer
+  if (escaped) {
+    const { data: trs, error: trsErr } = await supabase
+      .from("question_translations")
+      .select("question_id")
+      .ilike("body", `%${escaped}%`)
+      .limit(MAX_IN_IDS + 1);
+    if (trsErr) console.error("[admin] question search failed", trsErr.code ?? "unknown");
+    const all = Array.from(
+      new Set(((trs ?? []) as { question_id: string }[]).map((r) => r.question_id)),
+    );
+    searchCapped = all.length > MAX_IN_IDS;
+    searchIds = all.slice(0, MAX_IN_IDS);
+  }
+  const emptySearch = searchIds !== null && searchIds.length === 0;
+
+  const from = (page - 1) * size;
+  const to = from + size - 1;
+
+  const loadRows = async (): Promise<{
+    rows: any[];
+    count: number;
+    failed: boolean;
+  }> => {
+    if (emptySearch || emptyOptionE) return { rows: [], count: 0, failed: false };
+    let qb = supabase
+      .from("questions")
+      .select(
+        "id, status, primary_locale, term, created_at, subjects(name), grades(name), topics(name), question_translations(locale, body), question_explanations(locale)",
+        { count: "exact" },
+      )
+      // PRIVATE olympiad-package questions are excluded from the general list.
+      .is("olympiad_package_id", null);
+    if (searchIds) qb = qb.in("id", searchIds);
+    if (review === "optionE") qb = qb.in("id", optionEIds);
+    if (review === "needsTerm") qb = qb.is("term", null);
+    if (subject) qb = qb.eq("subject_id", subject);
+    if (topic) qb = qb.eq("topic_id", topic);
+    if (subtopic) qb = qb.eq("subtopic_id", subtopic);
+    if (grade) qb = qb.eq("grade_id", grade);
+    if (status) qb = qb.eq("status", status);
+    // Rüb filter (whitelisted above): "none" = the legacy NULL-term rows.
+    if (term === "none") qb = qb.is("term", null);
+    else if (term) qb = qb.eq("term", Number(term));
+    // Sorting. NULL terms always sort LAST so a term-sorted list opens on real
+    // content.
+    if (sort === "term_asc") {
+      qb = qb.order("term", { ascending: true, nullsFirst: false });
+    } else if (sort === "term_desc") {
+      qb = qb.order("term", { ascending: false, nullsFirst: false });
+    }
+    // `id` LAST, and it is not decoration. `created_at` was described here as
+    // "the tiebreaker so paging is deterministic", but it is not UNIQUE: a bulk
+    // import stamps one timestamp across the whole file, so thousands of rows
+    // tie. PostgreSQL may then order tied rows differently between the queries
+    // that serve page 3 and page 4 — the same question appears twice while
+    // another never appears at all. Reviewing a status page by page silently
+    // skipped questions forever, and no counter could reveal it. A unique final
+    // key makes the total order deterministic, which is what `.range()` needs
+    // to be a correct pager. Sorting by Rüb made it worse: a whole imported
+    // file ties on BOTH term and created_at.
+    const { data, count, error } = await qb
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
+    // A discarded error rendered as "there are no questions": an RLS denial, a
+    // statement timeout or a rejected oversized request all produced a calm,
+    // confident empty state, and the admin concluded the bank was empty.
+    if (error) {
+      console.error("[admin] questions list failed", error.code ?? "unknown");
+      return { rows: [], count: 0, failed: true };
+    }
+    return { rows: (data ?? []) as any[], count: count ?? 0, failed: false };
+  };
+
+  // ONE retry, and only for the list.
+  //
+  // The failure this recovers from is a STATEMENT TIMEOUT: `authenticated` runs
+  // with statement_timeout = 8s, and a bulk import writing 100-300 questions a
+  // minute into this same table is enough to push a cold `count: exact` past it.
+  // That is transient by construction — the previous behaviour turned it into a
+  // dead end whose only escape was reloading the page by hand.
+  //
+  // Deliberately ONE retry and no backoff loop: if the second attempt also
+  // fails, something is wrong that retrying will not fix, and the admin is
+  // better served by the honest error than by a page that hangs twice as long.
+  const loadRowsWithRetry = async () => {
+    const first = await loadRows();
+    if (!first.failed) return first;
+    return await loadRows();
+  };
+
+  const main = await loadRowsWithRetry();
+  const list = main.rows;
+  const total = main.count;
+
+  const langName = (loc: string): string =>
+    (locales as readonly string[]).includes(loc)
+      ? localeNames[loc as Locale]
+      : loc;
+
+  const bodySnippet = (r: any): string => {
+    const tr = (r.question_translations ?? []).find(
+      (x: any) => x.locale === r.primary_locale,
+    );
+    const b: string = tr?.body ?? "";
+    if (!b) return "—";
+    return b.length > 60 ? b.slice(0, 60) + "…" : b;
+  };
+
+  // Which explanation translations a row is still missing. An empty result is
+  // reported as "no explanation" rather than "missing EN/RU": a Content Manager
+  // without content.review cannot SEE another author's in-review explanations
+  // (qexpl_select), and claiming those are untranslated would be a guess. Same
+  // rule the student-facing fallback label uses — never assert a gap we cannot
+  // observe.
+  const explMissing = (r: any): string[] => {
+    const have = new Set(
+      ((r.question_explanations ?? []) as { locale: string }[]).map((x) => x.locale),
+    );
+    if (!have.has("az")) return [];
+    return (["en", "ru"] as const).filter((l) => !have.has(l)).map((l) => l.toUpperCase());
+  };
+
+  const display: QuestionRow[] = list.map((r) => ({
+    id: r.id,
+    subject: r.subjects?.name ?? "—",
+    grade: r.grades?.name ?? "—",
+    lang: langName(r.primary_locale),
+    // Embedded topics.name via questions.topic_id (NULL topic → em dash).
+    topic: r.topics?.name ?? "—",
+    term: r.term != null ? t(`term.${r.term}`) : t("term.review"),
+    // Raw 1..4 (or null) drives the colour-coded badge class.
+    termValue: r.term == null ? null : Number(r.term),
+    needsTerm: r.term == null,
+    body: bodySnippet(r),
+    // "" = nothing observable to report; otherwise the missing locale codes.
+    explHas: ((r.question_explanations ?? []) as { locale: string }[]).some(
+      (x) => x.locale === "az",
+    ),
+    explMissing: explMissing(r),
+    status: r.status,
+  }));
+
+  // ---- Pager numbers -------------------------------------------------------
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  // `page` was clamped at the BOTTOM (>= 1) but never at the top, so a bulk
+  // action that emptied the last page left the admin stranded: an empty table
+  // reading "Showing 0–2875 of 2875" with no page number highlighted, which
+  // reads as "the whole bank vanished". Send them to the last page that has
+  // rows instead — every other search param is preserved by href().
+  if (page > totalPages && total > 0) redirect(href({ page: String(totalPages) }));
+  const items = pageItems(page, totalPages);
+  const shownFrom = list.length === 0 ? 0 : from + 1;
+  const shownTo = from + list.length;
+  const showingLine = t("qpage.showing")
+    .replace("{from}", String(shownFrom))
+    .replace("{to}", String(shownTo))
+    .replace("{total}", String(total));
+
+
+  const anyFilter = Boolean(q || subject || topic || subtopic || grade || status || review || term);
+  const nextSort = sort === "term_asc" ? "term_desc" : sort === "term_desc" ? null : "term_asc";
+  const termSortHref = href({ sort: nextSort, page: null });
+  const clearHref = href({
+    q: null, subject: null, topic: null, subtopic: null, grade: null,
+    status: null, review: null, term: null, page: null,
+  });
+
+  return (
+    <>
       {/* A failed list query used to be indistinguishable from an empty bank.
           Say so instead: an RLS denial, a statement timeout or a rejected
           oversized request are all things the admin can act on or report, and
@@ -699,6 +846,6 @@ export default async function QuestionsPage({
           )}
         </nav>
       </div>
-    </div>
+    </>
   );
 }

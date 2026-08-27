@@ -83,11 +83,12 @@ export const NAV: NavGroup[] = [
       // Content Manager through requirePermission, which CLAUDE.md forbids in
       // payment modules. requireAdmin() inside every page is the boundary.
       { label: "nav.payments", href: "/payments", adminOnly: true },
-      // Migration 127: the queue of payments we took and could not deliver on.
-      // It has its own entry rather than living inside /subscriptions because a
-      // family waiting on their money is not a subscription-lifecycle task, and
-      // because an alarm reached through two clicks is an alarm people miss.
-      { label: "nav.checkoutReview", href: "/subscriptions/checkouts", adminOnly: true },
+      // Checkout review has NO sidebar entry (owner, 2026-08-27). The page and
+      // its route are untouched — /payments links straight to it from the
+      // attention block, which is where an admin is already looking when a
+      // family is waiting on their money. This deliberately reverses the
+      // migration-127 reasoning that gave it top-level placement; if that queue
+      // starts being missed, put the entry back rather than adding a second one.
       { label: "nav.leaderboard", href: "/leaderboard", adminOnly: true },
       // Administrator-only (requires notifications.send, which only admins hold —
       // Content Managers never see or reach it, same posture as News/Olympiad).

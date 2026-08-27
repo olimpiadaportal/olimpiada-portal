@@ -1464,6 +1464,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.cascade": "Mövzu / alt mövzu / günlük tur",
     "del.codeLabel": "Təsdiq kodu",
     "del.codeHint": "Davam etmək üçün bu kodu yazın:",
+    "del.subject.wordLabel": "Təsdiq sözü",
+    "del.subject.wordHint": "Silmək üçün bu sözü eyni ilə yazın:",
     "del.purgeTitle": "Sual bankını təmizlə",
     "del.purgeDesc":
       "Fənnin ümumi sualları silinir (cavablandırılmışlar arxivlənir). Fənn, mövzular və alt mövzular yerində qalır.",
@@ -2990,6 +2992,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.cascade": "Topics / subtopics / daily rounds",
     "del.codeLabel": "Confirmation code",
     "del.codeHint": "Type this code to continue:",
+    "del.subject.wordLabel": "Confirmation word",
+    "del.subject.wordHint": "Type this word exactly to delete:",
     "del.purgeTitle": "Clear the question bank",
     "del.purgeDesc":
       "Deletes the subject's general questions (answered ones are archived). The subject, its topics and its subtopics stay exactly as they are.",
@@ -4532,6 +4536,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.cascade": "Темы / подтемы / ежедневные раунды",
     "del.codeLabel": "Код подтверждения",
     "del.codeHint": "Введите этот код, чтобы продолжить:",
+    "del.subject.wordLabel": "Слово подтверждения",
+    "del.subject.wordHint": "Введите это слово точно так же, чтобы удалить:",
     "del.purgeTitle": "Очистить банк вопросов",
     "del.purgeDesc":
       "Удаляет общие вопросы предмета (отвеченные архивируются). Сам предмет, его темы и подтемы остаются на месте.",

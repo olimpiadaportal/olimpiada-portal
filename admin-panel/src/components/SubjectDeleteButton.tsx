@@ -18,6 +18,7 @@ import {
   DestructiveConfirmDialog,
   type DestructiveConfirmStrings,
 } from "@/components/DestructiveConfirm";
+import { SUBJECT_DELETE_WORD } from "@/lib/admin/deletion-confirm";
 
 export type SubjectDeleteStrings = DestructiveConfirmStrings & {
   questions: string;
@@ -41,7 +42,15 @@ export function SubjectDeleteButton({
     <DestructiveConfirmDialog<SubjectDeletionPreview>
       strings={strings}
       loadPreview={() => loadSubjectDeletionPreview(id)}
-      code={(p) => p.code}
+      // The typed token is the WORD, not the subject's code (owner spec). The
+      // dialog keeps showing the subject name, its question count and its
+      // warnings above the input, because a fixed word cannot prove WHICH row
+      // is being deleted the way a per-row code could.
+      //
+      // The server no longer trusts this string as the code: it validates the
+      // word and then reads the row's own code itself, so the RPC's under-lock
+      // comparison is now unreachable from the browser.
+      code={() => SUBJECT_DELETE_WORD}
       // The purge empties a live subject's bank without being blocked for it —
       // migration 111's one deliberately unblocked destructive scope — so the
       // checkbox is the second gate the token cannot be.

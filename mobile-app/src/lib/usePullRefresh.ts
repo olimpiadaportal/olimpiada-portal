@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n/useT";
 import { showToast } from "@/features/toast/toastStore";
+import { useRefreshOnFocus } from "@/lib/queryFocus";
 
 /** Anything a pull can re-read: a react-query result, or a bare thunk. */
 export type RefreshSource =
@@ -92,6 +93,38 @@ export function usePullRefresh(sources: RefreshSource[]): PullRefresh {
       showToast(bad ? t("mob.refresh.failed") : t("mob.refreshed"), bad ? "error" : "ok");
     })();
   }, [t]);
+
+  /**
+   * The SILENT counterpart, fired when the screen regains focus.
+   *
+   * Deliberately not `onRefresh`: that one owns the spinner and always ends in
+   * a toast, and a toast the user did not ask for on every tab switch is worse
+   * than stale data. This re-reads the same sources, shows nothing, and says
+   * nothing — react-query keeps the previous data on screen and swaps it when
+   * the response lands, so the update is invisible unless something changed.
+   *
+   * It shares `busy` with the pull, so a focus landing mid-pull is a no-op
+   * rather than a second round of identical requests. Failures are swallowed on
+   * purpose: this was not a user action, so there is nothing to report — the
+   * screen keeps showing the last good data and the next pull will surface a
+   * real problem with its toast.
+   */
+  const onFocusRefresh = useCallback(() => {
+    if (busy.current) return;
+    busy.current = true;
+    void (async () => {
+      try {
+        await Promise.allSettled(latest.current.map(invoke));
+      } finally {
+        busy.current = false;
+      }
+    })();
+  }, []);
+
+  // Every screen already using this hook gets tab-switch refresh from here —
+  // no per-screen wiring, and no screen can be forgotten. App-foreground
+  // refresh is handled separately by react-query's focusManager (lib/queryFocus).
+  useRefreshOnFocus(onFocusRefresh);
 
   return { refreshing, onRefresh };
 }

@@ -25,7 +25,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { getT } from "@/i18n/server";
 import { fillTemplate } from "@/lib/admin/olympiad-per-attempt";
 import { removeMediaAssets } from "@/lib/admin/media-sweep";
-import { confirmationTokenMatches } from "@/lib/admin/deletion-confirm";
+import { SUBJECT_DELETE_WORD } from "@/lib/admin/deletion-confirm";
 import {
   deletionBlockText,
   parseDeletionBlocks,
@@ -211,12 +211,13 @@ export async function purgeSubjectQuestions(
   // Refused BEFORE the RPC: an unconfirmed purge must not reach the function
   // that empties a question bank at all. The database compares the token again
   // under its own lock — that comparison, not this one, is the control.
-  if ((await confirmationTokenMatches(supabase, "subjects", id, code)) === false) {
-    return await tokenRefusal();
-  }
+  // Same gate as the delete branch: both live in ONE dialog, so both are
+  // confirmed by the same typed word and both resolve the real code server-side.
+  const realCode = await resolveSubjectCode(supabase, id, code);
+  if (realCode === null) return await tokenRefusal();
   const { data, error } = await supabase.rpc("admin_purge_subject_questions", {
     p_subject_id: id,
-    p_expected_code: code,
+    p_expected_code: realCode,
   });
   if (error || !data) return await toFailure(error, "subject question purge");
 
@@ -250,6 +251,36 @@ export async function purgeSubjectQuestions(
  * database BEFORE anything is destroyed, so the reassuring outcome never
  * arrives after the bank is gone.
  */
+/**
+ * The confirmation gate for both destructive subject branches.
+ *
+ * Returns the row's OWN code (what the RPC compares under its lock) only after
+ * the admin has typed the literal word. The browser never supplies the code, so
+ * a caller who posts this endpoint directly cannot confirm anything by knowing
+ * a subject's code — they have to type the word AND the row still has to exist.
+ *
+ * null = refuse. The caller turns that into the generic mismatch message; the
+ * reason is never distinguished for the client.
+ */
+async function resolveSubjectCode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  typed: string,
+): Promise<string | null> {
+  if (typed !== SUBJECT_DELETE_WORD) return null;
+  const { data, error } = await supabase
+    .from("subjects")
+    .select("code")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) {
+    console.error("[admin] subject code lookup failed");
+    return null;
+  }
+  const code = String((data as { code: string }).code ?? "").trim();
+  return code === "" ? null : code;
+}
+
 export async function deleteSubject(
   _prev: SubjectDeletionState,
   formData: FormData,
@@ -263,12 +294,11 @@ export async function deleteSubject(
   if (!UUID_RE.test(id)) return { ok: false, error: t("err.server"), blocks: [] };
 
   const supabase = await createClient();
-  if ((await confirmationTokenMatches(supabase, "subjects", id, code)) === false) {
-    return await tokenRefusal();
-  }
+  const realCode = await resolveSubjectCode(supabase, id, code);
+  if (realCode === null) return await tokenRefusal();
   const { data, error } = await supabase.rpc("admin_delete_subject", {
     p_subject_id: id,
-    p_expected_code: code,
+    p_expected_code: realCode,
   });
   if (error || !data) return await toFailure(error, "subject delete");
 

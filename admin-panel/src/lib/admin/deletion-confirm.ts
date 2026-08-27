@@ -20,6 +20,18 @@ import type { createClient } from "@/lib/supabase/server";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
+/**
+ * The word an admin types to confirm a PERMANENT subject deletion (owner spec,
+ * 2026-08-27). Azerbaijani for "delete".
+ *
+ * Compared case-sensitively against this exact string, so neither "sil" nor a
+ * dotless-I "SIL" passes. The character after S is U+0130 LATIN CAPITAL LETTER
+ * I WITH DOT ABOVE, which is a different codepoint from ASCII "I" — that is
+ * deliberate, and it is why this literal lives here rather than being retyped
+ * at each call site where a lookalike could creep in.
+ */
+export const SUBJECT_DELETE_WORD = "S\u0130L";
+
 /** Tables whose `code` column is a confirmation token. Never a client string. */
 export type ConfirmableTable = "subjects" | "olympiad_packages";
 

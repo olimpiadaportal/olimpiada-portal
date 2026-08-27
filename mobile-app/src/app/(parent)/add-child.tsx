@@ -20,6 +20,7 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { PartyPopper } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
+import { CopyableId } from "@/components/CopyableId";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { StepDots } from "@/components/StepDots";
@@ -326,15 +327,14 @@ export default function AddChildScreen() {
                 >
                   {/* The ID is a number: on 320pt / large font scale it
                       scales to fit, never wraps or truncates. */}
-                  <AppText
-                    variant="mono"
-                    color={tokens.accent}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    style={{ fontSize: 32, fontWeight: "800", letterSpacing: 2 }}
-                  >
-                    {groupChildId(doneId)}
-                  </AppText>
+                  <CopyableId
+                    id={doneId}
+                    display={groupChildId(doneId)}
+                    fontSize={32}
+                    label={t("parent.child.idCopy")}
+                    copiedLabel={t("parent.child.idCopied")}
+                    a11yLabel={t("parent.child.idCopyA11y")}
+                  />
                 </View>
               ) : null}
               <AppText variant="muted" style={{ textAlign: "center" }}>

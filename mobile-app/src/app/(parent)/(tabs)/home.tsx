@@ -10,6 +10,7 @@ import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { ChevronRight, Flame, GraduationCap, Plus, UserRoundPlus } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
+import { CopyableId } from "@/components/CopyableId";
 import { Button } from "@/components/Button";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { Card } from "@/components/Card";
@@ -153,9 +154,13 @@ function ChildCard({
       >
         <AppText variant="eyebrow">{t("parent.dash.childId")}</AppText>
         {child.child_unique_id ? (
-          <AppText variant="mono" style={{ fontSize: 20, fontWeight: "700", letterSpacing: 1 }}>
-            {groupChildId(child.child_unique_id)}
-          </AppText>
+          <CopyableId
+            id={child.child_unique_id}
+            display={groupChildId(child.child_unique_id)}
+            label={t("parent.child.idCopy")}
+              copiedLabel={t("parent.child.idCopied")}
+              a11yLabel={t("parent.child.idCopyA11y")}
+          />
         ) : (
           <AppText variant="label" color={tokens.muted}>
             {t("parent.dash.idPending")}

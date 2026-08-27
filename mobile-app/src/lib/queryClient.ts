@@ -8,7 +8,15 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 60_000,
       retry: 2,
-      refetchOnWindowFocus: false,
+      // TRUE, and it means something now: lib/queryFocus.ts drives React
+      // Query's focusManager from AppState, so "window focus" on this
+      // platform is "the app came back to the foreground". With the flag
+      // false and nothing else in its place, a screen showed whatever it
+      // fetched on mount until the user pulled to refresh.
+      //
+      // Bounded by staleTime above: a foreground within 60s of the last
+      // fetch refetches nothing, so app-switching does not hammer the API.
+      refetchOnWindowFocus: true,
     },
   },
 });

@@ -816,28 +816,43 @@ function RunnerActive({
       style={{ flex: 1, backgroundColor: arena.bg }}
       contentContainerStyle={[pad, { gap: spacing.lg }]}
     >
-      {/* ---- Top bar: title + timer, answered progress, counter + save state ---- */}
+      {/* ---- Top bar: title + timer, answered progress, counter + save state ----
+           WRAPS on a narrow phone. This row holds a title, a rated/practice
+           badge and the timer pill; at 360dp with Azerbaijani copy they do not
+           fit on one line, and the title is the element that was giving way —
+           "Günün raundu" rendered as "Günün ...", which names nothing. The row
+           now wraps the timer onto its own line instead, and the title is
+           allowed two lines before it truncates. */}
       <View style={{ gap: spacing.sm }}>
         <View
           style={{
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
+            rowGap: spacing.sm,
             gap: spacing.md,
           }}
         >
           <View
             style={{
-              flex: 1,
+              // minWidth forces the WRAP: without it flexbox keeps shrinking
+              // this group until the title is an ellipsis, which is exactly what
+              // it did. 200dp is wide enough for "Günün raundu" plus the badge.
+              flexGrow: 1,
+              flexShrink: 1,
+              minWidth: 200,
               flexDirection: "row",
               alignItems: "center",
+              flexWrap: "wrap",
+              rowGap: spacing.xs,
               gap: spacing.sm,
             }}
           >
             <AppText
               variant="title"
               color={arena.ink}
-              numberOfLines={1}
+              numberOfLines={2}
               style={{ flexShrink: 1 }}
             >
               {runTitle}

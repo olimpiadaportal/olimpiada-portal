@@ -49,8 +49,11 @@ function subjectDeleteStrings(t: T): SubjectDeleteStrings {
     irreversible: t("del.irreversible"),
     questions: t("del.questions"),
     cascade: t("del.cascade"),
-    codeLabel: t("del.codeLabel"),
-    codeHint: t("del.codeHint"),
+    // Subject-specific: this dialog asks for the WORD SİL, not the row's code
+    // (owner spec). The shared del.codeLabel/codeHint still describe a code and
+    // are still correct for every other destructive dialog in the panel.
+    codeLabel: t("del.subject.wordLabel"),
+    codeHint: t("del.subject.wordHint"),
     ackLabel: t("del.ackLabel"),
     purgeTitle: t("del.purgeTitle"),
     purgeDesc: t("del.purgeDesc"),

@@ -1,7 +1,7 @@
 {
   "name": "olympiq-mobile",
   "main": "expo-router/entry",
-  "version": "1.12.3",
+  "version": "1.13.0",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -27,6 +27,7 @@
     "@tanstack/react-query": "^5.101.2",
     "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.0",
+    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-device": "~8.0.10",
     "expo-font": "~14.0.12",

@@ -16,6 +16,7 @@ import React, { useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppText } from "@/components/AppText";
+import { CopyableId } from "@/components/CopyableId";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
@@ -44,7 +45,7 @@ import {
 } from "@/features/parent/queries";
 import { KeyRow, Pill, ScreenScroll, childDisplayName } from "@/features/parent/ui";
 
-function IdReveal({ id }: { id: string }) {
+function IdReveal({ id, t }: { id: string; t: (k: string) => string }) {
   const { tokens } = useTheme();
   return (
     <View
@@ -57,17 +58,19 @@ function IdReveal({ id }: { id: string }) {
         paddingHorizontal: spacing.xl,
       }}
     >
-      {/* The ID is a number: on 320pt / large font scale it scales to fit,
-          never wraps or truncates. */}
-      <AppText
-        variant="mono"
-        color={tokens.accent}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        style={{ fontSize: 32, fontWeight: "800", letterSpacing: 2 }}
-      >
-        {groupChildId(id)}
-      </AppText>
+      {/* Tappable: the parent reads this number here more often than anywhere
+          else, and typing eight digits into a child's login by hand is the
+          step they get wrong. Copies the RAW digits, never the spaced display
+          form — pasting "2721 0253" into the login field would fail and the
+          parent would blame the ID. */}
+      <CopyableId
+        id={id}
+        display={groupChildId(id)}
+        fontSize={32}
+        label={t("parent.child.idCopy")}
+        copiedLabel={t("parent.child.idCopied")}
+        a11yLabel={t("parent.child.idCopyA11y")}
+      />
     </View>
   );
 }
@@ -217,7 +220,7 @@ export default function ChildSubscribeScreen() {
               <AppText variant="title" style={{ textAlign: "center" }}>
                 {t("freeact.done")}
               </AppText>
-              <IdReveal id={revealedId} />
+              <IdReveal id={revealedId} t={t} />
               <AppText variant="muted" style={{ textAlign: "center" }}>
                 {t("parent.child.idNote")}
               </AppText>

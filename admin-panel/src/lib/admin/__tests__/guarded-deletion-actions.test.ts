@@ -40,6 +40,11 @@ const GRADE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 const SUBJECT = "9f8c1d2e-1111-4222-8333-444455556666";
 const PKG_CODE = "riyaziyyat-olimpiada-2026";
 const SUBJECT_CODE = "math";
+// Subject deletion is confirmed by typing the WORD, not the row code (owner
+// spec, 2026-08-27). The client no longer sends a code at all: the action
+// validates this literal and then reads the subject's own code server-side,
+// so `codeRow` below is what the RPC ends up comparing against.
+const SUBJECT_DELETE_WORD = "SİL";
 
 // ---- Supabase stub -------------------------------------------------------
 const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
@@ -227,8 +232,8 @@ describe("authorization happens before any client input is read", () => {
   });
 
   it.each([
-    ["purgeSubjectQuestions", { __id: SUBJECT, __code: SUBJECT_CODE }],
-    ["deleteSubject", { __id: SUBJECT, __code: SUBJECT_CODE }],
+    ["purgeSubjectQuestions", { __id: SUBJECT, __code: SUBJECT_DELETE_WORD }],
+    ["deleteSubject", { __id: SUBJECT, __code: SUBJECT_DELETE_WORD }],
   ])("%s guards first", async (name, fields) => {
     codeRow = { code: SUBJECT_CODE };
     const mod = (await subject()) as unknown as Record<string, any>;
@@ -521,6 +526,40 @@ describe("a refusal renders its own reasons, never a raw database string", () =>
     expect(writeAuditLog).not.toHaveBeenCalled();
   });
 
+  // ---- the SİL gate (owner spec, 2026-08-27) -----------------------------
+  it("refuses the delete unless the admin typed the word exactly", async () => {
+    codeRow = { code: SUBJECT_CODE };
+    const { deleteSubject } = await subject();
+
+    // Every near miss a real admin actually produces. "SIL" with an ASCII I is
+    // the important one: it looks identical in most fonts and is a different
+    // codepoint from the Azerbaijani dotted İ.
+    // Surrounding whitespace is trimmed by the action on purpose: a trailing
+    // space from a paste is not a different intent. Everything below IS.
+    for (const wrong of ["", "sil", "SIL", "Sİl", "delete", SUBJECT_CODE]) {
+      const res = await deleteSubject(null, form({ __id: SUBJECT, __code: wrong }));
+      expect(res?.ok, `"${wrong}" should not confirm a deletion`).toBe(false);
+    }
+  });
+
+  it("never lets the client supply the code the RPC compares", async () => {
+    // The browser sends the WORD; the server reads the row's own code and hands
+    // THAT to the RPC. Knowing a subject's code is therefore worth nothing to
+    // someone posting this endpoint directly.
+    rpcResults.admin_delete_subject = {
+      data: { subject_id: SUBJECT, subject_deleted: true, subject_archived: false },
+      error: null,
+    };
+    codeRow = { code: SUBJECT_CODE };
+    const { deleteSubject } = await subject();
+    const res = await deleteSubject(null, form({ __id: SUBJECT, __code: SUBJECT_DELETE_WORD }));
+
+    expect(res?.ok).toBe(true);
+    const call = rpcCalls.find((c) => c.name === "admin_delete_subject");
+    expect(call?.args?.p_expected_code).toBe(SUBJECT_CODE);
+    expect(call?.args?.p_expected_code).not.toBe(SUBJECT_DELETE_WORD);
+  });
+
   it("several reasons all arrive at once, so clearing one is not a guessing game", async () => {
     rpcResults.admin_delete_subject = {
       data: null,
@@ -532,7 +571,7 @@ describe("a refusal renders its own reasons, never a raw database string", () =>
     };
     codeRow = { code: SUBJECT_CODE };
     const { deleteSubject } = await subject();
-    const res = await deleteSubject(null, form({ __id: SUBJECT, __code: SUBJECT_CODE }));
+    const res = await deleteSubject(null, form({ __id: SUBJECT, __code: SUBJECT_DELETE_WORD }));
     expect(res).toEqual({
       ok: false,
       error: "del.err.blocked",

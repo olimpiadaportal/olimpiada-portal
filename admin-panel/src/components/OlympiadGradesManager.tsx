@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin/olympiad";
 import { ActionButton } from "@/components/ActionButton";
 import { OlympiadGradeBulkAppend } from "@/components/OlympiadGradeBulkAppend";
+import { OlympiadGradeBulkReplace } from "@/components/OlympiadGradeBulkReplace";
 import {
   OlympiadGradeDeleteButton,
   type OlympiadGradeDeleteStrings,
@@ -33,12 +34,15 @@ type Opt = { value: string; label: string };
 export function OlympiadGradesManager({
   dict,
   packageId,
+  packageCode,
   targetGrades,
   addableGrades,
   typeRules,
 }: {
   dict: Record<string, string>;
   packageId: string;
+  /** Demanded by the replace panel; the RPC re-checks it under a lock. */
+  packageCode: string;
   targetGrades: GradeRow[];
   /** Grades NOT yet targeted (candidates for the add form). */
   addableGrades: Opt[];
@@ -158,6 +162,19 @@ export function OlympiadGradesManager({
               packageId={packageId}
               gradeId={g.id}
               gradeName={g.name}
+              typeRules={typeRules}
+            />
+            {/* REPLACE sits below APPEND on purpose. They take the same file and
+                read almost identically, so the additive one is the one an admin
+                meets first; the destructive one is ghost-styled, collapsed, and
+                states its arithmetic before it will accept a file. */}
+            <OlympiadGradeBulkReplace
+              dict={dict}
+              packageId={packageId}
+              packageCode={packageCode}
+              gradeId={g.id}
+              gradeName={g.name}
+              currentCount={g.questions}
               typeRules={typeRules}
             />
           </div>

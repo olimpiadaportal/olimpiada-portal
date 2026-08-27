@@ -169,9 +169,10 @@ export default async function EditOlympiadPage({
       // stands on this array being the whole pool. Same pattern as
       // lib/admin/question-options.ts.
       //
-      // topic_id/subtopic_id ride along so the pool can be filtered by topic.
-      // Both are nullable by design for olympiad questions, which is why the
-      // filter needs an explicit "no topic" option.
+      // grade_id rides along so the pool can be filtered by GRADE. It is
+      // nullable by design for olympiad questions, which is why the filter
+      // needs an explicit "no grade" option -- a row it cannot reach is a row
+      // select-all would tick unseen.
       fetchWholePool(supabase, id),
       supabase.from("olympiad_types").select("id, name").order("name"),
       supabase
@@ -321,6 +322,7 @@ export default async function EditOlympiadPage({
           // existing label changes.
           dict={{ ...mergeLocalDict(fullDict, locale), ...olympiadLocalDict(locale), ...poolDict }}
           packageId={(pkg as any).id}
+          packageCode={String((pkg as any).code ?? "")}
           targetGrades={gradesWithCounts}
           addableGrades={addableGrades}
           typeRules={activeTypeRules}

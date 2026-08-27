@@ -1915,6 +1915,20 @@ select.sfield-select {
   flex-wrap: wrap;
 }
 
+/* A ghost button that reads as destructive without shouting. Used by the
+   olympiad pool's REPLACE panel, which sits directly under the additive APPEND
+   panel and takes the same file — the two must not look interchangeable. */
+.btn-danger-ghost {
+  color: var(--danger, #b42318);
+  border-color: color-mix(in srgb, var(--danger, #b42318) 35%, var(--border));
+}
+
+.btn-danger-ghost:hover {
+  color: #fff;
+  background: var(--danger, #b42318);
+  border-color: var(--danger, #b42318);
+}
+
 /* Toggle chips — the olympiad pool's multi-select grade filter.
    Buttons rather than a <select multiple>: deselecting one entry of a native
    multi-select requires ctrl-click, which is not discoverable, and this control

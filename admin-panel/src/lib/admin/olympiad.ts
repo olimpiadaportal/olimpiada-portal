@@ -1394,6 +1394,149 @@ export async function appendOlympiadGradeQuestions(
   return { ok: true, result: imp.result };
 }
 
+/**
+ * REPLACE one grade's pool with an uploaded file. Full replacement, not append:
+ * a 100-question pool replaced by a 50-question file ends with 50.
+ *
+ * The whole destructive sequence is migration 147's
+ * `admin_replace_olympiad_grade_pool`, in ONE transaction: purge the old rows
+ * (never-answered hard-deleted, answered ARCHIVED so graded results survive),
+ * reset that grade's rotations, import the new rows through the SAME importer
+ * the append path uses, then assert the pool still fills one attempt.
+ *
+ * Parsing, per-row validation and media claiming happen HERE, before the call,
+ * so a bad file is rejected while the old pool is still intact (spec §6).
+ */
+export async function replaceOlympiadGradeQuestions(
+  _prev: OlympiadGradeState,
+  fd: FormData,
+): Promise<OlympiadGradeState> {
+  const ctx = await requireAdmin();
+  const t = await getT();
+  const locale = await getLocale();
+  const lt = olympiadLocalStrings(locale);
+  const tq = withLocalStrings(t, locale);
+
+  const pkgId = s(fd, "__id");
+  const gradeId = s(fd, "grade_id");
+  if (!UUID_RE.test(pkgId) || !UUID_RE.test(gradeId)) return { error: t("err.server") };
+
+  const supabase = await createClient();
+  // Status is deliberately NOT a gate, exactly as in the append path: an
+  // ARCHIVED package still entitles its lifetime purchasers, so refreshing its
+  // pool stays legitimate.
+  const { data: pkg } = await supabase
+    .from("olympiad_packages")
+    .select("id, code")
+    .eq("id", pkgId)
+    .maybeSingle();
+  if (!pkg) return { error: t("err.server") };
+
+  // Typed by the admin, compared here for a nameable error and AGAIN by the RPC
+  // under its row lock — the second check is the one that counts.
+  const code = s(fd, "confirm_code");
+  if (!code || code !== String((pkg as { code: string }).code)) {
+    return { error: lt("olyq.replace.err.code") };
+  }
+
+  const target = (await packageGradeRows(supabase, pkgId)).find((g) => g.id === gradeId);
+  if (!target) return { error: lt("oly2.err.grades") };
+  if (!(target.level > 0)) return { error: t("olybulk.err.pkgGrade") };
+
+  const qMode = s(fd, "question_mode");
+  if (qMode !== "text" && qMode !== "mixed") return { error: tq("bulk.mode.required") };
+
+  // Everything the file can be wrong about is discovered NOW, while the pool
+  // this is about to destroy is still there.
+  const prepared = await prepareGradePoolRows(
+    supabase,
+    ctx.profileId,
+    fd,
+    tq,
+    target.level,
+    qMode === "mixed",
+  );
+  if ("error" in prepared) return { error: prepared.error };
+  const rows = prepared.rows;
+
+  if (rows.validItems.length === 0) {
+    return {
+      error: lt("oly2.err.gradeFiles").replace("{grades}", target.name),
+      result: { total: rows.total, successful: 0, failed: rows.total, errors: rows.errors },
+    };
+  }
+  // STRICTLY all-or-nothing (spec §6). The append path commits the good rows and
+  // reports the rest; here that would leave the grade holding neither the old
+  // pool nor the new one, so a single unusable row stops the whole replacement
+  // while nothing has been touched.
+  if (rows.errors.length > 0) {
+    return {
+      error: lt("olyq.replace.err.rows"),
+      result: {
+        total: rows.total,
+        successful: 0,
+        failed: rows.errors.length,
+        errors: rows.errors,
+      },
+    };
+  }
+
+  const { data, error } = await supabase.rpc("admin_replace_olympiad_grade_pool", {
+    p_package_id: pkgId,
+    p_grade_id: gradeId,
+    p_questions: rows.validItems,
+    p_expected_code: code,
+  });
+  if (error) {
+    // Every hint the RPC raises is something the admin can act on, so each gets
+    // its own sentence rather than the generic server error.
+    const hint = (error as { hint?: string }).hint ?? "";
+    if (hint === "confirmation_mismatch") return { error: lt("olyq.replace.err.code") };
+    if (hint === "empty_replacement") return { error: lt("olyq.replace.err.empty") };
+    if (hint === "pool_grade_not_targeted") return { error: lt("oly2.err.grades") };
+    if (hint === "live_attempts") return { error: lt("olyq.replace.err.live") };
+    if (hint === "replacement_incomplete") return { error: lt("olyq.replace.err.incomplete") };
+    if (hint === "replacement_below_floor" || hint === "replacement_below_floor_purchased") {
+      return { error: lt("olyq.replace.err.floor") };
+    }
+    console.error("[admin] olympiad pool replace failed", error.message);
+    return { error: t("err.server") };
+  }
+
+  const r = (data ?? {}) as Record<string, any>;
+  // The RPC returns the media its purge orphaned; sweeping it is the caller's
+  // half of the contract, and it is the SAME sweep the delete actions use.
+  // `media_truncated` rides along in the audit row: a full-pool replacement can
+  // exceed purge_question_set's 2000-id cap, and a leaked remainder that nobody
+  // recorded is worse than one that did.
+  await afterOlympiadDestructiveCall({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.grade_pool_replace",
+    packageId: pkgId,
+    metadata: {
+      grade_id: gradeId,
+      replaced_with: num(r.replaced_with),
+      deleted: num(r.deleted_questions),
+      archived_questions: num(r.archived_questions),
+      retained: num(r.retained_questions),
+      reset_rotations: num(r.reset_rotations),
+      purchases: num(r.purchases),
+      media_truncated: Boolean(r.media_truncated),
+    },
+    orphanedMediaIds: r.orphaned_media_ids,
+  });
+
+  return {
+    ok: true,
+    result: {
+      total: rows.total,
+      successful: num(r.replaced_with),
+      failed: 0,
+      errors: [],
+    },
+  };
+}
+
 export async function removeOlympiadPackageGradeAction(
   _prev: OlympiadGradeState,
   fd: FormData,

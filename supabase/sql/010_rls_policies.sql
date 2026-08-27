@@ -333,13 +333,33 @@ end $$;
 -- =============================================================================
 
 -- questions: published readable by authenticated; drafts by owner/reviewer/admin
+-- -----------------------------------------------------------------------------
+-- RLS PREDICATE HOISTING (migrations 149 + 150, 2026-08-27).
+--
+-- Every call below is written `(select public.is_admin())` rather than
+-- `is_admin()`. That is not style. A STABLE function in a policy predicate is
+-- evaluated PER ROW; the same call wrapped in a scalar subquery with no outer
+-- reference becomes an InitPlan and is evaluated ONCE.
+--
+-- Measured on production, 21,934 question_translations rows:  9.7s -> 127ms.
+-- Before the fix the admin Questions page returned 57014 "canceling statement
+-- due to statement timeout" and showed "The question list could not be loaded".
+--
+-- Two traps, both hit while fixing it:
+--   1. A `for all` policy is ALSO a read policy, and permissive policies are
+--      OR-ed. Hoisting only the `_select` half changed nothing, because the
+--      un-hoisted `_write` half sat first in the OR list and short-circuited it.
+--      Fix every permissive policy on a table or none of them matter.
+--   2. `create policy … for select` with no `to` clause defaults to PUBLIC,
+--      which includes anon. Rewriting a predicate must never rewrite the header.
+-- -----------------------------------------------------------------------------
 drop policy if exists "questions_select" on public.questions;
 create policy "questions_select" on public.questions for select to authenticated
   using (
     status = 'published'
-    or created_by = public.current_profile_id()
-    or public.is_admin()
-    or public.has_permission('content.review')
+    or created_by = public.(select current_profile_id())
+    or public.(select is_admin())
+    or public.(select has_permission('content.review'))
   );
 
 drop policy if exists "questions_insert" on public.questions;
@@ -375,16 +395,16 @@ drop policy if exists "qtrans_select" on public.question_translations;
 create policy "qtrans_select" on public.question_translations for select to authenticated
   using (exists (
     select 1 from public.questions q where q.id = question_id
-      and (q.status = 'published' or q.created_by = public.current_profile_id()
-           or public.is_admin() or public.has_permission('content.review'))));
+      and (q.status = 'published' or q.created_by = public.(select current_profile_id())
+           or public.(select is_admin()) or public.(select has_permission('content.review')))));
 -- Child content writes are scoped to the OWNER of the parent question
 -- (backported from migrations/2026_06_27_005_tighten_content_child_rls.sql).
 drop policy if exists "qtrans_write" on public.question_translations;
 create policy "qtrans_write" on public.question_translations for all to authenticated
-  using (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.current_profile_id()))
-  with check (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.current_profile_id()));
+  using (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())))
+  with check (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())));
 
 -- Audit H3 (migration 035): answer_options carries is_correct (the answer key),
 -- so learners must NEVER read rows directly — options reach students only via
@@ -395,30 +415,30 @@ drop policy if exists "aopt_select" on public.answer_options;
 create policy "aopt_select" on public.answer_options for select to authenticated
   using (exists (
     select 1 from public.questions q where q.id = question_id
-      and (q.created_by = public.current_profile_id()
-           or public.is_admin() or public.has_permission('content.review'))));
+      and (q.created_by = public.(select current_profile_id())
+           or public.(select is_admin()) or public.(select has_permission('content.review')))));
 drop policy if exists "aopt_write" on public.answer_options;
 create policy "aopt_write" on public.answer_options for all to authenticated
-  using (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.current_profile_id()))
-  with check (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.current_profile_id()));
+  using (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())))
+  with check (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())));
 
 drop policy if exists "aopttrans_select" on public.answer_option_translations;
 create policy "aopttrans_select" on public.answer_option_translations for select to authenticated
   using (exists (
     select 1 from public.answer_options o join public.questions q on q.id = o.question_id
     where o.id = option_id
-      and (q.status = 'published' or q.created_by = public.current_profile_id()
-           or public.is_admin() or public.has_permission('content.review'))));
+      and (q.status = 'published' or q.created_by = public.(select current_profile_id())
+           or public.(select is_admin()) or public.(select has_permission('content.review')))));
 drop policy if exists "aopttrans_write" on public.answer_option_translations;
 create policy "aopttrans_write" on public.answer_option_translations for all to authenticated
-  using (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
+  using (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
          or exists (select 1 from public.answer_options o join public.questions q on q.id = o.question_id
-                    where o.id = option_id and q.created_by = public.current_profile_id()))
-  with check (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
+                    where o.id = option_id and q.created_by = public.(select current_profile_id())))
+  with check (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
          or exists (select 1 from public.answer_options o join public.questions q on q.id = o.question_id
-                    where o.id = option_id and q.created_by = public.current_profile_id()));
+                    where o.id = option_id and q.created_by = public.(select current_profile_id())));
 
 -- explanations: a solution is visible only to a reader who EARNED it (migration
 -- 132). The previous comment here said "app should reveal only after result;
@@ -432,9 +452,9 @@ create policy "qexpl_select" on public.question_explanations for select to authe
     exists (
       select 1 from public.questions q
       where q.id = question_explanations.question_id
-        and (q.created_by = public.current_profile_id()
-             or public.is_admin()
-             or public.has_permission('content.review')))
+        and (q.created_by = public.(select current_profile_id())
+             or public.(select is_admin())
+             or public.(select has_permission('content.review'))))
     -- ...or the reader ANSWERED this question in an attempt of their own that
     -- has been graded. `status = 'graded'` and not 'submitted', to match
     -- get_test_review exactly: a child whose attempt is still being graded gets
@@ -444,16 +464,16 @@ create policy "qexpl_select" on public.question_explanations for select to authe
       from public.test_attempt_answers a
       join public.test_attempts t on t.id = a.attempt_id
       where a.question_id = question_explanations.question_id
-        and t.student_profile_id = public.current_profile_id()
+        and t.student_profile_id = public.(select current_profile_id())
         and t.status = 'graded')
   );
 
 drop policy if exists "qexpl_write" on public.question_explanations;
 create policy "qexpl_write" on public.question_explanations for all to authenticated
-  using (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.current_profile_id()))
-  with check (public.is_admin() or public.has_permission('content.review') or public.has_permission('content.publish')
-         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.current_profile_id()));
+  using (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())))
+  with check (public.(select is_admin()) or public.(select has_permission('content.review')) or public.(select has_permission('content.publish'))
+         or exists (select 1 from public.questions q where q.id = question_id and q.created_by = public.(select current_profile_id())));
 
 -- tests: published readable; managed by admin/content.
 drop policy if exists "tests_select" on public.tests;

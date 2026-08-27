@@ -118,20 +118,30 @@ export async function getChildSubjectAccess(
   for (const s of liveCoveredSubjects(subs as any[])) {
     subjMap.set(s.id, { code: s.code, name: s.name });
   }
-  // Free window: every subject with ACTIVE pricing is available (active
-  // subjects_pricing rows are publicly readable — pricing-page policy).
+  // Free window: every ACTIVE SUBJECT is available.
+  //
+  // This used to read `subjects_pricing` and take whatever subjects happened to
+  // hang off a priced row, which quietly made PRICING the source of truth for
+  // what a child can open. It is not, and the two disagree: has_subject_access()
+  // returns true for EVERY subject while is_giveaway_active(), so a subject an
+  // admin had created but not yet priced was fully accessible in the database
+  // and simply absent from the child's screen. Three of the seven live subjects
+  // were in exactly that state.
+  //
+  // `subjects` is the admin's list and is publicly readable (policy
+  // subjects_select is USING (true)), so reading it here needs no privilege and
+  // matches what the database will actually allow. Archived subjects are
+  // excluded — status is the admin's own switch for that.
   if (freeNow) {
-    const { data: priced } = await supabase
-      .from("subjects_pricing")
-      .select("subjects(id, code, name)")
+    const { data: all } = await supabase
+      .from("subjects")
+      .select("id, code, name")
       .eq("status", "active");
-    for (const row of (priced ?? []) as any[]) {
-      if (row.subjects) {
-        subjMap.set(row.subjects.id, {
-          code: row.subjects.code ?? null,
-          name: row.subjects.name,
-        });
-      }
+    for (const row of (all ?? []) as any[]) {
+      subjMap.set(String(row.id), {
+        code: row.code ?? null,
+        name: String(row.name),
+      });
     }
   }
   // The trial merges EXACTLY its own subjects. The attempt RPCs re-check access

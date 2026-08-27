@@ -102,7 +102,21 @@ export default async function PricingPage() {
                 const rows = priceMap.get(subject.id) ?? {};
                 return (
                   <tr key={subject.id}>
-                    <td className="pricing-subject">{subject.name}</td>
+                    <td className="pricing-subject">
+                      {subject.name}
+                      {/* AN UNPRICED SUBJECT IS INVISIBLE ON THE WEBSITE, and
+                          nothing used to say so. The public /services basket is
+                          built from priced rows, so a subject an admin created
+                          here but never priced simply never appeared, with no
+                          error anywhere — three of seven live subjects were in
+                          that state before anyone noticed. The omission is now
+                          stated on the row that causes it. */}
+                      {PRICE_INTERVALS.some((iv) => !rows[iv]) ? (
+                        <span className="pricing-unsold" title={lt("pricing.notSoldHint")}>
+                          {lt("pricing.notSold")}
+                        </span>
+                      ) : null}
+                    </td>
                     {PRICE_INTERVALS.map((iv) => {
                       const cell = rows[iv];
                       return (

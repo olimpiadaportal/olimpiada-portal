@@ -1,8 +1,16 @@
-// Route-level skeleton for /questions. This is the heaviest list in the panel
-// (server pagination + cascading filters + lifecycle counts + review chips), so
-// every filter change, page step and search keystroke navigates and lands here
-// first. Mirrors the real layout — head, stat cards, chips, filter row, rows —
-// so nothing jumps when the data arrives. Built from the shared .loc-skel
+// Route-level skeleton for /questions, the heaviest list in the panel (server
+// pagination + cascading filters + lifecycle counts + review chips).
+//
+// SCOPE, precisely — an earlier version of this comment claimed "every filter
+// change, page step and search keystroke navigates and lands here first", and
+// that is NOT true. This boundary covers arriving at /questions from another
+// SEGMENT. Filter, search and page changes only rewrite searchParams, stay on
+// this segment, and never re-suspend it — which is why the pager appeared to do
+// nothing for several seconds. Feedback for those lives on the controls
+// themselves (components/PendingLink.tsx, via useLinkStatus).
+//
+// Mirrors the real layout — head, stat cards, chips, filter row, rows — so
+// nothing jumps when the data arrives. Built from the shared .loc-skel
 // shimmer primitive; purely presentational, no text to translate.
 export default function QuestionsLoading() {
   return (

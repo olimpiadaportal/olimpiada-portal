@@ -1945,6 +1945,67 @@ a.qpage-link:hover {
   opacity: 0.55;
 }
 
+/* PendingLink — feedback for a navigation that only changes searchParams.
+   The route-level loading.tsx boundary does not fire for those, so without this
+   a clicked page number looked completely inert until the server answered.
+   :has() lets the anchor style itself from a flag its client child renders, so
+   the link itself stays server-rendered. */
+.qpage-link:has(.pl-pending-flag) {
+  border-color: var(--brand);
+  color: var(--brand);
+  cursor: progress;
+}
+
+.pl-dots {
+  display: inline-block;
+  width: 1em;
+  margin-left: 5px;
+  vertical-align: middle;
+  border-radius: 50%;
+  aspect-ratio: 1;
+  background: currentColor;
+  transform: scale(0.34);
+  animation: pl-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes pl-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.28);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(0.42);
+  }
+}
+
+/* Respect the OS setting: a progress hint must not be an animation for someone
+   who asked for none. It still changes colour and cursor. */
+@media (prefers-reduced-motion: reduce) {
+  .pl-dots {
+    animation: none;
+    opacity: 0.85;
+    transform: scale(0.36);
+  }
+}
+
+/* A subject with an incomplete price set never reaches the public basket.
+   Stated on the row rather than left to be discovered. */
+.pricing-unsold {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2, var(--surface));
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .qpage-ellipsis {
   padding: 0 4px;
   color: var(--muted);

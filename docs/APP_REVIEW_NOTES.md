@@ -109,6 +109,61 @@ Paste this, or something close to it, into the Resolution Center:
 
 ---
 
+## 0b. The four business-model questions (2026-08-27)
+
+App Review paused the review of the resubmitted build and asked four questions
+about the business model. This is Apple's standard screen for an app that consumes
+digital goods purchased outside IAP.
+
+**Read `docs/STORE_PAYMENTS_COMPLIANCE.md` §3 before editing a word of this.** Its
+conclusion is not comfortable and pretending otherwise helps nobody: both products
+are squarely inside 3.1.1; "only parents buy" grants ZERO relief because 3.1.3(c)
+names family sales explicitly; 3.1.3(b) must never be cited because its own proviso
+requires matching IAP; and 3.1.3(f) — the only clause that could apply — fits us
+badly, because its examples are infrastructure services with thin clients while our
+app is the PRIMARY consumption surface.
+
+**Therefore the answer below claims no exemption and cites no guideline.** It
+answers what was asked, completely and truthfully, and leaves the classification to
+App Review. Arguing a carve-out we do not clearly qualify for invites a rebuttal and
+reads as advocacy; answering plainly does not.
+
+### Facts verified before writing it (2026-08-27)
+
+| Claim | Verified against |
+|---|---|
+| Four priced subjects; 3 / 9 / 90 AZN per subject per child | `subjects_pricing` on production |
+| Sibling discount 10% / 15% | CLAUDE.md, investor-approved 2026-07-15 |
+| Four active olympiad packages | `olympiad_packages where status='active'` |
+| No price anywhere in the app | 0 occurrences of "AZN" in `messages.generated.ts`; no component renders an amount |
+| No link or CTA to a purchase | every `Linking.openURL` call site read; `/forgot-password` renders BARE CHROME (no nav, no register CTA, no footer links — compliance finding I8) so the reviewer cannot reach the paywall from the app |
+| Children cannot purchase | enforced server-side, not hidden in UI |
+| Free access period ends 2026-09-26 | `giveaway.started_at` + `giveaway.duration_days` on production |
+
+### The closing paragraph is an OWNER DECISION, not a drafting choice
+
+`STORE_PAYMENTS_COMPLIANCE.md` §10 lists as open decision 3: *"If Apple rejects the
+purchase-silent build twice, do we ship IAP on iOS only (accepting 15–30%, losing
+the sibling discount on that rail) or withhold the iOS app?"* That decision is still
+open, and the closing paragraph is where it becomes visible to Apple.
+
+* **Neutral close** — offers more information, concedes nothing. Keeps the option to
+  appeal. Higher chance the next message is a rejection.
+* **Cooperative close** — offers to implement IAP if App Review determines it is
+  required. Turns a binary outcome into a conversation, and is credible because the
+  entitlement model is provider-agnostic by design (§4.1). It also forfeits the
+  argument: having offered, we will very likely be held to it.
+
+Do not send the cooperative close unless the owner has accepted shipping IAP on iOS.
+
+**OWNER DECISION 2026-08-27: the NEUTRAL close was sent.** IAP on iOS stays
+undecided, and nothing has been promised to Apple. The cooperative close is still
+available as a second message if App Review pushes back — that ordering is
+deliberate and it only works in this direction: an offer can be made later, it
+cannot be withdrawn once made.
+
+---
+
 ## 1. Screen recording (you must record this)
 
 Apple wants one continuous recording **from a physical device**, starting at app

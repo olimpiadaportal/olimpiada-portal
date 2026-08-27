@@ -22,10 +22,15 @@ export async function loadQuestionOptions(): Promise<
     }));
   }
 
-  return {
-    subject_id: await named("subjects"),
-    grade_id: await named("grades", "level"),
-  };
+  // Promise.all, not two awaits in an object literal. Object properties are
+  // evaluated in order, so `subject_id: await ...` fully completed before the
+  // grades request was even issued — two serial round trips on every render of
+  // the questions list, for two independent lookups.
+  const [subject_id, grade_id] = await Promise.all([
+    named("subjects"),
+    named("grades", "level"),
+  ]);
+  return { subject_id, grade_id };
 }
 
 // EXAM-scoped taxonomy with the metadata the question editor needs: topics

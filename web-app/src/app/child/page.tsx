@@ -93,19 +93,21 @@ export default async function ChildDashboard() {
   for (const s of liveCoveredSubjects(subs as any[])) {
     subjMap.set(s.id, subjectLabel(t, s.code, s.name));
   }
-  // Giveaway: every subject with ACTIVE pricing becomes practicable, merged
-  // over the subscribed set. RLS note: subjects_pricing active rows are
-  // readable by everyone (public pricing page policy), so the child's
-  // request-scoped client can query it directly.
+  // Giveaway: every ACTIVE SUBJECT becomes practicable, merged over the
+  // subscribed set. Same correction as lib/childSubjects.ts, and the same
+  // reason: this read used to come from `subjects_pricing`, which made having a
+  // PRICE the condition for a child being able to open a subject. The database
+  // does not agree — has_subject_access() returns true for every subject while
+  // is_giveaway_active() — so an unpriced subject was accessible in fact and
+  // invisible on screen. `subjects` is the admin's own list and its select
+  // policy is USING (true), so the child's request-scoped client can read it.
   if (freeNow) {
-    const { data: priced } = await supabase
-      .from("subjects_pricing")
-      .select("subjects(id, code, name)")
+    const { data: all } = await supabase
+      .from("subjects")
+      .select("id, code, name")
       .eq("status", "active");
-    for (const row of (priced ?? []) as any[]) {
-      if (row.subjects) {
-        subjMap.set(row.subjects.id, subjectLabel(t, row.subjects.code, row.subjects.name));
-      }
+    for (const row of (all ?? []) as any[]) {
+      subjMap.set(String(row.id), subjectLabel(t, row.code, String(row.name)));
     }
   }
   const subjects = Array.from(subjMap, ([id, name]) => ({ id, name }));

@@ -22,6 +22,9 @@ const STRINGS: Record<Locale, Dict> = {
     "pricing.monthly": "Aylıq",
     "pricing.yearly": "İllik",
     "pricing.currencyNote": "Bütün qiymətlər AZN ilə göstərilir.",
+    "pricing.notSold": "saytda satılmır",
+    "pricing.notSoldHint":
+      "Bu fənnin bütün dövrlər üzrə qiyməti yoxdur, ona görə saytda seçilə bilmir. Qiymətləri daxil edən kimi görünəcək.",
     "pricing.repriceNote":
       "Ödəniş zamanı qiymət həmişə serverdə yenidən hesablanır. Mövcud abunəliklər yenilənmə və ya dəyişiklik edilənə qədər köhnə qiymətlə davam edir.",
     "pricing.notSet": "Qiymət təyin edilməyib",
@@ -41,6 +44,9 @@ const STRINGS: Record<Locale, Dict> = {
     "pricing.monthly": "Monthly",
     "pricing.yearly": "Yearly",
     "pricing.currencyNote": "All prices are shown in AZN.",
+    "pricing.notSold": "not sold on the site",
+    "pricing.notSoldHint":
+      "This subject has no price for every cycle, so it cannot be selected on the website. It appears as soon as the prices are set.",
     "pricing.repriceNote":
       "Checkout always reprices on the server. Existing subscriptions keep their current price until they renew or change.",
     "pricing.notSet": "No price set",
@@ -60,6 +66,9 @@ const STRINGS: Record<Locale, Dict> = {
     "pricing.monthly": "Ежемесячно",
     "pricing.yearly": "Ежегодно",
     "pricing.currencyNote": "Все цены указаны в AZN.",
+    "pricing.notSold": "не продаётся на сайте",
+    "pricing.notSoldHint":
+      "У этого предмета заполнены не все цены, поэтому его нельзя выбрать на сайте. Он появится, как только цены будут указаны.",
     "pricing.repriceNote":
       "При оплате цена всегда пересчитывается на сервере. Действующие подписки сохраняют текущую цену до продления или изменения.",
     "pricing.notSet": "Цена не задана",

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PendingLink } from "@/components/PendingLink";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/admin/guards";
@@ -247,77 +248,77 @@ export default async function QuestionsPage({
     return { rows: (data ?? []) as any[], count: count ?? 0, failed: false };
   };
 
-  // Cheap head-only counts for the stat cards (same private-pool exclusion).
-  const countByStatus = (st?: string) => {
-    let qb = supabase
-      .from("questions")
-      .select("id", { count: "exact", head: true })
-      .is("olympiad_package_id", null);
-    if (st) qb = qb.eq("status", st);
-    return qb;
+  // ONE retry, and only for the list.
+  //
+  // The failure this recovers from is a STATEMENT TIMEOUT: `authenticated` runs
+  // with statement_timeout = 8s, and a bulk import writing 100-300 questions a
+  // minute into this same table is enough to push a cold `count: exact` past it.
+  // That is transient by construction — the previous behaviour turned it into a
+  // dead end whose only escape was reloading the page by hand.
+  //
+  // Deliberately ONE retry and no backoff loop: if the second attempt also
+  // fails, something is wrong that retrying will not fix, and the admin is
+  // better served by the honest error than by a page that hangs twice as long.
+  const loadRowsWithRetry = async () => {
+    const first = await loadRows();
+    if (!first.failed) return first;
+    return await loadRows();
   };
 
-  // Explanation-translation coverage. A question with no explanation in the
-  // reader's language falls back to the Azerbaijani one, and the student review
-  // screen labels that; this is where an editor sees how big the gap still is.
-  // Both write paths now produce EN/RU rows — the question editor posts one box
-  // per locale and all four bulk templates carry a translated explanation — so
-  // these three numbers should converge over time instead of staying at az-only.
-  // uq_explanation_locale makes (question_id, locale) unique, so counting
-  // explanation rows for one locale counts QUESTIONS. head-only + an !inner
-  // embed keeps the private olympiad pool out, exactly like the cards above.
-  const explCoverage = (loc: string) =>
-    supabase
-      .from("question_explanations")
-      .select("question_id, questions!inner(olympiad_package_id)", {
-        count: "exact",
-        head: true,
-      })
-      .eq("locale", loc)
-      .is("questions.olympiad_package_id", null);
+  // The eight `count: exact` helpers that used to live here are GONE, replaced
+  // by the single admin_question_bank_stats() call below (migration 148).
+  //
+  // Do not bring them back one at a time. Each was a full pass over the bank,
+  // none of them depended on the page being viewed, and together they were what
+  // pushed the list query past the authenticated role's 8s statement_timeout
+  // while a bulk import was writing to the same table — the admin saw populated
+  // stat cards above a list that had failed to load. Another counter belongs in
+  // that RPC, not in another round trip.
 
   const [
     main,
     { data: subjects },
     { data: grades },
     { data: qtypes },
-    { count: statTotal },
-    { count: statReview },
-    { count: statPublished },
-    { count: statRejected },
-    { count: needsTermCount },
-    { count: explAzCount },
-    { count: explEnCount },
-    { count: explRuCount },
+    { data: bankStats },
     // For the New-question and Bulk-import modals.
     rawDict,
     selectOptions,
     editorTaxonomy,
   ] = await Promise.all([
-    loadRows(),
+    loadRowsWithRetry(),
     supabase.from("subjects").select("id, name, status").order("name"),
     supabase.from("grades").select("id, name, level").order("level"),
     supabase
       .from("question_types")
       .select("id, code, name, status, options_required, correct_required")
       .order("code"),
-    countByStatus(),
-    countByStatus("in_review"),
-    countByStatus("published"),
-    countByStatus("rejected"),
-    // "Needs term" chip count: general-bank questions without a Rüb.
-    supabase
-      .from("questions")
-      .select("id", { count: "exact", head: true })
-      .is("olympiad_package_id", null)
-      .is("term", null),
-    explCoverage("az"),
-    explCoverage("en"),
-    explCoverage("ru"),
+    // ONE call for all eight counters (migration 148). These were eight
+    // separate `count: exact` full passes over the bank, recomputed on every
+    // page step even though none of them depend on the page — and under a bulk
+    // import they were enough to push the list query past the 8s statement
+    // timeout. See the RPC's comment for the measurement.
+    supabase.rpc("admin_question_bank_stats"),
     getDict(),
     loadQuestionOptions(),
     loadQuestionTaxonomy(),
   ]);
+  // A failed stats call must not read as "the bank is empty": every card falls
+  // back to null, which the card renderer already shows as a dash.
+  const stats = (bankStats ?? {}) as Record<string, number | null>;
+  const num = (k: string): number | null => {
+    const v = stats[k];
+    return typeof v === "number" ? v : null;
+  };
+  const statTotal = num("total");
+  const statReview = num("in_review");
+  const statPublished = num("published");
+  const statRejected = num("rejected");
+  const needsTermCount = num("needs_term");
+  const explAzCount = num("expl_az");
+  const explEnCount = num("expl_en");
+  const explRuCount = num("expl_ru");
+
   const list = main.rows;
   const total = main.count;
   const fullDict = mergeLocalDict(rawDict, locale);
@@ -660,14 +661,17 @@ export default async function QuestionsPage({
         initialEditId={editQuestionId || null}
       />
 
-      {/* Footer pager — server-rendered links preserving all searchParams. */}
+      {/* Footer pager — server-rendered links preserving all searchParams.
+          PendingLink, not Link: this navigation only changes searchParams, so
+          the route-level loading.tsx boundary never re-suspends and the admin
+          would otherwise stare at an unchanged page for the whole round trip. */}
       <div className="qpager">
         <span className="qpager-info muted">{showingLine}</span>
         <nav className="qpager-nav" aria-label="pagination">
           {page > 1 ? (
-            <Link className="qpage-link" href={href({ page: String(page - 1) })}>
+            <PendingLink className="qpage-link" href={href({ page: String(page - 1) })}>
               {t("qpage.prev")}
-            </Link>
+            </PendingLink>
           ) : (
             <span className="qpage-link disabled">{t("qpage.prev")}</span>
           )}
@@ -681,15 +685,15 @@ export default async function QuestionsPage({
                 {it}
               </span>
             ) : (
-              <Link key={it} className="qpage-link" href={href({ page: String(it) })}>
+              <PendingLink key={it} className="qpage-link" href={href({ page: String(it) })}>
                 {it}
-              </Link>
+              </PendingLink>
             ),
           )}
           {page < totalPages ? (
-            <Link className="qpage-link" href={href({ page: String(page + 1) })}>
+            <PendingLink className="qpage-link" href={href({ page: String(page + 1) })}>
               {t("qpage.next")}
-            </Link>
+            </PendingLink>
           ) : (
             <span className="qpage-link disabled">{t("qpage.next")}</span>
           )}

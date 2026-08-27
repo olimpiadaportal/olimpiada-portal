@@ -49,37 +49,52 @@ payment state.
 
 Paste this, or something close to it, into the Resolution Center:
 
-> Thank you for the review — the finding was correct and we have fixed the cause
-> rather than the wording.
+> Thank you for the review. The finding was correct, and we have fixed its cause
+> rather than its wording.
 >
-> The message you screenshotted was generated from a server-side setting that
-> records whether our website is currently accepting payments. Three parent screens
-> read that setting and reported it. It described our website rather than the app,
-> and it made a complete app read as an unfinished one.
+> That message came from a server-side setting in our billing system that has
+> nothing to do with what the app does. Three parent screens read that setting and
+> reported it, so an app that was complete described itself as unavailable. It
+> should never have surfaced that state at all.
 >
-> In build 1.12.3 no screen in the app reports a platform payment state, and none
-> can: the screens no longer read that setting at all, and an automated test in our
-> build fails if any screen starts doing so again.
+> In the build now submitted, no screen in the app tells the user that payments or
+> purchases are unavailable, and none can: those screens no longer read that
+> setting, and an automated test in our codebase fails the change if any screen
+> begins to again.
 >
-> Specifically:
+> What changed:
 >
-> - The parent Subscription tab now shows an active subscription where the family
->   has one, and otherwise says only that subscriptions are not managed in this app.
-> - The in-app privacy policy no longer states a payment status. This is the change
->   we would draw your attention to: that screen is reachable from the login screen
->   without an account, so it carried the same sentence to a signed-out visitor.
+> - The parent Subscription tab shows the family's active subscription where there
+>   is one, and otherwise states only that subscriptions are not managed in this app.
+> - The in-app privacy policy no longer states a payment status. We would draw your
+>   attention to this one: that screen is reachable from the login screen without an
+>   account, so it showed the same sentence to a signed-out visitor.
 > - Creating a child now issues the child's 8-digit login ID immediately, so the
->   Add-Child flow ends with a usable account instead of telling the parent that the
->   ID will appear later.
+>   Add-Child flow ends with an account that can sign in rather than with a promise.
 > - The Profile screen no longer shows a "coming soon" placeholder where sticker
 >   themes have not been published.
 > - The Face ID, camera and photo-library permission prompts are now localised in
->   all three languages the app supports (Azerbaijani, English, Russian); previously
->   the Face ID prompt was Azerbaijani-only.
+>   all three languages the app supports; the Face ID prompt was previously
+>   Azerbaijani only.
 >
-> No functionality was removed and nothing was hidden. The app contains no purchase,
-> price, checkout or payment step of any kind, for parents or for students, and it
-> behaves identically for every user in every region.
+> There is no purchase, price or checkout anywhere in the app, for either account
+> type. No functionality was removed and nothing was hidden behind a setting, and
+> the app behaves identically for every user in every region.
+
+### Three wording choices that are deliberate
+
+* **"our billing system", not "our website".** Both are true. The second volunteers
+  anti-steering into a conversation about App Completeness, and Azerbaijan gets no
+  anti-steering relief. §5 already tells Apple access is provisioned outside the
+  app, so nothing is being concealed.
+* **"tells the user that payments or purchases are unavailable", not "reports a
+  platform payment state".** The absolute version is contradictable in one tap: a
+  free-access period is running, so Add-Child renders "The free promo period is
+  active". That is availability messaging, not an unavailability notice, so it is
+  fine — but do not hand a reviewer a sentence they can disprove.
+* **No build number.** The letter says "the build now submitted". A version named in
+  a letter and a version in App Store Connect are two things that can drift, and
+  this document has already gone stale once.
 
 ### What NOT to write
 

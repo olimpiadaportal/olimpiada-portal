@@ -1600,8 +1600,6 @@ export type OlympiadPoolQuestionData = {
   id: string;
   status: string;
   gradeId: string;
-  topicId: string;
-  subtopicId: string;
   correct: number; // order_index of the correct option, -1 when none
   content: Record<PoolLocale, PoolLocaleContent>;
   imageUrl: string | null;
@@ -1638,12 +1636,10 @@ async function getPoolQuestion(
   status: string;
   primary_locale: string;
   grade_id: string | null;
-  topic_id: string | null;
-  subtopic_id: string | null;
 } | null> {
   const { data } = await supabase
     .from("questions")
-    .select("id, status, grade_id, primary_locale, topic_id, subtopic_id")
+    .select("id, status, grade_id, primary_locale")
     .eq("id", qId)
     .eq("olympiad_package_id", pkgId)
     .maybeSingle();
@@ -1738,8 +1734,6 @@ export async function loadOlympiadPoolQuestion(
     id: String(q.id),
     status: String(q.status),
     gradeId: q.grade_id ? String(q.grade_id) : "",
-    topicId: q.topic_id ? String(q.topic_id) : "",
-    subtopicId: q.subtopic_id ? String(q.subtopic_id) : "",
     correct,
     content,
     imageUrl,
@@ -1783,39 +1777,11 @@ export async function saveOlympiadPackageQuestion(
     return { error: olympiadLocalStrings(await getLocale())("oly2.err.grades") };
   }
 
-  // ---- Optional olympiad-scoped taxonomy (never exam topics) ---------------
-  const topicId = s(fd, "topic_id");
-  const subtopicId = s(fd, "subtopic_id");
-  if (subtopicId && !topicId) return { error: lt("olyq.err.taxonomy") };
-  if (topicId) {
-    if (!UUID_RE.test(topicId)) return { error: lt("olyq.err.taxonomy") };
-    const { data: tp } = await supabase
-      .from("topics")
-      .select("id, subject_id, grade_id, scope")
-      .eq("id", topicId)
-      .maybeSingle();
-    if (
-      !tp ||
-      tp.scope !== "olympiad" ||
-      String(tp.subject_id) !== String(pkg.subject_id) ||
-      (tp.grade_id != null &&
-        poolGradeId &&
-        String(tp.grade_id) !== String(poolGradeId))
-    ) {
-      return { error: lt("olyq.err.taxonomy") };
-    }
-    if (subtopicId) {
-      if (!UUID_RE.test(subtopicId)) return { error: lt("olyq.err.taxonomy") };
-      const { data: st } = await supabase
-        .from("subtopics")
-        .select("id, topic_id")
-        .eq("id", subtopicId)
-        .maybeSingle();
-      if (!st || String(st.topic_id) !== topicId) {
-        return { error: lt("olyq.err.taxonomy") };
-      }
-    }
-  }
+  // TOPIC AND SUBTOPIC ARE NO LONGER PART OF THIS FORM (owner spec §1).
+  // The optional olympiad-scoped taxonomy block that stood here validated
+  // fields the UI no longer sends. The DATABASE never required them for pool
+  // rows -- both taxonomy guards carve out `olympiad_package_id is not null`
+  // (011) -- so removing them needed no migration.
 
   // ---- Trilingual content: az required; en/ru optional-but-complete --------
   const content: Record<PoolLocale, PoolLocaleContent | null> = {
@@ -1925,8 +1891,6 @@ export async function saveOlympiadPackageQuestion(
         olympiad_package_id: pkgId,
         subject_id: pkg.subject_id,
         grade_id: poolGradeId || null,
-        topic_id: topicId || null,
-        subtopic_id: subtopicId || null,
         type_id: qType.id,
         // Pool rows are always published (bulk v3 parity) — attempts draw
         // published questions only.
@@ -1948,10 +1912,12 @@ export async function saveOlympiadPackageQuestion(
       .update({
         subject_id: pkg.subject_id,
         grade_id: poolGradeId || null,
-        topic_id: topicId || null,
-        subtopic_id: subtopicId || null,
-        // Explicit NULL: trg_question_term_guard re-inherits the term from the
-        // (possibly changed) topic; a stale term would otherwise mismatch.
+        // topic_id / subtopic_id are OMITTED, not set to null. Writing null
+        // here would silently untag every pool question that already carries a
+        // topic, the first time an admin opened and saved it -- the form no
+        // longer offers the field, so a save must not be able to clear it.
+        // Explicit NULL term: trg_question_term_guard re-inherits it, and with
+        // the topic left untouched a stale term would otherwise mismatch.
         term: null,
         type_id: qType.id,
         primary_locale: primaryLocale,

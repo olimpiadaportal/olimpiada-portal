@@ -1915,6 +1915,41 @@ select.sfield-select {
   flex-wrap: wrap;
 }
 
+/* Toggle chips — the olympiad pool's multi-select grade filter.
+   Buttons rather than a <select multiple>: deselecting one entry of a native
+   multi-select requires ctrl-click, which is not discoverable, and this control
+   sits directly above a select-all checkbox and a bulk delete. */
+.oly-gradefilter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip {
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chip:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.chip-on,
+.chip[aria-pressed="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
 .qpage-link {
   display: inline-block;
   min-width: 30px;

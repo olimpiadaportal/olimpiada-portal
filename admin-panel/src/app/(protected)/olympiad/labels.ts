@@ -13,6 +13,8 @@ type Dict = Record<string, string>;
 const STRINGS: Record<Locale, Dict> = {
   az: {
     "olyq.allGrades": "Bütün siniflər",
+    "olyq.filter.grades": "Siniflər",
+    "olyq.filter.gradeNone": "— sinifsiz —",
     // ---- pool section on the package edit page ----
     "olyq.manageNote":
       "Sualları aşağıda tək-tək əlavə edib redaktə edə bilərsiniz; sinfin hovuzuna toplu şəkildə sual əlavə etmək üçün yuxarıdakı «Siniflər» bölməsindən istifadə edin.",
@@ -50,13 +52,7 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.subject": "Fənn",
     "olyq.grade": "Sinif",
     "olyq.fixedNote": "Fənn və sinif paketdən götürülür.",
-    "olyq.topic": "Mövzu (istəyə bağlı)",
-    "olyq.subtopic": "Alt mövzu (istəyə bağlı)",
-    "olyq.noTopics": "Bu fənn üçün olimpiada mövzusu yoxdur.",
     // ---- Bulk pool management (migration 144) --------------------------------
-    "olyq.filter.topic": "Mövzu",
-    "olyq.filter.topicAll": "Bütün mövzular",
-    "olyq.filter.topicNone": "— mövzusuz —",
     "olyq.filter.showing": "{shown} / {total} sual göstərilir",
     "olyq.bulk.archive": "Arxivləşdir",
     "olyq.bulk.restore": "Bərpa et",
@@ -105,13 +101,13 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.err.fiveOptions":
       "5 cavab variantının hamısı (A–E) doldurulmalıdır.",
     "olyq.err.oneCorrect": "Düzgün cavab seçilməlidir.",
-    "olyq.err.taxonomy":
-      "Mövzu bu paketin fənninə uyğun deyil. Mövzu və alt mövzunu yenidən seçin.",
     "olyq.err.hasAttempts":
       "Bu suala artıq cavablar verilib, ona görə silmək mümkün deyil — bunun əvəzinə sualı arxivləşdirin.",
   },
   en: {
     "olyq.allGrades": "All grades",
+    "olyq.filter.grades": "Grades",
+    "olyq.filter.gradeNone": "— no grade —",
     "olyq.manageNote":
       "Add and edit questions one by one below; to add many questions to a grade's pool at once, use the Grades section above.",
     "olyq.archivedNote":
@@ -147,13 +143,7 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.subject": "Subject",
     "olyq.grade": "Grade",
     "olyq.fixedNote": "Subject and grade are inherited from the package.",
-    "olyq.topic": "Topic (optional)",
-    "olyq.subtopic": "Subtopic (optional)",
-    "olyq.noTopics": "No olympiad topics exist for this subject.",
     // ---- Bulk pool management (migration 144) --------------------------------
-    "olyq.filter.topic": "Topic",
-    "olyq.filter.topicAll": "All topics",
-    "olyq.filter.topicNone": "— no topic —",
     "olyq.filter.showing": "Showing {shown} of {total}",
     "olyq.bulk.archive": "Archive",
     "olyq.bulk.restore": "Restore",
@@ -198,13 +188,13 @@ const STRINGS: Record<Locale, Dict> = {
       "{lang}: when a language is added, its question text and all 5 options must be filled in.",
     "olyq.err.fiveOptions": "All 5 answer options (A–E) must be filled in.",
     "olyq.err.oneCorrect": "Select the correct answer.",
-    "olyq.err.taxonomy":
-      "The topic does not match this package's subject. Re-select the topic and subtopic.",
     "olyq.err.hasAttempts":
       "This question already has answer history, so it cannot be deleted — archive it instead.",
   },
   ru: {
     "olyq.allGrades": "Все классы",
+    "olyq.filter.grades": "Классы",
+    "olyq.filter.gradeNone": "— без класса —",
     "olyq.manageNote":
       "Добавляйте и редактируйте вопросы по одному ниже; чтобы добавить в пул класса сразу много вопросов, используйте раздел «Классы» выше.",
     "olyq.archivedNote":
@@ -240,13 +230,7 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.subject": "Предмет",
     "olyq.grade": "Класс",
     "olyq.fixedNote": "Предмет и класс наследуются от пакета.",
-    "olyq.topic": "Тема (необязательно)",
-    "olyq.subtopic": "Подтема (необязательно)",
-    "olyq.noTopics": "Для этого предмета нет олимпиадных тем.",
     // ---- Bulk pool management (migration 144) --------------------------------
-    "olyq.filter.topic": "Тема",
-    "olyq.filter.topicAll": "Все темы",
-    "olyq.filter.topicNone": "— без темы —",
     "olyq.filter.showing": "Показано {shown} из {total}",
     "olyq.bulk.archive": "В архив",
     "olyq.bulk.restore": "Восстановить",
@@ -294,8 +278,6 @@ const STRINGS: Record<Locale, Dict> = {
     "olyq.err.fiveOptions":
       "Все 5 вариантов ответа (A–E) должны быть заполнены.",
     "olyq.err.oneCorrect": "Выберите правильный ответ.",
-    "olyq.err.taxonomy":
-      "Тема не соответствует предмету пакета. Выберите тему и подтему заново.",
     "olyq.err.hasAttempts":
       "На этот вопрос уже отвечали, поэтому его нельзя удалить — вместо этого отправьте его в архив.",
   },

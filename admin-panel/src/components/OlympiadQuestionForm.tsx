@@ -87,8 +87,6 @@ export function OlympiadQuestionForm({
   subjectName,
   packageGrades,
   defaultGradeId,
-  topics,
-  subtopics,
   defaults,
   onSaved,
   onBusyChange,
@@ -100,8 +98,6 @@ export function OlympiadQuestionForm({
   /** Round 34: the package's target grades — the question belongs to ONE. */
   packageGrades: { value: string; label: string }[];
   defaultGradeId?: string;
-  topics: OlympiadPoolTopic[]; // olympiad-scoped, already subject/grade-filtered
-  subtopics: OlympiadPoolSubtopic[];
   defaults?: OlympiadPoolQuestionData;
   onSaved?: () => void;
   // Lets the host Modal block dismissal while a save/upload is in flight.
@@ -125,14 +121,12 @@ export function OlympiadQuestionForm({
     draftsFromDefaults(defaults),
   );
   const [correct, setCorrect] = useState<number>(defaults?.correct ?? -1);
-  const [topic, setTopic] = useState(defaults?.topicId ?? "");
+
   const [gradeId, setGradeId] = useState(
     defaultGradeId ?? (packageGrades.length === 1 ? packageGrades[0].value : ""),
   );
-  const [subtopic, setSubtopic] = useState(defaults?.subtopicId ?? "");
   const [localError, setLocalError] = useState("");
 
-  const subtopicsForTopic = subtopics.filter((st) => st.topic_id === topic);
 
   function patchDraft(loc: Locale, patch: Partial<LocaleDraft>) {
     setDrafts((p) => ({ ...p, [loc]: { ...p[loc], ...patch } }));
@@ -254,8 +248,9 @@ export function OlympiadQuestionForm({
     fd.set("__package_id", packageId);
     if (questionId) fd.set("__id", questionId);
     fd.set("grade_id", gradeId);
-    fd.set("topic_id", topic);
-    fd.set("subtopic_id", topic ? subtopic : "");
+    // topic_id / subtopic_id are deliberately NOT sent (spec §1). The action
+    // omits them from the UPDATE too, so a pool question that already carries
+    // a topic keeps it instead of being silently untagged on the next save.
     fd.set("correct", String(correct));
     for (const loc of locales) {
       const d = drafts[loc];
@@ -322,39 +317,6 @@ export function OlympiadQuestionForm({
               ))}
             </select>
           )}
-        </label>
-        <label className="field">
-          <span className="field-label">{tt("olyq.topic")}</span>
-          <select
-            value={topic}
-            onChange={(e) => {
-              setTopic(e.target.value);
-              setSubtopic("");
-            }}
-          >
-            <option value="">{tt("olyq.none")}</option>
-            {topics.map((tp) => (
-              <option key={tp.id} value={tp.id}>
-                {tp.name}
-              </option>
-            ))}
-          </select>
-          {topics.length === 0 && <span className="hint">{tt("olyq.noTopics")}</span>}
-        </label>
-        <label className="field">
-          <span className="field-label">{tt("olyq.subtopic")}</span>
-          <select
-            value={subtopic}
-            disabled={!topic}
-            onChange={(e) => setSubtopic(e.target.value)}
-          >
-            <option value="">{tt("olyq.none")}</option>
-            {subtopicsForTopic.map((st) => (
-              <option key={st.id} value={st.id}>
-                {st.name}
-              </option>
-            ))}
-          </select>
         </label>
       </div>
       <p className="hint">{tt("olyq.fixedNote")}</p>

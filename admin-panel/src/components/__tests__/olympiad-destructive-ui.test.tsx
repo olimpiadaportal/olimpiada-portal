@@ -92,7 +92,6 @@ function row(id: string, num: number, gradeId: string, gradeName: string): Olymp
     gradeName,
     // Empty = no topic set, which is the ordinary case for an olympiad pool
     // imported without topic metadata.
-    topicId: "",
     excerpt: `question ${num}`,
     search: `question ${num}`.toLowerCase(),
     optionCount: 5,
@@ -124,8 +123,6 @@ function renderManager() {
         { value: G6, label: "6" },
         { value: G7, label: "7" },
       ]}
-      topics={[]}
-      subtopics={[]}
       rows={ROWS}
       // Both grades carry a floor of 2, so a selection of 2 grade-6 rows is a
       // shortfall and the preview has something real to say.
@@ -176,20 +173,45 @@ describe("olympiad pool — selection", () => {
     expect(screen.queryByText("3 selected")).toBeNull();
   });
 
+  /** One grade chip in the filter group, by its visible label. */
+  const gradeChip = (label: string) =>
+    within(screen.getByRole("group", { name: "olyq.filter.grades" })).getByRole(
+      "button",
+      { name: label },
+    );
+
   it("select-all after a grade filter takes ONLY the rows on screen", async () => {
     const user = userEvent.setup();
     renderManager();
 
-    // Scoped to the GRADE select by name: the pool toolbar now also carries a
-    // topic filter, so a bare combobox query is ambiguous.
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "olyq.grade" }),
-      G7,
-    );
+    // The grade filter is a group of toggle CHIPS now, not a <select>: a
+    // native multi-select needs ctrl-click to deselect, which no admin
+    // discovers, and this control sits directly above select-all + bulk delete.
+    await user.click(gradeChip("7"));
     await user.click(headBox());
 
     expect(rowBoxes()).toHaveLength(1);
     expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("shows BOTH grades when two chips are picked (§2 multi-select)", async () => {
+    const user = userEvent.setup();
+    renderManager();
+
+    // One chip narrows to a single grade...
+    await user.click(gradeChip("7"));
+    expect(rowBoxes()).toHaveLength(1);
+
+    // ...a second chip WIDENS rather than replacing, which is the whole point
+    // of the owner's "Grade 3 + Grade 5" requirement. A single-value <select>
+    // could not express this state at all.
+    await user.click(gradeChip("6"));
+    expect(rowBoxes()).toHaveLength(3);
+
+    // And clearing the last chip returns to ALL, never to an empty table.
+    await user.click(gradeChip("7"));
+    await user.click(gradeChip("6"));
+    expect(rowBoxes()).toHaveLength(3);
   });
 
   it("PRUNES the selection when a filter hides the ticked rows", async () => {
@@ -204,12 +226,10 @@ describe("olympiad pool — selection", () => {
     // …then filtered off screen. They must not survive: the count would stop
     // describing the table, and a confirmed delete would take rows the admin
     // can no longer read.
-    // Scoped to the GRADE select by name: the pool toolbar now also carries a
-    // topic filter, so a bare combobox query is ambiguous.
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "olyq.grade" }),
-      G7,
-    );
+    // The grade filter is a group of toggle CHIPS now, not a <select>: a
+    // native multi-select needs ctrl-click to deselect, which no admin
+    // discovers, and this control sits directly above select-all + bulk delete.
+    await user.click(gradeChip("7"));
     expect(screen.queryByText("2 selected")).toBeNull();
     expect(rowBoxes()[0].checked).toBe(false);
   });

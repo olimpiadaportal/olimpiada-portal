@@ -55,7 +55,7 @@ async function fetchWholePool(
   packageId: string,
 ) {
   const cols =
-    "id, status, grade_id, topic_id, subtopic_id, primary_locale, updated_at, question_translations(locale, body, media_asset_id), answer_options(count)";
+    "id, status, grade_id, primary_locale, updated_at, question_translations(locale, body, media_asset_id), answer_options(count)";
   const all: any[] = [];
   for (let from = 0; ; from += POOL_FETCH_PAGE) {
     const { data, error } = await supabase
@@ -153,7 +153,6 @@ export default async function EditOlympiadPage({
     { data: subjects },
     { data: grades },
     { data: poolQuestions },
-    { data: topicRows },
     { data: otypes },
     { data: qtypeRows },
     { data: pkgGradeRows },
@@ -174,14 +173,6 @@ export default async function EditOlympiadPage({
       // Both are nullable by design for olympiad questions, which is why the
       // filter needs an explicit "no topic" option.
       fetchWholePool(supabase, id),
-      // Optional taxonomy for the editor: OLYMPIAD-scoped topics of the
-      // package's subject (module separation — never exam topics).
-      supabase
-        .from("topics")
-        .select("id, grade_id, name")
-        .eq("scope", "olympiad")
-        .eq("subject_id", (pkg as any).subject_id)
-        .order("name"),
       supabase.from("olympiad_types").select("id, name").order("name"),
       supabase
         .from("question_types")
@@ -211,29 +202,6 @@ export default async function EditOlympiadPage({
     }))
     .sort((a, b) => a.level - b.level);
   const targetGradeIds = new Set(targetGrades.map((g) => g.id));
-  // Topics without a grade match any grade; grade-bound topics must match one
-  // of the package's target grades.
-  const poolTopics = ((topicRows ?? []) as any[])
-    .filter(
-      (tp) =>
-        tp.grade_id == null ||
-        targetGradeIds.size === 0 ||
-        targetGradeIds.has(String(tp.grade_id)),
-    )
-    .map((tp) => ({ id: String(tp.id), name: String(tp.name) }));
-  let poolSubtopics: { id: string; topic_id: string; name: string }[] = [];
-  if (poolTopics.length > 0) {
-    const { data: subRows } = await supabase
-      .from("subtopics")
-      .select("id, topic_id, name")
-      .in("topic_id", poolTopics.map((tp) => tp.id))
-      .order("name");
-    poolSubtopics = ((subRows ?? []) as any[]).map((st) => ({
-      id: String(st.id),
-      topic_id: String(st.topic_id),
-      name: String(st.name),
-    }));
-  }
 
   // Pre-shaped list rows (small payload; the edit modal loads the full
   // trilingual question on demand).
@@ -255,9 +223,6 @@ export default async function EditOlympiadPage({
       num: i + 1,
       gradeId: q.grade_id ? String(q.grade_id) : "",
       // Nullable BY DESIGN for olympiad questions, which is why the
-      // filter needs an explicit "no topic" option rather than treating
-      // an empty value as "match everything".
-      topicId: q.topic_id ? String(q.topic_id) : "",
       gradeName: String(gradeName),
       excerpt: body.length > 90 ? `${body.slice(0, 90)}…` : body,
       search: trs
@@ -433,8 +398,6 @@ export default async function EditOlympiadPage({
           packageCode={String((pkg as any).code ?? "")}
           subjectName={subjectName}
           packageGrades={targetGrades.map((g) => ({ value: g.id, label: g.name }))}
-          topics={poolTopics}
-          subtopics={poolSubtopics}
           rows={poolRows}
         />
       </section>

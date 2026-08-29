@@ -2407,29 +2407,92 @@ export async function setOlympiadPoolQuestionStatus(
   return null;
 }
 
-export async function archiveOlympiadPackage(fd: FormData): Promise<void> {
+/**
+ * Archives a package: it leaves the catalogue, nobody new can buy it, and every
+ * family that already did keeps lifetime access. That second half is guaranteed
+ * one layer below this action — can_view_olympiad_package's purchase branch
+ * never reads the package's status (015) — so archiving is safe on a purchased
+ * package by construction, and nothing here needs to check for purchases.
+ *
+ * Purchases block DELETE, not archiving; the delete refusal's own sentence
+ * names archiving as the way forward, which is why this action has no guard
+ * beyond requireAdmin() and the id check.
+ *
+ * IT MUST STILL REPORT ITS OWN FAILURE. The previous version used the update
+ * error only to decide whether to write the audit row and then redirected to
+ * /olympiad regardless, so a refused archive — RLS filtering the row, a row
+ * deleted by a second admin, a dropped connection — looked exactly like a
+ * successful one. That is the single path by which an archive could genuinely
+ * appear "blocked", and it is why this returns a DestructiveState instead of
+ * void.
+ */
+export async function archiveOlympiadPackageAction(
+  _prev: OlympiadDeletionState,
+  fd: FormData,
+): Promise<OlympiadDeletionState> {
+  // Guard FIRST — before any client-supplied FormData is read.
   const ctx = await requireAdmin();
-  const id = s(fd, "__id");
-  if (!id) return;
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("olympiad_packages")
-    .update({ status: "archived" })
-    .eq("id", id);
+  const t = await getT();
 
-  if (!error) {
-    await writeAuditLog({
-      actorProfileId: ctx.profileId,
-      action: "admin.olympiad.archive",
-      targetTable: "olympiad_packages",
-      targetId: id,
-      metadata: { status: "archived" },
-      severity: "warning",
-    });
+  const id = s(fd, "__id");
+  if (!UUID_RE.test(id)) return { ok: false, error: t("err.server"), blocks: [] };
+
+  const supabase = await createClient();
+  // Re-verify the client-supplied id server-side, and read the status it is
+  // coming FROM so the audit row records a transition rather than only its
+  // destination.
+  const { data: before, error: readError } = await supabase
+    .from("olympiad_packages")
+    .select("id, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (readError || !before) {
+    console.error(
+      "[admin] olympiad package archive: target not readable",
+      readError?.code ?? "missing",
+    );
+    return { ok: false, error: t("del.err.archiveFailed"), blocks: [] };
   }
 
+  const from = String((before as { status?: unknown }).status ?? "");
+  if (from === "archived") {
+    // Not a failure, and not a mutation either: say so rather than audit a
+    // status change that never happened.
+    return { ok: true, message: t("del.done.packageAlreadyArchived") };
+  }
+
+  // `.select("id")` is what makes a silently-ignored update visible: PostgREST
+  // answers a filtered-out row with success and ZERO rows, not with an error.
+  const { data: updated, error } = await supabase
+    .from("olympiad_packages")
+    .update({ status: "archived" })
+    .eq("id", id)
+    .select("id");
+  if (error || !updated || updated.length === 0) {
+    // Never the raw Postgres text — logged here, generic sentence to the client.
+    console.error(
+      "[admin] olympiad package archive failed",
+      error?.code ?? "no-rows-affected",
+    );
+    return { ok: false, error: t("del.err.archiveFailed"), blocks: [] };
+  }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.olympiad.archive",
+    targetTable: "olympiad_packages",
+    targetId: id,
+    metadata: { from, status: "archived" },
+    severity: "warning",
+  });
+
   revalidatePath("/olympiad");
-  redirect("/olympiad");
+  revalidatePath(`/olympiad/${id}/edit`);
+  // No redirect: archiving destroys nothing, so both screens that offer it —
+  // the package list and the package's own edit page — are still there to read
+  // the answer. The old redirect to /olympiad also threw away the admin's
+  // filters on the way past.
+  return { ok: true, message: t("del.done.packageArchivedNow") };
 }
 
 // =============================================================================
@@ -2473,6 +2536,19 @@ export type OlympiadPackageDeletionPreview = {
   ok: boolean;
   /** Finished sentences, already localized — never raw hints. */
   blockedBy: string[];
+  /**
+   * The raw owner counts, kept alongside the sentences rather than only inside
+   * them. `blockedBy` flattens each {hint, count} into finished copy, which is
+   * right for a refusal but wrong for a DECISION: "this package has 42 owners"
+   * is the fact the admin weighs before choosing archive, and a number buried
+   * mid-sentence in a red block is not one they can read.
+   *
+   * The two are NOT one figure and must not be added together: `purchases`
+   * counts olympiad_purchases rows (the ABB web rail), `entitlements` counts
+   * entitlements rows for the package — an Apple/Google grant, a school licence
+   * or a manual comp has no purchase row at all (migration 124).
+   */
+  owners: { purchases: number; entitlements: number };
   /** Which branch the mutation will ACTUALLY take, decided by the same rule. */
   outcome: "delete" | "archive";
   questions: OlympiadQuestionSplit;
@@ -2523,6 +2599,19 @@ export type OlympiadGradePoolDeletionPreview = {
 function num(v: unknown): number {
   const x = Number(v);
   return Number.isFinite(x) ? x : 0;
+}
+
+// One hint's raw count, read out of a preview's blocked_by[] BEFORE
+// localizeBlocks turns it into a sentence. Zero when the hint is absent, which
+// is exactly what "nobody owns this package" looks like: the SQL only reports a
+// block it is actually raising.
+function blockCount(raw: unknown, hint: string): number {
+  if (!Array.isArray(raw)) return 0;
+  for (const b of raw) {
+    const block = b as DeletionBlock;
+    if (block?.hint === hint) return num(block.count);
+  }
+  return 0;
 }
 
 // Localizes a blocked_by[] array from a preview payload. Unknown hints are
@@ -2638,6 +2727,10 @@ export async function loadOlympiadPackageDeletionPreview(
     status: String(p.package?.status ?? ""),
     ok: Boolean(p.ok),
     blockedBy: localizeBlocks(p.blocked_by, t),
+    owners: {
+      purchases: blockCount(p.blocked_by, "package_has_purchases"),
+      entitlements: blockCount(p.blocked_by, "package_has_entitlements"),
+    },
     outcome: p.outcome === "archive" ? "archive" : "delete",
     questions: splitOf(p.questions),
     deleteCascade: {

@@ -16,6 +16,7 @@ import { spacing } from "@/theme/tokens";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import type { AddChildFields } from "@/lib/api";
 import { useFieldChain } from "@/lib/useFieldChain";
+import { checkNewPassword } from "@/lib/passwordPolicy";
 import { useT } from "@/i18n/useT";
 import {
   useCities,
@@ -71,7 +72,16 @@ export function validateChildInfo(v: ChildInfo, hasDistricts: boolean): ChildInf
   if (!v.schoolId) e.schoolId = "addchild.err.schoolRequired";
   if (!v.gradeId) e.gradeId = "addchild.err.gradeRequired";
   if (!v.password) e.password = "auth.child.err.passwordRequired";
-  else if (v.password.length < 8) e.password = "auth.child.err.passwordTooShort";
+  else {
+    // FEEDBACK ONLY — the BFF re-runs the identical rule. `tooShort` keeps its
+    // existing message; the strength dimensions the old length test never
+    // covered share the one passwordWeak string.
+    const p = checkNewPassword(v.password);
+    if (p) {
+      e.password =
+        p === "tooShort" ? "auth.child.err.passwordTooShort" : "auth.child.err.passwordWeak";
+    }
+  }
   return e;
 }
 

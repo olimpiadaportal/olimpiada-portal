@@ -50,6 +50,26 @@ a 1.12.3 binary.
   that path.
 
 ### Fixed
+- `[store]` `(tester)` **Switching between light and dark left filter chips
+  painted in the old theme** — dark chips with unreadable dark text in light
+  mode, light chips with unreadable pale text in dark mode — until you left the
+  tab and came back. Reported on Parent → Analytics; it also affected the
+  leaderboard, notification and language-picker chips.
+
+  Not a React bug: the chip's text colour and its background come from the same
+  theme object one line apart, and the text was always correct. The Android
+  *native view* never repainted. A background ripple hands the view's drawable to
+  a wrapper that React Native then discards, and the discarded wrapper keeps the
+  callback — so the "please redraw" signal for the new colour went nowhere.
+  Leaving the tab destroyed and rebuilt the views, which is why that appeared to
+  fix it. These controls now use a foreground ripple, which never touches the
+  background at all.
+- `[store]` `(tester)` The Azerbaijani letter **ə rendered as an empty box** in
+  the Parent Analytics labels and the streak pill on some phones. Android's
+  generic monospace font has no glyph for it and React Native does not fall back
+  per-glyph, so the box *was* the fallback. Monospace is now used only where the
+  text can actually be drawn in it — numbers keep their alignment, words render
+  in the normal font.
 - `[store]` The subject list showed **Azərbaycan dili twice** and never showed
   Məntiq. The subject named Məntiq carries the legacy code `az_language`, and
   the label map translated that code as "Azerbaijani". Three other subjects had
@@ -57,10 +77,65 @@ a 1.12.3 binary.
 - `[store]` The test screen's title truncated to "Günün …" on a narrow phone.
   The header now wraps instead of squeezing the title to an ellipsis.
 
+- `[store]` **A parent could reset their child's password, be told it worked, and
+  the child still could not sign in.** The reset wrote to the Auth account by its
+  internal id — which always succeeds — while the child's login looks the account
+  up by an address derived from the 8-digit ID. Nothing kept the two in step, so
+  the new password was stored under an address nobody queries. Resetting now
+  repairs the address first and refuses outright if the child has no login ID,
+  rather than reporting a success it did not achieve.
+- `[store]` A password reset no longer leaves the child locked out by their own
+  earlier failed attempts. Eight wrong tries lock the ID for 15 minutes, and only
+  a *successful* sign-in used to clear that — so the reset was followed by the new
+  password being refused too. A reset now clears the failure history, which is the
+  one event that should.
+- `[store]` `(tester)` On Edit Child, the new-password field sat *below* the main
+  Save button with its own separate button. Typing a password and tapping Save
+  gave a success message while the password was never sent.
+- `[store]` **Physics was offered to Grades 1–6**, where it has no curriculum —
+  tapping it reached an empty screen, and worse, a parent could *buy* it for a
+  young child. Which subjects a grade is taught is now one rule in the database
+  instead of four hand-written copies, so every list, filter and purchase screen
+  agrees. Verified against live data: Physics resolves to grades 7–11 only.
+- `[store]` `(tester)` **The district list was missing most of the country.** It
+  held 15 major cities; Azerbaijan has 64 rayons and 11 cities of republic
+  significance, so a family in any of the other 61 — `Hacıqabul` among them — had
+  no correct answer to give when creating a child. All 75 are now there, read from
+  the State Statistical Committee's official 2024 classification.
+- `[store]` **And every one of them has schools.** School is required when
+  creating a child, so a district with no schools is exactly as unusable as a
+  missing one — adding the districts alone would have moved the dead end, not
+  removed it. 3,805 schools imported from the Ministry of Education's open-data
+  register, covering all 76 districts. The smallest now has 3; `Hacıqabul` has 32.
+- `[store]` Bakı schools now carry their **official names**, including the person
+  each is named after — `Bakı şəhəri Abdulla Şaiq adına 54 nömrəli tam orta
+  ümumtəhsil məktəbi` rather than `Bakı 54 nömrəli tam orta məktəb` — plus 97
+  Bakı schools that were missing entirely. Existing schools were renamed in
+  place, so no child lost the school they were already attached to.
+- `[store]` Every Bakı school now knows which rayon it is in. None of them did,
+  which is also why the admin panel listed all 320 as "Rayon təyin edilməyib".
+- `[store]` City, district and school pickers are now searchable, and the search
+  tolerates Azerbaijani spelling — typing `Haci` finds `Hacıqabul`. The box appears
+  automatically once a list is long enough to need it.
+- `[store]` Screens that show admin-managed data (prices, subjects, schools,
+  rankings) refreshed only on a pull. Several never refreshed at all, so a newly
+  added school could not be made to appear by any gesture.
+- `[store]` New passwords now require an uppercase letter and a special character.
+  **Existing passwords keep working** — the rule applies only when a password is
+  chosen. Azerbaijani capitals count: `Şəkil!2026` is accepted, which a naive
+  `A–Z` check would have rejected on the product's own default language.
+
 ### Internal
 - `[internal]` Subject labels corrected for all 7 codes in three languages, and
   synced to the mobile catalogue. Fixing web alone is why the app still showed
   the duplicate after the web fix shipped.
+- `[internal]` The password rule lives in one module, triplicated byte-identically
+  across the three apps (they share no package) with a parity check. It uses
+  `pw !== pw.toLowerCase()` rather than `/[A-Z]/` or `/\p{Lu}/u` — the first
+  rejects valid Azerbaijani passwords, the second is unproven on Hermes.
+- `[internal]` The mobile self-service password change went straight to Supabase
+  Auth from the device with **no server validation at all**. It now goes through a
+  new BFF route, so the rule cannot be bypassed by the client.
 
 ---
 
@@ -122,3 +197,87 @@ Recorded for the round's history; they never appear in store notes.
 - `[internal]` Olympiad pool: full replacement in one transaction
   (migration 147), Topic removed from olympiad question management, multi-select
   grade filter.
+
+### 2026-08-29
+- `[admin]` **Admin → Subjects is now the real source of truth.** The public
+  `/subjects` page — the one the landing page's browse button points at — was a
+  hardcoded four-item list on web *and* mobile, and two of its four entries named
+  subjects that do not exist. It could never show a subject you created. Both are
+  now read from the database.
+- `[admin]` A subject can no longer be **born published and unsellable**. Creating
+  one requires all three interval prices (week/month/year), and publishing is
+  refused outright until they exist — instead of silently succeeding and leaving
+  the subject invisible to families. An unpublished subject can now be priced,
+  which that rule makes necessary.
+- `[admin]` The subject delete dialog is rebuilt. The real cause of "aggressive
+  red block, text difficult to read" was a button styled `btn-danger` *without*
+  `btn`, so it rendered as a native 13px black-on-red browser button. Archive,
+  clear-the-question-bank and delete are now three visually distinct choices, and
+  a subject with one warning and three blocking reasons renders **zero** stacked
+  red boxes instead of seven.
+- `[admin]` **Archive is now offered where the refusal appears.** Archiving a
+  purchased olympiad package was never actually blocked — only hard delete was,
+  correctly. But the package list offered just Edit and Delete, so an admin met a
+  disabled button and a message saying "archive it instead" with nothing to click.
+  The owner count is stated plainly: archiving stops new sales, buyers keep
+  lifetime access.
+- `[admin]` A **failed archive was indistinguishable from a successful one** — the
+  error was used only to skip the audit row, then it redirected regardless.
+- `[admin]` The package list row now carries a real **Archive…** button beside
+  Delete, sharing one dialog. It stays enabled while Delete is refused, which is
+  the whole point: that combination is what an admin meets on a purchased package.
+- `[admin]` **A confirmation gate you had not satisfied looked identical to one
+  you had.** The shared destructive dialog's button carried `btn-danger` without
+  `btn`, and `.btn:disabled` — the only dimming rule in the stylesheet — never
+  matched it. So a Delete button still waiting for a typed confirmation, or
+  blocked outright, rendered exactly like an armed one. It was also the cause of
+  the unreadable 13px black-on-red label. A test now fails on any lone
+  `btn-danger` anywhere in the panel.
+- `[web]` An archived olympiad package **disappeared from the parent's screens
+  while their child kept playing it**. Both parent pages asked the catalogue
+  question first (`status = 'active'`) and joined purchases onto the result.
+  Ownership is now read first and widens the query. Latent until now — putting
+  Archive one click away in the admin panel is exactly what made it reachable.
+- `[web]` Archived subjects still appeared as parent analytics tabs, and the
+  mobile subscribe screen still offered them: those surfaces filtered the *price
+  row's* status and never read the subject's.
+- `[internal]` Validation check 32 asserted a NAME SHAPE that migration 160
+  deliberately changed — it matched the terse seeded form and could not match the
+  official ministry name, so it failed the moment the data got better. It now
+  counts numbered Bakı schools, which survives any future renaming. Same class of
+  staleness as check 33; a check should assert the invariant, not the wording.
+- `[internal]` Migrations 155/156/157 backported into canonical `011` and `014`,
+  with the `begin;/commit;` wrappers stripped — a canonical file that
+  self-transacts once committed an outer `drop schema` here and destroyed every
+  row. Both files verified to contain zero transaction statements.
+- `[web]` A news article could show **more likes than views** (11 views, 16
+  likes). Views were only counted on the article page, but the mobile feed card
+  has a like button — so every like from the feed was +1 like and +0 views. A
+  like now implies a view, enforced by a trigger *and* a constraint rather than
+  by which page a button happens to sit on. One live article was reconciled; no
+  displayed number was clamped.
+- `[web]` The view beacon dropped the view when `sessionStorage` threw (private
+  browsing, blocked site data) while the like on the same page still landed —
+  the one way the web could produce this too.
+- `[web]` **Leaderboards showed a higher percentage below a lower one.** Not a
+  client sort bug: `get_leaderboard` concatenated provisional rows *below* every
+  ranked row regardless of score, so a provisional student on 90% sat under a
+  ranked one on 40%. Percentages now descend the whole page while rank numbers
+  are still withheld below the minimum-attempts threshold.
+- `[web]` Copy Child ID on the web Parent Panel, matching the mobile control.
+  Copies the raw digits, never the spaced display form.
+- `[admin]` Password rule enforced on all four admin account-creation and reset
+  paths; `users.ts` no longer returns hardcoded English error text.
+- `[internal]` Migrations 155 (subject/grade availability), 156 (leaderboard
+  ordering), 157 (news like-implies-view) applied to staging then production.
+  Production validation: **129 checks, zero failures.**
+- `[internal]` Validation check 33 asserted an invariant migration 135 had
+  already **inverted** — a giveaway is now a modifier on an open payment rail,
+  not an alternative to one, so `payments + giveaway` both on is correct. The
+  check had been failing on production for every live campaign. This is also why
+  the giveaway toggle appeared to "turn itself off": with payments off, enabling
+  it raises.
+- `[internal]` The canonical seed priced subjects from a whitelist containing
+  `'science'`, which has never been a real code, while omitting `elm` and
+  `fizika`. Migration 154 fixed those two as data only, so a from-zero rebuild
+  would have reproduced the missing-subjects bug from source.

@@ -30,6 +30,7 @@ import { radius, spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 import { useFieldChain } from "@/lib/useFieldChain";
+import { checkNewPassword } from "@/lib/passwordPolicy";
 import { useAuthStore } from "@/features/auth/authStore";
 
 export default function Register() {
@@ -64,7 +65,15 @@ export default function Register() {
     if (!firstName.trim() || !lastName.trim()) return setError("parent.err.required");
     if (!email.trim()) return setError("parent.err.email");
     if (!E164_RE.test(phone)) return setError("parent.err.phone");
-    if (password.length < 8) return setError("parent.err.password");
+    // FEEDBACK ONLY — the BFF re-runs the identical rule and is authoritative.
+    // `tooShort` keeps the existing message; the strength dimensions the old
+    // length test never covered share the one passwordWeak string.
+    const pwProblem = checkNewPassword(password);
+    if (pwProblem) {
+      return setError(
+        pwProblem === "tooShort" ? "parent.err.password" : "parent.err.passwordWeak",
+      );
+    }
 
     setPending(true);
     setError(null);

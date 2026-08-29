@@ -68,7 +68,8 @@ const KEYS = [
   "addchild.giveawayGranted", "addchild.freeAccessGranted", "gate.paymentsOff",
   // validation-error keys returned by createChild / validateChildInfo:
   "auth.child.err.firstNameRequired", "auth.child.err.lastNameRequired",
-  "auth.child.err.passwordTooShort", "auth.child.err.passwordEqualsId",
+  "auth.child.err.passwordTooShort", "auth.child.err.passwordWeak",
+  "auth.child.err.passwordEqualsId",
   "auth.child.err.createFailed",
   "addchild.err.cityRequired", "addchild.err.schoolRequired",
   "addchild.err.gradeRequired", "addchild.err.districtRequired",

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { fetchTaughtSubjectIds } from "@/lib/childSubjects";
+import { keepTaughtSubjects } from "@/lib/gradeSubjects";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
@@ -114,7 +116,9 @@ export default async function SubscribePage({
 
   const { data: child } = await supabase
     .from("students")
-    .select("profile_id, first_name, last_name, child_unique_id, created_by_parent_profile_id")
+    .select(
+      "profile_id, first_name, last_name, child_unique_id, grade_id, created_by_parent_profile_id",
+    )
     .eq("profile_id", id)
     .maybeSingle();
   if (!child || (child as any).created_by_parent_profile_id !== parent.profileId) {
@@ -152,7 +156,12 @@ export default async function SubscribePage({
     }
     map.get(sid)!.prices[row.interval] = Number(row.price_amount);
   }
-  const subjects = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  // SCOPED TO THIS CHILD'S GRADE (migration 155). This is the screen where the
+  // rule matters most: nothing else stopped a parent BUYING Fizika — a grades
+  // 7-11 subject — for a grade-3 child, who would then own a subscription that
+  // can only ever open an empty test. The same DB rule the child's own screens
+  // use, so the two can never disagree about what exists for this child.
+  const taught = await fetchTaughtSubjectIds(supabase, (child as any).grade_id ?? null);
 
   // Is there already a live subscription? If so, show the subject editor instead of
   // the start-trial form (the child already has a plan + an allocated login ID).
@@ -187,6 +196,16 @@ export default async function SubscribePage({
       removeAt: (r.remove_at ?? null) as string | null,
     }));
   }
+
+  // The catalog the editors offer = subjects for this grade, PLUS anything this
+  // child is already covered for. Filtering what can be ADDED is the point;
+  // hiding a subject the family already pays for would leave it in the plan the
+  // editor submits with no card to remove it from — bought once, unremovable
+  // forever. A pre-existing mis-sale must stay visible so it can be cancelled.
+  const subjects = keepTaughtSubjects(
+    Array.from(map.values()),
+    taught && new Set([...taught, ...covered.map((c) => c.subjectId)]),
+  ).sort((a, b) => a.name.localeCompare(b.name));
 
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);

@@ -159,7 +159,13 @@ export default async function EditOlympiadPage({
     fullDict,
   ] =
     await Promise.all([
-      supabase.from("subjects").select("id, name").order("name"),
+      // Every status, on purpose — the filtering happens below. This list has
+      // TWO jobs: it names the package's CURRENT subject in the header, and it
+      // fills the form's subject select. Narrowing the query to active would do
+      // the second job by breaking the first: a package whose subject was later
+      // archived would lose its header name and open with an empty select that
+      // silently reassigns the package on the next save.
+      supabase.from("subjects").select("id, name, status").order("name"),
       supabase.from("grades").select("id, name, level").order("level"),
       // PRIVATE pool: questions owned by THIS package only, with what the
       // list needs (az/primary body excerpt, option count, image flag).
@@ -236,8 +242,16 @@ export default async function EditOlympiadPage({
       updatedAt: String(q.updated_at ?? "").slice(0, 10),
     };
   });
+  const allSubjects = (subjects ?? []) as any[];
   const subjectName =
-    ((subjects ?? []) as any[]).find((s) => s.id === (pkg as any).subject_id)?.name ?? "";
+    allSubjects.find((s) => s.id === (pkg as any).subject_id)?.name ?? "";
+  // Pickable = ACTIVE, plus whatever this package already points at. An
+  // archived subject must not be attachable to anything new, but the one
+  // already attached has to stay selectable or saving any other field on this
+  // form would quietly move the package off it.
+  const subjectOptions = allSubjects
+    .filter((s) => s.status === "active" || s.id === (pkg as any).subject_id)
+    .map((s) => ({ value: s.id, label: String(s.name) }));
   // Published pool size per target grade (drives the Grades & Pools manager).
   const publishedByGrade = new Map<string, number>();
   for (const q of (poolQuestions ?? []) as any[]) {
@@ -292,7 +306,7 @@ export default async function EditOlympiadPage({
           dict={formDict}
           locale={locale}
           id={(pkg as any).id}
-          subjects={((subjects ?? []) as any[]).map((s) => ({ value: s.id, label: s.name }))}
+          subjects={subjectOptions}
           olympiadTypes={((otypes ?? []) as any[]).map((o) => ({ value: o.id, label: o.name }))}
           // Reuses the per-grade published counts the page already computes.
           gradePools={gradesWithCounts}
@@ -411,8 +425,6 @@ export default async function EditOlympiadPage({
           isArchived={String((pkg as any).status) === "archived"}
           strings={{
             heading: t("del.package.heading"),
-            archive: t("oly2.archive"),
-            archiving: t("pend.processing"),
             restore: t("del.restore"),
             restoring: t("pend.processing"),
             restoreHint: t("del.restoreHint"),
@@ -420,20 +432,32 @@ export default async function EditOlympiadPage({
             title: t("del.package.title"),
             loading: t("del.loading"),
             loadFailed: t("del.loadFailed"),
-            blockedTitle: t("del.package.blockedTitle"),
-            warnTitle: t("del.warnTitle"),
-            irreversible: t("del.irreversible"),
-            codeLabel: t("del.codeLabel"),
-            codeHint: t("del.codeHint"),
-            ackLabel: t("del.ackLabel"),
             cancel: t("action.cancel"),
             close: t("modal.close"),
             working: t("pend.deleting"),
-            questions: t("del.questions"),
+            irreversible: t("del.irreversible"),
+            ackLabel: t("del.ackLabel"),
+            intro: t("del.package.intro"),
+            impact: t("del.package.impact"),
+            impactOwners: t("del.package.impactOwners"),
+            impactEntitlements: t("del.package.impactEntitlements"),
+            impactQuestions: t("del.package.impactQuestions"),
+            impactMedia: t("del.package.impactMedia"),
+            cascade: t("del.package.cascade"),
+            ownersNote: t("del.package.ownersNote"),
+            noOwners: t("del.package.noOwners"),
+            archiveTitle: t("del.package.archiveTitle"),
+            archiveDesc: t("del.package.archiveDesc"),
+            archiveAction: t("del.package.archiveAction"),
+            archivedAlready: t("del.package.archivedAlready"),
+            archiving: t("pend.processing"),
+            recommended: t("del.package.recommended"),
+            confirmHeading: t("del.package.confirmHeading"),
+            confirmIntro: t("del.package.confirmIntro"),
+            gateHint: t("del.package.gateHint"),
+            blockedTitle: t("del.package.blockedTitle"),
             outcomeDelete: t("del.package.outcomeDelete"),
             outcomeArchive: t("del.package.outcomeArchive"),
-            cascade: t("del.package.cascade"),
-            media: t("del.media"),
             deleteTitle: t("del.package.deleteTitle"),
             deleteDesc: t("del.package.deleteDesc"),
             deleteAction: t("del.package.deleteAction"),

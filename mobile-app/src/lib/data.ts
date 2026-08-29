@@ -81,26 +81,138 @@ export type SubjectPricingRow = {
   subject: { code: string | null; name: string } | null;
 };
 
-/** Active per-subject pricing (anon-readable; feeds pricing + wizard). */
-export async function fetchSubjectsPricing(): Promise<SubjectPricingRow[]> {
-  const { data, error } = await supabase
-    .from("subjects_pricing")
-    .select(
-      "subject_id, interval, amount:price_amount, currency, subject:subject_id(code, name)",
-    )
-    .eq("status", "active");
+/**
+ * Active per-subject pricing (anon-readable; feeds pricing + wizard).
+ *
+ * `gradeId` narrows the catalog to what ONE child's grade studies (migration
+ * 155) — pass it on any screen that sells to a single child, or Fizika stays
+ * buyable for a grade-3 pupil. It defaults to NO filtering rather than to the
+ * caller-scoped reader on purpose: every current caller is a parent whose
+ * children span grades, and a parent resolves to no restriction anyway, so the
+ * default would only buy an extra round trip.
+ *
+ * TWO STATUSES MATTER, AND ONLY ONE OF THEM WAS CHECKED. `.eq("status",
+ * "active")` below filters the PRICING row; archiving a subject in the admin
+ * panel does NOT deactivate its price rows, so an archived subject stayed
+ * listed — and buyable — on the mobile subscribe screen and stayed a tab on
+ * mobile analytics, long after the web screens (which read `subjects.status`)
+ * had correctly dropped it. Admin → Subjects is the single source of truth for
+ * WHAT EXISTS; pricing only answers what it costs.
+ */
+export async function fetchSubjectsPricing(
+  gradeId: string | null = null,
+): Promise<SubjectPricingRow[]> {
+  const [{ data, error }, taught, published] = await Promise.all([
+    supabase
+      .from("subjects_pricing")
+      .select(
+        "subject_id, interval, amount:price_amount, currency, subject:subject_id(code, name)",
+      )
+      .eq("status", "active"),
+    fetchTaughtSubjectIds(gradeId),
+    fetchPublishedSubjectIds(),
+  ]);
   if (error) throw error;
-  return (data ?? []) as unknown as SubjectPricingRow[];
+  const rows = ((data ?? []) as unknown as SubjectPricingRow[]).filter((r) =>
+    published.has(r.subject_id),
+  );
+  if (!taught) return rows;
+  return rows.filter((r) => taught.has(r.subject_id));
 }
 
-export async function fetchActiveSubjects() {
-  const { data, error } = await supabase
-    .from("subjects")
-    .select("id, code, name")
-    .eq("status", "active")
-    .order("name");
+/**
+ * Ids of the subjects the admin has PUBLISHED (`status = 'active'`).
+ *
+ * A separate read rather than an embedded `subject:subject_id(status)` filter:
+ * `subjects.status` lives on the parent row, so filtering it through the embed
+ * needs a PostgREST `!inner` hint, and getting that subtly wrong fails the
+ * whole purchase screen. One extra world-readable round trip, issued in the
+ * same Promise.all, costs nothing and cannot misfire.
+ *
+ * Throws like every other read here: a catalogue we could not verify must not
+ * quietly fall back to "show everything", because the rows it would show are
+ * the archived ones.
+ */
+async function fetchPublishedSubjectIds(): Promise<Set<string>> {
+  const { data, error } = await supabase.from("subjects").select("id").eq("status", "active");
   if (error) throw error;
-  return data ?? [];
+  return new Set(((data ?? []) as { id: string }[]).map((r) => String(r.id)));
+}
+
+// ---- grade availability (migration 155) -------------------------------------
+//
+// A subject is offered to a grade when the curriculum reaches it. Fizika is a
+// grades 7-11 subject, and until this rule existed on mobile a grade-3 child was
+// shown it everywhere and a parent could buy it — the subscription could then
+// only ever open an empty test.
+//
+// THE RULE ITSELF IS IN THE DATABASE and is never re-derived here. The web had
+// it as a hand-written client effect pasted into two files; a third and fourth
+// copy in this app would have drifted the same way. Everything below only asks
+// the RPC and applies its answer.
+
+/**
+ * The RPC answer → a lookup set, or `null` meaning "unknown, do not filter".
+ *
+ * `null` IS THE IMPORTANT CASE: no grade on the child's record, an RPC error, or
+ * an empty result all mean the rule cannot be applied, and the honest response
+ * is to leave the list alone. Hiding the whole catalogue from a paying family
+ * because one read failed is a far worse outcome than listing a subject the
+ * attempt RPCs would refuse anyway.
+ */
+export function taughtSubjectSet(data: unknown, error: unknown = null): Set<string> | null {
+  if (error || !Array.isArray(data)) return null;
+  const ids = new Set<string>();
+  for (const row of data) {
+    // `returns setof uuid` arrives as bare strings through PostgREST; the object
+    // arm costs one line and removes any dependence on that detail.
+    const id =
+      typeof row === "string"
+        ? row
+        : row && typeof row === "object"
+          ? String(Object.values(row as Record<string, unknown>)[0] ?? "")
+          : "";
+    if (id) ids.add(id);
+  }
+  return ids.size > 0 ? ids : null;
+}
+
+/** Keep only the subjects this grade studies; `null` passes the list through. */
+export function keepTaughtSubjects<T extends { id: string }>(
+  items: readonly T[],
+  taught: Set<string> | null,
+): T[] {
+  if (!taught) return [...items];
+  return items.filter((s) => taught.has(s.id));
+}
+
+/**
+ * Which subjects the grade studies.
+ *
+ * `undefined` (the default) asks the CALLER-SCOPED reader: a student session
+ * resolves to their own grade, and any other session — a parent, whose filters
+ * legitimately span children of different grades — resolves to no restriction.
+ * Pass an explicit grade id on a parent surface that acts on ONE child, and
+ * `null` to skip filtering entirely.
+ */
+export async function fetchTaughtSubjectIds(
+  gradeId?: string | null,
+): Promise<Set<string> | null> {
+  if (gradeId === null) return null;
+  const { data, error } =
+    gradeId === undefined
+      ? await supabase.rpc("my_taught_subjects")
+      : await supabase.rpc("subjects_taught_to_grade", { p_grade: gradeId });
+  return taughtSubjectSet(data, error);
+}
+
+export async function fetchActiveSubjects(gradeId?: string | null) {
+  const [{ data, error }, taught] = await Promise.all([
+    supabase.from("subjects").select("id, code, name").eq("status", "active").order("name"),
+    fetchTaughtSubjectIds(gradeId),
+  ]);
+  if (error) throw error;
+  return keepTaughtSubjects((data ?? []) as { id: string; code: string | null; name: string }[], taught);
 }
 
 // ---- news ---------------------------------------------------------------------

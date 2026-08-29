@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/admin/guards";
 import { createAdminClient, hasServiceRole } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { checkNewPassword, type PasswordProblem } from "@/lib/admin/passwordPolicy";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
 import { getT } from "@/i18n/server";
 
@@ -33,6 +34,17 @@ function f(formData: FormData, name: string): string {
   const v = formData.get(name);
   return typeof v === "string" ? v.trim() : "";
 }
+
+// The password strength rule lives in ONE module (passwordPolicy.ts, twinned
+// byte-for-byte with web-app and mobile-app). It returns a CODE rather than a
+// message because the three apps have three different i18n key namespaces —
+// this is the admin-panel half of that contract.
+const PASSWORD_PROBLEM_KEY: Record<PasswordProblem, string> = {
+  tooShort: "pw.err.tooShort",
+  tooLong: "pw.err.tooLong",
+  needsUpper: "pw.err.needsUpper",
+  needsSpecial: "pw.err.needsSpecial",
+};
 
 // L10: shared fail-CLOSED parent-role check. Returns true ONLY when the target
 // profile verifiably holds the 'parent' role; a failed/empty roles lookup (bad
@@ -58,8 +70,77 @@ async function holdsParentRole(
 }
 
 // =====================================================================
-// RESET CHILD PASSWORD (existing behaviour — unchanged)
+// RESET CHILD PASSWORD
+//
+// A reset here means "make this child able to sign in" — support uses this
+// path to rescue accounts that cannot. ONE password store (Supabase Auth) is
+// addressed by TWO keys: the reset writes by auth user id (always succeeds),
+// while child login signs in by the synthetic email derived from the 8-digit
+// id. Migration 146 backfilled ids for children created while payments were
+// off but could not write auth.users.email from SQL, so accounts exist whose
+// displayed id and login address disagree. Writing a password on one of those
+// reports success and changes nothing the child can use.
 // =====================================================================
+
+// admin-panel copy of web-app childAccountService.reconcileChildLoginEmail.
+// Duplicated on purpose: admin-panel is a separate deployable and cannot
+// import from web-app.
+//
+// Idempotent — an already-correct address costs one read and no write, which
+// is what makes it safe on every reset instead of only the broken ones. A
+// FAILED READ FALLS THROUGH TO THE WRITE rather than skipping: skipping on a
+// read error is the one outcome nothing downstream could ever detect.
+async function reconcileChildLoginEmail(
+  admin: ReturnType<typeof createAdminClient>,
+  authUserId: string,
+  childUniqueId: string,
+): Promise<{ ok: boolean; changed: boolean }> {
+  const desired = `c${childUniqueId}@children.invalid`;
+
+  const { data: existing } = await admin.auth.admin.getUserById(authUserId);
+  const currentEmail = existing?.user?.email?.trim().toLowerCase() ?? null;
+  if (currentEmail === desired) return { ok: true, changed: false };
+
+  // email_confirm keeps the address confirmed: GoTrue refuses
+  // signInWithPassword on an unconfirmed email, which would trade one silent
+  // login failure for another.
+  const { error } = await admin.auth.admin.updateUserById(authUserId, {
+    email: desired,
+    email_confirm: true,
+  });
+  if (error) {
+    // Never return raw Auth error text to the client.
+    console.error("[admin] child login email reconcile failed", error.message);
+    return { ok: false, changed: false };
+  }
+  return { ok: true, changed: true };
+}
+
+// Void the child's recent failed-login streak. is_child_login_locked counts
+// failures in the last 15 minutes and ONLY a successful login clears them, so
+// without this the rescued child is still refused for the rest of the window —
+// which looks exactly like the reset not having worked. Successful attempts
+// stay: they are login history, not a lockout.
+//
+// Best-effort: the password is already changed by the time this runs, so a
+// failure must not be reported as a failed reset. It is recorded in the audit
+// row instead.
+async function clearChildLoginFailures(
+  admin: ReturnType<typeof createAdminClient>,
+  childUniqueId: string,
+): Promise<boolean> {
+  const { error } = await admin
+    .from("child_login_attempts")
+    .delete()
+    .eq("child_unique_id", childUniqueId)
+    .eq("success", false);
+  if (error) {
+    console.error("[admin] could not clear the child login lockout");
+    return false;
+  }
+  return true;
+}
+
 export type ResetChildPasswordState = { error?: string; ok?: boolean } | null;
 
 export async function resetChildPassword(
@@ -77,9 +158,10 @@ export async function resetChildPassword(
   const password = String(formData.get("password") ?? "");
 
   if (!studentProfileId) return { error: t("accounts.reset.err.missing") };
-  if (password.length < 8) return { error: t("accounts.reset.err.short") };
-  // L11: cap the password length server-side as well.
-  if (password.length > PASSWORD_MAX) return { error: t("err.tooLong") };
+  // One rule for every newly chosen password, length caps included. Enforced
+  // server-side because the form's attributes are UX, not a guarantee.
+  const pwProblem = checkNewPassword(password);
+  if (pwProblem) return { error: t(PASSWORD_PROBLEM_KEY[pwProblem]) };
 
   const admin = createAdminClient();
 
@@ -96,12 +178,28 @@ export async function resetChildPassword(
   }
   if (!cred?.auth_user_id) return { error: t("accounts.reset.err.noCredentials") };
 
+  // A child with no 8-digit id has no username: no password would let them
+  // in, so reporting a successful reset would be a lie. The account needs an
+  // id allocated, which is a different repair than a password.
+  const childUniqueId: string | null = cred.child_unique_id ?? null;
+  if (!childUniqueId) return { error: t("accounts.reset.err.noLoginId") };
+
   // Defensive: never allow the password to equal the public 8-digit ID.
-  if (password === cred.child_unique_id) {
+  if (password === childUniqueId) {
     return { error: t("accounts.reset.err.equalsId") };
   }
 
-  // 2) Reset the password via the Auth admin API.
+  // 2) Repair the login address BEFORE touching the password. On failure the
+  //    password is deliberately left alone: setting it would put the account
+  //    straight back into the state this whole path exists to end.
+  const reconciled = await reconcileChildLoginEmail(
+    admin,
+    cred.auth_user_id,
+    childUniqueId,
+  );
+  if (!reconciled.ok) return { error: t("accounts.reset.err.loginRepair") };
+
+  // 3) Reset the password via the Auth admin API.
   const { error: updErr } = await admin.auth.admin.updateUserById(
     cred.auth_user_id,
     { password },
@@ -112,7 +210,7 @@ export async function resetChildPassword(
     return { error: t("err.server") };
   }
 
-  // 3) Record who/when the password was last set.
+  // 4) Record who/when the password was last set.
   await admin
     .from("child_credentials")
     .update({
@@ -121,12 +219,19 @@ export async function resetChildPassword(
     })
     .eq("student_profile_id", studentProfileId);
 
+  // 5) A reset is precisely the event that should void the failure history.
+  const lockoutCleared = await clearChildLoginFailures(admin, childUniqueId);
+
   await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.child.password_reset",
     targetTable: "child_credentials",
     targetId: studentProfileId,
     severity: "warning",
+    // Support needs to SEE the repair: emailReconciled means this account was
+    // one that could never sign in, and an uncleared lockout explains a child
+    // still being refused for the rest of the 15-minute window.
+    metadata: { emailReconciled: reconciled.changed, lockoutCleared },
   });
 
   revalidatePath("/accounts");
@@ -167,8 +272,8 @@ export async function createParent(
   }
   if (!email || !email.includes("@")) return { error: t("accounts.create.err.email") };
   if (email.length > 254) return { error: t("err.tooLong") };
-  if (password.length < 8) return { error: t("accounts.create.err.password") };
-  if (password.length > PASSWORD_MAX) return { error: t("err.tooLong") };
+  const parentPwProblem = checkNewPassword(password);
+  if (parentPwProblem) return { error: t(PASSWORD_PROBLEM_KEY[parentPwProblem]) };
 
   const admin = createAdminClient();
 
@@ -249,7 +354,6 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALLOWED_INTERVALS = new Set(["week", "month", "year"]);
 const NAME_MAX = 80;
-const PASSWORD_MAX = 128;
 const SUBJECTS_MAX = 20;
 
 // Round 12: live parent autocomplete for the admin Add-Child form. Case-insensitive
@@ -347,9 +451,8 @@ export async function createChildForParent(
   ) {
     return { error: t("accounts.create.err.required") };
   }
-  if (password.length < 8 || password.length > PASSWORD_MAX) {
-    return { error: t("accounts.create.err.password") };
-  }
+  const childPwProblem = checkNewPassword(password);
+  if (childPwProblem) return { error: t(PASSWORD_PROBLEM_KEY[childPwProblem]) };
   if (gradeId && !UUID_RE.test(gradeId)) {
     return { error: t("accounts.child.create.err.invalid") };
   }

@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Check, ChevronDown, Globe } from "lucide-react-native";
 import { AppText } from "./AppText";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, shadow, spacing } from "@/theme/tokens";
+import { radius, shadow, spacing, tint } from "@/theme/tokens";
 import { isLocale, useLocaleStore, type Locale } from "@/i18n";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
@@ -67,7 +67,11 @@ export function LocaleSwitcher({
         // 40px chip + 8 hitSlop clears both the iOS 44pt and Material 48dp
         // minimum touch targets without a bulky control in the header row.
         hitSlop={8}
-        android_ripple={{ color: tokens.border }}
+        // Foreground ripple — this trigger sets its own backgroundColor, and a
+        // background ripple leaves it painting the PREVIOUS theme's colour after
+        // a light/dark switch. See features/analytics/AnalyticsDashboard.tsx.
+        // Especially visible here: this control is how the theme gets changed.
+        android_ripple={{ color: tint(tokens.accent, 0.14), foreground: true }}
         style={({ pressed }) => ({
           flexDirection: "row",
           alignItems: "center",
@@ -139,7 +143,8 @@ export function LocaleSwitcher({
                     setLocale(l);
                     setOpen(false);
                   }}
-                  android_ripple={{ color: tokens.chipBg }}
+                  // Foreground ripple — the ACTIVE row carries a background.
+                  android_ripple={{ color: tint(tokens.accent, 0.14), foreground: true }}
                   style={({ pressed }) => ({
                     flexDirection: "row",
                     alignItems: "center",

@@ -122,16 +122,23 @@ function MetaChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
-function PublicPackagesSection() {
-  const { t, locale } = useT();
-  const { tokens } = useTheme();
-
-  const q = useQuery({
+/** The packages read as its OWN hook. The section renders it, but the pull
+ *  lives on the screen below and can only refetch what it is handed — so both
+ *  call this. Two observers of one query key still cost one request. */
+function usePublicPackages() {
+  return useQuery({
     queryKey: ["public-oly-packages"],
     queryFn: fetchPublicOlympiadPackages,
     enabled: isSupabaseConfigured,
     staleTime: PKG_STALE_MS,
   });
+}
+
+function PublicPackagesSection() {
+  const { t, locale } = useT();
+  const { tokens } = useTheme();
+
+  const q = usePublicPackages();
 
   return (
     <View style={{ gap: spacing.lg }}>
@@ -263,7 +270,11 @@ export default function Pricing() {
   // The subjects_pricing read is gone with the amounts it fed; only the CMS
   // copy around the cards still comes from the server.
   const overridesQ = useContentOverrides(locale);
-  const { refreshing, onRefresh } = usePullRefresh([overridesQ]);
+  // The packages band is admin-managed and cached for five minutes. Leaving it
+  // out of `sources` is why a pull repainted the copy around it and left the
+  // packages themselves at whatever the screen first fetched.
+  const packagesQ = usePublicPackages();
+  const { refreshing, onRefresh } = usePullRefresh([overridesQ, packagesQ]);
 
   const popular = plan === "monthly";
 

@@ -5,9 +5,11 @@
 //     name, 8-digit ID (mono, grouped "1234 5678") and the "only a parent can
 //     change" hint,
 //   * editable name (bffUpdateStudentName — web childUpdateOwnName twin),
-//   * security — change password DIRECTLY via supabase.auth.updateUser after
-//     the web childChangeOwnPassword client checks (≥8 chars, ≠ the child's
-//     8-digit ID, confirm-match),
+//   * security — change password through the BFF (bffChangeOwnPassword) after
+//     the web childChangeOwnPassword client checks (the shared password
+//     policy, ≠ the child's 8-digit ID, confirm-match). It used to call
+//     supabase.auth.updateUser directly, which meant no server-side strength
+//     rule ran at all,
 //   * read-only school info (ListRow facts: grade via formatGradeLabel, city,
 //     school),
 //   * character-sticker THEME picker + light-mode PALETTE picker — both write
@@ -40,9 +42,9 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { ARENA_LIGHT, radius, spacing, type ArenaPalette } from "@/theme/tokens";
 import { ARENA_PALETTE_GROUPS } from "@/theme/palettes.generated";
 import { useT } from "@/i18n/useT";
-import { bffUpdateStudentName } from "@/lib/api";
+import { bffChangeOwnPassword, bffUpdateStudentName } from "@/lib/api";
 import { useFieldChain } from "@/lib/useFieldChain";
-import { supabase } from "@/lib/supabase";
+import { checkNewPassword } from "@/lib/passwordPolicy";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { hasRemovableChildPhoto } from "@/lib/childAvatar";
 import { groupChildId } from "@/features/parent/commerce";
@@ -55,6 +57,7 @@ import {
   type StudentProfile,
 } from "./studentProfile";
 import { useSetStudentPalette } from "./useArenaPalette";
+import { QK } from "@/features/arena/queries";
 import { useAuthStore } from "@/features/auth/authStore";
 
 type T = (key: string) => string;
@@ -159,6 +162,11 @@ export function StudentNameSection({ profile, t }: { profile: StudentProfile; t:
     setDone(true);
     setOpen(false);
     void queryClient.invalidateQueries({ queryKey: studentProfileKey(profileId) });
+    // The HOME greeting reads the name from the ARENA SELF row, which is a
+    // different cache entry: invalidating only the profile key renamed the
+    // student on this screen and left Home greeting them by the old name until
+    // the app was restarted.
+    void queryClient.invalidateQueries({ queryKey: QK.self(profileId ?? "-") });
   }
 
   return (
@@ -264,9 +272,15 @@ export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T
   async function submit() {
     if (pending) return;
     setDone(false);
-    // Web childChangeOwnPassword contract: min 8, never the 8-digit login ID.
-    if (pw.length < 8) {
-      setError(t("profile.err.passwordShort"));
+    // Web childChangeOwnPassword contract: the shared strength policy, and
+    // never the 8-digit login ID. FEEDBACK ONLY — the BFF re-runs both.
+    // `tooShort` keeps its existing message; the strength dimensions the old
+    // length test never covered share the one passwordWeak string.
+    const problem = checkNewPassword(pw);
+    if (problem) {
+      setError(
+        t(problem === "tooShort" ? "profile.err.passwordShort" : "profile.err.passwordWeak"),
+      );
       return;
     }
     if (uniqueId && pw === uniqueId) {
@@ -279,10 +293,12 @@ export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T
     }
     setError(null);
     setPending(true);
-    const { error: err } = await supabase.auth.updateUser({ password: pw });
+    // Was a direct supabase.auth.updateUser, which left a CHILD's own password
+    // change with no server-side rule at all. The BFF owns it now.
+    const res = await bffChangeOwnPassword(pw);
     setPending(false);
-    if (err) {
-      setError(t("profile.err.updateFailed"));
+    if (!res.ok) {
+      setError(t(res.error));
       return;
     }
     setPw("");

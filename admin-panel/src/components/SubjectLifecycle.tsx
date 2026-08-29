@@ -17,10 +17,26 @@ export function SubjectLifecycle({
   id,
   status,
   dict,
+  sellable,
+  returnTo = "list",
 }: {
   id: string;
   status: string;
   dict: Record<string, string>;
+  /**
+   * Whether the subject has all three subjects_pricing rows.
+   *
+   * PUBLISHING AN UNPRICED SUBJECT PUBLISHES IT NOWHERE: /services, /register,
+   * Add-Child and the subscribe screens all build their list from PRICED rows,
+   * so an 'active' subject with no price is invisible to every family and says
+   * so nowhere. The server refuses that publish (subject-status.ts); disabling
+   * the button is only how the admin finds out BEFORE clicking. Left optional
+   * so a caller that has not loaded pricing renders the button as before and
+   * relies on the server's refusal.
+   */
+  sellable?: boolean;
+  /** Where a refused publish returns to. Resolved to a literal path server-side. */
+  returnTo?: "list" | "edit";
 }) {
   const tt = (k: string) => dict[k] ?? k;
 
@@ -28,22 +44,31 @@ export function SubjectLifecycle({
     action,
     label,
     danger,
+    disabled,
+    title,
   }: {
     action: string;
     label: string;
     danger?: boolean;
+    disabled?: boolean;
+    title?: string;
   }) => (
     <form action={transitionSubject} style={{ display: "inline" }}>
       <input type="hidden" name="__id" value={id} />
       <input type="hidden" name="__action" value={action} />
+      <input type="hidden" name="__return" value={returnTo} />
       <SubmitButton
         className={danger ? "btn-ghost btn-danger-ghost" : "btn-ghost"}
         pendingLabel={tt("pend.processing")}
+        disabled={disabled}
+        title={title}
       >
         {label}
       </SubmitButton>
     </form>
   );
+
+  const blockPublish = sellable === false;
 
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -52,7 +77,12 @@ export function SubjectLifecycle({
           archived → publish (archiving is reversible; that is the whole point
                      of keeping it distinct from delete) */}
       {(status === "inactive" || status === "archived") && (
-        <Action action="publish" label={tt("subj.act.publish")} />
+        <Action
+          action="publish"
+          label={tt("subj.act.publish")}
+          disabled={blockPublish}
+          title={blockPublish ? tt("subj.publishNeedsPrices") : undefined}
+        />
       )}
       {status === "active" && (
         <Action action="unpublish" label={tt("subj.act.unpublish")} />

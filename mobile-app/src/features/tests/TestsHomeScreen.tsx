@@ -26,6 +26,7 @@ import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { formatLongDate } from "@/lib/formatDate";
 import { usePullRefresh } from "@/lib/usePullRefresh";
+import { useMobileConfig } from "@/lib/configQueries";
 import { startDailyRoundAttempt } from "./api";
 import { useRecentAttempts, useSubjectAccess } from "./queries";
 import { dailyCardState, displayStatus, findLiveAttempt, type DailyCardState } from "./logic";
@@ -51,6 +52,10 @@ export function TestsHomeScreen() {
 
   const accessQ = useSubjectAccess();
   const attemptsQ = useRecentAttempts();
+  // The access set is DERIVED from the admin config (free windows, flags), so
+  // pulling has to re-read the config too or the subject cards can only ever
+  // be as fresh as the config they were computed from.
+  const configQ = useMobileConfig();
 
   // Refresh on RE-focus (returning from a finished/canceled attempt) — the
   // first focus rides on the initial fetch, so skip it.
@@ -66,7 +71,7 @@ export function TestsHomeScreen() {
     }, [qc]),
   );
 
-  const { refreshing, onRefresh } = usePullRefresh([accessQ, attemptsQ]);
+  const { refreshing, onRefresh } = usePullRefresh([configQ, accessQ, attemptsQ]);
 
   const pad = {
     padding: spacing.lg,

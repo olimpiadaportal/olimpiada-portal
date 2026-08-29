@@ -460,29 +460,62 @@ select '31_analytics_rpcs_secure' as check_name,
                    'public.get_admin_platform_overview()', 'EXECUTE') = false
             then 'PASS' else 'FAIL' end as status;
 
--- 32) Round 10 (migration 024): verified Bakı schools seeded from the official
---     BŞTİ list (≥ 300 rows) + the per-district duplicate guard index.
+-- 32) Round 10 (migration 024) / migration 160: Bakı carries a full set of
+--     numbered schools (≥ 300) + the per-district duplicate guard index.
+--
+--     THIS CHECK USED TO ASSERT A NAME SHAPE, AND MIGRATION 160 CHANGED THAT
+--     SHAPE ON PURPOSE. It matched `name like 'Bak% n%mr%li tam orta m%kt%b'`,
+--     which fitted the terse seeded form ("Bakı 54 nömrəli tam orta məktəb").
+--     Migration 160 reconciled those rows against the Ministry of Education's
+--     register and adopted the OFFICIAL names, which carry an honorific and the
+--     word ümumtəhsil ("Bakı şəhəri Abdulla Şaiq adına 54 nömrəli tam orta
+--     ümumtəhsil məktəbi"). The old LIKE cannot match that — "tam orta" is no
+--     longer followed immediately by "məktəb" — so the check failed the moment
+--     the data got BETTER.
+--
+--     A validation check should assert the invariant, not the wording. What
+--     actually matters is that Bakı still has its full complement of numbered
+--     general-education schools and that the duplicate guard is armed. Counting
+--     on school_number survives any future renaming, official or otherwise.
 select '32_baku_schools_seed' as check_name,
        case when (select count(*) from public.schools s
                     join public.districts d on d.id = s.district_id
                    where d.country_code = 'AZ'
-                     and s.name like 'Bak% n%mr%li tam orta m%kt%b') >= 300
+                     and d.name = 'Bak' || chr(305)
+                     and s.school_number is not null) >= 300
              and exists (select 1 from pg_indexes
                           where schemaname = 'public'
                             and indexname = 'uq_schools_district_name')
             then 'PASS' else 'FAIL' end as status;
 
--- 33) Round 11 (migration 025) / migration 121: payment-mode PAIR seeded +
---     exclusivity trigger present. The DB — not the UI — guarantees at most
---     one of payments / giveaway_period is enabled; neither enabled = mode
---     `off`. The third flag (demo_payments) was deleted with the demo mode —
---     check 108 asserts it stays gone.
+-- 33) Round 11 (migration 025) / migration 121 / migration 135: payment-mode
+--     PAIR seeded + exclusivity trigger present.
+--
+--     THE INVARIANT HERE WAS INVERTED BY MIGRATION 135 AND THIS CHECK WAS NOT
+--     UPDATED WITH IT. Until 135, payments and giveaway_period were mutually
+--     exclusive and this asserted `enabled <= 1`. Migration 135 redefined a
+--     campaign as a MODIFIER ON AN OPEN PAYMENT RAIL rather than an alternative
+--     to one — free subscriptions still need the rail for everything a campaign
+--     does not cover (olympiad packages), and an operator must never read
+--     "Payments: OFF" while cards are being charged. fn_payment_mode_exclusivity
+--     enforces exactly that: enabling giveaway_period while payments is off
+--     RAISES (hint `giveaway_requires_payments`), and turning payments off ends
+--     a running campaign rather than being refused.
+--
+--     So `payments AND giveaway_period` both enabled is the CORRECT state for a
+--     live campaign, and the old assertion failed on production every time one
+--     ran. The invariant is now implication, not exclusivity: a giveaway may
+--     never be on without payments. Both off remains valid (mode `off`).
+--     The third flag (demo_payments) was deleted with the demo mode — check 108
+--     asserts it stays gone.
 select '33_payment_mode_exclusivity' as check_name,
        case when (select count(*) from public.feature_flags
                    where key in ('payments','giveaway_period')) = 2
-             and (select count(*) from public.feature_flags
-                   where key in ('payments','giveaway_period')
-                     and enabled) <= 1
+             and not exists (select 1 from public.feature_flags g
+                              where g.key = 'giveaway_period' and g.enabled
+                                and not coalesce((select p.enabled
+                                                    from public.feature_flags p
+                                                   where p.key = 'payments'), false))
              and exists (select 1 from pg_trigger
                           where tgname = 'trg_payment_mode_exclusivity'
                             and tgrelid = 'public.feature_flags'::regclass)

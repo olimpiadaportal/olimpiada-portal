@@ -260,7 +260,17 @@ cross join (values
   ('month'::public.plan_interval, 9.00),
   ('year'::public.plan_interval, 90.00)
 ) as i(interval, price)
-where s.code in ('math', 'science', 'english', 'informatics', 'az_language')
+-- NO whitelist, deliberately: every seeded subject is priced. There used to be
+-- a `where s.code in ('math','science','english','informatics','az_language')`
+-- here and it was wrong twice over — 'science' has never been a real code (the
+-- row is 'elm'), and 'fizika' was simply absent. The effect was not academic: a
+-- subject with no pricing row is INVISIBLE on /services, Add-Child and the
+-- per-child subscribe screen, all of which key on subjects_pricing rather than
+-- on subjects. Elm and Fizika were reported missing from the live services page
+-- for exactly this reason and repaired by hand in migration 154 — a data-only
+-- fix, so a from-zero rebuild would have reproduced the bug from this file.
+-- A cross join is also the only shape that stays correct when a subject is
+-- added above: an explicit list silently un-prices whatever it forgets.
 on conflict (subject_id, interval) do nothing;
 
 -- -----------------------------------------------------------------------------
@@ -861,4 +871,61 @@ on conflict (platform) do nothing;
 -- then 114. Both are idempotent.
 -- Source of truth for the trilingual data: docs/investor/Kurikulum_1-11_AZ_EN_RU.docx
 -- extracted to supabase/seed/curriculum_2026_translations.json.
+-- =============================================================================
+
+
+-- =============================================================================
+-- ADMINISTRATIVE DIVISIONS AND SCHOOLS — also NOT inlined here.
+-- -----------------------------------------------------------------------------
+-- The 15 `districts` rows seeded above are the launch set: major cities only.
+-- They are kept because live rows reference them, but they are NOT the country.
+-- Azerbaijan has 64 rayons and 11 cities of republic significance, and a parent
+-- in any of the 61 missing ones had no correct answer to give when creating a
+-- child. Two rerun-safe migrations complete the picture:
+--
+--     supabase/sql/migrations/2026_08_29_158_admin_divisions.sql
+--     supabase/sql/migrations/2026_08_29_159_schools_outside_baku.sql
+--
+-- 158 adds the 75 level-1 units, sourced from the State Statistical Committee's
+-- "İnzibati Ərazi Bölgüsü Təsnifatı, 2024" (approved 16.02.2024), extracted to
+-- supabase/seed/locations_2026.json. It asserts, by name, the eight units an
+-- en-dash-blind extraction silently drops — Ağdam, Ağdərə, Cəbrayıl, Füzuli,
+-- Xocavənd, Kəlbəcər, Laçın, Şuşa — because their absence looks like a
+-- deliberate omission rather than an encoding bug.
+--
+-- 159 adds 3,805 schools for every district EXCEPT Bakı, from the Ministry of
+-- Science and Education's CC0 open-data register, extracted to
+-- supabase/seed/schools_2026.json. Referenced rather than inlined for the same
+-- reason as the curriculum: it is ~3,800 generated VALUES lines and two copies
+-- would drift. It must run AFTER 158, or its rayons do not resolve and it
+-- aborts by design rather than dropping schools silently.
+--
+-- WHY THE SCHOOLS MATTER AS MUCH AS THE DISTRICTS: school is REQUIRED when a
+-- parent creates a child, so a district with no schools is exactly as unusable
+-- as a district that does not exist. Adding 158 without 159 would move the dead
+-- end rather than remove it.
+--
+-- BAKI IS NOT IN 159. Its 320 schools are seeded above, and the ministry's 393
+-- Bakı rows must RECONCILE against them rather than be inserted beside them:
+--
+--     supabase/sql/migrations/2026_08_29_160_baku_school_reconcile.sql
+--
+-- 160 keys on (school_number, SERIES) — not on name, and not on number alone.
+-- Not name, because 295 ministry rows are the same school wearing an honorific
+-- ("Bakı şəhəri Abdulla Şaiq adına 54 nömrəli tam orta ümumtəhsil məktəbi" for
+-- the row seeded above as "Bakı 54 nömrəli tam orta məktəb"). Not number alone,
+-- because Bakı runs SEPARATE numbering series — "1 nömrəli idman liseyi" and
+-- "Bakı 1 nömrəli tam orta məktəb" are both number 1 and are different schools.
+-- It RENAMES the 295 matches in place, keeping their ids so no student is
+-- stranded, and inserts 98 genuinely new rows.
+--
+-- 160 also closes a gap this file leaves open. Rayon assignment for Bakı schools
+-- lives in migration 061, which is deliberately NOT seeded here — so a database
+-- bootstrapped from canonical ends up with all 320 Bakı schools carrying
+-- city_district_id NULL, and school_district_guard REQUIRES a rayon for any NEW
+-- school in a city that has active rayons. 160 fills it from the register.
+--
+-- Order for a from-zero rebuild: 001-012, 014, 015, 016, 013, then 095, 114,
+-- then 158, 159, 160 in that order. All are idempotent. 159 needs 158's
+-- districts to resolve; 160 needs the Bakı rows seeded above.
 -- =============================================================================

@@ -25,9 +25,9 @@ import {
   EMAIL_MAX,
   EMAIL_RE,
   PASSWORD_MAX,
-  PASSWORD_MIN,
   validateParentRegistration,
 } from "@/lib/auth/parentValidation";
+import { checkNewPassword } from "@/lib/auth/passwordPolicy";
 import { getT } from "@/i18n/server";
 import { rateLimitAllow } from "@/lib/rateLimit";
 import { isExistingAccountSignUp } from "@/lib/auth/signUpOutcome";
@@ -414,9 +414,20 @@ export async function updatePassword(
     return { error: t("parent.err.tooMany") };
   }
   const password = String(formData.get("password") ?? "");
-  // L1: same bounds as registration (>128 rejected, never silently truncated).
-  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
-    return { error: t("parent.err.password") };
+  // L1: same RULE as registration — bounds (>128 rejected, never silently
+  // truncated) plus strength. A recovery link that let the account out of the
+  // policy would make the policy optional for anyone who clicks "forgot".
+  // parentLogin above deliberately does NOT run this: existing passwords
+  // predate the rule and must keep signing in.
+  const weak = checkNewPassword(password);
+  if (weak) {
+    return {
+      error: t(
+        weak === "tooShort" || weak === "tooLong"
+          ? "parent.err.password"
+          : "parent.err.passwordWeak",
+      ),
+    };
   }
   const supabase = await createServerSupabase();
   const { error } = await supabase.auth.updateUser({ password });

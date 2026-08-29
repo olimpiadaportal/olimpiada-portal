@@ -12,6 +12,7 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { supabase } from "@/lib/supabase";
 import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/coverage";
+import { fetchTaughtSubjectIds, keepTaughtSubjects } from "@/lib/data";
 import { fallbackExplanationIds } from "@/lib/explanationFallback";
 import { pickName } from "@/lib/localizedName";
 import type { Locale } from "@/i18n";
@@ -40,14 +41,14 @@ const PG_UNIQUE_VIOLATION = "23505";
 // ---------------------------------------------------------------------------
 // Access set — EXACT mirror of web getChildSubjectAccess (childSubjects.ts):
 // covered subjects from live trialing/active subscriptions; during a giveaway
-// window or an active per-child free-access interval, every subject with
-// active pricing merges in on top. The start RPC re-checks server-side.
+// window or an active per-child free-access interval, every PUBLISHED subject
+// merges in on top. The start RPC re-checks server-side.
 // ---------------------------------------------------------------------------
 export async function fetchSubjectAccess(
   profileId: string,
   giveawayActive: boolean,
 ): Promise<SubjectAccess> {
-  const [freeAccessRes, trialRes, studentRes, subsRes] = await Promise.all([
+  const [freeAccessRes, trialRes, studentRes, subsRes, taught] = await Promise.all([
     supabase.rpc("my_free_access_active"),
     // A trial writes NO access_status -- it grants subject-scoped entitlements
     // and nothing else -- so without this a trial-only child reads as inactive
@@ -63,6 +64,9 @@ export async function fetchSubjectAccess(
       .select(CHILD_COVERAGE_SELECT)
       .eq("student_profile_id", profileId)
       .in("status", ["trialing", "active"]),
+    // Migration 155 — the grade-availability rule, answered by the database and
+    // caller-scoped, so a student session needs no grade lookup of its own.
+    fetchTaughtSubjectIds(),
   ]);
   if (studentRes.error) throw studentRes.error;
   if (subsRes.error) throw subsRes.error;
@@ -84,19 +88,27 @@ export async function fetchSubjectAccess(
   for (const s of liveCoveredSubjects(subsRes.data as any[])) {
     subjMap.set(s.id, { code: s.code, name: s.name });
   }
+  // A free window unlocks every PUBLISHED subject, read from `subjects`.
+  //
+  // This used to read `subjects_pricing`, which made PRICING decide what a child
+  // may open — and the database disagrees in both directions: during a giveaway
+  // has_subject_access() returns true for EVERY subject, so an unpriced one was
+  // playable server-side and missing from this list, while an ARCHIVED subject
+  // keeps its price rows and stayed on offer. `subjects.status` is the admin's
+  // publish switch and `subjects` is world-readable (policy subjects_select is
+  // USING (true)); web parity with lib/childSubjects.ts.
   if (freeNow) {
-    const { data: priced, error } = await supabase
-      .from("subjects_pricing")
-      .select("subjects(id, code, name)")
+    const { data: published, error } = await supabase
+      .from("subjects")
+      .select("id, code, name")
       .eq("status", "active");
     if (!error) {
-      for (const row of (priced ?? []) as any[]) {
-        if (row.subjects) {
-          subjMap.set(row.subjects.id, {
-            code: row.subjects.code ?? null,
-            name: row.subjects.name,
-          });
-        }
+      for (const row of (published ?? []) as any[]) {
+        if (!row?.id) continue;
+        subjMap.set(String(row.id), {
+          code: row.code ?? null,
+          name: String(row.name ?? ""),
+        });
       }
     }
   }
@@ -114,11 +126,16 @@ export async function fetchSubjectAccess(
     }
   }
 
-  const subjects: ChildSubject[] = Array.from(subjMap, ([id, v]) => ({
-    id,
-    code: v.code,
-    name: v.name,
-  }));
+  // SCOPED TO THE CHILD'S GRADE, after every merge above. Fizika is a grades
+  // 7-11 subject and this list is what the Tests home offers, so a grade-3
+  // child was tapping through to an empty "no questions" screen. Applied
+  // OUTSIDE the free/trial branches: a subscribed child must be filtered too —
+  // the web's first version of this rule lived inside `if (freeNow)` and so
+  // never reached anyone who was actually paying.
+  const subjects: ChildSubject[] = keepTaughtSubjects(
+    Array.from(subjMap, ([id, v]) => ({ id, code: v.code, name: v.name })),
+    taught,
+  );
   return { freeNow, access, hasAccess, subjects };
 }
 

@@ -61,7 +61,11 @@ export default async function NotificationsPage() {
       .select("id, code, locale, subject, body")
       .order("code")
       .order("locale"),
-    supabase.from("subjects").select("id, name").order("name"),
+    // ACTIVE only: these feed the COMPOSER's audience picker (a broadcast being
+    // written now), not any historical view — a campaign that already went out
+    // keeps its stored audience_filter regardless. An archived subject is one
+    // the admin has withdrawn, so it should not be a target for new sends.
+    supabase.from("subjects").select("id, name").eq("status", "active").order("name"),
     // ACTIVE olympiad packages (az titles) for the olympiad_buyers audience.
     supabase
       .from("olympiad_packages")

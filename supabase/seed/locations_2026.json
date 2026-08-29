@@ -1,0 +1,797 @@
+{
+  "generated_from": "https://www.stat.gov.az/menu/5/classifications/source/Inzibati-1.05.2024.pdf",
+  "source_title": "İnzibati Ərazi Bölgüsü Təsnifatı, 2024",
+  "source_authority": "Azərbaycan Respublikasının Dövlət Statistika Komitəsi — approved by collegium decision 2/2 of 16.02.2024, agreed with the Apparatus of the Milli Məclis",
+  "retrieved": "2026-08-29",
+  "source_sha256": "2445d60a6d7294d47ab7886eada3b27d86c8cdf9794da1962e3ba233952ef6b9",
+  "extraction_method": "pdftotext (Xpdf 4.00) -layout for the level-1 section headers; -table for the Bakı intra-city block, where the two-column layout otherwise crosses codes with names. Every row traces to a header line in the source; nothing is interpolated or pattern-filled.",
+  "code_scheme": {
+    "description": "Each 8-digit code encodes administrative status in its LAST digit.",
+    "1": "rayon",
+    "2": "republic-significance city",
+    "3": "intra-city rayon",
+    "4": "rayon-subordinate city (not emitted)",
+    "0": "grouping header, not an administrative unit (only 10000000, Naxçıvan MR)"
+  },
+  "counts": {
+    "rayon": 64,
+    "rayon_mainland": 57,
+    "rayon_naxcivan": 7,
+    "republic_city": 11,
+    "baku_rayon": 12,
+    "total": 87
+  },
+  "validation": [
+    "76 level-1 section headers parsed = 64 rayons + 11 republic cities + 1 grouping header.",
+    "Counts derived MECHANICALLY from the status digit rather than by eye, then asserted in code.",
+    "68 headers use HYPHEN-MINUS and 8 use EN DASH (U+2013). The 8 en-dash headers are exactly Ağdam, Ağdərə, Cəbrayıl, Füzuli, Xocavənd, Kəlbəcər, Laçın and Şuşa — all present, and asserted by name so a dash-blind regex can never silently drop them.",
+    "The 12 Bakı codes form the unbroken run 00100003–01200003: no gaps, no duplicates.",
+    "Sorting by Azerbaijani collation reproduced the source's own I–XII numbering of the Bakı rayons exactly — an independent check that collation and casing are correct.",
+    "Status-3 codes occur ONLY in the Bakı range, confirming no other city has intra-city rayons (Gəncə's Kəpəz/Nizami were abolished; its section lists four numbered siəd units and no şəhər rayonu line).",
+    "A second independent download of the PDF was byte-identical (sha256 above) to the copy used by the earlier research pass."
+  ],
+  "orthography_note": "Names are written exactly as the source spells them. The source prints level-1 names in ALL CAPS; they were down-cased with an Azerbaijani-aware mapping in which I→ı and İ→i. A default toLowerCase()/.lower() corrupts both. The Bakı rayon names were taken verbatim in their source mixed case and never re-cased.",
+  "naxcivan_note": "NAXÇIVAN MUXTAR RESPUBLİKASI (10000000) carries status digit 0: it is a grouping header, not an administrative unit, and is NOT emitted. Its 7 rayons carry status digit 1 and are PEERS of mainland rayons, not nested one level deeper, so their `parent` is null. The `in_naxcivan_ar` flag is a DISPLAY grouping hint only (derived from code prefix '1'); it is not a hierarchy level.",
+  "warnings": [
+    {
+      "id": "lankaran_saki_yevlax_rayon_divergence",
+      "severity": "product_decision",
+      "affects": [
+        "Lənkəran",
+        "Şəki",
+        "Yevlax"
+      ],
+      "detail": "The 2024 classification has NO separate rayon entry for these three: the city entry absorbs the surrounding rural territory. Verified directly — the candidate rayon codes 80200001, 40400001 and 90100001 do not occur anywhere in the document, while Lənkəran şəhəri carries 83 villages, Şəki şəhəri 68 and Yevlax şəhəri 46. BUT the same agency's population workbook (001_16.xls) contains data rows literally spelled 'Lənkəran rayonu' and 'Yevlax rayonu'. Both spellings are officially attested. A parent in rural Lənkəran will look for 'Lənkəran rayonu' and not find it. This file emits ONLY the classification's form (republic_city). Whether to also surface a '<name> rayonu' alias is an OWNER DECISION, not a data gap — it is flagged here, not resolved.",
+      "note_xankandi": "Xankəndi is often grouped with these three but does NOT share the divergence: its count block shows zero villages absorbed, so there is no rural population looking for a 'Xankəndi rayonu'."
+    },
+    {
+      "id": "existing_15_mix_categories",
+      "severity": "import_blocker",
+      "detail": "The platform's existing 15 `districts` rows mix categories and will not extend cleanly. Quba, Şamaxı, Qəbələ, Gədəbəy and Ağdam are RAYONS, not cities. Xırdalan is neither — it is a rayon-subordinate city inside Abşeron rayonu. Naftalan and Xankəndi are absent from the platform entirely. See `existing_platform_mapping` for the row-by-row mapping the import must honour so that no existing row is duplicated or orphaned.",
+      "table_naming": "The `districts` table holds CITIES while `city_districts` holds intra-city rayons. Loading 64 country-level rayons into `districts` would make that table name mean three different things. Worth resolving before the import, not after."
+    }
+  ],
+  "existing_platform_mapping": {
+    "source": "supabase/sql/012_seed_initial_data.sql (15 `districts` rows)",
+    "summary": {
+      "exact_republic_city_match": 9,
+      "reclassify_city_to_rayon": 5,
+      "no_direct_match": 1
+    },
+    "rows": [
+      {
+        "existing_name": "Bakı",
+        "maps_to": "Bakı",
+        "code": "00000002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Gəncə",
+        "maps_to": "Gəncə",
+        "code": "20000002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Sumqayıt",
+        "maps_to": "Sumqayıt",
+        "code": "30900002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Mingəçevir",
+        "maps_to": "Mingəçevir",
+        "code": "90200002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Şirvan",
+        "maps_to": "Şirvan",
+        "code": "91100002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Naxçıvan",
+        "maps_to": "Naxçıvan",
+        "code": "10400002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Lənkəran",
+        "maps_to": "Lənkəran",
+        "code": "80200002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Şəki",
+        "maps_to": "Şəki",
+        "code": "40400002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Yevlax",
+        "maps_to": "Yevlax",
+        "code": "90100002",
+        "kind": "republic_city",
+        "action": "match",
+        "note": "exact name match; already a republic-significance city"
+      },
+      {
+        "existing_name": "Xırdalan",
+        "maps_to": null,
+        "code": "30801014",
+        "kind": "rayon_subordinate_city",
+        "action": "no_direct_match",
+        "note": "NOT a top-level unit. The classification places Xırdalan INSIDE Abşeron rayonu (30800001) as a rayon-subordinate city (unit code 30801014, status digit 4; its administrative circle is 30801005). It is deliberately absent from `units`. Schools already attached to it must be re-parented to Abşeron rayonu, or Xırdalan kept as a separate sub-city concept — owner decides. Do not drop it silently: that would orphan its schools."
+      },
+      {
+        "existing_name": "Quba",
+        "maps_to": "Quba",
+        "code": "30300001",
+        "kind": "rayon",
+        "action": "reclassify",
+        "note": "RECLASSIFY: seeded as a city, but is a RAYON in the classification"
+      },
+      {
+        "existing_name": "Şamaxı",
+        "maps_to": "Şamaxı",
+        "code": "41000001",
+        "kind": "rayon",
+        "action": "reclassify",
+        "note": "RECLASSIFY: seeded as a city, but is a RAYON in the classification"
+      },
+      {
+        "existing_name": "Qəbələ",
+        "maps_to": "Qəbələ",
+        "code": "40600001",
+        "kind": "rayon",
+        "action": "reclassify",
+        "note": "RECLASSIFY: seeded as a city, but is a RAYON in the classification"
+      },
+      {
+        "existing_name": "Gədəbəy",
+        "maps_to": "Gədəbəy",
+        "code": "50500001",
+        "kind": "rayon",
+        "action": "reclassify",
+        "note": "RECLASSIFY: seeded as a city, but is a RAYON in the classification"
+      },
+      {
+        "existing_name": "Ağdam",
+        "maps_to": "Ağdam",
+        "code": "60900001",
+        "kind": "rayon",
+        "action": "reclassify",
+        "note": "RECLASSIFY: seeded as a city, but is a RAYON in the classification"
+      }
+    ],
+    "absent_from_platform_but_in_this_file": [
+      "Abşeron",
+      "Ağcabədi",
+      "Ağdaş",
+      "Ağdərə",
+      "Ağstafa",
+      "Ağsu",
+      "Astara",
+      "Babək",
+      "Balakən",
+      "Beyləqan",
+      "Bərdə",
+      "Biləsuvar",
+      "Cəbrayıl",
+      "Cəlilabad",
+      "Culfa",
+      "Daşkəsən",
+      "Füzuli",
+      "Goranboy",
+      "Göyçay",
+      "Göygöl",
+      "Hacıqabul",
+      "Xaçmaz",
+      "Xızı",
+      "Xocalı",
+      "Xocavənd",
+      "İmişli",
+      "İsmayıllı",
+      "Kəlbəcər",
+      "Kəngərli",
+      "Kürdəmir",
+      "Qax",
+      "Qazax",
+      "Qobustan",
+      "Qubadlı",
+      "Qusar",
+      "Laçın",
+      "Lerik",
+      "Masallı",
+      "Neftçala",
+      "Oğuz",
+      "Ordubad",
+      "Saatlı",
+      "Sabirabad",
+      "Salyan",
+      "Samux",
+      "Sədərək",
+      "Siyəzən",
+      "Şabran",
+      "Şahbuz",
+      "Şəmkir",
+      "Şərur",
+      "Şuşa",
+      "Tərtər",
+      "Tovuz",
+      "Ucar",
+      "Yardımlı",
+      "Zaqatala",
+      "Zəngilan",
+      "Zərdab",
+      "Xankəndi",
+      "Naftalan",
+      "Binəqədi",
+      "Xətai",
+      "Xəzər",
+      "Qaradağ",
+      "Nərimanov",
+      "Nəsimi",
+      "Nizami",
+      "Pirallahı",
+      "Sabunçu",
+      "Səbail",
+      "Suraxanı",
+      "Yasamal"
+    ]
+  },
+  "known_gaps": [
+    "Rayon-subordinate cities (status digit 4, 68 of them including Xırdalan) are NOT emitted: the platform does not model that level. They exist in the source if ever needed.",
+    "Settlement-level units (qəsəbə / kənd, status digits 5/6/8/9) are not emitted — out of scope for a location picker.",
+    "The Gəncə Kəpəz/Nizami abolition law text (president.az/az/articles/view/55708) was NOT fetched; that conclusion rests on the classification's own structure, which is unambiguous on the point.",
+    "Rayon-level population or school counts are not part of this file; it is administrative geography only."
+  ],
+  "units": [
+    {
+      "name": "Abşeron",
+      "code": "30800001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Ağcabədi",
+      "code": "60800001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Ağdam",
+      "code": "60900001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Ağdaş",
+      "code": "90300001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Ağdərə",
+      "code": "61200001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Ağstafa",
+      "code": "50200001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Ağsu",
+      "code": "40900001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Astara",
+      "code": "80100001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Babək",
+      "code": "10300001",
+      "kind": "rayon",
+      "parent": null,
+      "in_naxcivan_ar": true
+    },
+    {
+      "name": "Balakən",
+      "code": "40100001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Beyləqan",
+      "code": "60700001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Bərdə",
+      "code": "61000001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Biləsuvar",
+      "code": "80800001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Cəbrayıl",
+      "code": "60500001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Cəlilabad",
+      "code": "80600001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Culfa",
+      "code": "10600001",
+      "kind": "rayon",
+      "parent": null,
+      "in_naxcivan_ar": true
+    },
+    {
+      "name": "Daşkəsən",
+      "code": "50600001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Füzuli",
+      "code": "60600001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Gədəbəy",
+      "code": "50500001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Goranboy",
+      "code": "50900001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Göyçay",
+      "code": "40800001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Göygöl",
+      "code": "50800001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Hacıqabul",
+      "code": "91000001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Xaçmaz",
+      "code": "30200001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Xızı",
+      "code": "30600001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Xocalı",
+      "code": "70100001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Xocavənd",
+      "code": "70300001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "İmişli",
+      "code": "90700001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "İsmayıllı",
+      "code": "40700001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Kəlbəcər",
+      "code": "60100001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Kəngərli",
+      "code": "10800001",
+      "kind": "rayon",
+      "parent": null,
+      "in_naxcivan_ar": true
+    },
+    {
+      "name": "Kürdəmir",
+      "code": "90600001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Qax",
+      "code": "40300001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Qazax",
+      "code": "50100001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Qəbələ",
+      "code": "40600001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Qobustan",
+      "code": "30700001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Quba",
+      "code": "30300001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Qubadlı",
+      "code": "60300001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Qusar",
+      "code": "30100001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Laçın",
+      "code": "60200001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Lerik",
+      "code": "80300001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Masallı",
+      "code": "80500001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Neftçala",
+      "code": "80700001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Oğuz",
+      "code": "40500001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Ordubad",
+      "code": "10700001",
+      "kind": "rayon",
+      "parent": null,
+      "in_naxcivan_ar": true
+    },
+    {
+      "name": "Saatlı",
+      "code": "90800001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Sabirabad",
+      "code": "90900001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Salyan",
+      "code": "80900001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Samux",
+      "code": "50700001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Sədərək",
+      "code": "10100001",
+      "kind": "rayon",
+      "parent": null,
+      "in_naxcivan_ar": true
+    },
+    {
+      "name": "Siyəzən",
+      "code": "30500001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Şabran",
+      "code": "30400001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Şahbuz",
+      "code": "10500001",
+      "kind": "rayon",
+      "parent": null,
+      "in_naxcivan_ar": true
+    },
+    {
+      "name": "Şamaxı",
+      "code": "41000001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Şəmkir",
+      "code": "50400001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Şərur",
+      "code": "10200001",
+      "kind": "rayon",
+      "parent": null,
+      "in_naxcivan_ar": true
+    },
+    {
+      "name": "Şuşa",
+      "code": "70200001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Tərtər",
+      "code": "61100001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Tovuz",
+      "code": "50300001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Ucar",
+      "code": "90400001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Yardımlı",
+      "code": "80400001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Zaqatala",
+      "code": "40200001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Zəngilan",
+      "code": "60400001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Zərdab",
+      "code": "90500001",
+      "kind": "rayon",
+      "parent": null
+    },
+    {
+      "name": "Bakı",
+      "code": "00000002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Gəncə",
+      "code": "20000002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Xankəndi",
+      "code": "70400002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Lənkəran",
+      "code": "80200002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Mingəçevir",
+      "code": "90200002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Naftalan",
+      "code": "51000002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Naxçıvan",
+      "code": "10400002",
+      "kind": "republic_city",
+      "parent": null,
+      "in_naxcivan_ar": true
+    },
+    {
+      "name": "Sumqayıt",
+      "code": "30900002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Şəki",
+      "code": "40400002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Şirvan",
+      "code": "91100002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Yevlax",
+      "code": "90100002",
+      "kind": "republic_city",
+      "parent": null
+    },
+    {
+      "name": "Binəqədi",
+      "code": "00100003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Xətai",
+      "code": "01000003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Xəzər",
+      "code": "00300003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Qaradağ",
+      "code": "00200003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Nərimanov",
+      "code": "00700003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Nəsimi",
+      "code": "00800003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Nizami",
+      "code": "00900003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Pirallahı",
+      "code": "01200003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Sabunçu",
+      "code": "00500003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Səbail",
+      "code": "00400003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Suraxanı",
+      "code": "00600003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    },
+    {
+      "name": "Yasamal",
+      "code": "01100003",
+      "kind": "baku_rayon",
+      "parent": "Bakı"
+    }
+  ]
+}

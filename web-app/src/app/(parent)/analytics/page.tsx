@@ -120,14 +120,23 @@ export default async function ParentAnalytics({
 
     // Purchasable subjects (distinct) — same source the subscribe page uses, so
     // the two screens always agree on the child's subjects.
+    //
+    // BOTH statuses matter, and only one of them was checked here. `.eq("status",
+    // "active")` filters the PRICING row; a subject the admin has unpublished or
+    // archived keeps its price rows, so it went on rendering as a subject tab
+    // long after it had correctly vanished from /services, Add-Child and the
+    // per-child subscribe screen (which all read `subjects.status`). Admin →
+    // Subjects is the single source of truth for availability.
     try {
       const { data: pricing } = await supabase
         .from("subjects_pricing")
-        .select("subject_id, subjects(id, code, name)")
+        .select("subject_id, subjects(id, code, name, status)")
         .eq("status", "active");
       const seen = new Set<string>();
       for (const row of (pricing ?? []) as any[]) {
         const s = row.subjects;
+        // Unpublished or archived in the admin panel => no tab here either.
+        if (s?.status !== "active") continue;
         if (s?.id && !seen.has(s.id)) {
           seen.add(s.id);
           // Locale-aware tab label (subj.<code>); the id stays the RPC/URL value.

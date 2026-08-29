@@ -7,14 +7,17 @@
 // Validation returns i18n KEYS (not localized text): the web action localizes
 // via getT(); the mobile app translates keys client-side.
 
+import { checkNewPassword } from "@/lib/auth/passwordPolicy";
+
 // R7 security: pragmatic email shape check (local@domain.tld) + hard length
-// caps so unbounded strings never reach auth/DB. bcrypt effectively uses 72
-// bytes, so >128-char passwords are rejected rather than silently truncated.
+// caps so unbounded strings never reach auth/DB.
 export const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/;
 export const NAME_MAX = 80;
 export const EMAIL_MAX = 255;
-export const PASSWORD_MIN = 8;
-export const PASSWORD_MAX = 128;
+// Re-exported, not redeclared: the bounds are the password rule's, and a second
+// pair of constants here is a pair that can silently drift from the module the
+// server actually validates with.
+export { PASSWORD_MAX, PASSWORD_MIN } from "@/lib/auth/passwordPolicy";
 // Round 11: mandatory parent phone in E.164 — mirrors the DB check constraint
 // chk_profiles_phone_e164 (migration 025) so invalid values never reach the DB.
 export const PHONE_RE = /^\+[1-9][0-9]{6,14}$/;
@@ -44,7 +47,8 @@ export type ParentRegistrationValidation =
         | "parent.err.required"
         | "parent.err.email"
         | "parent.err.phone"
-        | "parent.err.password";
+        | "parent.err.password"
+        | "parent.err.passwordWeak";
     };
 
 /**
@@ -72,8 +76,21 @@ export function validateParentRegistration(
   if (!phone || phone.length > PHONE_MAX || !PHONE_RE.test(phone)) {
     return { ok: false, errorKey: "parent.err.phone" };
   }
-  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
-    return { ok: false, errorKey: "parent.err.password" };
+  // Strength lives in lib/auth/passwordPolicy — the same module the mobile BFF
+  // register route reaches through this function, so client and server can
+  // never disagree about what is acceptable.
+  const weak = checkNewPassword(password);
+  if (weak) {
+    // Two keys, because a length failure and a missing-symbol failure need
+    // different sentences: telling someone whose password is 4 characters long
+    // that it needs a capital letter sends them to fix the wrong thing.
+    return {
+      ok: false,
+      errorKey:
+        weak === "tooShort" || weak === "tooLong"
+          ? "parent.err.password"
+          : "parent.err.passwordWeak",
+    };
   }
   return { ok: true, displayName, firstName, lastName, email, phone };
 }

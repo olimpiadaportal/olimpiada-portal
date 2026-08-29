@@ -1,8 +1,8 @@
 // Parent profile section cards (mobile port of web ParentProfile): identity
 // header, the phone add/edit module, change-password, link rows and the
 // double-confirm danger zone. Presentational + local state only; privileged
-// flows go through the BFF client (bffUpdateParentPhone / bffDeleteAccount) or
-// supabase.auth.
+// flows go through the BFF client (bffUpdateParentPhone / bffDeleteAccount /
+// bffChangeOwnPassword).
 import React, { useState } from "react";
 import { Modal, Pressable, View } from "react-native";
 import {
@@ -21,8 +21,8 @@ import { E164_RE, PhoneField } from "@/components/PhoneField";
 import { PasswordField } from "@/components/TextField";
 import { useTheme } from "@/theme/ThemeProvider";
 import { radius, shadow, spacing } from "@/theme/tokens";
-import { supabase } from "@/lib/supabase";
-import { bffDeleteAccount, bffUpdateParentPhone } from "@/lib/api";
+import { bffChangeOwnPassword, bffDeleteAccount, bffUpdateParentPhone } from "@/lib/api";
+import { checkNewPassword } from "@/lib/passwordPolicy";
 import { useFieldChain } from "@/lib/useFieldChain";
 import { useAuthStore } from "@/features/auth/authStore";
 import { AvatarSection } from "./AvatarPicker";
@@ -225,8 +225,14 @@ export function PasswordSection({ t }: { t: T }) {
   async function submit() {
     if (pending) return;
     setDone(false);
-    if (pw.length < 8) {
-      setError(t("profile.err.passwordShort"));
+    // FEEDBACK ONLY — the BFF re-runs the identical rule and is authoritative.
+    // `tooShort` keeps its existing message; the strength dimensions the old
+    // length test never covered share the one passwordWeak string.
+    const problem = checkNewPassword(pw);
+    if (problem) {
+      setError(
+        t(problem === "tooShort" ? "profile.err.passwordShort" : "profile.err.passwordWeak"),
+      );
       return;
     }
     if (pw !== confirm) {
@@ -235,12 +241,16 @@ export function PasswordSection({ t }: { t: T }) {
     }
     setError(null);
     setPending(true);
-    const { error: err } = await supabase.auth.updateUser({ password: pw });
+    // Was a direct supabase.auth.updateUser, which left this screen with no
+    // server-side strength check at all. The BFF owns the rule now.
+    const res = await bffChangeOwnPassword(pw);
     setPending(false);
-    if (err) {
-      setError(t("profile.err.updateFailed"));
+    if (!res.ok) {
+      setError(t(res.error));
       return;
     }
+    setPw("");
+    setConfirm("");
     setDone(true);
   }
 

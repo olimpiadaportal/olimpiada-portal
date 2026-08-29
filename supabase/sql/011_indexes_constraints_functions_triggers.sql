@@ -5261,6 +5261,125 @@ comment on function public.my_accessible_subjects() is
 revoke all on function public.my_accessible_subjects() from public, anon;
 grant execute on function public.my_accessible_subjects() to authenticated, service_role;
 
+-- MIGRATION 155 -- "which subjects are taught to this grade" is ONE rule, here,
+-- not a hand-written copy per client. The web carried it twice and the mobile
+-- app's three list builders never got it, so Fizika was offered to a grade-3
+-- child on the PURCHASE screens: a parent could buy Physics and receive nothing.
+-- Two deliberate silences below. Subject STATUS is not consulted -- callers
+-- intersect this against a list they have already status-filtered, and one
+-- predicate answering two unrelated questions is how the copies drifted. And
+-- ADMIN surfaces must not use these at all: an administrator maintains Fizika's
+-- grade-1 curriculum by seeing Fizika while standing on grade 1.
+
+-- The SET form: every subject the curriculum teaches to this grade. Callers
+-- intersect their own (already status-filtered) list against it, which is why
+-- it returns bare ids and joins nothing.
+--
+-- p_grade IS NULL MEANS "NO GRADE RESTRICTION", not "no subjects". students.
+-- grade_id is nullable, and the alternative reading would hand a grade-less
+-- child an EMPTY catalogue — a total outage for that family — to prevent them
+-- seeing a subject the attempt engine would refuse anyway. Fail toward showing
+-- too much here; has_subject_access() and the attempt RPCs are the gate that
+-- matters.
+create or replace function public.subjects_taught_to_grade(p_grade uuid)
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select distinct t.subject_id
+  from public.topics t
+  where t.scope = 'exam'
+    and t.status = 'active'
+    -- A shared (grade-less) topic belongs to every grade. This is the reading
+    -- every test-setup path already uses; the client copy of this rule used
+    -- equality and made such a subject disappear instead.
+    and (p_grade is null or t.grade_id is null or t.grade_id = p_grade)
+$$;
+
+comment on function public.subjects_taught_to_grade(uuid) is
+  'THE grade-availability rule (migration 155): the subjects whose curriculum '
+  'reaches this grade — at least one ACTIVE, exam-scoped topic for the grade, '
+  'or a shared (grade-less) one. Callers intersect their own list against it, '
+  'so subject status is deliberately not consulted here. A NULL grade means no '
+  'restriction, never an empty catalogue. Admin surfaces must stay unfiltered.';
+
+revoke all on function public.subjects_taught_to_grade(uuid) from public, anon;
+grant execute on function public.subjects_taught_to_grade(uuid) to authenticated, service_role;
+
+-- The SINGLE-SUBJECT form, for re-checking one id that arrived from a URL, a
+-- deep link or a stale cache. A route must never trust that a subject id was
+-- only reachable from a filtered list, and asking this is cheaper than
+-- rebuilding the whole set to look for one member.
+create or replace function public.subject_taught_to_grade(p_subject uuid, p_grade uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+    from public.topics t
+    where t.subject_id = p_subject
+      and t.scope = 'exam'
+      and t.status = 'active'
+      and (p_grade is null or t.grade_id is null or t.grade_id = p_grade)
+  )
+$$;
+
+comment on function public.subject_taught_to_grade(uuid, uuid) is
+  'Migration 155: the one-subject form of subjects_taught_to_grade, for '
+  'server-side re-checks of a subject id taken from a URL or a stale client '
+  'cache. Same predicate, so the two can never drift.';
+
+revoke all on function public.subject_taught_to_grade(uuid, uuid) from public, anon;
+grant execute on function public.subject_taught_to_grade(uuid, uuid) to authenticated, service_role;
+
+-- The CALLER-SCOPED form, for the signed-in child's own screens — the same
+-- split as my_accessible_subjects() over has_subject_access(). It exists so a
+-- student surface does not have to fetch its own grade first and thread it
+-- through three query layers just to filter a list.
+--
+-- A caller with no students row (a parent, an admin) resolves to a NULL grade
+-- and therefore to NO restriction. That is deliberate: a parent's leaderboard
+-- and analytics filters span children of different grades, and narrowing them
+-- to one child's curriculum would be wrong. Parent PURCHASE screens must pass
+-- the CHILD's grade explicitly to subjects_taught_to_grade instead.
+--
+-- plpgsql rather than sql: it reads a value and then calls the set-returning
+-- rule with it, which is the one thing a plain SQL body cannot express without
+-- restating the predicate — and a second copy of the predicate is the defect
+-- this migration exists to remove.
+create or replace function public.my_taught_subjects()
+returns setof uuid
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_grade uuid;
+begin
+  select st.grade_id into v_grade
+  from public.students st
+  where st.profile_id = public.current_profile_id();
+
+  return query select * from public.subjects_taught_to_grade(v_grade);
+end;
+$$;
+
+comment on function public.my_taught_subjects() is
+  'Migration 155: the CURRENT student''s grade-appropriate subjects, by '
+  'subjects_taught_to_grade. Caller-scoped through current_profile_id(); a '
+  'caller who is not a student resolves to a NULL grade and so to no '
+  'restriction, which is what a parent''s cross-child filters need. Parent '
+  'purchase screens must pass the child''s grade explicitly instead.';
+
+revoke all on function public.my_taught_subjects() from public, anon;
+grant execute on function public.my_taught_subjects() to authenticated, service_role;
+
 -- The subscription half of the entitlement mirror (migration 124).
 --
 -- COLUMN SCOPING IS LOAD-BEARING on both. apply_due_plan_changes rewrites
@@ -8739,8 +8858,8 @@ comment on function public.lb_rows(text, text, uuid, text) is
 revoke all on function public.lb_rows(text, text, uuid, text) from public, anon, authenticated;
 grant execute on function public.lb_rows(text, text, uuid, text) to service_role;
 
--- get_leaderboard is unchanged (reads is_provisional from lb_rows) but must be
--- recreated because lb_rows was dropped/recreated above.
+-- get_leaderboard reads is_provisional from lb_rows and must be recreated here
+-- because lb_rows was dropped/recreated above.
 create or replace function public.get_leaderboard(
   p_board    text,
   p_scope    text default 'global',
@@ -8777,23 +8896,28 @@ begin
     with base as (
       select * from public.lb_rows(p_board, p_scope, p_scope_id, p_period)
     ),
-    ranked as (
+    ordered as (
+      -- MIGRATION 156 -- ONE ordering for ranked and provisional rows alike.
+      -- This used to be two separately-ordered blocks concatenated, where the
+      -- provisional block's sort position was (count of ranked rows) +
+      -- row_number() -- an offset, not a value -- which pinned every provisional
+      -- row below every ranked one and printed higher percentages under lower
+      -- ones. Ordering and ranking are separate questions; only the RANK is
+      -- withheld below min_attempts.
       select b.*,
-             rank() over (order by b.value desc)::int as rnk,
+             -- Rank number over the non-provisional population only. Partitioning
+             -- on is_provisional makes the `false` partition byte-for-byte the old
+             -- `rank() over (order by value desc)` applied to `where not
+             -- is_provisional` (ties share a rank); the `true` partition's number
+             -- is computed and discarded. lb_rows never returns a null here
+             -- (students.lb_attempts_* are `not null default 0`), so there is no
+             -- third partition to reason about.
+             case when b.is_provisional then null
+                  else rank() over (partition by b.is_provisional
+                                    order by b.value desc)::int end as rnk,
              row_number() over (order by b.value desc, b.best_streak desc,
                                 b.last_points_at asc nulls last, b.profile_id) as ord
-      from base b where not b.is_provisional
-    ),
-    prov as (
-      select b.*, null::int as rnk,
-             (select count(*) from base x where not x.is_provisional)
-               + row_number() over (order by b.value desc, b.profile_id) as ord
-      from base b where b.is_provisional
-    ),
-    unioned as (
-      select * from ranked
-      union all
-      select * from prov
+      from base b
     )
     select u.rnk,
            trim(coalesce(u.first_name, '') || ' ' ||
@@ -8801,16 +8925,20 @@ begin
            u.city_name, u.district_name, u.school_name, u.grade_level,
            u.value, u.profile_id = v_me,
            u.is_provisional, u.questions, u.correct, u.attempts
-    from unioned u
+    from ordered u
     where u.ord <= v_limit
     order by u.ord;
 end;
 $$;
 
 comment on function public.get_leaderboard(text, text, uuid, text, int) is
-  'Live percentage board: competition rank (ties share) on the unrounded value; '
-  'provisional rows (fewer than min_attempts rounds) listed after ranked ones with '
-  'rank NULL. Numeric ranks only; no ids leave the server.';
+  'Live percentage board: ONE order by value (tie-breaks best_streak desc, '
+  'last_points_at asc nulls last, profile_id) over ranked and provisional rows '
+  'alike, so percentages descend monotonically. Competition rank (ties share) is '
+  'computed on the unrounded value over NON-PROVISIONAL rows only; a provisional '
+  'row (fewer than min_attempts rounds) keeps its place by value and returns rank '
+  'NULL. Numeric ranks only; no ids leave the server.';
+
 revoke all on function public.get_leaderboard(text, text, uuid, text, int) from public, anon;
 grant execute on function public.get_leaderboard(text, text, uuid, text, int) to authenticated, service_role;
 

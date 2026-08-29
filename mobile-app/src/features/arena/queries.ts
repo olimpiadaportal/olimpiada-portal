@@ -8,6 +8,7 @@ import { useAuthStore } from "@/features/auth/authStore";
 import { useMobileConfig } from "@/lib/configQueries";
 import { parseRankPayload, type MyRank } from "@/features/ranking/parse";
 import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/coverage";
+import { fetchTaughtSubjectIds, keepTaughtSubjects } from "@/lib/data";
 import { ARENA_PALETTES, type ArenaPalette } from "@/theme/tokens";
 
 export const QK = {
@@ -172,35 +173,59 @@ export function useArenaAccess(): ArenaAccess {
 // `name` stays the raw DB fallback. Ids remain the stored/submitted values.
 export type ArenaSubject = { id: string; code: string | null; name: string };
 
-async function fetchMySubjects(profileId: string): Promise<ArenaSubject[]> {
-  const { data, error } = await supabase
-    .from("child_subscriptions")
-    .select(CHILD_COVERAGE_SELECT)
-    .eq("student_profile_id", profileId)
-    .in("status", ["trialing", "active"]);
+// BOTH builders below end in the SAME grade filter (migration 155). Fizika is a
+// grades 7-11 subject, so a grade-3 child was being offered a tile that could
+// only ever open an empty test. The filter sits on the SUBSCRIBED list too, not
+// only on the free-window one: a subject bought for the wrong grade is exactly
+// the case worth hiding, and the web's first version of this rule filtered only
+// the free branch — so the children it never reached were the paying ones.
+// fetchTaughtSubjectIds() is caller-scoped, so a student session needs no id.
+
+// Exported for __tests__/grade-subjects.test.ts: the grade filter is the whole
+// point of these two, and a hook wrapper is not where it should be proven.
+export async function fetchMySubjects(profileId: string): Promise<ArenaSubject[]> {
+  const [{ data, error }, taught] = await Promise.all([
+    supabase
+      .from("child_subscriptions")
+      .select(CHILD_COVERAGE_SELECT)
+      .eq("student_profile_id", profileId)
+      .in("status", ["trialing", "active"]),
+    fetchTaughtSubjectIds(),
+  ]);
   if (error) throw error;
   // Per-subject periods: the subscription outlives its shortest-cycle subject,
   // so the status filter alone would list a lapsed one the engine refuses.
-  return liveCoveredSubjects(data as any[]);
+  return keepTaughtSubjects(liveCoveredSubjects(data as any[]), taught);
 }
 
-/** Free windows unlock every actively-priced subject (public pricing RLS). */
-async function fetchPricedSubjects(): Promise<ArenaSubject[]> {
-  const { data, error } = await supabase
-    .from("subjects_pricing")
-    .select("subjects(id, code, name)")
-    .eq("status", "active");
+/**
+ * Free windows unlock every PUBLISHED subject.
+ *
+ * It used to read `subjects_pricing` and keep whatever subject hung off a
+ * priced row, which quietly made PRICING the source of truth for what a child
+ * can open. It is not, and the two disagree in both directions: during a
+ * giveaway has_subject_access() returns true for EVERY subject, so a subject the
+ * admin had created but not yet priced was fully playable in the database and
+ * simply absent from this screen (three of the seven live subjects were in
+ * exactly that state), while an ARCHIVED subject keeps its price rows and went
+ * on being offered. `subjects` is the admin's list, is world-readable (policy
+ * subjects_select is USING (true)) and carries the publish switch, so it is
+ * what this reads — web parity with lib/childSubjects.ts.
+ *
+ * The exported name is kept: the Arena home imports `usePricedSubjects`, and a
+ * rename would buy nothing but churn across a screen this file does not own.
+ */
+export async function fetchPricedSubjects(): Promise<ArenaSubject[]> {
+  const [{ data, error }, taught] = await Promise.all([
+    supabase.from("subjects").select("id, code, name").eq("status", "active"),
+    fetchTaughtSubjectIds(),
+  ]);
   if (error) throw error;
-  const map = new Map<string, { code: string | null; name: string }>();
-  for (const row of (data ?? []) as any[]) {
-    if (row.subjects) {
-      map.set(row.subjects.id, {
-        code: row.subjects.code ?? null,
-        name: row.subjects.name,
-      });
-    }
-  }
-  return Array.from(map, ([id, v]) => ({ id, code: v.code, name: v.name }));
+  const rows = (data ?? []) as { id: string; code: string | null; name: string }[];
+  return keepTaughtSubjects(
+    rows.map((r) => ({ id: r.id, code: r.code ?? null, name: r.name })),
+    taught,
+  );
 }
 
 export function useMySubjects() {

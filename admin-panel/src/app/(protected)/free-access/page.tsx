@@ -34,8 +34,8 @@ export default async function FreeAccessPage() {
   const intervals = serviceReady ? await listFreeAccessIntervals() : [];
 
   // ---- Create-child form data (same sources as the parent Add-Child flow) ----
-  // Grades feed the optional grade select; subjects are limited to ACTIVE
-  // pricing per interval (mirrors the grant RPC); cities + schools feed the
+  // Grades feed the optional grade select; subjects are PUBLISHED subjects with
+  // ACTIVE pricing per interval (mirrors the grant RPC); cities + schools feed the
   // mandatory City -> School cascade (schools ordered private-first + numeric).
   let childGrades: GradeOption[] = [];
   let childSubjects: SubjectOption[] = [];
@@ -46,9 +46,15 @@ export default async function FreeAccessPage() {
     const [gradesRes, pricingRes, citiesRes, cityDistrictsRes, schoolsRes] =
       await Promise.all([
       supabase.from("grades").select("id, name, level").order("level"),
+      // TWO statuses matter, and only one was checked. `.eq("status","active")`
+      // filters the PRICING row; archiving a subject does not deactivate its
+      // price rows, so an archived subject stayed offerable here. Pricing is
+      // still the source of the per-interval options (the grant RPC mirrors
+      // it) — `subjects.status` decides whether the subject may be offered at
+      // all.
       supabase
         .from("subjects_pricing")
-        .select("subject_id, interval, subjects(name)")
+        .select("subject_id, interval, subjects(name, status)")
         .eq("status", "active"),
       supabase.from("districts").select("id, name").eq("status", "active").order("name"),
       // Round 21: a child in a city that HAS rayons must be given one, and
@@ -88,6 +94,8 @@ export default async function FreeAccessPage() {
     }));
     const bySubject = new Map<string, { name: string; intervals: Set<string> }>();
     for (const r of (pricingRes.data ?? []) as any[]) {
+      // Unpublished or archived in Admin → Subjects => not offered here either.
+      if (r.subjects?.status !== "active") continue;
       const name = r.subjects?.name ?? "—";
       const entry = bySubject.get(r.subject_id) ?? {
         name,

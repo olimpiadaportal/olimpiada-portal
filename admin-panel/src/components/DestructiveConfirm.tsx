@@ -418,7 +418,13 @@ export function DestructiveActionForm({
 
       <div className="row-actions" style={{ justifyContent: "flex-start" }}>
         <ActionButton
-          className="btn-danger"
+          // BOTH classes, always. `.btn-danger` declares ONLY `background: #dc2626`
+          // — no padding, no white text, no radius, no border reset — so on its
+          // own it renders as the browser default 13px black system button on a
+          // red block, and `.btn:disabled` (the opacity dimming) never applies
+          // either, so a gate the admin has not yet satisfied looks identical to
+          // an armed one. Same composed pair the subject and package dialogs use.
+          className="btn btn-danger"
           pending={pending}
           pendingLabel={gate.strings.working}
           disabled={!ready || blocked || disabled || gate.busy}

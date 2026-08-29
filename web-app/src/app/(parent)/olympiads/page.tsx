@@ -25,6 +25,11 @@ import {
   type PolyPackage,
 } from "@/components/OlympiadPurchase";
 
+// Shape-checked before being interpolated into a PostgREST `or=(...)` filter,
+// which takes a raw string rather than a bound parameter. The ids come straight
+// back from the database today; the check keeps that assumption honest.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** The olympiad_package_translations columns this page embeds. */
 type PackageTr = { locale: string; title: string | null; description: string | null };
 
@@ -62,18 +67,17 @@ export default async function ParentOlympiadCatalogPage() {
     gradeId: c.grade_id ? String(c.grade_id) : null,
   }));
 
-  // Active packages (public listing under RLS) + ownership per child + the
-  // grades catalog (id → level) so the details modal can label target grades.
-  const [{ data: packages }, { data: purchases }, { data: gradeCatalog }] = await Promise.all([
-    supabase
-      .from("olympiad_packages")
-      .select(
-        "id, price_amount, currency, duration_minutes, questions_per_attempt, event_starts_at, sale_starts_at, sale_ends_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
-      )
-      .eq("status", "active")
-      .order("created_at"),
+  // OWNERSHIP IS READ FIRST, because it widens the package query. The catalogue
+  // is status='active'; what this FAMILY OWNS is not a catalogue question at
+  // all. Asking for active packages and then joining purchases onto the result
+  // means an ARCHIVED package the family PAID for silently leaves the parent's
+  // screen while the child keeps playing it — `can_view_olympiad_package()`
+  // grants access through the purchase branch and never reads status, so the
+  // two halves of the product disagreed. Archiving stops new sales; it has
+  // never revoked access, and it is now one click from the admin package list.
+  const { data: purchases } =
     childList.length > 0
-      ? supabase
+      ? await supabase
           .from("olympiad_purchases")
           .select("olympiad_package_id, student_profile_id, status")
           .in(
@@ -81,7 +85,21 @@ export default async function ParentOlympiadCatalogPage() {
             childList.map((c) => c.id),
           )
           .eq("status", "active")
-      : Promise.resolve({ data: [] as any[] }),
+      : { data: [] as any[] };
+  const ownedPackageIds = [
+    ...new Set(((purchases ?? []) as any[]).map((p) => p.olympiad_package_id)),
+  ].filter((v): v is string => typeof v === "string" && UUID_RE.test(v));
+
+  const packageQuery = supabase
+    .from("olympiad_packages")
+    .select(
+      "id, price_amount, currency, duration_minutes, questions_per_attempt, event_starts_at, sale_starts_at, sale_ends_at, subjects(code, name), olympiad_types(name), media_assets:cover_media_id(bucket, path), olympiad_package_translations(locale, title, description)",
+    );
+  const [{ data: packages }, { data: gradeCatalog }] = await Promise.all([
+    (ownedPackageIds.length > 0
+      ? packageQuery.or(`status.eq.active,id.in.(${ownedPackageIds.join(",")})`)
+      : packageQuery.eq("status", "active")
+    ).order("created_at"),
     supabase.from("grades").select("id, level"),
   ]);
 

@@ -20,6 +20,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { resolvePaletteChoice } from "@/lib/theme/palettes";
 import { requireChild } from "@/lib/auth/session";
+import { checkNewPassword } from "@/lib/auth/passwordPolicy";
 import { updateChildOwnNameCore } from "@/lib/auth/childProfileCore";
 import {
   removeOwnChildAvatarCore,
@@ -152,8 +153,9 @@ const AVATAR_REVALIDATE = [
   "/subscription",
 ];
 
-// Change the logged-in child's own login password. Enforces min length 8 and
-// that the password is not equal to the child's 8-digit login ID (a trivial,
+// Change the logged-in child's own login password. Enforces the shared strength
+// rule (lib/auth/passwordPolicy — the same one the parent's Add-Child form runs)
+// and that the password is not equal to the child's 8-digit login ID (a trivial,
 // guessable value). Uses supabase.auth.updateUser for the CHILD's own session.
 export async function childChangeOwnPassword(
   _prev: ChildProfileState,
@@ -163,9 +165,11 @@ export async function childChangeOwnPassword(
   const child = await requireChild();
   const newPassword = String(formData.get("new_password") ?? "");
 
-  if (newPassword.length < 8) {
+  const weak = checkNewPassword(newPassword);
+  if (weak === "tooShort" || weak === "tooLong") {
     return { error: t("profile.err.passwordShort") };
   }
+  if (weak) return { error: t("profile.err.passwordWeak") };
 
   const supabase = await createClient();
 

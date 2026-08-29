@@ -77,5 +77,9 @@ export async function saveSubjectPrice(
   // Audit: the RPC writes its own audit row (SECURITY DEFINER), so no
   // duplicate writeAuditLog() here.
   revalidatePath("/pricing");
+  // The Subjects list prints the same three amounts and the "not sellable"
+  // flag derived from them, so a reprice here must not leave that screen
+  // showing the old figure.
+  revalidatePath("/manage/subjects");
   return { ok: true };
 }

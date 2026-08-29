@@ -30,6 +30,7 @@ import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { usePullRefresh } from "@/lib/usePullRefresh";
 import { bffActivateFree, bffAddChild } from "@/lib/api";
 import {
   ChildInfoForm,
@@ -101,6 +102,21 @@ export default function AddChildScreen() {
   const schools = useSchools(info.cityId);
   const mode = config.data?.payment.mode ?? "off";
   const posture = resolvePosture(mode, freeAccess.data?.active === true);
+
+  // Every select on this screen reads an ADMIN-MANAGED catalog cached for ten
+  // minutes, and the screen had no refresh affordance of any kind: when an
+  // admin added a school, the parent had no gesture that could reach it — the
+  // only way out was to kill the app. The hook also brings silent
+  // refresh-on-focus, which is what actually covers "the admin just added it".
+  // Schools are fetched per city and disabled until one is chosen.
+  const { refreshing, onRefresh } = usePullRefresh([
+    config,
+    freeAccess,
+    grades,
+    cities,
+    districts,
+    info.cityId ? schools : null,
+  ]);
 
   // Rayon requirement of the chosen city (drives validation + the summary).
   const cityRayons = rayonsOfCity(districts.data, info.cityId);
@@ -208,7 +224,7 @@ export default function AddChildScreen() {
   const configLoading = config.isPending || freeAccess.isPending;
 
   return (
-    <ScreenScroll>
+    <ScreenScroll refreshing={refreshing} onRefresh={onRefresh}>
       {configLoading ? (
         <View style={{ gap: spacing.md }}>
           <Skeleton height={28} width="60%" />

@@ -18,6 +18,7 @@
 import Link from "next/link";
 import { startTransition, useActionState, useMemo, useState } from "react";
 import { useLocale } from "@/i18n/I18nProvider";
+import { CopyableId } from "@/components/CopyableId";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { updateChildProfile, type UpdateChildState } from "@/lib/auth/parentService";
 import { saveChildAvatar } from "@/lib/auth/childAvatarActions";
@@ -406,7 +407,9 @@ export function ChildInfoEditForm({
       <div className="prof2-rows" style={{ marginTop: 4 }}>
         <div className="prof2-row">
           <span className="prof2-row-label">{tt("parent.child.idLabel")}</span>
-          <span className="prof2-row-value mono">{childUniqueId || tt("parent.dash.idPending")}</span>
+          <span className="prof2-row-value mono">
+            {childUniqueId ? <CopyableId id={childUniqueId} /> : tt("parent.dash.idPending")}
+          </span>
         </div>
         <div className="prof2-row">
           <span className="prof2-row-label">{tt("childedit.internalId")}</span>

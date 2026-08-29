@@ -6,6 +6,7 @@
 // errors per locale (az/en/ru). See messages.ts `auth.child.*`.
 
 import { isUuid } from "@/lib/uuid";
+import { checkNewPassword } from "@/lib/auth/passwordPolicy";
 
 export const CHILD_ID_RE = /^\d{8}$/;
 export const CHILD_PASSWORD_MIN = 8;
@@ -59,7 +60,16 @@ export function validateChildPassword(
   opts?: { childUniqueId?: string },
 ): ValidationResult {
   const errors: string[] = [];
-  if (password.length < CHILD_PASSWORD_MIN) errors.push("auth.child.err.passwordTooShort");
+  // A child password is CHOSEN here (by the parent, or by the child on their
+  // own profile), so the full strength rule applies. validateChildLogin below
+  // deliberately does NOT call this — children whose password predates the rule
+  // must keep being able to sign in.
+  const weak = checkNewPassword(password);
+  if (weak === "tooShort" || weak === "tooLong") {
+    errors.push("auth.child.err.passwordTooShort");
+  } else if (weak) {
+    errors.push("auth.child.err.passwordWeak");
+  }
   if (opts?.childUniqueId && password === opts.childUniqueId) {
     errors.push("auth.child.err.passwordEqualsId");
   }

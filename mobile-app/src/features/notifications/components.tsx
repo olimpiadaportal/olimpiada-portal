@@ -29,7 +29,7 @@ import {
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, shadow, spacing } from "@/theme/tokens";
+import { radius, shadow, spacing, tint } from "@/theme/tokens";
 import { RichBody } from "@/lib/notifMarkdown";
 import { bakuDayKey, formatDayMonth, formatLongDate } from "@/lib/formatDate";
 import { useT } from "@/i18n/useT";
@@ -244,7 +244,13 @@ export function CategoryChips({
               accessibilityState={{ selected: on }}
               accessibilityLabel={c.label}
               onPress={() => onChange(c.value)}
-              android_ripple={{ color: tokens.pillBg }}
+              // Foreground ripple: a background one replaces this view's
+              // drawable and leaves it painting the PREVIOUS theme's colour
+              // after a light/dark switch. See AnalyticsDashboard.tsx.
+              android_ripple={{
+                color: on ? "rgba(255,255,255,0.25)" : tint(tokens.accent, 0.14),
+                foreground: true,
+              }}
               style={({ pressed }) => ({
                 paddingVertical: spacing.sm,
                 paddingHorizontal: spacing.lg,
@@ -301,7 +307,9 @@ export function NotificationRow({
       accessibilityLabel={item.title}
       onPress={onPress}
       onLongPress={onLongPress}
-      android_ripple={{ color: tokens.chipBg }}
+      // Foreground ripple — this row carries its own backgroundColor (unread vs
+      // read), so a background ripple would strand it on the old theme's colour.
+      android_ripple={{ color: tint(tokens.accent, 0.14), foreground: true }}
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",

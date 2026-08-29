@@ -14,29 +14,60 @@
 // pool too small to pass it) and would put the package back ON SALE under a
 // sale window that may be long expired. The admin activates deliberately, from
 // the form above, once the pool is ready.
+//
+// ARCHIVE REPORTS ITS OWN OUTCOME NOW. It used to be a bare `<form action={…}>`
+// over a void server action that redirected to /olympiad whatever happened, so
+// a refused archive left the same screen as a successful one and read as "the
+// system blocked me". It shares the archive action with the dialog below, which
+// offers the same operation from the list — one action, two entry points, so
+// the two screens cannot drift.
 import { useActionState } from "react";
 import {
-  archiveOlympiadPackage,
+  archiveOlympiadPackageAction,
   unarchiveOlympiadPackageAction,
   type OlympiadDeletionState,
 } from "@/lib/admin/olympiad";
-import { ActionButton, SubmitButton } from "@/components/ActionButton";
+import { ActionButton } from "@/components/ActionButton";
 import {
   OlympiadPackageDeleteButton,
   type OlympiadPackageDeleteStrings,
 } from "@/components/OlympiadPackageDeleteButton";
 
-// The delete dialog itself lives in OlympiadPackageDeleteButton — the package
-// list renders the same one from its rows, and a second copy here would be a
-// second place for the outcome/blocking copy to drift.
+// The delete/archive dialog itself lives in OlympiadPackageDeleteButton — the
+// package list renders the same one from its rows, and a second copy here would
+// be a second place for the outcome/blocking copy to drift.
 export type OlympiadPackageDangerStrings = OlympiadPackageDeleteStrings & {
   heading: string;
-  archive: string;
-  archiving: string;
   restore: string;
   restoring: string;
   restoreHint: string;
 };
+
+/** A finished result — success or a counted refusal — under one control. */
+function Result({ state }: { state: OlympiadDeletionState }) {
+  if (!state) return null;
+  if (state.ok) {
+    return (
+      <span className="form-ok" role="status">
+        {state.message}
+      </span>
+    );
+  }
+  return (
+    <div role="alert">
+      <span className="form-error">{state.error}</span>
+      {state.blocks.length > 0 && (
+        <ul>
+          {state.blocks.map((b, i) => (
+            <li key={i} className="form-error">
+              {b}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function OlympiadPackageDangerZone({
   packageId,
@@ -51,6 +82,10 @@ export function OlympiadPackageDangerZone({
     OlympiadDeletionState,
     FormData
   >(unarchiveOlympiadPackageAction, null);
+  const [archiveState, archiveAction, archivePending] = useActionState<
+    OlympiadDeletionState,
+    FormData
+  >(archiveOlympiadPackageAction, null);
 
   return (
     <div>
@@ -69,11 +104,18 @@ export function OlympiadPackageDangerZone({
             </ActionButton>
           </form>
         ) : (
-          <form action={archiveOlympiadPackage}>
+          <form action={archiveAction}>
             <input type="hidden" name="__id" value={packageId} />
-            <SubmitButton className="link-danger" pendingLabel={strings.archiving}>
-              {strings.archive}
-            </SubmitButton>
+            {/* Not `.link-danger`: archiving is the SAFE answer here — it stops
+                new sales and leaves every buyer whole — and dressing it as a
+                destructive action is what pushed admins towards Delete. */}
+            <ActionButton
+              className="btn-ghost"
+              pending={archivePending}
+              pendingLabel={strings.archiving}
+            >
+              {strings.archiveAction}
+            </ActionButton>
           </form>
         )}
 
@@ -83,23 +125,8 @@ export function OlympiadPackageDangerZone({
       </div>
 
       {isArchived && <p className="hint">{strings.restoreHint}</p>}
-      {restoreState && !restoreState.ok && (
-        <div role="alert">
-          <span className="form-error">{restoreState.error}</span>
-          <ul>
-            {restoreState.blocks.map((b, i) => (
-              <li key={i} className="form-error">
-                {b}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {restoreState && restoreState.ok && (
-        <span className="form-ok" role="status">
-          {restoreState.message}
-        </span>
-      )}
+      <Result state={archiveState} />
+      <Result state={restoreState} />
     </div>
   );
 }

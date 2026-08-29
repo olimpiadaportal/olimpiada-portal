@@ -10,6 +10,11 @@ import { createClient } from "@/lib/supabase/server";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
 import { getMyFreeTrial } from "@/lib/freeTrial";
+import {
+  TAUGHT_SUBJECTS_RPC,
+  keepTaughtSubjects,
+  taughtSubjectSet,
+} from "@/lib/gradeSubjects";
 
 // `code` drives the locale-aware display label (subj.<code> via subjectLabel);
 // `name` stays the raw DB fallback. Ids remain the stored/submitted values.
@@ -57,6 +62,26 @@ export function liveCoveredSubjects(
     }
   }
   return [...map.values()];
+}
+
+/**
+ * The subjects this grade studies, as a lookup set — or `null` when the rule
+ * cannot be applied (no grade, or the read failed) and the caller must leave
+ * its list alone.
+ *
+ * ONE RULE, IN THE DATABASE (migration 155). Every child- and parent-facing
+ * subject list on the web goes through this, and the mobile apps call the same
+ * RPC. The previous hand-written version lived in two files, ran only during a
+ * free window, ignored topic status, and dropped a subject whose topic was
+ * SHARED across grades — see lib/gradeSubjects.ts.
+ */
+export async function fetchTaughtSubjectIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  gradeId: string | null,
+): Promise<ReadonlySet<string> | null> {
+  if (!gradeId) return null;
+  const { data, error } = await supabase.rpc(TAUGHT_SUBJECTS_RPC, { p_grade: gradeId });
+  return taughtSubjectSet(data, error);
 }
 
 export type ChildSubjectAccess = {
@@ -132,35 +157,12 @@ export async function getChildSubjectAccess(
   // subjects_select is USING (true)), so reading it here needs no privilege and
   // matches what the database will actually allow. Archived subjects are
   // excluded — status is the admin's own switch for that.
-  //
-  // SCOPED TO THE CHILD'S GRADE. "Every active subject" was still too many:
-  // Fizika exists only for grades 7-11, so a grade-3 child was being offered a
-  // subject with no curriculum at all behind it. The investor's instruction was
-  // explicit -- "only those grades should see this subject, not below 7" -- and
-  // the honest way to honour it is by DATA rather than a hardcoded grade floor:
-  // a subject is offered when it has at least one exam topic for this child's
-  // grade. That needs no maintenance when a subject's range changes, and it is
-  // the same fact the arena uses to build a round.
   if (freeNow) {
-    const gradeId = (student as any)?.grade_id ?? null;
-    const { data: gradeTopics } = gradeId
-      ? await supabase
-          .from("topics")
-          .select("subject_id")
-          .eq("scope", "exam")
-          .eq("grade_id", gradeId)
-      : { data: [] as { subject_id: string }[] };
-    const taught = new Set(
-      ((gradeTopics ?? []) as { subject_id: string }[]).map((r) => String(r.subject_id)),
-    );
     const { data: all } = await supabase
       .from("subjects")
       .select("id, code, name")
       .eq("status", "active");
     for (const row of (all ?? []) as any[]) {
-      // A subject with no curriculum for this grade is not "locked" -- it simply
-      // does not exist for this child, so it is not listed at all.
-      if (!taught.has(String(row.id))) continue;
       subjMap.set(String(row.id), {
         code: row.code ?? null,
         name: String(row.name),
@@ -176,7 +178,22 @@ export async function getChildSubjectAccess(
     }
   }
 
-  const subjects = Array.from(subjMap, ([id, v]) => ({ id, code: v.code, name: v.name }));
+  // SCOPED TO THE CHILD'S GRADE, OUTSIDE EVERY BRANCH ABOVE. Fizika exists only
+  // for grades 7-11, so a grade-3 child was being offered a subject with no
+  // curriculum at all behind it. The rule is honoured by DATA (migration 155)
+  // rather than a hardcoded grade floor, so it needs no maintenance when a
+  // subject's range changes.
+  //
+  // THE PLACEMENT IS THE FIX. The first version of this ran inside the
+  // `if (freeNow)` branch, which meant a child on a real subscription or a trial
+  // was never grade-filtered at all — the only children who reached it were the
+  // ones paying nothing. A subject bought for the wrong grade is exactly the
+  // case that must be hidden: it can only ever open an empty test.
+  const taught = await fetchTaughtSubjectIds(supabase, (student as any)?.grade_id ?? null);
+  const subjects = keepTaughtSubjects(
+    Array.from(subjMap, ([id, v]) => ({ id, code: v.code, name: v.name })),
+    taught,
+  );
 
   return { freeNow, access, hasAccess, subjects, trialNow, trialEndsAt: trial.endsAt };
 }

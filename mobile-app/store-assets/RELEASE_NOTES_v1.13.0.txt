@@ -1,0 +1,107 @@
+===========================================================
+  OlympIQ — Google Play / App Store
+  Version: 1.13.0
+===========================================================
+
+  BU BURAXILIŞ YENİ BUILD TƏLƏB EDİR, OTA YENİLƏMƏ YOX.
+  runtimeVersion = appVersion, ona görə 1.13.0 üçün
+  yayımlanan OTA yeniləmə 1.12.3 quruluşuna HEÇ VAXT
+  çatmır. Üstəlik expo-clipboard native moduldur.
+  Yəni: yeni build + yeni mağaza buraxılışı.
+
+  Mənbə: CHANGELOG.md → 1.13.0 bölməsinin [store] sətirləri.
+
+
+-----------------------------------------------------------
+RELEASE NAME  (yalnız Play Console-da görünür, istifadəçiyə YOX)
+-----------------------------------------------------------
+
+1.13.0 — Rayonlar, məktəblər və düzəlişlər
+
+  Limit: 50 simvol.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — AZƏRBAYCAN  (az-AZ)
+-----------------------------------------------------------
+
+Bu buraxılışda:
+
+• Ölkənin bütün rayonları əlavə edildi — Hacıqabul da daxil. Hər rayon üçün məktəb siyahısı var.
+• Şəhər, rayon və məktəb axtarışı: "Haci" yazsanız da "Hacıqabul" tapılır.
+• Uşağın 8 rəqəmli nömrəsini toxunmaqla kopyalayın.
+• Şifrə yeniləndikdən sonra uşağın daxil ola bilməməsi düzəldildi.
+• "ə" hərfinin bəzi telefonlarda boş kvadrat görünməsi düzəldildi.
+• Tema dəyişəndə bəzi filtrlərin köhnə rəngdə qalması düzəldildi.
+• Fizika artıq yalnız 7-11-ci siniflərə göstərilir.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — ENGLISH  (en-US)
+-----------------------------------------------------------
+
+In this release:
+
+• Every district in the country is listed now — Hacıqabul among them — each with its schools.
+• Search the city, district and school lists: "Haci" finds "Hacıqabul".
+• Tap a child's 8-digit ID to copy it.
+• Fixed a password reset that said it worked while the child still could not sign in.
+• Fixed the letter "ə" showing as an empty box on some phones.
+• Fixed filters keeping old colours after a light/dark switch.
+• Physics is now offered only to grades 7-11.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — РУССКИЙ  (ru-RU)
+-----------------------------------------------------------
+
+В этом выпуске:
+
+• Добавлены все районы страны, включая Hacıqabul, и для каждого — список школ.
+• Поиск по городам, районам и школам: «Haci» найдёт «Hacıqabul».
+• 8-значный номер ребёнка копируется одним касанием.
+• Исправлен сброс пароля, который сообщал об успехе, но вход не работал.
+• Исправлено отображение буквы «ə» пустым квадратом на некоторых телефонах.
+• Исправлены фильтры со старым цветом после смены темы.
+• Физика теперь доступна только 7-11 классам.
+
+
+===========================================================
+  NƏYƏ GÖRƏ BURADA QİYMƏT VƏ "ABUNƏ OL" YOXDUR
+===========================================================
+
+Tətbiqin içində alış-veriş yoxdur — abunəlik və olimpiada
+paketləri yalnız sayt üzərindən alınır. Buraxılış qeydləri
+mağaza siyahısının bir hissəsidir, ona görə burada da qiymət,
+"Abunə ol" çağırışı və ya ödəniş linki yazılmır.
+
+Bu, təsadüf deyil: Apple 3.1.1(a) və Google Play Payments
+qaydaları Azərbaycan üçün tam qüvvədədir və bu qaydaların
+pozulmasının cəzası tətbiqin rədd edilməsi deyil, developer
+hesabının bağlanmasıdır.
+
+  Limit: hər dil üçün 500 simvol.
+
+===========================================================
+  BU BURAXILIŞDA DÜZƏLƏN, LAKİN QEYDLƏRƏ SALINMAYAN İŞLƏR
+===========================================================
+
+Aşağıdakılar da düzəldilib, sadəcə 500 simvol limitinə
+görə mağaza qeydlərinə salınmayıb (tam siyahı: CHANGELOG.md):
+
+• Şifrə yeniləndikdə əvvəlki uğursuz cəhdlərin kilidi silinir
+  (əvvəllər yeni şifrə də 15 dəqiqə qəbul edilmirdi).
+• "Uşağı redaktə et" ekranında şifrə sahəsi əsas "Yadda saxla"
+  düyməsinin altında qalırdı — şifrə göndərilmədən "yadda
+  saxlanıldı" mesajı çıxırdı.
+• Yeni şifrələr üçün ən azı bir böyük hərf və bir xüsusi simvol
+  tələb olunur. MÖVCUD şifrələr işləməyə davam edir.
+• Fənn siyahısında "Azərbaycan dili" iki dəfə görünürdü,
+  "Məntiq" isə heç görünmürdü.
+• Test ekranının başlığı dar telefonlarda kəsilirdi.
+• Ekranlar tab dəyişəndə və tətbiqə qayıdanda özü yenilənir
+  (əvvəllər yalnız aşağı çəkməklə yenilənirdi).
+• Bakı məktəbləri rəsmi adları ilə göstərilir və hər biri
+  öz rayonuna bağlandı.
+
+===========================================================

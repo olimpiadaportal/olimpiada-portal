@@ -37,6 +37,29 @@ create table if not exists public.news (
 -- Rerun-safety for databases created before Round 6 (migration 019).
 alter table public.news add column if not exists like_count integer not null default 0;
 
+-- "A LIKE IMPLIES A VIEW" (migration 157). On the web this held only by accident
+-- of layout -- the like button lived on the same detail page whose beacon fired
+-- the view -- until the mobile feed CARD grew a like button and articles started
+-- reporting more likes than views. fn_news_like_count now raises the floor on
+-- every INSERT; this constraint makes the impossible state unreachable from any
+-- other path. Nothing in the codebase lowers view_count (bump_news_view only
+-- increments and no admin path writes the column), so it can only be tripped by
+-- a future path that recreates the bug -- which is the point, since the last one
+-- went unnoticed until a reader counted the two numbers. Guarded rather than
+-- declared inline: on a database that predates this, the create table above is a
+-- no-op and the constraint would never arrive.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.news'::regclass
+      and conname = 'news_view_count_at_least_likes'
+  ) then
+    alter table public.news
+      add constraint news_view_count_at_least_likes check (view_count >= like_count);
+  end if;
+end $$;
+
 comment on table public.news is
   'General news (public + in-app). Admin-only CRUD. Images in Supabase Storage (news-media).';
 
@@ -171,9 +194,18 @@ set search_path = public, pg_temp
 as $$
 begin
   if tg_op = 'INSERT' then
-    update public.news set like_count = like_count + 1 where id = new.news_id;
+    -- MIGRATION 157 -- a like implies a view. Both expressions read the row as
+    -- it was BEFORE this update, so `like_count + 1` is the new like count.
+    -- greatest() and not +1: the web reader was already counted by the view
+    -- beacon on the same page, and must not be counted twice for liking.
+    update public.news
+       set like_count = like_count + 1,
+           view_count = greatest(view_count, like_count + 1)
+     where id = new.news_id;
     return new;
   elsif tg_op = 'DELETE' then
+    -- Unliking never returns a view. Views are monotonic; that is what keeps
+    -- the invariant true once it is true.
     update public.news set like_count = greatest(like_count - 1, 0) where id = old.news_id;
     return old;
   end if;
@@ -182,8 +214,11 @@ end;
 $$;
 
 comment on function public.fn_news_like_count() is
-  'Trigger function: keeps news.like_count in sync with news_likes rows. '
-  'SECURITY DEFINER so likers need no UPDATE right on public.news.';
+  'Trigger function: keeps news.like_count in sync with news_likes rows and '
+  'enforces "a like implies a view" by raising view_count to at least the like '
+  'count on INSERT (migration 157) — a reader must render the article to like '
+  'it, and on mobile the like button sits on a list card that never fires '
+  'bump_news_view. SECURITY DEFINER so likers need no UPDATE right on public.news.';
 
 revoke all on function public.fn_news_like_count() from public, anon, authenticated;
 

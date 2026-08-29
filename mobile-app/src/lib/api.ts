@@ -461,6 +461,25 @@ export const bffUpdateStudentName = (firstName: string, lastName: string) =>
     "profile.err.updateFailed",
   );
 
+/**
+ * Own password change — BOTH roles (the BFF resolves the caller from the
+ * bearer and applies the rules that role gets).
+ *
+ * Replaces a direct `supabase.auth.updateUser({ password })` from the app. That
+ * call went straight to GoTrue, so the ONLY strength rule that ever ran on a
+ * self-service password change was GoTrue's own minimum: the client checked
+ * `length < 8` and the server checked nothing the product had decided. The
+ * password policy has to live where the client cannot skip it.
+ *
+ * The screens read only `ok` — the payload is an acknowledgement, not data.
+ */
+export const bffChangeOwnPassword = (password: string) =>
+  bffAuthedPost<{ updated: true }>(
+    "/api/mobile/v1/profile/password",
+    { password },
+    "profile.err.updateFailed",
+  );
+
 // ---- child avatar (parent-managed; POST /children/[id]/avatar) -----------------
 // One endpoint, three request shapes (web childAvatarCore twins): multipart
 // `file` → photo (byte-sniffed server-side, png/jpeg/webp ≤2MB), JSON

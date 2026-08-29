@@ -21,7 +21,8 @@ const PROFILE_KEYS = [
   "profile.err.nameRequired",
   "profile.avatar", "profile.uploadAvatar", "profile.changeAvatar",
   "profile.removeAvatar", "profile.avatarHint", "profile.noAvatar",
-  "profile.err.passwordShort", "profile.err.passwordEqualsId",
+  "profile.err.passwordShort", "profile.err.passwordWeak",
+  "profile.err.passwordEqualsId",
   "profile.err.fileType", "profile.err.fileTooLarge", "profile.err.uploadFailed",
   "profile.err.updateFailed", "account.deleteConfirm",
   // Phone row + its inline add/edit form (shares the register field's copy).

@@ -123,7 +123,15 @@ export function OlympiadsScreen() {
     staleTime: 0,
   });
 
-  const { refreshing, onRefresh } = usePullRefresh([catalogQ, poolCountsQ, ownedQ, liveQ]);
+  // `config` gates what this screen is allowed to show at all, so a pull that
+  // skipped it could repaint every package around a stale flag.
+  const { refreshing, onRefresh } = usePullRefresh([
+    config,
+    catalogQ,
+    poolCountsQ,
+    ownedQ,
+    liveQ,
+  ]);
 
   const [detail, setDetail] = useState<OlympiadPackageRow | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);

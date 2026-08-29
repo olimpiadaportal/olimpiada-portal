@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireParent } from "@/lib/auth/session";
 import { removeAvatarCore, setAvatarCore } from "@/lib/auth/avatarCore";
 import { updateOwnPhoneCore } from "@/lib/auth/phoneCore";
+import { checkNewPassword } from "@/lib/auth/passwordPolicy";
 import { rateLimitAllow } from "@/lib/rateLimit";
 import { getT } from "@/i18n/server";
 
@@ -71,8 +72,11 @@ export async function updateOwnPhone(
   return { ok: true };
 }
 
-// Change the logged-in parent's password. Validates min length 8 (matches the
-// parent registration rule) before calling supabase.auth.updateUser.
+// Change the logged-in parent's password. Runs the SAME rule registration runs
+// (lib/auth/passwordPolicy) before calling supabase.auth.updateUser — otherwise
+// a parent could register under the policy and then step straight out of it
+// from this form. This path had no upper bound at all until now, so a >128-char
+// password reached bcrypt and was silently truncated.
 export async function updateOwnPassword(
   _prev: ProfileActionState,
   formData: FormData,
@@ -80,7 +84,11 @@ export async function updateOwnPassword(
   await requireParent();
   const t = await getT();
   const password = String(formData.get("new_password") ?? "");
-  if (password.length < 8) return { error: t("profile.err.passwordShort") };
+  const weak = checkNewPassword(password);
+  if (weak === "tooShort" || weak === "tooLong") {
+    return { error: t("profile.err.passwordShort") };
+  }
+  if (weak) return { error: t("profile.err.passwordWeak") };
 
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({ password });

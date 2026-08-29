@@ -23,12 +23,24 @@
 // clicked was rendered from data that may be seconds old, and without the check
 // a stale page could archive a subject somebody else just published.
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { PRICE_INTERVALS } from "@/app/(protected)/pricing/shared";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Where a refused publish sends the admin back to. A LITERAL map, never a path
+ * from the form: a redirect target read out of client input is an open-redirect
+ * (see safeNext() in the web app). The form only picks a key.
+ */
+const RETURN_PATHS = {
+  list: () => "/manage/subjects",
+  edit: (id: string) => `/manage/subjects/${id}/edit`,
+} as const;
 
 /**
  * The allowed moves. `from` is a whitelist, not documentation: an action whose
@@ -60,6 +72,7 @@ export async function transitionSubject(formData: FormData): Promise<void> {
 
   const id = String(formData.get("__id") ?? "").trim();
   const action = String(formData.get("__action") ?? "").trim();
+  const returnKey = String(formData.get("__return") ?? "").trim();
   const tr = SUBJECT_TRANSITIONS[action];
   if (!UUID_RE.test(id) || !tr) return;
 
@@ -71,6 +84,40 @@ export async function transitionSubject(formData: FormData): Promise<void> {
     .maybeSingle();
   // Re-read, then verify the move is legal FROM WHERE THE ROW ACTUALLY IS.
   if (!row || !tr.from.includes(String(row.status))) return;
+
+  // PUBLISHED-AND-UNSELLABLE IS THE BUG THIS BLOCKS. A subject's price is not
+  // a column on the row: it lives in subjects_pricing, one row per
+  // (subject × interval). Every family-facing surface — /services, /register,
+  // Add-Child, the per-child subscribe screen, even the admin Free Access
+  // picker — builds its subject list from PRICED rows, so a subject that is
+  // 'active' with an incomplete price set is published nowhere and says so
+  // nowhere. Elm and Fizika sat in exactly that state until migration 154
+  // priced them. Publishing now requires all three cycles to be priced, and
+  // the refusal is SHOWN (query flag) rather than swallowed — an admin who is
+  // told nothing assumes the publish worked.
+  if (tr.to === "active") {
+    const { data: prices, error: priceErr } = await supabase
+      .from("subjects_pricing")
+      .select("interval")
+      .eq("subject_id", id)
+      .eq("status", "active");
+    const priced = new Set(
+      (prices ?? []).map((p) => String((p as { interval: string }).interval)),
+    );
+    const complete =
+      !priceErr && PRICE_INTERVALS.every((iv) => priced.has(iv));
+    if (!complete) {
+      if (priceErr) {
+        console.error(
+          "[admin] subject pricing check failed",
+          priceErr.code ?? "unknown",
+        );
+      }
+      const back =
+        returnKey === "edit" ? RETURN_PATHS.edit(id) : RETURN_PATHS.list();
+      redirect(`${back}?publishBlocked=1`);
+    }
+  }
 
   const { error } = await supabase
     .from("subjects")
@@ -95,5 +142,6 @@ export async function transitionSubject(formData: FormData): Promise<void> {
   // on the web reads it too — but that is a different deployment and revalidates
   // on its own 60s cache.
   revalidatePath("/manage/subjects");
+  revalidatePath(`/manage/subjects/${id}/edit`);
   revalidatePath("/pricing");
 }

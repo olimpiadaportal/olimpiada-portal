@@ -61,7 +61,11 @@ export function RankingScreen() {
   });
   const subjectsQ = useQuery({
     queryKey: ["catalog", "active-subjects"],
-    queryFn: fetchActiveSubjects,
+    // Called through an arrow, never passed by reference: React Query hands a
+    // queryFn its CONTEXT object as the first argument, and fetchActiveSubjects
+    // now takes an optional gradeId there — a context object would fall into
+    // its by-grade branch instead of the "all my taught subjects" one.
+    queryFn: () => fetchActiveSubjects(),
     enabled: leaderboardOn,
     staleTime: 10 * 60_000,
   });
@@ -152,7 +156,14 @@ export function RankingScreen() {
 
   // All enabled-gated, so their own isRefetching flags stay false until the
   // scope ids land — the hook's boolean does not.
+  //
+  // The scope ids and the subject catalog belong here even though no board row
+  // comes from them: they are what the FILTERS are built out of, and both are
+  // admin-managed (a renamed subject, a moved school). Without them a pull
+  // refreshed the board while the chips above it kept naming the old world.
   const { refreshing, onRefresh } = usePullRefresh([
+    scopeIdsQ,
+    subjectsQ,
     listQ,
     meQ,
     cityId ? districtsQ : null,

@@ -9,7 +9,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getResource, type Resource } from "@/lib/admin/resources";
 import { requireAdmin, requirePanelAccess } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { getT } from "@/i18n/server";
+import { getT, type T } from "@/i18n/server";
+import {
+  PRICE_INTERVALS,
+  parsePriceAmount,
+  type PriceInterval,
+} from "@/app/(protected)/pricing/shared";
 
 export type SaveState = { error?: string } | null;
 
@@ -155,6 +160,16 @@ export async function saveRow(
   if (!res) return { error: "Unknown resource." };
   if (res.adminOnly) await requireAdmin();
   const t = await getT();
+  // Subjects have their own create/edit action (below): the registry form
+  // cannot express the three subjects_pricing rows a subject needs to be
+  // sellable, and a subject saved WITHOUT them is published nowhere. Refused
+  // here and not merely hidden in the UI, because a hand-crafted POST
+  // carrying __slug=subjects would otherwise still flip status to 'active'
+  // on an unpriced row — the exact state that made Elm and Fizika invisible.
+  if (NON_GENERIC_SAVE.has(res.slug)) {
+    console.error("[admin] generic save refused for guarded resource", res.slug);
+    return { error: t("err.server") };
+  }
 
   const supabase = await createClient();
   const built = buildPayload(res, formData);
@@ -238,6 +253,10 @@ export async function saveRow(
 // with an error this function used to throw away).
 const NON_GENERIC_DELETE = new Set(["subjects"]);
 
+// Resources whose CREATE/UPDATE is not generic either. Same reasoning as
+// above, applied to the write side: see the comment inside saveRow().
+const NON_GENERIC_SAVE = new Set(["subjects"]);
+
 export async function deleteRow(formData: FormData): Promise<void> {
   // L8: guard FIRST — panel access before any FormData is read; escalate to
   // admin once the registry flag is known (memoized context, no extra lookup).
@@ -286,4 +305,306 @@ export async function deleteRow(formData: FormData): Promise<void> {
   });
 
   revalidatePath(`/manage/${slug}`);
+}
+
+// ===========================================================================
+// SUBJECTS — their own create/edit action.
+//
+// WHY NOT THE REGISTRY. A subject's PRICE is not a column on `subjects`. It
+// lives in `public.subjects_pricing`, one row per (subject_id, interval) with
+// a UNIQUE key on that pair and intervals week | month | year. So a single
+// scalar "price" field is the wrong shape twice over: it cannot hold 3/9/90,
+// and writing only one of the three leaves the other two unpriced — which is
+// precisely the state that made Elm and Fizika vanish from /services. The form
+// therefore takes THREE amounts, and this action is the only route that can
+// write a subject and its prices together.
+//
+// WHY PRICES ARE REQUIRED AT CREATION. Every family-facing surface builds its
+// subject list from PRICED rows, not from `subjects`, so a subject created
+// 'active' with no pricing is published and unsellable at the same moment, and
+// nothing anywhere says so. The three alternatives were: default the prices
+// (which would put a brand-new subject on public sale at a price nobody chose),
+// block publishing only (which leaves the trap intact for a subject created as
+// Public), or demand them up front. This does the last AND blocks publishing
+// (see subject-status.ts), so the invariant "status = 'active' implies three
+// active pricing rows" holds through every path an admin can take.
+//
+// MONEY. Amounts are validated by parsePriceAmount — a STRING shape plus
+// 0 < x <= 10000 — so "at most two decimals" is a property of the text, not of
+// a float. The value goes straight to admin_upsert_subject_price, which
+// re-checks the same bounds and stores numeric(12,2). No arithmetic happens in
+// TypeScript at any point.
+// ===========================================================================
+
+const UUID_SHAPE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const SUBJECT_STATUSES = ["active", "inactive", "archived"] as const;
+type SubjectStatus = (typeof SUBJECT_STATUSES)[number];
+
+/** Which control an error belongs to, so the form can point at it. */
+export type SubjectFormField = "name" | "status" | PriceInterval;
+
+export type SubjectSaveState = {
+  error?: string;
+  field?: SubjectFormField;
+  ok?: boolean;
+} | null;
+
+type ParsedSubject =
+  | {
+      ok: true;
+      name: string;
+      status: SubjectStatus;
+      prices: Record<PriceInterval, number>;
+    }
+  | { ok: false; state: SubjectSaveState };
+
+// Server-side validation of the whole form. The client mirrors these rules for
+// UX only — nothing here trusts a `required` attribute or a number input.
+function parseSubjectForm(formData: FormData, t: T): ParsedSubject {
+  const name = String(formData.get("name") ?? "").trim();
+  if (name.length < 1 || name.length > TEXT_MAX) {
+    return { ok: false, state: { error: t("subj.err.name"), field: "name" } };
+  }
+
+  const statusRaw = String(formData.get("status") ?? "").trim();
+  if (!(SUBJECT_STATUSES as readonly string[]).includes(statusRaw)) {
+    return { ok: false, state: { error: t("err.server"), field: "status" } };
+  }
+  const status = statusRaw as SubjectStatus;
+
+  const prices = {} as Record<PriceInterval, number>;
+  for (const iv of PRICE_INTERVALS) {
+    const amount = parsePriceAmount(String(formData.get("price_" + iv) ?? ""));
+    if (amount === null) {
+      return { ok: false, state: { error: t("subj.err.price"), field: iv } };
+    }
+    prices[iv] = amount;
+  }
+
+  return { ok: true, name, status, prices };
+}
+
+/**
+ * Writes the three prices through admin_upsert_subject_price (Administrator
+ * guard, interval whitelist and bounds re-checked in the database, and its own
+ * audit row per write).
+ *
+ * Returns the interval that FAILED, or null when all three are stored. The
+ * caller must not change the subject's status after a failure: an interval
+ * that did not save is an interval the public basket will not find.
+ *
+ * A cycle whose amount is already stored is skipped, so re-saving an unchanged
+ * form does not write three audit rows. KNOWN GAP: the RPC never touches
+ * `subjects_pricing.status`, so a pricing row somebody deactivated by hand
+ * cannot be brought back to 'active' from the panel — it is re-written on every
+ * save and stays unsellable. No admin path can produce that state today; it is
+ * reported rather than papered over.
+ */
+async function writeSubjectPrices(
+  supabase: Db,
+  subjectId: string,
+  prices: Record<PriceInterval, number>,
+): Promise<PriceInterval | null> {
+  const { data: existing } = await supabase
+    .from("subjects_pricing")
+    .select("interval, price_amount, status")
+    .eq("subject_id", subjectId);
+
+  const stored = new Map<string, { amount: string; status: string }>();
+  for (const r of (existing ?? []) as {
+    interval: string;
+    price_amount: number | string;
+    status: string;
+  }[]) {
+    // numeric(12,2) arrives as a string over PostgREST. Both sides are
+    // normalised to the same 2-decimal TEXT and compared as text — never
+    // subtracted.
+    stored.set(String(r.interval), {
+      amount: Number(r.price_amount).toFixed(2),
+      status: String(r.status),
+    });
+  }
+
+  for (const iv of PRICE_INTERVALS) {
+    const cur = stored.get(iv);
+    if (cur && cur.status === "active" && cur.amount === prices[iv].toFixed(2)) {
+      continue;
+    }
+    const { error } = await supabase.rpc("admin_upsert_subject_price", {
+      p_subject_id: subjectId,
+      p_interval: iv,
+      p_amount: prices[iv],
+    });
+    if (error) {
+      // Generic message to the client; the detail stays in the server log.
+      console.error(
+        "[admin] subject price write failed",
+        subjectId,
+        iv,
+        error.message,
+      );
+      return iv;
+    }
+  }
+  return null;
+}
+
+function revalidateSubject(id?: string): void {
+  revalidatePath("/manage/subjects");
+  if (id) revalidatePath("/manage/subjects/" + id + "/edit");
+  // The pricing grid reads the same two tables.
+  revalidatePath("/pricing");
+}
+
+export async function createSubject(
+  _prev: SubjectSaveState,
+  formData: FormData,
+): Promise<SubjectSaveState> {
+  // Guard FIRST — before any client-supplied FormData is read.
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const parsed = parseSubjectForm(formData, t);
+  if (!parsed.ok) return parsed.state;
+
+  const supabase = await createClient();
+
+  // THE ROW IS BORN PRIVATE, ALWAYS. The requested status is applied only
+  // after the prices are stored, so a price write that fails can never leave a
+  // published subject that cannot be sold — the failure mode this whole action
+  // exists to remove.
+  const payload: Record<string, unknown> = {
+    name: parsed.name,
+    status: "inactive",
+    code: slugifyCode(parsed.name),
+  };
+  let { data: created, error } = await supabase
+    .from("subjects")
+    .insert(payload)
+    .select("id")
+    .single();
+  if (error && (error as { code?: string }).code === "23505") {
+    // `code` collided — retry once with a short random suffix (the same rule
+    // the registry insert uses; `code` is unique, `name` is not).
+    payload.code =
+      slugifyCode(parsed.name) + "_" + Math.random().toString(36).slice(2, 6);
+    ({ data: created, error } = await supabase
+      .from("subjects")
+      .insert(payload)
+      .select("id")
+      .single());
+  }
+  if (error || !created) {
+    console.error("[admin] subject insert failed", error?.message);
+    return { error: t("err.server") };
+  }
+
+  const newId = String((created as { id: string }).id);
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.subject.create",
+    targetTable: "subjects",
+    targetId: newId,
+    metadata: { name: parsed.name, code: String(payload.code) },
+  });
+
+  const failed = await writeSubjectPrices(supabase, newId, parsed.prices);
+  if (failed) {
+    // The subject EXISTS but is unpriced and still private. Sending the admin
+    // back to the create form would invite a duplicate; the edit page is where
+    // the missing price can actually be fixed, and the flag says what happened.
+    revalidateSubject(newId);
+    redirect("/manage/subjects/" + newId + "/edit?priceFailed=1");
+  }
+
+  if (parsed.status !== "inactive") {
+    const { error: statusErr } = await supabase
+      .from("subjects")
+      .update({ status: parsed.status, updated_at: new Date().toISOString() })
+      .eq("id", newId);
+    if (statusErr) {
+      console.error(
+        "[admin] subject status write failed",
+        statusErr.code ?? "unknown",
+      );
+      // Do NOT report a publish that did not happen.
+      revalidateSubject(newId);
+      redirect("/manage/subjects/" + newId + "/edit?statusFailed=1");
+    }
+    await writeAuditLog({
+      actorProfileId: ctx.profileId,
+      action: "admin.subject.transition",
+      targetTable: "subjects",
+      targetId: newId,
+      metadata: { transition: "create", from: "inactive", to: parsed.status },
+    });
+  }
+
+  revalidateSubject(newId);
+  redirect("/manage/subjects");
+}
+
+export async function updateSubject(
+  _prev: SubjectSaveState,
+  formData: FormData,
+): Promise<SubjectSaveState> {
+  // Guard FIRST — before any client-supplied FormData is read.
+  const ctx = await requireAdmin();
+  const t = await getT();
+
+  const id = String(formData.get("__id") ?? "").trim();
+  if (!UUID_SHAPE.test(id)) return { error: t("err.server") };
+
+  const parsed = parseSubjectForm(formData, t);
+  if (!parsed.ok) return parsed.state;
+
+  const supabase = await createClient();
+  // Re-verify the client-supplied id server-side before anything privileged.
+  const { data: row } = await supabase
+    .from("subjects")
+    .select("id, name, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!row) return { error: t("err.server") };
+  const before = row as { name: string; status: string };
+
+  // PRICES FIRST, ROW SECOND. If a price write fails the status is left exactly
+  // where it was, so a failed reprice can never publish an unsellable subject —
+  // and the previous price stays in the database, which is what the error
+  // message promises the admin.
+  const failed = await writeSubjectPrices(supabase, id, parsed.prices);
+  if (failed) return { error: t("subj.err.priceSave"), field: failed };
+
+  const { error } = await supabase
+    .from("subjects")
+    .update({
+      name: parsed.name,
+      status: parsed.status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) {
+    // Never a raw Postgres message; the form keeps showing the stored values.
+    console.error("[admin] subject update failed", error.message);
+    return { error: t("err.server") };
+  }
+
+  await writeAuditLog({
+    actorProfileId: ctx.profileId,
+    action: "admin.subject.update",
+    targetTable: "subjects",
+    targetId: id,
+    metadata: {
+      name: parsed.name,
+      renamed: before.name !== parsed.name,
+      from: before.status,
+      to: parsed.status,
+    },
+  });
+
+  revalidateSubject(id);
+  return { ok: true };
 }

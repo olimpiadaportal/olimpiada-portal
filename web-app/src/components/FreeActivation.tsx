@@ -9,6 +9,7 @@
 // the login ID at no cost. Strings arrive pre-translated via `dict`.
 
 import { useActionState } from "react";
+import { CopyableId } from "@/components/CopyableId";
 import {
   activateChildGiveaway,
   type GiveawayActivateState,
@@ -36,7 +37,7 @@ export function FreeActivation({
         {state.childUniqueId && (
           <p>
             <span className="field-label">{tt("parent.child.idLabel")}</span>{" "}
-            <code>{state.childUniqueId}</code>
+            <CopyableId id={state.childUniqueId} />
           </p>
         )}
         <p className="muted">{tt("parent.child.idNote")}</p>

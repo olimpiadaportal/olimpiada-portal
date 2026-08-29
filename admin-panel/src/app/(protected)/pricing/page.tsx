@@ -18,11 +18,13 @@ export default async function PricingPage() {
   const supabase = await createClient();
 
   const [subjectsRes, pricesRes] = await Promise.all([
-    supabase
-      .from("subjects")
-      .select("id, name")
-      .eq("status", "active")
-      .order("name"),
+    // EVERY subject, not just the published ones. Loading `status = 'active'`
+    // only made the natural order of work impossible: an admin who unpublished
+    // a subject to prepare it lost the ability to price it, and an archived
+    // subject could never be priced before being brought back — while
+    // publishing now REQUIRES a complete price set (subject-status.ts). The
+    // status is shown per row so the grid still reads as a catalogue.
+    supabase.from("subjects").select("id, name, status").order("name"),
     supabase
       .from("subjects_pricing")
       .select("subject_id, interval, price_amount, currency"),
@@ -36,7 +38,11 @@ export default async function PricingPage() {
     );
   }
 
-  const subjects = (subjectsRes.data ?? []) as { id: string; name: string }[];
+  const subjects = (subjectsRes.data ?? []) as {
+    id: string;
+    name: string;
+    status: string | null;
+  }[];
 
   // subject_id → interval → { amount, currency }.
   const priceMap = new Map<
@@ -84,7 +90,7 @@ export default async function PricingPage() {
         </div>
       ) : subjects.length === 0 ? (
         <div className="card">
-          <p className="muted">{lt("pricing.empty")}</p>
+          <p className="muted">{t("subj.noRecords")}</p>
         </div>
       ) : (
         <div className="table-wrap">
@@ -92,6 +98,7 @@ export default async function PricingPage() {
             <thead>
               <tr>
                 <th>{lt("pricing.subject")}</th>
+                <th>{t("subj.field.status")}</th>
                 {PRICE_INTERVALS.map((iv) => (
                   <th key={iv}>{intervalLabel[iv]}</th>
                 ))}
@@ -110,12 +117,16 @@ export default async function PricingPage() {
                           here but never priced simply never appeared, with no
                           error anywhere — three of seven live subjects were in
                           that state before anyone noticed. The omission is now
-                          stated on the row that causes it. */}
+                          stated on the row that causes it, and on the Subjects
+                          screen where subjects are created and published. */}
                       {PRICE_INTERVALS.some((iv) => !rows[iv]) ? (
                         <span className="pricing-unsold" title={lt("pricing.notSoldHint")}>
                           {lt("pricing.notSold")}
                         </span>
                       ) : null}
+                    </td>
+                    <td className="nowrap">
+                      {subject.status ? t(`status.${subject.status}`) : "—"}
                     </td>
                     {PRICE_INTERVALS.map((iv) => {
                       const cell = rows[iv];

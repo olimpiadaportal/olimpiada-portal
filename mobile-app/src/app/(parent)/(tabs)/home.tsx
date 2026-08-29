@@ -291,6 +291,10 @@ export default function ParentHome() {
   const config = useMobileConfig();
   const children = useChildren();
   const freeAccess = useParentFreeAccess();
+  // GreetingHeader RENDERS this one (the name and the header avatar), but the
+  // pull lives here and can only refetch the sources it is handed — so the
+  // screen observes the same query key. One key, one request.
+  const profile = useOwnProfile();
 
   const leaderboardOn = config.data?.flags.leaderboard === true;
   const lbQueries = useLeaderboardSummaries(children.data, leaderboardOn);
@@ -312,6 +316,7 @@ export default function ParentHome() {
     children,
     freeAccess,
     config,
+    profile,
     ...lbQueries,
   ]);
 

@@ -7,6 +7,7 @@ import { sanitizeSearchTerm } from "@/lib/admin/search";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import type { OlympiadPackageDeleteStrings } from "@/components/OlympiadPackageDeleteButton";
 import {
+  OlympiadPackageArchiveTrigger,
   OlympiadPackageDeleteBoundary,
   OlympiadPackageDeleteTrigger,
 } from "@/components/OlympiadPackageDeleteBoundary";
@@ -101,25 +102,45 @@ export default async function OlympiadListPage({
   // dialog the edit page opens — the copy has one source, and a refusal
   // ("someone bought this package") reads as the normal answer it is, with
   // archiving named as the way forward.
+  //
+  // The dialog carries BOTH answers — archive and delete — and the row now
+  // carries a button for each (`del.package.rowArchive` / `del.package.rowDelete`),
+  // which is why this label went back to naming the delete alone. Archiving used
+  // to live only in the edit page's danger zone, so an admin working from this
+  // list met a disabled Delete and a sentence telling them to archive with
+  // nothing to click; naming both operations on one trigger was the stopgap for
+  // the missing button, not the fix.
   const deleteStrings: OlympiadPackageDeleteStrings = {
-    open: t("del.package.rowOpen"),
+    open: t("del.package.rowDelete"),
     title: t("del.package.title"),
     loading: t("del.loading"),
     loadFailed: t("del.loadFailed"),
-    blockedTitle: t("del.package.blockedTitle"),
-    warnTitle: t("del.warnTitle"),
-    irreversible: t("del.irreversible"),
-    codeLabel: t("del.codeLabel"),
-    codeHint: t("del.codeHint"),
-    ackLabel: t("del.ackLabel"),
     cancel: t("action.cancel"),
     close: t("modal.close"),
     working: t("pend.deleting"),
-    questions: t("del.questions"),
+    irreversible: t("del.irreversible"),
+    ackLabel: t("del.ackLabel"),
+    intro: t("del.package.intro"),
+    impact: t("del.package.impact"),
+    impactOwners: t("del.package.impactOwners"),
+    impactEntitlements: t("del.package.impactEntitlements"),
+    impactQuestions: t("del.package.impactQuestions"),
+    impactMedia: t("del.package.impactMedia"),
+    cascade: t("del.package.cascade"),
+    ownersNote: t("del.package.ownersNote"),
+    noOwners: t("del.package.noOwners"),
+    archiveTitle: t("del.package.archiveTitle"),
+    archiveDesc: t("del.package.archiveDesc"),
+    archiveAction: t("del.package.archiveAction"),
+    archivedAlready: t("del.package.archivedAlready"),
+    archiving: t("pend.processing"),
+    recommended: t("del.package.recommended"),
+    confirmHeading: t("del.package.confirmHeading"),
+    confirmIntro: t("del.package.confirmIntro"),
+    gateHint: t("del.package.gateHint"),
+    blockedTitle: t("del.package.blockedTitle"),
     outcomeDelete: t("del.package.outcomeDelete"),
     outcomeArchive: t("del.package.outcomeArchive"),
-    cascade: t("del.package.cascade"),
-    media: t("del.media"),
     deleteTitle: t("del.package.deleteTitle"),
     deleteDesc: t("del.package.deleteDesc"),
     deleteAction: t("del.package.deleteAction"),
@@ -215,13 +236,27 @@ export default async function OlympiadListPage({
                           {lt(`oly2.state.${state}`)}
                         </span>
                       </td>
-                      {/* Edit stays the neutral action; Delete sits to its right
-                          in the panel's destructive style. .row-actions keeps
-                          them on one line and .nowrap stops the cell wrapping —
-                          below the table's min-width .table-wrap scrolls, so the
-                          pair never collapses on a narrow screen. */}
+                      {/* Edit stays the neutral action; Archive follows it in the
+                          neutral style and Delete last in the destructive one.
+                          Both open the SAME hoisted dialog — Archive is simply
+                          the operation that is never refused, so an admin whose
+                          Delete is blocked by buyers has a live button to press
+                          instead of a red sentence. .row-actions keeps them on
+                          one line and .nowrap stops the cell wrapping — below the
+                          table's min-width .table-wrap scrolls, so the group
+                          never collapses on a narrow screen. */}
                       <td className="row-actions nowrap">
                         <Link href={`/olympiad/${r.id}/edit`}>{t("action.edit")}</Link>
+                        {/* An archived package has nothing to archive; the
+                            dialog would only say so. The delete trigger stays —
+                            archived is exactly the state a delete may proceed
+                            from. */}
+                        {String(r.status) !== "archived" && (
+                          <OlympiadPackageArchiveTrigger
+                            packageId={String(r.id)}
+                            label={t("del.package.rowArchive")}
+                          />
+                        )}
                         <OlympiadPackageDeleteTrigger packageId={String(r.id)} />
                       </td>
                     </tr>

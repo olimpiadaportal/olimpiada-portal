@@ -218,6 +218,15 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Uzun müddət əməliyyat olmadığı üçün sessiya bağlandı. Zəhmət olmasa yenidən daxil olun.",
     "err.server": "Əməliyyat alınmadı. Yenidən cəhd edin.",
     "err.tooLong": "Mətn həddindən artıq uzundur. Qısaldıb yenidən cəhd edin.",
+    // ---- Password strength (lib/admin/passwordPolicy.ts returns the CODE,
+    // these are the messages). The form hints that promise the rule live with
+    // their forms (accounts.reset.hint, accounts.create.passwordHint,
+    // users.passwordHint) and must be changed together with these. ----
+    "pw.err.tooShort": "Şifrə ən azı 8 simvol olmalıdır.",
+    "pw.err.tooLong": "Şifrə 128 simvoldan uzun ola bilməz.",
+    "pw.err.needsUpper": "Şifrədə ən azı bir böyük hərf olmalıdır.",
+    "pw.err.needsSpecial":
+      "Şifrədə ən azı bir xüsusi simvol olmalıdır (məsələn ! ? # $).",
     "action.signOut": "Çıxış",
     "group.overview": "İcmal",
     "group.taxonomy": "Taksonomiya",
@@ -231,6 +240,42 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.act.publish": "Satışa çıxar",
     "subj.act.unpublish": "Gizlət",
     "subj.act.archive": "Arxivlə",
+    // ---- Fənlər: xüsusi siyahı / yaratma / düzəliş ekranı ----
+    // Qiymət fənn sətrində DEYİL, subjects_pricing cədvəlində (fənn × dövr)
+    // saxlanılır. Ona görə forma bir yox, üç qiymət qəbul edir.
+    "subj.title": "Fənlər",
+    "subj.subtitle":
+      "Fənləri yarat, qiymətləndir, dərc et və arxivlə. Burada dərc edilən fənn eyni anda saytda, valideyn və şagird panelində görünür.",
+    "subj.new": "Yeni fənn",
+    "subj.newTitle": "Yeni fənn",
+    "subj.editTitle": "Fənnə düzəliş et",
+    "subj.infoHeading": "Fənn məlumatı",
+    "subj.field.name": "Fənnin adı",
+    "subj.field.status": "Vəziyyət",
+    "subj.field.prices": "Abunəlik qiymətləri (AZN)",
+    "subj.pricesHint":
+      "Üç dövrün hər biri üçün qiymət lazımdır. Qiyməti tam olmayan fənn saytda, uşaq əlavə etmə və abunə ekranlarında ümumiyyətlə görünmür.",
+    "subj.interval.week": "Həftəlik",
+    "subj.interval.month": "Aylıq",
+    "subj.interval.year": "İllik",
+    "subj.col.pricing": "Qiymət (həftə / ay / il)",
+    "subj.notSellable": "satılmır — qiymət yoxdur",
+    "subj.notSellableHint":
+      "Bu fənnin üç dövr üzrə qiyməti tam deyil, ona görə saytda və abunə ekranlarında seçilə bilmir.",
+    "subj.sellable": "satışdadır",
+    "subj.code": "Daxili kod",
+    "subj.codeHint": "Addan avtomatik yaradılır və sonradan dəyişmir.",
+    "subj.noRecords": "Hələ fənn yoxdur. Birincisini əlavə edin.",
+    "subj.saved": "Dəyişikliklər yadda saxlanıldı.",
+    "subj.dangerHeading": "Təhlükəli əməliyyatlar",
+    "subj.dangerHint": "Arxivləmə geri qaytarıla bilər, silinmə yox.",
+    "subj.publishBlocked":
+      "Fənn dərc edilmədi: hər üç dövr üçün qiymət təyin olunmayıb. Əvvəlcə qiymətləri daxil edin.",
+    "subj.publishNeedsPrices": "Dərc etmək üçün əvvəlcə hər üç qiyməti daxil edin.",
+    "subj.err.name": "Fənnin adı 1–120 simvol olmalıdır.",
+    "subj.err.price":
+      "Hər qiymət 0-dan böyük, 10000-dən çox olmayan və ən çoxu 2 onluq rəqəmli olmalıdır.",
+    "subj.err.priceSave": "Qiymət yadda saxlanmadı. Əvvəlki qiymət qüvvədə qalır.",
     "nav.topics": "Mövzular",
     "nav.subtopics": "Alt mövzular",
     "nav.cities": "Şəhərlər",
@@ -348,13 +393,18 @@ export const messages: Record<Locale, Record<string, string>> = {
     "users.status": "Status",
     "users.password": "İlkin şifrə",
     "users.passwordHint":
-      "Ən azı 8 simvol. İstifadəçi sonra dəyişə bilər.",
+      "Ən azı 8 simvol, bir böyük hərf və bir xüsusi simvol. İstifadəçi sonra dəyişə bilər.",
     "users.create": "İstifadəçi yarat",
     "users.creating": "Yaradılır…",
     "users.created": "İstifadəçi yaradıldı.",
     "users.noServiceKey":
       "Server SUPABASE_SERVICE_ROLE_KEY açarını tapmır. Onu admin-panel/.env.local faylına (yalnız server) əlavə edin və yenidən başladın.",
     "users.none": "Hələ administrator və ya kontent meneceri yoxdur.",
+    "users.err.email": "E-poçt ünvanını daxil edin.",
+    "users.err.role": "Rol yanlışdır.",
+    "users.err.notCreated": "İstifadəçi yaradıla bilmədi. Yenidən cəhd edin.",
+    "users.err.noProfile": "Profil yaradılmadı. Server loglarını yoxlayın.",
+    "users.err.roleMissing": "Seçilmiş rol bazada tapılmadı.",
     "role.administrator": "Administrator",
     "role.contentManager": "Kontent meneceri",
     "manage.addHeading": "Yeni qeyd əlavə et",
@@ -706,7 +756,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.poolNote": "Bu paketin hovuzuna daxil ediləcək dərc edilmiş sualları seçin.",
     "oly2.savePool": "Hovuzu yadda saxla",
     "oly2.noQuestions": "Bu fənn üçün hələ dərc edilmiş sual yoxdur.",
-    "oly2.archive": "Paketi arxivlə",
     "oly2.err.code": "Düzgün kod daxil edin (kiçik hərflər, rəqəmlər, defis).",
     "oly2.err.subject": "Fənn seçin.",
     "oly2.err.grade": "Sinif seçin.",
@@ -874,29 +923,33 @@ export const messages: Record<Locale, Record<string, string>> = {
     "accounts.access.inactive": "Qeyri-aktiv",
     "accounts.reset.open": "Şifrəni sıfırla",
     "accounts.reset.newPassword": "Yeni şifrə",
-    "accounts.reset.hint": "Ən azı 8 simvol.",
+    "accounts.reset.hint":
+      "Ən azı 8 simvol, bir böyük hərf və bir xüsusi simvol (! ? # $ və s.).",
     "accounts.reset.submit": "Şifrəni dəyiş",
     "accounts.reset.submitting": "Dəyişdirilir…",
     "accounts.reset.done": "Şifrə yeniləndi.",
     "accounts.reset.noServiceKey":
       "Server SUPABASE_SERVICE_ROLE_KEY açarını tapmır. Şifrə sıfırlama üçün onu admin-panel/.env.local faylına (yalnız server) əlavə edin və yenidən başladın.",
     "accounts.reset.err.missing": "Uşaq seçilməyib.",
-    "accounts.reset.err.short": "Şifrə ən azı 8 simvol olmalıdır.",
     "accounts.reset.err.noCredentials": "Bu uşaq üçün giriş məlumatı tapılmadı.",
     "accounts.reset.err.equalsId": "Şifrə uşağın ID-si ilə eyni ola bilməz.",
+    "accounts.reset.err.noLoginId":
+      "Bu uşağın 8 rəqəmli giriş ID-si yoxdur — heç bir şifrə ilə daxil ola bilməz. Əvvəlcə hesabı tamamlayın.",
+    "accounts.reset.err.loginRepair":
+      "Uşağın giriş ünvanını bərpa etmək mümkün olmadı, ona görə şifrə dəyişdirilmədi. Yenidən cəhd edin.",
     "accounts.create.open": "Valideyn yarat",
     "accounts.create.title": "Yeni valideyn hesabı",
     "accounts.create.firstName": "Ad",
     "accounts.create.lastName": "Soyad",
     "accounts.create.email": "E-poçt",
     "accounts.create.password": "Şifrə",
-    "accounts.create.passwordHint": "Ən azı 8 simvol.",
+    "accounts.create.passwordHint":
+      "Ən azı 8 simvol, bir böyük hərf və bir xüsusi simvol (! ? # $ və s.).",
     "accounts.create.submit": "Valideyn yarat",
     "accounts.create.submitting": "Yaradılır…",
     "accounts.create.done": "Valideyn hesabı yaradıldı.",
     "accounts.create.err.required": "Ad və soyad tələb olunur.",
     "accounts.create.err.email": "Düzgün e-poçt ünvanı daxil edin.",
-    "accounts.create.err.password": "Şifrə ən azı 8 simvol olmalıdır.",
     "accounts.create.err.exists": "Bu e-poçt artıq istifadə olunur.",
     "accounts.create.err.failed": "Valideyn hesabı yaradıla bilmədi.",
     "accounts.parentStatus": "Status",
@@ -1469,6 +1522,32 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.codeHint": "Davam etmək üçün bu kodu yazın:",
     "del.subject.wordLabel": "Təsdiq sözü",
     "del.subject.wordHint": "Silmək üçün bu sözü eyni ilə yazın:",
+    // Yenilənmiş silmə dialoqu: arxivlə / bankı təmizlə / fənni sil — üçü də
+    // ayrı kart, red cavabları isə qırmızı qutu yığını yox, bir kəhrəba xəbərdarlıq.
+    "del.subject.intro":
+      "«{name}» fənni üçün üç ayrı əməliyyat var və nəticələri fərqlidir. Aşağıdan birini seçin.",
+    "del.subject.impact": "Bu fənnə bağlı olanlar",
+    "del.subject.impactQuestions":
+      "{total} sual — {deletable} silinir, {archived} arxivlənir",
+    "del.subject.impactTopics": "{topics} mövzu, {subtopics} alt mövzu",
+    "del.subject.impactRounds": "{n} günlük tur",
+    "del.subject.impactSubscribers": "{n} abunə şagird",
+    "del.subject.archiveTitle": "Fənni arxivlə",
+    "del.subject.archiveDesc":
+      "Ən təhlükəsiz yol. Fənn ailələrə görünmür, amma suallar, nəticələr və ödəniş qeydləri toxunulmaz qalır. İstənilən vaxt geri qaytarmaq olar.",
+    "del.subject.archiveAction": "Arxivlə",
+    "del.subject.archivedAlready": "Bu fənn artıq arxivdədir — ailələrə görünmür.",
+    "del.subject.recommended": "Tövsiyə olunur",
+    "del.subject.confirmHeading": "Təsdiq",
+    "del.subject.confirmIntro": "Aşağıdakı iki əməliyyat təsdiq tələb edir.",
+    "del.subject.gateHint":
+      "Davam etmək üçün təsdiq sözünü yazın və qutunu işarələyin.",
+    "del.subject.wordMismatch": "Söz düz yazılmayıb.",
+    "del.subject.purgeEmpty":
+      "Bu fənnin ümumi bankında sual yoxdur — silinəcək bir şey yoxdur.",
+    "del.subject.outcomeArchive":
+      "{n} sual cavablandırılıb: bu fənn silinməyəcək, arxivlənəcək.",
+    "del.subject.outcomeDelete": "Bu fənn tamamilə silinəcək.",
     "del.purgeTitle": "Sual bankını təmizlə",
     "del.purgeDesc":
       "Fənnin ümumi sualları silinir (cavablandırılmışlar arxivlənir). Fənn, mövzular və alt mövzular yerində qalır.",
@@ -1491,11 +1570,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     // təsdiqləmiş olardı — üstündəki abzas isə bunun əksini deyir.
     "del.ackLabel":
       "Başa düşürəm: cavabsız suallar həmişəlik silinir və bərpa olunmur, cavablandırılmışlar isə silinmir — arxivə keçir.",
-    "del.media": "Silinəcək şəkillər (təxmini)",
     // ---- Olimpiada paketi ----
     "del.package.heading": "Paketin ləğvi",
     "del.package.open": "Paketi sil…",
-    "del.package.title": "Paketi sil",
+    "del.package.title": "Paketi arxivlə və ya sil",
     "del.package.blockedTitle": "Bu paket indi silinə bilməz:",
     "del.package.outcomeDelete":
       "Nəticə: paket və bütün sual hovuzu tamamilə silinəcək.",
@@ -1506,6 +1584,43 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.package.deleteDesc":
       "Yalnız arxivlənmiş və heç kim tərəfindən alınmamış paket silinə bilər. Cavablandırılmış sual varsa, paket silinmir, arxivlənir.",
     "del.package.deleteAction": "Paketi sil",
+    // ---- Paket: arxivləmə bir QƏRARDIR, səhv deyil (sahib spesifikasiyası §15) ----
+    // Alıcının olması admini dayandıran nasazlıq deyil — bu, onun çəkib
+    // ölçməli olduğu faktdır. Ona görə mətnlər sayı ilə birlikdə seçim kimi
+    // yazılıb: arxivlə (satış dayanır, alıcılar qalır) və ya sil. Qırmızı
+    // «olmaz» yalnız əməliyyat həqiqətən mümkün olmayanda görünür.
+    "del.package.intro":
+      "«{name}» paketi üçün iki ayrı əməliyyat var və nəticələri fərqlidir. Aşağıdan birini seçin.",
+    "del.package.impact": "Bu paketə bağlı olanlar",
+    "del.package.impactOwners": "{n} alış — bu ailələr paketi ömürlük saxlayır",
+    // Alış sətri ilə giriş hüququ eyni şey deyil: Apple/Google, məktəb
+    // lisenziyası və ya əl ilə verilmiş girişin alış sətri olmur (miqrasiya
+    // 124), ona görə iki rəqəm heç vaxt toplanmır.
+    "del.package.impactEntitlements":
+      "{n} giriş hüququ — Apple/Google, məktəb lisenziyası və ya əl ilə verilmiş giriş",
+    "del.package.impactQuestions":
+      "{total} sual — {deletable} silinir, {archived} arxivlənir",
+    "del.package.impactMedia": "{n} şəkil silinəcək (təxmini)",
+    "del.package.ownersNote":
+      "Arxivləmək yeni satışları dayandırır. Artıq alanlar paketi görməyə, açmağa və testləri tamamlamağa davam edir — girişləri ömürlükdür, keçmiş nəticələri isə dəyişmir.",
+    "del.package.noOwners": "Bu paketi hələ heç kim almayıb.",
+    "del.package.archiveTitle": "Paketi arxivlə",
+    "del.package.archiveDesc":
+      "Paket kataloqdan çıxır: yeni heç kim onu görmür və ala bilmir. Alıcılar isə paketi saxlayır. Bu addım geri qaytarıla bilər — sonradan paketi bərpa edib «Deaktiv» vəziyyətinə qaytarmaq olar.",
+    "del.package.archiveAction": "Arxivlə",
+    "del.package.archivedAlready":
+      "Bu paket artıq arxivdədir — yeni satış yoxdur, alıcıların girişi isə qalır.",
+    "del.package.recommended": "Tövsiyə olunur",
+    "del.package.confirmHeading": "Təsdiq",
+    "del.package.confirmIntro":
+      "Aşağıdakı silmə əməliyyatı təsdiq tələb edir. Arxivləmək üçün təsdiq lazım deyil — o, geri qaytarıla bilər.",
+    "del.package.gateHint": "Davam etmək üçün qutunu işarələyin.",
+    "del.done.packageArchivedNow":
+      "Paket arxivləndi: yeni satış dayandı, alıcıların ömürlük girişi isə qaldı.",
+    "del.done.packageAlreadyArchived":
+      "Paket onsuz da arxivdə idi — heç nə dəyişmədi.",
+    "del.err.archiveFailed":
+      "Paketi arxivləmək mümkün olmadı. Səhifəni yeniləyib yenidən cəhd edin.",
     "del.done.packageDeleted": "Paket və sual hovuzu silindi.",
     "del.done.packageArchived":
       "Cavablandırılmış suallar olduğu üçün paket silinmədi, arxivləndi.",
@@ -1536,8 +1651,17 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.done.questionsPurged":
       "Seçilmiş suallar emal olundu: {deleted} sual silindi, {archived} sual arxivləndi.",
     "del.done.demoted": "Paket «Deaktiv» vəziyyətinə keçdi.",
-    // ---- Paket siyahısındakı sil düyməsi ----
-    "del.package.rowOpen": "Sil…",
+    // ---- Paket siyahısındakı sətir düymələri ----
+    // İki ayrı düymə, çünki iki əməliyyat eyni deyil: arxivləmə heç vaxt rədd
+    // edilmir (alıcılar girişini onsuz da saxlayır), alınmış paketin silinməsi
+    // isə həmişə rədd olunur. Hər biri öz adı ilə görünür ki, admin sönük
+    // düymə və qırmızı cümlə yox, basıla bilən düymə görsün. Hər ikisi eyni
+    // dialoqu açır — «…» bunu bildirir.
+    "del.package.rowArchive": "Arxivləşdir…",
+    "del.package.rowDelete": "Sil…",
+    // Sətirdə tək düymə olduğu dövrün birləşmiş etiketi. Sətir artıq iki düymə
+    // daşıyır, ona görə istifadə olunmur.
+    "del.package.rowOpen": "Arxivlə / Sil…",
     // ---- Hovuzdan seçilmiş sualların silinməsi (miqrasiya 112) ----
     // Mətn bazanın həqiqətən etdiyini deyir: cavabsız suallar silinir,
     // cavablandırılmışlar isə arxivlənir. Başqa cür yazsaq, admini aldadardıq.
@@ -1767,6 +1891,15 @@ export const messages: Record<Locale, Record<string, string>> = {
     "login.timeout": "You were signed out due to inactivity. Please sign in again.",
     "err.server": "The operation failed. Please try again.",
     "err.tooLong": "The text is too long. Please shorten it and try again.",
+    // ---- Password strength (lib/admin/passwordPolicy.ts returns the CODE,
+    // these are the messages). The form hints that promise the rule live with
+    // their forms (accounts.reset.hint, accounts.create.passwordHint,
+    // users.passwordHint) and must be changed together with these. ----
+    "pw.err.tooShort": "Password must be at least 8 characters.",
+    "pw.err.tooLong": "Password cannot be longer than 128 characters.",
+    "pw.err.needsUpper": "Password must contain at least one capital letter.",
+    "pw.err.needsSpecial":
+      "Password must contain at least one special character (for example ! ? # $).",
     "action.signOut": "Sign out",
     "group.overview": "Overview",
     "group.taxonomy": "Taxonomy",
@@ -1780,6 +1913,43 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.act.publish": "Publish",
     "subj.act.unpublish": "Hide",
     "subj.act.archive": "Archive",
+    // ---- Subjects: dedicated list / create / edit screens ----
+    // The price is NOT a column on the subject row: it lives in
+    // subjects_pricing, one row per (subject × interval). Hence three price
+    // inputs, never one.
+    "subj.title": "Subjects",
+    "subj.subtitle":
+      "Create, price, publish and archive subjects. A subject published here shows up on the website, the parent panel and the student panel at the same time.",
+    "subj.new": "New subject",
+    "subj.newTitle": "New subject",
+    "subj.editTitle": "Edit subject",
+    "subj.infoHeading": "Subject details",
+    "subj.field.name": "Subject name",
+    "subj.field.status": "Status",
+    "subj.field.prices": "Subscription prices (AZN)",
+    "subj.pricesHint":
+      "All three cycles need a price. A subject with an incomplete price set never appears on the website, in Add-Child or on the subscribe screens.",
+    "subj.interval.week": "Weekly",
+    "subj.interval.month": "Monthly",
+    "subj.interval.year": "Yearly",
+    "subj.col.pricing": "Price (week / month / year)",
+    "subj.notSellable": "not sellable — no price",
+    "subj.notSellableHint":
+      "This subject has no price for all three cycles, so it cannot be selected on the website or on the subscribe screens.",
+    "subj.sellable": "on sale",
+    "subj.code": "Internal code",
+    "subj.codeHint": "Generated from the name and never changed afterwards.",
+    "subj.noRecords": "No subjects yet. Add the first one.",
+    "subj.saved": "Changes saved.",
+    "subj.dangerHeading": "Destructive actions",
+    "subj.dangerHint": "Archiving can be undone; deleting cannot.",
+    "subj.publishBlocked":
+      "The subject was not published: it has no price for all three cycles. Set the prices first.",
+    "subj.publishNeedsPrices": "Set all three prices before publishing.",
+    "subj.err.name": "The subject name must be 1–120 characters.",
+    "subj.err.price":
+      "Each price must be above 0, at most 10000, with up to 2 decimal places.",
+    "subj.err.priceSave": "The price was not saved. The previous price still applies.",
     "nav.topics": "Topics",
     "nav.subtopics": "Subtopics",
     "nav.cities": "Cities",
@@ -1889,13 +2059,19 @@ export const messages: Record<Locale, Record<string, string>> = {
     "users.role": "Role",
     "users.status": "Status",
     "users.password": "Initial password",
-    "users.passwordHint": "At least 8 characters. The user can change it later.",
+    "users.passwordHint":
+      "At least 8 characters, one capital letter and one special character. The user can change it later.",
     "users.create": "Create user",
     "users.creating": "Creating…",
     "users.created": "User created.",
     "users.noServiceKey":
       "The server is missing SUPABASE_SERVICE_ROLE_KEY. Add it to admin-panel/.env.local (server-only) and restart.",
     "users.none": "No administrators or content managers yet.",
+    "users.err.email": "Enter an email address.",
+    "users.err.role": "Invalid role.",
+    "users.err.notCreated": "The user could not be created. Please try again.",
+    "users.err.noProfile": "The profile was not provisioned. Check the server logs.",
+    "users.err.roleMissing": "The selected role was not found in the database.",
     "role.administrator": "Administrator",
     "role.contentManager": "Content Manager",
     "manage.addHeading": "Add a record",
@@ -2238,7 +2414,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.poolNote": "Tick the published questions to include in this package's pool.",
     "oly2.savePool": "Save pool",
     "oly2.noQuestions": "No published questions for this subject yet.",
-    "oly2.archive": "Archive package",
     "oly2.err.code": "Enter a valid code (lowercase letters, numbers, hyphens).",
     "oly2.err.subject": "Choose a subject.",
     "oly2.err.grade": "Choose a grade.",
@@ -2406,29 +2581,33 @@ export const messages: Record<Locale, Record<string, string>> = {
     "accounts.access.inactive": "Inactive",
     "accounts.reset.open": "Reset password",
     "accounts.reset.newPassword": "New password",
-    "accounts.reset.hint": "At least 8 characters.",
+    "accounts.reset.hint":
+      "At least 8 characters, one capital letter and one special character (! ? # $ …).",
     "accounts.reset.submit": "Change password",
     "accounts.reset.submitting": "Changing…",
     "accounts.reset.done": "Password updated.",
     "accounts.reset.noServiceKey":
       "The server is missing SUPABASE_SERVICE_ROLE_KEY. Add it to admin-panel/.env.local (server-only) and restart to enable password resets.",
     "accounts.reset.err.missing": "No child selected.",
-    "accounts.reset.err.short": "Password must be at least 8 characters.",
     "accounts.reset.err.noCredentials": "No login credentials found for this child.",
     "accounts.reset.err.equalsId": "The password cannot be the same as the child's ID.",
+    "accounts.reset.err.noLoginId":
+      "This child has no 8-digit login ID, so no password can let them in. Finish setting up the account first.",
+    "accounts.reset.err.loginRepair":
+      "Could not repair the child's login address, so the password was left unchanged. Please try again.",
     "accounts.create.open": "Create parent",
     "accounts.create.title": "New parent account",
     "accounts.create.firstName": "First name",
     "accounts.create.lastName": "Last name",
     "accounts.create.email": "Email",
     "accounts.create.password": "Password",
-    "accounts.create.passwordHint": "At least 8 characters.",
+    "accounts.create.passwordHint":
+      "At least 8 characters, one capital letter and one special character (! ? # $ …).",
     "accounts.create.submit": "Create parent",
     "accounts.create.submitting": "Creating…",
     "accounts.create.done": "Parent account created.",
     "accounts.create.err.required": "First and last name are required.",
     "accounts.create.err.email": "Enter a valid email address.",
-    "accounts.create.err.password": "Password must be at least 8 characters.",
     "accounts.create.err.exists": "This email is already in use.",
     "accounts.create.err.failed": "Could not create the parent account.",
     "accounts.parentStatus": "Status",
@@ -3000,6 +3179,34 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.codeHint": "Type this code to continue:",
     "del.subject.wordLabel": "Confirmation word",
     "del.subject.wordHint": "Type this word exactly to delete:",
+    // The redesigned dialog: archive / clear the bank / delete are three
+    // separate cards, and refusals are one amber callout instead of a stack of
+    // red boxes.
+    "del.subject.intro":
+      "There are three different actions for “{name}”, and they do different things. Pick one below.",
+    "del.subject.impact": "What is attached to this subject",
+    "del.subject.impactQuestions":
+      "{total} question(s) — {deletable} deleted, {archived} archived",
+    "del.subject.impactTopics": "{topics} topic(s), {subtopics} subtopic(s)",
+    "del.subject.impactRounds": "{n} daily round(s)",
+    "del.subject.impactSubscribers": "{n} subscribed student(s)",
+    "del.subject.archiveTitle": "Archive the subject",
+    "del.subject.archiveDesc":
+      "The safe option. Families stop seeing the subject, while its questions, results and payment records stay untouched. It can be brought back at any time.",
+    "del.subject.archiveAction": "Archive",
+    "del.subject.archivedAlready":
+      "This subject is already archived — families do not see it.",
+    "del.subject.recommended": "Recommended",
+    "del.subject.confirmHeading": "Confirmation",
+    "del.subject.confirmIntro": "The two actions below need a confirmation.",
+    "del.subject.gateHint":
+      "Type the confirmation word and tick the box to continue.",
+    "del.subject.wordMismatch": "The word does not match.",
+    "del.subject.purgeEmpty":
+      "This subject's general bank has no questions — there is nothing to delete.",
+    "del.subject.outcomeArchive":
+      "{n} question(s) have been answered, so this subject will be archived rather than deleted.",
+    "del.subject.outcomeDelete": "This subject will be deleted completely.",
     "del.purgeTitle": "Clear the question bank",
     "del.purgeDesc":
       "Deletes the subject's general questions (answered ones are archived). The subject, its topics and its subtopics stay exactly as they are.",
@@ -3022,11 +3229,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     // the paragraph above it contradicts.
     "del.ackLabel":
       "I understand: unanswered questions are deleted for good and cannot be brought back, while answered ones are not deleted — they are archived.",
-    "del.media": "Images to be removed (estimate)",
     // ---- Olympiad package ----
     "del.package.heading": "Removing this package",
     "del.package.open": "Delete package…",
-    "del.package.title": "Delete package",
+    "del.package.title": "Archive or delete package",
     "del.package.blockedTitle": "This package cannot be deleted yet:",
     "del.package.outcomeDelete":
       "Outcome: the package and its entire question pool will be deleted.",
@@ -3037,6 +3243,44 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.package.deleteDesc":
       "Only an archived package that nobody has purchased can be deleted. If any question has been answered, the package is archived instead of deleted.",
     "del.package.deleteAction": "Delete package",
+    // ---- Package: archiving is a DECISION, not an error (owner spec §15) ----
+    // Existing buyers are not a fault that stops the admin; they are the fact
+    // the admin has to weigh. So the copy states the count and offers the
+    // choice — archive (sales stop, buyers stay) or delete. Red is spent only
+    // where the operation genuinely cannot be completed.
+    "del.package.intro":
+      "There are two different operations for “{name}”, and they end differently. Pick one below.",
+    "del.package.impact": "What is attached to this package",
+    "del.package.impactOwners":
+      "{n} purchase(s) — those families keep the package for life",
+    // A purchase row and an entitlement are not the same thing: an Apple/Google
+    // grant, a school licence or a manual comp has no purchase row at all
+    // (migration 124), which is why the two numbers are never added up.
+    "del.package.impactEntitlements":
+      "{n} entitlement(s) — an Apple/Google grant, a school licence or a manual grant",
+    "del.package.impactQuestions":
+      "{total} question(s) — {deletable} deleted, {archived} archived",
+    "del.package.impactMedia": "{n} image(s) to be removed (estimate)",
+    "del.package.ownersNote":
+      "Archiving stops new purchases. Everyone who already bought it keeps seeing it, keeps entering it and keeps finishing their tests — their access is for life, and their past results do not change.",
+    "del.package.noOwners": "Nobody has bought this package yet.",
+    "del.package.archiveTitle": "Archive the package",
+    "del.package.archiveDesc":
+      "The package leaves the catalogue: nobody new sees it and nobody new can buy it. Its buyers keep it. This step is reversible — you can restore the package to Inactive later.",
+    "del.package.archiveAction": "Archive",
+    "del.package.archivedAlready":
+      "This package is already archived — no new sales, and its buyers keep their access.",
+    "del.package.recommended": "Recommended",
+    "del.package.confirmHeading": "Confirmation",
+    "del.package.confirmIntro":
+      "The delete below needs a confirmation. Archiving does not — it can be undone.",
+    "del.package.gateHint": "Tick the box to continue.",
+    "del.done.packageArchivedNow":
+      "The package was archived: new sales have stopped and its buyers keep lifetime access.",
+    "del.done.packageAlreadyArchived":
+      "The package was already archived — nothing changed.",
+    "del.err.archiveFailed":
+      "The package could not be archived. Refresh the page and try again.",
     "del.done.packageDeleted": "The package and its question pool were deleted.",
     "del.done.packageArchived":
       "Answered questions exist, so the package was archived instead of deleted.",
@@ -3067,8 +3311,17 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.done.questionsPurged":
       "Selection processed: {deleted} question(s) deleted, {archived} archived.",
     "del.done.demoted": "The package was set to Inactive.",
-    // ---- Delete button in the package list ----
-    "del.package.rowOpen": "Delete…",
+    // ---- Row buttons in the package list ----
+    // Two separate buttons, because the two operations are not alike: archiving
+    // is never refused (buyers keep their access either way) while deleting a
+    // package somebody bought always is. Each gets its own name so the admin
+    // sees a button they can press instead of a dead one and a red sentence.
+    // Both open the same dialog — that is what the ellipsis says.
+    "del.package.rowArchive": "Archive…",
+    "del.package.rowDelete": "Delete…",
+    // The combined label from when the row had a single trigger. The row
+    // carries both buttons now, so nothing renders this.
+    "del.package.rowOpen": "Archive / Delete…",
     // ---- Deleting a selection from the pool (migration 112) ----
     // The copy says what the database actually does: unanswered questions are
     // deleted, answered ones are archived. Promising anything else would be a
@@ -3299,6 +3552,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "login.timeout": "Сеанс завершён из-за неактивности. Пожалуйста, войдите снова.",
     "err.server": "Не удалось выполнить операцию. Попробуйте ещё раз.",
     "err.tooLong": "Текст слишком длинный. Сократите его и попробуйте ещё раз.",
+    // ---- Password strength (lib/admin/passwordPolicy.ts returns the CODE,
+    // these are the messages). The form hints that promise the rule live with
+    // their forms (accounts.reset.hint, accounts.create.passwordHint,
+    // users.passwordHint) and must be changed together with these. ----
+    "pw.err.tooShort": "Пароль должен содержать не менее 8 символов.",
+    "pw.err.tooLong": "Пароль не может быть длиннее 128 символов.",
+    "pw.err.needsUpper":
+      "Пароль должен содержать хотя бы одну заглавную букву.",
+    "pw.err.needsSpecial":
+      "Пароль должен содержать хотя бы один специальный символ (например ! ? # $).",
     "action.signOut": "Выйти",
     "group.overview": "Обзор",
     "group.taxonomy": "Таксономия",
@@ -3312,6 +3575,42 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.act.publish": "Опубликовать",
     "subj.act.unpublish": "Скрыть",
     "subj.act.archive": "В архив",
+    // ---- Предметы: отдельные экраны списка / создания / редактирования ----
+    // Цена не является полем предмета: она лежит в subjects_pricing — по одной
+    // строке на (предмет × период). Поэтому в форме три поля цены, а не одно.
+    "subj.title": "Предметы",
+    "subj.subtitle":
+      "Создавайте предметы, задавайте цены, публикуйте и архивируйте. Опубликованный здесь предмет сразу появляется на сайте, в панели родителя и в панели ученика.",
+    "subj.new": "Новый предмет",
+    "subj.newTitle": "Новый предмет",
+    "subj.editTitle": "Редактирование предмета",
+    "subj.infoHeading": "Данные предмета",
+    "subj.field.name": "Название предмета",
+    "subj.field.status": "Статус",
+    "subj.field.prices": "Цены подписки (AZN)",
+    "subj.pricesHint":
+      "Цена нужна для всех трёх периодов. Предмет с неполным набором цен вообще не показывается на сайте, при добавлении ребёнка и на экранах подписки.",
+    "subj.interval.week": "Еженедельно",
+    "subj.interval.month": "Ежемесячно",
+    "subj.interval.year": "Ежегодно",
+    "subj.col.pricing": "Цена (неделя / месяц / год)",
+    "subj.notSellable": "не продаётся — нет цены",
+    "subj.notSellableHint":
+      "У предмета заданы не все три цены, поэтому его нельзя выбрать на сайте и на экранах подписки.",
+    "subj.sellable": "в продаже",
+    "subj.code": "Внутренний код",
+    "subj.codeHint": "Создаётся из названия и в дальнейшем не меняется.",
+    "subj.noRecords": "Предметов пока нет. Добавьте первый.",
+    "subj.saved": "Изменения сохранены.",
+    "subj.dangerHeading": "Опасные действия",
+    "subj.dangerHint": "Архивацию можно отменить, удаление — нет.",
+    "subj.publishBlocked":
+      "Предмет не опубликован: у него заданы не все три цены. Сначала укажите цены.",
+    "subj.publishNeedsPrices": "Перед публикацией укажите все три цены.",
+    "subj.err.name": "Название предмета должно содержать от 1 до 120 символов.",
+    "subj.err.price":
+      "Каждая цена должна быть больше 0, не более 10000 и максимум с 2 знаками после запятой.",
+    "subj.err.priceSave": "Цена не сохранена. Прежняя цена остаётся в силе.",
     "nav.topics": "Темы",
     "nav.subtopics": "Подтемы",
     "nav.cities": "Города",
@@ -3422,13 +3721,19 @@ export const messages: Record<Locale, Record<string, string>> = {
     "users.status": "Статус",
     "users.password": "Временный пароль",
     "users.passwordHint":
-      "Минимум 8 символов. Пользователь сможет изменить его позже.",
+      "Минимум 8 символов, одна заглавная буква и один специальный символ. Пользователь сможет изменить его позже.",
     "users.create": "Создать пользователя",
     "users.creating": "Создание…",
     "users.created": "Пользователь создан.",
     "users.noServiceKey":
       "На сервере нет ключа SUPABASE_SERVICE_ROLE_KEY. Добавьте его в admin-panel/.env.local (только сервер) и перезапустите.",
     "users.none": "Администраторов и контент-менеджеров пока нет.",
+    "users.err.email": "Введите адрес эл. почты.",
+    "users.err.role": "Недопустимая роль.",
+    "users.err.notCreated": "Не удалось создать пользователя. Попробуйте ещё раз.",
+    "users.err.noProfile":
+      "Профиль не был создан. Проверьте журналы сервера.",
+    "users.err.roleMissing": "Выбранная роль не найдена в базе данных.",
     "role.administrator": "Администратор",
     "role.contentManager": "Контент-менеджер",
     "manage.addHeading": "Добавить запись",
@@ -3778,7 +4083,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.poolNote": "Отметьте опубликованные вопросы для пула этого пакета.",
     "oly2.savePool": "Сохранить пул",
     "oly2.noQuestions": "Для этого предмета пока нет опубликованных вопросов.",
-    "oly2.archive": "Архивировать пакет",
     "oly2.err.code": "Введите корректный код (строчные буквы, цифры, дефисы).",
     "oly2.err.subject": "Выберите предмет.",
     "oly2.err.grade": "Выберите класс.",
@@ -3951,29 +4255,33 @@ export const messages: Record<Locale, Record<string, string>> = {
     "accounts.access.inactive": "Неактивен",
     "accounts.reset.open": "Сбросить пароль",
     "accounts.reset.newPassword": "Новый пароль",
-    "accounts.reset.hint": "Минимум 8 символов.",
+    "accounts.reset.hint":
+      "Минимум 8 символов, одна заглавная буква и один специальный символ (! ? # $ …).",
     "accounts.reset.submit": "Изменить пароль",
     "accounts.reset.submitting": "Изменение…",
     "accounts.reset.done": "Пароль обновлён.",
     "accounts.reset.noServiceKey":
       "На сервере нет ключа SUPABASE_SERVICE_ROLE_KEY. Добавьте его в admin-panel/.env.local (только сервер) и перезапустите, чтобы включить сброс паролей.",
     "accounts.reset.err.missing": "Ребёнок не выбран.",
-    "accounts.reset.err.short": "Пароль должен содержать не менее 8 символов.",
     "accounts.reset.err.noCredentials": "Учётные данные для этого ребёнка не найдены.",
     "accounts.reset.err.equalsId": "Пароль не может совпадать с ID ребёнка.",
+    "accounts.reset.err.noLoginId":
+      "У этого ребёнка нет 8-значного ID для входа — никакой пароль ему не поможет. Сначала завершите настройку аккаунта.",
+    "accounts.reset.err.loginRepair":
+      "Не удалось восстановить адрес входа ребёнка, поэтому пароль не был изменён. Попробуйте ещё раз.",
     "accounts.create.open": "Создать родителя",
     "accounts.create.title": "Новый родительский аккаунт",
     "accounts.create.firstName": "Имя",
     "accounts.create.lastName": "Фамилия",
     "accounts.create.email": "Электронная почта",
     "accounts.create.password": "Пароль",
-    "accounts.create.passwordHint": "Минимум 8 символов.",
+    "accounts.create.passwordHint":
+      "Минимум 8 символов, одна заглавная буква и один специальный символ (! ? # $ …).",
     "accounts.create.submit": "Создать родителя",
     "accounts.create.submitting": "Создание…",
     "accounts.create.done": "Родительский аккаунт создан.",
     "accounts.create.err.required": "Укажите имя и фамилию.",
     "accounts.create.err.email": "Введите корректный адрес электронной почты.",
-    "accounts.create.err.password": "Пароль должен содержать не менее 8 символов.",
     "accounts.create.err.exists": "Эта почта уже используется.",
     "accounts.create.err.failed": "Не удалось создать родительский аккаунт.",
     "accounts.parentStatus": "Статус",
@@ -4547,6 +4855,33 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.codeHint": "Введите этот код, чтобы продолжить:",
     "del.subject.wordLabel": "Слово подтверждения",
     "del.subject.wordHint": "Введите это слово точно так же, чтобы удалить:",
+    // Обновлённый диалог: архивировать / очистить банк / удалить — три
+    // отдельные карточки, а отказы — одна янтарная плашка вместо стопки
+    // красных блоков.
+    "del.subject.intro":
+      "Для предмета «{name}» есть три разных действия, и результат у каждого свой. Выберите нужное ниже.",
+    "del.subject.impact": "Что связано с этим предметом",
+    "del.subject.impactQuestions":
+      "{total} вопр. — {deletable} удаляется, {archived} архивируется",
+    "del.subject.impactTopics": "{topics} тем, {subtopics} подтем",
+    "del.subject.impactRounds": "{n} ежедневных туров",
+    "del.subject.impactSubscribers": "{n} учеников с подпиской",
+    "del.subject.archiveTitle": "Архивировать предмет",
+    "del.subject.archiveDesc":
+      "Самый безопасный вариант. Семьи перестают видеть предмет, но вопросы, результаты и платёжные записи остаются нетронутыми. Вернуть можно в любой момент.",
+    "del.subject.archiveAction": "Архивировать",
+    "del.subject.archivedAlready": "Предмет уже в архиве — семьям он не показывается.",
+    "del.subject.recommended": "Рекомендуется",
+    "del.subject.confirmHeading": "Подтверждение",
+    "del.subject.confirmIntro": "Два действия ниже требуют подтверждения.",
+    "del.subject.gateHint":
+      "Чтобы продолжить, введите слово-подтверждение и отметьте галочку.",
+    "del.subject.wordMismatch": "Слово введено неверно.",
+    "del.subject.purgeEmpty":
+      "В общем банке этого предмета нет вопросов — удалять нечего.",
+    "del.subject.outcomeArchive":
+      "Отвечено вопросов: {n}. Поэтому предмет будет не удалён, а архивирован.",
+    "del.subject.outcomeDelete": "Предмет будет удалён полностью.",
     "del.purgeTitle": "Очистить банк вопросов",
     "del.purgeDesc":
       "Удаляет общие вопросы предмета (отвеченные архивируются). Сам предмет, его темы и подтемы остаются на месте.",
@@ -4567,11 +4902,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     // без ответов удаляются, отвеченные уходят в архив и восстановимы.
     "del.ackLabel":
       "Я понимаю: вопросы без ответов удаляются навсегда и вернуть их нельзя, а отвеченные не удаляются — они уходят в архив.",
-    "del.media": "Изображений будет удалено (примерно)",
     // ---- Пакет олимпиады ----
     "del.package.heading": "Удаление пакета",
     "del.package.open": "Удалить пакет…",
-    "del.package.title": "Удаление пакета",
+    "del.package.title": "Архивировать или удалить пакет",
     "del.package.blockedTitle": "Пока этот пакет удалить нельзя:",
     "del.package.outcomeDelete":
       "Итог: пакет и весь его банк вопросов будут удалены.",
@@ -4582,6 +4916,44 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.package.deleteDesc":
       "Удалить можно только архивированный пакет, который никто не покупал. Если хотя бы на один вопрос отвечали, пакет будет архивирован, а не удалён.",
     "del.package.deleteAction": "Удалить пакет",
+    // ---- Пакет: архивирование — это РЕШЕНИЕ, а не ошибка (спец. владельца §15) ----
+    // Наличие покупателей — не сбой, останавливающий администратора, а факт,
+    // который он должен взвесить. Поэтому текст называет число и предлагает
+    // выбор: архивировать (продажи прекращаются, покупатели остаются) или
+    // удалить. Красный — только там, где операция действительно невозможна.
+    "del.package.intro":
+      "Для пакета «{name}» есть две разные операции, и заканчиваются они по-разному. Выберите одну ниже.",
+    "del.package.impact": "Что связано с этим пакетом",
+    "del.package.impactOwners":
+      "{n} покупок — эти семьи сохраняют пакет навсегда",
+    // Покупка и право доступа — не одно и то же: у выдачи Apple/Google, у
+    // школьной лицензии и у ручной выдачи строки покупки нет вовсе (миграция
+    // 124), поэтому эти два числа никогда не складываются.
+    "del.package.impactEntitlements":
+      "{n} прав доступа — Apple/Google, школьная лицензия или выдача вручную",
+    "del.package.impactQuestions":
+      "{total} вопрос(ов) — {deletable} удаляется, {archived} архивируется",
+    "del.package.impactMedia": "{n} изображений будет удалено (примерно)",
+    "del.package.ownersNote":
+      "Архивирование останавливает новые продажи. Все, кто уже купил пакет, продолжают его видеть, открывать и проходить тесты — доступ пожизненный, а прошлые результаты не меняются.",
+    "del.package.noOwners": "Этот пакет пока никто не купил.",
+    "del.package.archiveTitle": "Архивировать пакет",
+    "del.package.archiveDesc":
+      "Пакет уходит из каталога: новые пользователи его не видят и не могут купить. Покупатели пакет сохраняют. Шаг обратим — позже пакет можно восстановить в статус «Неактивен».",
+    "del.package.archiveAction": "Архивировать",
+    "del.package.archivedAlready":
+      "Пакет уже в архиве — новых продаж нет, а доступ покупателей сохраняется.",
+    "del.package.recommended": "Рекомендуется",
+    "del.package.confirmHeading": "Подтверждение",
+    "del.package.confirmIntro":
+      "Удаление ниже требует подтверждения. Для архивирования оно не нужно — этот шаг обратим.",
+    "del.package.gateHint": "Отметьте галочку, чтобы продолжить.",
+    "del.done.packageArchivedNow":
+      "Пакет архивирован: новые продажи остановлены, покупатели сохраняют пожизненный доступ.",
+    "del.done.packageAlreadyArchived":
+      "Пакет уже был в архиве — ничего не изменилось.",
+    "del.err.archiveFailed":
+      "Не удалось архивировать пакет. Обновите страницу и попробуйте снова.",
     "del.done.packageDeleted": "Пакет и его банк вопросов удалены.",
     "del.done.packageArchived":
       "Есть отвеченные вопросы, поэтому пакет архивирован, а не удалён.",
@@ -4612,8 +4984,17 @@ export const messages: Record<Locale, Record<string, string>> = {
     "del.done.questionsPurged":
       "Выбранные вопросы обработаны. Удалено: {deleted}, архивировано: {archived}.",
     "del.done.demoted": "Пакет переведён в статус «Неактивен».",
-    // ---- Кнопка удаления в списке пакетов ----
-    "del.package.rowOpen": "Удалить…",
+    // ---- Кнопки в строке списка пакетов ----
+    // Две отдельные кнопки, потому что операции разные: архивирование не
+    // отклоняется никогда (покупатели в любом случае сохраняют доступ), а
+    // удаление купленного пакета отклоняется всегда. У каждой — своё название,
+    // чтобы администратор видел рабочую кнопку, а не отключённую и красную
+    // фразу рядом. Обе открывают один и тот же диалог — об этом и многоточие.
+    "del.package.rowArchive": "Архивировать…",
+    "del.package.rowDelete": "Удалить…",
+    // Объединённая подпись тех времён, когда в строке была одна кнопка. Теперь
+    // в строке их две, и эта строка нигде не выводится.
+    "del.package.rowOpen": "Архивировать / Удалить…",
     // ---- Удаление выбранных вопросов из пула (миграция 112) ----
     // Формулировки описывают то, что база делает на самом деле: вопросы без
     // ответов удаляются, отвеченные архивируются. Обещать иное — значит

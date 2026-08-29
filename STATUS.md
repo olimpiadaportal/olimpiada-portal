@@ -6,6 +6,133 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## ROUND 56 — FOUR QUEUED BRIEFS (2026-08-29)
+
+Four owner briefs worked as one round: `Claude_Professional_Prompt.docx` (7
+items), Subjects management (17 sections), Olympiad lifecycle (19 sections),
+`Claude_Cross_Platform_Fix_Prompt.docx` (5 fixes). The flat list of what shipped
+is in `CHANGELOG.md`; this section is the reasoning.
+
+**Verified:** web 731 tests + build, admin 727 tests + build, mobile 611 tests,
+`tsc` clean on all three. Production DB: **129 validation checks, 0 failures.**
+Migrations 155-159 applied staging→production and backported to canonical.
+
+### Two briefs asked for things the code did not need
+
+**The olympiad brief's premise was false.** It asked to remove the restriction
+blocking archive of a purchased package. Archiving was never blocked:
+`archiveOlympiadPackage` is a bare status update behind `requireAdmin()` with
+zero guards, and every trigger short-circuits for a non-`active` status. Only
+hard delete is blocked, correctly — that is CLAUDE.md law. The real defect was
+PLACEMENT: the package list offered only Edit and Delete, so an admin met a
+disabled Delete plus a red sentence reading "archive the package instead" with
+nothing to click. Fixed by putting Archive on the row. **Refused:** a new
+`catalog_status` value, weakening the delete guard, a new entitlement table.
+`REMOVED_FROM_SALE` already exists twice over (`archived`, and an expired
+`sale_ends_at`).
+
+**The subjects brief asked for a scalar `Price` field.** Price is per
+(subject × interval) with `unique(subject_id, interval)` — one field could only
+write one of week/month/year and would leave two unpriced, which is EXACTLY the
+defect that made Elm and Fizika vanish. Built as three interval inputs instead.
+
+### The child password reset was writing to an address nobody reads
+
+One password store (Supabase Auth), addressed by TWO keys nothing kept in sync.
+Reset wrote by primary key (`updateUserById(auth_user_id)`) — always succeeds,
+so the UI truthfully reported success. Login reads by a DERIVED key
+(`signInWithPassword({email: 'c'+child_unique_id+'@children.invalid'})`). They
+agree only if `applyAllocatedChildEmail` already replaced the throwaway
+`pending-<uuid>@` address. Migration 146 backfilled `child_unique_id` in SQL —
+which cannot write `auth.users.email` — so the panel began DISPLAYING an ID for
+accounts whose auth email was still the pending one. `013` never reads
+`auth.users`, so no validation could see it. Two independent secondary causes of
+the same symptom: a reset never cleared `child_login_attempts` (so the new
+password stayed refused for 15 more minutes), and on mobile the password field
+sat below the primary Save button.
+
+### Physics for grades 1-6 was one rule with four copies and three bugs
+
+The rule existed as a hand-written client effect pasted byte-identically into
+two web files and never ported to mobile's three list builders. It also (i) ran
+only inside `if (freeNow)`, so a SUBSCRIBED child was never filtered — a parent
+could BUY Physics for a grade-3 child; (ii) omitted `status='active'` on topics;
+(iii) used grade equality, so a shared NULL-grade topic made a subject vanish,
+contradicting every test-setup path. Migration 155 makes it one DB function.
+Its assertion runs against live data: *fizika resolves to grades 7-11 only*.
+
+### Leaderboard ordering: the brief's hypothesis was refuted
+
+Not a client sort bug — the sort key and the rendered value are the same column,
+no client re-sorts, no pagination. `get_leaderboard` gave provisional rows
+`ord = (count of ranked) + row_number()`, an OFFSET rather than a value, so every
+provisional row sat below every ranked one regardless of score. Migration 156
+orders the whole population by value while still withholding the rank NUMBER
+below `min_attempts` — both the report and the product rule satisfied.
+
+### News likes > views was definitional, not corruption
+
+`like_count` is a trigger-maintained cache of PK-deduped rows and was correct.
+`view_count` moves only via `bump_news_view`, called only from the DETAIL screen.
+Mobile put a like button on the LIST CARD, so a feed like is +1 like / +0 views.
+The invariant "a like implies a view" was never encoded anywhere — it was an
+emergent property of one page's layout. Migration 157 makes it real (trigger +
+CHECK) and reconciled 1 live article. Not clamped in the UI, per the brief.
+
+### Validation check 33 had been failing on production for every campaign
+
+Migration 135 INVERTED the invariant — a giveaway is a modifier on an open
+payment rail, not an alternative to one — and check 33 was never updated, still
+asserting mutual exclusivity. This is also why the giveaway toggle appeared to
+"turn itself off after two seconds": with payments off, enabling it raises
+`giveaway_requires_payments`. The check now asserts implication, not exclusivity.
+
+### A from-zero rebuild would have recreated the missing-subjects bug
+
+`012`'s pricing seed filtered `code in ('math','science','english','informatics',
+'az_language')`. `'science'` has never been a real code and `fizika` was absent,
+so Elm and Fizika came out unpriced — and unpriced means invisible on /services.
+Migration 154 had fixed them as DATA only. It is now a cross join, as its own
+comment always claimed.
+
+### Locations and schools: 15 districts → 76, 320 schools → 4,125
+
+Sourced from the State Statistical Committee classification (approved
+2026-02-16) and the Ministry's CC0 open-data register. **Nothing fabricated** —
+the owner's brief forbids it, and the ~160-school shortfall against the official
+4,357 is recorded as a known gap concentrated in reopening districts.
+
+Three judgement calls, recorded in the migrations themselves: **Xırdalan kept
+selectable** (officially inside Abşeron, but a city of ~100k with zero
+dependents; its 11 schools routed to it so it is not an empty dead end); **36
+Cyrillic-homoglyph names repaired** (a real defect in the ministry file — a
+parent typing "orta" would never find them, and the unique index cannot see them
+as duplicates); **liberated-territory schools imported as published** (the
+register is de jure; excluding them is a political judgement a migration should
+not make).
+
+**The en-dash trap is worth remembering:** the source PDF's headers use both a
+hyphen and U+2013. A dash-blind regex drops exactly Ağdam, Ağdərə, Cəbrayıl,
+Füzuli, Xocavənd, Kəlbəcər, Laçın and Şuşa — precisely the subset whose absence
+reads as a deliberate omission. Migration 158 asserts all eight by name.
+
+### Deliberately NOT done — Bakı schools
+
+The register's 393 Bakı rows must reconcile against the 320 seeded in `012` on
+school NUMBER, not name: 178 are the same physical school wearing an honorific
+("Bakı şəhəri Ə.Səmədov adına 12 nömrəli tam orta ümumtəhsil məktəbi" vs the
+seeded "Bakı 12 nömrəli tam orta məktəb"). A name-based import puts ~190
+duplicates into the picker where the 21 real students live. Own migration, next
+round. 18 seeded numbers (25, 41, 66, 173, 190, 199, 277, 339-350) have no
+counterpart in the ministry list and need a ruling.
+
+### Also open
+
+- The parent-side archived-package leak was fixed here, but the same
+  "catalogue question asked before ownership" shape may exist on other surfaces.
+- 135 RLS policies still carry the un-hoisted `is_admin()` pattern (Round 55).
+- `del.codeHint` appears dead (0 references, 3 definitions); left in place.
+
 ## SUBJECTS ARE NOW ONE SOURCE OF TRUTH (owner spec, 2026-08-27)
 
 Admin → Subjects controls what families can buy. Seven subjects, all sellable,

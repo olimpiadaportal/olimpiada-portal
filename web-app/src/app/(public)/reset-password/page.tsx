@@ -10,6 +10,8 @@ export default async function ResetPasswordPage() {
     "reset.submit",
     "parent.auth.submitting",
     "parent.err.password",
+    "parent.err.passwordWeak",
+    "parent.err.tooMany",
     "parent.err.invalid",
     "parent.auth.passwordPh",
     "auth.showPassword",

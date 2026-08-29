@@ -19,6 +19,7 @@ import {
   type QuoteResult,
 } from "@/lib/auth/subscriptionService";
 import { CheckoutRedirect } from "@/components/CheckoutRedirect";
+import { CopyableId } from "@/components/CopyableId";
 import { PlanSummary } from "@/components/PlanSummary";
 import { SubjectPlanCard } from "@/components/SubjectPlanCard";
 import { useLocale, useT } from "@/i18n/I18nProvider";
@@ -145,9 +146,7 @@ export function SubscribeForm({
         {r.childUniqueId && (
           <div style={{ margin: "12px 0" }}>
             <p className="muted">{tt("parent.child.idLabel")}:</p>
-            <p style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "3px" }}>
-              <code>{r.childUniqueId}</code>
-            </p>
+            <CopyableId id={r.childUniqueId} size="lg" />
             <p className="muted">{tt("parent.child.idNote")}</p>
           </div>
         )}

@@ -20,7 +20,7 @@ import { Card } from "@/components/Card";
 import { SectionHeader } from "@/components/SectionHeader";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
-import { spacing } from "@/theme/tokens";
+import { spacing, tint } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
@@ -63,7 +63,13 @@ function Chip({
       accessibilityState={{ selected: active }}
       accessibilityLabel={label}
       onPress={onPress}
-      android_ripple={{ color: tokens.pillBg }}
+      // Foreground ripple: a background one replaces this view's drawable and
+      // leaves it painting the PREVIOUS theme's colour after a light/dark
+      // switch. Full explanation in features/analytics/AnalyticsDashboard.tsx.
+      android_ripple={{
+        color: active ? "rgba(255,255,255,0.25)" : tint(tokens.accent, 0.14),
+        foreground: true,
+      }}
       style={({ pressed }) => ({
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.lg,
@@ -95,7 +101,11 @@ export default function ParentLeaderboard() {
   // ---- catalogs (world-readable; the same sources the Add-Child flow uses) --
   const subjectsQ = useQuery({
     queryKey: ["catalog", "active-subjects"],
-    queryFn: fetchActiveSubjects,
+    // Called through an arrow, never passed by reference: React Query hands a
+    // queryFn its CONTEXT object as the first argument, and fetchActiveSubjects
+    // now takes an optional gradeId there — a context object would fall into
+    // its by-grade branch instead of the "all my taught subjects" one.
+    queryFn: () => fetchActiveSubjects(),
     enabled: leaderboardOn,
     staleTime: 10 * 60_000,
   });
@@ -196,7 +206,22 @@ export default function ParentLeaderboard() {
 
   // The board query is enabled-gated, so its own isRefetching flag can never
   // turn on while the scope is unusable — the hook's boolean always does.
-  const { refreshing, onRefresh } = usePullRefresh([listQ, childrenQ, childId ? posQ : null]);
+  //
+  // Every catalog this screen filters by is admin-managed, so they all belong
+  // in `sources`: a pull that refreshed only the board left the subject, grade,
+  // city, rayon and school pickers showing the catalog as it was at mount. The
+  // school list is fetched lazily for its own scope, hence the guard.
+  const { refreshing, onRefresh } = usePullRefresh([
+    config,
+    subjectsQ,
+    gradesQ,
+    citiesQ,
+    rayonsQ,
+    scope === "school" ? schoolsQ : null,
+    listQ,
+    childrenQ,
+    childId ? posQ : null,
+  ]);
 
   if (config.data && !leaderboardOn) {
     return (

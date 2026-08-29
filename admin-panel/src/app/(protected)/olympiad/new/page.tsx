@@ -19,7 +19,13 @@ export default async function NewOlympiadPage() {
   const supabase = await createClient();
   const [{ data: subjects }, { data: grades }, { data: qtypes }, { data: otypes }, fullDict] =
     await Promise.all([
-      supabase.from("subjects").select("id, name").order("name"),
+      // ACTIVE only: this is a SELECTION list for a package being created now,
+      // and an archived subject is one an admin has taken out of circulation —
+      // attaching a brand-new package to it would put a subject back on a
+      // public card the moment the package goes on sale. Management views
+      // (the /olympiad list filter, the edit page's current value) still show
+      // every status; only "what may I pick for something new" is narrowed.
+      supabase.from("subjects").select("id, name").eq("status", "active").order("name"),
       supabase.from("grades").select("id, name, level").order("level"),
       supabase
         .from("question_types")

@@ -81,6 +81,7 @@ export default async function ChildProfilePage() {
     "profile.removeAvatar",
     "profile.avatarHint",
     "profile.err.passwordShort",
+    "profile.err.passwordWeak",
     "profile.err.passwordEqualsId",
     "profile.err.fileType",
     "profile.err.fileTooLarge",

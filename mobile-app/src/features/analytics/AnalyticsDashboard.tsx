@@ -16,7 +16,7 @@ import { Avatar } from "@/components/Avatar";
 import { Card } from "@/components/Card";
 import { SectionHeader } from "@/components/SectionHeader";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, spacing } from "@/theme/tokens";
+import { radius, spacing, tint } from "@/theme/tokens";
 import { formatPercent } from "@/lib/formatPercent";
 import { WeeklyBars, TrendLine } from "./charts";
 import {
@@ -63,7 +63,12 @@ export function ChildChips({
                 accessibilityState={{ selected: active }}
                 accessibilityLabel={c.name}
                 onPress={() => onSelect(c.id)}
-                android_ripple={{ color: tokens.pillBg }}
+                // Foreground ripple — see SubjectChips below for why a
+                // background ripple strands this view on the old theme colour.
+                android_ripple={{
+                  color: active ? "rgba(255,255,255,0.25)" : tint(tokens.accent, 0.14),
+                  foreground: true,
+                }}
                 style={({ pressed }) => ({
                   flexDirection: "row",
                   alignItems: "center",
@@ -135,7 +140,36 @@ export function SubjectChips({
                 accessibilityState={{ selected: active }}
                 accessibilityLabel={c.label}
                 onPress={() => onSelect(c.id)}
-                android_ripple={{ color: tokens.pillBg }}
+                // `foreground: true` IS NOT COSMETIC HERE — without it these
+                // chips keep the PREVIOUS theme's background after a light/dark
+                // switch, until something forces the screen to remount.
+                //
+                // Reported on this exact row: in light mode the chips render
+                // dark with unreadable dark text; in dark mode, light with
+                // unreadable pale text. The text is right and the background is
+                // wrong even though both come from `tokens` one line apart —
+                // which rules out every JS staleness explanation, because the
+                // component demonstrably re-rendered.
+                //
+                // A BACKGROUND ripple (the default) routes through
+                // BackgroundStyleApplicator.setFeedbackUnderlay, which on the
+                // New Architecture builds a fresh CompositeBackgroundDrawable
+                // and then DISCARDS it. LayerDrawable takes over the callback of
+                // every child it wraps, so the live drawable the view is
+                // painting now reports to an orphan attached to no View. A later
+                // setBackgroundColor writes the new colour and calls
+                // invalidateSelf(), the invalidation goes to the orphan, and
+                // Android never repaints. Leaving the tab fixes it because the
+                // views are destroyed and rebuilt.
+                //
+                // A FOREGROUND ripple goes to view.foreground and never touches
+                // the background composite. It paints OVER the label, so it must
+                // be translucent — hence these colours rather than a token.
+                // Button.tsx and features/arena/ui.tsx already do exactly this.
+                android_ripple={{
+                  color: active ? "rgba(255,255,255,0.25)" : tint(tokens.accent, 0.14),
+                  foreground: true,
+                }}
                 style={({ pressed }) => ({
                   paddingVertical: spacing.sm,
                   paddingHorizontal: spacing.lg,

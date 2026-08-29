@@ -9,6 +9,7 @@ import { formatPercent } from "@/lib/formatPercent";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { ChildCardActions } from "@/components/ChildCardActions";
+import { CopyableId } from "@/components/CopyableId";
 import { InfoCarousel, type InfoSlide } from "@/components/InfoCarousel";
 import { ParentNewsPanel } from "@/components/ParentNewsPanel";
 
@@ -153,7 +154,7 @@ export default async function ParentDashboard() {
                 <p className="muted">
                   {t("parent.dash.childId")}:{" "}
                   {c.child_unique_id ? (
-                    <code>{c.child_unique_id}</code>
+                    <CopyableId id={c.child_unique_id} />
                   ) : (
                     <span className="pill">{t("parent.dash.idPending")}</span>
                   )}

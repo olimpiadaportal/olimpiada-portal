@@ -68,6 +68,7 @@ import {
   type QuoteResult,
 } from "@/lib/auth/subscriptionService";
 import { CheckoutRedirect } from "@/components/CheckoutRedirect";
+import { CopyableId } from "@/components/CopyableId";
 import { PlanSummary } from "@/components/PlanSummary";
 import { SubjectPlanCard } from "@/components/SubjectPlanCard";
 import {
@@ -845,11 +846,7 @@ export function AddChildWizard({
                   </strong>
                 </p>
                 <p className="muted">{tt("pay.idRevealed")}</p>
-                {childUniqueId && (
-                  <p className="wiz-id">
-                    <code>{childUniqueId}</code>
-                  </p>
-                )}
+                {childUniqueId && <CopyableId id={childUniqueId} size="lg" />}
                 <p className="muted">{tt("parent.child.idNote")}</p>
                 <div className="site-cta wiz-done-cta">
                   <Link className="btn" href="/dashboard">

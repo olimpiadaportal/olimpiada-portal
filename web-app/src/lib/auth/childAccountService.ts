@@ -8,7 +8,10 @@
 //   (see allocateChildIdFromSubscribe + subscriptionService.subscribeChild).
 //   On any post-createUser failure we delete the orphaned auth user (the RPC's own
 //   transaction already rolled back its DB writes).
-// resetChildPassword: parent resets their child's password (ownership-checked).
+// resetChildPassword: parent restores their child's ability to sign in
+//   (ownership-checked): refuse an id-less account, reconcile the synthetic
+//   login email, set the password, void the failed-login lockout. See the
+//   comment above the function for why all four are one operation.
 //
 // Callers (Stage 10 parent server actions) MUST authorize the parent first; this
 // client bypasses RLS.
@@ -136,6 +139,26 @@ export type ResetChildPasswordResult =
   | { ok: true }
   | { ok: false; errors: string[]; detail?: string };
 
+// A password reset means "make this child able to sign in", not "write a new
+// password". They are different operations because ONE password store (Supabase
+// Auth) is addressed by TWO keys that nothing keeps in sync: this function used
+// to update the auth user by PRIMARY KEY (which always succeeds, so the UI
+// truthfully reported success), while child login signs in by the SYNTHETIC
+// EMAIL derived from the 8-digit id — see childLoginService and the mobile
+// child-login route, both of which call childSyntheticEmail(child_unique_id).
+//
+// The two keys diverge for real accounts. Migration 146 backfilled ids for the
+// children created while payments were off, and its header records the half it
+// could not do: SQL cannot write auth.users.email. So the Parent Panel now
+// DISPLAYS an 8-digit id for auth users still carrying their throwaway
+// pending-<uuid>@children.invalid address, and every password set on those
+// accounts landed somewhere no login would ever look.
+//
+// Hence the order below, which is the whole point of the function:
+//   refuse an account with no id -> repair the address -> set the password ->
+//   void the failure streak the forgotten password produced.
+// This is the single shared core: the parent server action and the mobile BFF
+// route are both thin wrappers, so both platforms are fixed here.
 export async function resetChildPassword(params: {
   parentProfileId: string;
   studentProfileId: string;
@@ -156,9 +179,33 @@ export async function resetChildPassword(params: {
   const ownsChild = await parentOwnsChild(parentProfileId, studentProfileId);
   if (!ownsChild) return { ok: false, errors: ["auth.child.err.notYourChild"] };
 
+  // A child with no 8-digit id has no username: there is no password that would
+  // let them in, so "password updated" would be a lie. Refused with its own key
+  // rather than folded into updateFailed — the parent needs to know the account
+  // is unfinished, not that a retry might work.
+  const childUniqueId: string | null = cred.child_unique_id ?? null;
+  if (!childUniqueId) return { ok: false, errors: ["auth.child.err.noLoginId"] };
+
   // Password rules (the 8-digit ID is known here, so enforce password != id).
-  const pwCheck = validateChildPassword(newPassword, { childUniqueId: cred.child_unique_id });
+  const pwCheck = validateChildPassword(newPassword, { childUniqueId });
   if (!pwCheck.ok) return { ok: false, errors: pwCheck.errors };
+
+  // Repair the login mapping BEFORE the password is set. If this fails the
+  // password is deliberately left untouched: writing it would put the account
+  // back in exactly the state this function exists to end — a new password the
+  // child cannot use and a parent who was told it worked.
+  const reconciled = await reconcileChildLoginEmail({
+    authUserId: cred.auth_user_id,
+    childUniqueId,
+  });
+  if (!reconciled.ok) {
+    console.error("[child] login email reconcile failed");
+    return {
+      ok: false,
+      errors: ["auth.child.err.updateFailed"],
+      detail: reconciled.detail,
+    };
+  }
 
   const { error: updErr } = await admin.auth.admin.updateUserById(cred.auth_user_id, {
     password: newPassword,
@@ -173,30 +220,93 @@ export async function resetChildPassword(params: {
     })
     .eq("student_profile_id", studentProfileId);
 
+  const lockoutCleared = await clearChildLoginFailures(childUniqueId);
+
   await writeAuditLog(parentProfileId, "parent.child_password_reset", {
     severity: "warning",
     targetTable: "students",
     targetId: studentProfileId,
+    // Support reads these two: a reconcile means the account was one that could
+    // never sign in, and an uncleared lockout explains a child still being
+    // refused for the rest of the 15-minute window.
+    metadata: { emailReconciled: reconciled.changed, lockoutCleared },
   });
 
   return { ok: true };
 }
 
+// Make the child's auth user carry the canonical synthetic login email
+// (c<8digits>@children.invalid) that child login derives from the 8-digit id.
+// That address IS the child's username, so a correct password on a user still
+// holding its pending- address is unreachable.
+//
+// Idempotent: an already-correct address costs one read and no write, which is
+// what makes it safe to run on every reset rather than only on the broken ones.
+//
+// A FAILED READ FALLS THROUGH TO THE WRITE instead of skipping it. Skipping on a
+// read error is the one outcome nothing downstream could detect — the caller
+// would be told the mapping is fine while the account stays unusable.
+async function reconcileChildLoginEmail(params: {
+  authUserId: string;
+  childUniqueId: string;
+}): Promise<{ ok: boolean; changed: boolean; detail?: string }> {
+  const admin = getAdminClient();
+  const desired = childSyntheticEmail(params.childUniqueId);
+
+  const { data: existing } = await admin.auth.admin.getUserById(params.authUserId);
+  const currentEmail = existing?.user?.email?.trim().toLowerCase() ?? null;
+  if (currentEmail === desired) return { ok: true, changed: false };
+
+  // email_confirm keeps the new address confirmed: GoTrue refuses
+  // signInWithPassword on an unconfirmed email, which would trade one silent
+  // login failure for another.
+  const { error } = await admin.auth.admin.updateUserById(params.authUserId, {
+    email: desired,
+    email_confirm: true,
+  });
+  if (error) return { ok: false, changed: false, detail: error.message };
+  return { ok: true, changed: true };
+}
+
+// Void a child's recent failed-login streak.
+//
+// is_child_login_locked counts failures in the last 15 minutes and ONLY a
+// SUCCESSFUL login clears them (record_child_login_attempt). That is why the
+// commonest reset in production still failed: the child forgets the password,
+// gets it wrong eight times, the parent resets, and the brand-new password is
+// refused for the rest of the window. A reset is precisely the event that should
+// void the failure history. Successful attempts are kept — they are login
+// history, not a lockout.
+//
+// Best-effort: the password is ALREADY changed by the time this runs, so a
+// failure here must not be reported as a failed reset. It is logged and recorded
+// in the audit row instead.
+async function clearChildLoginFailures(childUniqueId: string): Promise<boolean> {
+  const admin = getAdminClient();
+  const { error } = await admin
+    .from("child_login_attempts")
+    .delete()
+    .eq("child_unique_id", childUniqueId)
+    .eq("success", false);
+  if (error) {
+    console.error("[child] could not clear the login lockout after a reset");
+    return false;
+  }
+  return true;
+}
+
 // Batch H: after the subscribe RPC allocates the deferred 8-digit ID, set the
-// child's canonical synthetic auth email (c<8digits>@children.invalid) so that
-// child login (ID -> synthetic email -> signInWithPassword) works. Idempotent and
-// best-effort: a child can only ever log in once this email is set. Called from the
-// subscribe server action, which already authorized the parent + child.
+// child's canonical synthetic auth email so that child login (ID -> synthetic
+// email -> signInWithPassword) works. Called from the subscribe server action and
+// the checkout-intent grant, which have already authorized the parent + child.
+// Thin wrapper over the same reconcile the reset path uses, so there is exactly
+// one implementation of "make this id the login address".
 export async function applyAllocatedChildEmail(params: {
   authUserId: string;
   childUniqueId: string;
 }): Promise<{ ok: boolean; detail?: string }> {
-  const admin = getAdminClient();
-  const { error } = await admin.auth.admin.updateUserById(params.authUserId, {
-    email: childSyntheticEmail(params.childUniqueId),
-  });
-  if (error) return { ok: false, detail: error.message };
-  return { ok: true };
+  const res = await reconcileChildLoginEmail(params);
+  return res.ok ? { ok: true } : { ok: false, detail: res.detail };
 }
 
 /** True if the parent created the child or has an active parent_student_links row. */

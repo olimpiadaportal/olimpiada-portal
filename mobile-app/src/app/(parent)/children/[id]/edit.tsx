@@ -23,6 +23,8 @@ import { spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 import { useFieldChain } from "@/lib/useFieldChain";
+import { usePullRefresh } from "@/lib/usePullRefresh";
+import { checkNewPassword } from "@/lib/passwordPolicy";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchChildren, type ChildRow } from "@/lib/data";
 import { resolveChildAvatarSource } from "@/lib/childAvatar";
@@ -369,19 +371,54 @@ function EditForm({
   );
 }
 
+/**
+ * Child password reset — a COLLAPSED disclosure, and that is the fix, not a
+ * style choice.
+ *
+ * THE BUG: the field used to be permanently visible in a card that sits BELOW
+ * the details form's big filled "Save". A parent typed a new password, pressed
+ * the only primary button on the screen, and was told the save succeeded —
+ * while the password had never been transmitted. Nothing about the layout said
+ * the field belonged to the small ghost button further down.
+ *
+ * THE RULE THIS RESTORES: a password input never exists on screen unless its
+ * OWN submit is the next action under it. Closed, there is nothing to lose;
+ * open, the field and its Update button are one block with no other submit
+ * between them. This is the same shape the two self-service password sections
+ * already use (features/profile/sections.tsx, studentSections.tsx).
+ */
 function PasswordReset({ childId }: { childId: string }) {
   const { t } = useT();
   const { tokens } = useTheme();
+  const [open, setOpen] = useState(false);
   const [pw, setPw] = useState("");
   const [pending, setPending] = useState(false);
   const [ok, setOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function close() {
+    // Never leave a typed password behind a collapsed card: reopening it would
+    // show a filled field the parent no longer remembers choosing.
+    setPw("");
+    setError(null);
+    setOpen(false);
+  }
+
   async function submit() {
     if (pending) return;
     setOk(false);
-    if (pw.length < 8) {
-      setError(t("auth.child.err.passwordTooShort"));
+    // FEEDBACK ONLY — the BFF re-runs the identical rule and is authoritative.
+    // `tooShort` keeps its existing message; the strength dimensions the old
+    // length test never covered share the one passwordWeak string.
+    const problem = checkNewPassword(pw);
+    if (problem) {
+      setError(
+        t(
+          problem === "tooShort"
+            ? "auth.child.err.passwordTooShort"
+            : "auth.child.err.passwordWeak",
+        ),
+      );
       return;
     }
     setError(null);
@@ -393,7 +430,9 @@ function PasswordReset({ childId }: { childId: string }) {
       setError(t(res.error));
       return;
     }
+    setPw("");
     setOk(true);
+    setOpen(false);
   }
 
   return (
@@ -401,18 +440,6 @@ function PasswordReset({ childId }: { childId: string }) {
       <AppText variant="title" style={{ fontSize: 16 }}>
         {t("child.resetPw")}
       </AppText>
-      {/* A run of one, in its own card with its own submit: the return key
-          only closes the keyboard — a password reset is never fired by it. */}
-      <PasswordField
-        label={t("parent.child.password")}
-        value={pw}
-        onChangeText={setPw}
-        returnKeyType="done"
-        submitBehavior="blurAndSubmit"
-        showLabel={t("mob.pw.show")}
-        hideLabel={t("mob.pw.hide")}
-        error={error}
-      />
       <AppText variant="muted" style={{ fontSize: 12 }}>
         {t("parent.child.passwordHint")}
       </AppText>
@@ -421,12 +448,48 @@ function PasswordReset({ childId }: { childId: string }) {
           {t("auth.child.passwordReset")}
         </AppText>
       ) : null}
-      <Button
-        title={t("child.resetPwSubmit")}
-        variant="ghost"
-        pending={pending}
-        onPress={() => void submit()}
-      />
+      {!open ? (
+        <Button
+          title={t("profile.changePassword")}
+          variant="ghost"
+          onPress={() => {
+            setOk(false);
+            setOpen(true);
+          }}
+        />
+      ) : (
+        <View style={{ gap: spacing.md }}>
+          {/* A run of one, in its own card with its own submit: the return key
+              only closes the keyboard — a password reset is never fired by it. */}
+          <PasswordField
+            label={t("parent.child.password")}
+            value={pw}
+            onChangeText={setPw}
+            returnKeyType="done"
+            submitBehavior="blurAndSubmit"
+            showLabel={t("mob.pw.show")}
+            hideLabel={t("mob.pw.hide")}
+            error={error}
+          />
+          {/* The FILLED button is this field's own submit, directly under it.
+              Both buttons flex so the two az/ru labels share the width at
+              320pt instead of one of them truncating. */}
+          <View style={{ flexDirection: "row", gap: spacing.md }}>
+            <Button
+              title={t("child.resetPwSubmit")}
+              pending={pending}
+              style={{ flex: 1 }}
+              onPress={() => void submit()}
+            />
+            <Button
+              title={t("profile.cancel")}
+              variant="ghost"
+              style={{ flex: 1 }}
+              onPress={close}
+            />
+          </View>
+        </View>
+      )}
     </Card>
   );
 }
@@ -436,6 +499,7 @@ export default function EditChildScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = typeof params.id === "string" ? params.id : "";
+  const queryClient = useQueryClient();
 
   const childrenQ = useQuery({ queryKey: ["children"], queryFn: fetchChildren });
   const child = (childrenQ.data ?? []).find((c) => c.profile_id === id) ?? null;
@@ -457,13 +521,33 @@ export default function EditChildScreen() {
     },
   });
 
+  // Same gap as Add-Child: the four catalogs behind the selects are
+  // admin-managed and cached for ten minutes, and this screen offered no way
+  // to re-read them. The catalog hooks are observed HERE as well as inside the
+  // form — one query key, one request — because the pull can only refetch what
+  // it is handed.
+  const citiesQ = useCities();
+  const gradesQ = useGrades();
+  const rayonsQ = useCityDistricts();
+  const { refreshing, onRefresh } = usePullRefresh([
+    childrenQ,
+    child ? rayonQ : null,
+    citiesQ,
+    gradesQ,
+    rayonsQ,
+    // The school list is keyed by the city SELECTED INSIDE the form, which
+    // this component does not hold. `type: "active"` refetches exactly the
+    // mounted one instead of guessing the key.
+    () => queryClient.refetchQueries({ queryKey: ["catalog", "schools"], type: "active" }),
+  ]);
+
   if (childrenQ.isSuccess && !child) {
     // Unknown/foreign id — never render a form for someone else's child.
     return <Redirect href="/(parent)/(tabs)/home" />;
   }
 
   return (
-    <Screen scroll>
+    <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
       {childrenQ.isPending || (child && rayonQ.isPending) ? (
         <View style={{ gap: spacing.md, paddingTop: spacing.md }}>
           <Skeleton height={20} width="70%" />

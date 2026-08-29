@@ -7,7 +7,12 @@ import { isGiveawayActive } from "@/lib/paymentMode";
 import { getChildFreeAccessActive } from "@/lib/freeAccess";
 import { formatPercent } from "@/lib/formatPercent";
 import { subjectLabel } from "@/lib/subjectLabel";
-import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/childSubjects";
+import {
+  CHILD_COVERAGE_SELECT,
+  fetchTaughtSubjectIds,
+  liveCoveredSubjects,
+} from "@/lib/childSubjects";
+import { keepTaughtSubjects } from "@/lib/gradeSubjects";
 
 export default async function ChildDashboard() {
   const child = await requireChild();
@@ -101,34 +106,26 @@ export default async function ChildDashboard() {
   // is_giveaway_active() — so an unpriced subject was accessible in fact and
   // invisible on screen. `subjects` is the admin's own list and its select
   // policy is USING (true), so the child's request-scoped client can read it.
-  //
-  // SCOPED TO THE CHILD'S GRADE, same rule as lib/childSubjects.ts. Fizika has
-  // curriculum for grades 7-11 only, so listing "every active subject" offered a
-  // grade-3 child a subject with nothing behind it. Derived from the topic tree
-  // rather than a hardcoded floor, so it stays correct when a subject's grade
-  // range changes.
   if (freeNow) {
-    const gradeId = (student as any)?.grade_id ?? null;
-    const { data: gradeTopics } = gradeId
-      ? await supabase
-          .from("topics")
-          .select("subject_id")
-          .eq("scope", "exam")
-          .eq("grade_id", gradeId)
-      : { data: [] as { subject_id: string }[] };
-    const taught = new Set(
-      ((gradeTopics ?? []) as { subject_id: string }[]).map((r) => String(r.subject_id)),
-    );
     const { data: all } = await supabase
       .from("subjects")
       .select("id, code, name")
       .eq("status", "active");
     for (const row of (all ?? []) as any[]) {
-      if (!taught.has(String(row.id))) continue;
       subjMap.set(String(row.id), subjectLabel(t, row.code, String(row.name)));
     }
   }
-  const subjects = Array.from(subjMap, ([id, name]) => ({ id, name }));
+  // SCOPED TO THE CHILD'S GRADE, same rule as lib/childSubjects.ts — and now
+  // literally the same rule, answered once by the database (migration 155)
+  // instead of copied byte-for-byte into both files. Fizika has curriculum for
+  // grades 7-11 only, so a grade-3 child was offered a subject with nothing
+  // behind it. Applied AFTER the merges, never inside the free-window branch:
+  // a subscribed or trialling child must be filtered too, and previously was not.
+  const taught = await fetchTaughtSubjectIds(supabase, (student as any)?.grade_id ?? null);
+  const subjects = keepTaughtSubjects(
+    Array.from(subjMap, ([id, name]) => ({ id, name })),
+    taught,
+  );
 
   const graded = (attempts ?? []) as any[];
 

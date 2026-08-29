@@ -250,7 +250,15 @@ export function ChildChips({
             accessibilityState={{ selected: active }}
             accessibilityLabel={name}
             onPress={() => onSelect(c.profile_id)}
-            android_ripple={{ color: tokens.pillBg }}
+            // Foreground ripple: a background one replaces this view's drawable
+            // and leaves it painting the PREVIOUS theme's colour after a
+            // light/dark switch. Full explanation in AnalyticsDashboard.tsx.
+            android_ripple={{
+              // This file's LOCAL tint() takes an alpha HEX BYTE, not a 0-1
+              // number like the one in @/theme/tokens. "24" is ~0.14.
+              color: active ? "rgba(255,255,255,0.25)" : tint(tokens.accent, "24"),
+              foreground: true,
+            }}
             style={({ pressed }) => ({
               flexDirection: "row",
               alignItems: "center",

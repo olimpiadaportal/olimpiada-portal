@@ -7,6 +7,12 @@ import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { pickTranslation } from "@/lib/localizedName";
 
+// These ids are interpolated into a PostgREST `or=(...)` filter rather than
+// bound as a parameter, so they are shape-checked first. They come straight
+// back from the database and cannot currently be anything else — the check is
+// here so that stays true if the source ever changes.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function ParentOlympiadsPage({
   params,
 }: {
@@ -31,11 +37,15 @@ export default async function ParentOlympiadsPage({
     .maybeSingle();
   if (!child || (child as any).created_by_parent_profile_id !== parent.profileId) notFound();
 
-  const { data: packages } = await supabase
-    .from("olympiad_packages")
-    .select("id, price_amount, currency, event_starts_at, sale_starts_at, sale_ends_at, olympiad_package_translations(locale, title)")
-    .eq("status", "active")
-    .order("created_at");
+  // ENTITLEMENT IS NOT THE CATALOGUE, so purchases are read FIRST and the
+  // package query is widened by what this child owns. Filtering on
+  // status='active' before knowing that would make an ARCHIVED package the
+  // family PAID for disappear from the parent's screen while the child carries
+  // on playing it — archiving stops new sales, it has never revoked access
+  // (`can_view_olympiad_package` grants through the purchase branch and does
+  // not read status). Harmless while archiving took a trip to the edit page's
+  // danger zone; now that it is one click from the package list, it is a bug
+  // waiting for the first admin who tidies up an old olympiad.
   const { data: purchases } = await supabase
     .from("olympiad_purchases")
     .select("olympiad_package_id, status")
@@ -43,6 +53,17 @@ export default async function ParentOlympiadsPage({
   const owned = new Set(
     ((purchases ?? []) as any[]).filter((p) => p.status === "active").map((p) => p.olympiad_package_id),
   );
+  const ownedIds = [...owned].filter(
+    (v): v is string => typeof v === "string" && UUID_RE.test(v),
+  );
+  const packageQuery = supabase
+    .from("olympiad_packages")
+    .select("id, price_amount, currency, event_starts_at, sale_starts_at, sale_ends_at, olympiad_package_translations(locale, title)");
+  const { data: packages } = await (
+    ownedIds.length > 0
+      ? packageQuery.or(`status.eq.active,id.in.(${ownedIds.join(",")})`)
+      : packageQuery.eq("status", "active")
+  ).order("created_at");
   const title = (p: any): string =>
     pickTranslation<{ locale: string; title: string | null }>(
       p.olympiad_package_translations,

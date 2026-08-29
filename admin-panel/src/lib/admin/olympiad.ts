@@ -24,6 +24,7 @@ import {
 } from "@/lib/admin/bulk-validate";
 import { getT, getLocale, type T } from "@/i18n/server";
 import { parseIsoTimestamp } from "@/lib/admin/datetime";
+import { parsePackagePriceAmount } from "@/app/(protected)/pricing/shared";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import { withLocalStrings } from "@/lib/admin/question-flow-labels";
 import { rejectUnclaimableMedia } from "@/lib/admin/bulk-media";
@@ -152,14 +153,28 @@ function parsePackageFields(
   } else if (!UUID_RE.test(olympiadTypeId)) {
     return { error: lt("oly2.err.type") };
   }
-  // Price must be a finite number ≥ 0 (negatives/NaN/Infinity rejected);
-  // normalized to 2 decimals.
-  const priceRaw = s(fd, "price_amount");
-  const priceNum = priceRaw === "" ? 0 : Number(priceRaw);
-  if (!Number.isFinite(priceNum) || priceNum < 0) {
-    return { error: t("err.server") };
+  // Price: the SAME parser the subscription-pricing rail uses, in its
+  // zero-inclusive form — a free olympiad package is a real product concept
+  // (purchase_olympiad_if_free), a free subscription subject is not.
+  //
+  // This replaced a hand-rolled check that read
+  //   const priceNum = Number(priceRaw);
+  //   if (!Number.isFinite(priceNum) || priceNum < 0) …
+  //   const price = Math.round(priceNum * 100) / 100;
+  // which rejected negatives correctly but had no UPPER bound — so 999999999
+  // reached Postgres and came back as a raw numeric-overflow reported to the
+  // admin as a generic "server error" — and did FLOAT ARITHMETIC ON MONEY,
+  // the one place in the panel that did. parsePackagePriceAmount proves
+  // "at most 2 decimals" from the STRING SHAPE instead, so no rounding is
+  // needed and none is done.
+  //
+  // An empty field still means a free package: the input is not required, and
+  // that is long-standing behaviour rather than something to change here.
+  const priceRaw = s(fd, "price_amount").trim();
+  const price = priceRaw === "" ? 0 : parsePackagePriceAmount(priceRaw);
+  if (price === null) {
+    return { error: t("oly2.err.price") };
   }
-  const price = Math.round(priceNum * 100) / 100;
   // Attempt duration: whole minutes, 5–240 (drives the child's countdown).
   const durationNum = Number(s(fd, "duration_minutes"));
   if (

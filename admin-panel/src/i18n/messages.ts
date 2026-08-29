@@ -757,6 +757,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.savePool": "Hovuzu yadda saxla",
     "oly2.noQuestions": "Bu fənn üçün hələ dərc edilmiş sual yoxdur.",
     "oly2.err.code": "Düzgün kod daxil edin (kiçik hərflər, rəqəmlər, defis).",
+    "oly2.err.price":
+      "Qiymət 0 ilə 10 000 arasında olmalıdır, ən çox iki onluq rəqəmlə. Pulsuz paket üçün 0 yazın və ya boş buraxın.",
     "oly2.err.subject": "Fənn seçin.",
     "oly2.err.grade": "Sinif seçin.",
     "oly2.err.titleAz": "Azərbaycan dilində başlıq tələb olunur.",
@@ -2419,6 +2421,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.savePool": "Save pool",
     "oly2.noQuestions": "No published questions for this subject yet.",
     "oly2.err.code": "Enter a valid code (lowercase letters, numbers, hyphens).",
+    "oly2.err.price":
+      "The price must be between 0 and 10,000, with at most two decimals. Enter 0 or leave it empty for a free package.",
     "oly2.err.subject": "Choose a subject.",
     "oly2.err.grade": "Choose a grade.",
     "oly2.err.titleAz": "Azerbaijani title is required.",
@@ -4092,6 +4096,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "oly2.savePool": "Сохранить пул",
     "oly2.noQuestions": "Для этого предмета пока нет опубликованных вопросов.",
     "oly2.err.code": "Введите корректный код (строчные буквы, цифры, дефисы).",
+    "oly2.err.price":
+      "Цена должна быть от 0 до 10 000, не более двух знаков после запятой. Для бесплатного пакета укажите 0 или оставьте поле пустым.",
     "oly2.err.subject": "Выберите предмет.",
     "oly2.err.grade": "Выберите класс.",
     "oly2.err.titleAz": "Требуется заголовок на азербайджанском.",

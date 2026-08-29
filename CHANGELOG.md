@@ -47,6 +47,33 @@ a 1.12.3 binary.
 > history, with release notes for a release that never existed, would be worse
 > bookkeeping than a skipped number.
 
+### Money
+- `[admin]` **A negative price could be written to the database, and the admin
+  panel's own validation could not stop it.** The subject-price rail validated in
+  three places and all three were correct — but `subjects_pricing` and
+  `olympiad_packages` both carry an RLS write policy of
+  `for all to authenticated using (is_admin())`, i.e. plain table write access for
+  any signed-in administrator. So `PATCH /rest/v1/subjects_pricing` with
+  `{"price_amount": -5}` succeeded, going around the parser and the RPC entirely.
+  An audit of every money column found **exactly one** bounding CHECK constraint
+  in the whole schema; the other sixteen columns could hold a negative.
+
+  A negative price never opened a charge — the paid rail refuses `due <= 0` — but
+  the *free* rail gates on `due > 0`, and a negative is not greater than zero, so
+  it silently turned a paid product into a free one.
+
+  Twelve CHECK constraints now make it unrepresentable. The floors differ on
+  purpose: a zero-priced **olympiad package** is a real product (the free-purchase
+  RPC exists to deliver one), a zero-priced **subscription subject** is not.
+- `[admin]` The olympiad price input had **no bounds at all** — no `min`, no
+  `max` — with a single line of TypeScript between a typed `-5` and the database.
+  It now uses the same string-shape parser as the subscription rail, which also
+  gives it the upper bound it lacked: `999999999` used to reach Postgres and come
+  back as a raw numeric-overflow shown to the admin as "server error".
+- `[internal]` Removed the one place in the panel doing **float arithmetic on
+  money** (`Math.round(price * 100) / 100`). The shared parser proves "at most two
+  decimals" from the string shape, so no rounding is needed.
+
 ### Build
 - `[internal]` **The Android release build failed on `lintVitalRelease`** with
   nine fatal `ExtraTranslation` errors. `expo.locales` is not iOS-scoped — there

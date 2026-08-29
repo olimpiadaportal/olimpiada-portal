@@ -136,7 +136,18 @@ export function OlympiadForm({
       </label>
       <label className="field">
         <span className="field-label">{tt("oly2.price")}</span>
-        <input name="price_amount" type="number" step="0.01" value={f.price} onChange={(e) => set("price", e.target.value)} />
+        <input
+          name="price_amount"
+          type="number"
+          inputMode="decimal"
+          // 0 is valid here — a free package is a real product concept.
+          // These bounds are UX only; olympiad.ts re-checks server-side.
+          min={0}
+          max={10000}
+          step="0.01"
+          value={f.price}
+          onChange={(e) => set("price", e.target.value)}
+        />
       </label>
       {/* Round 49 — questions served per attempt. NOT the uploaded pool total:
           the pool (shown in the cycle summary below and in Grades & Pools) can

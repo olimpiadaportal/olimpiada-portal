@@ -146,7 +146,10 @@ create table if not exists public.subjects_pricing (
   id           uuid primary key default gen_random_uuid(),
   subject_id   uuid not null references public.subjects (id) on delete cascade,
   interval     public.plan_interval not null,
-  price_amount numeric(12,2) not null,
+  -- > 0, not >= 0: admin_upsert_subject_price refuses 0, and a free
+  -- subject is delivered through the free-access rail rather than by
+  -- pricing it at zero. Migration 162.
+  price_amount numeric(12,2) not null check (price_amount > 0),
   currency     text not null default 'AZN',
   status       public.catalog_status not null default 'active',
   created_at   timestamptz not null default now(),
@@ -650,3 +653,70 @@ create index if not exists idx_free_trials_ends_at
 create index if not exists idx_free_trials_parent
   on public.free_trials (owner_parent_profile_id);
 
+
+-- -----------------------------------------------------------------------------
+-- MONEY CANNOT GO NEGATIVE (migration 2026_08_29_162).
+--
+-- The two ADMIN-EDITABLE prices carry their constraint inline on the column
+-- (subjects_pricing above, olympiad_packages in 015). These are the rest: money
+-- and percentage columns written only by RPCs and triggers. They are guarded
+-- here for the same reason the editable ones are — an audit found exactly ONE
+-- bounding CHECK in the whole schema, while RLS grants any signed-in admin plain
+-- table writes, so `PATCH /rest/v1/<table>` with a negative amount succeeded.
+-- Application validation is the readable error; the constraint is the boundary.
+--
+-- A guarded do-block rather than inline column checks, because `create table if
+-- not exists` above is a no-op on a database that already has these tables, so
+-- an inline check would silently never arrive there.
+--
+-- The floors differ ON PURPOSE and each is argued in migration 162's header:
+-- >= 0 where zero is a real state (a comped grant writes 0), > 0 only where the
+-- writing RPC already refuses zero. subscription_changes.prorated_amount is
+-- >= 0 only because proration is retired and removals never refund — a future
+-- credit feature would need to drop that constraint deliberately.
+-- -----------------------------------------------------------------------------
+do $$
+declare
+  v_specs text[][] := array[
+    ['payments',              'ck_payments_amount',           'amount >= 0'],
+    ['checkout_sessions',     'ck_checkout_amount_positive',  'amount is null or amount > 0'],
+    ['child_subscriptions',   'ck_child_subs_amounts',
+      'coalesce(base_amount,0) >= 0 and coalesce(discount_amount,0) >= 0 and coalesce(total_amount,0) >= 0'],
+    ['child_subscriptions',   'ck_child_subs_sibling_pct',
+      'sibling_discount_percent is null or sibling_discount_percent between 0 and 100'],
+    ['subscription_subjects', 'ck_sub_subjects_price',        'price_amount is null or price_amount >= 0'],
+    ['subscription_changes',  'ck_sub_changes_amounts',
+      'coalesce(prorated_amount,0) >= 0 and coalesce(recurring_before,0) >= 0 and coalesce(recurring_after,0) >= 0 and (discount_percent is null or discount_percent between 0 and 100)'],
+    ['sibling_discounts',     'ck_sibling_discounts_pct',
+      'discount_percent is null or discount_percent between 0 and 100'],
+    ['coupons',               'ck_coupons_value',             'value is null or value >= 0'],
+    ['subscription_plans',    'ck_subscription_plans_price',  'price_amount is null or price_amount >= 0']
+  ];
+  v_tbl  text;
+  v_name text;
+  v_pred text;
+  i      int;
+begin
+  for i in 1 .. array_length(v_specs, 1) loop
+    v_tbl  := v_specs[i][1];
+    v_name := v_specs[i][2];
+    v_pred := v_specs[i][3];
+    if not exists (
+      select 1 from information_schema.tables
+      where table_schema = 'public' and table_name = v_tbl
+    ) then
+      continue;
+    end if;
+    if exists (
+      select 1 from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      join pg_namespace n on n.oid = t.relnamespace
+      where n.nspname = 'public' and t.relname = v_tbl and c.conname = v_name
+    ) then
+      continue;
+    end if;
+    execute format('alter table public.%I add constraint %I check (%s)',
+                   v_tbl, v_name, v_pred);
+  end loop;
+end;
+$$;

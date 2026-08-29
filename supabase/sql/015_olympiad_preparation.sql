@@ -35,7 +35,10 @@ create table if not exists public.olympiad_packages (
   grade_id             uuid references public.grades (id) on delete set null,
   olympiad_type_id     uuid references public.olympiad_types (id) on delete set null,
   cover_media_id       uuid references public.media_assets (id) on delete set null,
-  price_amount         numeric(10,2) not null default 0,
+  -- >= 0, not > 0: a zero-priced package is a live product concept —
+  -- purchase_olympiad_if_free exists to deliver one. Migration 162.
+  price_amount         numeric(10,2) not null default 0
+    check (price_amount >= 0),
   currency             text not null default 'AZN',
   questions_per_attempt integer not null default 25 check (questions_per_attempt >= 1 and questions_per_attempt <= 500), -- LIVE again (Round 51, migration 090): questions served per attempt, drawn via the per-student rotation below
   duration_minutes     int not null default 25 check (duration_minutes between 5 and 240), -- attempt time limit (migration 047; drives deadline_at)
@@ -121,7 +124,9 @@ create table if not exists public.olympiad_purchases (
   owner_parent_profile_id uuid references public.profiles (id) on delete set null,
   student_profile_id      uuid references public.students (profile_id) on delete set null,
   checkout_session_id     uuid references public.checkout_sessions (id) on delete set null,
-  amount                  numeric(10,2) not null default 0,
+  -- Migration 162: a purchase can be free (comped/giveaway), never negative.
+  amount                  numeric(10,2) not null default 0
+    check (amount >= 0),
   currency                text not null default 'AZN',
   status                  text not null default 'pending'
                             check (status in ('pending', 'active', 'refunded')),

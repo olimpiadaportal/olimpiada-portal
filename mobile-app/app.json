@@ -69,7 +69,8 @@
         {
           "faceIDPermission": "OlympIQ Face ID-dən yalnız tətbiqin kilidini açmaq üçün istifadə edir — bunu özünüz Hesab bölməsində aktivləşdirirsiniz. Üz məlumatları qurğunuzu heç vaxt tərk etmir."
         }
-      ]
+      ],
+      "./plugins/withIosPermissionStringDefaults"
     ],
     "experiments": {
       "typedRoutes": true

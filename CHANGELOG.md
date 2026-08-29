@@ -47,6 +47,28 @@ a 1.12.3 binary.
 > history, with release notes for a release that never existed, would be worse
 > bookkeeping than a skipped number.
 
+### Build
+- `[internal]` **The Android release build failed on `lintVitalRelease`** with
+  nine fatal `ExtraTranslation` errors. `expo.locales` is not iOS-scoped — there
+  is no `ios.locales` in the Expo schema — so the three `NS*UsageDescription`
+  keys in `locales/{az,en,ru}.json` were copied into Android's localized
+  `values-b+<locale>/strings.xml` as well, while nothing wrote them into the
+  default `values/strings.xml`, because they mean nothing on Android. Three
+  locales × three keys = the nine errors.
+
+  It surfaced now because the localized permission prompts were added in 1.12.3
+  for the Apple review, and 1.12.3 was only ever built for **iOS**. The last
+  Android build was 1.12.0.
+
+  Fixed by a config plugin that gives those keys a default-locale entry, rather
+  than by `lint { disable 'ExtraTranslation' }`. Disabling would have switched
+  off a genuinely useful check app-wide, forever, to work around three strings;
+  adding the default answers lint's actual complaint and keeps the check fatal
+  for the defects it exists to catch. iOS is untouched — the mod is Android-only.
+- `[internal]` Five packages were behind their SDK 54 patch versions (`expo`,
+  `expo-constants`, `expo-local-authentication`, `expo-updates`, `jest-expo`),
+  flagged by `expo-doctor` and realigned with `expo install --fix`.
+
 ### Added — the update gate is finished
 - `[store]` The app can now **suggest** an update instead of only forcing one: a
   dismissible card offers Update or Later, and a version you skip stays skipped

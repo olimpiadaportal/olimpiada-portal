@@ -35,11 +35,37 @@ tester who keeps reporting.
 
 ---
 
-## 1.13.0 — unreleased
+## 1.14.0 — unreleased
 
 Needs a NEW BUILD, not an OTA update: `expo-clipboard` is a native module, and
-`runtimeVersion: appVersion` means an update published for 1.13.0 never reaches
+`runtimeVersion: appVersion` means an update published for 1.14.0 never reaches
 a 1.12.3 binary.
+
+> Numbered 1.14.0, not 1.13.0. 1.13.0 was prepared but never built or released,
+> and the update gate below is a new feature rather than a fix — so everything
+> here rides in one build under one version. A phantom 1.13.0 in the store
+> history, with release notes for a release that never existed, would be worse
+> bookkeeping than a skipped number.
+
+### Added — the update gate is finished
+- `[store]` The app can now **suggest** an update instead of only forcing one: a
+  dismissible card offers Update or Later, and a version you skip stays skipped
+  until a newer one ships. It appears over the running app rather than replacing
+  it, so nothing is blocked and Android back still works.
+- `[admin]` **Turning on a forced update with no store link is now impossible.**
+  That combination rendered a full-screen block with no button, no back and no
+  navigator — every install bricked, with no way to even explain why. Both store
+  URLs are empty in production today, so it was one checkbox away. The admin
+  action now refuses it with a readable message, and a database constraint makes
+  the state unrepresentable however it is written.
+- `[admin]` A minimum version above the latest version is refused too, compared
+  numerically — `"1.10.0" < "1.9.0"` is *true* as a string, and that bug would
+  have first bitten at exactly version 1.10.
+- `[store]` The Update button on the mandatory update screen no longer fails
+  silently when the device cannot open the store — it says so. It was the only
+  control on a screen with no other way out.
+- `[store]` The force-update and maintenance screens no longer sit under the
+  notch or the home indicator.
 
 ### Added
 - `[store]` Tap a child's 8-digit login ID to copy it. Copies the raw digits,

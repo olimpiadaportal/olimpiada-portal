@@ -9,6 +9,10 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
+import {
+  SEMVER_RE,
+  versionGateProblem,
+} from "@/lib/admin/mobile-version";
 
 export type MobileVersionRow = {
   id: string;
@@ -28,7 +32,8 @@ export type MobileVersionState =
   | null;
 
 // Server-side caps (mirror the DB checks; client attributes are UX only).
-const SEMVER_RE = /^\d+\.\d+\.\d+$/;
+// SEMVER_RE and the cross-field safety rails live in lib/admin/mobile-version
+// so the form evaluates the exact same rules — see the note in that file.
 const VERSION_MAX = 20;
 const STORE_URL_MAX = 300;
 const MESSAGE_MAX = 500;
@@ -93,6 +98,19 @@ export async function updateMobileVersion(
   if ([messageAz, messageEn, messageRu].some((m) => m.length > MESSAGE_MAX)) {
     return { error: "mobileapp.err.length", platform };
   }
+
+  // ---- Safety rails: refuse the two states a device cannot recover from ----
+  // The form checks these too, but this is the authoritative half — a request
+  // can be replayed without the form, and the DB CHECK added by migration
+  // 2026_08_29_161 backs the first rule up with a constraint. Refuse BEFORE any
+  // write so a bad save leaves the live gate untouched.
+  const problem = versionGateProblem({
+    minVersion,
+    latestVersion,
+    forceUpdate,
+    storeUrl,
+  });
+  if (problem) return { error: problem, platform };
 
   const payload = {
     min_version: minVersion,

@@ -43,6 +43,18 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.update.body":
       "Tətbiqin bu versiyası artıq dəstəklənmir. Davam etmək üçün mağazadan yeniləyin.",
     "mob.update.cta": "İndi yenilə",
+    "mob.update.openFailed":
+      "Mağazanı açmaq mümkün olmadı. Zəhmət olmasa mağazanı özünüz açıb tətbiqi yeniləyin.",
+    // ---- OPTIONAL (skippable) update -----------------------------------
+    // Separate keys on purpose: mob.update.* is worded as MANDATORY ("artıq
+    // dəstəklənmir"), and that sentence above a "Sonra" button would read as a
+    // threat the app then lets you ignore. No price, no purchase verb, no URL —
+    // an update prompt is not a commerce surface.
+    "mob.updateAvailable.title": "Yeni versiya mövcuddur",
+    "mob.updateAvailable.body":
+      "Tətbiqin daha yeni versiyası hazırdır. Yeniləmə son düzəlişləri və təkmilləşdirmələri gətirir — istəsəniz sonra da yeniləyə bilərsiniz.",
+    "mob.updateAvailable.cta": "Yenilə",
+    "mob.updateAvailable.later": "Sonra",
     "mob.boot.error": "Yükləmək mümkün olmadı. İnternet bağlantını yoxla.",
     "mob.err.serverUnavailable": "Server hazırda cavab vermir. Bir azdan yenidən cəhd et.",
     "mob.err.network": "Serverə qoşulmaq alınmadı. İnternet bağlantını yoxla və yenidən cəhd et.",
@@ -184,6 +196,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.update.body":
       "This version of the app is no longer supported. Update from the store to continue.",
     "mob.update.cta": "Update now",
+    "mob.update.openFailed":
+      "The store could not be opened. Please open your app store and update the app from there.",
+    "mob.updateAvailable.title": "A new version is available",
+    "mob.updateAvailable.body":
+      "A newer version of the app is ready. Updating brings the latest fixes and improvements — you can also do it later.",
+    "mob.updateAvailable.cta": "Update",
+    "mob.updateAvailable.later": "Later",
     "mob.boot.error": "Could not load. Check your internet connection.",
     "mob.err.serverUnavailable": "The server isn't responding right now. Please try again shortly.",
     "mob.err.network": "Couldn't reach the server. Check your connection and try again.",
@@ -317,6 +336,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.update.body":
       "Эта версия приложения больше не поддерживается. Обновите её в магазине, чтобы продолжить.",
     "mob.update.cta": "Обновить",
+    "mob.update.openFailed":
+      "Не удалось открыть магазин. Откройте магазин приложений и обновите приложение вручную.",
+    "mob.updateAvailable.title": "Доступна новая версия",
+    "mob.updateAvailable.body":
+      "Вышла более новая версия приложения. Обновление принесёт последние исправления и улучшения — это можно сделать и позже.",
+    "mob.updateAvailable.cta": "Обновить",
+    "mob.updateAvailable.later": "Позже",
     "mob.boot.error": "Не удалось загрузить. Проверьте подключение к интернету.",
     "mob.err.serverUnavailable": "Сервер сейчас не отвечает. Повторите попытку чуть позже.",
     "mob.err.network": "Не удалось связаться с сервером. Проверьте подключение и попробуйте снова.",

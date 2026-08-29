@@ -316,7 +316,17 @@ create table if not exists public.mobile_app_versions (
   message_ru     text not null default '',
   updated_by     uuid references public.profiles (id) on delete set null,
   created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now()
+  updated_at     timestamptz not null default now(),
+  -- A FORCED update must have somewhere to send the user (migration 161).
+  -- The force screen renders BEFORE the navigator and has no back and no
+  -- dismiss — it is a deliberate dead end, which is the point. But with an
+  -- empty store_url it is a dead end with no BUTTON either: every installed
+  -- copy of the app is bricked, and the user cannot even reach the screen that
+  -- would tell them why. The admin action refuses this combination with a
+  -- readable message; this constraint is what makes the state unrepresentable
+  -- however it is written, including by hand in the SQL editor.
+  constraint mobile_app_versions_force_needs_store_url
+    check (force_update = false or store_url <> '')
 );
 
 -- -----------------------------------------------------------------------------

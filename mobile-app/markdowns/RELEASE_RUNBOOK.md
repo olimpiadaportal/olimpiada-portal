@@ -121,13 +121,29 @@ latest / force / store_url / trilingual message), served to devices via
 `get_mobile_config()`; the app blocks with `ForceUpdateScreen` when
 `force = true AND app version < min`.
 
-- **Soft nudge:** raise `latest_version` only — the app can show update-available UI
-  without blocking.
+- **Soft nudge:** raise `latest_version` **and make sure `store_url` is set** for
+  that platform. The app then shows a dismissible update card (Update / Later)
+  over the running app — nothing is blocked, and a skipped version stays skipped
+  until a newer one ships. The store link is not optional here: the card's only
+  action opens the store, and a suggestion whose button does nothing is worse
+  than no suggestion. The client refuses to show the card without an https
+  `store_url`, so a half-filled row is silently inert rather than broken.
 - **Force upgrade (e.g. security fix):** set `min_version` to the first safe version,
   `force_update = true`, fill `store_url` + the trilingual message. Devices below min
-  are blocked at next config fetch (≤30s foregrounded).
+  are blocked at next config fetch (≤30s foregrounded). Since migration 161 the
+  database REFUSES `force_update = true` with an empty `store_url` — that
+  combination used to render a full-screen block with no button, no back and no
+  navigator, i.e. every install bricked with no way to explain why.
 - **Roll back a bad gate:** set `force_update = false` (or lower `min_version`).
-- Never force-gate above the version currently live in the stores.
+  This is the ONLY recovery: an OTA cannot clear a force gate, because
+  `runtimeVersion: appVersion` means an update published for a newer version
+  never reaches the older binary that is stuck.
+- Never force-gate above the version currently live in the stores. Nothing can
+  check this for you — the panel cannot see the store — and getting it wrong
+  strands every user on a screen whose button leads to a version that does not
+  exist yet.
+- Remember an OTA update does **not** change the app's version, so a
+  `min_version` raise only ever makes sense against store builds.
 
 ## 6. Incident playbook
 

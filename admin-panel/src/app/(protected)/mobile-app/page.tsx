@@ -22,10 +22,12 @@ export default async function MobileAppPage() {
   const labels: MobileVersionLabels = {
     min: t("mobileapp.min"),
     minHelp: t("mobileapp.minHelp"),
+    minGuidance: t("mobileapp.minGuidance"),
     latest: t("mobileapp.latest"),
     latestHelp: t("mobileapp.latestHelp"),
     force: t("mobileapp.force"),
     forceHelp: t("mobileapp.forceHelp"),
+    forceWarn: t("mobileapp.forceWarn"),
     storeUrl: t("mobileapp.storeUrl"),
     storeUrlHelp: t("mobileapp.storeUrlHelp"),
     message: t("mobileapp.message"),
@@ -40,6 +42,8 @@ export default async function MobileAppPage() {
     errSemver: t("mobileapp.err.semver"),
     errUrl: t("mobileapp.err.url"),
     errLength: t("mobileapp.err.length"),
+    errForceNoUrl: t("mobileapp.err.forceNoUrl"),
+    errMinAboveLatest: t("mobileapp.err.minAboveLatest"),
     errGeneric: t("mobileapp.err.server"),
   };
 

@@ -5,6 +5,7 @@ import {
   updateMobileVersion,
   type MobileVersionState,
 } from "@/lib/admin/mobileApp";
+import { versionGateProblem } from "@/lib/admin/mobile-version";
 import { ActionButton } from "@/components/ActionButton";
 
 // Error codes returned by updateMobileVersion mapped to localized strings
@@ -12,10 +13,12 @@ import { ActionButton } from "@/components/ActionButton";
 export type MobileVersionLabels = {
   min: string;
   minHelp: string;
+  minGuidance: string;
   latest: string;
   latestHelp: string;
   force: string;
   forceHelp: string;
+  forceWarn: string;
   storeUrl: string;
   storeUrlHelp: string;
   message: string;
@@ -30,17 +33,21 @@ export type MobileVersionLabels = {
   errSemver: string;
   errUrl: string;
   errLength: string;
+  errForceNoUrl: string;
+  errMinAboveLatest: string;
   errGeneric: string;
 };
 
 function mapError(
-  code: string | undefined,
+  code: string | undefined | null,
   l: MobileVersionLabels,
 ): string | null {
   if (!code) return null;
   if (code === "mobileapp.err.semver") return l.errSemver;
   if (code === "mobileapp.err.url") return l.errUrl;
   if (code === "mobileapp.err.length") return l.errLength;
+  if (code === "mobileapp.err.forceNoUrl") return l.errForceNoUrl;
+  if (code === "mobileapp.err.minAboveLatest") return l.errMinAboveLatest;
   return l.errGeneric;
 }
 
@@ -78,7 +85,24 @@ export function MobileVersionForm({
     }
   }, [state]);
 
-  const error = mapError(state?.error, labels);
+  // The three fields the safety rails read are tracked so the admin sees the
+  // refusal WHILE editing instead of after a round-trip. The server re-runs the
+  // same versionGateProblem() and stays the authority — this is feedback, not
+  // enforcement, and disabling the button must never be mistaken for the guard.
+  const [minVersion, setMinVersion] = useState(initial.min_version);
+  const [latestVersion, setLatestVersion] = useState(initial.latest_version);
+  const [storeUrl, setStoreUrl] = useState(initial.store_url);
+  const [forceUpdate, setForceUpdate] = useState(initial.force_update);
+
+  const problem = versionGateProblem({
+    minVersion,
+    latestVersion,
+    forceUpdate,
+    storeUrl,
+  });
+
+  // A live rule violation outranks a stale server error from the last attempt.
+  const error = mapError(problem ?? state?.error, labels);
 
   const messageLangs = [
     { name: "message_az", label: labels.langAz, value: initial.message_az },
@@ -96,7 +120,8 @@ export function MobileVersionForm({
           <input
             type="text"
             name="min_version"
-            defaultValue={initial.min_version}
+            value={minVersion}
+            onChange={(e) => setMinVersion(e.target.value)}
             required
             maxLength={20}
             pattern="\d+\.\d+\.\d+"
@@ -110,7 +135,8 @@ export function MobileVersionForm({
           <input
             type="text"
             name="latest_version"
-            defaultValue={initial.latest_version}
+            value={latestVersion}
+            onChange={(e) => setLatestVersion(e.target.value)}
             required
             maxLength={20}
             pattern="\d+\.\d+\.\d+"
@@ -120,13 +146,22 @@ export function MobileVersionForm({
         </label>
       </div>
 
+      {/* The panel CANNOT see what is published in the store, so this is
+          guidance and not a check — inventing one would only teach the admin to
+          trust a number nobody verified. It sits under the version fields
+          because that is where the decision is made. */}
+      <div className="confirm-row" role="note">
+        <p className="confirm-text">{labels.minGuidance}</p>
+      </div>
+
       <div className="form-grid">
         <label className="field">
           <span className="field-label">{labels.storeUrl}</span>
           <input
             type="text"
             name="store_url"
-            defaultValue={initial.store_url}
+            value={storeUrl}
+            onChange={(e) => setStoreUrl(e.target.value)}
             maxLength={300}
             inputMode="url"
             placeholder="https://…"
@@ -139,11 +174,20 @@ export function MobileVersionForm({
           <input
             type="checkbox"
             name="force_update"
-            defaultChecked={initial.force_update}
+            checked={forceUpdate}
+            onChange={(e) => setForceUpdate(e.target.checked)}
           />
           <span className="sfield-help">{labels.forceHelp}</span>
         </label>
       </div>
+
+      {/* Blast radius, shown the moment the box is ticked — same amber notice
+          the maintenance-mode toggle uses before it locks the platform. */}
+      {forceUpdate && (
+        <div className="confirm-row" role="note">
+          <p className="confirm-text">{labels.forceWarn}</p>
+        </div>
+      )}
 
       <div className="field">
         <span className="field-label">{labels.message}</span>
@@ -179,7 +223,12 @@ export function MobileVersionForm({
         </p>
       )}
 
-      <ActionButton className="btn" pending={pending} pendingLabel={labels.saving}>
+      <ActionButton
+        className="btn"
+        pending={pending}
+        pendingLabel={labels.saving}
+        disabled={problem !== null}
+      >
         {labels.save}
       </ActionButton>
     </form>

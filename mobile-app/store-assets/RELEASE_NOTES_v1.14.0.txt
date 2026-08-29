@@ -1,22 +1,22 @@
 ===========================================================
   OlympIQ — Google Play / App Store
-  Version: 1.13.0
+  Version: 1.14.0
 ===========================================================
 
   BU BURAXILIŞ YENİ BUILD TƏLƏB EDİR, OTA YENİLƏMƏ YOX.
-  runtimeVersion = appVersion, ona görə 1.13.0 üçün
+  runtimeVersion = appVersion, ona görə 1.14.0 üçün
   yayımlanan OTA yeniləmə 1.12.3 quruluşuna HEÇ VAXT
   çatmır. Üstəlik expo-clipboard native moduldur.
   Yəni: yeni build + yeni mağaza buraxılışı.
 
-  Mənbə: CHANGELOG.md → 1.13.0 bölməsinin [store] sətirləri.
+  Mənbə: CHANGELOG.md → 1.14.0 bölməsinin [store] sətirləri.
 
 
 -----------------------------------------------------------
 RELEASE NAME  (yalnız Play Console-da görünür, istifadəçiyə YOX)
 -----------------------------------------------------------
 
-1.13.0 — Rayonlar, məktəblər və düzəlişlər
+1.14.0 — Rayonlar, məktəblər və düzəlişlər
 
   Limit: 50 simvol.
 
@@ -103,5 +103,9 @@ görə mağaza qeydlərinə salınmayıb (tam siyahı: CHANGELOG.md):
   (əvvəllər yalnız aşağı çəkməklə yenilənirdi).
 • Bakı məktəbləri rəsmi adları ilə göstərilir və hər biri
   öz rayonuna bağlandı.
+• Yeni versiya çıxanda tətbiq "Yenilə / Sonra" kartı göstərə
+  bilir. Bu buraxılışda istifadəçiyə görünmür — admin paneldə
+  konfiqurasiya edilənə qədər passivdir, ona görə mağaza
+  qeydlərinə salınmayıb.
 
 ===========================================================

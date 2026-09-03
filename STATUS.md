@@ -95,6 +95,33 @@ run, and Apple answered the second reservation with 409
 wanted. Now treated as success, matching the other three scripts, so a re-run is
 safe rather than alarming.
 
+### The screenshot that uploaded successfully and was rejected
+
+All 21 uploads returned `UPLOAD_COMPLETE` and `failed: 0`. All 21 were rejected.
+
+`UPLOAD_COMPLETE` means **"Apple received the bytes"**, not "Apple accepted the
+image". Dimensions are validated afterwards, asynchronously, and nothing in the
+upload response hints at it. The image was an Android phone screenshot —
+**769×1600** — and Apple answered `IMAGE_INCORRECT_DIMENSIONS` on every product.
+Nothing surfaced it until `--diagnose` read `assetDeliveryState.errors` back.
+
+Fourth instance this round of the same underlying mistake: **a result assumed
+rather than checked.** Here the check existed but ran after the fact.
+
+Two fixes, both in `finish-iap-metadata.mjs`:
+* **A local dimension guard** against Apple's accepted sizes, run BEFORE the
+  first byte is sent — one refusal on the operator's machine instead of 21
+  silent rejections at Apple's. It reads width/height from the PNG/JPEG header
+  directly, so it needs no image library.
+* **`--replace`**, which DELETEs the existing asset before reserving a new one.
+  Apple allows one review screenshot per product, so a plain re-upload 409s —
+  and the idempotency fix added an hour earlier would have reported that as
+  "already done", which is exactly wrong when what exists is broken. Idempotency
+  and replacement are different intents and now have different flags.
+
+Re-uploaded at **1242×2208**. All 21 verified `READY_TO_SUBMIT` with price,
+2 localizations, availability and screenshot all present.
+
 ### Still open
 
 `iap_products.active` is **0 of 23** — deliberately. Products must be submitted

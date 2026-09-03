@@ -50,6 +50,15 @@ never reaches a 1.12.3 binary.
 - `[store]` iOS: parents can now buy subject access for a child inside the app.
   The price shown is the App Store's own; nothing is priced by us on screen.
 - `[store]` Android is untouched: no price, no purchase, no link out.
+- `[internal]` `finish-iap-metadata.mjs` checks the screenshot's dimensions
+  locally before uploading. Apple answers `UPLOAD_COMPLETE` for an image it will
+  later reject, so 21 uploads reported success and all 21 failed processing.
+- `[internal]` `--replace` deletes a product's existing review screenshot before
+  uploading a new one. Apple allows only one, so replacing a broken asset is a
+  different intent from skipping an existing good one.
+- `[internal]` `--diagnose` prints what Apple actually holds per product — price,
+  localizations, territories, screenshot — because `MISSING_METADATA` never says
+  which field is missing and the UI shows the same badge either way.
 
 ## 1.14.0 — superseded, never built
 

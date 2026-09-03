@@ -226,7 +226,29 @@ async function setAvailability(request, iapId, territoryIds) {
 // -----------------------------------------------------------------------------
 // Screenshot: reserve -> upload -> commit -> verify.
 // -----------------------------------------------------------------------------
-async function uploadScreenshot(request, iapId, file) {
+/** The product's current review screenshot, or null. */
+async function findScreenshot(request, iapId) {
+  try {
+    const body = await request("GET", `/v2/inAppPurchases/${iapId}?include=appStoreReviewScreenshot`);
+    const rel = body.data && body.data.relationships && body.data.relationships.appStoreReviewScreenshot;
+    return rel && rel.data ? rel.data.id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function uploadScreenshot(request, iapId, file, { replace = false } = {}) {
+  // 0. REPLACE. Apple allows ONE review screenshot per product, so a second
+  //    reservation 409s. When the existing one is BROKEN — as all 21 were after
+  //    the wrong-dimension upload — "already exists" is not success and the old
+  //    asset has to go first.
+  if (replace) {
+    const existing = await findScreenshot(request, iapId);
+    if (existing) {
+      await request("DELETE", `/v1/inAppPurchaseAppStoreReviewScreenshots/${existing}`);
+    }
+  }
+
   // 1. RESERVE
   let reserved;
   try {
@@ -292,6 +314,88 @@ async function uploadScreenshot(request, iapId, file) {
   return { ok: true, state: state.state || "(no state)" };
 }
 
+/**
+ * ASK APPLE WHAT IT ACTUALLY HAS, rather than inferring from the state string.
+ *
+ * MISSING_METADATA tells you something is absent but never says WHAT, and the
+ * App Store Connect UI collapses both MISSING_METADATA and READY_TO_SUBMIT into
+ * the same yellow "Prepare for Submission" badge — so neither the API state nor
+ * the screen can distinguish "still incomplete" from "complete but not yet
+ * added to a submission". This reads the four relationships that matter and
+ * prints presence per product, so the next step is chosen from fact.
+ */
+async function diagnose(request, live, targets) {
+  const assetErrors = new Set();
+  log("");
+  log("product".padEnd(42) + "price  loc  terr  shot   state");
+  rule();
+  for (const productId of targets) {
+    const iap = live.get(productId);
+    if (!iap) {
+      log(`${productId.padEnd(42)}  NOT AT APPLE`);
+      continue;
+    }
+    let price = "?";
+    let loc = "?";
+    let terr = "?";
+    let shot = "?";
+    try {
+      const body = await request(
+        "GET",
+        `/v2/inAppPurchases/${iap.id}` +
+          `?include=iapPriceSchedule,inAppPurchaseLocalizations,inAppPurchaseAvailability,appStoreReviewScreenshot`,
+      );
+      const rel = (body.data && body.data.relationships) || {};
+      const has = (name) => {
+        const d = rel[name] && rel[name].data;
+        return Array.isArray(d) ? d.length : d ? 1 : 0;
+      };
+      price = has("iapPriceSchedule") ? "yes" : "NO";
+      loc = String(has("inAppPurchaseLocalizations"));
+      terr = has("inAppPurchaseAvailability") ? "yes" : "NO";
+      const shotCount = has("appStoreReviewScreenshot");
+      shot = shotCount ? "yes" : "NO";
+      // A screenshot can exist but have failed processing — that would look
+      // present here and still block Apple, so report its delivery state.
+      if (shotCount) {
+        const inc = (body.included || []).find((i) => i.type === "inAppPurchaseAppStoreReviewScreenshots");
+        const st = inc && inc.attributes && inc.attributes.assetDeliveryState;
+        if (st && st.state && st.state !== "COMPLETE") shot = st.state;
+        if (st && st.errors && st.errors.length) {
+          shot = "ERRORS";
+          // Print Apple's own words. "ERRORS" alone sends the next person
+          // guessing at dimensions; the message names the actual rule.
+          for (const e of st.errors) {
+            assetErrors.add(`${e.code || "(no code)"}: ${e.description || JSON.stringify(e)}`);
+          }
+        }
+      }
+    } catch (err) {
+      price = loc = terr = shot = "ERR";
+      process.stderr.write(`${err instanceof ApiError ? formatApiError(err) : err.message}\n`);
+    }
+    log(
+      productId.padEnd(42) +
+        price.padEnd(7) +
+        loc.padEnd(5) +
+        terr.padEnd(6) +
+        shot.padEnd(7) +
+        (iap.state || ""),
+    );
+    await sleep(150);
+  }
+  log("");
+  log("price=iapPriceSchedule  loc=localization count  terr=availability  shot=review screenshot");
+  if (assetErrors.size) {
+    log("");
+    rule("=");
+    log("APPLE REJECTED THE SCREENSHOT ASSET:");
+    rule("=");
+    for (const e of assetErrors) log(`  ${e}`);
+  }
+  return 0;
+}
+
 // -----------------------------------------------------------------------------
 function parseArgs(argv) {
   const o = {
@@ -300,11 +404,15 @@ function parseArgs(argv) {
     screenshot: null,
     availabilityOnly: false,
     screenshotOnly: false,
+    diagnose: false,
+    replace: false,
     verbose: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--apply") o.apply = true;
+    else if (a === "--diagnose") o.diagnose = true;
+    else if (a === "--replace") o.replace = true;
     else if (a === "--availability-only") o.availabilityOnly = true;
     else if (a === "--screenshot-only") o.screenshotOnly = true;
     else if (a === "--verbose") o.verbose = true;
@@ -321,6 +429,41 @@ function parseArgs(argv) {
   return o;
 }
 
+/**
+ * Apple's accepted review-screenshot dimensions.
+ *
+ * WHY THIS LIST EXISTS. The first run uploaded an Android phone screenshot to
+ * all 21 products. Every upload returned UPLOAD_COMPLETE — which means "bytes
+ * received", NOT "asset accepted" — and Apple then failed each one during
+ * processing with IMAGE_INCORRECT_DIMENSIONS. The failure was invisible until
+ * the products were read back. Checking locally turns 21 silent rejections into
+ * one refusal before anything is sent.
+ */
+const APPLE_SCREENSHOT_SIZES = [
+  [640, 920], [640, 960], [640, 1096], [750, 1334], [1242, 2208], [1125, 2436],
+  [1242, 2688], [828, 1792], [1170, 2532], [1284, 2778], [1179, 2556], [1290, 2796],
+  [1024, 768], [768, 1024], [2048, 1536], [1536, 2048], [2732, 2048], [2048, 2732],
+];
+
+/** Width and height from the file header — no image library needed. */
+function readImageSize(bytes) {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) {
+    return { w: bytes.readUInt32BE(16), h: bytes.readUInt32BE(20) };
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let i = 2;
+    while (i < bytes.length - 9) {
+      if (bytes[i] !== 0xff) { i += 1; continue; }
+      const marker = bytes[i + 1];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { h: bytes.readUInt16BE(i + 5), w: bytes.readUInt16BE(i + 7) };
+      }
+      i += 2 + bytes.readUInt16BE(i + 2);
+    }
+  }
+  return null;
+}
+
 function loadScreenshot(path) {
   if (!existsSync(path)) fail(`No file at ${path}`);
   const stat = statSync(path);
@@ -330,6 +473,25 @@ function loadScreenshot(path) {
   if (!IMAGE_MIME[ext]) fail(`Screenshot must be .png, .jpg or .jpeg — got ".${ext}".`);
   const bytes = readFileSync(path);
   if (bytes.length === 0) fail("The screenshot file is empty.");
+
+  const size = readImageSize(bytes);
+  if (!size) fail("Could not read the image dimensions — is this really a PNG or JPEG?");
+  const accepted = APPLE_SCREENSHOT_SIZES.some(
+    ([w, h]) => (size.w === w && size.h === h) || (size.w === h && size.h === w),
+  );
+  if (!accepted) {
+    fail(
+      `Apple will reject ${size.w}x${size.h} with IMAGE_INCORRECT_DIMENSIONS.\n\n` +
+        `It must be an iOS device screenshot size. An Android phone shot\n` +
+        `(1080x2400 and similar) is on none of Apple's lists. Resize to one of:\n` +
+        APPLE_SCREENSHOT_SIZES.slice(0, 6)
+          .map(([w, h]) => `  ${w} x ${h}`)
+          .join("\n") +
+        `\n\n1242 x 2208 is the safest.`,
+    );
+  }
+  log(`  image ${size.w}x${size.h} — an accepted size`);
+
   return {
     name,
     bytes,
@@ -341,7 +503,7 @@ function loadScreenshot(path) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const doAvailability = !opts.screenshotOnly;
-  const doScreenshot = !opts.availabilityOnly;
+  const doScreenshot = !opts.availabilityOnly && !opts.diagnose;
 
   if (doScreenshot && !opts.screenshot) {
     fail(
@@ -368,7 +530,7 @@ async function main() {
   log(`App Store Connect has ${live.size} in-app purchase(s).`);
 
   let territories = [];
-  if (doAvailability) {
+  if (doAvailability && !opts.diagnose) {
     territories = await fetchAllTerritories(request);
     log(`Apple lists ${territories.length} territories; all will be enabled.`);
   }
@@ -378,6 +540,8 @@ async function main() {
     targets = targets.filter((p) => p === opts.only);
     if (!targets.length) fail(`No planned product with id "${opts.only}".`);
   }
+
+  if (opts.diagnose) return diagnose(request, live, targets);
 
   const summary = { availability: [], screenshot: [], failed: [] };
   let index = 0;
@@ -418,7 +582,7 @@ async function main() {
 
     if (doScreenshot) {
       try {
-        const r = await uploadScreenshot(request, iap.id, file);
+        const r = await uploadScreenshot(request, iap.id, file, { replace: opts.replace });
         if (r.ok) {
           log(`${label} — screenshot uploaded (${r.state}) ✓`);
           summary.screenshot.push(productId);

@@ -141,6 +141,48 @@ Full sourced analysis: **`docs/STORE_PAYMENTS_COMPLIANCE.md`** (authoritative; s
 - **ABB/web rail:** full HTTP redirect to the hosted payment page (never an embedded iframe — PCI SAQ A); never receive/log/store PAN or CVV; the callback is untrusted client data (verify `P_SIGN`, then re-query status server-side before granting entitlement); idempotency key per charge; flag the first charge as the initial transaction of a recurring series (CBAR enhanced-authentication rules, NOT PSD2) or renewals silently die; e-kassa fiscal receipt per charge including auto-renewals; bill through an Azerbaijani-**resident** entity.
 - **Do not opt into Apple's Kids Category or Google's Designed for Families** — the Apple 1.3 commitment is sticky and would permanently foreclose adding IAP without a parental gate. Comply with 5.1.4(b)/Play Families policy regardless.
 
+## Who The Seller Is (established 2026-09-02 from the investor's own documents)
+
+The platform is operated by an **INDIVIDUAL**, not a company. There is no MMC, no
+ASC and no registered legal entity anywhere in this project. The operator is
+**Kamil Piriyev**, a **fərdi sahibkar / mikro sahibkar** (individual
+micro-entrepreneur), holding **VÖEN 6300091352** — which the app and the privacy
+policy already publish in all three languages — and registered in **Lerik rayonu,
+Peştətük**.
+
+Do not re-derive this and do not assume a company exists. Four consequences:
+
+- **The Apple Developer enrolment is an INDIVIDUAL enrolment.** No D-U-N-S number
+  is needed, and none should be sought.
+- **The US tax form is the individual one, not the entity one.** A sole
+  proprietor is not an entity for US withholding purposes.
+- **The App Store seller name WILL BE the person's legal name, and there is no
+  way around it.** Apple: *"If you're enrolled as an individual, this option
+  isn't available to you and the developer name is the same as your legal name."*
+  The registered-trade-name / DBA developer name is an **Organization-only**
+  feature, and Apple does not accept a DBA as an enrolling entity either. So the
+  App Store will show the owner's personal name as the seller, not "OlympIQ".
+  Changing that later means incorporating a real legal entity and moving the app
+  to an Organization account. Do not promise the brand name as the seller, and
+  do not file trade-name paperwork expecting Apple to accept it.
+- **The bank account on file is AZN-only, at ABB (BIC `IBAZAZ2X`), and almost
+  certainly cannot receive App Store proceeds.** AZN appears in no Apple currency
+  material and has no offshore clearing. **But do not state that Apple "pays
+  Azerbaijan in EUR" — that over-reads the source.** The only Apple page pairing
+  Azerbaijan with a currency is the *minimum payment threshold* table, which is
+  an exceptions list for thresholds, not a schedule of supported payout
+  currencies. The supported currencies are whatever the **Bank Account Currency
+  dropdown** actually offers once Bank Territory is set to Azerbaijan. **Read the
+  live dropdown before telling anyone which account to open** — see `STATUS.md`.
+
+**NEVER commit the identity or banking documents.** Passport number, personal
+number, date of birth, account number and IBAN are exactly what the Secret
+Handling rule below exists for, and `docs/investor/` is a TRACKED directory —
+`.gitignore` rules were added on 2026-09-02 to stop `git add -A` publishing them.
+Git history cannot be un-published. Those values belong in App Store Connect and
+at the bank, never in this repository, never in `STATUS.md`, and never in a
+commit message.
+
 ## Secret Handling (Non-Negotiable)
 
 - Never print, echo, save, log, commit, or otherwise expose `OLIMPIADA_PROD_DB_URL`, `OLIMPIADA_STAGING_DB_URL`, database passwords, the Supabase service role key, API keys, or any other secret.

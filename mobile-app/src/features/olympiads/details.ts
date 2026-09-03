@@ -38,6 +38,66 @@ export function sharedGradeValue(
   return values.size === 1 ? (values.values().next().value ?? null) : null;
 }
 
+/** A status pill on an olympiad card. `labelKey` is an i18n key, never text —
+ *  the caller translates, so this module stays pure and testable. */
+export type OlympiadStatusPill = {
+  key: "owned" | "notOnSale" | "held";
+  labelKey: string;
+  tone: "ok" | "muted";
+};
+
+export type OlympiadCardState = {
+  owned: boolean;
+  onSale: boolean;
+  past: boolean;
+  /** Pills in render order; empty for an ordinary live listing. */
+  pills: OlympiadStatusPill[];
+};
+
+/**
+ * Migration 163 — what a catalog card IS, now that the catalog returns more
+ * than on-sale listings.
+ *
+ * get_my_olympiad_catalog() used to filter on the sales window alone, so an
+ * olympiad silently disappeared from the parent tab the moment it was archived
+ * or its window closed — including one the family had PAID FOR, while the child
+ * carried on solving it (lifetime access was never revoked). The RPC now has an
+ * ownership branch, which means a returned row is either a live listing or
+ * something this family owns, and the card has to say which.
+ *
+ * THE ONE RULE THAT MATTERS: an OWNED package reads as OWNED, never as
+ * unavailable. "Satış bitib" on a package a parent bought is technically true
+ * and completely wrong — it describes the shop, and they are not shopping.
+ * So the off-sale pill is shown only when the family does NOT own the row.
+ *
+ * There is deliberately no "buyable" state and no CTA of any kind: this tab is
+ * browse-only (docs/STORE_PAYMENTS_COMPLIANCE.md, owner 2026-08-18) and the app
+ * was rejected under App Store Guideline 3.1.1 on 2026-08-31. Adding a purchase
+ * affordance back here is the violation, not the fix.
+ */
+export function resolveOlympiadCardState(
+  pkg: Pick<OlympiadPackageRow, "is_owned" | "is_on_sale" | "event_starts_at">,
+  /** Ownership from the parent tab's own purchases query, scoped to the
+   *  SELECTED child. OR-ed with the server flag so the card is right on a
+   *  database that predates 163 and on one that has it. */
+  ownedByPurchase = false,
+  nowMs: number = Date.now(),
+): OlympiadCardState {
+  const owned = pkg.is_owned === true || ownedByPurchase;
+  const onSale = pkg.is_on_sale !== false;
+  const ts = pkg.event_starts_at ? Date.parse(pkg.event_starts_at) : NaN;
+  const past = Number.isFinite(ts) && ts <= nowMs;
+
+  const pills: OlympiadStatusPill[] = [];
+  if (owned) pills.push({ key: "owned", labelKey: "poly.owned", tone: "ok" });
+  else if (!onSale) pills.push({ key: "notOnSale", labelKey: "poly.notOnSale", tone: "muted" });
+  // The event date is a separate fact from the sale state — an owned package
+  // whose olympiad has already been held reads "Alınıb · Keçirilib".
+  if (past) pills.push({ key: "held", labelKey: "oly4.status.held", tone: "muted" });
+
+  return { owned, onSale, past, pills };
+}
+
 export function buildOlympiadDetailRows(
   pkg: OlympiadPackageRow,
   count: number,

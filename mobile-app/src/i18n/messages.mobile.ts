@@ -28,6 +28,14 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a3": "Hər fənn üzrə giriş valideyn hesabı vasitəsilə açılır. Şagird heç vaxt özü giriş aça bilmir.",
     "faq.q6": "Fənn girişi nə qədər davam edir?",
     "faq.a6": "Hər fənnin öz dövrü var və dövr bitdikdə giriş bağlanır. Bitmə tarixindən əvvəl valideynə bildiriş göndərilir.",
+    // The cancel sheet was the last purchasing copy a parent could reach on
+    // Android: a cancellation reason naming a PRICE the binary otherwise never
+    // shows, and a what-you-lose line naming a DISCOUNT. Both were tracked as
+    // known gaps in __tests__/store-copy.test.ts rather than fixed. The reasons
+    // stay meaningful — a parent cancelling over cost still recognises "it isn't
+    // right for us" — they just stop naming commerce. (2026-09-01)
+    "cancel.reason.price": "Bizim üçün uyğun deyil",
+    "cancel.benefit3": "Cari giriş müddətinizin qalan hissəsini",
     // Round 8 store-compliance pass: the 2026-08-18 rewrite covered q3/a3 and
     // q6/a6 and MISSED these two. faq.a7 shipped the sibling-discount schedule
     // ("10% / 15%") in the binary, and the FAQ row in the account sheet is not
@@ -85,9 +93,58 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.select.search": "Axtar…",
     "mob.select.noResults": "Uyğun nəticə tapılmadı",
     "mob.sub.accessUntil": "Giriş bu tarixə qədər",
+    // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
+    // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
+    // resolves none of these keys because nothing asks for them.
+    //
+    // NO AMOUNT APPEARS IN ANY OF THESE STRINGS AND NONE EVER MAY. The only
+    // price the app shows is StoreKit's own `displayPrice`, straight onto the
+    // button — already localised, already in the viewer's storefront currency,
+    // already right about tax. A price written here would be wrong for most of
+    // the world on the day it was typed.
+    //
+    // The vocabulary is deliberately plain (activate / access / restore) rather
+    // than the obvious selling verbs. Two reasons, and neither is squeamishness:
+    // the app's shared copy sweep bans that vocabulary catalogue-wide because it
+    // also reaches the CHILD side of this one binary, and "access" is simply
+    // what a non-renewing period actually is.
+    "mob.iap.title": "App Store ilə aktivləşdirmə",
+    "mob.iap.intro":
+      "Övladınız üçün fənn seçin. Aktivləşdirmə App Store vasitəsilə tamamlanır və giriş dərhal açılır.",
+    "mob.iap.noRenew":
+      "Avtomatik yenilənmə yoxdur: müddət bitəndə giriş dayanır və yenisini özünüz başladırsınız.",
+    "mob.iap.loading": "App Store yoxlanılır…",
+    "mob.iap.working": "Gözləyin…",
+    "mob.iap.done": "Hazırdır — giriş açıldı.",
+    // THE MOST IMPORTANT SENTENCE IN THIS FILE: shown when money has moved and
+    // the grant could not be confirmed. It must never read as a failure.
+    "mob.iap.pending":
+      "Ödəniş qeydə alındı. Giriş bir neçə dəqiqə ərzində avtomatik açılır. Açılmasa, aşağıdakı bərpa düyməsindən istifadə edin.",
+    "mob.iap.deferred":
+      "Sorğu təsdiq gözləyir. Ailə təşkilatçısı təsdiqləyən kimi giriş avtomatik açılacaq.",
+    "mob.iap.err.generic": "Əməliyyat tamamlanmadı. Bir azdan yenidən cəhd edin.",
+    "mob.iap.err.unavailable":
+      "App Store ilə əlaqə qurulmadı. İnternet bağlantını yoxlayıb yenidən cəhd edin.",
+    "mob.iap.err.notAllowed":
+      "Bu cihazda App Store əməliyyatları məhdudlaşdırılıb. Ayarlarda Ekran vaxtı məhdudiyyətlərini yoxlayın.",
+    "mob.iap.restore": "Girişi bərpa et",
+    "mob.iap.restoreHint": "Əvvəl ödədiyiniz giriş görünmürsə, bura toxunun.",
+    "mob.iap.restoreWorking": "Yoxlanılır…",
+    "mob.iap.restoreDone": "Giriş bərpa olundu.",
+    // Calm, not an error: this is the ordinary answer on a fresh device.
+    "mob.iap.restoreNothing":
+      "Bərpa ediləcək bir şey tapılmadı. Bu cihazda bu Apple ID ilə əvvəlki əməliyyat yoxdur.",
     "subjedit.noChargeNow": "İndi heç bir ödəniş yoxdur — fənn dərhal açılır.",
     "mob.subjedit.notInApp": "Bu dəyişiklik tətbiqdə tamamlanmır. Fənni silmək və ya ləğv etdiyin fənni geri qaytarmaq isə burada mümkündür.",
-    "mob.oly.notInApp": "Olimpiada paketləri bu tətbiqdə əldə edilmir. Övladınız üçün açılan paket avtomatik burada və onun \"Olimpiadalarım\" bölməsində görünür.",
+    // WAS: "Olimpiada paketləri bu tətbiqdə əldə edilmir..." — "are not obtained
+    // in this app" states that they are obtained SOMEWHERE ELSE, which is the
+    // exact 3.1.1 pattern the app was rejected for, on a second product line.
+    // It also bought us nothing: no olympiad package has a price (production,
+    // 2026-09-01: 8 packages, 2 active, ZERO priced above zero), and Apple
+    // requires no in-app purchase for content that costs nothing. So the
+    // sentence carried the whole compliance risk and none of the benefit.
+    // Now it says only what happens, in access language. (2026-09-01)
+    "mob.oly.notInApp": "Övladınız üçün açılan olimpiada paketləri avtomatik burada və onun \"Olimpiadalarım\" bölməsində görünür.",
     "mob.cancel.untilEnd": "Giriş ödənilmiş dövrün sonuna qədər davam edir.",
     "mob.oly.duration": "Müddət",
     "mob.unit.min": "dəq",
@@ -186,6 +243,9 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a3": "Access to each subject is opened through the parent account. A student can never open access themselves.",
     "faq.q6": "How long does access to a subject last?",
     "faq.a6": "Each subject has its own period, and access closes when that period ends. The parent is notified before the end date.",
+    // See the az block: the cancel sheet named a price and a discount on Android.
+    "cancel.reason.price": "It isn't right for us",
+    "cancel.benefit3": "The remaining time on your current access",
     "faq.q5": "Can a student open access themselves?",
     "faq.a5": "No. Subject access is opened only through the parent account.",
     "faq.q7": "How does it work for several children in one family?",
@@ -233,9 +293,52 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.select.search": "Search…",
     "mob.select.noResults": "No matching results",
     "mob.sub.accessUntil": "Access until",
+    // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
+    // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
+    // resolves none of these keys because nothing asks for them.
+    //
+    // NO AMOUNT APPEARS IN ANY OF THESE STRINGS AND NONE EVER MAY. The only
+    // price the app shows is StoreKit's own `displayPrice`, straight onto the
+    // button — already localised, already in the viewer's storefront currency,
+    // already right about tax. A price written here would be wrong for most of
+    // the world on the day it was typed.
+    //
+    // The vocabulary is deliberately plain (activate / access / restore) rather
+    // than the obvious selling verbs. Two reasons, and neither is squeamishness:
+    // the app's shared copy sweep bans that vocabulary catalogue-wide because it
+    // also reaches the CHILD side of this one binary, and "access" is simply
+    // what a non-renewing period actually is.
+    "mob.iap.title": "Activate with the App Store",
+    "mob.iap.intro":
+      "Choose a subject for your child. The App Store completes the activation and access opens straight away.",
+    "mob.iap.noRenew":
+      "Nothing renews automatically: access ends when the period is over, and you start a new one yourself.",
+    "mob.iap.loading": "Checking the App Store…",
+    "mob.iap.working": "Please wait…",
+    "mob.iap.done": "Done — access is open.",
+    // THE MOST IMPORTANT SENTENCE IN THIS FILE: shown when money has moved and
+    // the grant could not be confirmed. It must never read as a failure.
+    "mob.iap.pending":
+      "Your payment is recorded. Access opens automatically within a few minutes. If it does not, use the restore button below.",
+    "mob.iap.deferred":
+      "This request is waiting for approval. Access opens automatically as soon as the family organiser approves it.",
+    "mob.iap.err.generic": "That did not go through. Please try again in a moment.",
+    "mob.iap.err.unavailable":
+      "The App Store could not be reached. Check your connection and try again.",
+    "mob.iap.err.notAllowed":
+      "App Store transactions are restricted on this device. Check the Screen Time restrictions in Settings.",
+    "mob.iap.restore": "Restore access",
+    "mob.iap.restoreHint": "Tap here if access you already paid for is not showing.",
+    "mob.iap.restoreWorking": "Checking…",
+    "mob.iap.restoreDone": "Access has been restored.",
+    // Calm, not an error: this is the ordinary answer on a fresh device.
+    "mob.iap.restoreNothing":
+      "There is nothing to restore. This device has no earlier App Store transaction for this Apple ID.",
     "subjedit.noChargeNow": "Nothing is charged now — the subject is unlocked right away.",
     "mob.subjedit.notInApp": "This change can't be completed in the app. Removing a subject, or restoring one you cancelled, still works here.",
-    "mob.oly.notInApp": "Olympiad packages are not obtained in this app. A package unlocked for your child appears here, and in their \"My Olympiads\" section, automatically.",
+    // See the az block: "are not obtained in this app" implied an external
+    // channel for content that costs nothing anywhere.
+    "mob.oly.notInApp": "Olympiad packages opened for your child appear here automatically, and in their \"My Olympiads\" section.",
     "mob.cancel.untilEnd": "Access continues until the end of the paid period.",
     "mob.oly.duration": "Duration",
     "mob.unit.min": "min",
@@ -326,6 +429,9 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "faq.a3": "Доступ к каждому предмету открывается через родительский аккаунт. Ученик никогда не открывает доступ сам.",
     "faq.q6": "Сколько длится доступ к предмету?",
     "faq.a6": "У каждого предмета свой период, и по его окончании доступ закрывается. Родитель получает уведомление до даты окончания.",
+    // См. блок az: в форме отмены назывались цена и скидка на Android.
+    "cancel.reason.price": "Нам это не подходит",
+    "cancel.benefit3": "Оставшееся время текущего доступа",
     "faq.q5": "Может ли ученик сам открыть доступ?",
     "faq.a5": "Нет. Доступ к предметам открывается только через родительский аккаунт.",
     "faq.q7": "Как это работает для нескольких детей в одной семье?",
@@ -373,9 +479,52 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.select.search": "Поиск…",
     "mob.select.noResults": "Ничего не найдено",
     "mob.sub.accessUntil": "Доступ до",
+    // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
+    // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
+    // resolves none of these keys because nothing asks for them.
+    //
+    // NO AMOUNT APPEARS IN ANY OF THESE STRINGS AND NONE EVER MAY. The only
+    // price the app shows is StoreKit's own `displayPrice`, straight onto the
+    // button — already localised, already in the viewer's storefront currency,
+    // already right about tax. A price written here would be wrong for most of
+    // the world on the day it was typed.
+    //
+    // The vocabulary is deliberately plain (activate / access / restore) rather
+    // than the obvious selling verbs. Two reasons, and neither is squeamishness:
+    // the app's shared copy sweep bans that vocabulary catalogue-wide because it
+    // also reaches the CHILD side of this one binary, and "access" is simply
+    // what a non-renewing period actually is.
+    "mob.iap.title": "Активация через App Store",
+    "mob.iap.intro":
+      "Выберите предмет для ребёнка. Активация завершается в App Store, и доступ открывается сразу.",
+    "mob.iap.noRenew":
+      "Автоматического продления нет: доступ заканчивается по окончании срока, а новый вы начинаете сами.",
+    "mob.iap.loading": "Проверяем App Store…",
+    "mob.iap.working": "Подождите…",
+    "mob.iap.done": "Готово — доступ открыт.",
+    // THE MOST IMPORTANT SENTENCE IN THIS FILE: shown when money has moved and
+    // the grant could not be confirmed. It must never read as a failure.
+    "mob.iap.pending":
+      "Оплата записана. Доступ откроется автоматически в течение нескольких минут. Если этого не произошло, нажмите кнопку восстановления ниже.",
+    "mob.iap.deferred":
+      "Запрос ожидает подтверждения. Доступ откроется автоматически, как только организатор семьи его подтвердит.",
+    "mob.iap.err.generic": "Не удалось завершить. Попробуйте ещё раз через минуту.",
+    "mob.iap.err.unavailable":
+      "Не удалось связаться с App Store. Проверьте подключение и попробуйте ещё раз.",
+    "mob.iap.err.notAllowed":
+      "Операции App Store ограничены на этом устройстве. Проверьте ограничения в разделе «Экранное время».",
+    "mob.iap.restore": "Восстановить доступ",
+    "mob.iap.restoreHint": "Нажмите, если ранее оплаченный доступ не отображается.",
+    "mob.iap.restoreWorking": "Проверяем…",
+    "mob.iap.restoreDone": "Доступ восстановлен.",
+    // Calm, not an error: this is the ordinary answer on a fresh device.
+    "mob.iap.restoreNothing":
+      "Восстанавливать нечего. На этом устройстве нет прежних операций App Store для этого Apple ID.",
     "subjedit.noChargeNow": "Сейчас ничего не списывается — предмет открывается сразу.",
     "mob.subjedit.notInApp": "Это изменение нельзя завершить в приложении. Удалить предмет или вернуть отменённый можно здесь.",
-    "mob.oly.notInApp": "Олимпиадные пакеты не оформляются в этом приложении. Пакет, открытый для вашего ребёнка, появится здесь и в его разделе \"Мои олимпиады\" автоматически.",
+    // См. блок az: «не оформляются в этом приложении» указывало на внешний
+    // канал для контента, который нигде ничего не стоит.
+    "mob.oly.notInApp": "Олимпиадные пакеты, открытые для вашего ребёнка, автоматически появляются здесь и в его разделе \"Мои олимпиады\".",
     "mob.cancel.untilEnd": "Доступ сохраняется до конца оплаченного периода.",
     "mob.oly.duration": "Длительность",
     "mob.unit.min": "мин",

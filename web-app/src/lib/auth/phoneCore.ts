@@ -7,11 +7,16 @@
 // like every other parent-initiated mutation).
 //
 // profiles.phone is written once at registration (parentService.registerParent)
-// and that write is best-effort, so pre-Round-11 accounts and failed patches
-// leave it NULL. This core is the self-service repair path: ADD when there is
-// none, CHANGE when there is. Clearing back to NULL is deliberately NOT
-// supported — the number is mandatory at registration, and filling legacy
-// nulls is the whole point of the feature.
+// and that write is best-effort, so accounts do exist with none. This core is
+// the self-service path: ADD when there is none, CHANGE when there is, and —
+// since 2026-08-31 — CLEAR back to NULL.
+//
+// Clearing used to be refused on the grounds that the number was mandatory at
+// registration. It no longer is: Apple rejected the app under Guideline
+// 5.1.1(v) for requiring personal information the core functionality does not
+// need. The same guideline that makes the field optional at sign-up makes it
+// removable afterwards — a parent who once gave a number must be able to take
+// it back, or "optional" is only true for accounts created after the fix.
 //
 // Validation is the REGISTRATION rule, imported (never re-spelled) from
 // parentValidation, which itself mirrors the DB constraint
@@ -24,7 +29,8 @@ import { PHONE_MAX, PHONE_RE } from "@/lib/auth/parentValidation";
 import { writeAuditLog } from "@/lib/audit";
 
 export type PhoneCoreResult =
-  | { ok: true; phone: string }
+  /** `phone` is NULL when the parent cleared the field — never "". */
+  | { ok: true; phone: string | null }
   | { ok: false; errorKey: "parent.err.phone" | "profile.err.updateFailed" };
 
 /**
@@ -38,9 +44,10 @@ export function normalizePhoneInput(raw: string): string {
 }
 
 /**
- * Set the parent's own contact phone. `profileId` always comes from the
- * caller's verified session — never from a request body — and the patch is a
- * HARD-CODED single column: profiles_update is row-scoped, not column-scoped,
+ * Set — or, with an empty `rawPhone`, clear — the parent's own contact phone.
+ * `profileId` always comes from the caller's verified session — never from a
+ * request body — and the patch is a HARD-CODED single column:
+ * profiles_update is row-scoped, not column-scoped,
  * so the patch shape is the only thing stopping this from becoming a generic
  * profile writer. Never build it from client keys.
  */
@@ -50,15 +57,22 @@ export async function updateOwnPhoneCore(
   rawPhone: string,
 ): Promise<PhoneCoreResult> {
   const phone = normalizePhoneInput(rawPhone);
-  // Length cap BEFORE the pattern, like validateParentRegistration, so an
-  // unbounded string is rejected on size rather than on shape.
-  if (!phone || phone.length > PHONE_MAX || !PHONE_RE.test(phone)) {
+  // An EMPTY submission is a deliberate CLEAR, not a validation failure
+  // (Apple 5.1.1(v) — see the header). Anything non-empty is still held to the
+  // registration rule: length cap BEFORE the pattern, like
+  // validateParentRegistration, so an unbounded string is rejected on size
+  // rather than on shape.
+  if (phone && (phone.length > PHONE_MAX || !PHONE_RE.test(phone))) {
     return { ok: false, errorKey: "parent.err.phone" };
   }
+  // NULL, never "": profiles.phone is nullable and chk_profiles_phone_e164
+  // permits NULL, but "" fails its regex — writing the empty string is the one
+  // way to turn "clear my number" into a constraint violation.
+  const next = phone || null;
 
   const { error } = await client
     .from("profiles")
-    .update({ phone })
+    .update({ phone: next })
     .eq("id", profileId);
   if (error) {
     // Code only — never the message (leaks internals) and never the number.
@@ -75,5 +89,5 @@ export async function updateOwnPhoneCore(
   });
 
   revalidatePath("/profile");
-  return { ok: true, phone };
+  return { ok: true, phone: next };
 }

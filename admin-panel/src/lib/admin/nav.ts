@@ -72,6 +72,16 @@ export const NAV: NavGroup[] = [
       // Content Managers must never reach pricing. Distinct from nav.subscriptions
       // below (subscription lifecycle monitoring/management).
       { label: "nav.pricing", href: "/pricing", adminOnly: true },
+      // The App Store product map (public.iap_products, migration 164) — which
+      // store product id sells which subject/package, and whether it is live.
+      // Sits next to Pricing because it answers the neighbouring question, but
+      // it holds NO price: App Store Connect owns the iOS price and the app
+      // reads it from the store. Administrator-only, and deliberately with NO
+      // `permission:` field — this is a payment module, and a `payments.manage`
+      // code here would be an invitation to grant a Content Manager the ability
+      // to make the app start charging money. requireAdmin() in the page and in
+      // every action is the boundary.
+      { label: "nav.iap", href: "/iap", adminOnly: true },
       // Round 31: subscription lifecycle monitoring (activate/extend/cancel/
       // expire comped/admin-granted child subscriptions). Moved out of comingSoon
       // when the module was built.

@@ -2,9 +2,10 @@
 // parity). The id param is validated against the parent's own children (RLS
 // list) — a foreign/malformed id renders the not-your-child notice.
 //
-// PURCHASE-SILENT (docs/STORE_PAYMENTS_COMPLIANCE.md): there is no subscribe
-// wizard on mobile in ANY mode since the demo payment mode was deleted (owner,
-// 2026-08-18). Every branch below is read-only or free-activation:
+// PURCHASE-SILENT ON ANDROID (docs/STORE_PAYMENTS_COMPLIANCE.md): there is no
+// subscribe wizard on mobile in ANY mode since the demo payment mode was
+// deleted (owner, 2026-08-18). Every branch below is read-only or
+// free-activation:
 //   free modes → free notice + bffActivateFree, and the price-free subjects
 //                editor when a plan is live
 //   real / off → the live plan if there is one, otherwise status only
@@ -12,6 +13,14 @@
 // A live subscription is NEVER suppressed by the payment posture -- 'off' is
 // also the fail-closed default when the config RPC fails, and this screen used
 // to blank itself in exactly that case.
+//
+// ON iOS ONE THING IS ADDED AND NOTHING IS TAKEN AWAY: the Apple in-app
+// purchase panel (src/features/iap), plus the Restore control Apple requires to
+// exist and to be findable. Apple rejected the 2026-08-31 submission under
+// Guideline 3.1.1 — on that storefront the fix is not silence, it is IAP.
+// Everything is behind IAP_PLATFORM_SUPPORTED, a BUILD-TIME constant: an
+// Android build renders exactly what it rendered yesterday, down to the
+// mob.pay.notInApp sentence.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -36,6 +45,12 @@ import {
   subStatusKey,
 } from "@/features/parent/commerce";
 import { ManageSubjectsEditor } from "@/features/parent/ManageSubjectsEditor";
+import {
+  IAP_PLATFORM_SUPPORTED,
+  IapPanel,
+  RestoreAccessButton,
+  useIapOffers,
+} from "@/features/iap";
 import {
   useChildSubscriptions,
   useChildren,
@@ -106,6 +121,15 @@ export default function ChildSubscribeScreen() {
     (subs.data ?? []).find(
       (s) => s.student_profile_id === id && isCancellable(s.status),
     ) ?? null;
+
+  // iOS purchase surface. Called UNCONDITIONALLY and before every early return
+  // below — it owns react-query hooks, and a hook that disappears on the
+  // loading branch is a crash on the next render. Off iOS it fetches nothing
+  // and answers state "off".
+  const iap = useIapOffers(liveSub ? liveSub.subjects.map((s) => s.subject_id) : []);
+  // Does the panel actually put something on screen? "off"/"none" render null,
+  // and in that case the screen keeps the sentence it has always shown.
+  const iapVisible = IAP_PLATFORM_SUPPORTED && iap.state !== "off" && iap.state !== "none";
 
   async function activateFree() {
     if (freePending) return;
@@ -257,15 +281,45 @@ export default function ChildSubscribeScreen() {
           ) : null}
         </>
       ) : (
-        // 'real': read-only. The plan itself is not started, changed or paid
-        // for anywhere in this app.
+        // 'real': read-only on Android. The plan itself is not started, changed
+        // or paid for anywhere in this app.
         <>
           {liveSubCard}
-          <Card>
-            <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
-          </Card>
+          {/* ANDROID ONLY — see the same guard in (tabs)/subscription.tsx.
+              "Subscriptions are not managed in this app" is policy-safe on
+              Android and a written 3.1.1 confession on iOS, where it used to
+              appear whenever the catalogue was empty. iOS renders nothing
+              instead: an empty area claims nothing, while the obvious
+              alternative ("not available right now") is the 2.1.0 rejection. */}
+          {iapVisible || IAP_PLATFORM_SUPPORTED ? null : (
+            <Card>
+              <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
+            </Card>
+          )}
         </>
       )}
+
+      {/* iOS ONLY, in BOTH postures. The panel renders null unless there is
+          something priced to offer, so a free window shows the notice above and
+          nothing else. */}
+      {IAP_PLATFORM_SUPPORTED ? (
+        <IapPanel
+          studentProfileId={id}
+          state={iap.state}
+          offers={iap.offers}
+          refetch={iap.refetch}
+          onSettled={invalidate}
+        />
+      ) : null}
+
+      {/* RESTORE IS UNCONDITIONAL ON iOS — including when nothing is for sale.
+          Apple requires the control to exist and to be findable; a family that
+          reinstalls or switches device must get back what they paid for. */}
+      {IAP_PLATFORM_SUPPORTED ? (
+        <Card style={{ gap: spacing.md }}>
+          <RestoreAccessButton />
+        </Card>
+      ) : null}
     </ScreenScroll>
   );
 }

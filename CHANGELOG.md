@@ -35,11 +35,25 @@ tester who keeps reporting.
 
 ---
 
-## 1.14.0 — unreleased
+## 1.15.0 — unreleased
 
-Needs a NEW BUILD, not an OTA update: `expo-clipboard` is a native module, and
-`runtimeVersion: appVersion` means an update published for 1.14.0 never reaches
-a 1.12.3 binary.
+**The In-App Purchase release.** This is the build that answers the 2026-08-31
+Guideline 3.1.1 rejection: iOS now sells per-child subject access through Apple,
+with 21 non-renewing subscription products. Android is unchanged and remains
+purchase-silent — Google's consumption-only rule is app-wide and Azerbaijan is
+in no alternative-billing programme.
+
+Needs a NEW BUILD, not an OTA update: `expo-iap` and `expo-clipboard` are native
+modules, and `runtimeVersion: appVersion` means an update published for 1.15.0
+never reaches a 1.12.3 binary.
+
+- `[store]` iOS: parents can now buy subject access for a child inside the app.
+  The price shown is the App Store's own; nothing is priced by us on screen.
+- `[store]` Android is untouched: no price, no purchase, no link out.
+
+## 1.14.0 — superseded, never built
+
+Rolled into 1.15.0 — 1.14.0 existed only in `app.json` and was never released.
 
 > Numbered 1.14.0, not 1.13.0. 1.13.0 was prepared but never built or released,
 > and the update gate below is a new feature rather than a fix — so everything
@@ -250,6 +264,67 @@ a 1.12.3 binary.
 
 Changes to `olympiq.ai` and the admin panel that shipped between mobile builds.
 Recorded for the round's history; they never appear in store notes.
+
+### 2026-09-02
+- `[store]` Deleting your account now deletes your uploaded photos as well.
+  They used to stay in storage after the account was gone.
+- `[admin]` Deleting a parent or child from the admin panel reported success
+  even when nothing was deleted. It now says so and skips the audit entry.
+- `[internal]` Migration 167: the parent-deletion cascade refuses rather than
+  deleting a child's profile while their login survives — that combination left
+  a working sign-in with no account behind it, 14 times.
+- `[internal]` `supabase/scripts/purge-orphaned-avatars.mjs` removes avatar
+  files whose owner no longer exists. Read-only until `--apply`.
+- `[store]` **(tester)** Deleting your account sometimes deleted nothing while
+  telling you it was gone — the old credentials still worked. Deletion now
+  verifies the account is actually removed and reports an error instead of a
+  false success. Affected 2 of 5 real deletions.
+- `[store]` **(tester)** A student's profile photo now appears on their own row
+  in the Ranking list. Other students' rows stay on initials, which is
+  deliberate: those rows show real names, school and grade to every signed-in
+  user, and the photos are private to each family.
+- `[store]` A parent's own child now shows their photo on the Ranking screen's
+  summary card, matching the Home screen.
+
+### 2026-09-01
+- `[store]` The Olympiads tab said packages "are not obtained in this app" —
+  which states they are obtained somewhere else. No olympiad package costs
+  anything, so the sentence carried a compliance risk and no benefit. It now
+  says only that packages opened for a child appear there.
+- `[store]` "Subscriptions are not managed in this app" is now shown on Android
+  only. On iOS it appeared whenever the product catalogue was empty, which is a
+  written confession that access comes from elsewhere.
+- `[internal]` `scripts/submission-preflight.mjs` — answers the App Review
+  blocking checklist mechanically against the live database and App Store
+  Connect. Read-only. Reports what it could not check as SKIP, never as a pass.
+- `[store]` The cancel-subscription sheet named a price ("The price isn't right
+  for me") and a discount ("your earned discount") — the last purchasing copy a
+  parent could reach on Android. Both rewritten in access language, az/en/ru.
+- `[admin]` Putting a store product on sale now asks App Store Connect whether
+  the product actually exists and can still sell, and refuses if it cannot —
+  including when the check itself is unconfigured. Activating a product Apple
+  has never heard of gives every family a buy button that fails.
+- `[store]` **(tester)** Changing your own password from Profile → Security always
+  failed with "Update failed. Please try again." It now works, for parents and
+  students alike. Broken since 2026-08-29 for every user without exception.
+- `[internal]` `docs/INVESTOR_INFO_REQUEST_AZ.txt` / `_EN.txt` — the one request
+  sent to the investor for Apple payout onboarding. Leads with the two facts a
+  finance director would otherwise get wrong: Apple pays Azerbaijan in **EUR**
+  (AZN is absent from Apple's payout currencies), and Azerbaijani banks give
+  every currency its **own IBAN** (944/840/978 encoded inside it), so the AZN
+  IBAN would be handed over and the payment would silently never arrive.
+- `[internal]` `--find-app` added to `create-iap-products.mjs`: lists the apps a
+  key can see with their numeric Apple IDs. A wrong app id fails as a 404 that
+  reads like a bad credential, so the natural fix is regenerating a working key.
+- `[internal]` The same script crashed at exit on Node 24 / Windows —
+  `process.exit()` on top of `fetch`'s keep-alive socket pool trips a libuv
+  assertion *after* every request succeeded. Harmless on a read, but during
+  `--apply` it would print "created 21 products" beside a crash and leave the
+  operator unable to tell. Now closes the pool and sets `exitCode`; a self-test
+  check reads the script's own tail so it cannot regress.
+- `[internal]` Migration numbering collision fixed — two files both claimed 165.
+  The unapplied one became `2026_09_01_166_iap_notification_log.sql`; production
+  was queried read-only to decide which was which rather than trusting headers.
 
 ### 2026-08-27
 - `[admin]` RLS evaluated `is_admin()` **once per row**. The admin Questions

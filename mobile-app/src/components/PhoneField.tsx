@@ -2,6 +2,12 @@
 // searchable country sheet; the national number is typed separately and the
 // composed +<dial><national> value is what the caller submits. The server
 // re-validates — this composition is UX, not security.
+//
+// THE FIELD IS OPTIONAL (2026-08-31). Apple rejected the app under Guideline
+// 5.1.1(v) — an app may not REQUIRE personal information its core functionality
+// does not need. The label therefore carries an "(optional)" suffix and an
+// empty field emits the EMPTY STRING (see composeE164), which every server path
+// normalizes to NULL. Do not reinstate a mandatory phone.
 import React, { useMemo, useState } from "react";
 import {
   FlatList,
@@ -23,12 +29,22 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { fontSize, radius, spacing } from "@/theme/tokens";
 import { KeyboardFocusBoundary } from "@/lib/useKeyboardAware";
 import { COUNTRIES, DEFAULT_ISO2, type Country } from "@/lib/countries";
+import { useT } from "@/i18n/useT";
 
 export const E164_RE = /^\+[1-9][0-9]{6,14}$/;
 
+/**
+ * "" when there is no national number at all — NOT a bare "+994".
+ *
+ * This is load-bearing for the optional field: callers test the emitted value
+ * for emptiness to decide "no number given". Returning the dial code alone made
+ * a field the user typed into and then cleared look like a MALFORMED number
+ * rather than an absent one, so an optional field became un-leavable the moment
+ * it was touched.
+ */
 export function composeE164(dial: string, national: string): string {
   const digits = national.replace(/[^\d]/g, "").replace(/^0+/, "");
-  return `+${dial}${digits}`;
+  return digits ? `+${dial}${digits}` : "";
 }
 
 export function PhoneField({
@@ -59,6 +75,14 @@ export function PhoneField({
 }) {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
+  // Resolved HERE rather than passed in, so every phone row in the app (sign-up
+  // and the parent profile alike) says "optional" the same way and none of them
+  // can forget to. `t` returns the raw key when the catalogue has no entry — the
+  // synced web catalogue is regenerated separately — so an unresolved key must
+  // render as NO suffix, never as the literal "field.optional".
+  const { t } = useT();
+  const optionalRaw = t("field.optional");
+  const optionalSuffix = optionalRaw === "field.optional" ? "" : optionalRaw;
   const [country, setCountry] = useState<Country>(
     () => COUNTRIES.find((c) => c.iso2 === DEFAULT_ISO2) ?? COUNTRIES[0],
   );
@@ -103,7 +127,9 @@ export function PhoneField({
 
   return (
     <View style={{ gap: spacing.xs }}>
-      <AppText variant="label">{label}</AppText>
+      <AppText variant="label">
+        {optionalSuffix ? `${label} ${optionalSuffix}` : label}
+      </AppText>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <Pressable
           accessibilityRole="button"

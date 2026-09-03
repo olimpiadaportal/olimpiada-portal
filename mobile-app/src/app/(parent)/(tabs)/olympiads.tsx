@@ -8,7 +8,15 @@
 // no price chip, no "Əldə et" button, no confirm sheet, no purchase call. One
 // binary serves both roles, so Google's consumption-only test covers the
 // PARENT tabs too; packages are obtained outside the app and simply appear
-// here once they are unlocked for the child.
+// here once they are unlocked for the child. Apple rejected this app under
+// Guideline 3.1.1 on 2026-08-31; restoring a Get/Purchase CTA here is the
+// violation, not the fix. __tests__/olympiad-ownership.test.ts pins that.
+//
+// Migration 163: the catalog RPC no longer filters on the sales window alone,
+// so a package the family OWNS stays on this screen after it is archived or
+// its window closes (it used to vanish while the child kept solving it). The
+// card's pills are resolved by resolveOlympiadCardState — an owned package
+// reads OWNED, never "sales ended".
 import React, { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { Image } from "expo-image";
@@ -42,7 +50,12 @@ import {
   useOlympiadPurchases,
 } from "@/features/parent/queries";
 import { ChildChips, KeyRow, Pill, ScreenScroll, SheetShell } from "@/features/parent/ui";
-import { buildOlympiadDetailRows, sharedGradeValue } from "@/features/olympiads/details";
+import {
+  buildOlympiadDetailRows,
+  resolveOlympiadCardState,
+  sharedGradeValue,
+  type OlympiadCardState,
+} from "@/features/olympiads/details";
 import { TypeMarquee } from "@/features/olympiads/TypeMarquee";
 
 function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
@@ -81,16 +94,11 @@ function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
  *  beside the title is gone — no amount renders anywhere in this app. */
 function CoverHeader({
   pkg,
-  owned,
-  past,
-  ownedLabel,
-  heldLabel,
+  pills,
 }: {
   pkg: OlympiadPackageRow;
-  owned: boolean;
-  past: boolean;
-  ownedLabel: string;
-  heldLabel: string;
+  /** Already-translated status pills from resolveOlympiadCardState. */
+  pills: { key: string; label: string; tone: "ok" | "muted" }[];
 }) {
   return (
     <View style={{ width: "100%", aspectRatio: 16 / 9 }}>
@@ -114,19 +122,27 @@ function CoverHeader({
         </LinearGradient>
       )}
 
-      {/* Status pills float on the cover's top edge. */}
-      {(owned || past) && (
+      {/* Status pills float on the cover's top edge. They describe STATE only
+          (owned / sales ended / already held) — none of them is tappable and
+          none of them is a purchase affordance. */}
+      {pills.length > 0 && (
         <View
           style={{
             position: "absolute",
             top: spacing.sm,
             right: spacing.sm,
             flexDirection: "row",
+            // A 320pt cover fits two pills; a third wraps instead of running
+            // off the image.
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+            maxWidth: "70%",
             gap: spacing.sm,
           }}
         >
-          {owned ? <Pill label={ownedLabel} tone="ok" /> : null}
-          {past ? <Pill label={heldLabel} tone="muted" /> : null}
+          {pills.map((p) => (
+            <Pill key={p.key} label={p.label} tone={p.tone} />
+          ))}
         </View>
       )}
 
@@ -213,10 +229,12 @@ export default function ParentOlympiads() {
   const loading = config.isPending || children.isPending;
   const catalogLoading = selected !== null && catalog.isPending;
 
-  const isPast = (pkg: OlympiadPackageRow) => {
-    const ts = pkg.event_starts_at ? Date.parse(pkg.event_starts_at) : NaN;
-    return Number.isFinite(ts) && ts <= now;
-  };
+  // Owned / on-sale / held, resolved in one pure place (details.ts) so the
+  // rule "an owned package reads OWNED, not unavailable" is testable and lives
+  // next to the sale-window reasoning rather than being re-derived per card.
+  const cardState = (pkg: OlympiadPackageRow): OlympiadCardState =>
+    resolveOlympiadCardState(pkg, ownedForSelected.has(pkg.id), now);
+
   // REAL pool size (missing row / still loading → 0, web coalesce parity).
   // Round 34: the catalog RPC computes the caller-relevant published count
   // (children's grade pools) server-side; the pool-counts RPC stays the
@@ -291,16 +309,16 @@ export default function ParentOlympiads() {
           ) : (
             <View style={{ gap: spacing.lg }}>
               {(catalog.data ?? []).map((pkg) => {
-                const owned = ownedForSelected.has(pkg.id);
-                const past = isPast(pkg);
+                const state = cardState(pkg);
                 return (
                   <Card key={pkg.id} style={{ padding: 0, overflow: "hidden" }}>
                     <CoverHeader
                       pkg={pkg}
-                      owned={owned}
-                      past={past}
-                      ownedLabel={t("poly.owned")}
-                      heldLabel={t("oly4.status.held")}
+                      pills={state.pills.map((p) => ({
+                        key: p.key,
+                        label: t(p.labelKey),
+                        tone: p.tone,
+                      }))}
                     />
                     <View style={{ padding: spacing.lg, gap: spacing.md }}>
                       {/* Round 43: the olympiad type headlines the card body as
@@ -374,6 +392,16 @@ export default function ParentOlympiads() {
         {detail ? (
           <ScrollView contentContainerStyle={{ gap: spacing.md }}>
             <AppText variant="title">{detail.title}</AppText>
+            {/* The same pills as the card: a parent who opens "Ətraflı" on a
+                package they own must read OWNED here too, not an empty sheet
+                that reads like a listing they missed. */}
+            {cardState(detail).pills.length > 0 ? (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                {cardState(detail).pills.map((p) => (
+                  <Pill key={p.key} label={t(p.labelKey)} tone={p.tone} />
+                ))}
+              </View>
+            ) : null}
             {/* Round 43: every AVAILABLE field with its poly.det.* label; a
                 null/empty value is dropped (never renders "null"). */}
             <View
@@ -398,7 +426,7 @@ export default function ParentOlympiads() {
               </View>
             ) : null}
             <AppText variant="muted">
-              {ownedForSelected.has(detail.id)
+              {cardState(detail).owned
                 ? t("poly.modal.already")
                 : t("mob.oly.notInApp")}
             </AppText>

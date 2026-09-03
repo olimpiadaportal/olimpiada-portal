@@ -145,13 +145,136 @@ const PRICING_KEYS_MOBILE_RENDERS = new Set([
   "pricing.yearly",
 ]);
 
-const WEB_ONLY_PREFIXES = ["terms."];
+// `checkout.*` is the ABB hosted-payment handoff ("Pay now", "Amount",
+// "The price has changed", "Payment successful") and `payres.*` is its result
+// screen. `terms.*` is the /terms page. All three are whole web flows: not one
+// key of any of them is referenced by a single mobile screen, and none of them
+// could be without putting a checkout in the binary — which is Apple 2.3.1(a),
+// not a design question.
+const WEB_ONLY_PREFIXES = ["terms.", "checkout.", "payres."];
+
+// ---------------------------------------------------------------------------
+// DEAD COMMERCE STRINGS — shipped in the bundle, rendered by nothing.
+//
+// WHY THIS LIST EXISTS: Apple rejected this app under Guideline 3.1.1 on
+// 2026-08-31. docs/STORE_PAYMENTS_COMPLIANCE.md §11 tells the submitter to grep
+// the release bundle for `poly.buyNow`, any AZN string and any olympiq.ai URL —
+// and `poly.buyNow` ("Əldə et" / "Get it" / "Получить") was still in it, along
+// with the full sibling-discount schedule ("-10% for the 2nd child, -15% for the
+// 3rd"), "Confirm and buy", "Subscribe to unlock this subject's analytics" and
+// the rest of the web checkout vocabulary. A reviewer greps the bundle; it does
+// not matter that no screen calls t() on these.
+//
+// EVERY KEY HERE WAS VERIFIED UNRENDERED before it was added: no literal
+// occurrence anywhere under mobile-app/src, and not reachable through any of the
+// template-literal key families the app builds at runtime (`faq.q${i}`,
+// `carousel.i${n}.*`, `pricing2.${plan}.*`, `subscription.status.${s}`,
+// `subj.${code}`, `pal.${id}`, `about2.${key}.*`, `privacy.${id}.title`, …).
+// That verification is the whole cost of this list — deleting a key the app
+// DOES render makes it print the raw key string to a user, in three languages.
+// So: before adding a key, grep mobile-app/src for it AND for the prefix a
+// template literal could build it from. Keys that ARE rendered but read wrong
+// get an override in messages.mobile.ts instead; they are not deleted here.
+//
+// DO NOT "restore the missing keys". Their absence is the point. The web app
+// still has every one of them, which is correct — olympiq.ai is where
+// purchasing legitimately happens.
+const DEAD_COMMERCE_KEYS = new Set([
+  // Olympiad purchase flow (parent tab). The tab kept its catalogue and
+  // details modal; the buy button, the confirm dialog and the price rows went
+  // with the 2026-08-18 purchase-silent pass and left their strings behind.
+  "poly.noChildren",
+  "poly.buy",
+  "poly.buyNow",
+  "poly.price",
+  "poly.det.price",
+  "poly.err.generic",
+  "poly.err.priceMoved",
+  "poly.modal.title",
+  "poly.modal.payNote",
+  "poly.modal.confirm",
+  "poly.modal.pending",
+  "poly.modal.success",
+  "polyPub.ctaParent",
+  "polyPub.parentOnlyNote",
+  "oly3.buy",
+  "oly4.price",
+  // Subscribe / plan configurator (web-only funnel: pick subjects → price →
+  // pay). `sub.discount.hint` and `pricing2.sibling.body` are the sibling
+  // schedule with the percentages in it — the same leak the FAQ pass caught.
+  "pricing2.sibling.title",
+  "pricing2.sibling.body",
+  "cfg.emptySelection",
+  "cfg.perSubjectLabel",
+  "cfg.childNote",
+  "cfg.serverNote",
+  "cfg.loadError",
+  "plan.dueToday",
+  "plan.renewalLine.weekly",
+  "plan.renewalLine.monthly",
+  "plan.renewalLine.yearly",
+  "plan.fromPrice",
+  "sub.base",
+  "sub.discount",
+  "sub.discount.rank2",
+  "sub.discount.rank3",
+  "sub.discount.hint",
+  "sub.discount.saved",
+  "sub.noSibling",
+  "sub.siblingNote",
+  "sub.submit",
+  "sub.done",
+  "sub.trial",
+  "sub.total",
+  "sub.totalNow",
+  "sub.previewHint",
+  "sub.noSubjectsAvailable",
+  "sub.trialNoChargeToday",
+  "sub.payFirst",
+  "sub.payFirstNote",
+  "sub.err.priceMoved",
+  "pay.title",
+  "pay.note",
+  "pay.payNow",
+  "pay.continue",
+  "pay.processing",
+  "pay.success",
+  "pay.subtotal",
+  "pay.discount",
+  "pay.total",
+  // Manage-subjects editor: the editor itself ships, its MONEY half does not.
+  // The rendered half (subjedit.title/noChargeNow/noteText/…) stays.
+  "subjedit.dueNow",
+  "subjedit.dueNowNote",
+  "subjedit.subjectPlanLine",
+  "subjedit.startsToday",
+  // Parent analytics: the locked-subject state is drawn without a CTA, so this
+  // "Subscribe to unlock…" line has had no render site since that pass.
+  "ana.locked",
+  // "…for the price of a cup of coffee" — the About page renders the about2.*
+  // rewrite, not this one.
+  "about.vision.body",
+  // "Questions about the service or pricing…" — the Contact screen renders
+  // contact.generalTitle without this body.
+  "contact.generalDesc",
+  // Privacy §8 deliberately renders NEITHER payment-status branch (see the
+  // comment in app/(public)/privacy.tsx): one described the app as unfinished,
+  // the other claimed it "may show subscription prices". Both are still in the
+  // bundle, and one of them says "purchase".
+  "privacy.s8.statusOn",
+  "privacy.s8.statusOff",
+]);
+
+// Snapshot before the deletions below, so the stale-entry warning can tell
+// "the web catalogue never had this key" from "this run just removed it".
+const keysBeforeDrop = new Set(Object.keys(messages.az));
 
 let dropped = 0;
 for (const l of locales) {
   for (const k of Object.keys(messages[l])) {
     const isWebOnly =
       WEB_ONLY_PREFIXES.some((p) => k.startsWith(p)) ||
+      DEAD_COMMERCE_KEYS.has(k) ||
       (k.startsWith("trial.") && !TRIAL_KEYS_MOBILE_RENDERS.has(k)) ||
       (k.startsWith("pricing.") && !PRICING_KEYS_MOBILE_RENDERS.has(k));
     if (isWebOnly) {
@@ -159,6 +282,18 @@ for (const l of locales) {
       dropped += 1;
     }
   }
+}
+
+// A drop-list entry the web catalogue no longer has is dead weight that reads
+// like protection. Warn, never fail: the web strings are edited independently
+// of this script, and a stale name is not a reason to leave the mobile
+// catalogue unsynced.
+const staleDrops = [...DEAD_COMMERCE_KEYS].filter((k) => !keysBeforeDrop.has(k));
+if (staleDrops.length > 0) {
+  console.warn(
+    `sync-i18n: ${staleDrops.length} drop-list key(s) no longer exist in the web catalogue — ` +
+      `remove them from DEAD_COMMERCE_KEYS: ${staleDrops.join(", ")}`,
+  );
 }
 
 const counts = locales.map((l) => `${l}=${Object.keys(messages[l]).length}`).join(" ");

@@ -35,7 +35,7 @@ create table if not exists public.profiles (
   display_name     text,
   email            citext,
   phone_optional   text,                      -- LEGACY, unused by app code (kept non-destructively; superseded by phone)
-  phone            text,                      -- Round 11: parent contact phone, E.164 (+994…); required at parent registration (app-enforced)
+  phone            text,                      -- Round 11: parent contact phone, E.164 (+994…); OPTIONAL since 2026-08-31 (Apple 5.1.1(v))
   preferred_locale public.content_locale not null default 'az',
   avatar_media_id  uuid,                       -- FK to media_assets added in 011 (deferred)
   status           public.account_status not null default 'pending',
@@ -56,7 +56,7 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 comment on column public.profiles.phone is
-  'Parent contact phone in E.164 (+<country><number>). Required at parent registration (app-enforced); null for children/admin/legacy rows. Never used for SMS/auth.';
+  'Parent contact phone in E.164 (+<country><number>). OPTIONAL — Apple Guideline 5.1.1(v) forbids requiring information the app does not need, so it was relaxed on 2026-08-31; the CHECK below has always permitted null, so no migration was required. Null for children/admin/legacy rows and for any parent who declines. Never used for SMS/auth.';
 
 -- -----------------------------------------------------------------------------
 -- roles : role definitions (RBAC). Do not rely on a text role column alone.

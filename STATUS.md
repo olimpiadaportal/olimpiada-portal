@@ -6,6 +6,776 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## ROUND 65 — THE APPLE RAIL, CONFIGURED END TO END (2026-09-03)
+
+**Mobile version bumped 1.14.0 → 1.15.0** (minor: In-App Purchase is a feature,
+not a fix). 1.14.0 existed only in `app.json` and was never built.
+`runtimeVersion: appVersion` ⇒ this needs a NEW BUILD, never an OTA.
+
+### What is now done at Apple
+
+Paid Applications agreement **Active** · bank account **Active (EUR)** · both tax
+forms **Active** · **21 products created** · **42 localizations** (en-US + ru;
+Apple has no Azerbaijani App Store locale) · **21 prices, each read back and
+verified** · **21 × 175 territories** · **21 review screenshots**.
+
+Four scripts now do what was ~150 manual operations across 21 pages:
+`create-iap-products.mjs`, `set-iap-prices.mjs`, `finish-iap-metadata.mjs`,
+`submission-preflight.mjs`.
+
+### THE PRICING NEAR-MISS — the most valuable thing this round produced
+
+Owner decision: **Option A** — the customer pays the same as on the web and
+Apple's commission comes out of our side, rather than marking the App Store up
+to preserve revenue.
+
+Web is 3 / 9 / 90 **AZN**, so the first version of the script targeted `3`, `9`,
+`90`. It matched all three exactly and reported success on a dry run.
+
+**Apple bills the Azerbaijan storefront in USD.** `customerPrice` is a bare
+number with no currency attached anywhere in the price-point response, so
+writing "3" would have charged **$3 ≈ ₼5.10** — a ~70% overcharge across all 21
+products — while every check in the script showed an exact match. **No read-back
+could have caught it**: Apple would have faithfully stored precisely what it was
+asked for. The tell was the ladder shape (0.99 / 1.99 / 2.99 is a USD ladder),
+not any error.
+
+The script now asks Apple for the territory's billing currency and REFUSES
+unless it equals a declared `EXPECTED_CURRENCY`. Final values, converted at the
+pegged ₼1.70 = $1 and snapped to real price points: **$1.79 / $5.29 / $52.99**.
+
+### Traps that cost nothing because something checked first
+
+* **`availableInAllTerritories`** is not an attribute of `inAppPurchases` —
+  Apple 409s it. Found by `--only` on the first product, so it cost one error
+  message instead of 21 half-created products.
+* **The availability body is not the app-level one.** `inAppPurchaseAvailabilities`
+  uses `availableTerritories` with member type `territories` and **no `included`
+  array**; the app-level resource uses `territoryAvailabilities` + `included`,
+  which is what almost every example online shows and which 409s here.
+* **Reading availability back through `include=` silently truncates at 50.** A
+  correct 175-territory write would have read back as ~50 and looked like a
+  partial failure. Verification uses the `/availableTerritories?limit=200`
+  sub-endpoint and asserts the exact count.
+* **Price point ids are per-product** — base64 of `{iapId}_{territory}_{tier}` —
+  so the ladder is fetched once per product. Caching one id and reusing it is
+  the classic way to write a pricing script that looks like it worked.
+* **The screenshot commit** uses `uploaded` (not the older `isUploaded`) and an
+  MD5 of the whole file as lowercase hex; Apple recomputes it after reassembly.
+
+### Where the products are in App Store Connect
+
+**Not** under Monetization → In-App Purchases, which correctly renders EMPTY:
+that page lists only Consumables and Non-Consumables. Non-renewing subscriptions
+live under **Subscriptions → scroll to the bottom → Non-Renewing Subscriptions →
+Manage**. Apple documents the split; the scrolling is the load-bearing step.
+
+### A circular dependency worth knowing about
+
+The review screenshot clears `MISSING_METADATA`; the purchase panel only renders
+when `iap_products.active` is true; and the activation preflight refuses to
+activate anything in `MISSING_METADATA`. So the real purchase card cannot be
+photographed before the metadata is complete — on any device, iPhone included.
+
+Resolved by uploading a representative screenshot (the parent Home screen, taken
+on Android) to unblock the metadata. Apple marks this asset "for review purposes
+only, not displayed on the App Store", and the review notes carry the real
+explanation. It is replaceable once products are active.
+
+**An Android screenshot of the SUBSCRIPTION tab would have been wrong** — that
+screen shows "Subscriptions are not managed in this app" on Android, which is
+correct for Google and the worst possible sentence to show an Apple reviewer.
+
+### The idempotency bug in my own script
+
+`finish-iap-metadata.mjs` reported `20 uploaded, 1 failed` when all 21 were in
+fact complete: math-month already had a screenshot from the single-product test
+run, and Apple answered the second reservation with 409
+`MEDIA_ASSET_CREATION_NOT_ALLOWED / "Screenshot already exists"` — the state we
+wanted. Now treated as success, matching the other three scripts, so a re-run is
+safe rather than alarming.
+
+### Still open
+
+`iap_products.active` is **0 of 23** — deliberately. Products must be submitted
+and approved at Apple first; the admin activation preflight enforces the order.
+The free-access window (ends 2026-09-26) remains a WARN: while open, a reviewer
+sees "all subjects are open" above the price buttons. Wording for §4 of
+`APP_REVIEW_NOTES.md` is drafted if submitting before then.
+
+---
+
+## ROUND 64 — THE ORPHAN FACTORY, AND A REVIEW THAT EARNED ITS KEEP (2026-09-02)
+
+**Verified:** web `tsc` + 1003 tests + build · admin `tsc` + 837 tests + build ·
+mobile `tsc` + 670 tests. Migration **applied to staging (exit 0)**; production
+apply and the storage purge are the owner's to run.
+
+### The review caught a migration that would have deleted every login
+
+Migration 167 deletes orphaned `auth.users` rows using the predicate *"no
+profiles row references this user"*. Three review lenses ran before it was
+applied anywhere, and the second found this:
+
+`public.profiles` has **RLS enabled**. Run by any role that neither owns the
+table nor sets `rolbypassrls`, **or against a database where profiles is empty —
+which is what the repo's own staging-first rule sends it to** — the `not exists`
+subquery returns nothing for every user, so **every** auth user matches and the
+statement deletes all 72. Both post-conditions would have PASSED, because zero
+users means zero orphans.
+
+The safety net pointed the wrong way: it asserted "no orphans remain", which is
+satisfied perfectly by having deleted everything. Three guards added — refuse
+when `profiles` is empty or invisible (naming `current_user`), refuse when the
+orphan count exceeds a sane ceiling, and assert `v_deleted = v_before` so the
+delete must remove exactly the rows that were counted.
+
+Also from the review: the required `Destructive change / Rollback notes` header
+was missing, the deleted ids are now printed so the psql transcript is a second
+record behind the `pg_dump`, the `auth.refresh_tokens` claim was wrong (it has
+NO FK to auth.users — it cascades via `auth.sessions`), `storage.objects.owner`
+is a bare uuid covered by nothing, and section 3 now asserts
+`on_auth_user_created` is armed, because "no orphans" is an invariant produced
+by a trigger rather than enforced by a constraint.
+
+### The ordering bug I introduced, caught by the same review
+
+`purgeFamilyStorage` ran BEFORE the account delete, on the reasoning that the
+ids would not resolve afterwards. That reasoning is wrong twice: the ids are in
+local variables and survive the delete fine, **and** migration 167 makes refusal
+a reachable outcome — so a refused deletion would have destroyed a family's
+photographs while leaving their account intact. Irreversible work now runs after
+the reversible work has succeeded. The test that asserted the old ordering was
+inverted rather than deleted.
+
+### The admin panel had the identical bug, and 167 made it dangerous
+
+`admin-panel/src/lib/admin/accounts.ts` carried the same
+`deleteUser(...).catch(() => {})` at three sites and returned `{ ok: true }`
+regardless. Harmless-looking before; after 167 the trigger RAISES rather than
+stranding a login, so the swallowed error would tell an administrator a family
+was deleted while parent and children all still signed in. `deleteAuthUserVerified`
+ported across; both actions now return `accounts.delete.err.failed` and skip the
+audit row when anything survives.
+
+### Storage retention
+
+`media_assets.owner_profile_id` is ON DELETE SET NULL and nothing ever removed
+the objects, so deleted children's PHOTOGRAPHS stayed in the bucket. Deletion
+now purges the family's files: the child's private avatars, the parent's public
+one, and legacy child uploads that landed in `profile-avatars` before migration
+096 forced the private bucket. It does NOT throw — revoking the login is what
+must not fail silently; a leftover object is a retention problem, a leftover
+login is a security one.
+
+`supabase/scripts/purge-orphaned-avatars.mjs` clears what accumulated before
+that. A SCRIPT and not a migration for a reason: deleting a `storage.objects`
+row removes the METADATA, not the file — the bytes only release through the
+Storage API, so a SQL cleanup would leave every image in place while making it
+invisible to the query that would find it again. Dry run against production
+found **4 orphaned child photographs (private) and 4 orphaned parent avatars
+(PUBLIC — world-readable at a stable URL today)**. Output masks every uuid.
+
+**The first `--apply` run reported "deleted 8 of 8" and removed ONE object.**
+The script POSTed every path to the bulk `DELETE /storage/v1/object/<bucket>`
+endpoint with a `{prefixes: […]}` body and trusted `res.ok`. That endpoint
+answers **200 on a partial failure** — the per-object outcome is in the response
+body, and from the status line alone a near-total failure is indistinguishable
+from success. This is the same defect as the two bugs fixed this round
+(`deleteUser().catch(() => {})`, `auth.updateUser` never reaching the network):
+**a call assumed to have worked.** Only the script's own re-query caught it, and
+that verification pass existed for exactly this reason.
+
+Rewritten to DELETE one object at a time, so every file has its own status and
+"it worked" is a fact rather than an inference. 404 counts as success — already
+gone is the goal.
+
+**THEN IT FAILED A SECOND WAY, and the shape of the failure was the clue.** The
+per-object version reported `deleted 1 of 7`, then `deleted 1 of 5` — always
+exactly ONE, with the rest `HTTP 400: Object not found`, while a hand-rolled
+probe deleted the same objects fine. The survivor was always the LAST row:
+`psql` on Windows returns **CRLF**, the script split on `"\n"`, and every path
+but the final one carried a trailing `\r` that percent-encoded into the delete
+URL as `%0D`. Split is now `/\r?\n/` with a trim on both fields.
+
+Worth recording as a pattern, because it is the third instance this round of the
+same underlying mistake — a call whose result was assumed rather than checked.
+Here the script's own verification pass is what refused to report success, and
+the *distribution* of the failures (always one, always the last) is what
+identified the cause. Final run: **deleted 4 of 4, verified: no orphaned avatar
+objects remain.**
+
+### Production state after this round
+
+    orphaned auth users     = 0   (was 14, 9 of them able to sign in)
+    orphaned avatar objects = 0   (was 8, 4 of them children's photographs)
+    iap_notification_log    = MISSING   <- migration 166, still owed
+    active iap products     = 0 of 23   <- the submission blocker
+
+### Owner-run, deliberately
+
+The production apply was blocked by the safety classifier and was NOT worked
+around. `pg_dump --data-only` of `auth.users/identities/sessions/refresh_tokens`
+is taken (303 lines, scratchpad — never the repo). Production remains at
+**14 orphans, old trigger**. Both remaining commands are in `Human Next Actions`.
+
+---
+
+## ROUND 63 — TWO TESTER BUGS; BOTH REPORTS WERE MIS-AIMED (2026-09-02)
+
+**Verified:** web `tsc` + **998 tests** (was 988), mobile `tsc` + **670 tests**.
+
+### Bug 1 — account deletion that deleted nothing and said it did
+
+Reported as an iOS Keychain/cache problem. It was neither: a fresh credential
+login is answered by GoTrue, which never reads the device's storage, so no
+amount of local clearing could produce the symptom.
+
+`parentCore.ts` ran `await admin.auth.admin.deleteUser(id).catch(() => {})`.
+That reads as "delete, ignore failures". It is worse — auth-js's `deleteUser`
+CATCHES every AuthError and RETURNS it as `{ data, error }` rather than
+throwing, so `.catch()` intercepted almost nothing and the discarded return
+value was the **only** place a failure was ever reported. The route then
+answered `{ ok: true, deleted: true }` unconditionally.
+
+**Production proof, not inference:** `audit_logs.actor_profile_id` is
+`ON DELETE SET NULL`, so a surviving non-null actor on a `parent.account_delete`
+row proves the profile was never deleted. Of **5** real deletions, **2** removed
+nothing at all — auth user alive, `banned_until` null, profile intact. Both
+people were told their account was gone. Separately: **71 auth users vs 57
+profiles** — 14 login-capable rows with no account, 12 of them synthetic
+children, 9 with a non-null `last_sign_in_at`.
+
+**The fix** checks the returned error, and then **re-reads the user** — success
+is defined as "the row is gone", not "the API did not complain", because this
+whole bug class is *we assumed the call worked*. A surviving CHILD now fails the
+operation too (that `c<id>@children.invalid` login still works). `authUserId:
+null` refuses instead of silently skipping the parent — the old
+`if (params.authUserId)` guard deleted the children and left a live parent
+login. Any failure throws, so the BFF returns an error and the web action skips
+its `signOut` and `redirect`.
+
+Tests target the seam between "the API returned" and "the row is gone": a test
+mocking `deleteUser` to resolve `{ error: null }` passes on the BROKEN code, so
+the fixture models a 2xx with the row still present — the state the old code
+could not represent.
+
+**NOT fixed, needs an owner decision:** (a) the 12 orphaned child auth users are
+live right now — the fix stops new ones, cleanup needs a one-off migration;
+(b) `media_assets` is `ON DELETE SET NULL` and nothing removes Storage objects,
+so a deleted child's PHOTOGRAPH survives deletion. On a platform holding minors'
+photos that is a real retention problem.
+
+### Bug 2 — the avatar omission was deliberate, and stays
+
+Reported as "the child's photo shows in Profile but not in Ranking; make it
+consistent". Verified as **deliberate privacy design**, stated in four places
+and enforced at three layers: `get_leaderboard` returns 12 columns and no avatar
+("Numeric ranks only; no ids leave the server"), photos live in a PRIVATE bucket
+whose `can_access_child_avatar()` excludes peers, and `get_leaderboard` applies
+**no ownership check on scope** — any signed-in user can pull any school's
+board. Board rows carry REAL names + city + district + school + grade (migration
+048 removed the anonymisation from the in-app board on an owner ruling; "Şagird
+XXXX" survives only on the public landing page). Production holds 24 student
+avatars, **8 real photographs**. Migration 096 exists because this exposure
+already happened once: *"a photograph of a MINOR was world-readable at a stable
+URL and could never be withdrawn."*
+
+**Implemented instead, which satisfies the actual report:** the viewer's OWN
+photo now renders on their OWN row (`is_self` was already on every row; a
+student may read their own avatar; no RPC, RLS or storage change). Plus the
+parent's own child on the parent leaderboard summary card, which was simply
+left on the initials component while parent Home rendered it correctly.
+
+No cache work was needed: the avatar comes from the `student-profile` query, not
+the board query, so the existing upload invalidation already refreshes it.
+
+Pinned by three tests, because the change that would break it is a one-word edit
+that looks like a fix — dropping `is_self` so "it shows for everyone".
+
+### Apple — parked at the owner's request, resumable
+
+Nothing is waiting on Apple; every remaining item is ours or the owner's. The
+tax forms gate the Paid Apps agreement, which gates product creation. Full
+ordered list in `docs/APP_REVIEW_NOTES.md`'s blocking checklist; run
+`mobile-app/scripts/submission-preflight.mjs` before any submission.
+
+Open question recorded for later: App Store Connect populates the tax form's
+line 1 from the LOGGED-IN USER ("Not You?" dialog), not the enrolment, so
+whether the beneficial owner may differ from the enrolled individual is
+unresolved and worth one question to Apple Developer Support before signing —
+submission is irreversible in App Store Connect.
+
+---
+
+## ROUND 62 — THE INVESTOR DOCUMENTS: ONE ANSWER, ONE BLOCKER (2026-09-02)
+
+Received: the completed Apple information form, ABB account requisites (AZ + EN),
+and photographs of the passport and VÖEN certificate.
+
+**FIRST ACTION WAS `.gitignore`, BEFORE READING ANYTHING INTO A TRACKED FILE.**
+`docs/investor/` is a tracked directory and was not ignored, so the next
+`git add -A` would have committed a passport number, a bank account number, an
+IBAN and a tax id **permanently** — git history cannot be un-published. Rules
+added; all three new files verified ignored; nothing already committed was
+touched. **No sensitive value appears in this file, in `CLAUDE.md`, or anywhere
+else in the repository** — only the operational consequences below.
+
+### The question that mattered most is answered: there is no company
+
+Section 1 of the form and the VÖEN certificate agree. The operator is an
+**individual — `mikro sahibkar`**, Kamil Piriyev, VÖEN 6300091352 (already
+published in the app), registered in Lerik rayonu, Peştətük. No MMC, no ASC, no
+legal entity. Recorded in `CLAUDE.md` so it is never re-derived; it changes the
+Apple enrolment type, the US tax form, and the App Store seller name.
+
+### THE BLOCKER: the account supplied is AZN-only
+
+ABB (Azərbaycan Beynəlxalq Bankı), Sabail branch, BIC `IBAZAZ2X`. The requisites
+document names exactly **one** account and marks it `(AZN)`. Form questions 2.1
+and 2.2 — *does a EUR account exist? does a USD account exist?* — came back
+**unanswered**.
+
+This is precisely the failure the request document was written to prevent, and it
+predicted the mechanism: asked for "our IBAN", the answer is the manat account,
+because that is the one everything else runs through.
+
+**CORRECTION TO ROUND 58 — I over-read the source, and it changes the next
+action.** Round 58 recorded that "Apple pays Azerbaijan in EUR". Adversarial
+re-checking refuted the reasoning: the only Apple page pairing Azerbaijan with a
+currency is the **minimum payment threshold** table, whose columns are *bank
+country / bank account currency / minimum payment in USD*. That is an exceptions
+list for thresholds, **not a schedule of supported payout currencies**, so "AZE |
+EUR | 0.02" does not establish that EUR is the required or only option.
+
+What survives: **AZN almost certainly cannot be paid** — it appears in no Apple
+currency material at all, Azerbaijan's App Store sales settle into the USD "Rest
+of World" region, and AZN has no offshore clearing, so a correspondent bank could
+not originate the wire. That is a sound working assumption but an inference from
+silence; it must not be quoted to anyone as Apple policy.
+
+**Therefore: read the live Bank Account Currency dropdown in App Store Connect
+(with Bank Territory set to Azerbaijan) BEFORE telling the investor which account
+to open.** Sending them to open a EUR account on my inference, when the dropdown
+might offer USD, wastes a bank visit that takes days. The dropdown is on the same
+banking form the owner is already in.
+
+Once the currency is known: in Azerbaijan each currency is a separate account
+with its own IBAN, so this is a NEW account to open, not a setting on the
+existing one.
+
+### Also unanswered on the returned form
+
+Bank: 2.1 EUR account, 2.2 USD account, 2.8 address match, 2.9 the two questions
+for the bank. Tax: 3.1 VAT registration, 3.2 EIN, 3.3 passive-income share,
+3.4 accountant, 3.5 tax adviser. Apple: 4.1 Account Holder name + Apple ID,
+4.2 enrolment type, 4.3 D-U-N-S, 4.4 whose name the accounts are held in.
+Contact: 5.1 support phone, 5.2 WhatsApp, 5.3 privacy mailbox choice.
+
+Answered and usable: 1.1–1.6, 2.3–2.7, 5.4 (seller name "OlympIQ" — see below),
+5.5 (`© 2026 OlympIQ`).
+
+### Two discrepancies to resolve before anything is filed
+
+1. **Postal index.** The VÖEN certificate prints `AZ6300`; form 1.5 says
+   `AZ4335`. Apple's account-holder address needs one, and it must match the
+   bank's record. Two different values are on file; nobody has said which is
+   right.
+2. **Registration number.** Form 1.4 gives the **VÖEN** as the state
+   registration number. For an individual with no legal entity that is plausibly
+   correct — there may be no separate number — but it should be confirmed rather
+   than assumed, because Apple asks for them as different things.
+
+### Seller name: settled, and NOT the way the form assumes
+
+Form 5.4 asks for **OlympIQ** as the App Store seller name. **That is not
+available**, and this is verified against Apple's own wording rather than
+inferred: *"If you're enrolled as an individual, this option isn't available to
+you and the developer name is the same as your legal name."* The
+registered-trade-name / DBA developer name is an **Organization-only** feature,
+and Apple separately refuses DBAs as enrolling entities — *"DBAs, fictitious
+businesses, trade names, and branches are not accepted"*.
+
+So the App Store will list the owner's **personal legal name** as the seller.
+There is no documentation path that changes it on an individual account; the only
+route to a brand seller name is incorporating a real legal entity and moving the
+app to an Organization enrolment. That is a business decision with a real cost,
+and it is better made now than after the listing is public.
+
+The copyright line (`© 2026 OlympIQ`) and the app's own name are unaffected —
+only the seller/developer line is.
+
+### The US tax form: confirmed, with the reasoning corrected
+
+**Form W-8BEN** (individuals), not W-8BEN-E. Confirmed, but the reason matters
+for the next case: it is not "a sole proprietor is not an entity" — it is that a
+sole proprietorship is not an entity *separate from its owner* for US tax
+purposes, so the beneficial owner is the person. The test is **"is this a
+hüquqi şəxs under Azerbaijani law?"**, not "is it registered" or "does it hold a
+VÖEN". An MMC would file W-8BEN-E even with one owner.
+
+Practical: line 1 is the **individual's legal name**, never a trade name (W-8BEN
+has no disregarded-entity line); line 6a is the **VÖEN** as foreign TIN, which is
+what makes the treaty claim possible without a US SSN/ITIN; line 9 is
+**Azerbaijan** (not "USSR"/"CIS"); line 10 cites **Article III(1)(a)**, 0%,
+royalties. The 1973 treaty covers individuals textually — Art. II(3)(b), *"an
+individual resident in the Soviet Union for purposes of its tax"* — and the
+qualifying test is **tax residence**, not citizenship or registration.
+
+Let App Store Connect's own question flow select the form; if it ever offers
+W-8BEN-E to an individual enrolment, a question was answered wrong. A local
+adviser should countersign the treaty claim before it is filed.
+
+---
+
+## ROUND 61 — THE THREE OPEN DECISIONS, CLOSED (2026-09-01)
+
+**Verified:** mobile `tsc` + **670 tests**. Preflight run against production.
+
+### Olympiad packages: there was no commerce problem, only a sentence
+
+The flagged 3.1.1 exposure dissolved on contact with production: **8 packages, 2
+active, ZERO priced above zero.** Apple requires no in-app purchase for content
+that costs nothing, so nothing needed to be built, activated or decided.
+
+What created the exposure was the copy. `mob.oly.notInApp` said packages "are not
+obtained in this app" — a sentence that asserts they are obtained *somewhere
+else*, which is the 3.1.1 pattern verbatim, for content that is free everywhere.
+All of the risk, none of the benefit. Rewritten in access language, az/en/ru.
+
+The preflight now FAILS if an active package ever gains a price while the app
+cannot sell it, so the resolution survives the day someone prices one.
+
+### The iOS build was confessing whenever the catalogue was empty
+
+Found while fixing the above, and worse than the thing being fixed:
+`mob.pay.notInApp` — *"Subscriptions are not managed in this app"* — rendered on
+BOTH platforms whenever the purchase panel had nothing to show. On Android that
+is true and policy-safe. **On iOS it is a written 3.1.1 confession displayed to
+the reviewer**, and its trigger is precisely an empty catalogue: the forgotten
+activation, which has no other visible symptom.
+
+The tempting fix is the trap: *"not available right now"* is the **2.1.0 App
+Completeness** rejection this app already took on 2026-08-26. iOS now renders
+NOTHING. An empty area claims nothing and confesses nothing.
+
+`iap-store-boundary.test.ts` caught the change (its positive-guard regex counted
+`!IAP_PLATFORM_SUPPORTED ? (`), fixed with a lookbehind and extended with a test
+pinning that the sentence is Android-gated on both screens.
+
+### The activation flag now has a mechanical check, not a checklist item
+
+`scripts/submission-preflight.mjs` — read-only, queries production and App Store
+Connect, exits 1 on any blocking failure. Written because the most dangerous item
+on the checklist is the one with **no visible symptom**: 23 products ship
+`active = false`, an empty catalogue renders no purchase card, and the reviewer
+sees exactly the rejected screen with the whole rail working behind it.
+
+Its design rule is that **a check it cannot run reports SKIP, never PASS** — the
+Vercel-side env var, the age rating and the sandbox rehearsal are printed as
+unverified rather than quietly counted as green.
+
+First run against production found two real blockers and one warning:
+
+```
+FAIL  iap_products has an active product         ZERO active iOS products
+FAIL  notification-log migration applied         iap_notification_log missing (166)
+WARN  free-access window is closed               open until 2026-09-26
+PASS  payments flag is enabled
+PASS  no unsellable priced content
+```
+
+### Free-access window: deliberately NOT closed early
+
+It runs to 2026-09-26 and is a commitment to real families; ending it early to
+tidy a review is a disruption paid by users to save an editing step. It is a
+WARN, with the §4 demo-account paragraph already drafted for a submission made
+while it is open — and if submission lands after the 26th the point is moot.
+
+### Not bumped
+
+`mobile-app` version is unchanged: the owner has not said they are committing,
+and a bump forecloses the OTA path for changes that are pure copy and render
+logic. Decide the build-vs-OTA question first (see `CLAUDE.md`), then bump.
+
+---
+
+## ROUND 60 — THE ACTIVATION GUARD, AND TWO LIVE COMPLIANCE GAPS (2026-09-01)
+
+**Verified:** admin `tsc` + 833→892 tests, mobile `tsc` + 668 tests, web 988
+tests + production build. All green.
+
+### Android was not purchase-silent, and the test suite said so
+
+`cancel.reason.price` («The price isn't right for me») and `cancel.benefit3`
+(«your earned discount») rendered on Android with no platform gate, from
+`features/parent/CancelSheet.tsx`, reachable by any parent with a live
+subscription. The compliance sweep passed **because both sat in `KNOWN_GAPS`** —
+the suite was documenting the violation, not preventing it, and a green run read
+as compliance.
+
+Both rewritten in access language across az/en/ru via the overlay (`Bizim üçün
+uyğun deyil` / `It isn't right for us`; `Cari giriş müddətinizin qalan hissəsini`
+/ `The remaining time on your current access`). The reason stays useful — a
+parent cancelling over cost still recognises it — it just stops naming commerce.
+"Trial period" went too: a trial is a billing concept in a binary meant to be
+silent about billing.
+
+**`KNOWN_GAPS` is now empty and the mechanism stays.** The sweep asserts every
+entry STILL trips a pattern, so a fixed key cannot be left as cover; keeping the
+empty list gives the next gap somewhere visible and self-expiring to go, instead
+of `ALLOWED`, where nothing re-checks it.
+
+### The activation guard, and the two rules that would have been wrong
+
+`iap_products.active` is a switch in OUR database — nothing about it consulted
+Apple, so the panel would happily sell a product id App Store Connect has never
+heard of. New `lib/admin/appStoreConnect.ts` asks Apple first. **Two plausible
+rules were both refuted by research before being written:**
+
+**"Refuse anything not APPROVED" would have blocked our own submission.** App
+Review buys in the SANDBOX (TN2413), and sandbox availability "doesn't require
+you to submit your In-App Purchases for review" (TN3186) — at review time our
+products sit in `WAITING_FOR_REVIEW`/`IN_REVIEW`. That guard would refuse them,
+the reviewer would see no purchase button, and we would be rejected for exactly
+what the guard was meant to prevent. Those states are ALLOWED.
+
+**"MISSING_METADATA means unpurchasable" is false.** Apple's stated sandbox
+minimum is only a reference name, product id, localized name and a price;
+submission additionally wants a Description. So a product can sit in
+`MISSING_METADATA` and buy fine in sandbox. It is refused anyway — for the honest
+reason that a product which cannot be SUBMITTED can never be approved, so selling
+it is a release mistake — and the message says that rather than implying the
+purchase would fail.
+
+Also encoded: **Apple publishes no state-to-sandbox matrix at all** (checked
+across four Apple pages), so the allowlist is commented as inference rather than
+contract; an **unrecognised state fails closed**, because Apple has added states
+to this resource before; and **operator-facing text never echoes a raw API
+state** — `MISSING_METADATA` and `READY_TO_SUBMIT` both display as "Prepare for
+Submission" in App Store Connect, so quoting the API name sends the owner hunting
+for a status that does not exist on the screen.
+
+Missing credentials **fail closed**: an unchecked activation is the event the
+module exists to prevent. Deactivation never consults Apple — it is the way OUT
+of a bad state, and blocking it when Apple is unreachable would be worst exactly
+when someone is trying to stop selling something. Both are pinned by tests.
+
+### The five red tests were the guard working
+
+`iap-product-map.test.ts` went 5-red the moment the preflight landed: every test
+that activates a product hit a fail-closed check with no credentials in the test
+environment. Mocked to allow by default, with four new tests pinning refusal,
+that nothing is written on refusal, that all seven problem keys exist in all
+three locales, and that deactivation is never blocked.
+
+### APP_REVIEW_NOTES.md rewritten — it had become a confession
+
+Its §5 told Apple *"Access is provisioned outside the app and the app only
+reflects its status"* — written when true, a written 3.1.1 confession the moment
+Apple looked, and false of the iOS binary since IAP landed. §0 and §0b (the 2.1.0
+reply and the neutral/cooperative close) are superseded by events and moved to a
+**Historical — DO NOT PASTE** appendix; §0b's reserved "cooperative close" offered
+to build IAP, which is now shipped.
+
+**Two blockers the rewrite surfaced that nobody was tracking:**
+
+1. **The `payments` system flag must be ON throughout review.** The intent
+   endpoint fails closed on it, so with it off every price button shows a red
+   "not available right now" and the reviewer never reaches the App Store sheet —
+   the same rejection, dressed as a bug.
+2. **Olympiad packages are still consume-only.** The Olympiads tab tells a parent
+   packages are "not obtained in this app" — the exact 3.1.1 pattern, on a second
+   product line. An owner decision, flagged, not papered over.
+
+Plus the free-access window (ends 2026-09-26) makes a reviewer see "All subjects
+are open" directly above a row of price buttons. Cleanest submission closes it
+first; wording provided if it stays open.
+
+---
+
+## ROUND 59 — THE PASSWORD CHANGE THAT NEVER SENT A REQUEST (2026-09-01)
+
+**Verified:** web-app `tsc` clean, **988 tests / 52 files pass**.
+
+### The bug
+
+Profile → Security, mobile. New password, matching confirmation, "Yadda saxla" →
+*"Yenilənmə alınmadı. Yenidən cəhd edin."* Reported for a child; true for parents
+too, and true for every password ever entered.
+
+`route.ts:92` called `createBearerClient(token).auth.updateUser({ password })`.
+**`updateUser` is SESSION-bound, not header-bound.** A bearer client sets a global
+`Authorization` header — correct for PostgREST, RPC and Storage — but auth-js
+resolves the session from its own storage, and `persistSession: false` makes that
+storage a fresh empty object per request. `_updateUser` runs inside `_useSession`,
+finds `session === null`, and throws `AuthSessionMissingError` **before issuing any
+HTTP request**. Reproduced offline against a deliberately fake hostname: it
+returned instantly, proving no packet was ever sent.
+
+`updateUser` catches its own AuthError and RETURNS it, so the route took the
+`if (error)` branch — a flat 400 — rather than the 500 catch. That distinction is
+what identified it: the client's `classifyBffResponse` rewrites 5xx/404/405 to
+`mob.err.serverUnavailable` and 401 to `mob.session.expired`, so the Azerbaijani
+string reaching the screen PROVED a parseable sub-500 JSON envelope, which only
+`route.ts:96` can produce.
+
+**Regression age: 3 days.** Commit `a990e06` (2026-08-29) moved the call server-side
+to make the strength rule enforceable — the app previously called `updateUser`
+on-device, where a session genuinely existed. Enforcing the rule is right; the move
+silently removed the only thing the method could work with.
+
+### The fix, and the one that was rejected
+
+New `updateOwnPasswordWithBearer` in `lib/auth/mobileBearer.ts`: a direct
+`PUT {supabaseUrl}/auth/v1/user` with the caller's own token — exactly the request
+`auth.updateUser` would have made had it held a session.
+
+**Three of four verifiers proposed `getAdminClient().auth.admin.updateUserById`
+instead. Rejected**, for two reasons neither weighed. The route's header states the
+property being protected — *being the token holder IS the authorization* — and
+service-role would turn any future `resolveBearerUser` defect into an
+account-takeover primitive rather than a scoping bug. And if GoTrue is ever
+configured to demand reauthentication for a password change, the admin API would
+silently BYPASS that control while the token path correctly reports it. The bearer
+client stays for the RLS-scoped `students.child_unique_id` read, which is what it
+is actually good for.
+
+Failure logging now records the GoTrue error CODE. Logging only `error.status` is
+what hid this for three days: it was always a flat 400.
+
+### The tests are written against `fetch`, deliberately
+
+`__tests__/mobileBearerPassword.test.ts` (7 tests) asserts the network boundary,
+not a mocked SDK. **Any test that stubs `auth.updateUser` to resolve
+`{ error: null }` passes on the broken implementation** — the defect is precisely
+that the real method never reaches the transport. So the first assertion is that
+one request was sent; the old code sent zero. Also pinned: an unreachable server is
+distinguishable from a rejection (the old flat-400 collapse is what hid this), and
+a GoTrue message — which can quote the submitted password back — never reaches the
+returned value, which callers log.
+
+---
+
+## ROUND 58 — APPLE PAYOUT ONBOARDING: THREE ASSUMPTIONS OVERTURNED (2026-09-01)
+
+**BLOCKED ON OWNER — see the reminder list at the end of this section.**
+
+The IAP code is finished. The rollout is now entirely an App Store Connect
+configuration problem, and this round was about not getting the configuration
+wrong in a way that costs a week.
+
+### What I had wrong, and what it would have cost
+
+I had told the owner three things from intuition. An adversarial verification
+pass (11 agents, primary sources only) refuted all three.
+
+**1. "Apple converts to whatever currency your account holds, 40 USD minimum."**
+False for Azerbaijan. Apple's published payment-threshold table lists Azerbaijan
+exactly once — `AZE | Azerbaijan | EUR | 0.02 USD`. AZN appears nowhere in
+Apple's payout currencies at all, and the 40 USD floor is the *residual* clause
+for countries with no row of their own. Azerbaijan has a row. **We need a EUR
+account**, and the threshold is negligible.
+*Caveat kept honest in the doc:* the table is a threshold schedule, not a
+declared allowlist, so "USD is unavailable" is undocumented rather than proven.
+
+**2. "Give Apple the company IBAN."** There is no such thing as *the* IBAN.
+Azerbaijani banks open a separate account per currency, each with its own IBAN,
+and the ISO 4217 numeric code sits inside it (944 AZN / 840 USD / 978 EUR) —
+confirmed by decomposing published requisites from three Azerbaijani
+organisations, and by a CBAR AZIPS directory in which 1999 of 1999 manat IBANs
+end in 944. Handing Apple the AZN IBAN is a silent failure: the form accepts it
+and the money never arrives. Apple also has **no correspondent-bank field**, so
+asking the bank for one wastes a call.
+
+**3. "Apple is merchant of record, so no e-kassa duty."** Right conclusion,
+wrong and dangerous reasoning. Apple's Exhibit A puts Azerbaijan under **Apple
+as Commissionaire**, not agent — merchant-of-record language lives only in the
+consumer-facing Media Services Terms. The reasoning matters because "our
+processor is MoR" is equally true of Paddle or FastSpring, and would wrongly
+exempt the *web* rail too, where AZN 1,000-6,000 sanctions apply. The defensible
+reason is that the resident developer has no consumer-facing settlement in
+Azerbaijan. Also verified: Apple remits Azerbaijani VAT with **no local-developer
+carve-out** (Exhibit B, no asterisk — unlike Kazakhstan/Uzbekistan).
+
+**One thing I assumed was risky and turned out fine:** the US *does* have a tax
+treaty with Azerbaijan, via the 1973 US-USSR convention that the IRS still
+applies and lists Azerbaijan by name (Pub. 901). Treaty benefits are claimable
+under Article III(1)(a) with no LOB article; the VÖEN satisfies line 9b. Likely
+moot in practice — Apple states app sales are not subject to US withholding.
+
+### The finding nobody was looking for
+
+**There is no registered company anywhere in this repository.** The published
+operator, in all three locales and in the privacy policy, is an individual:
+"Kamil Piriyev (VÖEN 6300091352) və tərəfdaşları". `docs/OLYMPIQ_ECOSYSTEM_FOR_APPLE.md`
+already carried `Registered company name, if any | — | OWNER MUST CONFIRM`.
+
+This is not a detail. It decides the Apple enrolment type, the Account Holder
+Type field, whether the tax form is W-8BEN-E or W-8BEN, and the public seller
+name. It is question 1.1 of the request document for that reason.
+
+Separately worth confirming: the ASC API key on the account was generated by a
+name that does not match the published operator, so who holds the Account Holder
+role is an open question rather than an assumption.
+
+### Shipped this round
+
+- `docs/INVESTOR_INFO_REQUEST_AZ.txt` + `_EN.txt` — fill-in-the-blank request.
+  Deliberately opens by telling the reader to ask the bank for the **euro**
+  account, because a recipient-simulation agent predicted the natural failure:
+  asked for "our IBAN", a finance director returns the AZN one, since that is
+  the account everything else runs through. Both files close with an explicit
+  "what we already have — do NOT re-send" list (VÖEN, both addresses, the three
+  mailboxes, the domain, every technical identifier) so the ask stays short.
+- `--find-app` in `mobile-app/scripts/create-iap-products.mjs`. The numeric app
+  id lives on a page that is easy to miss, and a wrong one fails as a 404 that
+  reads exactly like a bad credential — the natural next move is regenerating a
+  key that was fine. `readEnv(required, { needAppId })` exists because the
+  command you run to *discover* the id cannot require the id. Script still
+  12/12 on `--self-test`; no mobile version bump (build tooling, not binary).
+
+### OWNER REMINDER — outstanding, in order
+
+1. **Create the ASC API key.** Users and Access → Integrations → Team Keys → +,
+   name `OlympIQ IAP Setup`, access **Admin**. The `.p8` downloads **once**;
+   save to `C:\Users\aliqu\keys\`. The existing `[Expo] EAS Submit` key cannot
+   be reused and must not be disturbed.
+2. **`node ./scripts/create-iap-products.mjs --find-app`** for the numeric id.
+3. **Paid Applications agreement → Active** — needs the investor document back.
+4. Then: 21 products via script, 21 prices by hand, the *separate* In-App
+   Purchase key, sandbox tester, age rating, Server Notifications V2 at
+   `https://olympiq.ai/api/payments/apple/notifications` (+ `/sandbox`).
+
+### Migration numbering collision — found and fixed
+
+Two uncommitted files both claimed **165**: `165_iap_olympiad_products` and
+`165_iap_notification_log`. "Run SQL scripts in numeric order only" has no
+meaning when two files share a number, and neither is committed yet, so this was
+the moment to fix it rather than after it reached a second machine.
+
+Resolved by a read-only production query rather than by reading the headers:
+`iap_products` and `iap_purchase_intents` exist (164 applied), and both
+`iap_notifications` and `iap_notification_log` are **MISSING** — so the
+notification-log migration is genuinely unapplied, as its own header claimed.
+The APPLIED file keeps 165; the unapplied one is renamed to
+**`2026_09_01_166_iap_notification_log.sql`** with its header line updated. No
+migration-tracking table exists (tracking is prose in this file), so no database
+state references the old filename, and nothing else in the repo did either —
+grep across `.md/.sql/.ts/.mjs` returned zero hits.
+
+**DEPLOY-ORDER HAZARD, unchanged by the rename:** the notification endpoints
+under `web-app/src/app/api/payments/apple/` read a table production does not
+have. Pushing them before 166 is applied means every Apple notification gets a
+500 and is retried indefinitely. 166 goes staging → production **before** that
+code is pushed.
+
+Still open from earlier rounds: `docs/APP_REVIEW_NOTES.md` still tells Apple
+access is provisioned outside the app — a written 3.1.1 confession that must be
+rewritten before resubmission; migrations 164/165 not yet backported to canonical.
+
+---
+
 ## ROUND 56 — FOUR QUEUED BRIEFS (2026-08-29)
 
 Four owner briefs worked as one round: `Claude_Professional_Prompt.docx` (7

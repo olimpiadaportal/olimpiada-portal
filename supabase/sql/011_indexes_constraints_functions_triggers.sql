@@ -11683,6 +11683,7 @@ set search_path = public, pg_temp
 as $fn$
 declare
   v_children uuid[];
+  v_stranded int;
 begin
   select coalesce(array_agg(distinct child), '{}')
     into v_children
@@ -11727,6 +11728,37 @@ begin
       null;
   end;
 
+  -- Migration 167. Before the guarantee below, refuse if any child's auth user
+  -- survived the attempt above.
+  --
+  -- The guarantee used to run unconditionally, and that is what manufactured
+  -- orphans: the FK runs auth.users -> profiles and NOT the reverse, so
+  -- deleting the profile while the auth user lives leaves the login perfectly
+  -- intact. GoTrue authenticates c<8-digit-id>@children.invalid against
+  -- auth.users alone and never consults profiles, so the result is a working
+  -- credential with no account behind it. Production accumulated 14 of them,
+  -- 9 with a non-null last_sign_in_at, before anyone noticed.
+  --
+  -- Refusing means the parent's deletion fails loudly and recoverably. That is
+  -- the better half of the trade: a loud failure is fixed in minutes, a silent
+  -- orphan went unnoticed for two months.
+  select count(*)
+    into v_stranded
+    from public.profiles p
+   where p.id = any(v_children)
+     and p.auth_user_id is not null
+     and exists (select 1 from auth.users u where u.id = p.auth_user_id);
+
+  if v_stranded > 0 then
+    raise exception
+      'cascade_delete_would_strand_% child login(s); parent % not deleted',
+      v_stranded, old.profile_id
+      using errcode = 'raise_exception';
+  end if;
+
+  -- The guarantee, unchanged in purpose: children that never had an auth user
+  -- (half-finished provisioning). Anything WITH an auth user has already gone
+  -- via the cascade above, or we refused.
   delete from public.profiles p where p.id = any(v_children);
 
   return old;
@@ -11734,9 +11766,12 @@ end;
 $fn$;
 
 comment on function public.fn_cascade_delete_parent_children() is
-  'Migration 098: deletes a departing parent''s children (profiles + auth users) '
-  'so no orphan child account survives, whatever route deleted the parent. '
-  'Children still linked to another parent are kept.';
+  'Migration 098, hardened by 167: deletes a departing parent''s children '
+  '(profiles + auth users) so no orphan child account survives, whatever route '
+  'deleted the parent. Children still linked to another parent are kept. '
+  'REFUSES rather than deleting a child profile whose auth user survived — that '
+  'combination strands a working c<id>@children.invalid login with no account '
+  'behind it.';
 
 drop trigger if exists trg_parents_cascade_children on public.parents;
 create trigger trg_parents_cascade_children

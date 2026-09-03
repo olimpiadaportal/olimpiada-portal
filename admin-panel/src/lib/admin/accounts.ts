@@ -926,6 +926,47 @@ export async function updateChildAccount(
 // =====================================================================
 export type DeleteState = { error?: string; ok?: boolean } | null;
 
+/**
+ * Delete ONE auth user and PROVE it is gone. Returns null on success, or a
+ * short reason for server-side logging. Twin of the web-app's
+ * lib/auth/parentCore.deleteAuthUserVerified — same reasoning, same shape.
+ *
+ * WHY IT REPLACES `.catch(() => {})`. `deleteUser` CATCHES every AuthError and
+ * RETURNS it as `{ data, error }` rather than throwing, so `.catch()` here
+ * intercepted almost nothing and the discarded return value was the only place
+ * a failure was ever reported. Both delete actions below then returned
+ * `{ ok: true }` regardless. In the web app the identical pattern silently did
+ * nothing on two of five real account deletions.
+ *
+ * Migration 167 makes this urgent rather than merely wrong: the cascade trigger
+ * now RAISES rather than stranding a child login, so a refusal is a reachable
+ * outcome. Swallowed, it would tell an administrator a family was deleted while
+ * the parent and every child remain able to sign in.
+ *
+ * Success means the row is gone, not that the API stayed quiet.
+ */
+async function deleteAuthUserVerified(
+  admin: ReturnType<typeof createAdminClient>,
+  authUserId: string,
+): Promise<string | null> {
+  const { error } = await admin.auth.admin.deleteUser(authUserId);
+  if (error) {
+    // Already absent is the outcome we want, so a retry after a partial
+    // failure can finish rather than trip over what it already removed.
+    const status = (error as { status?: number }).status;
+    const notFound = status === 404 || /not\s*found/i.test(error.message ?? "");
+    if (!notFound) return `delete_failed:${status ?? "unknown"}`;
+  }
+
+  const { data, error: readError } = await admin.auth.admin.getUserById(authUserId);
+  if (readError) {
+    const status = (readError as { status?: number }).status;
+    if (status === 404) return null;
+    return `verify_failed:${status ?? "unknown"}`;
+  }
+  return data?.user ? "still_present" : null;
+}
+
 export async function deleteChild(
   _prev: DeleteState,
   formData: FormData,
@@ -959,7 +1000,13 @@ export async function deleteChild(
     .eq("student_profile_id", studentProfileId)
     .maybeSingle();
   if (cred?.auth_user_id) {
-    await admin.auth.admin.deleteUser(cred.auth_user_id).catch(() => {});
+    const reason = await deleteAuthUserVerified(admin, cred.auth_user_id);
+    if (reason) {
+      // Never audit or report a deletion that did not happen: the child's
+      // c<id>@children.invalid login still works.
+      console.error("[admin] child delete incomplete", studentProfileId, reason);
+      return { error: t("accounts.delete.err.failed") };
+    }
   }
 
   await writeAuditLog({
@@ -1013,6 +1060,11 @@ export async function deleteParent(
     return { error: t("accounts.delete.err.failed") };
   }
 
+  // Collected rather than thrown per-user: an administrator needs to know that
+  // SOMETHING survived, and stopping at the first failure would leave more
+  // behind than continuing does.
+  const failures: string[] = [];
+
   // 1) Delete this parent's children (auth delete cascades their rows).
   const { data: students } = await admin
     .from("students")
@@ -1028,13 +1080,25 @@ export async function deleteParent(
       .in("student_profile_id", studentIds);
     for (const c of (creds ?? []) as { auth_user_id: string }[]) {
       if (c.auth_user_id) {
-        await admin.auth.admin.deleteUser(c.auth_user_id).catch(() => {});
+        const reason = await deleteAuthUserVerified(admin, c.auth_user_id);
+        if (reason) failures.push(`child:${reason}`);
       }
     }
   }
 
   // 2) Delete the parent auth user (cascades profile/parents/links via FK).
-  await admin.auth.admin.deleteUser(parentProfile.auth_user_id).catch(() => {});
+  const parentReason = await deleteAuthUserVerified(admin, parentProfile.auth_user_id);
+  if (parentReason) failures.push(`parent:${parentReason}`);
+
+  if (failures.length > 0) {
+    // Report the failure instead of auditing a deletion that did not happen.
+    // Since migration 167 the cascade trigger REFUSES rather than stranding a
+    // child login, so "nothing was deleted" is a real outcome an administrator
+    // must be told about — otherwise the family is still able to sign in and
+    // the audit log claims otherwise.
+    console.error("[admin] parent delete incomplete", parentProfileId, failures.join(","));
+    return { error: t("accounts.delete.err.failed") };
+  }
 
   await writeAuditLog({
     actorProfileId: ctx.profileId,

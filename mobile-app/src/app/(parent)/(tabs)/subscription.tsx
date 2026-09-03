@@ -15,6 +15,13 @@
 // NOT decide what this tab says about payments: a live subscription is always
 // shown, and a family without one always reads the same sentence
 // (mob.pay.notInApp). See __tests__/no-payment-state.test.ts.
+//
+// iOS ADDS THE APPLE RAIL (src/features/iap) AND TAKES NOTHING AWAY. Apple
+// rejected the 2026-08-31 submission under Guideline 3.1.1; on that storefront
+// the answer is in-app purchase, not silence. The panel and the Restore control
+// sit behind IAP_PLATFORM_SUPPORTED — a BUILD-TIME constant, never a server
+// flag — so an Android build renders precisely what it rendered yesterday.
+// The mob.pay.notInApp sentence is still here and is still what Android says.
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
@@ -32,6 +39,12 @@ import { usePullRefresh } from "@/lib/usePullRefresh";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { fmtDate, isCancellable, resolvePosture, subStatusKey } from "@/features/parent/commerce";
 import { CancelSheet } from "@/features/parent/CancelSheet";
+import {
+  IAP_PLATFORM_SUPPORTED,
+  IapPanel,
+  RestoreAccessButton,
+  useIapOffers,
+} from "@/features/iap";
 import { ManageSubjectsEditor } from "@/features/parent/ManageSubjectsEditor";
 import {
   useChildSubscriptions,
@@ -85,6 +98,13 @@ export default function ParentSubscription() {
   const loading =
     config.isPending || children.isPending || subs.isPending || freeAccess.isPending;
   const { refreshing, onRefresh } = usePullRefresh([children, subs, freeAccess, config]);
+
+  // iOS purchase surface for the SELECTED child. Called unconditionally and
+  // before the early returns below — it owns react-query hooks, and a hook that
+  // vanishes on the loading branch is a crash on the next render. Off iOS it
+  // fetches nothing and answers state "off".
+  const iap = useIapOffers(liveSub ? liveSub.subjects.map((s) => s.subject_id) : []);
+  const iapVisible = IAP_PLATFORM_SUPPORTED && iap.state !== "off" && iap.state !== "none";
 
   const intervalName = (iv: string | null) =>
     iv === "week" ? t("pricing.weekly") : iv === "year" ? t("pricing.yearly") : t("pricing.monthly");
@@ -256,16 +276,47 @@ export default function ParentSubscription() {
                   cannot do here is one unchanging sentence that is true whatever
                   the server says. An empty branch is not an option either — a
                   blank tab reads as unfinished, which is the same rejection. */}
-              {liveSub ? (
-                // Managing a plan the family ALREADY has — removing a subject,
-                // restoring one they cancelled — is not purchasing, so it stays.
-                // Adds are gated whenever a new charge would be required.
-                manageBlock(!posture.freeFlow)
-              ) : (
+              {liveSub
+                ? // Managing a plan the family ALREADY has — removing a subject,
+                  // restoring one they cancelled — is not purchasing, so it
+                  // stays. Adds are gated whenever a new charge would be
+                  // required.
+                  manageBlock(!posture.freeFlow)
+                : null}
+
+              {/* iOS ONLY. Renders null unless there is something priced to
+                  offer, so it never shows a heading over an empty box. */}
+              {IAP_PLATFORM_SUPPORTED ? (
+                <IapPanel
+                  studentProfileId={selected.profile_id}
+                  state={iap.state}
+                  offers={iap.offers}
+                  refetch={iap.refetch}
+                  onSettled={invalidate}
+                />
+              ) : null}
+
+              {/* ANDROID ONLY, and the platform test is the whole point.
+                  "Subscriptions are not managed in this app" is true and
+                  policy-safe on Android, which is consumption-only by Google's
+                  rules and says nothing about where to go instead.
+
+                  On iOS that same sentence is a WRITTEN 3.1.1 CONFESSION shown
+                  to the reviewer — and it used to appear there whenever the
+                  catalogue was empty, which is exactly the state a forgotten
+                  activation leaves us in. The tempting alternative ("not
+                  available right now") is worse: that is the 2.1.0 App
+                  Completeness rejection we already took in August.
+
+                  So iOS renders NOTHING here. An empty area claims nothing and
+                  confesses nothing. The real protection is that the catalogue
+                  is never empty at review time — scripts/submission-preflight.mjs
+                  fails on it — and this is the second line of defence. */}
+              {!liveSub && !iapVisible && !IAP_PLATFORM_SUPPORTED ? (
                 <Card>
                   <AppText variant="muted">{t("mob.pay.notInApp")}</AppText>
                 </Card>
-              )}
+              ) : null}
             </View>
           ) : null}
 
@@ -281,6 +332,17 @@ export default function ParentSubscription() {
           ) : null}
         </>
       )}
+
+      {/* RESTORE SITS OUTSIDE THE CHILDREN FORK, on purpose. It is rendered
+          even when nothing is for sale and even when the family has no children
+          yet: Apple requires the control to exist and to be findable, and what
+          it restores is an ACCOUNT's history, so it must not depend on whether
+          a child chip happens to be selected. */}
+      {IAP_PLATFORM_SUPPORTED ? (
+        <Card style={{ gap: spacing.md }}>
+          <RestoreAccessButton />
+        </Card>
+      ) : null}
     </ScreenScroll>
   );
 }

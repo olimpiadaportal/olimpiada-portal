@@ -1,7 +1,7 @@
 {
   "name": "olympiq-mobile",
   "main": "expo-router/entry",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -31,6 +31,7 @@
     "expo-constants": "~18.0.14",
     "expo-device": "~8.0.10",
     "expo-font": "~14.0.12",
+    "expo-iap": "^5.5.0",
     "expo-image": "~3.0.11",
     "expo-image-picker": "~17.0.11",
     "expo-linear-gradient": "~15.0.8",

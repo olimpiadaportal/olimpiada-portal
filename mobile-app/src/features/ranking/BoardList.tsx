@@ -9,6 +9,8 @@ import React from "react";
 import { Platform, View } from "react-native";
 import { AppText } from "@/components/AppText";
 import { Avatar } from "@/components/Avatar";
+import { ChildAvatar } from "@/components/ChildAvatar";
+import type { ChildAvatarFields } from "@/lib/childAvatar";
 import { radius, spacing } from "@/theme/tokens";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { formatPercent } from "@/lib/formatPercent";
@@ -71,6 +73,7 @@ export function BoardRowList({
   t,
   locale,
   selfSeed,
+  selfAvatar,
 }: {
   rows: LbRow[];
   board: Board;
@@ -79,6 +82,15 @@ export function BoardRowList({
   locale: Locale;
   /** Stable avatar seed for the viewer's own row (student board only). */
   selfSeed?: string | null;
+  /**
+   * The VIEWER'S OWN avatar fields, rendered only on the `is_self` row.
+   *
+   * Deliberately not a per-row field: the board's rows carry no avatar data
+   * from the server and must not, so this is the one avatar the client already
+   * legitimately holds. Omit it and every row falls back to initials, which is
+   * the correct behaviour for any surface showing other people's children.
+   */
+  selfAvatar?: ChildAvatarFields | null;
 }) {
   return (
     <>
@@ -113,7 +125,33 @@ export function BoardRowList({
                 {r.rank !== null ? String(r.rank) : "—"}
               </AppText>
             </View>
-            <Avatar name={name} seed={r.is_self && selfSeed ? selfSeed : name} size={34} />
+            {/* THE VIEWER'S OWN ROW shows the viewer's own photo — this is what
+                a student means by "my picture isn't in the ranking". It exposes
+                nothing: they are already looking at their own avatar on their
+                own Profile screen, and storage RLS signs it with their own
+                session (can_access_child_avatar → the student themself).
+
+                EVERY OTHER ROW STAYS ON INITIALS, and that is not a styling
+                choice. Those rows are OTHER PEOPLE'S CHILDREN, listed beside
+                real names, city, district, school and grade. get_leaderboard
+                deliberately returns no avatar column and no ids at all ("Numeric
+                ranks only; no ids leave the server"), photos live in a PRIVATE
+                bucket a peer cannot read, and get_leaderboard applies no
+                ownership check on scope — any signed-in user can pull any
+                school's board. Rendering peer photos here would require
+                weakening all three, and migration 096 exists because that
+                exposure already happened once: "a photograph of a MINOR was
+                world-readable at a stable URL and could never be withdrawn." */}
+            {r.is_self && selfAvatar ? (
+              <ChildAvatar
+                row={selfAvatar}
+                name={name}
+                seed={selfSeed ?? name}
+                size={34}
+              />
+            ) : (
+              <Avatar name={name} seed={r.is_self && selfSeed ? selfSeed : name} size={34} />
+            )}
             {/* flex: 1 (basis 0) — this column absorbs every deficit, so both
                 texts below measure against a real width and ellipsize INSIDE
                 the row instead of pushing the value cell off a 320pt screen. */}

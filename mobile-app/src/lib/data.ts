@@ -367,6 +367,24 @@ export type OlympiadPackageRow = {
   }[];
   /** Published questions the CALLER's family actually receives (server-computed). */
   my_question_count: number;
+  /**
+   * Migration 163 — the row's own state, because the feed is no longer "all of
+   * this is on sale". `is_owned` says the row may be here ONLY because the
+   * family holds an active purchase (the catalog now has an ownership branch,
+   * so an archived / out-of-window package the family PAID FOR still appears
+   * instead of vanishing). `is_on_sale` is server-computed and cannot be
+   * derived here: the client sees neither the package `status` nor the server
+   * clock, so an ARCHIVED package inside a still-open window looks on-sale from
+   * the sale_starts_at/sale_ends_at pair alone.
+   *
+   * Both default SAFELY against a database that predates 163: a missing
+   * `is_on_sale` means the old function ran, and everything it returned WAS on
+   * sale; a missing `is_owned` falls back to the purchases query the parent tab
+   * already runs. Neither flag ever produces a purchase affordance — this app
+   * is purchase-silent for both roles.
+   */
+  is_owned: boolean;
+  is_on_sale: boolean;
   cover: { bucket: string; path: string } | null;
   title: string;
   description: string;
@@ -458,6 +476,10 @@ export async function fetchOlympiadCatalog(
         grades.length === 1 ? { level: grades[0].level, name: grades[0].name } : null,
       grades,
       my_question_count: Number(p.my_question_count ?? 0) || 0,
+      // Pre-163 databases return neither flag — see the type's comment for why
+      // these two defaults are the truthful ones there.
+      is_owned: p.is_owned === true,
+      is_on_sale: p.is_on_sale !== false,
       cover:
         p.cover_bucket && p.cover_path
           ? { bucket: String(p.cover_bucket), path: String(p.cover_path) }

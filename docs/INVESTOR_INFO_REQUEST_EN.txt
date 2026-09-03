@@ -1,0 +1,252 @@
+===============================================================================
+OLYMPIQ — INFORMATION NEEDED TO RECEIVE APP STORE PAYMENTS
+===============================================================================
+Date:  1 September 2026
+To:    Founder / finance lead / accountant
+Re:    Banking and legal details required for Apple's Paid Applications agreement
+
+
+WHY WE ARE ASKING
+-------------------------------------------------------------------------------
+Apple rejected our mobile app on 31 August 2026 because subscriptions are not
+purchasable inside the app. There is no exemption available for Azerbaijan, so
+the app must sell subscriptions through Apple's own system.
+
+The engineering work is finished. The only remaining blocker is administrative:
+Apple's "Paid Applications" agreement must be signed, with bank details and a
+US tax form completed. Until it is Active, Apple will not let us create even
+one product.
+
+Please fill in the blanks below and send this file back.
+
+
+⚠ TWO THINGS TO KNOW BEFORE CALLING THE BANK
+-------------------------------------------------------------------------------
+
+  1. APPLE DOES NOT PAY IN AZERBAIJANI MANAT. AZN appears nowhere in Apple's
+     currency documentation. We are confirming the exact currency Apple accepts
+     from the list in App Store Connect (most likely EUR or USD) and will tell
+     you which one before you go to the bank — so that no account is opened in
+     the wrong currency.
+
+  2. IN AZERBAIJAN, EACH CURRENCY IS A SEPARATE ACCOUNT WITH ITS OWN IBAN.
+     The currency is encoded inside the IBAN (944 = AZN, 840 = USD, 978 = EUR).
+     We need a FOREIGN-CURRENCY account's IBAN, not the manat one. Giving Apple
+     the wrong IBAN means the payment simply never arrives.
+
+When you call the bank, do NOT say "send me our IBAN" — you will be given the
+manat account, because that is the one everything else runs through.
+
+
+===============================================================================
+SECTION 1 — LEGAL STATUS  (the most important question; everything depends on it)
+===============================================================================
+
+Our app and privacy policy currently name an INDIVIDUAL as the operator:
+"Kamil Piriyev (VÖEN: 6300091352) and partners". No registered company name
+appears anywhere in our records.
+
+What we write to Apple depends entirely on this, so we need a precise answer.
+
+1.1 Does a registered legal entity exist? (choose one)
+    [ ] Yes — MMC (limited liability company)
+    [ ] Yes — Joint-stock company (Səhmdar Cəmiyyəti)
+    [ ] Yes — registered sole trader (Fərdi Sahibkar / FS)
+    [ ] No — the business operates under an individual's name
+
+1.2 If an entity exists, its FULL name exactly as it appears in the state
+    register (including quotation marks and the "MMC" suffix):
+
+    In Azerbaijani letters: __________________________________________
+    Latin transliteration:  __________________________________________
+
+1.3 Whom does VÖEN 6300091352 belong to?
+    [ ] Kamil Piriyev as an individual
+    [ ] A registered legal entity
+
+1.4 State registration number (this is DIFFERENT from the VÖEN): ____________
+
+1.5 POSTAL CODE of the address on the registration certificate: _____________
+
+    (We already have the address itself — Peshtatuk village, Lerik District.
+     We also already have the Baku office address. Only the postal code is
+     missing.)
+
+1.6 Person authorised to sign on behalf of the business:
+    Full name (LATIN spelling, as in the passport): __________________________
+    Title (per the charter): ________________________________________________
+
+
+===============================================================================
+SECTION 2 — BANKING  (longest lead time — please start today)
+===============================================================================
+
+Two simple questions first:
+
+2.1 Does the business already have a EUR current account?
+    [ ] Yes
+    [ ] No
+
+2.2 Is there a USD account?   [ ] Yes   [ ] No
+
+    THESE TWO ANSWERS MATTER MOST: once we confirm which currency Apple accepts,
+    we will tell you which account to open. If one of these already exists, a new
+    account may not be needed at all.
+
+Complete the following FOR THE FOREIGN-CURRENCY ACCOUNT (if one exists):
+
+2.3 Full official bank name: ______________________________________________
+
+2.4 Bank SWIFT / BIC: _____________________________________________________
+    (Azerbaijani banks end in "AZ", e.g. IBAZAZ2X, PAHAAZ22.
+     NOTE: we do NOT need correspondent or intermediary bank details. Apple's
+     form has no field for them. Only our own bank's code.)
+
+2.5 IBAN of the foreign-currency account (28 chars, starts with AZ), and which
+    currency it is:
+
+    IBAN: __________________________  Currency: ______
+
+    Check: "944" means manat — that is NOT the account we need.
+
+2.6 Account number (the 20-digit number the bank shows on its own statements):
+    __________________________________________________________________
+
+2.7 Account holder name — EXACTLY AS THE BANK PRINTS IT, character for character:
+    __________________________________________________________________
+
+    ⚠ This is the most common cause of failed payments. Do not type it from
+      memory. Copy it from a bank statement or the bank letter: capitalisation,
+      quotation marks, "MMC" — all identical. A mismatch bounces the payment.
+
+2.8 Is the account holder's address on file at the bank the same as the
+    registered address?  [ ] Yes  [ ] No — if different: ____________________
+
+2.9 Please ask the bank these two questions and record the answers:
+    a) Can this account receive regular incoming international transfers from
+       "Apple Distribution International Ltd." (Ireland)?
+       Answer: _______________________________________________________
+    b) Does currency control require a contract or supporting document for
+       each incoming payment?
+       Answer: _______________________________________________________
+
+
+===============================================================================
+SECTION 3 — TAX (US form)
+===============================================================================
+
+Apple requires a US tax questionnaire. We will complete it, but need these
+facts from you.
+
+Good news: a US tax treaty DOES apply to Azerbaijan (the 1973 USSR convention
+remains in force, and the IRS lists Azerbaijan by name), so we can claim treaty
+benefits.
+
+3.1 Is the business VAT-registered (ƏDV)?
+    [ ] Yes — registration number and date: ________________________
+    [ ] No — turnover for the last 12 months is under AZN 200,000
+
+3.2 Does the business have a US EIN?  [ ] Yes: __________  [ ] No
+    (Almost certainly no. That is fine — the VÖEN is sufficient.)
+
+3.3 Roughly what percentage of last year's gross income was passive income
+    (interest, dividends, rent, royalties)?  Approx: ______ %
+    (Needed to certify "Active NFFE" status on Apple's form. This is normally
+     close to zero.)
+
+3.4 Accountant's name and direct phone (in case of follow-up questions):
+    __________________________________________________________________
+
+3.5 Is there a tax adviser? Name and contact:
+    __________________________________________________________________
+
+
+===============================================================================
+SECTION 4 — APPLE ACCOUNT
+===============================================================================
+
+4.1 Who holds the "Account Holder" role on the Apple Developer account?
+    Name: ____________________________________________________________
+    Apple ID (email): ________________________________________________
+
+    ⚠ Some steps can ONLY be done by this person and cannot be delegated:
+      signing the agreement, approving bank details, generating keys. They
+      need to be reachable while we work through this.
+
+4.2 What enrolment type is the account?
+    [ ] Individual
+    [ ] Organization
+    [ ] Don't know
+
+4.3 Is there a D-U-N-S number? _____________________________________
+    (Required only for an Organization enrolment. Obtaining one takes
+     roughly 5-7 working days.)
+
+4.4 Will the Apple and Google accounts be held in the business's name or an
+    individual's name? _______________________________________________
+
+
+===============================================================================
+SECTION 5 — CONTACT DETAILS TO BE PUBLISHED
+===============================================================================
+
+These will be PUBLICLY VISIBLE on the App Store listing and in the privacy policy.
+
+5.1 Official support phone (international format, e.g. +994XXXXXXXXX):
+    __________________________________________________________________
+    (We currently have no phone number at all. Apple wants one for review
+     correspondence.)
+
+5.2 Publish a WhatsApp number?  [ ] Yes: __________  [ ] No
+
+5.3 Open a separate mailbox for data-deletion requests?
+    [ ] Yes — create privacy@olympiq.ai
+    [ ] No — support@olympiq.ai is sufficient
+
+5.4 What should appear as the seller name on the App Store?
+    [ ] "OlympIQ" (the brand)
+    [ ] The full legal entity name
+
+5.5 Copyright line: © 2026 ________________________________________
+
+
+===============================================================================
+DOCUMENTS TO ATTACH (as PDF)
+===============================================================================
+
+[ ] State registration certificate / register extract
+[ ] Charter, or the register page naming the director
+[ ] VÖEN certificate
+[ ] BANK LETTER — requisites for the foreign-currency account, IN ENGLISH, on
+    letterhead, stamped and signed
+    ⚠ This is the most important attachment. We copy the account holder name
+      from it character for character.
+[ ] Passport of the signing person (to confirm the Latin spelling of the name)
+
+
+===============================================================================
+WHAT WE ALREADY HAVE — please do NOT re-send these
+===============================================================================
+
+VÖEN 6300091352 / registered address (Lerik, Peshtatuk) / Baku office address /
+support@olympiq.ai / info@olympiq.ai / the olympiq.ai domain / privacy policy
+and terms pages / the app identifier / prices / the product list and every
+technical parameter.
+
+Only the items asked for above are needed.
+
+
+===============================================================================
+PRIORITY
+===============================================================================
+
+In order of urgency:
+
+  1. The foreign-currency account (Section 2) — opening one takes days
+     and holds up everything else
+  2. Legal status (Section 1) — determines what we file with Apple
+  3. The bank letter — so the account holder name is exact
+  4. Everything else
+
+Happy to fill this in together over a call if that is easier.
+===============================================================================

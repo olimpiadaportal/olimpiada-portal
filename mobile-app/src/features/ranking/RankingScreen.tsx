@@ -28,6 +28,7 @@ import { usePullRefresh } from "@/lib/usePullRefresh";
 import { fetchActiveSubjects } from "@/lib/data";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { SelectField } from "@/features/profile/SelectField";
+import { useStudentProfile } from "@/features/profile/studentProfile";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useArena } from "@/features/arena/useArena";
 import { ArenaChip, ArenaEyebrow, ArenaPanel, ArenaScroll } from "@/features/arena/ui";
@@ -52,6 +53,11 @@ export function RankingScreen() {
   const profileId = useAuthStore((s) => s.profileId);
 
   const leaderboardOn = config.data?.flags.leaderboard === true;
+
+  // The student's OWN avatar, for their OWN row in the board. Same query the
+  // Profile screen uses, so the two surfaces cannot disagree and an upload
+  // invalidates both at once.
+  const selfProfileQ = useStudentProfile({ enabled: leaderboardOn });
 
   const scopeIdsQ = useQuery({
     queryKey: ["student", "lb-scope-ids", profileId],
@@ -363,6 +369,7 @@ export function RankingScreen() {
                 t={t}
                 locale={locale}
                 selfSeed={profileId}
+                selfAvatar={selfProfileQ.data?.avatar ?? null}
                 colors={{
                   ink: arena.ink,
                   muted: arena.muted,

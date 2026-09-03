@@ -185,6 +185,70 @@ export function createBearerClient(token: string): SupabaseClient {
 }
 
 /**
+ * Change the password of the user the token belongs to.
+ *
+ * WHY THIS IS NOT `createBearerClient(token).auth.updateUser({ password })`.
+ * That was the original implementation and it could never work. `updateUser` is
+ * SESSION-bound, not header-bound: auth-js resolves the session from its own
+ * storage and throws `AuthSessionMissingError` before issuing any request. A
+ * bearer client sets a global `Authorization` header — which authorizes
+ * PostgREST, RPC and Storage — but its auth sub-client never reads that header,
+ * and with `persistSession: false` its storage is a fresh empty object per
+ * request. So the call failed 100% of the time, for every user, deterministically,
+ * without a single packet leaving the server (fixed 2026-09-01).
+ *
+ * WHY NOT THE SERVICE-ROLE ADMIN API, which would also work. Two reasons, and
+ * the route's own header states the first: being the token holder IS the
+ * authorization here, so no service-role key belongs on a credential path. With
+ * `updateUserById` a future defect in `resolveBearerUser` becomes an
+ * account-takeover primitive; with the token, GoTrue re-validates and can only
+ * ever change that token's own user. Second: if GoTrue is configured to demand
+ * reauthentication for a password change, the admin API would silently BYPASS
+ * that control while this path correctly reports it.
+ *
+ * This is exactly the request `auth.updateUser` would have sent had it held a
+ * session — the same endpoint the app used to call directly from the device.
+ *
+ * Returns null on success, or an opaque reason for SERVER-SIDE logging only.
+ * The body is never returned to a caller (project rule: never leak internals).
+ */
+export async function updateOwnPasswordWithBearer(
+  token: string,
+  password: string,
+): Promise<{ status: number; code: string } | null> {
+  if (!token) return { status: 0, code: "no_token" };
+  let response: Response;
+  try {
+    response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: "PUT",
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+  } catch {
+    // Network/DNS/TLS. Distinguishable from a rejection, which matters: one is
+    // ours to fix and the other is the user's password.
+    return { status: 0, code: "unreachable" };
+  }
+  if (response.ok) return null;
+
+  // GoTrue answers a rejection with {error_code|code, msg|message}. Keep only
+  // the CODE — never the message, which can quote the password back.
+  let code = "unknown";
+  try {
+    const body = (await response.json()) as Record<string, unknown>;
+    const raw = body.error_code ?? body.code ?? body.error;
+    if (typeof raw === "string" && raw.length <= 64) code = raw;
+  } catch {
+    /* non-JSON body; the status alone is the signal */
+  }
+  return { status: response.status, code };
+}
+
+/**
  * Free-access checker for the BFF path — the token-bound twin of
  * lib/freeAccess.isChildFreeAccessActive: the SAME caller-scoped
  * `is_child_free_access_active` RPC (SECURITY DEFINER, returns false unless

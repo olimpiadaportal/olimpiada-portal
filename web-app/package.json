@@ -13,6 +13,7 @@
     "gen:palettes": "node ./scripts/gen-palettes.mjs"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "^3.1.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.48.1",
     "next": "^15.5.19",

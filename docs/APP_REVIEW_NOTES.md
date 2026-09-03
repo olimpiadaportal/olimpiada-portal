@@ -1,212 +1,147 @@
-# App Review Information — what to paste, and the reply to the 2.1.0 rejection
+# App Review Information — what to paste, and the reply to the 3.1.1 rejection
 
-**Status:** ready to paste, for build **1.12.3**. Rewritten 2026-08-27.
+**Status:** rewritten 2026-09-01 for the **In-App Purchase** build. Not yet
+submitted — the blocking checklist at the end is not satisfied.
 
-This file has been through two rounds with Apple:
+**READ THIS FIRST: the app changed category.** Every earlier version of this
+file told Apple the app contained no purchase functionality of any kind. That
+was true, deliberate, and defensible until 2026-08-31. It is now **false of the
+iOS binary**, which sells subject access through In-App Purchase. Sections that
+said otherwise have been moved to the *Historical* appendix at the end and must
+never be pasted. If you are about to copy a sentence from this file into App
+Store Connect, check it is not from that appendix.
 
-* **2026-08-23** — the first submission came back asking for *information*: a screen
-  recording, a device list, a description, credentials, external services, regional
-  differences, regulated-industry documentation. That was a metadata request, not a
-  guideline finding. Sections 2–7 below are the answers.
-* **2026-08-26** — the next submission was **rejected under Guideline 2.1.0
-  Performance: App Completeness**. That one WAS a finding, it was correct, and §0
-  below is both the fix and the reply.
+Three rounds with Apple so far:
+
+* **2026-08-23** — a request for *information* (recording, devices, credentials,
+  external services, regional differences). Sections 2–7 are the answers.
+* **2026-08-26** — rejected under **2.1.0 App Completeness**. Fixed in 1.12.3.
+* **2026-08-31** — rejected under **3.1.1 In-App Purchase**. That is what §0
+  answers, and it is why the app now sells subscriptions itself.
 
 Two things go in App Store Connect:
 
 * **App Review Information → Notes** — sections 2–7, pasted as one block.
-* **App Review Information → Sign-In Information** — the parent email and password.
-  The CHILD login has no email field, so its credentials go in the Notes (§4).
-
-Everything here is written to be true of build 1.12.3. **If the build changes,
-re-read it before pasting** — the previous version of this file went stale in three
-places and told Apple things that had stopped being true.
+* **Sign-In Information** — the parent email and password. The CHILD login has
+  no email field, so its credentials go in the Notes (§4).
 
 ---
 
-## 0. The reply to the 2.1.0 rejection (Resolution Center)
+## What NOT to write — read before replying to anything
 
-### What Apple saw
+This list is promoted to the top because every item on it is a way to turn a
+solvable review into a rejection, and three of them are *more* tempting now that
+IAP exists, not less.
 
-A parent screen rendered:
-
-> **Plans & subjects** — Payments are temporarily paused. New subscriptions and
-> purchases are unavailable right now.
-
-### Why it was there, and why it was our bug
-
-The sentence described **the website**, not the app. It was produced from a
-server-side setting that records whether olympiq.ai is currently taking payments,
-and three parent screens read that setting and reported it.
-
-That is a real defect and Apple read it correctly. An app that announces a feature
-as unavailable reads as an unfinished app — and worse, an app whose visible
-behaviour changes with a server switch is a problem in its own right, independent of
-this rejection. The app should never have had an opinion about the platform's
-payment state.
-
-### What changed in 1.12.3
-
-Paste this, or something close to it, into the Resolution Center:
-
-> Thank you for the review. The finding was correct, and we have fixed its cause
-> rather than its wording.
->
-> That message came from a server-side setting in our billing system that has
-> nothing to do with what the app does. Three parent screens read that setting and
-> reported it, so an app that was complete described itself as unavailable. It
-> should never have surfaced that state at all.
->
-> In the build now submitted, no screen in the app tells the user that payments or
-> purchases are unavailable, and none can: those screens no longer read that
-> setting, and an automated test in our codebase fails the change if any screen
-> begins to again.
->
-> What changed:
->
-> - The parent Subscription tab shows the family's active subscription where there
->   is one, and otherwise states only that subscriptions are not managed in this app.
-> - The in-app privacy policy no longer states a payment status. We would draw your
->   attention to this one: that screen is reachable from the login screen without an
->   account, so it showed the same sentence to a signed-out visitor.
-> - Creating a child now issues the child's 8-digit login ID immediately, so the
->   Add-Child flow ends with an account that can sign in rather than with a promise.
-> - The Profile screen no longer shows a "coming soon" placeholder where sticker
->   themes have not been published.
-> - The Face ID, camera and photo-library permission prompts are now localised in
->   all three languages the app supports; the Face ID prompt was previously
->   Azerbaijani only.
->
-> There is no purchase, price or checkout anywhere in the app, for either account
-> type. No functionality was removed and nothing was hidden behind a setting, and
-> the app behaves identically for every user in every region.
-
-### Three wording choices that are deliberate
-
-* **"our billing system", not "our website".** Both are true. The second volunteers
-  anti-steering into a conversation about App Completeness, and Azerbaijan gets no
-  anti-steering relief. §5 already tells Apple access is provisioned outside the
-  app, so nothing is being concealed.
-* **"tells the user that payments or purchases are unavailable", not "reports a
-  platform payment state".** The absolute version is contradictable in one tap: a
-  free-access period is running, so Add-Child renders "The free promo period is
-  active". That is availability messaging, not an unavailability notice, so it is
-  fine — but do not hand a reviewer a sentence they can disprove.
-* **No build number.** The letter says "the build now submitted". A version named in
-  a letter and a version in App Store Connect are two things that can drift, and
-  this document has already gone stale once.
-
-### What NOT to write
-
-* Do not offer to "turn payments on" so the string disappears. The string was the
-  symptom; a store binary whose behaviour depends on a server flag is the disease,
-  and turning the flag the other way would leave it in place.
-* Do not cite Guideline **3.1.3(b) Multiplatform Services**. Its own proviso
+* **Never cite Guideline 3.1.3(b) Multiplatform Services.** Its own proviso
   *requires* matching in-app purchases, so citing it argues against us.
-* Do not argue that "only parents can buy, so IAP does not apply". 3.1.3(c) names
-  family sales explicitly. It is good child-safety design; it is not an exemption.
-* Do not name a price or a purchasing URL anywhere in the reply.
+* **Never argue that only parents buy, so IAP does not apply.** 3.1.3(c) names
+  family sales explicitly. It is good child-safety design; it is not an
+  exemption.
+* **Never claim 3.1.3(f) companion-app status.** The app is the primary
+  consumption surface. With IAP shipped we need no carve-out at all.
+* **Never reason from the Epic rulings or the DMA.** The link-out permission is
+  **US-storefront-only** and the DMA is **EEA-only**. Azerbaijan gets neither.
+* **Never name or describe any other purchase channel** — no website, no
+  processor, no price outside the App Store — including when answering "how did
+  existing users get access". This is anti-steering and it is a rejection risk
+  on its own.
+* **Never say our prices differ anywhere.** Do not compare, do not explain.
+* **Do not explain what is still outside IAP as a justified exception.** Having
+  built IAP it is tempting to argue the remainder. State facts and stop; an
+  argument invites a rebuttal, an answer does not.
+* **Do not mention sandbox behaviour.** How our server treats sandbox
+  transactions is an implementation detail and volunteering it invites scrutiny
+  of something that is working correctly.
+* **No build number in anything pasted.** Say "the build now submitted". A
+  version named in a letter and a version in App Store Connect are two things
+  that drift, and this document has already gone stale once.
 
 ---
 
-## 0b. The four business-model questions (2026-08-27)
+## 0. The reply to the 3.1.1 rejection (Resolution Center)
 
-App Review paused the review of the resubmitted build and asked four questions
-about the business model. This is Apple's standard screen for an app that consumes
-digital goods purchased outside IAP.
+### What Apple found
 
-**Read `docs/STORE_PAYMENTS_COMPLIANCE.md` §3 before editing a word of this.** Its
-conclusion is not comfortable and pretending otherwise helps nobody: both products
-are squarely inside 3.1.1; "only parents buy" grants ZERO relief because 3.1.3(c)
-names family sales explicitly; 3.1.3(b) must never be cited because its own proviso
-requires matching IAP; and 3.1.3(f) — the only clause that could apply — fits us
-badly, because its examples are infrastructure services with thin clients while our
-app is the PRIMARY consumption surface.
+The app let a signed-in family use subject access that had been provisioned
+outside the app, and that access was not purchasable inside the app. That is
+Guideline 3.1.1, and the finding was correct.
 
-**Therefore the answer below claims no exemption and cites no guideline.** It
-answers what was asked, completely and truthfully, and leaves the classification to
-App Review. Arguing a carve-out we do not clearly qualify for invites a rebuttal and
-reads as advocacy; answering plainly does not.
+### What changed
 
-### Facts verified before writing it (2026-08-27)
+Paste this, or something close to it:
 
-| Claim | Verified against |
-|---|---|
-| Four priced subjects; 3 / 9 / 90 AZN per subject per child | `subjects_pricing` on production |
-| Sibling discount 10% / 15% | CLAUDE.md, investor-approved 2026-07-15 |
-| Four active olympiad packages | `olympiad_packages where status='active'` |
-| No price anywhere in the app | 0 occurrences of "AZN" in `messages.generated.ts`; no component renders an amount |
-| No link or CTA to a purchase | every `Linking.openURL` call site read; `/forgot-password` renders BARE CHROME (no nav, no register CTA, no footer links — compliance finding I8) so the reviewer cannot reach the paywall from the app |
-| Children cannot purchase | enforced server-side, not hidden in UI |
-| Free access period ends 2026-09-26 | `giveaway.started_at` + `giveaway.duration_days` on production |
+> Thank you for the review. The finding was correct and we have implemented
+> In-App Purchase rather than argued the point.
+>
+> The build now submitted sells subject access directly in the app through
+> In-App Purchase. A parent opens the Subscription tab, selects a child, and
+> buys access to a subject for a week, a month or a year. The price shown is the
+> App Store's own localized price for each product; the app contains no price of
+> its own and no other way to obtain access.
+>
+> Two aspects of the configuration are deliberate and we mention them so they do
+> not look like mistakes:
+>
+> **The products are non-renewing subscriptions rather than auto-renewable
+> ones.** Access is granted per child, per subject. A parent with three children
+> studying the same subject needs three simultaneous grants of the same product,
+> which an auto-renewable subscription cannot represent — the App Store permits
+> one active subscription per subscription group per Apple ID. Each purchase
+> grants exactly one child access to exactly one subject for exactly the period
+> bought, and the purchase card states that nothing renews automatically.
+>
+> **A purchase is attributed to a specific child.** The app opens a purchase
+> intent for the selected child before presenting the App Store sheet and passes
+> its identifier as the transaction's account token, so the access that results
+> is applied to that child and no other.
+>
+> Children cannot purchase anything. A child account has no purchase surface at
+> all; every purchase is made by the parent from the parent's own account.
+>
+> We are happy to provide anything further that would help the review.
 
-### The closing paragraph is an OWNER DECISION, not a drafting choice
+### Why that letter says what it says
 
-`STORE_PAYMENTS_COMPLIANCE.md` §10 lists as open decision 3: *"If Apple rejects the
-purchase-silent build twice, do we ship IAP on iOS only (accepting 15–30%, losing
-the sibling discount on that rail) or withhold the iOS app?"* That decision is still
-open, and the closing paragraph is where it becomes visible to Apple.
-
-* **Neutral close** — offers more information, concedes nothing. Keeps the option to
-  appeal. Higher chance the next message is a rejection.
-* **Cooperative close** — offers to implement IAP if App Review determines it is
-  required. Turns a binary outcome into a conversation, and is credible because the
-  entitlement model is provider-agnostic by design (§4.1). It also forfeits the
-  argument: having offered, we will very likely be held to it.
-
-Do not send the cooperative close unless the owner has accepted shipping IAP on iOS.
-
-**OWNER DECISION 2026-08-27: the NEUTRAL close was sent.** IAP on iOS stays
-undecided, and nothing has been promised to Apple. The cooperative close is still
-available as a second message if App Review pushes back — that ordering is
-deliberate and it only works in this direction: an offer can be made later, it
-cannot be withdrawn once made.
+* **It claims no exemption and cites no guideline.** With IAP shipped we do not
+  need one, and arguing for a carve-out we do not require reads as advocacy.
+* **It explains non-renewing before being asked.** A reviewer who notices it
+  unprompted has to guess whether it is an error. The per-child reason is true,
+  verifiable in the binary, and it is the actual reason.
+* **It says "no other way to obtain access" and stops.** True of the app, which
+  is what Apple is reviewing. It volunteers no other channel.
 
 ---
 
 ## 1. Screen recording (you must record this)
 
-Apple wants one continuous recording **from a physical device**, starting at app
-launch. Record from the TestFlight build, not a simulator.
+One continuous recording from a **physical device**, starting at app launch, on
+the build being submitted.
 
-Shoot this order — it covers every flow they listed:
+1. **Launch** from the home screen (start recording first).
+2. **Register** a new parent account. Show the confirmation screen.
+3. **Log in as the DEMO PARENT** — the account in Sign-In Information.
+4. **Add a child**, to the success screen, with the **8-digit login ID** visible.
+5. **Make a purchase.** Subscription tab → select the child → tap the button
+   showing the price → complete the App Store sheet → show the success state and
+   the subject becoming available. **This is the part the rejection was about;
+   do not cut it short.**
+6. **Log in as the DEMO CHILD** — log out, Student tab, 8-digit ID + password.
+7. **Start a daily round**, answer two or three, submit, open the **result with
+   an explanation expanded**.
+8. **Leaderboard** and **Profile** as the child.
+9. Back as the parent: **Account → Delete account**, show the dialog, **cancel**.
 
-1. **Launch** the app from the home screen (start recording before you tap).
-2. **Register** a brand-new parent account (email + password + phone). Show the
-   confirmation screen.
-3. **Log in as the DEMO PARENT** — the account whose credentials are in App Store
-   Connect, not the one you just registered. From here on the recording matches
-   exactly what the reviewer can reproduce.
-4. **Add a child** from the parent account, all the way to the success screen, and
-   let the **8-digit login ID** be visible on camera. This is worth recording now:
-   until 1.12.3 the ID was only issued when a subscription was activated, so this
-   flow ended on a promise. It no longer does.
-5. **Log in as the DEMO CHILD** — log out, choose the Student tab, and sign in with
-   the 8-digit ID + password. Go slowly; this is the flow a reviewer cannot guess.
-   Use the DEMO child rather than the one you just created, so the recording matches
-   the credentials in App Store Connect exactly.
-6. **Start a daily round**, answer two or three questions, submit, and open the
-   **result screen with an explanation expanded**.
-7. Open **Leaderboard** and **Profile** as the child.
-8. Log back in as the parent and open **Account → Delete account**, showing the
-   confirmation dialog. **Cancel it** — do not delete the demo family.
-9. Show a **permission prompt** by opening the avatar picker.
-
-**Do not** show anything price-related. There is none in the app, and the recording
-should make that evident rather than raise the question.
-
-Keep it under about 4 minutes. Upload as a file in your reply, or a private link.
+Keep it under about 5 minutes.
 
 ---
 
 ## 2. Devices and operating systems tested
 
-Replace this with what you actually used — Apple checks nothing, but a false claim
-is a bad look.
+Replace with what you actually used.
 
 > Tested on:
 > - iPhone (physical device) — iOS 18
-> - Android physical device — Android 14 (development testing)
 > - iOS Simulator — iPhone 16 Pro Max, iOS 18
 >
 > The app is iPhone-only; `supportsTablet` is false and no iPad build is offered.
@@ -215,29 +150,22 @@ is a bad look.
 
 ## 3. What the app does and who it is for
 
-> OlympIQ is an olympiad-preparation and school-practice platform for schoolchildren
-> in Azerbaijan, used by two kinds of account:
+> OlympIQ is an olympiad-preparation and school-practice platform for
+> schoolchildren in Azerbaijan, used by two kinds of account.
 >
 > **Parents** create and manage the family. A parent registers with an email
-> address, adds each child, and can see each child's progress, subject access and
-> results.
+> address, adds each child, buys subject access for each child, and sees each
+> child's progress and results.
 >
 > **Students (children)** do not register and have no email address. A parent
-> creates the child account, and the server issues a unique 8-digit ID. The child
-> signs in with that ID plus a password the parent sets. This is deliberate: it
-> keeps children from creating accounts themselves and keeps their personal data
-> minimal — a child never enters an email address or any payment information.
+> creates the child account and the server issues a unique 8-digit ID. The child
+> signs in with that ID plus a password the parent sets. This keeps children from
+> creating accounts themselves and keeps their data minimal — a child never
+> enters an email address and never makes a purchase.
 >
-> The problem it solves: olympiad preparation in Azerbaijan is fragmented across
-> printed books and private tutoring, with no way for a parent to see whether a
-> child is actually improving. OlympIQ gives a structured question bank mapped to
-> the national curriculum, a daily practice round per subject, and progress and
-> ranking a parent can read at a glance.
->
-> Core features: a daily rated round per subject; untimed topic practice;
-> olympiad-preparation question packages; a results screen with worked explanations;
-> leaderboards by school, district and grade; and a parent view of each child's
-> progress.
+> Core features: a daily rated round per subject; untimed topic practice; a
+> results screen with worked explanations; leaderboards by school, district and
+> grade; and a parent view of each child's progress.
 >
 > Content and interface are available in Azerbaijani, English and Russian.
 
@@ -245,56 +173,62 @@ is a bad look.
 
 ## 4. How to set up and access the main features
 
-> The app is fully behind sign-in and has TWO account types. Credentials for both:
+> The app is fully behind sign-in and has TWO account types.
 >
 > **PARENT (email login)**
 > Email: `<demo parent email>`
 > Password: `<demo parent password>`
-> These are also in the Sign-In Information fields.
+> Also in the Sign-In Information fields.
 >
 > **STUDENT / CHILD (8-digit ID login — no email)**
 > On the login screen choose the **Student** tab.
 > Student ID: `<8-digit id>`
 > Password: `<child password>`
 >
-> A child account cannot be created from the login screen by design — only a parent
-> creates children. The 8-digit ID above belongs to a child already set up on the
-> demo parent account, with subject access active, so every student feature is
-> reachable immediately.
+> A child account cannot be created from the login screen by design — only a
+> parent creates children.
 >
-> If you create your own child from the parent account, that child receives an
-> 8-digit ID straight away and can sign in with it immediately. A free access
-> period is currently running on our platform, so a newly created child also has
-> their subjects opened right away and every student feature is reachable. The
-> demo child credentials above work the same way and are the account we have
-> prepared for review.
+> **To make a purchase (parent account):**
 >
-> To exercise the main features as the student: open a subject from the home screen,
-> start the daily round, answer the questions and submit. The result screen shows the
-> score and a worked explanation per question. Leaderboard and Profile are in the
-> bottom tab bar.
+> 1. Sign in with the parent credentials above.
+> 2. In the bottom tab bar, tap **Subscription**.
+> 3. If the family has more than one child, tap the child's name in the row of
+>    chips at the top. Everything below applies to the selected child.
+> 4. Scroll to the card headed **"Activate with the App Store"**.
+> 5. Each row is a subject with its period underneath. **The button is labelled
+>    with the App Store price** — there is no "Subscribe" or "Buy" wording, by
+>    design, because the app displays no price of its own.
+> 6. Tap it and complete the App Store sheet. Access opens immediately and the
+>    subject becomes available to that child.
 >
-> To exercise the parent side: sign in with the parent credentials, open the child
-> from the home screen, and view progress and subject status.
+> **To exercise the student features:** sign in with the student credentials,
+> open a subject from the home screen, start the daily round, answer and submit.
+> The result screen shows the score and a worked explanation per question.
+> Leaderboard and Profile are in the bottom tab bar.
+>
+> **To exercise the parent features:** sign in as the parent, open the child from
+> the home screen, and view progress and subject status.
 
 ---
 
 ## 5. External services used
 
-> - **Supabase** (PostgreSQL database, authentication, file storage) — hosted in the
->   EU (eu-west-1, Ireland). Stores accounts, questions, attempts and results.
-> - **Vercel** — hosting for the web application and the API the mobile app calls.
+> - **Supabase** (PostgreSQL database, authentication, file storage) — hosted in
+>   the EU (eu-west-1, Ireland). Stores accounts, questions, attempts and results.
+> - **Vercel** — hosting for the API the app calls.
 > - **Expo / EAS** — build and over-the-air update infrastructure.
-> - **Brevo** — transactional email (account verification and password reset for
->   parents only; children have no email address).
+> - **Brevo** — transactional email (verification and password reset for parents
+>   only; children have no email address).
 >
-> **No payment processor is reachable from this app.** The app contains no purchase,
-> subscription, price or checkout functionality of any kind, for either account type.
-> Access is provisioned outside the app and the app only reflects its status.
+> **Purchases in this app are made entirely through the App Store.** The app
+> contains no other payment method, no card entry, no checkout of its own and no
+> price of its own — every price displayed is the App Store's localized price for
+> the product. Our server verifies each transaction with Apple before granting
+> access.
 >
-> No advertising SDK, no analytics SDK, and no third-party tracking are included. No
-> data is used for tracking as defined by App Tracking Transparency, and the app does
-> not present the ATT prompt.
+> No advertising SDK, no analytics SDK, no third-party tracking. No data is used
+> for tracking as defined by App Tracking Transparency and the app does not
+> present the ATT prompt.
 >
 > No AI or machine-learning service is used. All questions are authored by our
 > content team.
@@ -304,12 +238,12 @@ is a bad look.
 ## 6. Regional differences
 
 > The app functions identically in every region. There are no region-locked
-> features, no region-specific content and no geographic restrictions in the code.
+> features, no region-specific content and no geographic restrictions.
 >
 > The content is Azerbaijani school and olympiad curriculum, so the audience is
-> concentrated in Azerbaijan, but nothing in the app behaves differently based on the
-> user's location. The interface is available in Azerbaijani, English and Russian,
-> selected by the user, not by region.
+> concentrated in Azerbaijan, but nothing behaves differently based on location.
+> The interface is available in Azerbaijani, English and Russian, chosen by the
+> user rather than by region.
 
 ---
 
@@ -317,46 +251,149 @@ is a bad look.
 
 > OlympIQ is not in a regulated industry. It is an educational practice app.
 >
-> All questions, answers and explanations are authored by our own content team for
-> this platform. The app contains no licensed third-party textbook content, no
-> copyrighted exam papers and no protected material belonging to any examination
-> board. Curriculum topic names follow the public national curriculum structure,
-> which is not protected material.
+> All questions, answers and explanations are authored by our own content team.
+> The app contains no licensed third-party textbook content, no copyrighted exam
+> papers and no protected material belonging to any examination board. Curriculum
+> topic names follow the public national curriculum structure, which is not
+> protected material.
 >
-> The app is not affiliated with, and does not claim endorsement by, any examination
-> board or government body.
+> The app is not affiliated with, and does not claim endorsement by, any
+> examination board or government body.
 
 ---
 
-## A dated caveat: the free access period ends 2026-09-26
+# BLOCKING CHECKLIST — none of this is optional
 
-A platform-wide free access window opened on 2026-08-27 and runs for 30 days. While
-it is open, ANY newly created child gets subjects opened immediately, which is why
-§4 says so. When it closes (2026-09-26) the platform returns to ordinary paid
-access and a newly created child will NOT have subjects open.
+**Run this first. It answers most of the list mechanically:**
 
-**If you are reading this on or after 2026-09-26, re-check §4 before pasting it**,
-and confirm the demo child still has access. Nothing in the app breaks either way —
-but §4 would be describing a state that has passed, which is the exact failure this
-document has already had once.
+```
+cd mobile-app
+node ./scripts/submission-preflight.mjs
+```
+
+Read-only — it changes nothing. Exit 0 means no blocking failure; exit 1 means
+do not submit. It reports what it could NOT check as `SKIP`, never as a pass,
+because a checklist that quietly passes the items it cannot see is worse than no
+checklist. The `SKIP` items below are the ones you must confirm by hand.
+
+Each item has been observed to produce, or would produce, a failed review.
+
+### The purchase must actually work for the reviewer
+
+* [ ] **At least one `iap_products` row per demo subject is `active = true`.**
+      They are seeded `active = false` and **all 23 are off today**. An inactive
+      catalogue renders *no purchase card at all* — the reviewer sees exactly the
+      screen that was rejected. This is the single most likely way to fail again.
+* [ ] **The `payments` system flag is ENABLED and stays enabled throughout
+      review.** The purchase-intent endpoint checks it and fails closed. With it
+      off, every price button shows a red "not available right now" and the
+      reviewer never reaches the App Store sheet — functionally the same
+      rejection, dressed as a bug.
+* [ ] **`APPLE_IAP_SANDBOX_GRANTS` is NOT set to `"off"` in production.** App
+      Review buys in sandbox. With grants off, the reviewer pays and receives
+      nothing.
+* [ ] **The products exist in App Store Connect and are submitted for review.**
+      Creating them is not enough — in-app purchases must be explicitly *added to
+      a submission*; they are never swept in with the build. A first in-app
+      purchase must be submitted **with an app version**.
+* [ ] **Every product has a price.** A product with no price cannot be bought,
+      in sandbox or otherwise.
+* [ ] **Rehearse the purchase on the submitted binary** with a sandbox Apple ID,
+      end to end, and confirm access actually opens afterwards.
+
+### Metadata
+
+* [ ] **Age Rating → "Does your app contain in-app purchases?" must now be YES.**
+* [ ] **3.1.2 — Subscription information.** The app offers no auto-renewable
+      subscriptions; the in-app purchases are **non-renewing subscriptions**. The
+      purchase card states that nothing renews automatically, and the App Store
+      Connect product metadata must say the same in every locale.
+* [ ] **2.3.3 — Screenshots** must show the app in use, not login or splash.
+* [ ] **5.1.1 — Purpose strings** for camera, photo library and Face ID are
+      localized az/en/ru via `expo.locales`.
+* [ ] **A new build is required, not an OTA update.** `runtimeVersion` is
+      `appVersion`, so an update published for one version never reaches another.
+
+### Two decisions to settle before submitting
+
+* [x] **Olympiad packages — RESOLVED 2026-09-01, no commerce change needed.**
+      Production carries 8 packages, 2 active, and **none has a price**. Apple
+      requires no in-app purchase for content that costs nothing, so there was
+      never a 3.1.1 exposure here — only a sentence that created one. The
+      Olympiads tab said packages "are not obtained in this app", which states
+      they are obtained *somewhere else*: all of the compliance risk, none of the
+      benefit. It now says only that packages opened for a child appear there.
+      The preflight fails if any active package ever gains a price while the app
+      cannot sell it.
+* [ ] **The free-access window (ends 2026-09-26) should be closed before
+      submitting.** While it is open a child has full access through a database
+      predicate rather than an entitlement, so the reviewer sees "All subjects
+      are open for your children right now" *directly above a row of price
+      buttons* — which reads as content unlocked outside In-App Purchase. The
+      cleanest submission is one made with the window closed and a demo family
+      that has at least one child with an unpurchased subject.
+
+      If it must stay open, add this to §4 — factual, no defence, and naming no
+      other channel:
+
+      > **One note about the demo account.** A promotional period is currently
+      > running on our platform during which subjects are open to existing
+      > families. The demo child's access comes from that promotion. To review
+      > the purchase itself, please add a new child from the parent account and
+      > buy a subject for that child — the flow is unaffected.
 
 ---
 
-## Before you submit 1.12.3
+# Internal — why this file changed category (never paste)
 
-* **2.1 — Accessing the app.** Install the build and sign in as BOTH the demo parent
-  and the demo child. If the demo child sees locked subjects, the reviewer will read
-  it as a broken paywall — check that account's subject access first.
-* **A new build is required, not an OTA update.** 1.12.3 changes `app.json`
-  (localised permission strings), which is native configuration. An EAS Update
-  cannot carry it, and `runtimeVersion` is `appVersion`, so an update published for
-  1.12.1 will never reach a 1.12.3 binary and vice versa.
-* **2.3.3 — Screenshots.** Must show the app in use, not the login or splash screen.
-  Use the arena home, a question with its A–E options, a result with an explanation
-  open, the leaderboard, and the parent home.
-* **3.1.2 — Subscription information.** Does not apply: the app offers no
-  auto-renewable subscriptions and no in-app purchases.
-* **5.1.1 — Purpose strings.** Camera, photo library and Face ID all give a reason
-  and an example, and as of 1.12.3 all three are localised az/en/ru through
-  `expo.locales` (`mobile-app/locales/*.json`) rather than being fixed to one
-  language.
+Everything this document used to say about the app having no purchase
+functionality was written when it was true and was the deliberate architecture:
+purchasing happened on the web only, and the apps reflected entitlement.
+
+Apple rejected that under 3.1.1 on 2026-08-31. No exemption was available —
+the link-out permission is US-only, the DMA is EEA-only, the Reader rule does
+not cover exam preparation, and 3.1.3(b) requires matching IAP as its own
+condition. The owner resolved open decision 3 in `STORE_PAYMENTS_COMPLIANCE.md`
+§10 by shipping IAP on iOS.
+
+The result is a deliberate platform split: **iOS sells subject access in-app**
+through 21 non-renewing subscription products; **Android remains purchase-silent
+and unchanged**, because Google's consumption-only test is app-wide and
+Azerbaijan is not in any alternative-billing programme. That split is why the
+compliance rules in `CLAUDE.md` still apply in full to the Android build.
+
+A future reader needs this paragraph, or the sections deleted below will look
+like an unexplained retreat and someone will restore a sentence from them.
+
+---
+
+# Historical — superseded, DO NOT PASTE
+
+Kept because the reasoning should not be re-derived, not because any of it is
+still sendable.
+
+**§0 (2026-08-26, Guideline 2.1.0).** The app showed "Payments are temporarily
+paused" on three parent screens, produced by a server-side setting describing the
+website. The fix was to stop the app having any opinion about the platform's
+payment state, and a test fails the change if a screen begins reading it again.
+The reply's central promise — *"There is no purchase, price or checkout anywhere
+in the app, for either account type"* — **stopped being true of iOS on
+2026-08-31** and must never be pasted again.
+
+**§0b (2026-08-27, the four business-model questions).** App Review paused the
+review to ask about the business model. The answer claimed no exemption and cited
+no guideline, and the owner chose the **neutral close** over the cooperative one
+that offered to implement IAP if required — deliberately, because an offer can be
+made later but cannot be withdrawn. Events resolved it: Apple rejected under
+3.1.1 and IAP was built. The cooperative close is now not merely stale but
+embarrassing, since it offers to do something already shipped.
+
+**Two things from §0b survive and are carried forward above:** the discipline of
+verifying every factual claim against production before writing it, and the rule
+that we claim no exemption and cite no guideline — which is easier to hold now
+that we need none.
+
+**The old §5 external-services paragraph** ended *"Access is provisioned outside
+the app and the app only reflects its status."* Written when it was true, it
+became a written confession to 3.1.1 the moment Apple looked for one. Its
+replacement is above.

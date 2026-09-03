@@ -2,7 +2,7 @@
   "expo": {
     "name": "OlympIQ",
     "slug": "olympiq",
-    "version": "1.14.0",
+    "version": "1.15.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "olympiq",
@@ -24,7 +24,11 @@
         },
         "NSPhotoLibraryUsageDescription": "OlympIQ uses this only when you choose a profile picture — for example, picking a photo for your child's profile so they can recognise their own account. The photo is stored only as a profile image and is never used for anything else.",
         "NSCameraUsageDescription": "OlympIQ uses this only for profile pictures — for example, adding a photo to your child's profile so they can recognise their own account. Photos are stored only as a profile image and are never used for anything else.",
-        "CFBundleLocalizations": ["az", "en", "ru"],
+        "CFBundleLocalizations": [
+          "az",
+          "en",
+          "ru"
+        ],
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -70,7 +74,8 @@
           "faceIDPermission": "OlympIQ Face ID-dən yalnız tətbiqin kilidini açmaq üçün istifadə edir — bunu özünüz Hesab bölməsində aktivləşdirirsiniz. Üz məlumatları qurğunuzu heç vaxt tərk etmir."
         }
       ],
-      "./plugins/withIosPermissionStringDefaults"
+      "./plugins/withIosPermissionStringDefaults",
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true

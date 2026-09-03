@@ -11,8 +11,17 @@
 // server/DB E.164 rule) is enforced via setCustomValidity on the visible
 // national input so the browser blocks submit; server-side validation in
 // registerParent remains the source of truth.
+//
+// THE FIELD IS OPTIONAL (2026-08-31). Apple rejected the iOS build under
+// Guideline 5.1.1(v) — an app may not REQUIRE personal information its core
+// functionality does not need. So: no `required`, an "(optional)" label suffix
+// instead of the " *" required marker, and an EMPTY national number submits ""
+// (which the server normalizes to NULL). Leaving it blank on the profile form
+// is therefore also how a parent CLEARS a number they gave earlier. Do not put
+// `required` back to "make the data cleaner" — it is a store rejection.
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { COUNTRIES, DEFAULT_ISO2 } from "@/lib/countries";
+import { useT } from "@/i18n/I18nProvider";
 
 // Mirrors the server regex in parentService.ts and chk_profiles_phone_e164.
 const E164_RE = /^\+[1-9][0-9]{6,14}$/;
@@ -69,6 +78,14 @@ export function PhoneField({
   initialE164?: string;
 }) {
   const id = useId();
+  // The optional marker is resolved HERE, not passed in: both call sites
+  // (registration form, profile card) render the same optional field, and
+  // neither should have to remember to say so. `useT` degrades to returning the
+  // raw key, so a missing catalogue entry must not leak "field.optional" into
+  // the label — fall back to no suffix instead.
+  const t = useT();
+  const optionalRaw = t("field.optional");
+  const optionalSuffix = optionalRaw === "field.optional" ? "" : optionalRaw;
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -121,7 +138,8 @@ export function PhoneField({
   const e164 = national ? `+${dial}${national}` : "";
 
   // Custom validity on the VISIBLE input so native form validation blocks
-  // submit (required covers the empty case with the browser's own message).
+  // submit on a HALF-TYPED number. An EMPTY field is valid — the field is
+  // optional — which is what the `nat &&` guard below already encodes.
   function applyValidity(el: HTMLInputElement, nat: string, d: string) {
     const ok = NATIONAL_RE.test(nat) && E164_RE.test(`+${d}${nat}`);
     el.setCustomValidity(nat && !ok ? invalidMessage : "");
@@ -192,7 +210,7 @@ export function PhoneField({
   return (
     <div className="field phone-field">
       <label className="field-label" htmlFor={`${id}-num`}>
-        {label} *
+        {optionalSuffix ? `${label} ${optionalSuffix}` : label}
       </label>
       <div className="phone-row">
         <div className="phone-cc" ref={rootRef}>
@@ -281,7 +299,6 @@ export function PhoneField({
           type="text"
           inputMode="tel"
           autoComplete="tel-national"
-          required
           maxLength={20}
           value={national}
           onChange={onNationalChange}

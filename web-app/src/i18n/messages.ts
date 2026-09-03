@@ -110,6 +110,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "freeact.cta": "Pulsuz aktivləşdir",
     "freeact.activating": "Aktivləşdirilir…",
     "freeact.done": "Hazırdır! Giriş ID-si yaradıldı.",
+    // Generic "this field may be left empty" suffix, appended to a field label.
+    // Kept as its own key (not baked into each label) so every optional field
+    // says it the same way — the parent phone is the first, after Apple
+    // 5.1.1(v) forced it to stop being mandatory.
+    "field.optional": "(istəyə bağlı)",
     "parent.auth.phone": "Telefon nömrəsi",
     "parent.auth.phonePh": "50 123 45 67",
     "parent.auth.phoneCountry": "Ölkə kodu",
@@ -118,7 +123,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "profile.phoneLabel": "Telefon",
     "profile.phoneEdit": "Dəyiş",
     "profile.phoneSaved": "Telefon nömrəsi yeniləndi",
-    "profile.phoneHint": "Hesabınızla bağlı vacib məsələlərdə sizinlə bu nömrə vasitəsilə əlaqə saxlayırıq.",
+    "profile.phoneHint":
+      "İstəyə bağlıdır. Nömrə əlavə etsəniz, hesabınızla bağlı vacib məsələlərdə sizinlə həmin nömrə vasitəsilə əlaqə saxlayırıq; sahəni boş saxlayıb istənilən vaxt silə bilərsiniz.",
     "profile.addPhone": "Nömrə əlavə et",
     "gvw.title": "Pulsuz giriş aktivdir! 🎁",
     "gvw.sub": "Bütün imkanları indi sınayın — ödənişli giriş daha sonra başlayacaq.",
@@ -844,6 +850,29 @@ export const messages: Record<Locale, Record<string, string>> = {
     // screenshots. This one is the shape section 5 lists as right.
     "gate.notInApp":
       "Bu dəyişiklik tətbiqdə tamamlana bilmir. Abunəliklər bu tətbiqdə idarə olunmur.",
+    // ---- Apple in-app purchase (iap.*) — the iOS store rail, 2026-09-01 ----
+    // Bound by docs/STORE_PAYMENTS_COMPLIANCE.md section 5: no price, no
+    // purchase verb aimed outside the store, no olympiq.ai, and never a hint
+    // that another channel is cheaper — anti-steering is the guideline the app
+    // was rejected under on 2026-08-31. Every sentence states a fact about THIS
+    // purchase and stops there.
+    "iap.err.generic":
+      "Əməliyyat tamamlana bilmədi. Zəhmət olmasa yenidən cəhd edin.",
+    "iap.err.unavailable": "Bu məhsul hazırda əlçatan deyil.",
+    // The double-billing refusal. A distinct key so the app can say plainly
+    // that the child already has it, instead of showing a failure.
+    "iap.err.alreadyActive":
+      "Bu övladın buna girişi artıq aktivdir — yeni ödəniş tələb olunmur.",
+    "iap.err.notFound": "Bu sorğu tapılmadı. Zəhmət olmasa yenidən başlayın.",
+    "iap.err.mismatch": "Bu ödəniş həmin sorğuya uyğun gəlmir.",
+    "iap.err.notVerified":
+      "App Store bu ödənişi təsdiqləyə bilmədi. Məbləğ tutulubsa, dəstəyə yazın.",
+    "iap.err.revoked": "Bu ödəniş geri qaytarılıb, ona görə giriş bərpa olunmur.",
+    "iap.err.alreadyUsed": "Bu ödəniş artıq başqa övlad üçün istifadə olunub.",
+    "iap.err.childGone":
+      "Bu ödənişin aid olduğu övlad hesabı artıq mövcud deyil. Dəstəyə yazın.",
+    "iap.msg.recorded":
+      "Ödənişiniz qeydə alındı. Giriş görünmürsə, tətbiqi yenidən açın.",
     "fa.title": "Pulsuz giriş",
     "fa.sub": "Bütün abunə imkanları hazırda sizin üçün pulsuzdur.",
     "gate.olympiadOff": "Olimpiada modulu hazırda aktiv deyil.",
@@ -2038,6 +2067,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "freeact.cta": "Activate for free",
     "freeact.activating": "Activating…",
     "freeact.done": "Done! The login ID has been created.",
+    "field.optional": "(optional)",
     "parent.auth.phone": "Phone number",
     "parent.auth.phonePh": "50 123 45 67",
     "parent.auth.phoneCountry": "Country code",
@@ -2046,7 +2076,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "profile.phoneLabel": "Phone",
     "profile.phoneEdit": "Change",
     "profile.phoneSaved": "Phone number updated",
-    "profile.phoneHint": "We use this number to reach you about your account.",
+    "profile.phoneHint":
+      "Optional. If you add a number we use it to reach you about your account; leave the field empty to remove it at any time.",
     "profile.addPhone": "Add number",
     "gvw.title": "Free access is on! 🎁",
     "gvw.sub": "Try everything now — paid access starts later.",
@@ -2762,6 +2793,26 @@ export const messages: Record<Locale, Record<string, string>> = {
     // screenshots. This one is the shape section 5 lists as right.
     "gate.notInApp":
       "This change can't be completed in the app. Subscriptions aren't managed in this app.",
+    // ---- Apple in-app purchase (iap.*) — the iOS store rail, 2026-09-01 ----
+    // Bound by docs/STORE_PAYMENTS_COMPLIANCE.md section 5: no price, no
+    // purchase verb aimed outside the store, no olympiq.ai, and never a hint
+    // that another channel is cheaper — anti-steering is the guideline the app
+    // was rejected under on 2026-08-31. Every sentence states a fact about THIS
+    // purchase and stops there.
+    "iap.err.generic": "The operation could not be completed. Please try again.",
+    "iap.err.unavailable": "This item is not available right now.",
+    "iap.err.alreadyActive":
+      "This child already has access to this — no new payment is needed.",
+    "iap.err.notFound": "That request could not be found. Please start again.",
+    "iap.err.mismatch": "This payment does not match that request.",
+    "iap.err.notVerified":
+      "The App Store could not confirm this payment. If you were charged, contact support.",
+    "iap.err.revoked": "This payment was refunded, so access cannot be restored.",
+    "iap.err.alreadyUsed": "This payment has already been used for another child.",
+    "iap.err.childGone":
+      "The child this payment was for no longer exists. Please contact support.",
+    "iap.msg.recorded":
+      "Your payment has been recorded. If access does not appear, reopen the app.",
     "fa.title": "Free access",
     "fa.sub": "All subscription features are free for you right now.",
     "gate.olympiadOff": "The olympiad module is currently unavailable.",
@@ -3937,6 +3988,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "freeact.cta": "Активировать бесплатно",
     "freeact.activating": "Активация…",
     "freeact.done": "Готово! ID для входа создан.",
+    "field.optional": "(необязательно)",
     "parent.auth.phone": "Номер телефона",
     "parent.auth.phonePh": "50 123 45 67",
     "parent.auth.phoneCountry": "Код страны",
@@ -3945,7 +3997,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "profile.phoneLabel": "Телефон",
     "profile.phoneEdit": "Изменить",
     "profile.phoneSaved": "Номер телефона обновлён",
-    "profile.phoneHint": "По этому номеру мы свяжемся с вами по вопросам аккаунта.",
+    "profile.phoneHint":
+      "Необязательно. Если укажете номер, мы будем связываться с вами по нему по вопросам аккаунта; чтобы удалить его, оставьте поле пустым.",
     "profile.addPhone": "Добавить номер",
     "gvw.title": "Бесплатный доступ открыт! 🎁",
     "gvw.sub": "Попробуйте все возможности прямо сейчас — платный доступ начнётся позже.",
@@ -4662,6 +4715,26 @@ export const messages: Record<Locale, Record<string, string>> = {
     // screenshots. This one is the shape section 5 lists as right.
     "gate.notInApp":
       "Это изменение нельзя завершить в приложении. Подписки не управляются в этом приложении.",
+    // ---- Apple in-app purchase (iap.*) — the iOS store rail, 2026-09-01 ----
+    // Bound by docs/STORE_PAYMENTS_COMPLIANCE.md section 5: no price, no
+    // purchase verb aimed outside the store, no olympiq.ai, and never a hint
+    // that another channel is cheaper — anti-steering is the guideline the app
+    // was rejected under on 2026-08-31. Every sentence states a fact about THIS
+    // purchase and stops there.
+    "iap.err.generic": "Не удалось выполнить операцию. Пожалуйста, попробуйте ещё раз.",
+    "iap.err.unavailable": "Сейчас это недоступно.",
+    "iap.err.alreadyActive":
+      "У этого ребёнка уже есть доступ к этому — новая оплата не нужна.",
+    "iap.err.notFound": "Запрос не найден. Пожалуйста, начните заново.",
+    "iap.err.mismatch": "Эта оплата не соответствует этому запросу.",
+    "iap.err.notVerified":
+      "App Store не смог подтвердить эту оплату. Если деньги списаны, напишите в поддержку.",
+    "iap.err.revoked": "Эта оплата возвращена, поэтому доступ не восстанавливается.",
+    "iap.err.alreadyUsed": "Эта оплата уже использована для другого ребёнка.",
+    "iap.err.childGone":
+      "Ребёнка, для которого была эта оплата, больше не существует. Напишите в поддержку.",
+    "iap.msg.recorded":
+      "Ваша оплата записана. Если доступ не появился, перезапустите приложение.",
     "fa.title": "Бесплатный доступ",
     "fa.sub": "Все возможности подписки сейчас для вас бесплатны.",
     "gate.olympiadOff": "Модуль олимпиад в данный момент недоступен.",

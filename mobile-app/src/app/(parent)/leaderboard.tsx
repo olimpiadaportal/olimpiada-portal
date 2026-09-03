@@ -14,7 +14,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppText } from "@/components/AppText";
-import { Avatar } from "@/components/Avatar";
+import { ChildAvatar } from "@/components/ChildAvatar";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -466,7 +466,19 @@ export default function ParentLeaderboard() {
                 flexWrap: "wrap",
               }}
             >
-              <Avatar
+              {/* THE PARENT'S OWN CHILD, on a summary card — not a board row.
+                  Storage RLS already permits a linked parent to sign this
+                  object (can_access_child_avatar), and parent Home renders the
+                  same child the same way; this card was simply left on the
+                  initials bubble. Fixed 2026-09-02.
+
+                  THE BOARD ROWS BELOW STAY ON INITIALS AND MUST. They list
+                  OTHER people's children beside real names, school, district
+                  and grade, get_leaderboard ships no avatar column at all, and
+                  a peer has no storage read access to those photos. See the
+                  header of components/ChildAvatar.tsx. */}
+              <ChildAvatar
+                row={selectedChild}
                 name={childDisplayName(selectedChild)}
                 seed={selectedChild.profile_id}
                 size={40}

@@ -1,9 +1,11 @@
 // Parent registration (web /register parity): first/last name, email,
-// password, MANDATORY E.164 phone. Runs through the BFF, which enforces the
-// exact same validation + rate limits as the web action. When the Supabase
-// project requires email confirmation the BFF returns verify_email instead of
-// tokens and this screen shows the check-your-inbox notice (restyled as a
-// success card per plan §3). Card-grouped fields + gradient CTA.
+// password, OPTIONAL E.164 phone (Apple 5.1.1(v) — the app may not require
+// personal data its core functionality does not need). Runs through the BFF,
+// which enforces the exact same validation + rate limits as the web action.
+// When the Supabase project requires email confirmation the BFF returns
+// verify_email instead of tokens and this screen shows the check-your-inbox
+// notice (restyled as a success card per plan §3). Card-grouped fields +
+// gradient CTA.
 //
 // The notice also carries the RESEND control (web /verify-email parity): a
 // confirmation mail that never arrives otherwise strands the account for good —
@@ -64,7 +66,12 @@ export default function Register() {
     // Client-side mirrors of the server rules — UX only, the BFF re-validates.
     if (!firstName.trim() || !lastName.trim()) return setError("parent.err.required");
     if (!email.trim()) return setError("parent.err.email");
-    if (!E164_RE.test(phone)) return setError("parent.err.phone");
+    // The phone is OPTIONAL (Apple 5.1.1(v), rejection of 2026-08-31): an empty
+    // value passes and is stored as NULL. A number that IS entered still has to
+    // be well-formed — the DB constraint would refuse a malformed one anyway.
+    // `phone` is "" (not a bare dial code) when the field is empty; see
+    // composeE164. Never restore the unconditional test here.
+    if (phone && !E164_RE.test(phone)) return setError("parent.err.phone");
     // FEEDBACK ONLY — the BFF re-runs the identical rule and is authoritative.
     // `tooShort` keeps the existing message; the strength dimensions the old
     // length test never covered share the one passwordWeak string.

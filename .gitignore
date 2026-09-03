@@ -107,3 +107,17 @@ desktop.ini
 # Personal, machine-local Claude Code settings (permission allowlists, etc.).
 # A shared .claude/settings.json may be committed if the team wants one.
 .claude/settings.local.json
+
+# --- Identity, banking and tax documents -----------------------------------
+# Added 2026-09-02. These carry a real person's passport number, bank account
+# number, IBAN and tax id. `docs/investor/` is otherwise a TRACKED directory, so
+# without these rules the next `git add -A` commits them permanently — git
+# history cannot be un-published once pushed, and the same rule that keeps
+# database URLs and API keys out of this repository applies here for the same
+# reason. Keep the originals locally; the values belong in App Store Connect and
+# in the bank's own systems, never in version control.
+docs/investor/*requisites*.pdf
+docs/investor/*melumat_formasi*.docx
+docs/investor/**/passport*
+docs/investor/**/*VOEN*
+docs/investor/**/*voen*

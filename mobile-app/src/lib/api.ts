@@ -141,10 +141,11 @@ async function bffJsonPost<T>(
   fallbackErrorKey: string,
   authed: boolean,
   extraHeaders?: Record<string, string>,
+  timeoutMs?: number,
 ): Promise<BffResult<T>> {
   if (!isBffConfigured) return { ok: false, ...unconfiguredFailure(path) };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs ?? TIMEOUT_MS);
   try {
     const res = await fetch(`${bffUrl}${path}`, {
       method: "POST",
@@ -265,8 +266,11 @@ export function bffAuthedPost<T>(
   body: unknown,
   fallbackErrorKey: string,
   extraHeaders?: Record<string, string>,
+  /** Overrides the 12s JSON budget. Only for endpoints whose work is bounded
+   *  by an OUTBOUND call we do not control — see the Apple IAP calls below. */
+  timeoutMs?: number,
 ): Promise<BffResult<T>> {
-  return bffJsonPost<T>(path, body, fallbackErrorKey, true, extraHeaders);
+  return bffJsonPost<T>(path, body, fallbackErrorKey, true, extraHeaders, timeoutMs);
 }
 
 /**
@@ -427,6 +431,81 @@ export const bffCancelSubscription = (
     "cancel.err",
   );
 
+// ---- Apple in-app purchase (iOS only; parent bearer) ---------------------------
+// The three parent-facing endpoints of the Apple rail. They are declared here
+// like every other BFF call, but NOTHING outside src/features/iap calls them and
+// that module refuses to run off iOS — the Android binary never reaches this
+// section. Errors come back as the server's own i18n keys (iap.err.*).
+//
+// NO PRICE CROSSES THIS BOUNDARY IN EITHER DIRECTION. Apple owns the amount;
+// the server never sends one and the app never asks.
+
+/** `intent_id` IS the appAccountToken handed to StoreKit — the only thing that
+ *  ties an Apple purchase to one CHILD. `expires_at` is a staleness marker for
+ *  pruning a local pending list, NOT a deadline: the server still honours a
+ *  transaction Apple reports after it passes. */
+export type IapIntent = {
+  intent_id: string;
+  product_id: string;
+  student_profile_id: string;
+  expires_at: string;
+};
+
+export const bffIapIntent = (studentProfileId: string, productId: string) =>
+  bffAuthedPost<IapIntent>(
+    "/api/mobile/v1/iap/apple/intent",
+    { student_profile_id: studentProfileId, product_id: productId },
+    "iap.err.generic",
+  );
+
+/** `granted: false` with a `message` is a SANDBOX purchase: verified and
+ *  genuine, but structurally unable to create real access. It is a success, not
+ *  an error — and it is what App Review sees, because review buys in sandbox. */
+export type IapRedeemResult = {
+  granted: boolean;
+  already?: boolean;
+  message?: string;
+  student_profile_id?: string | null;
+  product_id?: string | null;
+  scope?: string;
+  ends_at?: string | null;
+};
+
+/** Longer than the house 12s budget: this endpoint makes its own verified call
+ *  out to Apple (production host, then sandbox) before it answers. A false
+ *  timeout here is expensive — the charge already happened, and the app must not
+ *  be pushed onto the "we could not confirm" path by our own impatience. */
+const IAP_REDEEM_TIMEOUT_MS = 25_000;
+
+export const bffIapRedeem = (intentId: string, transactionId: string) =>
+  bffAuthedPost<IapRedeemResult>(
+    "/api/mobile/v1/iap/apple/redeem",
+    { intent_id: intentId, transaction_id: transactionId },
+    "iap.err.generic",
+    undefined,
+    IAP_REDEEM_TIMEOUT_MS,
+  );
+
+export type IapRestoreResult = {
+  checked: number;
+  granted: number;
+  results: { transaction_id: string; status: "granted" | "pending" | "refused" }[];
+};
+
+/** Restore asks Apple about up to 25 transactions, four at a time. Twelve
+ *  seconds is not enough for a family with real history, and a timeout here
+ *  would tell a paying parent there is nothing to give back. */
+const IAP_RESTORE_TIMEOUT_MS = 45_000;
+
+export const bffIapRestore = (transactionIds: string[]) =>
+  bffAuthedPost<IapRestoreResult>(
+    "/api/mobile/v1/iap/apple/restore",
+    { transaction_ids: transactionIds },
+    "iap.err.generic",
+    undefined,
+    IAP_RESTORE_TIMEOUT_MS,
+  );
+
 /** Remove the signed-in user's own avatar. For a STUDENT this deletes the
  *  private storage object as well — a child's photo must be withdrawable, not
  *  merely unlinked. */
@@ -444,10 +523,12 @@ export const bffDeleteAccount = () =>
     "prof2.err.generic",
   );
 
-/** Parent phone change. E.164 only — the server revalidates with the same
- *  PHONE_RE registration uses, so the client never decides what is valid. */
+/** Parent phone change. E.164 when present — the server revalidates with the
+ *  same PHONE_RE registration uses, so the client never decides what is valid.
+ *  An EMPTY string clears the number and the server answers `{ phone: null }`;
+ *  the phone is optional since Apple Guideline 5.1.1(v). */
 export const bffUpdateParentPhone = (phone: string) =>
-  bffAuthedPost<{ phone: string }>(
+  bffAuthedPost<{ phone: string | null }>(
     "/api/mobile/v1/profile/phone",
     { phone },
     "profile.err.updateFailed",

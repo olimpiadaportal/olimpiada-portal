@@ -114,3 +114,37 @@ describe("no public URL survives on any student avatar path", () => {
     expect(src).toMatch(/fallbackUrl=\{isStudent \? null :/);
   });
 });
+
+describe("a leaderboard row shows a photo ONLY for the viewer themself", () => {
+  // Added 2026-09-02, when the board learned to render the viewer's own photo.
+  //
+  // WHY THIS IS PINNED IN A TEST RATHER THAN A COMMENT. The change that would
+  // break it is a one-word edit that looks like a bug fix: dropping `is_self`
+  // so "the avatar shows for everyone". The board lists OTHER PEOPLE'S CHILDREN
+  // beside real names, city, district, school and grade; get_leaderboard ships
+  // no avatar column and no ids at all; the photos sit in a PRIVATE bucket a
+  // peer cannot read; and get_leaderboard applies no ownership check on scope,
+  // so any signed-in user can pull any school's board. Migration 096 exists
+  // because this exposure already happened once — a minor's photograph was
+  // world-readable at a stable URL and could never be withdrawn.
+  const board = srcCode("features", "ranking", "BoardList.tsx");
+
+  it("gates ChildAvatar behind is_self", () => {
+    // The ONLY ChildAvatar use in this file must be guarded by is_self.
+    const uses = board.match(/<ChildAvatar/g) ?? [];
+    expect(uses).toHaveLength(1);
+    expect(board).toMatch(/r\.is_self\s*&&\s*selfAvatar\s*\?[\s\S]{0,200}<ChildAvatar/);
+  });
+
+  it("keeps the plain initials Avatar as the fallback for every other row", () => {
+    expect(board).toContain("<Avatar");
+  });
+
+  it("takes ONE viewer avatar, never a per-row avatar field", () => {
+    // A per-row avatar prop would mean the server started shipping avatar data
+    // for other children, which is the thing that must not happen.
+    expect(board).toContain("selfAvatar");
+    expect(board).not.toMatch(/r\.avatar_(kind|key|media_path)/);
+    expect(board).not.toMatch(/row\.avatar_(kind|key|media_path)/);
+  });
+});

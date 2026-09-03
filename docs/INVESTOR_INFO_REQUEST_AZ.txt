@@ -1,0 +1,248 @@
+===============================================================================
+OLYMPIQ — APP STORE ÖDƏNİŞ SİSTEMİ ÜÇÜN LAZIM OLAN MƏLUMATLAR
+===============================================================================
+Tarix:      01.09.2026
+Kimə:       Şirkətin təsisçisi / maliyyə məsulu / mühasib
+Mövzu:      Apple-dan ödəniş ala bilməmiz üçün lazım olan bank və hüquqi məlumatlar
+
+QISA İZAH
+-----------------------------------------------------------------------------
+Apple mobil tətbiqimizi 31.08.2026-da rədd etdi. Səbəb: abunələr tətbiqin
+içindən satılmır. Azərbaycan üçün heç bir istisna yoxdur — abunələri Apple-ın
+öz sistemi ilə satmalıyıq.
+
+Texniki hissə hazırdır. Qalan yeganə maneə budur: Apple bizə pul köçürə bilməsi
+üçün "Paid Applications" müqaviləsi imzalanmalı, bank hesabı və vergi forması
+təqdim edilməlidir. Bu müqavilə tamamlanmayana qədər Apple-da BİR DƏNƏ də
+məhsul yarada bilmirik.
+
+Aşağıdakı sualların cavabını verməyinizi xahiş edirik. Boş sətirləri doldurun
+və faylı geri göndərin.
+
+⚠ ƏN VACİB İKİ MƏQAM (bunları bilmədən banka zəng etməyin):
+
+  1. Apple manatla (AZN) ödəniş etmir. Manat Apple-ın valyuta sənədlərində
+     ümumiyyətlə yer almır. Apple-ın hansı valyutanı qəbul etdiyini App Store
+     Connect-dəki siyahıdan DƏQİQLƏŞDİRİRİK (böyük ehtimalla AVRO və ya ABŞ
+     dolları) və dəqiq valyutanı sizə ayrıca bildirəcəyik — bankda səhv
+     valyutada hesab açmamağınız üçün.
+
+  2. Azərbaycan banklarında hər valyutanın AYRI hesabı və AYRI IBAN-ı olur
+     (IBAN-ın içindəki rəqəm valyutanı bildirir: 944=AZN, 840=USD, 978=EUR).
+     Bizə manat (AZN) hesabı YOX, xarici valyuta hesabının IBAN-ı lazımdır.
+     Səhv IBAN verilsə, ödəniş sadəcə gəlməyəcək.
+
+Ona görə banka zəng etdikdə "bizim IBAN-ı göndərin" DEMƏYİN — sizə manat
+hesabını verəcəklər, çünki gündəlik işlər onun üzərindən gedir.
+
+
+===============================================================================
+BÖLMƏ 1 — HÜQUQİ STATUS  (ƏN VACİB SUAL, hər şey buna bağlıdır)
+===============================================================================
+
+Tətbiqdə və məxfilik siyasətində operator kimi FİZİKİ ŞƏXS göstərilib:
+"Kamil Piriyev (VÖEN: 6300091352) və tərəfdaşları". Yəni sənədlərimizdə
+qeydiyyatdan keçmiş şirkət adı yoxdur.
+
+Apple-a nə yazacağımız tamamilə bundan asılıdır, ona görə dəqiq cavab lazımdır:
+
+1.1 Qeydiyyatdan keçmiş hüquqi şəxs varmı? (birini seçin)
+    [ ] Bəli — MMC (məhdud məsuliyyətli cəmiyyət)
+    [ ] Bəli — Səhmdar Cəmiyyəti
+    [ ] Bəli — qeydiyyatdan keçmiş Fərdi Sahibkar (FS)
+    [ ] Xeyr — fəaliyyət fiziki şəxs adına aparılır
+
+1.2 Əgər hüquqi şəxs varsa, dövlət reyestrindəki TAM ADI
+    (necə yazılıbsa, eynilə — dırnaqlar və "MMC" daxil olmaqla):
+
+    Azərbaycan dilində: ______________________________________________
+    Latın hərfləri ilə: ______________________________________________
+
+1.3 VÖEN 6300091352 kimə aiddir?
+    [ ] Kamil Piriyevə fiziki şəxs kimi
+    [ ] Qeydiyyatdan keçmiş hüquqi şəxsə
+
+1.4 Dövlət qeydiyyat nömrəsi (VÖEN-dən FƏRQLİDİR): _______________________
+
+1.5 Qeydiyyat şəhadətnaməsindəki ünvanın POÇT İNDEKSİ: ___________________
+
+    (Ünvanın özünü bilirik — Lerik rayonu, Peştətük kəndi. Yalnız indeks
+     lazımdır. Bakıdakı ofis ünvanını da bilirik, onu göndərməyə ehtiyac yoxdur.)
+
+1.6 Şirkət adından imza atmaq səlahiyyəti olan şəxs:
+    Adı, soyadı (pasportdakı LATIN yazılışı ilə): ____________________________
+    Vəzifəsi (nizamnaməyə əsasən): __________________________________________
+
+
+===============================================================================
+BÖLMƏ 2 — BANK  (bu, ən uzun çəkən hissədir — dərhal başlayın)
+===============================================================================
+
+Əvvəlcə iki sadə sual:
+
+2.1 Şirkətin AVRO (EUR) cari hesabı VARMI?
+    [ ] Bəli, var
+    [ ] Xeyr, yoxdur
+
+2.2 ABŞ dolları (USD) hesabı varmı?  [ ] Bəli   [ ] Xeyr
+
+    Bu iki sualın cavabı ÇOX VACİBDİR: Apple-ın qəbul etdiyi valyutanı
+    dəqiqləşdirəndən sonra hansı hesabı açmaq lazım olduğunu deyəcəyik.
+    Əgər artıq belə bir hesab varsa, yeni hesab açmağa ehtiyac qalmaya bilər.
+
+Aşağıdakıları XARİCİ VALYUTA hesabı üçün doldurun (varsa):
+
+2.3 Bankın tam rəsmi adı: ________________________________________________
+
+2.4 Bankın SWIFT / BIC kodu: _____________________________________________
+    (Azərbaycan bankları üçün "AZ" ilə bitir, məsələn IBAZAZ2X, PAHAAZ22.
+     DİQQƏT: bizə korrespondent/vasitəçi bankın SWIFT-i LAZIM DEYİL —
+     Apple-ın formasında belə bir xana ümumiyyətlə yoxdur. Yalnız bizim
+     öz bankımızın kodu.)
+
+2.5 Xarici valyuta hesabının IBAN-ı (28 simvol, AZ ilə başlayır) və valyutası:
+
+    IBAN: __________________________  Valyuta: ______
+
+    Yoxlama: "944" manat deməkdir — o, bizə lazım olan hesab DEYİL.
+
+2.6 Hesab nömrəsi (bankın öz çıxarışlarında göstərdiyi 20 rəqəmli nömrə):
+    _________________________________________________________________
+
+2.7 Hesab sahibinin adı — BANKIN YAZDIĞI KİMİ, HƏRFBƏHƏRF:
+    _________________________________________________________________
+
+    ⚠ Bu, ən çox səhv edilən yerdir. Yaddaşdan yazmayın. Bank çıxarışından
+      və ya arayışdan köçürün: böyük/kiçik hərflər, dırnaqlar, "MMC" — hamısı
+      eynilə. Uyğunsuzluq olsa, Apple-ın ödənişi geri qayıdır.
+
+2.8 Hesab sahibinin bankda qeydiyyatda olan ünvanı qeydiyyat ünvanı ilə
+    eynidir? [ ] Bəli  [ ] Xeyr — fərqlidirsə yazın: ___________________
+
+2.9 Banka bu iki sualı verin və cavabı yazın:
+    a) Bu hesab İrlandiyadakı "Apple Distribution International Ltd."
+       şirkətindən müntəzəm gələn xarici köçürmələri qəbul edə bilərmi?
+       Cavab: ______________________________________________________
+    b) Valyuta nəzarəti baxımından hər daxilolma üçün müqavilə və ya
+       əsaslandırıcı sənəd tələb olunurmu?
+       Cavab: ______________________________________________________
+
+
+===============================================================================
+BÖLMƏ 3 — VERGİ (ABŞ forması)
+===============================================================================
+
+Apple ABŞ vergi anketi tələb edir. Doldurmaq bizim üzərimizdədir, amma
+aşağıdakı məlumatlar sizdən lazımdır.
+
+Yaxşı xəbər: ABŞ-ın Azərbaycanla vergi müqaviləsi VAR (1973-cü il SSRİ
+konvensiyası hələ də qüvvədədir və ABŞ Vergi İdarəsi Azərbaycanı adbaad
+sadalayır). Yəni müqavilə güzəştini tələb edə bilərik.
+
+3.1 Şirkət ƏDV (əlavə dəyər vergisi) qeydiyyatındadır?
+    [ ] Bəli — qeydiyyat nömrəsi və tarixi: _________________________
+    [ ] Xeyr — son 12 ayın dövriyyəsi 200 000 AZN-dən azdır
+
+3.2 Şirkətin ABŞ EIN nömrəsi varmı?  [ ] Bəli: __________  [ ] Xeyr
+    (Böyük ehtimalla xeyr. Problem deyil — VÖEN kifayət edir.)
+
+3.3 Keçən il ümumi gəlirin neçə faizi passiv gəlir olub (faiz, dividend,
+    icarə, royalti)?  Təxmini: ______ %
+    (Apple-ın formasında "Active NFFE" statusunu təsdiqləmək üçündür.
+     Adətən bu rəqəm 0-a yaxın olur.)
+
+3.4 Mühasibin adı və birbaşa telefonu (sual yaranarsa):
+    _________________________________________________________________
+
+3.5 Vergi məsləhətçisi varmı? Adı və əlaqə:
+    _________________________________________________________________
+
+
+===============================================================================
+BÖLMƏ 4 — APPLE HESABI
+===============================================================================
+
+4.1 Apple Developer hesabının "Account Holder" səlahiyyəti kimdədir?
+    Ad, soyad: ______________________________________________________
+    Apple ID (e-poçt): ______________________________________________
+
+    ⚠ Bəzi addımları YALNIZ bu şəxs edə bilər — başqasına həvalə etmək
+      mümkün deyil: müqavilənin imzalanması, bank məlumatlarının təsdiqi,
+      açarların yaradılması. Bu şəxs prosesin gedişində əlçatan olmalıdır.
+
+4.2 Hesab hansı tipdə qeydiyyatdan keçib?
+    [ ] Individual (fiziki şəxs)
+    [ ] Organization (təşkilat)
+    [ ] Bilmirəm
+
+4.3 D-U-N-S nömrəsi varmı? _______________________________________
+    (Yalnız "Organization" tipi üçün lazımdır. Yoxdursa alınması
+     təxminən 5-7 iş günü çəkir.)
+
+4.4 Apple və Google hesabları şirkət adına, yoxsa fiziki şəxs adına
+    saxlanacaq? ____________________________________________________
+
+
+===============================================================================
+BÖLMƏ 5 — DƏRC EDİLƏCƏK ƏLAQƏ MƏLUMATLARI
+===============================================================================
+
+Bunlar App Store səhifəsində və məxfilik siyasətində GÖRÜNƏCƏK.
+
+5.1 Rəsmi dəstək telefonu (beynəlxalq formatda, məs. +994XXXXXXXXX):
+    _________________________________________________________________
+    (Hazırda heç bir nömrəmiz yoxdur. Apple sorğu göndərmək üçün telefon
+     istəyir.)
+
+5.2 WhatsApp nömrəsi dərc edilsin? [ ] Bəli: __________  [ ] Xeyr
+
+5.3 Məlumat silinməsi sorğuları üçün ayrıca poçt açılsın?
+    [ ] Bəli — privacy@olympiq.ai açaq
+    [ ] Xeyr — support@olympiq.ai kifayətdir
+
+5.4 App Store-da satıcı adı kimi nə görünsün?
+    [ ] "OlympIQ" (brend)
+    [ ] Hüquqi şəxsin tam adı
+
+5.5 Müəllif hüququ sətri: © 2026 _________________________________
+
+
+===============================================================================
+SƏNƏDLƏR (PDF şəkilində göndərin)
+===============================================================================
+
+[ ] Dövlət qeydiyyatı haqqında şəhadətnamə / reyestrdən çıxarış
+[ ] Nizamnamə (və ya direktorun adını göstərən çıxarış səhifəsi)
+[ ] VÖEN şəhadətnaməsi
+[ ] BANK ARAYIŞI — xarici valyuta hesabının rekvizitləri haqqında arayış,
+    İNGİLİS DİLİNDƏ, blankda, möhür və imza ilə
+    ⚠ Bu ən vacib sənəddir. Hesab sahibinin adını buradan hərfbəhərf
+      köçürəcəyik.
+[ ] İmza atacaq şəxsin pasportu (adın latın yazılışını görmək üçün)
+
+
+===============================================================================
+BİZDƏ ARTIQ OLAN MƏLUMATLAR — bunları göndərməyə EHTİYAC YOXDUR
+===============================================================================
+
+VÖEN 6300091352 / hüquqi ünvan (Lerik, Peştətük) / Bakı ofis ünvanı /
+support@olympiq.ai / info@olympiq.ai / olympiq.ai domeni / məxfilik siyasəti
+və şərtlər səhifələri / tətbiqin identifikatoru / qiymətlər / məhsul siyahısı
+və bütün texniki parametrlər.
+
+Yalnız yuxarıda soruşulanlar lazımdır.
+
+
+===============================================================================
+NƏ QƏDƏR TƏCİLİDİR
+===============================================================================
+
+Sıra ilə ən vacibdən:
+
+  1. Xarici valyuta hesabı (Bölmə 2) — yoxdursa açılması günlər çəkir
+  2. Hüquqi status (Bölmə 1) — Apple-a nə yazacağımızı müəyyən edir
+  3. Bank arayışı — hesab sahibinin adını dəqiq bilmək üçün
+  4. Qalanları
+
+Sualınız olsa yazın — bu formanı birlikdə doldura bilərik.
+===============================================================================

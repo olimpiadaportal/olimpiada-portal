@@ -18,8 +18,20 @@ export const EMAIL_MAX = 255;
 // pair of constants here is a pair that can silently drift from the module the
 // server actually validates with.
 export { PASSWORD_MAX, PASSWORD_MIN } from "@/lib/auth/passwordPolicy";
-// Round 11: mandatory parent phone in E.164 — mirrors the DB check constraint
+// Parent phone in E.164 — mirrors the DB check constraint
 // chk_profiles_phone_e164 (migration 025) so invalid values never reach the DB.
+//
+// OPTIONAL since 2026-08-31 (was mandatory in Round 11). Apple rejected the
+// iOS build under Guideline 5.1.1(v): an app may not REQUIRE personal
+// information that its core functionality does not need, and nothing here
+// needs a parent phone (the WhatsApp/tel links read the PLATFORM number from
+// system_settings; payments read no phone at all). No migration was needed —
+// chk_profiles_phone_e164 already constrains only the SHAPE of a NON-NULL
+// value and profiles.phone is a plain nullable column, so mandatoriness only
+// ever lived in the application layer.
+//
+// Optional is NOT unvalidated: a value that IS supplied must still be E.164,
+// or the write fails the constraint.
 export const PHONE_RE = /^\+[1-9][0-9]{6,14}$/;
 export const PHONE_MAX = 16;
 
@@ -28,7 +40,8 @@ export type ParentRegistrationInput = {
   lastName: string;
   email: string;
   password: string;
-  phone: string;
+  /** Optional (Apple 5.1.1(v)). Absent, empty and whitespace all mean "none". */
+  phone?: string | null;
 };
 
 export type ParentRegistrationValidation =
@@ -39,7 +52,13 @@ export type ParentRegistrationValidation =
       firstName: string;
       lastName: string;
       email: string;
-      phone: string;
+      /**
+       * NULL when the parent gave no number — never "". The column is nullable
+       * and the DB constraint permits NULL, but "" fails the E.164 regex, so an
+       * empty string is the one value that would break the write. Callers pass
+       * this straight into `profiles.phone`; do not coerce it back to a string.
+       */
+      phone: string | null;
     }
   | {
       ok: false;
@@ -53,10 +72,10 @@ export type ParentRegistrationValidation =
 
 /**
  * Validates (and normalizes) a parent registration. Rules, order and error
- * keys are exactly the historical registerParent behavior:
+ * keys follow the historical registerParent behavior:
  * required → email → phone → password. Names are trimmed and capped, the
- * email is trimmed + lowercased, the phone is trimmed; the password is used
- * as-is (never normalized, never truncated).
+ * email is trimmed + lowercased, the phone is trimmed and collapses to NULL
+ * when blank; the password is used as-is (never normalized, never truncated).
  */
 export function validateParentRegistration(
   input: ParentRegistrationInput,
@@ -65,15 +84,18 @@ export function validateParentRegistration(
   const lastName = input.lastName.trim().slice(0, NAME_MAX);
   const displayName = `${firstName} ${lastName}`.trim();
   const email = input.email.trim().toLowerCase();
-  const phone = input.phone.trim();
+  const phone = (input.phone ?? "").trim();
   const password = input.password;
   if (!firstName || !lastName) return { ok: false, errorKey: "parent.err.required" };
   if (!email || email.length > EMAIL_MAX || !EMAIL_RE.test(email)) {
     return { ok: false, errorKey: "parent.err.email" };
   }
-  // Mandatory phone, validated BEFORE any auth user is created. The client
-  // composes E.164 (+countrycode + national); never trust that composition.
-  if (!phone || phone.length > PHONE_MAX || !PHONE_RE.test(phone)) {
+  // OPTIONAL phone (Apple 5.1.1(v)) — a blank field is ACCEPTED and becomes
+  // NULL below. A phone that is PRESENT is still validated BEFORE any auth user
+  // is created: the client composes E.164 (+countrycode + national) and that
+  // composition is never trusted, and a malformed string would be refused by
+  // chk_profiles_phone_e164 at write time anyway.
+  if (phone && (phone.length > PHONE_MAX || !PHONE_RE.test(phone))) {
     return { ok: false, errorKey: "parent.err.phone" };
   }
   // Strength lives in lib/auth/passwordPolicy — the same module the mobile BFF
@@ -92,5 +114,8 @@ export function validateParentRegistration(
           : "parent.err.passwordWeak",
     };
   }
-  return { ok: true, displayName, firstName, lastName, email, phone };
+  // `phone || null` — NOT `phone`. Both call sites write this value straight
+  // into profiles.phone (`.update({ phone })`); "" would fail the E.164 check
+  // constraint, NULL is exactly what the column expects for "no number".
+  return { ok: true, displayName, firstName, lastName, email, phone: phone || null };
 }

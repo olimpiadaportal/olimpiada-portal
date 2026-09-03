@@ -15,15 +15,23 @@
 // account, not per surface), and — for a student — the same "your password may
 // not be your 8-digit login ID" rule.
 //
-// The write runs on the BEARER client: auth.updateUser acts on the token's own
-// user, so no service-role key touches this path and no client-supplied id is
-// accepted (being the token holder IS the authorization).
+// The write is authorized BY THE TOKEN ITSELF: updateOwnPasswordWithBearer PUTs
+// to GoTrue with the caller's own access token, so no service-role key touches
+// this path and no client-supplied id is accepted (being the token holder IS the
+// authorization). GoTrue re-validates the token, so this endpoint can only ever
+// change the password of the user who called it.
+//
+// It does NOT use `client.auth.updateUser` — that is session-bound, and a bearer
+// client deliberately has no session, so it failed for every caller without
+// reaching the network. That was the bug fixed on 2026-09-01; the bearer client
+// below is still correct for the RLS-scoped `students` read.
 //
 // Request: JSON {"password":"…"} → {ok:true, data:{updated:true}}
 import {
   createBearerClient,
   extractBearerToken,
   resolveBearerUser,
+  updateOwnPasswordWithBearer,
 } from "@/lib/auth/mobileBearer";
 import { checkNewPassword } from "@/lib/auth/passwordPolicy";
 import { rateLimitAllow } from "@/lib/rateLimit";
@@ -89,10 +97,21 @@ export async function POST(request: Request): Promise<Response> {
       }
     }
 
-    const { error } = await client.auth.updateUser({ password });
-    if (error) {
-      // Never leak error.message; log the code server-side only.
-      console.error("mobile password update failed", error.status ?? "unknown");
+    // NOT client.auth.updateUser — that is session-bound and a bearer client has
+    // no session, so it failed for every user without a request leaving the
+    // server. See updateOwnPasswordWithBearer for the full reasoning.
+    const failure = await updateOwnPasswordWithBearer(
+      extractBearerToken(request) ?? "",
+      password,
+    );
+    if (failure) {
+      // Never leak the message; log the CODE. Logging only the status is what
+      // hid the original defect — it was always a flat 400.
+      console.error(
+        "mobile password update failed",
+        failure.code,
+        failure.status,
+      );
       return errorResponse("profile.err.updateFailed", 400);
     }
     return okResponse({ updated: true });

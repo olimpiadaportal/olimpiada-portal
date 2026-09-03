@@ -122,7 +122,14 @@ export function PhoneSection({
     if (pending) return;
     // Client mirror of the server rule — UX only: the BFF re-runs the same
     // E.164 check and the database constraint is the final authority.
-    if (!E164_RE.test(phone)) {
+    //
+    // AN EMPTY VALUE IS A DELIBERATE CLEAR, NOT A FAILURE. The phone became
+    // optional for Apple Guideline 5.1.1(v), which requires that a user not be
+    // forced to supply information the app does not need — and "optional" is
+    // hollow if a parent who once gave a number can never take it back. The
+    // server accepts the clear (phoneCore writes NULL); without this guard the
+    // client would refuse it, so the field would be one-way.
+    if (phone && !E164_RE.test(phone)) {
       setError(t("parent.err.phone"));
       return;
     }

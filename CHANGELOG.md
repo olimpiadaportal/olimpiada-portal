@@ -59,6 +59,25 @@ never reaches a 1.12.3 binary.
 - `[internal]` `--diagnose` prints what Apple actually holds per product — price,
   localizations, territories, screenshot — because `MISSING_METADATA` never says
   which field is missing and the UI shows the same badge either way.
+- `[web]` The purchase endpoint no longer counts a **Free Trial** as access the
+  family already owns. Migration 168 stopped a trial suppressing the purchase
+  offer, but the server's double-billing guard still saw it, so the newly visible
+  Buy button answered with a red "already active" instead of the store sheet. The
+  two halves now use the same predicate. Deploys with `web-app/`; no new build.
+- `[web]` The purchase endpoint refuses to sell a **subject the child's grade
+  does not study**, asking `subjects_taught_to_grade` rather than a copy of the
+  rule. Package sales have always been grade-checked; subject sales were not, so
+  the server could take money for an entitlement every child screen then filters
+  out — money in, screen unchanged, which is the Guideline 3.1.1 impression the
+  whole rail exists to remove.
+- `[store]` iOS: the subject a parent has just bought **leaves the offer list
+  immediately** instead of keeping its price button for the second it takes the
+  entitlement read to come back. A tap in that window met the server's
+  double-billing refusal, in red, directly under the green "done" line.
+- `[internal]` The arena gate and the Tests home now share ONE parse of
+  `my_accessible_subjects()`. They decoded its rows differently, so a
+  `returns table(...)` would have locked the arena on a paying child while the
+  Tests tab of the same session went on listing their subjects.
 
 ## 1.14.0 — superseded, never built
 

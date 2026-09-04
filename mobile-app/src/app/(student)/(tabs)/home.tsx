@@ -230,7 +230,24 @@ export default function StudentArena() {
   const config = useMobileConfig();
   const access = useArenaAccess();
   const subjectsQ = useMySubjects();
-  const pricedQ = usePricedSubjects(access.freeNow);
+  // Enabled for an ENTITLED child too, not just a free window: the published
+  // catalogue is where the code+name of an entitled subject come from (the
+  // access RPC returns bare ids).
+  //
+  // A SUBSCRIBED CHILD MAKES THIS FETCH TOO, and the gate was never going to
+  // spare them: subscriptions are MIRRORED into entitlements (011
+  // fn_entitlement_map_subject, fired by trg_entitlements_from_sub_subjects /
+  // trg_entitlements_from_child_subs; 013 check 114_entitlements_parity is the
+  // standing alarm that the two stay in step), so my_accessible_subjects() names
+  // a subscriber's subjects and `entitledNow` is true for them. What the gate
+  // actually skips is the child with NO live access at all — a locked or expired
+  // account, where the catalogue would only feed a list they may not open.
+  //
+  // Which is why the round trip stays. It is what makes an entitled child's
+  // subjects appear at all, and `pricedQ.isLoading` below is what holds the
+  // skeleton until it lands; "optimising" the gate to `freeNow` would paint a
+  // paying child an unlocked arena with nothing in it.
+  const pricedQ = usePricedSubjects(access.freeNow || access.entitledNow);
   const attemptsQ = useMyAttempts();
   const streakQ = useStreakStatus();
   const leaderboardOn = config.data?.flags.leaderboard === true;
@@ -251,7 +268,12 @@ export default function StudentArena() {
   }
 
   // ---- loading / error (skeletons, never spinners) ----
-  if (access.loading || subjectsQ.isPending || attemptsQ.isPending) {
+  // `pricedQ.isLoading`, never `isPending`: a DISABLED query stays pending
+  // forever, so isPending here would hang the skeleton for every subscribed
+  // child. isLoading is true only while it is actually fetching — which is
+  // exactly the window in which an entitled child would otherwise be painted
+  // unlocked with an empty subject list before the catalogue lands.
+  if (access.loading || subjectsQ.isPending || pricedQ.isLoading || attemptsQ.isPending) {
     return (
       <ArenaScroll>
         <Skeleton height={170} />
@@ -275,7 +297,28 @@ export default function StudentArena() {
   }
 
   // ---- derived data (web ChildDashboard math, ported 1:1) ----
-  const subjects = mergeSubjects(subjectsQ.data, access.freeNow ? pricedQ.data : undefined);
+  // What the published catalogue contributes on top of the subscribed list. A
+  // free window contributes ALL of it; an entitlement contributes exactly the
+  // subjects my_accessible_subjects() named, and nothing else on this screen
+  // reads `entitlements` — an in-app purchase writes that one row and neither a
+  // child_subscriptions row nor an access_status, so useMySubjects() comes back
+  // EMPTY for a purchase-only child. Without this arm the hero declares the
+  // arena unlocked, offers no "start round" button and never names the subject
+  // that was just bought.
+  //
+  // Same shape as the Tests home (features/tests/api.ts fetchSubjectAccess):
+  // the RPC returns ids only, so code+name are resolved here and the ids merely
+  // NARROW the list. The narrowing is the whole point — merging the catalogue
+  // wholesale for an entitled child would offer subjects that
+  // start_daily_round_attempt then refuses. fetchPricedSubjects() has already
+  // applied the grade filter (keepTaughtSubjects) to what arrives here, so that
+  // rule still runs last and covers both arms.
+  const unlocked = access.freeNow
+    ? pricedQ.data
+    : access.entitledNow
+      ? (pricedQ.data ?? []).filter((s) => access.accessibleSubjectIds.includes(s.id))
+      : undefined;
+  const subjects = mergeSubjects(subjectsQ.data, unlocked);
   const graded: ArenaAttempt[] = attemptsQ.data ?? [];
 
   let totalScore = 0;
@@ -427,6 +470,28 @@ export default function StudentArena() {
             {t(access.lockedKey)}
           </AppText>
           <AppText color={arena.muted}>{t("child.lockedNote")}</AppText>
+        </ArenaPanel>
+      ) : subjects.length === 0 ? (
+        /* ACCESS, BUT NOTHING TO OPEN — and this combination used to render
+           NOTHING AT ALL: the hero drops its "start round" button (it needs a
+           subject), and the locked card above is skipped precisely because the
+           child DOES have access. A child whose family had just paid got a
+           dashboard that said nothing about it.
+
+           It is reachable whenever the entitled subject survives the access
+           read and not the grade rule that runs last — a legacy purchase of a
+           subject this grade does not study, or a subject whose curriculum has
+           not reached this grade yet. The purchase surfaces now apply the same
+           rule (features/iap/catalog.ts) so no NEW sale can land here, and this
+           panel is what an old one looks like instead of a blank screen.
+
+           Same sentence as the Tests tab in the same state (child.noSubjects),
+           because it is the same fact and a child must not be told two
+           different stories on two tabs. Not child.lockedNote — "ask your
+           parent to activate a subscription" would read as a payment that
+           failed, to a family whose payment worked. */
+        <ArenaPanel style={{ borderLeftWidth: 3, borderLeftColor: arena.gold }}>
+          <AppText color={arena.muted}>{t("child.noSubjects")}</AppText>
         </ArenaPanel>
       ) : null}
 

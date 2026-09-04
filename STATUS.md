@@ -6,6 +6,52 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
+## RESUME POINT (2026-09-03, owner away ~3h) — SUBMISSION IN FLIGHT
+
+Where things stand mid-release, so nothing is re-derived on return:
+
+**DONE this session:** age-rating questionnaire completed (Parental Controls =
+YES — accurate per Apple's definition and cannot raise the 4+ rating; Step 7
+"Age Categories and Override" = **Not Applicable**, deliberately — Made for Kids
+is the sticky Guideline 1.3 trap and was offered because the app computes to
+4+). **There is NO in-app-purchase declaration anywhere in App Store Connect** —
+the earlier instruction to set one was wrong; Apple derives the badge from
+approved products. The IAP checkbox that does exist is Google Play's.
+
+**iOS build:** version **1.15.0, buildNumber 4** (EAS remote build numbers —
+this is why Apple saw "1.0 (3)" before: `app.json` said 1.14.0 but the old
+build predated the bump). Build succeeded; `eas submit --latest` is **queued
+server-side** ("waiting for an available submitter" = Expo's queue, not an
+error; Ctrl+C only stops watching). Check:
+https://expo.dev/accounts/olimpiadaplatforms-team/projects/olympiq/submissions
+
+**Env vars:** web-app has the six `APPLE_IAP_*` (In-App Purchase key + the
+4-cert root bundle from `docs/apple/apple-roots.pem`, validated through the
+server's own parser); admin-panel has the four `APP_STORE_CONNECT_*` (the API
+key — NOT the purchase key; the two issuer ids differ). Both redeployed.
+Endpoints verified live: notifications → 400, intent → 401 (was 404).
+
+**ON RETURN, in order:**
+1. **Admin panel → /iap → activate all 21 subject products.** All are
+   READY_TO_SUBMIT so the store preflight should allow each. A refusal names
+   its cause; "storeNotConfigured" = Vercel vars didn't land.
+2. Confirm the build reached App Store Connect (processing takes ~10–15 min
+   after upload).
+3. App Store Connect → version page (sidebar shows "1.0 Rejected"): set the
+   version string to **1.15.0**, attach build 4.
+4. **Attach all 21 IAPs** in the "In-App Purchases and Subscriptions" section
+   on that page — it only renders when products are Ready to Submit. Skipping
+   it = reviewer sees purchase UI with nothing purchasable = 3.1.1 again.
+5. Paste the rewritten review notes (`docs/APP_REVIEW_NOTES.md` §§2–7 + §0
+   Resolution Center reply) + demo parent/child credentials. NOTHING from the
+   "Historical — DO NOT PASTE" appendix.
+6. **Free-access window decision** (open until 2026-09-26): include the §4
+   demo-account paragraph, or wait until the 27th to submit.
+7. `node ./mobile-app/scripts/submission-preflight.mjs` → zero FAILs.
+8. Submit.
+
+---
+
 ## ROUND 65 — THE APPLE RAIL, CONFIGURED END TO END (2026-09-03)
 
 **Mobile version bumped 1.14.0 → 1.15.0** (minor: In-App Purchase is a feature,

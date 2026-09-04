@@ -14,7 +14,7 @@ import {
   fetchSubjectsPricing,
   type ChildRow,
 } from "@/lib/data";
-import { groupPricing } from "./commerce";
+import { groupPricing, type SubjectOption } from "./commerce";
 import type { Locale } from "@/i18n";
 
 // NAMING (web Round 21 parity): the `districts` table is the CITIES catalog
@@ -72,11 +72,20 @@ async function fetchOlympiadPoolCounts(packageIds: string[]): Promise<Map<string
   return counts;
 }
 
+// Split out so `QK.entitled` can be built from the SAME array the invalidator
+// passes to react-query. The nesting is load-bearing: invalidation is by key
+// PREFIX, so useInvalidateParentData() — what the IAP panel calls the moment a
+// purchase settles — already refetches every entitlement query without naming
+// one. Inline the literal twice and the day someone renames the subscriptions
+// key is the day a settled purchase stops reaching the screens.
+const SUBSCRIPTIONS_KEY = ["parent", "subscriptions"] as const;
+
 export const QK = {
   children: ["parent", "children"] as const,
   freeAccess: ["parent", "free-access"] as const,
   pricing: ["parent", "subjects-pricing"] as const,
-  subscriptions: ["parent", "subscriptions"] as const,
+  subscriptions: SUBSCRIPTIONS_KEY,
+  entitled: (studentId: string) => [...SUBSCRIPTIONS_KEY, "entitled", studentId] as const,
   catalog: (locale: Locale, studentId: string | null) =>
     ["parent", "oly-catalog", locale, studentId] as const,
   purchases: ["parent", "oly-purchases"] as const,
@@ -176,6 +185,100 @@ export function useLeaderboardSummaries(children: ChildRow[] | undefined, enable
       queryFn: () => fetchChildLeaderboardSummary(c.profile_id),
       enabled,
       staleTime: 5 * 60_000,
+    })),
+  });
+}
+
+/**
+ * The subjects one child holds a LIVE entitlement for (migration 168) —
+ * whatever granted them: an Apple purchase, the web rail, a manual comp, a
+ * school licence.
+ *
+ * THE WHOLE ROW IS KEPT, not just the id. The migration returns `code` and
+ * `name` for exactly one reason: an entitlement is the ONLY trace an Apple
+ * purchase leaves — it writes no `child_subscriptions` row and does not touch
+ * `students.access_status` — so those two fields are the only thing a screen
+ * can say a family who has just paid now HAS. Reducing the rows to ids is why
+ * the offer disappeared and nothing took its place.
+ *
+ * child_entitled_subjects, NEVER my_accessible_subjects, and both reasons are
+ * fatal here:
+ *   1. my_accessible_subjects() is caller-scoped to current_profile_id(), which
+ *      on a PARENT screen is the parent — it would answer about the wrong
+ *      person entirely.
+ *   2. It counts the giveaway window and the admin free-access interval as
+ *      access, so while a promo runs it calls every subject accessible. Feeding
+ *      that into the offer filter would hide all 21 products and leave a store
+ *      reviewer with no purchase button — the Guideline 3.1.1 failure this rail
+ *      exists to answer. Borrowed access is not ownership: it must neither
+ *      suppress an offer nor be reported back as something the family owns.
+ *
+ * Safe fallback = EMPTY, the OPPOSITE of the usual gate posture and deliberate:
+ * an empty list OFFERS the product. Hiding a purchase because an RPC hiccuped
+ * costs a family the thing they came for; offering one they already hold costs
+ * a refusal they can read. On the Home card the same empty list simply falls
+ * back to `students.access_status`, i.e. to yesterday's pill.
+ *
+ * ONE reader for all three callers (the two purchase screens and the Home
+ * cards): the parse and the failure posture above are the contract, and a
+ * second copy is a second set of bugs.
+ */
+export async function fetchEntitledSubjects(
+  studentProfileId: string,
+): Promise<SubjectOption[]> {
+  const { data, error } = await supabase.rpc("child_entitled_subjects", {
+    p_student: studentProfileId,
+  });
+  if (error || !Array.isArray(data)) return [];
+  // A jsonb array of { id, code, name }. Rows are FILTERED rather than cast: a
+  // malformed one must neither hide an offer nor render as "undefined" under a
+  // child's name. A missing code/name is survivable — subjectLabel() falls back
+  // through the raw DB name to a dash — while a missing id is not, because it is
+  // what the offer filter matches on.
+  return (data as Record<string, unknown>[])
+    .filter((row) => typeof row?.id === "string" && row.id !== "")
+    .map((row) => ({
+      id: row.id as string,
+      code: typeof row.code === "string" ? row.code : null,
+      name: typeof row.name === "string" ? row.name : "",
+    }));
+}
+
+/**
+ * Live entitlements for EVERY child on one screen — the Home cards' input,
+ * returned positionally so the caller can zip it against its own list, exactly
+ * like useLeaderboardSummaries above.
+ *
+ * ONE CALL PER CHILD, DELIBERATELY, and it is not a hidden N+1:
+ *   - child_entitled_subjects(uuid) takes a single student. The only batched
+ *     alternative available without a new migration is selecting
+ *     `public.entitlements` straight from the client and re-implementing the
+ *     "live" predicate here — scope, source <> 'trial', revoked_at, starts_at,
+ *     ends_at. That predicate is copied verbatim from has_subject_access() in
+ *     the migration precisely so the two can never disagree; a third copy in
+ *     TypeScript would compare `ends_at` against the DEVICE clock, so a phone
+ *     with a skewed date would decide for itself whether a family has access.
+ *   - The per-child key is what makes the read nearly free in practice: the two
+ *     purchase screens query the SAME key, so arriving back on Home from a
+ *     settled purchase reuses the entitlement react-query just refetched
+ *     instead of issuing anything at all.
+ * Families have single-digit numbers of children, and the queries are handed to
+ * usePullRefresh like every other source on the screen.
+ *
+ * NOT platform-gated. The purchase screens read this only for the iOS offer
+ * filter and disable it elsewhere; the Home pill is a different question —
+ * "what does this child hold" — and an entitlement-only grant (admin comp,
+ * school licence) is just as invisible to `students.access_status` on Android.
+ */
+export function useEntitledSubjectsByChild(
+  children: ChildRow[] | undefined,
+  enabled = true,
+) {
+  return useQueries({
+    queries: (children ?? []).map((c) => ({
+      queryKey: QK.entitled(c.profile_id),
+      queryFn: () => fetchEntitledSubjects(c.profile_id),
+      enabled,
     })),
   });
 }

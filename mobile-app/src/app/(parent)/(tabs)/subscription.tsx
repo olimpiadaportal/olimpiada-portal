@@ -25,7 +25,14 @@
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { CalendarDays, CreditCard, FileText, RefreshCw } from "lucide-react-native";
+import { useQuery } from "@tanstack/react-query";
+import {
+  CalendarDays,
+  CheckCircle2,
+  CreditCard,
+  FileText,
+  RefreshCw,
+} from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -37,16 +44,24 @@ import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { subjectLabel } from "@/lib/subjectLabel";
-import { fmtDate, isCancellable, resolvePosture, subStatusKey } from "@/features/parent/commerce";
+import {
+  fmtDate,
+  isCancellable,
+  resolvePosture,
+  subStatusKey,
+} from "@/features/parent/commerce";
 import { CancelSheet } from "@/features/parent/CancelSheet";
 import {
   IAP_PLATFORM_SUPPORTED,
   IapPanel,
   RestoreAccessButton,
   useIapOffers,
+  type IapSurfaceState,
 } from "@/features/iap";
 import { ManageSubjectsEditor } from "@/features/parent/ManageSubjectsEditor";
 import {
+  QK,
+  fetchEntitledSubjects,
   useChildSubscriptions,
   useChildren,
   useInvalidateParentData,
@@ -95,16 +110,91 @@ export default function ParentSubscription() {
       ) ?? null
     : null;
 
+  // WHAT THIS CHILD ALREADY OWNS — the half `liveSub` cannot see. An Apple
+  // purchase writes ONE row, an entitlement, and no `child_subscriptions` row,
+  // so the subject a parent bought a minute ago kept its price button here, and
+  // tapping it again met the server's double-billing refusal — rendered in the
+  // DANGER colour directly under a payment that had worked.
+  //
+  // The reader (and the reasoning behind child_entitled_subjects, the kept
+  // code/name and the fail-OPEN empty list) lives in features/parent/queries —
+  // the parent Home cards read the same rows to decide their access pill, and
+  // one contract is why the three surfaces cannot disagree about a purchase.
+  const entitled = useQuery({
+    // Keyed UNDER the subscriptions key on purpose. react-query invalidates by
+    // prefix, so useInvalidateParentData() — what IapPanel calls the moment a
+    // purchase settles, and what the cancel sheet and the subjects editor call
+    // too — already refetches this, and the bought subject leaves the offer
+    // list without an app restart. Home shares the key, so it inherits both.
+    queryKey: QK.entitled(selected?.profile_id ?? "-"),
+    queryFn: () => fetchEntitledSubjects(selected?.profile_id ?? ""),
+    // Only the iOS offer filter reads it: an Android build must issue no
+    // request it did not issue yesterday. That is also why it stays out of
+    // `loading` below — a disabled query is pending forever, and the skeleton
+    // would never end on Android.
+    enabled: IAP_PLATFORM_SUPPORTED && selected !== null,
+  });
+
+  // WHAT THE CARD SHOWS. Subjects the live plan already lists are dropped from
+  // the "already active" line: the same subject named twice, under two
+  // headings, reads as two payments.
+  const entitledSubjects = entitled.data ?? [];
+  const planSubjectIds = new Set((liveSub?.subjects ?? []).map((s) => s.subject_id));
+  const entitledExtra = entitledSubjects.filter((s) => !planSubjectIds.has(s.id));
+
   const loading =
     config.isPending || children.isPending || subs.isPending || freeAccess.isPending;
-  const { refreshing, onRefresh } = usePullRefresh([children, subs, freeAccess, config]);
+  // `entitled` is refreshed on iOS ONLY — refetch() ignores `enabled`, so an
+  // unguarded entry would fire the RPC from an Android pull.
+  const { refreshing, onRefresh } = usePullRefresh([
+    children,
+    subs,
+    IAP_PLATFORM_SUPPORTED && entitled,
+    freeAccess,
+    config,
+  ]);
 
   // iOS purchase surface for the SELECTED child. Called unconditionally and
   // before the early returns below — it owns react-query hooks, and a hook that
   // vanishes on the loading branch is a crash on the next render. Off iOS it
   // fetches nothing and answers state "off".
-  const iap = useIapOffers(liveSub ? liveSub.subjects.map((s) => s.subject_id) : []);
-  const iapVisible = IAP_PLATFORM_SUPPORTED && iap.state !== "off" && iap.state !== "none";
+  const iap = useIapOffers(
+    [
+      ...(liveSub ? liveSub.subjects.map((s) => s.subject_id) : []),
+      // Entitlements merged in: an in-app purchase writes no subscription row, so
+      // the line above on its own keeps offering what the family just bought.
+      ...entitledSubjects.map((s) => s.id),
+    ],
+    // SCOPED TO THE SELECTED CHILD'S GRADE (migration 155), the same rule the
+    // web subscribe page applies and the same one the child's own screens apply
+    // last. Fizika is taught in grades 7-11 only: without this a parent could
+    // buy it for a grade-3 child, and the arena — which runs the identical rule
+    // — would then drop the entitlement it produced and render nothing at all.
+    // A paid purchase that changes nothing on screen is the Guideline 3.1.1
+    // reading this rail exists to remove.
+    selected?.grade_id ?? null,
+  );
+  // THE OFFERS WAIT FOR THE ENTITLEMENT READ — on iOS only. The two reads
+  // race: the StoreKit catalogue is cached for ten minutes while `entitled`
+  // refetches after every purchase, so the offer list could paint first and
+  // briefly show a price button for a subject this child already owns. One tap
+  // on it opens the store sheet for a purchase the server then refuses, and the
+  // refusal renders in the DANGER colour directly under a payment that worked.
+  //
+  // Folded into the PANEL's state, never into `loading` above: "loading" is a
+  // state the panel already renders honestly (mob.iap.loading), while the
+  // screen's skeleton must not hang on a query that is DISABLED — and so
+  // pending forever — on Android. Off iOS the constant is false at build time
+  // and this is just `iap.state`, which is "off".
+  //
+  // `isPending` COVERS THE COLD LOAD ONLY. After a purchase, `entitled`
+  // refetches while already holding data, so it stays `success` and this guard
+  // is false for the whole of that window — the post-purchase half is handled
+  // inside IapPanel, which drops the subject it just sold from its own offer
+  // list and lets this read confirm it afterwards.
+  const iapState: IapSurfaceState =
+    IAP_PLATFORM_SUPPORTED && entitled.isPending ? "loading" : iap.state;
+  const iapVisible = IAP_PLATFORM_SUPPORTED && iapState !== "off" && iapState !== "none";
 
   const intervalName = (iv: string | null) =>
     iv === "week" ? t("pricing.weekly") : iv === "year" ? t("pricing.yearly") : t("pricing.monthly");
@@ -138,7 +228,19 @@ export default function ParentSubscription() {
         <AppText variant="title" style={{ flex: 1 }}>
           {childDisplayName(selected)}
         </AppText>
-        <Pill label={t(subStatusKey(liveSub?.status))} tone={liveSub ? "ok" : "muted"} />
+        {/* AN ENTITLEMENT IS NOT A SUBSCRIPTION ROW. This pill read "No
+            subscription", in the muted tone, to a parent who had paid Apple
+            thirty seconds earlier. It now reports the ACCESS when that is what
+            exists; the subscription vocabulary is kept for the families who
+            actually hold a subscription. */}
+        <Pill
+          label={
+            !liveSub && entitledSubjects.length > 0
+              ? t("mob.sub.accessActive")
+              : t(subStatusKey(liveSub?.status))
+          }
+          tone={liveSub || entitledSubjects.length > 0 ? "ok" : "muted"}
+        />
       </View>
       {liveSub ? (
         <>
@@ -178,7 +280,24 @@ export default function ParentSubscription() {
             }
           />
         </>
-      ) : (
+      ) : null}
+      {/* WHAT AN IN-APP PURCHASE ACTUALLY PRODUCES: one row in `entitlements`,
+          no `child_subscriptions` row at all — which is why `liveSub` above is
+          null for a family whose only purchase went through Apple. Without this
+          line the screen deleted the offer and put NOTHING in its place, so a
+          reviewer watched money go in and read "no subjects selected yet": the
+          exact Guideline 3.1.1 impression this rail exists to remove.
+
+          It REPLACES that sentence rather than sitting above it — a card that
+          says both "Active subjects: Riyaziyyat" and "no subjects selected
+          yet" is worse than either line alone. */}
+      {entitledExtra.length > 0 ? (
+        <KeyRow
+          icon={<CheckCircle2 size={16} color={tokens.ok} strokeWidth={2} />}
+          label={t("mob.sub.activeSubjects")}
+          value={entitledExtra.map((s) => subjectLabel(t, s.code, s.name)).join(", ")}
+        />
+      ) : liveSub ? null : (
         <AppText variant="muted">{t("billing.noSubjects")}</AppText>
       )}
     </View>
@@ -289,7 +408,7 @@ export default function ParentSubscription() {
               {IAP_PLATFORM_SUPPORTED ? (
                 <IapPanel
                   studentProfileId={selected.profile_id}
-                  state={iap.state}
+                  state={iapState}
                   offers={iap.offers}
                   refetch={iap.refetch}
                   onSettled={invalidate}

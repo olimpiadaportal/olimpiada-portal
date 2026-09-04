@@ -28,14 +28,11 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { formatPercent } from "@/lib/formatPercent";
 import type { ChildRow } from "@/lib/data";
 import { useOwnProfile } from "@/features/profile/useOwnProfile";
-import {
-  accessStatusKey,
-  accessTone,
-  groupChildId,
-} from "@/features/parent/commerce";
+import { accessPill, groupChildId } from "@/features/parent/commerce";
 import { InfoCarousel } from "@/features/parent/InfoCarousel";
 import {
   useChildren,
+  useEntitledSubjectsByChild,
   useLeaderboardSummaries,
   useParentFreeAccess,
 } from "@/features/parent/queries";
@@ -76,12 +73,16 @@ function GreetingHeader() {
 
 function ChildCard({
   child,
+  entitled,
   giveawayActive,
   freeAccessActive,
   leaderboardOn,
   lb,
 }: {
   child: ChildRow;
+  /** This child holds at least one LIVE subject entitlement (migration 168).
+   *  False is also the safe fallback when the read fails — see accessPill. */
+  entitled: boolean;
   giveawayActive: boolean;
   freeAccessActive: boolean;
   leaderboardOn: boolean;
@@ -92,6 +93,11 @@ function ChildCard({
   const router = useRouter();
 
   const name = childDisplayName(child);
+  // The giveaway/free-access branches below outrank this: those windows are
+  // BORROWED access and get to say so in their own words. Underneath them the
+  // pill reports what the child actually holds, from both rails — see
+  // accessPill for why `students.access_status` alone was not enough.
+  const pill = accessPill(child.access_status, entitled);
   const gradeText = child.grade
     ? formatGradeLabel(child.grade.level, locale, child.grade.name)
     : null;
@@ -126,10 +132,7 @@ function ChildCard({
           ) : freeAccessActive ? (
             <Pill label={t("access.freeAccess")} tone="accent" />
           ) : (
-            <Pill
-              label={t(accessStatusKey(child.access_status))}
-              tone={accessTone(child.access_status)}
-            />
+            <Pill label={t(pill.key)} tone={pill.tone} />
           )}
         </View>
         {placeLine ? (
@@ -303,6 +306,19 @@ export default function ParentHome() {
     lbByChild.set(c.profile_id, (lbQueries[i]?.data ?? null) as LbSummary | null);
   });
 
+  // WHAT EACH CHILD ACTUALLY HOLDS. `students.access_status` — the column these
+  // cards read on their own — is written by the subscription rail alone, so a
+  // child whose parent had just paid Apple was labelled "No access" on the
+  // screen a parent lands on by DEFAULT, and no amount of refreshing could move
+  // it. Same query key as the two purchase screens, so a purchase settling
+  // there invalidates and refetches this too (useInvalidateParentData is a
+  // PREFIX invalidation) and the card is right by the time the parent is back.
+  const entQueries = useEntitledSubjectsByChild(children.data);
+  const entitledByChild = new Map<string, boolean>();
+  (children.data ?? []).forEach((c, i) => {
+    entitledByChild.set(c.profile_id, (entQueries[i]?.data ?? []).length > 0);
+  });
+
   const mode = config.data?.payment.mode ?? "off";
   const giveawayActive = mode === "giveaway";
   const giveawayEndsAt = config.data?.payment.giveawayEndsAt ?? null;
@@ -318,6 +334,9 @@ export default function ParentHome() {
     config,
     profile,
     ...lbQueries,
+    // The pill's second input. Left out, the one thing a parent comes back to
+    // this screen to check would be the one thing a pull could not re-read.
+    ...entQueries,
   ]);
 
   const timeLabels = {
@@ -377,6 +396,7 @@ export default function ParentHome() {
             <ChildCard
               key={c.profile_id}
               child={c}
+              entitled={entitledByChild.get(c.profile_id) === true}
               giveawayActive={giveawayActive}
               freeAccessActive={freeActive}
               leaderboardOn={leaderboardOn}

@@ -7,7 +7,11 @@ import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useMobileConfig } from "@/lib/configQueries";
 import { parseRankPayload, type MyRank } from "@/features/ranking/parse";
-import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/coverage";
+import {
+  CHILD_COVERAGE_SELECT,
+  liveCoveredSubjects,
+  parseAccessibleSubjectIds,
+} from "@/lib/coverage";
 import { fetchTaughtSubjectIds, keepTaughtSubjects } from "@/lib/data";
 import { ARENA_PALETTES, type ArenaPalette } from "@/theme/tokens";
 
@@ -15,6 +19,7 @@ export const QK = {
   self: (id: string) => ["arena", "self", id] as const,
   freeAccess: ["arena", "free-access"] as const,
   freeTrial: ["arena", "free-trial"] as const,
+  accessibleSubjects: ["arena", "accessible-subjects"] as const,
   subjects: (id: string) => ["arena", "subjects", id] as const,
   pricedSubjects: ["arena", "priced-subjects"] as const,
   attempts: (id: string) => ["arena", "attempts", id] as const,
@@ -24,6 +29,9 @@ export const QK = {
 };
 
 const ARENA_STALE_MS = 60_000;
+
+/** Shared empty result for the accessible-subject list (stable identity). */
+const NO_SUBJECT_IDS: string[] = [];
 
 /** True only for a signed-in STUDENT session (all arena queries gate on it). */
 function useStudentProfileId(): string | null {
@@ -104,6 +112,33 @@ async function fetchMyFreeTrial(): Promise<{ active: boolean; endsAt: string | n
   return { active: d.active === true, endsAt: d.ends_at ?? null };
 }
 
+/**
+ * The subject ids the server says this child may PLAY (migration 124), backed
+ * by the same has_subject_access() the attempt engines run.
+ *
+ * It is the ONLY read in this file that reaches `entitlements`, which is where
+ * an in-app purchase lands: the purchase writes that one row and nothing else
+ * -- no `child_subscriptions` row, no `access_status` -- so every other gate
+ * here still reads a paying child as `inactive`. The RPC also answers true for
+ * the giveaway and the admin free-access window, which `freeNow` already
+ * reports; the overlap costs nothing because the gate is an OR.
+ *
+ * Safe fallback = [] -- an empty list LOCKS. An RPC hiccup must never hand out
+ * access, and the other gates still speak for themselves.
+ */
+async function fetchMyAccessibleSubjects(): Promise<string[]> {
+  const { data, error } = await supabase.rpc("my_accessible_subjects");
+  if (error) return [];
+  // ONE parse, shared with the Tests tab's reader of this same RPC
+  // (features/tests/api.ts fetchSubjectAccess). This file used to accept bare
+  // uuid strings ONLY, where that one also accepted the row-object form — both
+  // correct against today's encoding, and a `returns table(...)` away from the
+  // app disagreeing with itself: the arena would fall closed and tell a paying
+  // child they were locked while the Tests tab of the same session listed their
+  // subjects. See lib/coverage.
+  return parseAccessibleSubjectIds(data);
+}
+
 export type ArenaAccess = {
   loading: boolean;
   error: boolean;
@@ -119,6 +154,34 @@ export type ArenaAccess = {
   trialNow: boolean;
   /** Expiry of that access, for the countdown. Null when there is none. */
   trialEndsAt: string | null;
+  /**
+   * The server reports at least one playable subject for this child.
+   *
+   * This is what makes an in-app purchase visible to the UI at all: a purchase
+   * writes a single `entitlements` row and changes nothing else, and no other
+   * field on this type reads that table -- so without it a reviewer who pays is
+   * still shown the locked arena, which is the Guideline 3.1.1 rejection all
+   * over again. Deliberately NOT narrowed to purchases: this is the same check
+   * the attempt engines run, so whatever it calls playable IS playable.
+   */
+  entitledNow: boolean;
+  /**
+   * WHICH subjects those are — the raw ids `my_accessible_subjects()` returned.
+   *
+   * `entitledNow` alone only moves the LOCK; it cannot build a subject list, and
+   * a home screen that unlocks without listing anything is the same rejection
+   * wearing a different face: the child is told they are in, is offered no
+   * "start round" button, and is never shown the subject that was bought. The
+   * ids come back without code or name (the RPC `returns setof uuid`), so a
+   * caller resolves those from the published `subjects` list and uses these
+   * purely to NARROW it — see the Arena home and the identical shape in
+   * features/tests/api.ts fetchSubjectAccess().
+   *
+   * Safe fallback = [] — an empty list offers nothing, which locks rather than
+   * over-offers, and it is the same array `entitledNow` is derived from, so the
+   * flag and the list can never disagree.
+   */
+  accessibleSubjectIds: string[];
   accessStatus: string;
   hasAccess: boolean;
   /** Trilingual locked-state key (unknown statuses degrade to inactive, web parity). */
@@ -142,24 +205,45 @@ export function useArenaAccess(): ArenaAccess {
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
   });
+  const entitled = useQuery({
+    queryKey: QK.accessibleSubjects,
+    queryFn: fetchMyAccessibleSubjects,
+    enabled: !!profileId,
+    staleTime: ARENA_STALE_MS,
+  });
 
   const giveawayActive = config.data?.payment.mode === "giveaway";
   const freeNow = giveawayActive || free.data === true;
   const accessStatus = self.data?.accessStatus ?? "inactive";
   const trialNow = trial.data?.active === true;
+  // One array, one derived flag: a stable module constant for the empty case so
+  // the identity does not change on every render of a child with no entitlement.
+  const accessibleSubjectIds = entitled.data ?? NO_SUBJECT_IDS;
+  const entitledNow = accessibleSubjectIds.length > 0;
   const hasAccess =
-    accessStatus === "trialing" || accessStatus === "active" || freeNow || trialNow;
+    accessStatus === "trialing" ||
+    accessStatus === "active" ||
+    freeNow ||
+    trialNow ||
+    entitledNow;
   const lockedKey = ["inactive", "locked", "expired"].includes(accessStatus)
     ? `child.locked.${accessStatus}`
     : "child.locked.inactive";
 
   return {
-    loading: self.isPending || free.isPending || trial.isPending || config.isPending,
+    loading:
+      self.isPending ||
+      free.isPending ||
+      trial.isPending ||
+      entitled.isPending ||
+      config.isPending,
     error: self.isError,
     giveawayActive,
     freeNow,
     trialNow,
     trialEndsAt: trial.data?.endsAt ?? null,
+    entitledNow,
+    accessibleSubjectIds,
     accessStatus,
     hasAccess,
     lockedKey,
@@ -238,6 +322,12 @@ export function useMySubjects() {
   });
 }
 
+/**
+ * The published catalogue, fetched only when something can unlock it: a free
+ * window (which unlocks all of it) or a live entitlement (where the caller
+ * narrows it to `accessibleSubjectIds`, because an entitlement is per-subject).
+ * Left disabled otherwise — a subscribed child's list comes from useMySubjects.
+ */
 export function usePricedSubjects(enabled: boolean) {
   const profileId = useStudentProfileId();
   return useQuery({

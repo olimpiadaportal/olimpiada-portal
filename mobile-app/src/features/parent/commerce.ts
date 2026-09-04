@@ -116,6 +116,43 @@ export function accessTone(status: string | null | undefined): "ok" | "bad" | "m
   return "muted";
 }
 
+export type AccessPill = { key: string; tone: "ok" | "bad" | "muted" };
+
+/**
+ * The child card's access pill, decided from BOTH things that can grant access.
+ *
+ * WHY A SECOND SOURCE. `students.access_status` is written by the SUBSCRIPTION
+ * rail alone — the subscription writers and the hourly reconciliation job, all
+ * of which read `child_subscriptions`. An entitlement-only grant writes exactly
+ * one row, into `public.entitlements`, and touches nothing else: an Apple
+ * purchase (grantEntitlement → entitlement_grant), an admin comp
+ * (admin_grant_entitlement), a school licence. So a child whose parent paid
+ * thirty seconds ago was still `inactive` here, and the FIRST screen a parent
+ * lands on labelled them "Giriş yoxdur" / "No access" in the muted tone. Pulling
+ * to refresh could not help — the column it re-read had never changed.
+ *
+ * Nothing about that is iOS-specific, which is why this takes a plain boolean
+ * and no platform flag: the same blind spot covers a comp and a school licence
+ * on Android.
+ *
+ * FAIL OPEN. `entitled === false` is the entitlement reader's own safe fallback
+ * (that is what it returns when the RPC hiccups) and it reproduces the previous
+ * behaviour EXACTLY — a failed read can only cost the upgrade. It can never
+ * invent access, and never blanks the pill.
+ *
+ * A status that ALREADY reads as access keeps its own wording: a family with a
+ * live subscription is not relabelled "access is active" merely because the
+ * entitlement mirror knows about them too.
+ */
+export function accessPill(
+  status: string | null | undefined,
+  entitled: boolean,
+): AccessPill {
+  const tone = accessTone(status);
+  if (tone !== "ok" && entitled) return { key: "mob.sub.accessActive", tone: "ok" };
+  return { key: accessStatusKey(status), tone };
+}
+
 const SUB_STATUSES = ["trialing", "active", "past_due", "canceled", "expired"] as const;
 
 export function subStatusKey(status: string | null | undefined): string {

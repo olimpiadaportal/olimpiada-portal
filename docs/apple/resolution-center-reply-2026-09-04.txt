@@ -1,0 +1,15 @@
+Thank you for the review. The finding was correct and we have implemented In-App Purchase rather than argued the point.
+
+The build now submitted sells subject access directly in the app through In-App Purchase. A parent opens the Subscription tab, selects a child, and buys access to a subject for a week, a month or a year. The price shown is the App Store's own localized price for each product; the app contains no price of its own and no other way to obtain access.
+
+Two aspects of the configuration are deliberate and we mention them so they do not look like mistakes:
+
+The products are non-renewing subscriptions rather than auto-renewable ones. Access is granted per child, per subject. A parent with three children studying the same subject needs three simultaneous grants of the same product, which an auto-renewable subscription cannot represent - the App Store permits one active subscription per subscription group per Apple ID. Each purchase grants exactly one child access to exactly one subject for exactly the period bought, and the purchase card states that nothing renews automatically.
+
+A purchase is attributed to a specific child. The app opens a purchase intent for the selected child before presenting the App Store sheet and passes its identifier as the transaction's account token, so the access that results is applied to that child and no other.
+
+Children cannot purchase anything. A child account has no purchase surface at all; every purchase is made by the parent from the parent's own account.
+
+One procedural note so the change is not unexpected. The 21 non-renewing subscription products are configured and Ready to Submit. Because the first non-renewing subscription of a type must be reviewed together with an app version, we are moving version 1.15.0 into the submission that carries those products, so that the binary and the products are reviewed together. No new build is involved - the binary is unchanged.
+
+We are happy to provide anything further that would help the review.

@@ -71,10 +71,12 @@ const SCREENS: { file: string; sources: string[] }[] = [
       "posQ",
     ],
   },
-  // `profile` feeds the greeting name and the header avatar.
+  // `profile` feeds the greeting name and the header avatar; `entQueries` is
+  // the live-entitlement half of the access pill, and it is the one a parent
+  // comes back to this screen to check after paying.
   {
     file: "app/(parent)/(tabs)/home.tsx",
-    sources: ["children", "freeAccess", "config", "profile", "lbQueries"],
+    sources: ["children", "freeAccess", "config", "profile", "lbQueries", "entQueries"],
   },
   { file: "features/olympiads/OlympiadsScreen.tsx", sources: ["config", "catalogQ", "poolCountsQ", "ownedQ", "liveQ"] },
   // The subject access set is derived from the config, so the config has to be

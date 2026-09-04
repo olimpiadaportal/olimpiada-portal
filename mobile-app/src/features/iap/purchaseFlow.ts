@@ -144,9 +144,12 @@ export async function runPurchase(deps: PurchaseFlowDeps): Promise<PurchaseOutco
 
   // ---- 4. FINISH -----------------------------------------------------------
   // The server acknowledged this transaction, whether or not it produced
-  // access. `granted: false` is the SANDBOX answer (App Review buys in sandbox
-  // against this same deployment): verified, genuine, and structurally unable to
-  // create real access. It is settled, so StoreKit may stop replaying it.
+  // access. `granted: false` is a SANDBOX purchase the server declined to turn
+  // into access — and that is NOT what App Review gets. The reviewer buys in
+  // sandbox against this same deployment and grantEntitlement.ts GRANTS it,
+  // "sbx:"-namespaced, because APPLE_IAP_SANDBOX_GRANTS defaults to ON so review
+  // passes; a review purchase returns `granted: true`. Either way the server has
+  // settled it, so StoreKit may stop replaying it.
   onStep?.("finish");
   try {
     await store.finish(purchase);

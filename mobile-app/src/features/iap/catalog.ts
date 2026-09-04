@@ -93,11 +93,31 @@ export function sellableProductIds(catalog: IapCatalogRow[]): string[] {
  * `coveredSubjectIds` are the subjects this child already has. The server's
  * double-billing guard refuses those anyway — this only keeps the parent from
  * meeting that refusal after opening a sheet.
+ *
+ * `taughtSubjectIds` IS THE CHILD'S GRADE RULE (migration 155,
+ * subjects_taught_to_grade), and without it this screen sells a subject that
+ * buys nothing. Fizika is active with three iOS products and has curriculum for
+ * grades 7-11 only; a grade-3 family could buy it here, and every child-side
+ * list then applies the SAME rule and drops the entitlement it produced — the
+ * arena renders no round to start and not even a locked card. Money in, screen
+ * unchanged, which is the Guideline 3.1.1 impression this rail exists to
+ * remove. `null` means the rule could not be applied (no grade on the record,
+ * or the read failed) and the list passes through untouched: hiding a whole
+ * catalogue because one RPC hiccuped costs a family the thing they came for.
+ *
+ * THE COVERED IDS ARE NOT UNIONED INTO THAT RULE, and the web subscribe page's
+ * union (web-app/src/app/(parent)/children/[id]/subscribe/page.tsx) is not a
+ * precedent for doing so here: that list is an EDITOR, where a held subject
+ * must keep a card or a pre-existing mis-sale becomes unremovable. This list is
+ * an OFFER list, so a held subject is dropped outright before any grade rule is
+ * consulted — unioning it in could not change an outcome, and writing it anyway
+ * would state a rule this function does not have.
  */
 export function buildOffers(
   catalog: IapCatalogRow[],
   products: StoreProduct[],
   coveredSubjectIds: string[],
+  taughtSubjectIds: ReadonlySet<string> | null = null,
 ): IapOffer[] {
   const priced = new Map(products.map((p) => [p.id, p]));
   const covered = new Set(coveredSubjectIds);
@@ -106,6 +126,7 @@ export function buildOffers(
     if (row.scope !== "subject") continue;
     if (row.subjectId === null || row.interval === null) continue;
     if (covered.has(row.subjectId)) continue;
+    if (taughtSubjectIds && !taughtSubjectIds.has(row.subjectId)) continue;
     const product = priced.get(row.productId);
     if (!product) continue;
     offers.push({

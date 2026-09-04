@@ -40,3 +40,41 @@ export function liveCoveredSubjects(
   }
   return [...map.values()];
 }
+
+// The OTHER half of "which subjects may this child open right now": the ids
+// my_accessible_subjects() answers with. It lives beside liveCoveredSubjects
+// for the same two reasons — it is pure, and BOTH child-side readers have to
+// agree on it.
+
+/**
+ * Subject ids out of a `my_accessible_subjects()` payload, whatever shape
+ * PostgREST chose for it.
+ *
+ * The RPC `returns setof uuid` (011), which arrives today as a bare array of
+ * uuid STRINGS. The two callers used to decode that SEPARATELY and only one of
+ * them also handled the row-OBJECT form — a disagreement waiting for an
+ * encoding change to happen: `returns table(...)` is one edit away, and it
+ * wraps every row in an object. On that day the arena gate would have read "no
+ * accessible subjects" and locked a paying child out, while the Tests tab of
+ * the SAME session went on listing their subjects. One parse, one answer, both
+ * screens — and the safer of the two parses is the one kept.
+ *
+ * Rows are FILTERED, never cast: an unexpected row is dropped rather than
+ * trusted, so a malformed payload can never count as access. The callers keep
+ * their own failure handling — an RPC that ERRORED must fall back to [] (which
+ * locks), and that is their decision to make, not this function's.
+ */
+export function parseAccessibleSubjectIds(data: unknown): string[] {
+  if (!Array.isArray(data)) return [];
+  const ids: string[] = [];
+  for (const row of data as unknown[]) {
+    const id =
+      typeof row === "string"
+        ? row
+        : row && typeof row === "object"
+          ? String(Object.values(row as Record<string, unknown>)[0] ?? "")
+          : "";
+    if (id !== "") ids.push(id);
+  }
+  return ids;
+}

@@ -47,7 +47,12 @@ import {
   readJsonBody,
   unauthorizedResponse,
 } from "@/lib/mobile/http";
-import { PRODUCT_ID_MAX, packageUnsellableKey, paymentsClosedKey } from "../shared";
+import {
+  PRODUCT_ID_MAX,
+  packageUnsellableKey,
+  paymentsClosedKey,
+  subjectUnsellableKey,
+} from "../shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -106,6 +111,17 @@ export async function POST(request: Request): Promise<Response> {
     // child's grade — because a package bought outside either delivers nothing.
     if (product.scope === "olympiad_package" && product.packageId) {
       const unsellable = await packageUnsellableKey(product.packageId, studentProfileId);
+      if (unsellable) return errorResponse(unsellable, 409);
+    }
+
+    // 5b. AND A SUBJECT SALE HAS THE SAME GRADE CONDITION, for the same reason.
+    //     A subject the child's grade does not study delivers nothing: the grant
+    //     is written and every child screen then filters it out against
+    //     `subjects_taught_to_grade` (migration 155). This branch had no
+    //     equivalent of the package check above, so the one scope a parent
+    //     actually buys most was the one the server would sell blind.
+    if (product.scope === "subject" && product.subjectId) {
+      const unsellable = await subjectUnsellableKey(product.subjectId, studentProfileId);
       if (unsellable) return errorResponse(unsellable, 409);
     }
 

@@ -93,6 +93,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.select.search": "Axtar…",
     "mob.select.noResults": "Uyğun nəticə tapılmadı",
     "mob.sub.accessUntil": "Giriş bu tarixə qədər",
+    // An Apple activation writes ONE entitlement row and no subscription row
+    // at all, so these two lines are the whole visible result of a payment for
+    // a family that has never subscribed. Reporting "no subjects selected yet"
+    // over a subject they have just paid for is the "money in, nothing out"
+    // reading a Guideline 3.1.1 rejection is made of.
+    "mob.sub.accessActive": "Giriş aktivdir",
+    "mob.sub.activeSubjects": "Aktiv fənlər",
     // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
     // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
     // resolves none of these keys because nothing asks for them.
@@ -293,6 +300,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.select.search": "Search…",
     "mob.select.noResults": "No matching results",
     "mob.sub.accessUntil": "Access until",
+    // An Apple activation writes ONE entitlement row and no subscription row
+    // at all, so these two lines are the whole visible result of a payment for
+    // a family that has never subscribed. Reporting "no subjects selected yet"
+    // over a subject they have just paid for is the "money in, nothing out"
+    // reading a Guideline 3.1.1 rejection is made of.
+    "mob.sub.accessActive": "Access is active",
+    "mob.sub.activeSubjects": "Active subjects",
     // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
     // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
     // resolves none of these keys because nothing asks for them.
@@ -479,6 +493,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.select.search": "Поиск…",
     "mob.select.noResults": "Ничего не найдено",
     "mob.sub.accessUntil": "Доступ до",
+    // An Apple activation writes ONE entitlement row and no subscription row
+    // at all, so these two lines are the whole visible result of a payment for
+    // a family that has never subscribed. Reporting "no subjects selected yet"
+    // over a subject they have just paid for is the "money in, nothing out"
+    // reading a Guideline 3.1.1 rejection is made of.
+    "mob.sub.accessActive": "Доступ активен",
+    "mob.sub.activeSubjects": "Активные предметы",
     // ---- APPLE IN-APP PURCHASE (iOS ONLY) ------------------------------
     // Rendered only where IAP_PLATFORM_SUPPORTED is true; an Android build
     // resolves none of these keys because nothing asks for them.

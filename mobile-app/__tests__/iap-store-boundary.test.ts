@@ -236,6 +236,37 @@ describe("only priced, sellable, uncovered subject products are offered", () => 
     expect(buildOffers([row({})], products, ["s1"])).toEqual([]);
   });
 
+  it("drops a subject this child's grade does not study", () => {
+    // The silent sale: Fizika is taught in grades 7-11, so a grade-3 family
+    // could buy it and every child screen — which applies the SAME rule last —
+    // then dropped the entitlement it produced. Money in, nothing on screen.
+    const products: StoreProduct[] = [{ id: "p", displayPrice: "X", title: null }];
+    expect(buildOffers([row({})], products, [], new Set(["s9"]))).toEqual([]);
+    expect(buildOffers([row({})], products, [], new Set(["s1"])).length).toBe(1);
+  });
+
+  it("keeps a held subject out of the offer list whatever the grade rule says", () => {
+    // This list is what may be ADDED, so a held subject is absent from it for
+    // its own reason and not as a side effect of the grade rule: both answers
+    // below are the covered filter's, and they stay the same when the rule
+    // agrees and when it disagrees. The third assertion is the control — it is
+    // what makes the two empties above evidence rather than a fixture that
+    // could not have produced a row in the first place.
+    const products: StoreProduct[] = [{ id: "p", displayPrice: "X", title: null }];
+    expect(buildOffers([row({})], products, ["s1"], new Set(["s1"]))).toEqual([]);
+    expect(buildOffers([row({})], products, ["s1"], new Set(["s9"]))).toEqual([]);
+    expect(buildOffers([row({})], products, [], new Set(["s1"])).length).toBe(1);
+  });
+
+  it("filters nothing when the grade rule is unknown", () => {
+    // No grade on the record, or a failed read. Hiding the whole catalogue
+    // because one RPC hiccuped costs a family the thing they came for — and
+    // leaves a store reviewer with no purchase button.
+    const products: StoreProduct[] = [{ id: "p", displayPrice: "X", title: null }];
+    expect(buildOffers([row({})], products, [], null).length).toBe(1);
+    expect(buildOffers([row({})], products, []).length).toBe(1);
+  });
+
   it("never offers an olympiad package here", () => {
     // The olympiad tab is browse-only by an owner decision that survived the
     // 3.1.1 rejection, and a package is grade-targeted — selling one from a

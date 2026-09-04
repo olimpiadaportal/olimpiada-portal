@@ -20,9 +20,12 @@
 // USAGE
 //   node ./scripts/submission-preflight.mjs
 //
-// ENVIRONMENT (each unlocks a group of checks; missing ones are reported SKIP,
-// never PASS)
+// ENVIRONMENT (each unlocks a group of checks; a missing one is reported SKIP
+// or WARN, never PASS)
 //   OLIMPIADA_PROD_DB_URL         production database, read-only queries
+//   APP_REVIEW_DEMO_CHILD_ID      the 8-digit student ID that APP_REVIEW_NOTES.md
+//                                 §4 hands to the reviewer; without it the
+//                                 demo-child check can only WARN
 //   APP_STORE_CONNECT_ISSUER_ID   \
 //   APP_STORE_CONNECT_KEY_ID       |  same values the product-creation script
 //   APP_STORE_CONNECT_P8_PATH      |  uses; see README_IAP_PRODUCTS.md
@@ -205,6 +208,62 @@ function checkDatabase() {
         ? "iap_notifications does not exist. Apply migration 166 BEFORE pushing the notification endpoints, or every Apple notification 500s and retries forever."
         : "iap_notifications exists",
     );
+
+    // 6. THE REHEARSAL TRAP. The rehearsal that proves the purchase works is
+    //    also what can empty the reviewer's purchase card. A sandbox purchase
+    //    writes a REAL entitlement (grants are ON unless APPLE_IAP_SANDBOX_GRANTS
+    //    is "off"), and buildOffers() hides every interval of a subject the
+    //    child already holds. Rehearse a grade's sellable subjects on the child
+    //    whose credentials are printed in the review notes and that child's card
+    //    offers nothing: the reviewer opens Subscription and finds NO PURCHASE
+    //    CARD — the rejected screen, produced by the rehearsal meant to prevent
+    //    it. Rehearse on a throwaway child; this check is the tripwire.
+    const demoChildId = (process.env.APP_REVIEW_DEMO_CHILD_ID || "").trim();
+    const demoCheck = "demo child holds no apple_iap grant";
+    if (!/^\d{8}$/.test(demoChildId)) {
+      // WARN, not SKIP. The damage is invisible in the app and invisible in the
+      // database unless someone looks, so "could not check" has to read as an
+      // open question rather than as one more line that scrolled past.
+      record(
+        WARN,
+        demoCheck,
+        "APP_REVIEW_DEMO_CHILD_ID is not set to the 8-digit student ID from APP_REVIEW_NOTES.md §4, so this cannot be answered here. BY HAND: confirm that child holds no live apple_iap entitlement — every subject it holds is a subject its purchase card stops offering, and a handful of them leave the reviewer no purchase card at all.",
+      );
+    } else {
+      // Interpolated rather than parameterised: the id is proven to be eight
+      // digits directly above, so there is nothing left to inject. Both counts
+      // in one round trip — psql -tA separates columns with '|'.
+      const [found, live] = (
+        dbQuery(
+          `select (select count(*) from students where child_unique_id = '${demoChildId}'),` +
+            ` (select count(*) from entitlements e` +
+            ` join students s on s.profile_id = e.student_profile_id` +
+            ` where s.child_unique_id = '${demoChildId}' and e.source = 'apple_iap'` +
+            ` and e.revoked_at is null and e.starts_at <= now()` +
+            ` and (e.ends_at is null or e.ends_at > now()));`,
+        ) || ""
+      )
+        .split("|")
+        .map((value) => value.trim());
+      // The id is never echoed back: it is half of a working child login.
+      if (found === "0") {
+        record(
+          FAIL,
+          demoCheck,
+          "no student carries the id in APP_REVIEW_DEMO_CHILD_ID. Either the variable is wrong or the demo child in §4 does not exist — and a reviewer following the notes cannot sign in.",
+        );
+      } else if (live === "0") {
+        record(PASS, demoCheck, "no live apple_iap entitlement on the demo child");
+      } else if (live) {
+        record(
+          FAIL,
+          demoCheck,
+          `${live} live apple_iap entitlement(s) on the demo child — almost certainly a rehearsed sandbox purchase. Each one removes its subject from that child's purchase card (twelve months, for a yearly product). Revoke them before submitting, and rehearse on a throwaway child.`,
+        );
+      } else {
+        record(WARN, demoCheck, "the count query returned nothing readable; check this one by hand.");
+      }
+    }
   } catch (error) {
     record(FAIL, "database checks", error.message);
   }
@@ -340,13 +399,8 @@ function checkManual() {
   );
   record(
     SKIP,
-    "age rating declares in-app purchases",
-    "App Store Connect → Age Rating → \"Does your app contain in-app purchases?\" must now be YES.",
-  );
-  record(
-    SKIP,
     "a sandbox purchase was rehearsed on the submitted binary",
-    "Nothing here can prove this. Buy a subject with a sandbox Apple ID and confirm access actually opens.",
+    "Nothing here can prove this. Buy a subject with a sandbox Apple ID and confirm access actually opens. Do it on a THROWAWAY child, never on the demo child in the review notes: a sandbox purchase is a real entitlement, and the card stops offering a subject the child already holds.",
   );
 }
 

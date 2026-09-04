@@ -100,6 +100,74 @@ export async function paymentsClosedKey(): Promise<string | null> {
 }
 
 /**
+ * May this SUBJECT be sold to THIS child right now?
+ *
+ * The subject-scope twin of `packageUnsellableKey`'s grade question, and it
+ * exists for the same reason: a subject the child's grade does not study
+ * delivers NOTHING. The entitlement row is written, and then every child screen
+ * filters it straight back out — the arena gate, the Tests home and the daily
+ * round all intersect against `subjects_taught_to_grade`, which is how Fizika
+ * came to be listed to a grade-3 child in the first place (migration 155). The
+ * package branch has refused this since day one; subject scope had no
+ * equivalent, so the server would happily take money it could not deliver.
+ *
+ * THE RULE IS ASKED OF THE DATABASE, never re-written here. Migration 155 exists
+ * precisely because this predicate was hand-copied into client files and drifted
+ * three separate ways (it ignored topic status, it demanded an exact grade match
+ * so a SHARED topic made a subject vanish, and it ran only inside a free-access
+ * branch). `subject_taught_to_grade` is the single-subject form the migration
+ * added for exactly this case — a server re-check of an id that arrived from a
+ * client — so the store and every list the child sees answer from one place.
+ *
+ * A GRADE-LESS CHILD IS NOT REFUSED. `students.grade_id` is nullable and the
+ * rule's own comment is explicit that a NULL grade means NO RESTRICTION rather
+ * than an empty catalogue; refusing here would lock such a family out of buying
+ * anything at all. The check is skipped rather than asked with a NULL grade,
+ * because the RPC would then answer "does this subject have any curriculum
+ * anywhere" — a different question, and one whose `false` is not about grades.
+ * (This is the one place the two guards deliberately differ: a package with no
+ * matching grade row genuinely has nothing to deliver, so that branch refuses.)
+ *
+ * Returns an i18n key on refusal, or null when the sale may proceed. Fails
+ * CLOSED on an unreadable answer, like every other gate on this route: a sale
+ * that fails is retried a second later, while a purchase that delivers nothing
+ * can only be undone by Apple.
+ */
+export async function subjectUnsellableKey(
+  subjectId: string,
+  studentProfileId: string,
+): Promise<string | null> {
+  if (!isServiceRoleConfigured) return "iap.err.generic";
+  const admin = getAdminClient();
+
+  const { data: student, error: studentError } = await admin
+    .from("students")
+    .select("grade_id")
+    .eq("profile_id", studentProfileId)
+    .maybeSingle();
+  if (studentError) {
+    console.error("[apple] grade lookup failed:", studentError.code ?? "unknown");
+    return "iap.err.generic";
+  }
+  const gradeId = (student as { grade_id?: string | null } | null)?.grade_id ?? null;
+  if (!gradeId) return null;
+
+  const { data: taught, error: taughtError } = await admin.rpc("subject_taught_to_grade", {
+    p_subject: subjectId,
+    p_grade: gradeId,
+  });
+  if (taughtError) {
+    console.error("[apple] the grade rule could not be read:", taughtError.code ?? "unknown");
+    return "iap.err.generic";
+  }
+  // `!== true` and not `=== false`: a null or a shape we did not expect is an
+  // unanswered question, and this gate does not guess.
+  if (taught !== true) return "iap.err.unavailable";
+
+  return null;
+}
+
+/**
  * May this olympiad package be sold to THIS child right now?
  *
  * Two questions, and both of them are about delivering what was paid for:

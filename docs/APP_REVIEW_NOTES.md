@@ -299,11 +299,31 @@ Each item has been observed to produce, or would produce, a failed review.
 * [ ] **Every product has a price.** A product with no price cannot be bought,
       in sandbox or otherwise.
 * [ ] **Rehearse the purchase on the submitted binary** with a sandbox Apple ID,
-      end to end, and confirm access actually opens afterwards.
+      end to end, and confirm access actually opens afterwards — **on a THROWAWAY
+      child created for the rehearsal. Never on the demo child in §4, and never
+      on any child a reviewer is told to use.** A sandbox purchase writes a real
+      entitlement (grants are on by default), and the purchase card only offers
+      subjects the child does not already hold — so every subject you rehearse
+      disappears from that child's card, for twelve months if you rehearsed the
+      yearly product. Rehearse the handful of subjects that grade can be sold and
+      the card empties itself: no offers, no panel, and a reviewer following
+      these notes finds **no purchase card at all** — the exact screen that was
+      rejected under 3.1.1, produced by the rehearsal meant to prevent it. If it
+      has already happened, revoke those `apple_iap` entitlement rows before
+      submitting. Set `APP_REVIEW_DEMO_CHILD_ID` to the demo child's 8-digit ID
+      and the preflight above fails while any live one remains.
 
 ### Metadata
 
-* [ ] **Age Rating → "Does your app contain in-app purchases?" must now be YES.**
+* **There is no in-app-purchase declaration to set — do not go hunting for one.**
+  This list used to carry "Age Rating → *Does your app contain in-app
+  purchases?* must now be YES" as a blocking item. **That field does not exist
+  in App Store Connect** (established 2026-09-03): Apple derives the in-app
+  purchase badge from the approved products themselves, and the IAP checkbox
+  that does exist belongs to Google Play. Corrected rather than deleted, because
+  every other item here has produced a failed review — an item that cannot be
+  satisfied costs an hour of hunting under submission pressure, or gets ticked
+  falsely.
 * [ ] **3.1.2 — Subscription information.** The app offers no auto-renewable
       subscriptions; the in-app purchases are **non-renewing subscriptions**. The
       purchase card states that nothing renews automatically, and the App Store

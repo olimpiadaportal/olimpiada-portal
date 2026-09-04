@@ -636,9 +636,44 @@ export async function grantAppleEntitlement(params: {
  * knows better. A LIVE ENTITLEMENT is different: it is a thing the family
  * already has.
  *
- * Liveness is COMPUTED, exactly as `has_subject_access` computes it — there is
- * no status column to read, on purpose (entitlements' own table comment says
- * why). The end-date arms differ by scope because the schema forces them to:
+ * AND NEITHER IS A TRIAL, which is why `source = 'trial'` is excluded here. It
+ * is the SAME exclusion `child_entitled_subjects` makes (migration 168) and the
+ * two must stay byte-for-byte the same rule: that function decides what the
+ * parent panel OFFERS, this one decides what the server will SELL. When they
+ * disagree the failure is not a hidden button but a red one — the panel offers
+ * the trial-covered subject, the parent taps Buy, and this probe refuses with
+ * `iap.err.alreadyActive` before the store sheet ever opens. A trial writes
+ * REAL entitlement rows (activate_free_trial → entitlement_grant(…,'trial',…)),
+ * so without this filter it arrives through this very query and suppresses the
+ * sale of exactly the one or two subjects the trial exists to convert, for the
+ * whole 24 hours it runs.
+ *
+ * WHAT BECOMES OF THE TRIAL ROW WHEN THE PAID GRANT LANDS: nothing, and nothing
+ * needs to. Both rows are live at once, and that is safe in three independent
+ * ways —
+ *   * THEY CANNOT COLLIDE. `uq_entitlements_source_ref` is unique on
+ *     (source, external_ref); the trial's ref is `trial:<student>:<subject>`
+ *     and Apple's is the originalTransactionId, so `entitlement_grant`'s
+ *     `on conflict (source, external_ref) do update` inserts a SECOND row
+ *     rather than overwriting the trial. There is no unique index on
+ *     (student, subject), on purpose.
+ *   * PLAY NEVER BLINKS. `has_subject_access()` reads neither the source nor
+ *     the row count — one live row of any source is access — so the child keeps
+ *     playing across the purchase and after the trial's own ends_at passes.
+ *   * THE PURCHASE UPGRADES THE DAY. `subject_access_is_trial_only()` already
+ *     names this case ("PAID ALWAYS WINS … which happens naturally when a
+ *     parent buys during the trial day") and answers false the moment a
+ *     non-trial row is live, so today's rounds become RATED instead of staying
+ *     practice.
+ * The expired trial row then simply stops matching every predicate that reads
+ * it. It is history, not state.
+ *
+ * Liveness is COMPUTED the way `has_subject_access` computes it — there is no
+ * status column to read, on purpose (entitlements' own table comment says why)
+ * — with the one deliberate difference above: that function answers "may this
+ * child PLAY", where a trial counts, and this one answers "has this been
+ * BOUGHT", where it does not. The end-date arms differ by scope because the
+ * schema forces them to:
  * `ck_entitlement_bounded` makes a subject grant's `ends_at` NOT NULL, and
  * `ck_entitlement_lifetime` makes a package grant's `ends_at` ALWAYS NULL.
  *
@@ -662,6 +697,11 @@ export async function hasLiveEntitlement(params: {
     .select("id")
     .eq("student_profile_id", params.studentProfileId)
     .eq("scope", params.scope)
+    // Borrowed access is not ownership — see the header. Unconditional rather
+    // than scope-branched: only subjects are ever granted as a trial today, and
+    // if a trial-sourced package row ever existed, letting it be bought is the
+    // side to fail on.
+    .neq("source", "trial")
     .is("revoked_at", null)
     .lte("starts_at", now)
     .limit(1);

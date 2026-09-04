@@ -107,6 +107,10 @@ type Row = Record<string, unknown>;
 let paymentsDisabled = false;
 let packageOnSale = true;
 let packageTargetsGrade = true;
+/** What `subject_taught_to_grade` answers. `null` = the RPC could not answer. */
+let subjectTaught: boolean | null = true;
+/** students.grade_id — nullable in the schema, which is a case in its own right. */
+let studentGrade: string | null = GRADE;
 const inserts: Row[] = [];
 
 function builder(table: string) {
@@ -132,7 +136,7 @@ function builder(table: string) {
           error: null,
         };
       }
-      if (table === "students") return { data: { grade_id: GRADE }, error: null };
+      if (table === "students") return { data: { grade_id: studentGrade }, error: null };
       return { data: null, error: null };
     },
     then: (resolve: (v: { data: Row[]; error: unknown }) => unknown) => {
@@ -157,6 +161,13 @@ vi.mock("@/lib/supabase/admin", () => ({
           : { data: null, error: null };
       }
       if (fn === "olympiad_package_on_sale") return { data: packageOnSale, error: null };
+      // Migration 155's single-subject form. `null` here stands for the RPC
+      // failing, which the route must treat as a refusal rather than a yes.
+      if (fn === "subject_taught_to_grade") {
+        return subjectTaught === null
+          ? { data: null, error: { code: "42883", hint: null } }
+          : { data: subjectTaught, error: null };
+      }
       return { data: null, error: { code: "42883", hint: null } };
     },
   }),
@@ -199,6 +210,8 @@ beforeEach(() => {
   paymentsDisabled = false;
   packageOnSale = true;
   packageTargetsGrade = true;
+  subjectTaught = true;
+  studentGrade = GRADE;
   product = { ...subjectProduct };
   liveEntitlement = false;
   requeryResult = { ok: true, transaction: { environment: "Production", source: "requery" } };
@@ -376,6 +389,39 @@ describe("opening a purchase intent", () => {
     expect(res.status).toBe(409);
     expect((await payload(res)).error).toBe("iap.err.unavailable");
     expect(inserts).toHaveLength(0);
+  });
+
+  it("refuses a SUBJECT this child's grade does not study", async () => {
+    // The package branch has always refused a wrong-grade sale; subject scope
+    // had no equivalent, so Fizika could be sold for a grade-3 child and then
+    // filtered out of every screen that child opens (migration 155).
+    subjectTaught = false;
+    const res = await intentPost(req(body));
+    expect(res.status).toBe(409);
+    expect((await payload(res)).error).toBe("iap.err.unavailable");
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("refuses when the grade rule cannot be read at all", async () => {
+    // Fails CLOSED, like every other gate here: a failed sale is retried a
+    // second later, a purchase that delivers nothing needs Apple to refund it.
+    subjectTaught = null;
+    const res = await intentPost(req(body));
+    expect(res.status).toBe(409);
+    expect((await payload(res)).error).toBe("iap.err.generic");
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("does NOT refuse a child who has no grade on record", async () => {
+    // students.grade_id is nullable and the DB rule reads a NULL grade as "no
+    // restriction", never as "no subjects". Refusing here would lock such a
+    // family out of buying anything at all.
+    studentGrade = null;
+    // Even if the rule would have said no, it is not asked.
+    subjectTaught = false;
+    const res = await intentPost(req(body));
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
   });
 
   it("refuses a package that does not target this child's grade", async () => {

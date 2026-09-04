@@ -148,6 +148,7 @@ function builder(table: string) {
     insert: (v: Row) => ((mode = "insert"), (payload = v), b),
     update: (v: Row) => ((mode = "update"), (payload = v), b),
     eq: (c: string, v: unknown) => (preds.push((r) => r[c] === v), b),
+    neq: (c: string, v: unknown) => (preds.push((r) => r[c] !== v), b),
     is: (c: string, v: unknown) => (preds.push((r) => (r[c] ?? null) === v), b),
     lte: (c: string, v: string) => (preds.push((r) => String(r[c] ?? "") <= v), b),
     gt: (c: string, v: string) => (preds.push((r) => String(r[c] ?? "") > v), b),
@@ -687,6 +688,72 @@ describe("the double-billing probe", () => {
         scope: "olympiad_package",
         subjectId: null,
         packageId: PACKAGE,
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it("does NOT count a live TRIAL as access already owned", async () => {
+    // THE HALF THAT MUST MATCH THE DATABASE. child_entitled_subjects (migration
+    // 168) excludes source = 'trial' so the panel keeps OFFERING a trial-covered
+    // subject during the 24 hours the trial exists to convert. If this probe
+    // still counted it, that offer would open a red "already active" refusal
+    // instead of the store sheet — a worse outcome than the hidden button the
+    // exclusion was added to fix.
+    db.entitlements.push({
+      id: "e6",
+      student_profile_id: CHILD,
+      scope: "subject",
+      subject_id: SUBJECT,
+      source: "trial",
+      external_ref: `trial:${CHILD}:${SUBJECT}`,
+      revoked_at: null,
+      starts_at: "2026-01-01T00:00:00.000Z",
+      ends_at: "2099-01-01T00:00:00.000Z",
+    });
+    await expect(
+      hasLiveEntitlement({
+        studentProfileId: CHILD,
+        scope: "subject",
+        subjectId: SUBJECT,
+        packageId: null,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("still sees a PAID grant sitting beside a live trial", async () => {
+    // Both rows are live at once — they cannot collide (uq_entitlements_source_ref
+    // is on (source, external_ref) and the two refs differ), and once the paid
+    // one exists this child really has been sold the subject.
+    db.entitlements.push(
+      {
+        id: "e7",
+        student_profile_id: CHILD,
+        scope: "subject",
+        subject_id: SUBJECT,
+        source: "trial",
+        external_ref: `trial:${CHILD}:${SUBJECT}`,
+        revoked_at: null,
+        starts_at: "2026-01-01T00:00:00.000Z",
+        ends_at: "2099-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e8",
+        student_profile_id: CHILD,
+        scope: "subject",
+        subject_id: SUBJECT,
+        source: "apple_iap",
+        external_ref: TXN,
+        revoked_at: null,
+        starts_at: "2026-01-01T00:00:00.000Z",
+        ends_at: "2099-01-01T00:00:00.000Z",
+      },
+    );
+    await expect(
+      hasLiveEntitlement({
+        studentProfileId: CHILD,
+        scope: "subject",
+        subjectId: SUBJECT,
+        packageId: null,
       }),
     ).resolves.toBe(true);
   });

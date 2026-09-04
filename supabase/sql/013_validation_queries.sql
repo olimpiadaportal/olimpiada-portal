@@ -4463,6 +4463,95 @@ select '125_scheduled_webhooks_answered' as check_name,
        coalesce((select client_err from recent), 0) as responses_4xx_last_hour,
        coalesce((select server_err from recent), 0) as responses_5xx_last_hour;
 
+-- -----------------------------------------------------------------------------
+-- 126) THE PURCHASE OFFER READS OWNERSHIP, NOT BORROWED ACCESS (migration 168).
+--      An Apple in-app purchase writes exactly ONE row, into public.entitlements
+--      -- no child_subscriptions row, no students.access_status change. So the
+--      only honest answer to "has this child already BEEN GRANTED this subject"
+--      comes from child_entitled_subjects(), and both parent purchase screens
+--      union its ids into their covered-subject set to decide what to stop
+--      offering. my_entitled_subjects() is the same answer for the signed-in
+--      child's own session.
+--
+--      WHY THIS CHECK EXISTS. Migration 168 shipped two SECURITY DEFINER
+--      functions and nothing in this file asserted either of them, so a database
+--      that never received the migration read GREEN while every purchase screen
+--      fell back to an empty offer filter. This app has already been rejected
+--      once under Guideline 3.1.1; the visible symptom of that state is a
+--      reviewer who finds no buy button, and no other check would notice.
+--
+--      THE GRANT HALF, AND WHY IT DIFFERS FROM CHECK 42. has_subject_access()
+--      and live_package_entitlement() take an arbitrary student id and are
+--      therefore service_role only. child_entitled_subjects() also takes one but
+--      IS authenticated-executable on purpose: it restates the entitlements
+--      reader set in its own body and fails closed to []. A parent screen holds
+--      no service_role and could not call it otherwise. anon must still never
+--      reach either -- that is one family probing another's purchases.
+--
+--      THE BODY HALF IS THE WHOLE POINT. Three properties together are what stop
+--      BORROWED access from suppressing a purchase:
+--        - no is_giveaway_active. While a giveaway runs has_subject_access()
+--          answers true for EVERY subject, so a giveaway-aware reader decides the
+--          child already owns all 21 products and offers nothing at all.
+--        - no is_free_access_active_for_student. Same shape, admin-granted.
+--        - source <> 'trial'. A trial DOES write real entitlement rows
+--          (activate_free_trial -> entitlement_grant(..., 'trial', ...)), so
+--          unlike the other two it arrives through this very query. Trial
+--          everything and the panel renders nothing for exactly the hours the
+--          trial exists to convert.
+--      A `create or replace` from an older copy of 011 loses any of the three in
+--      silence. my_entitled_subjects() is asserted to DELEGATE rather than
+--      re-derive, which is what keeps the child's own screen behind the same
+--      three properties instead of a second copy of them.
+--
+--      to_regprocedure() throughout, per check 119: the text form of
+--      has_function_privilege() and the ::regprocedure cast both ERROR on a
+--      missing function, and a check whose whole purpose is "168 was never
+--      applied" must REPORT that rather than abort the file before check 102.
+-- -----------------------------------------------------------------------------
+with sigs (sig) as (values
+  ('public.child_entitled_subjects(uuid)'),
+  ('public.my_entitled_subjects()')
+), granted as (
+  select count(*) as n from sigs s
+   where to_regprocedure(s.sig) is not null
+     and not has_function_privilege('anon',          to_regprocedure(s.sig)::oid, 'EXECUTE')
+     and     has_function_privilege('authenticated', to_regprocedure(s.sig)::oid, 'EXECUTE')
+), defs as (
+  select coalesce((select pg_get_functiondef(to_regprocedure('public.child_entitled_subjects(uuid)'))
+                    where to_regprocedure('public.child_entitled_subjects(uuid)') is not null), '') as child_def,
+         coalesce((select pg_get_functiondef(to_regprocedure('public.my_entitled_subjects()'))
+                    where to_regprocedure('public.my_entitled_subjects()') is not null), '') as own_def
+), verdict as (
+  -- The source predicate is written with aligned padding in 011 and the stored
+  -- body carries this file's CRs, so it is probed whitespace-free per check 89.
+  -- Both spellings are accepted: firing on `!=` would be a false alarm, and a
+  -- permanently red check hides the condition it exists to detect (check 123).
+  select child_def = '' as child_missing,
+         position('is_giveaway_active'                in child_def) = 0
+           and position('is_free_access_active_for_student' in child_def) = 0 as borrowed_excluded,
+         position('e.source<>''trial''' in replace(replace(child_def, chr(13), ''), ' ', '')) > 0
+           or position('e.source!=''trial''' in replace(replace(child_def, chr(13), ''), ' ', '')) > 0
+             as trial_excluded,
+         position('child_entitled_subjects' in own_def) > 0 as own_delegates
+  from defs
+)
+select '126_purchase_offer_reads_ownership' as check_name,
+       case when (select n from granted) = (select count(*) from sigs)
+             and (select borrowed_excluded from verdict)
+             and (select trial_excluded    from verdict)
+             and (select own_delegates     from verdict)
+            then 'PASS' else 'FAIL' end as status,
+       (select count(*) from sigs) - (select n from granted) as readers_missing_or_misgranted,
+       case when (select child_missing     from verdict) then 'READER MISSING'
+            when (select borrowed_excluded from verdict) then 'excluded'
+            else 'SUPPRESSES OFFER' end as giveaway_and_free_access,
+       case when (select child_missing  from verdict) then 'READER MISSING'
+            when (select trial_excluded from verdict) then 'excluded'
+            else 'SUPPRESSES OFFER' end as trial_grants,
+       case when (select own_delegates from verdict) then 'delegates'
+            else 'FORKED OR MISSING' end as own_session_reader;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

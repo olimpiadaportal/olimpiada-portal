@@ -5261,6 +5261,126 @@ comment on function public.my_accessible_subjects() is
 revoke all on function public.my_accessible_subjects() from public, anon;
 grant execute on function public.my_accessible_subjects() to authenticated, service_role;
 
+
+-- ---------------------------------------------------------------------------
+-- MIGRATION 168 - "which subjects has this child actually been GRANTED".
+--
+-- my_accessible_subjects() above answers "may this child PLAY", which is the
+-- right question for a GATE and the wrong one for a PURCHASE OFFER, twice over:
+-- it is caller-scoped to current_profile_id(), which on a parent screen is the
+-- PARENT, and it INCLUDES the giveaway — has_subject_access() returns true for
+-- every subject while a giveaway runs, so during a promo the panel would decide
+-- the child already owns all 21 products and offer nothing at all. That is the
+-- "reviewer sees no purchase button" failure (App Store Guideline 3.1.1) these
+-- two functions exist to prevent. A giveaway is borrowed access, never
+-- ownership, and must never suppress an offer — so neither the giveaway window
+-- nor an admin free-access interval is consulted below.
+--
+-- The entitlement predicate is copied verbatim from has_subject_access() so the
+-- two can never disagree about what "live" means.
+-- ---------------------------------------------------------------------------
+
+-- One child's live subject grants. Takes an ARBITRARY student id, so it
+-- restates the entitlements reader set itself: this is a definer function and
+-- RLS does not apply inside it. Same shape and same failure posture as
+-- child_free_trial(uuid), deliberately — the clients merge the two lists side
+-- by side and a second shape would invite a second set of bugs.
+create or replace function public.child_entitled_subjects(p_student uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_me uuid := public.current_profile_id();
+begin
+  -- Fails CLOSED to an empty list. A hiccup must never suppress a purchase
+  -- offer, because the cost of that is a parent who cannot buy and a reviewer
+  -- who reports the in-app purchase as missing.
+  if v_me is null or p_student is null then
+    return '[]'::jsonb;
+  end if;
+
+  -- The same reader set as the entitlements RLS policy and as
+  -- child_free_trial: the child themselves, a linked parent, the parent who
+  -- created them, an admin, or subscriptions.manage.
+  if not (
+    p_student = v_me
+    or public.is_parent_linked_to_student(p_student)
+    or exists (select 1 from public.students s
+               where s.profile_id = p_student
+                 and s.created_by_parent_profile_id = v_me)
+    or public.is_admin()
+    or public.has_permission('subscriptions.manage')
+  ) then
+    return '[]'::jsonb;
+  end if;
+
+  -- ck_entitlement_bounded makes a NULL ends_at unrepresentable for a SUBJECT
+  -- grant ("forever" is a package shape), so there is no `ends_at is null` arm
+  -- here — exactly as in has_subject_access().
+  --
+  -- EXPIRY IS DERIVED. No job flips a status when the clock passes ends_at, so
+  -- there is no window in which access and the screen disagree.
+  return coalesce((
+    select jsonb_agg(distinct jsonb_build_object(
+             'id',   s.id,
+             'code', s.code,
+             'name', s.name))
+    from public.entitlements e
+    join public.subjects s on s.id = e.subject_id
+    where e.student_profile_id = p_student
+      and e.scope       = 'subject'
+      -- BORROWED ACCESS IS NOT OWNERSHIP, and a trial is borrowed. The giveaway
+      -- and the admin free-access window are excluded simply by never being
+      -- called here, but a trial DOES write real entitlement rows
+      -- (activate_free_trial -> entitlement_grant(..., 'trial', ...)), so it
+      -- would arrive through this very query and suppress the offer for exactly
+      -- the subjects the family is trying -- the 24 hours the trial exists to
+      -- convert, with no way to buy. activate_free_trial's own "already
+      -- covered" guard excludes source = 'trial' for the same reason.
+      -- has_subject_access() deliberately does NOT filter it: a trial really is
+      -- access to PLAY. This answers what has been BOUGHT.
+      and e.source     <> 'trial'
+      and e.revoked_at is null
+      and e.starts_at  <= now()
+      and e.ends_at     > now()
+  ), '[]'::jsonb);
+end;
+$$;
+
+comment on function public.child_entitled_subjects(uuid) is
+  'Migration 168: the subjects one child holds a LIVE entitlement for, whatever '
+  'granted it (abb_web, apple_iap, google_play, giveaway-as-a-row, manual, '
+  'school_license). Deliberately EXCLUDES the giveaway window and admin '
+  'free-access intervals: those are borrowed access, and letting them suppress '
+  'a purchase offer is how a reviewer ends up with no buy button. For "may this '
+  'child PLAY this subject", use has_subject_access / my_accessible_subjects '
+  'instead. Caller-scoped, fails closed to [].';
+
+revoke all on function public.child_entitled_subjects(uuid) from public, anon;
+grant execute on function public.child_entitled_subjects(uuid) to authenticated, service_role;
+
+
+-- The signed-in child's own grants. Delegates so the two can never disagree.
+create or replace function public.my_entitled_subjects()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public.child_entitled_subjects(public.current_profile_id());
+$$;
+
+comment on function public.my_entitled_subjects() is
+  'Migration 168: the signed-in child''s own live subject entitlements. '
+  'Delegates to child_entitled_subjects so the two can never disagree.';
+
+revoke all on function public.my_entitled_subjects() from public, anon;
+grant execute on function public.my_entitled_subjects() to authenticated, service_role;
+
 -- MIGRATION 155 -- "which subjects are taught to this grade" is ONE rule, here,
 -- not a hand-written copy per client. The web carried it twice and the mobile
 -- app's three list builders never got it, so Fizika was offered to a grade-3

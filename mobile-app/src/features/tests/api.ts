@@ -11,7 +11,11 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { supabase } from "@/lib/supabase";
-import { CHILD_COVERAGE_SELECT, liveCoveredSubjects } from "@/lib/coverage";
+import {
+  CHILD_COVERAGE_SELECT,
+  liveCoveredSubjects,
+  parseAccessibleSubjectIds,
+} from "@/lib/coverage";
 import { fetchTaughtSubjectIds, keepTaughtSubjects } from "@/lib/data";
 import { fallbackExplanationIds } from "@/lib/explanationFallback";
 import { pickName } from "@/lib/localizedName";
@@ -40,20 +44,27 @@ const PG_UNIQUE_VIOLATION = "23505";
 
 // ---------------------------------------------------------------------------
 // Access set — EXACT mirror of web getChildSubjectAccess (childSubjects.ts):
-// covered subjects from live trialing/active subscriptions; during a giveaway
-// window or an active per-child free-access interval, every PUBLISHED subject
-// merges in on top. The start RPC re-checks server-side.
+// covered subjects from live trialing/active subscriptions, plus whatever the
+// database itself says this child may play; during a giveaway window or an
+// active per-child free-access interval, every PUBLISHED subject merges in on
+// top. The start RPC re-checks server-side.
 // ---------------------------------------------------------------------------
 export async function fetchSubjectAccess(
   profileId: string,
   giveawayActive: boolean,
 ): Promise<SubjectAccess> {
-  const [freeAccessRes, trialRes, studentRes, subsRes, taught] = await Promise.all([
+  const [freeAccessRes, trialRes, accessibleRes, studentRes, subsRes, taught] = await Promise.all([
     supabase.rpc("my_free_access_active"),
     // A trial writes NO access_status -- it grants subject-scoped entitlements
     // and nothing else -- so without this a trial-only child reads as inactive
     // and is offered no subjects at all, while the server happily allows them.
     supabase.rpc("my_free_trial"),
+    // Migration 124 — the same has_subject_access() the attempt RPCs enforce,
+    // caller-scoped to this child. An Apple in-app purchase writes ONE row, in
+    // `entitlements`: no access_status, no child_subscriptions row, no trial.
+    // Without this read the engine would start the attempt while every screen
+    // told the child the app was locked — i.e. a reviewer pays and gets nothing.
+    supabase.rpc("my_accessible_subjects"),
     supabase
       .from("students")
       .select("access_status")
@@ -78,8 +89,26 @@ export async function fetchSubjectAccess(
       "inactive") as string;
   const trial = (trialRes.data ?? null) as { active?: boolean; subjects?: unknown } | null;
   const trialNow = !trialRes.error && trial?.active === true;
+  // Safe fallback = nothing accessible: an RPC hiccup never invents access. Not
+  // lib/data's taughtSubjectSet() — it answers `null`/"do not filter" on error,
+  // the opposite fallback direction from the one an access read needs.
+  //
+  // The PARSE itself is shared with the arena gate (lib/coverage): the two
+  // readers of this one RPC used to decode its rows differently, so an encoding
+  // change would have locked the arena while this tab still reported access —
+  // the app disagreeing with itself about whether a family has paid.
+  const accessibleIds = new Set<string>(
+    accessibleRes.error ? [] : parseAccessibleSubjectIds(accessibleRes.data),
+  );
+  // An entitlement writes no access_status and no subscription row, exactly like
+  // a trial, so a purchase-only child reads "inactive" here and would be shown
+  // the locked app while the attempt RPCs let them play.
   const hasAccess =
-    access === "trialing" || access === "active" || freeNow || trialNow;
+    access === "trialing" ||
+    access === "active" ||
+    freeNow ||
+    trialNow ||
+    accessibleIds.size > 0;
 
   // Per-subject periods: the subscription outlives its shortest-cycle
   // subject, so the status filter alone would offer a lapsed one that
@@ -88,7 +117,9 @@ export async function fetchSubjectAccess(
   for (const s of liveCoveredSubjects(subsRes.data as any[])) {
     subjMap.set(s.id, { code: s.code, name: s.name });
   }
-  // A free window unlocks every PUBLISHED subject, read from `subjects`.
+  // A free window unlocks every PUBLISHED subject, read from `subjects`; an
+  // entitled child unlocks exactly the ones my_accessible_subjects() named. Both
+  // need the same lookup — the RPC returns ids only, and code+name live here.
   //
   // This used to read `subjects_pricing`, which made PRICING decide what a child
   // may open — and the database disagrees in both directions: during a giveaway
@@ -97,7 +128,7 @@ export async function fetchSubjectAccess(
   // keeps its price rows and stayed on offer. `subjects.status` is the admin's
   // publish switch and `subjects` is world-readable (policy subjects_select is
   // USING (true)); web parity with lib/childSubjects.ts.
-  if (freeNow) {
+  if (freeNow || accessibleIds.size > 0) {
     const { data: published, error } = await supabase
       .from("subjects")
       .select("id, code, name")
@@ -105,7 +136,13 @@ export async function fetchSubjectAccess(
     if (!error) {
       for (const row of (published ?? []) as any[]) {
         if (!row?.id) continue;
-        subjMap.set(String(row.id), {
+        const id = String(row.id);
+        // During a giveaway the RPC already names every subject, so the two arms
+        // agree; the filter matters for a child whose access is an entitlement
+        // alone, where merging the whole catalogue would offer subjects the
+        // start RPC then refuses.
+        if (!freeNow && !accessibleIds.has(id)) continue;
+        subjMap.set(id, {
           code: row.code ?? null,
           name: String(row.name ?? ""),
         });

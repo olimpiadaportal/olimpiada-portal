@@ -237,18 +237,52 @@ function readPlanShape(r: Record<string, unknown>): {
   return { items, groups, mixed: r.mixed === true };
 }
 
+/**
+ * WHY a parent may not act on a child — and the two refusals are NOT the same
+ * event. "absent" means there is no such student row at all (deleted, or never
+ * existed); "otherParent" means the row is somebody else's. Collapsing them
+ * into one boolean is what made a RETRIED child deletion answer "this child is
+ * not yours" for a child the parent had just successfully deleted.
+ */
+export type ChildOwnership = "owned" | "absent" | "otherParent";
+
+/** Which of the three the student row is, for the already-authorized parent. */
+export async function childOwnershipCore(
+  parentProfileId: string,
+  studentId: string,
+): Promise<ChildOwnership> {
+  const admin = getAdminClient();
+  const { data: student, error } = await admin
+    .from("students")
+    .select("created_by_parent_profile_id")
+    .eq("profile_id", studentId)
+    .maybeSingle();
+  // A read that FAILED is not a row that is ABSENT, and callers read "absent"
+  // as "already deleted, count it as done". Answering that on a transient
+  // database error would report a deletion that never happened as a success —
+  // the exact lie deleteChildCore's verify step exists to prevent. Thrown, so
+  // the caller's catch reports it as the server fault it is.
+  if (error) {
+    console.error("[child-ownership] students read failed for", studentId, error.code);
+    throw new Error("students ownership read failed");
+  }
+  if (!student) return "absent";
+  return student.created_by_parent_profile_id === parentProfileId ? "owned" : "otherParent";
+}
+
 /** True when the parent created this child (the ownership rule every paid action uses). */
 export async function ownsChildCore(
   parentProfileId: string,
   studentId: string,
 ): Promise<boolean> {
-  const admin = getAdminClient();
-  const { data: student } = await admin
-    .from("students")
-    .select("created_by_parent_profile_id")
-    .eq("profile_id", studentId)
-    .maybeSingle();
-  return !!student && student.created_by_parent_profile_id === parentProfileId;
+  try {
+    return (await childOwnershipCore(parentProfileId, studentId)) === "owned";
+  } catch {
+    // Unchanged from the read this replaced: an UNREADABLE row is not an owned
+    // one. Only the caller that must tell "gone" from "not yours" — the child
+    // delete BFF — needs the failure to surface, and it calls the core above.
+    return false;
+  }
 }
 
 // ---- Start a child subscription (allocates the deferred 8-digit login ID) ----

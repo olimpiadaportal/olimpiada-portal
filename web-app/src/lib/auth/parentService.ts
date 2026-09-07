@@ -17,6 +17,7 @@ import {
   resetChildPassword as svcResetChildPassword,
 } from "@/lib/auth/childAccountService";
 import {
+  deleteChildCore,
   deleteParentAccountCore,
   updateChildProfileCore,
 } from "@/lib/auth/parentCore";
@@ -566,28 +567,26 @@ export async function updateChildProfile(
   return { ok: true };
 }
 
+// ---- Parent deletes a child -----------------------------------------------
+// The work — ownership re-verification, the VERIFIED auth-user deletion and the
+// child's file purge — lives in lib/auth/parentCore.deleteChildCore, shared with
+// the mobile BFF, which needs the outcome this signature cannot carry.
+//
+// THIN ON PURPOSE. React requires a `<form action>` to resolve to void, so the
+// dashboard button (ChildCardActions) cannot receive a result. That is a limit
+// of the form binding, not a reason for the operation to have no result: a
+// refusal is logged server-side here and the dashboard re-rendered, which shows
+// the truth — the child still listed — instead of the old silent success.
 export async function deleteChild(formData: FormData): Promise<void> {
+  // Authorize FIRST, before reading any form field.
   const parent = await requireParent();
-  const studentProfileId = f(formData, "student_profile_id");
-  if (!studentProfileId) return;
-  const admin = getAdminClient();
-
-  // Verify the parent created this child.
-  const { data: student } = await admin
-    .from("students")
-    .select("created_by_parent_profile_id")
-    .eq("profile_id", studentProfileId)
-    .single();
-  if (!student || student.created_by_parent_profile_id !== parent.profileId) return;
-
-  // Delete the child auth user (cascades student/credentials/links).
-  const { data: cred } = await admin
-    .from("child_credentials")
-    .select("auth_user_id")
-    .eq("student_profile_id", studentProfileId)
-    .single();
-  if (cred?.auth_user_id) {
-    await admin.auth.admin.deleteUser(cred.auth_user_id).catch(() => {});
-  }
+  const res = await deleteChildCore({
+    parentProfileId: parent.profileId,
+    studentProfileId: f(formData, "student_profile_id"),
+  });
+  // The KEY only — never the upstream detail, which the core has already logged.
+  if (!res.ok) console.error("deleteChild: refused", res.errorKey);
+  // Revalidate either way: gone on success, still there on refusal, and the
+  // dashboard should be showing whichever one actually happened.
   revalidatePath("/dashboard");
 }

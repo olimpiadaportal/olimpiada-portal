@@ -95,6 +95,7 @@ const ACTION_KEYS: Record<string, string> = {
   "parent.phone_update": "audit.action.parent_phone_update",
   "parent.account_delete": "audit.action.parent_account_delete",
   "parent.child_create": "audit.action.parent_child_create",
+  "parent.child_delete": "audit.action.parent_child_delete",
   "parent.child_password_reset": "audit.action.parent_child_password_reset",
   "parent.subscription_create": "audit.action.parent_subscription_create",
   "parent.subscription_subjects_change": "audit.action.parent_subscription_subjects_change",

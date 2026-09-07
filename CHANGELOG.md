@@ -35,6 +35,60 @@ tester who keeps reporting.
 
 ---
 
+## Next build — unreleased, version not yet assigned
+
+**Deliberately not filed under 1.15.0.** Build 5 of 1.15.0 is already in App
+Store review, so nothing below is in it — filing these lines there would put a
+feature that build does not contain into its release notes. The version this
+rides in is decided when the next build is cut.
+
+- `[store]` Parents can now delete one of their children from the app. The
+  child's edit screen has a Delete section that asks for confirmation first and
+  says plainly what goes with the account: the child's profile, their 8-digit
+  login ID and all of their learning results, permanently. The child's sign-in
+  stops working the moment it is done, and their uploaded photos are removed
+  too. Nothing is deleted without that confirmation, and a deletion that does
+  not fully go through now reports an error instead of a false "done".
+- `[web]` Deleting a child from the parent dashboard on the website could report
+  success when nothing had been deleted — the child was still listed and their
+  login still worked. It now either deletes the account for real or shows a
+  refusal, and it can no longer act on a child the signed-in parent did not
+  create.
+- `[internal]` That web action ended in
+  `admin.auth.admin.deleteUser(id).catch(() => {})`. auth-js RETURNS its errors
+  instead of throwing them, so the catch intercepted almost nothing and the only
+  report of a failure was the return value being thrown away — the same
+  swallowed-deletion bug the parent-account rail was fixed for, and the way a
+  working child login ends up outliving the profile it belongs to, which is the
+  pairing migration 167 refuses. The work now lives in `deleteChildCore`, shared
+  with the mobile BFF: it resolves the login from `profiles` (an FK guarantees
+  the row) rather than `child_credentials`, verifies the auth user is really
+  gone before touching the child's files, tells "not your child" apart from
+  "done", and writes one `parent.child_delete` audit row whether the deletion
+  succeeded or was refused.
+- `[admin]` The audit log names that new `parent.child_delete` action in all
+  three languages and offers it in the action filter, instead of showing a
+  cleaned-up copy of the raw code.
+- `[store]` Deleting a child whose deletion had already gone through no longer
+  answers "this child is not on your account". A child with a long history can
+  take longer to delete than the phone waits for: the account is removed, the
+  app reports a network error, and the parent presses Delete again. The second
+  attempt now recognises that the child is already gone and finishes quietly
+  instead of accusing the parent of deleting somebody else's child.
+- `[store]` A refused delete no longer shows "Enter your email and password".
+  Both danger actions — delete child and delete account — say that the action
+  was not confirmed, in all three languages.
+- `[internal]` The delete BFF's ownership gate stopped collapsing "no such
+  student row" into "not your child": `childOwnershipCore` answers
+  owned / absent / otherParent, so the app's deliberate already-deleted path
+  can fire while the 403 stays a real refusal for a linked, non-creating
+  parent. A student read that FAILS now throws rather than answering "absent" —
+  "could not read the row" must never become "the row is gone" — and a
+  malformed child id in the path answers the generic delete-failed key, so a
+  client bug cannot be mistaken for a completed deletion.
+
+---
+
 ## 1.15.0 — unreleased
 
 **The In-App Purchase release.** This is the build that answers the 2026-08-31

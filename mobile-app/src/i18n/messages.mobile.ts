@@ -66,6 +66,12 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.boot.error": "Yükləmək mümkün olmadı. İnternet bağlantını yoxla.",
     "mob.err.serverUnavailable": "Server hazırda cavab vermir. Bir azdan yenidən cəhd et.",
     "mob.err.network": "Serverə qoşulmaq alınmadı. İnternet bağlantını yoxla və yenidən cəhd et.",
+    // A BFF-chosen key, not a t("literal") one: both danger endpoints
+    // (/account/delete and /children/[id]/delete) refuse a POST that does not
+    // carry {"confirm":true}, and they now say so with THIS key instead of the
+    // login form's parent.err.required — "enter your email and password" under a
+    // delete confirmation.
+    "mob.err.confirmRequired": "Əməliyyat təsdiqlənmədi. Zəhmət olmasa yenidən cəhd edin.",
     "mob.retry": "Yenidən cəhd et",
     "mob.refresh.failed": "Yeniləmək alınmadı. İnternet bağlantını yoxla.",
     "mob.refreshing": "Yenilənir…",
@@ -89,6 +95,17 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pay.notInApp": "Abunəliklər bu tətbiqdə idarə olunmur. Burada yalnız cari vəziyyət göstərilir.",
     "mob.gate.allOpen": "Hazırda bütün fənlər övladlarınız üçün açıqdır.",
     "mob.addchild.idReady": "Övladınız bu ID ilə indi daxil ola bilər. Fənnlərə giriş isə hələ aktiv deyil.",
+    // ---- deleting a child (parent) --------------------------------------
+    // The button label and the question itself are NOT here: they reuse the
+    // web catalogue's child.deleteChild / child.deleteConfirm so the two
+    // platforms ask the parent the same sentence. Only what the web action has
+    // no counterpart for — the consequence line, the in-flight label, the
+    // outcome — is added.
+    "mob.child.delete.hint":
+      "Uşağın hesabı həmişəlik silinir: profili, 8 rəqəmli giriş ID-si, girişi və bütün təlim nəticələri ilə tarixçəsi. Bu əməliyyatı geri qaytarmaq mümkün deyil.",
+    "mob.child.delete.pending": "Silinir…",
+    "mob.child.delete.done": "Uşaq hesabı silindi",
+    "mob.child.delete.failed": "Uşaq hesabını silmək alınmadı. Bir azdan yenidən cəhd edin.",
     "mob.select.cancel": "Ləğv et",
     "mob.select.search": "Axtar…",
     "mob.select.noResults": "Uyğun nəticə tapılmadı",
@@ -273,6 +290,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.boot.error": "Could not load. Check your internet connection.",
     "mob.err.serverUnavailable": "The server isn't responding right now. Please try again shortly.",
     "mob.err.network": "Couldn't reach the server. Check your connection and try again.",
+    "mob.err.confirmRequired": "The action wasn't confirmed. Please try again.",
     "mob.retry": "Try again",
     "mob.refresh.failed": "Couldn't refresh. Check your connection.",
     "mob.refreshing": "Refreshing…",
@@ -296,6 +314,11 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pay.notInApp": "Subscriptions are not managed in this app. This screen only shows your current status.",
     "mob.gate.allOpen": "All subjects are open for your children right now.",
     "mob.addchild.idReady": "Your child can sign in with this ID right away. Access to subjects is not active yet.",
+    "mob.child.delete.hint":
+      "This permanently deletes the child's account: their profile, their 8-digit login ID, their access, and all of their results and history. It cannot be undone.",
+    "mob.child.delete.pending": "Deleting…",
+    "mob.child.delete.done": "Child account deleted",
+    "mob.child.delete.failed": "Could not delete the child account. Please try again in a moment.",
     "mob.select.cancel": "Cancel",
     "mob.select.search": "Search…",
     "mob.select.noResults": "No matching results",
@@ -466,6 +489,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.boot.error": "Не удалось загрузить. Проверьте подключение к интернету.",
     "mob.err.serverUnavailable": "Сервер сейчас не отвечает. Повторите попытку чуть позже.",
     "mob.err.network": "Не удалось связаться с сервером. Проверьте подключение и попробуйте снова.",
+    "mob.err.confirmRequired": "Действие не подтверждено. Пожалуйста, попробуйте ещё раз.",
     "mob.retry": "Повторить",
     "mob.refresh.failed": "Не удалось обновить. Проверьте подключение.",
     "mob.refreshing": "Обновление…",
@@ -489,6 +513,11 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.pay.notInApp": "Подписки не управляются в этом приложении. Здесь показано только текущее состояние.",
     "mob.gate.allOpen": "Сейчас все предметы открыты для ваших детей.",
     "mob.addchild.idReady": "Ребёнок уже может войти по этому ID. Доступ к предметам пока не активен.",
+    "mob.child.delete.hint":
+      "Аккаунт ребёнка удаляется навсегда: профиль, 8-значный ID для входа, доступ и все результаты обучения вместе с историей. Отменить это действие нельзя.",
+    "mob.child.delete.pending": "Удаление…",
+    "mob.child.delete.done": "Аккаунт ребёнка удалён",
+    "mob.child.delete.failed": "Не удалось удалить аккаунт ребёнка. Попробуйте ещё раз чуть позже.",
     "mob.select.cancel": "Отмена",
     "mob.select.search": "Поиск…",
     "mob.select.noResults": "Ничего не найдено",

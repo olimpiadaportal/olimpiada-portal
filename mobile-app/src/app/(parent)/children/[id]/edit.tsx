@@ -11,6 +11,7 @@
 import React, { useMemo, useState } from "react";
 import { View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
+import { Trash2, TriangleAlert } from "lucide-react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
@@ -29,7 +30,7 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchChildren, type ChildRow } from "@/lib/data";
 import { resolveChildAvatarSource } from "@/lib/childAvatar";
 import { supabase } from "@/lib/supabase";
-import { bffEditChild, bffResetChildPassword } from "@/lib/api";
+import { bffDeleteChild, bffEditChild, bffResetChildPassword } from "@/lib/api";
 import { filterSchoolsByRayon, rayonsOfCity } from "@/features/parent/ChildInfoForm";
 import {
   ChildAvatarPicker,
@@ -40,10 +41,14 @@ import {
   useCities,
   useCityDistricts,
   useGrades,
+  useInvalidateParentData,
   useSchools,
   type SchoolRow,
 } from "@/features/parent/queries";
+import { SheetShell, childDisplayName } from "@/features/parent/ui";
 import { SelectField, type SelectOption } from "@/features/profile/SelectField";
+import { useAuthStore } from "@/features/auth/authStore";
+import { showToast } from "@/features/toast/toastStore";
 
 type FieldErrors = Partial<
   Record<"first" | "last" | "city" | "district" | "school" | "grade", string>
@@ -367,6 +372,7 @@ function EditForm({
       />
 
       <PasswordReset childId={child.profile_id} />
+      <DeleteChild child={child} />
     </View>
   );
 }
@@ -490,6 +496,171 @@ function PasswordReset({ childId }: { childId: string }) {
           </View>
         </View>
       )}
+    </Card>
+  );
+}
+
+/**
+ * DANGER ZONE — delete this child (web `deleteChild` action parity).
+ *
+ * WHY IT IS HERE AND NOT ON THE HOME CARD. The web keeps it on the dashboard
+ * card because the web has nowhere else to put it. Mobile does: this screen is
+ * where child management already lives, and the card's OTHER secondary action —
+ * the password reset above — was moved here for the same reason. The Home card
+ * ends in a two-up flex row whose az labels ("Fənlər", "Məlumatı redaktə et")
+ * already use their width at 320pt; a third button turns that row into three
+ * wrapped columns and puts an IRREVERSIBLE action one mis-tap away on the
+ * screen a parent opens most. The app's own destructive precedent is a danger
+ * card at the bottom of a detail screen (features/profile/sections.tsx →
+ * DangerZone), and this is that shape. Reaching it still costs one tap from the
+ * card ("Məlumatı redaktə et"), which is the web's flow with the confirmation
+ * step given room.
+ *
+ * HIDDEN FROM A PARENT WHO IS KNOWN NOT TO HAVE CREATED THE CHILD.
+ * `students_select` also shows a row to a merely LINKED parent, but
+ * `students_write` and the web action both require the CREATOR — for anyone
+ * else the web button silently returns having deleted nothing, which is worse
+ * than no button. Note the direction: the gate hides on a KNOWN mismatch, not
+ * on an unresolved identity (see the check itself). The BFF re-verifies
+ * authorship server-side; this decides what is OFFERED, never what is allowed.
+ */
+function DeleteChild({ child }: { child: ChildRow }) {
+  const { t } = useT();
+  const { tokens } = useTheme();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const invalidateParentData = useInvalidateParentData();
+  const myProfileId = useAuthStore((s) => s.profileId);
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function close() {
+    // The backdrop tap and Android back both land here, so the sheet is modal
+    // in the strict sense while the request is deciding: a dialog that vanishes
+    // mid-delete reads as "nothing happened" and invites a second attempt.
+    if (pending) return;
+    setError(null);
+    setConfirmOpen(false);
+  }
+
+  async function submit() {
+    if (pending) return; // double-submit guard
+    setPending(true);
+    setError(null);
+    const res = await bffDeleteChild(child.profile_id);
+    // "No such child" IS the success answer on this one path, and treating it
+    // as a failure is what a slow delete looks like: the request times out
+    // client-side while the server finishes the cascade, the parent presses
+    // Delete again, and the second call finds the row already gone. The
+    // endpoint answers `childNotFound` for exactly one situation — the student
+    // row is ABSENT — whether its ownership gate or the core discovers it, and
+    // the only thing that empties a row reached from this screen is this very
+    // flow. Refusing here would leave a stale card on Home and tell a parent
+    // their completed deletion had failed. Note the key is NOT `notYourChild`:
+    // that one still means refused (a linked, non-creating parent), and still
+    // reports as an error — and a malformed id gets its own key rather than
+    // borrowing this one, so a bad request can never read as a deletion.
+    if (!res.ok && res.error !== "auth.child.err.childNotFound") {
+      setPending(false);
+      // An i18n KEY the BFF chose — never a server sentence.
+      setError(t(res.error));
+      return;
+    }
+    // Invalidate BEFORE navigating: the Home list this screen returns to must
+    // have dropped the card, not re-render a child that no longer exists. Both
+    // keys, because this screen reads ["children"] while the parent surface
+    // reads ["parent", "children"] — the same split the edit save already
+    // handles above.
+    invalidateParentData();
+    void queryClient.invalidateQueries({ queryKey: ["children"] });
+    showToast(t("mob.child.delete.done"), "ok");
+    // replace(), not back(): this screen edits a profile that is gone and must
+    // not stay in the back stack. `pending` deliberately stays true across the
+    // transition, so nothing here can be fired twice on the way out.
+    router.replace("/(parent)/(tabs)/home");
+  }
+
+  // KNOWN AND DIFFERENT hides the zone; UNRESOLVED does not. `profileId` is
+  // read once at boot through `current_profile_id`, and that read SWALLOWS its
+  // failures and answers null (features/auth/authStore.ts) — so a single
+  // transient RPC hiccup used to hide this action for the whole session, with
+  // no error and nothing to retry. The server is the authority either way: the
+  // BFF re-checks authorship before it deletes anything and the core checks it
+  // again, so rendering the zone on an unknown profile risks a refusal the
+  // parent can read, while hiding it removes a legitimate action silently.
+  if (myProfileId && child.created_by_parent_profile_id !== myProfileId) return null;
+
+  return (
+    <Card
+      variant="flat"
+      style={{
+        gap: spacing.md,
+        borderColor: tokens.danger,
+        // Soft danger wash (6-digit hex + alpha byte) so the zone reads as
+        // danger in both themes — the DangerZone construction, not a new colour.
+        backgroundColor: /^#[0-9a-fA-F]{6}$/.test(tokens.danger)
+          ? `${tokens.danger}12`
+          : tokens.surface,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+        <TriangleAlert size={18} color={tokens.danger} strokeWidth={2} />
+        <AppText
+          variant="title"
+          color={tokens.danger}
+          style={{ flex: 1, minWidth: 0, fontSize: 16 }}
+        >
+          {t("prof2.danger")}
+        </AppText>
+      </View>
+      <AppText variant="muted" style={{ fontSize: 12 }}>
+        {t("mob.child.delete.hint")}
+      </AppText>
+      <Button
+        title={t("child.deleteChild")}
+        variant="danger"
+        icon={<Trash2 size={18} color="#ffffff" strokeWidth={2} />}
+        onPress={() => setConfirmOpen(true)}
+      />
+
+      {/* The confirmation uses the sheet shell every parent sheet already uses.
+          There is no Alert.alert anywhere in this app to mark an action
+          "destructive" on, so the destructive weight is carried the way the
+          rest of the app carries it: the danger Button variant and the
+          danger-tinted heading. Cancel left, Delete right — the order of the
+          web ConfirmModal this mirrors. */}
+      <SheetShell visible={confirmOpen} onClose={close} closeLabel={t("profile.cancel")}>
+        <AppText variant="title" color={tokens.danger}>
+          {t("child.deleteChild")}
+        </AppText>
+        <AppText>{t("child.deleteConfirm")}</AppText>
+        {/* Which child — the sheet covers the screen that said so. */}
+        <AppText variant="muted">{childDisplayName(child)}</AppText>
+        {error ? (
+          <AppText accessibilityLiveRegion="polite" variant="muted" color={tokens.danger}>
+            {error}
+          </AppText>
+        ) : null}
+        <View style={{ flexDirection: "row", gap: spacing.md }}>
+          <Button
+            title={t("profile.cancel")}
+            variant="ghost"
+            disabled={pending}
+            style={{ flex: 1 }}
+            onPress={close}
+          />
+          <Button
+            title={t("child.deleteChild")}
+            pendingTitle={t("mob.child.delete.pending")}
+            variant="danger"
+            pending={pending}
+            style={{ flex: 1 }}
+            onPress={() => void submit()}
+          />
+        </View>
+      </SheetShell>
     </Card>
   );
 }

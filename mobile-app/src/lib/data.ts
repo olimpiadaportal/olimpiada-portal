@@ -15,6 +15,11 @@ export type ChildRow = {
   grade_id: string | null;
   district_id: string | null;
   school_id: string | null;
+  // WHO CREATED this child. `students_select` also shows a row to a merely
+  // LINKED parent, but every child-management write is gated on the CREATING
+  // parent (students_write, and the web deleteChild action) — so the screens
+  // need the distinction to avoid offering an action that would do nothing.
+  created_by_parent_profile_id: string | null;
   // Parent-managed avatar (preset/photo; ChildAvatar resolves the display).
   avatar_kind: string | null;
   avatar_key: string | null;
@@ -29,7 +34,7 @@ export async function fetchChildren(): Promise<ChildRow[]> {
   const { data, error } = await supabase
     .from("students")
     .select(
-      "profile_id, first_name, last_name, child_unique_id, access_status, grade_id, district_id, school_id, avatar_kind, avatar_key, avatar_media_path, grade:grade_id(level, name), district:district_id(name), school:school_id(name)",
+      "profile_id, first_name, last_name, child_unique_id, access_status, grade_id, district_id, school_id, created_by_parent_profile_id, avatar_kind, avatar_key, avatar_media_path, grade:grade_id(level, name), district:district_id(name), school:school_id(name)",
     )
     .order("created_at", { ascending: true });
   if (error) throw error;

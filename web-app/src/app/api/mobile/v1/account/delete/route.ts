@@ -25,9 +25,13 @@ export async function POST(request: Request): Promise<Response> {
     const parent = await resolveBearerParent(request);
     if (!parent) return unauthorizedResponse();
 
+    // ONE key, shared with the child twin at /children/[id]/delete so the two
+    // cannot drift. It used to be the LOGIN form's `parent.err.required`, which
+    // the app localizes as "Enter your email and password" — nonsense under a
+    // delete-my-account confirmation, where neither field exists.
     const body = await readJsonBody(request);
     if (body.confirm !== true) {
-      return errorResponse("parent.err.required", 400);
+      return errorResponse("mob.err.confirmRequired", 400);
     }
 
     await deleteParentAccountCore({

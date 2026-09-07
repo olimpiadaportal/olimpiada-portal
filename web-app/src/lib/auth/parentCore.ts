@@ -357,3 +357,134 @@ export async function deleteParentAccountCore(params: {
     );
   }
 }
+
+export type DeleteChildCoreResult =
+  | { ok: true }
+  | {
+      ok: false;
+      errorKey:
+        | "auth.child.err.childNotFound"
+        | "auth.child.err.notYourChild"
+        | "auth.child.err.serverError";
+    };
+
+/**
+ * Parent deletes ONE of their children: revoke the child's LOGIN (delete the
+ * auth user, which cascades profile → students → child_credentials → links),
+ * then remove that child's stored files.
+ *
+ * IT RETURNS A RESULT, and that is half the point of the rewrite. The web
+ * action this was extracted from was `Promise<void>` and `return`ed early on a
+ * missing id, a missing student and somebody ELSE's student alike — three
+ * refusals a caller could not tell apart from a deletion, all of them followed
+ * by the same revalidate. The mobile BFF needs exactly that distinction, and so
+ * did the web: "not your child" is not "done".
+ *
+ * The other half is the ending, which was
+ * `await admin.auth.admin.deleteUser(id).catch(() => {})` — the SAME bug
+ * deleteAuthUserVerified above was written for. auth-js RETURNS AuthErrors
+ * instead of throwing them, so the catch intercepted almost nothing and the
+ * discarded return value was the only place a failure was ever reported. A
+ * failure here deletes NOTHING: auth user, profile and student row all survive,
+ * the child's login keeps working, and the parent is told the account is gone.
+ * Two of five real parent-account deletions failed in precisely that way before
+ * the verify step existed.
+ *
+ * Errors are i18n KEYS, never localized text — each surface localizes them.
+ */
+export async function deleteChildCore(params: {
+  parentProfileId: string;
+  studentProfileId: string;
+}): Promise<DeleteChildCoreResult> {
+  const { parentProfileId, studentProfileId } = params;
+  // A malformed id and an id that matches nothing are the same answer: there is
+  // no such child. Neither is worth a distinct key, and both must refuse rather
+  // than fall through to the revalidate that used to imply success.
+  if (!isUuid(studentProfileId)) return { ok: false, errorKey: "auth.child.err.childNotFound" };
+
+  const admin = getAdminClient();
+  // Re-verify OWNERSHIP server-side (the parent must have created this child).
+  // RLS also enforces this, but we never trust the client-supplied id.
+  const { data: student, error: studentError } = await admin
+    .from("students")
+    .select("created_by_parent_profile_id")
+    .eq("profile_id", studentProfileId)
+    .maybeSingle();
+  // A READ THAT FAILED IS NOT A ROW THAT IS ABSENT, and the two must not share
+  // an answer. `childNotFound` now MEANS "already gone, count it as done" — the
+  // mobile client treats it as success so that a retry after a slow-but-
+  // completed delete stops accusing the parent of not owning their own child.
+  // Letting a transient error fall into that branch would show a green
+  // "account deleted" toast while the auth user, the profile, the students row
+  // and the child's working 8-digit login all survive. Same reasoning, same
+  // shape as childOwnershipCore in subscriptionCore.ts.
+  if (studentError) {
+    console.error("[child-delete] students read failed for", studentProfileId, studentError.code);
+    return { ok: false, errorKey: "auth.child.err.serverError" };
+  }
+  if (!student) return { ok: false, errorKey: "auth.child.err.childNotFound" };
+  if (student.created_by_parent_profile_id !== parentProfileId) {
+    return { ok: false, errorKey: "auth.child.err.notYourChild" };
+  }
+
+  // The child's auth user comes from PROFILES, not child_credentials. Both
+  // carry the same id by construction (create_child_account writes one from the
+  // other), but students.profile_id → profiles.id is an FK, so a student row
+  // guarantees a profile row while a credential row is merely expected to
+  // exist. It is also the route fn_cascade_delete_parent_children takes, so the
+  // two deletion paths resolve the login the same way.
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("auth_user_id")
+    .eq("id", studentProfileId)
+    .maybeSingle();
+  const authUserId: string | null = profile?.auth_user_id ?? null;
+  if (!authUserId) {
+    // Half-finished provisioning. Refused, not skipped: the row is still there
+    // afterwards, so answering ok would be the same lie in a quieter voice —
+    // and deleteParentAccountCore already treats a missing auth user id as a
+    // refusal rather than a no-op.
+    console.error("[child-delete] no auth user for student", studentProfileId);
+    return { ok: false, errorKey: "auth.child.err.serverError" };
+  }
+
+  const reason = await deleteAuthUserVerified(admin, authUserId);
+
+  // ONE audit row either way. A REFUSED deletion of a child account is exactly
+  // the event worth having a record of, and unlike parent-account deletion the
+  // actor survives this operation, so the row can be written after the outcome
+  // is known instead of before it.
+  await writeAuditLog(parentProfileId, "parent.child_delete", {
+    targetTable: "students",
+    targetId: studentProfileId,
+    severity: "critical",
+    success: !reason,
+    metadata: reason ? { failure: reason } : undefined,
+  });
+
+  if (reason) {
+    // Detail server-side only; the surfaces answer with the generic key.
+    console.error("[child-delete] incomplete for student", studentProfileId, reason);
+    return { ok: false, errorKey: "auth.child.err.serverError" };
+  }
+
+  // FILES LAST, and only once the account is provably gone — same ordering and
+  // same reasoning as deleteParentAccountCore: irreversible work goes after the
+  // reversible work has succeeded, so a refusal never destroys a child's
+  // photograph while leaving the child's account intact. Best-effort by design;
+  // a leftover object is a retention problem, a leftover login is a security
+  // one, and only the second may fail the operation.
+  const storageProblems = await purgeFamilyStorage(admin, {
+    studentProfileIds: [studentProfileId],
+    authUserIds: [authUserId],
+  });
+  if (storageProblems.length > 0) {
+    console.error(
+      "[child-delete] storage purge incomplete for student",
+      studentProfileId,
+      storageProblems.join(","),
+    );
+  }
+
+  return { ok: true };
+}

@@ -266,8 +266,9 @@ export function bffAuthedPost<T>(
   body: unknown,
   fallbackErrorKey: string,
   extraHeaders?: Record<string, string>,
-  /** Overrides the 12s JSON budget. Only for endpoints whose work is bounded
-   *  by an OUTBOUND call we do not control — see the Apple IAP calls below. */
+  /** Overrides the 12s JSON budget. Only for endpoints whose duration is not
+   *  ours to bound — an outbound call we do not control (the Apple IAP calls
+   *  below) or an unbounded cascade (the child deletion below). */
   timeoutMs?: number,
 ): Promise<BffResult<T>> {
   return bffJsonPost<T>(path, body, fallbackErrorKey, true, extraHeaders, timeoutMs);
@@ -418,6 +419,39 @@ export const bffResetChildPassword = (childId: string, password: string) =>
     `/api/mobile/v1/children/${childId}/reset-password`,
     { password },
     "auth.child.err.updateFailed",
+  );
+
+/** Longer than the house 12s budget, for the same reason the IAP calls are:
+ *  the work behind this one is not bounded by anything the client can see. The
+ *  core runs two reads, a GoTrue user delete whose FK cascade tears down every
+ *  attempt, answer, activity day and leaderboard row the child ever produced, a
+ *  verify read, an audit insert and two Storage round-trips. A child with a
+ *  long history legitimately passes 12s, and a false timeout is the worst
+ *  report this call can give: the deletion SUCCEEDED and the parent is told it
+ *  failed. */
+const CHILD_DELETE_TIMEOUT_MS = 45_000;
+
+/**
+ * Permanently delete one child (web `deleteChild` server action parity).
+ *
+ * The body carries an explicit `{confirm:true}`, matching the parent-account
+ * twin at /account/delete: on an irreversible endpoint a bare POST — a stray
+ * retry, a replayed request, a hand-rolled call — must delete nothing. The
+ * app's confirm sheet is what sets it; the child id in the path still names
+ * WHICH child.
+ *
+ * The BFF re-verifies SERVER-SIDE that the caller CREATED this child before it
+ * deletes anything. The gate on the button is presentation only — it decides
+ * what is offered, never what is allowed.
+ */
+
+export const bffDeleteChild = (childId: string) =>
+  bffAuthedPost<{ deleted: true }>(
+    `/api/mobile/v1/children/${childId}/delete`,
+    { confirm: true },
+    "mob.child.delete.failed",
+    undefined,
+    CHILD_DELETE_TIMEOUT_MS,
   );
 
 export const bffCancelSubscription = (

@@ -119,7 +119,7 @@ export function accessTone(status: string | null | undefined): "ok" | "bad" | "m
 export type AccessPill = { key: string; tone: "ok" | "bad" | "muted" };
 
 /**
- * The child card's access pill, decided from BOTH things that can grant access.
+ * The child card's access pill, decided from every rail that can grant access.
  *
  * WHY A SECOND SOURCE. `students.access_status` is written by the SUBSCRIPTION
  * rail alone — the subscription writers and the hourly reconciliation job, all
@@ -135,21 +135,41 @@ export type AccessPill = { key: string; tone: "ok" | "bad" | "muted" };
  * and no platform flag: the same blind spot covers a comp and a school licence
  * on Android.
  *
+ * THE THIRD GRANT IS THE FREE TRIAL, and it is invisible to BOTH of the above.
+ * activate_free_trial (migration 140) writes no `access_status` and no
+ * `child_subscriptions` row, and the entitlement rows it DOES write are
+ * deliberately excluded from child_entitled_subjects — that exclusion is what
+ * stops a 24-hour trial suppressing the purchase offer the trial exists to
+ * convert, so it stays. What was left was a child reading `inactive` here while
+ * their arena and Tests tabs were unlocked and a rated round was running: the
+ * parent's FIRST screen said "Giriş yoxdur" over a child who was mid-round.
+ * `onTrial` therefore arrives from its own read — child_free_trial(uuid), the
+ * caller-scoped twin of the entitlement RPC — whose `active` is DERIVED from
+ * ends_at, so no job has to run for the pill and the arena to agree.
+ *
+ * It reuses `access.trialing`, the word the subscription rail already uses for
+ * exactly this state, rather than minting a second vocabulary for "temporary".
+ *
  * FAIL OPEN. `entitled === false` is the entitlement reader's own safe fallback
- * (that is what it returns when the RPC hiccups) and it reproduces the previous
- * behaviour EXACTLY — a failed read can only cost the upgrade. It can never
- * invent access, and never blanks the pill.
+ * (that is what it returns when the RPC hiccups) and `onTrial === false` is the
+ * trial reader's; both reproduce the previous behaviour EXACTLY — a failed read
+ * can only cost the upgrade. Neither can invent access, and neither blanks the
+ * pill.
  *
  * A status that ALREADY reads as access keeps its own wording: a family with a
  * live subscription is not relabelled "access is active" merely because the
- * entitlement mirror knows about them too.
+ * entitlement mirror knows about them too. An entitlement outranks a trial for
+ * the same reason — a family holding both bought something, and that is the
+ * truer thing to say about what they hold.
  */
 export function accessPill(
   status: string | null | undefined,
   entitled: boolean,
+  onTrial = false,
 ): AccessPill {
   const tone = accessTone(status);
   if (tone !== "ok" && entitled) return { key: "mob.sub.accessActive", tone: "ok" };
+  if (tone !== "ok" && onTrial) return { key: "access.trialing", tone: "ok" };
   return { key: accessStatusKey(status), tone };
 }
 

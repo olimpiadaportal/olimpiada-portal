@@ -40,10 +40,20 @@ Never proceed with large implementation work without updating `STATUS.md`.
 - **`013` IS NOT PURELY A SCHEMA CHECK.** Check `102_curriculum_translations` asserts CONTENT
   coverage — at least 260 exam topics and 1077 subtopics carrying `en` and `ru` translations —
   so it CANNOT pass on a freshly bootstrapped, schema-only database and its failure there is
-  expected, not a divergence. A from-zero rebuild is therefore proven by **127/128 with only
-  `102` failing** (it was 126/127 until migration 128 added check 124); check its three reported columns (`rpc_misconfigured`, `failed_invariants`,
-  `stale_overloads`) are all `0`, which is the schema half of that same check. Any OTHER failing
-  check on a fresh build is a real divergence between canonical SQL and production.
+  expected, not a divergence. A from-zero rebuild is therefore proven by **every check passing
+  except `102`** — state the criterion that way and NEVER as a ratio: the check count grows with
+  almost every migration, so a hard-coded "N of M" goes stale silently and makes a HEALTHY
+  database look broken. If you quote a count anyway, COUNT the `as check_name` literals (130
+  today) and do NOT read the number off the last check: `013` has a LETTERED sub-check family
+  (`57b`–`57e`), so the highest check number (126) is four short of the count. Even when
+  `102` fails, its three reported columns (`rpc_misconfigured`, `failed_invariants`,
+  `stale_overloads`) must all be `0` — that is the schema half of that same check. Any OTHER
+  failing check on a fresh build is a real divergence between canonical SQL and production, with
+  one tolerated exception that appears only on a PRODUCTION run: `88_import_media_orphans` counts
+  abandoned bulk-import assets, and its own comment in `013` says a one-off non-zero count is
+  normal (an admin started an import and never submitted it) while the signal is a count that
+  GROWS. It passes on a schema-only rebuild because no imports exist there; on production it was
+  the single failure of the 2026-09-04 run.
 - **Source the canonical files ONE AT A TIME and let each finish.** `011` alone takes over two
   minutes and no canonical file self-transacts, so a client timeout mid-file leaves its
   statements COMMITTED. Re-running the file then fails on its own half-finished work

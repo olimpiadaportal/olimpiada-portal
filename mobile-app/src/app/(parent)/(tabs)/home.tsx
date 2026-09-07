@@ -33,6 +33,7 @@ import { InfoCarousel } from "@/features/parent/InfoCarousel";
 import {
   useChildren,
   useEntitledSubjectsByChild,
+  useFreeTrialsByChild,
   useLeaderboardSummaries,
   useParentFreeAccess,
 } from "@/features/parent/queries";
@@ -74,6 +75,7 @@ function GreetingHeader() {
 function ChildCard({
   child,
   entitled,
+  onTrial,
   giveawayActive,
   freeAccessActive,
   leaderboardOn,
@@ -83,6 +85,10 @@ function ChildCard({
   /** This child holds at least one LIVE subject entitlement (migration 168).
    *  False is also the safe fallback when the read fails — see accessPill. */
   entitled: boolean;
+  /** This child is inside their one-time Free Trial (migration 140), which
+   *  `entitled` deliberately cannot see and `access_status` never records.
+   *  False is likewise the safe fallback — see accessPill. */
+  onTrial: boolean;
   giveawayActive: boolean;
   freeAccessActive: boolean;
   leaderboardOn: boolean;
@@ -95,9 +101,10 @@ function ChildCard({
   const name = childDisplayName(child);
   // The giveaway/free-access branches below outrank this: those windows are
   // BORROWED access and get to say so in their own words. Underneath them the
-  // pill reports what the child actually holds, from both rails — see
-  // accessPill for why `students.access_status` alone was not enough.
-  const pill = accessPill(child.access_status, entitled);
+  // pill reports what the child actually holds, across all three rails that can
+  // grant it — see accessPill for why `students.access_status` alone was not
+  // enough, and why a trial needs a read of its own.
+  const pill = accessPill(child.access_status, entitled, onTrial);
   const gradeText = child.grade
     ? formatGradeLabel(child.grade.level, locale, child.grade.name)
     : null;
@@ -306,24 +313,82 @@ export default function ParentHome() {
     lbByChild.set(c.profile_id, (lbQueries[i]?.data ?? null) as LbSummary | null);
   });
 
+  // Declared BEFORE the two per-child reads below, because they gate them.
+  const mode = config.data?.payment.mode ?? "off";
+  const giveawayActive = mode === "giveaway";
+  const giveawayEndsAt = config.data?.payment.giveawayEndsAt ?? null;
+  const freeActive = freeAccess.data?.active === true;
+  const freeEndsAt = freeAccess.data?.endsAt ?? null;
+
+  // WHETHER THE PILL'S TWO READS RUN AT ALL. ChildCard's giveaway and
+  // free-access branches outrank the entitlement pill, so while either window
+  // runs the card has already decided what it says, and the two per-child reads
+  // below would spend 2N round trips on every focus computing a value nothing
+  // displays. Neither window is the common case — this is normally true and
+  // both reads normally run — but a promo is exactly when a parent opens the
+  // app.
+  //
+  // "NOT YET KNOWN" IS NOT "OFF", and reading it as "off" broke the gate on
+  // exactly the launch it exists for. Both window flags are derived from
+  // queries that start out `undefined`, and the `?? "off"` / `=== true`
+  // defaults above turn that into "no window is running" — so on a cold start
+  // the gate opened the moment `children.data` landed, fired the full 2N round
+  // trips, and only THEN saw the config say `giveaway` and disable queries
+  // whose answers the giveaway had already paid for. The gate therefore waits
+  // for both window reads to SETTLE before deciding.
+  //
+  // Settled, not succeeded. A config that FAILED is answered by the same
+  // `?? "off"` default the card itself uses, so the card will render the
+  // entitlement pill and the reads that make that pill true have to run;
+  // holding them back until a success that may never come would leave a family
+  // who has just paid reading "No access" with nothing able to move it — the
+  // precise defect these two reads were added to fix. Waiting costs nothing
+  // when the queries cannot run at all (an unconfigured Supabase leaves the
+  // config `pending` forever, but `children` fails too and the screen renders
+  // its error state instead of any card).
+  //
+  // The accepted cost is a window ENDING mid-session: the reads only mount once
+  // the config flips, so for one round trip a card falls back to what
+  // `access_status` alone knows. Bounded and self-correcting, and the
+  // alternative is paying 2N per focus for the whole window to pre-warm a value
+  // the window itself overrides.
+  // SUPPRESS ONLY WHAT WE KNOW IS POINTLESS. The earlier form here also waited
+  // for the two window reads to SETTLE, so that a cold start during a giveaway
+  // would not pay 2N round trips for a pill the giveaway branch overrides. That
+  // is the right instinct and the wrong failure direction: `isPending` stays
+  // true through the whole retry backoff (queryClient sets retry: 2), so on a
+  // flaky connection the corrective reads were withheld for seconds — and the
+  // label they correct is "Giriş yoxdur" / "No access", shown to a parent who
+  // has paid, on the screen they land on by default. That is the exact bug this
+  // pill was rewritten twice to kill.
+  // So: withhold the reads only while a window is KNOWN to be active. Unknown
+  // counts as "no window", which costs one wasted round of reads on a cold
+  // start inside a promo and never mislabels anyone.
+  const pillReadsOn = !giveawayActive && !freeActive;
+
   // WHAT EACH CHILD ACTUALLY HOLDS. `students.access_status` — the column these
   // cards read on their own — is written by the subscription rail alone, so a
   // child whose parent had just paid Apple was labelled "No access" on the
   // screen a parent lands on by DEFAULT, and no amount of refreshing could move
   // it. Same query key as the two purchase screens, so a purchase settling
   // there invalidates and refetches this too (useInvalidateParentData is a
-  // PREFIX invalidation) and the card is right by the time the parent is back.
-  const entQueries = useEntitledSubjectsByChild(children.data);
+  // PREFIX invalidation, which outranks the staleTime) and the card is right by
+  // the time the parent is back.
+  const entQueries = useEntitledSubjectsByChild(children.data, pillReadsOn);
   const entitledByChild = new Map<string, boolean>();
   (children.data ?? []).forEach((c, i) => {
     entitledByChild.set(c.profile_id, (entQueries[i]?.data ?? []).length > 0);
   });
 
-  const mode = config.data?.payment.mode ?? "off";
-  const giveawayActive = mode === "giveaway";
-  const giveawayEndsAt = config.data?.payment.giveawayEndsAt ?? null;
-  const freeActive = freeAccess.data?.active === true;
-  const freeEndsAt = freeAccess.data?.endsAt ?? null;
+  // THE SAME BLIND SPOT, THIRD RAIL. A Free Trial writes neither an
+  // `access_status` nor a `child_subscriptions` row, and its entitlement rows
+  // are excluded from the read above on purpose, so a trialling child was
+  // labelled "No access" here while playing rated rounds.
+  const trialQueries = useFreeTrialsByChild(children.data, pillReadsOn);
+  const trialByChild = new Map<string, boolean>();
+  (children.data ?? []).forEach((c, i) => {
+    trialByChild.set(c.profile_id, trialQueries[i]?.data === true);
+  });
 
   const kids = children.data ?? [];
   const hasKids = kids.length > 0;
@@ -334,9 +399,15 @@ export default function ParentHome() {
     config,
     profile,
     ...lbQueries,
-    // The pill's second input. Left out, the one thing a parent comes back to
-    // this screen to check would be the one thing a pull could not re-read.
-    ...entQueries,
+    // The pill's other two inputs. Left out, the one thing a parent comes back
+    // to this screen to check would be the one thing a pull could not re-read.
+    // Gated on the same `pillReadsOn`, and it has to be that one and not a
+    // near-miss like `giveawayActive`: refetch() ignores `enabled`, so a pull
+    // taken during a giveaway would fire both RPCs from here regardless of what
+    // the hooks above were told. __tests__/refresh-sources.test.ts pins the
+    // condition, not just the presence of the two arrays.
+    ...(pillReadsOn ? entQueries : []),
+    ...(pillReadsOn ? trialQueries : []),
   ]);
 
   const timeLabels = {
@@ -397,6 +468,7 @@ export default function ParentHome() {
               key={c.profile_id}
               child={c}
               entitled={entitledByChild.get(c.profile_id) === true}
+              onTrial={trialByChild.get(c.profile_id) === true}
               giveawayActive={giveawayActive}
               freeAccessActive={freeActive}
               leaderboardOn={leaderboardOn}

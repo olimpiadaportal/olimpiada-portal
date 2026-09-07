@@ -672,6 +672,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "reset.submit": "Şifrəni yenilə",
     "account.delete": "Hesabı sil",
     "account.deleteConfirm": "Hesabınız, bütün uşaq hesablarınız və onların təlim məlumatları həmişəlik silinəcək. Az sayda qeyd adsızlaşdırılmış formada saxlanılır (Məxfilik Siyasətinə baxın). Davam edilsin?",
+    "account.err.deleteFailed":
+      "Hesabınızı silmək alınmadı. Yenidən cəhd edin — problem təkrarlanarsa, bizimlə əlaqə saxlayın.",
     "child.resetPw": "Şifrəni sıfırla",
     "child.newPassword": "Yeni şifrə",
     "child.resetPwSubmit": "Yenilə",
@@ -2620,6 +2622,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "reset.submit": "Update password",
     "account.delete": "Delete account",
     "account.deleteConfirm": "Your account, all your children's accounts and their learning data will be permanently deleted. A small number of records are kept in anonymised form (see the Privacy Policy). Continue?",
+    "account.err.deleteFailed":
+      "We couldn't delete your account. Please try again — if it keeps failing, get in touch with us.",
     "child.resetPw": "Reset password",
     "child.newPassword": "New password",
     "child.resetPwSubmit": "Update",
@@ -4544,6 +4548,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "reset.submit": "Обновить пароль",
     "account.delete": "Удалить аккаунт",
     "account.deleteConfirm": "Ваш аккаунт, все аккаунты детей и их учебные данные будут удалены навсегда. Небольшое количество записей сохраняется в обезличенном виде (см. Политику конфиденциальности). Продолжить?",
+    "account.err.deleteFailed":
+      "Не удалось удалить аккаунт. Попробуйте ещё раз — если ошибка повторяется, свяжитесь с нами.",
     "child.resetPw": "Сбросить пароль",
     "child.newPassword": "Новый пароль",
     "child.resetPwSubmit": "Обновить",

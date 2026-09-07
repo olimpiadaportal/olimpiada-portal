@@ -439,17 +439,56 @@ export async function updatePassword(
 // ---- Account deletion (self-serve; deletes the parent + their children) -----
 // Stage M2: the deletion cascade (children auth users → parent auth user) lives
 // in lib/auth/parentCore.deleteParentAccountCore, shared with the mobile BFF.
-export async function deleteParentAccount(): Promise<void> {
+
+/** A refused account deletion. There is no `ok`: the success path redirects. */
+export type AccountDeleteState = { error?: string } | null;
+
+// A useActionState ACTION, for the same reason deleteChild below is one — and
+// with more at stake, because this is the MORE destructive of the two.
+//
+// deleteParentAccountCore THROWS when anything survives (a child auth user the
+// verify step could not confirm gone, a missing auth user id, a failed parent
+// delete). That contract exists precisely so the caller does NOT tell somebody
+// their account is gone while a working login remains. This wrapper used to
+// return `Promise<void>` and let the throw escape into the server-action
+// boundary, where it becomes an opaque digest and nothing renders: the modal
+// that submitted it stayed open with both buttons disabled forever, and the
+// only way out of a refused deletion was reloading the page. The happy path hid
+// it — a successful delete redirects, so the dead dialog goes with it.
+//
+// The message is GENERIC and localized here: the core has already logged which
+// half failed, and a partial deletion is not something to describe to a person
+// whose next useful move is to retry or write to us.
+export async function deleteParentAccount(
+  _prev: AccountDeleteState,
+  _formData: FormData,
+): Promise<AccountDeleteState> {
+  // Authorize FIRST. requireParent redirects a non-parent, and that redirect
+  // must stay OUTSIDE the try below or it would be swallowed as a failure.
   const parent = await requireParent();
+  const t = await getT();
   const supabase = await createServerSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  await deleteParentAccountCore({
-    parentProfileId: parent.profileId,
-    authUserId: user?.id ?? null,
-  });
+  try {
+    await deleteParentAccountCore({
+      parentProfileId: parent.profileId,
+      authUserId: user?.id ?? null,
+    });
+  } catch (error) {
+    // The core's own marker only (account_delete_no_auth_user /
+    // account_delete_incomplete:N) — it logged the per-account detail already.
+    console.error(
+      "deleteParentAccount: refused",
+      error instanceof Error ? error.message : "unknown_error",
+    );
+    return { error: t("account.err.deleteFailed") };
+  }
+
+  // Only now, with every account provably gone: end the session and leave.
+  // redirect() throws NEXT_REDIRECT, so it stays out of the try/catch.
   await supabase.auth.signOut();
   redirect("/?deleted=1");
 }
@@ -570,23 +609,39 @@ export async function updateChildProfile(
 // ---- Parent deletes a child -----------------------------------------------
 // The work — ownership re-verification, the VERIFIED auth-user deletion and the
 // child's file purge — lives in lib/auth/parentCore.deleteChildCore, shared with
-// the mobile BFF, which needs the outcome this signature cannot carry.
+// the mobile BFF.
 //
-// THIN ON PURPOSE. React requires a `<form action>` to resolve to void, so the
-// dashboard button (ChildCardActions) cannot receive a result. That is a limit
-// of the form binding, not a reason for the operation to have no result: a
-// refusal is logged server-side here and the dashboard re-rendered, which shows
-// the truth — the child still listed — instead of the old silent success.
-export async function deleteChild(formData: FormData): Promise<void> {
+// A useActionState ACTION, exactly like resetChildPasswordAction above and for
+// the same reason. This was `(formData) => Promise<void>` on the premise that a
+// `<form action>` cannot carry a result back — but useActionState binds a
+// `(prev, formData)` action to precisely such a form, which is how every other
+// fallible form in this app reports a refusal (CancelSubscription,
+// ManageSubjects, the password reset beside this one). Without it the core's
+// typed errorKey died in a console.error, the dashboard re-rendered with the
+// child still listed, and the parent was told NOTHING — a refused deletion was
+// indistinguishable from a mis-clicked confirm.
+//
+// The key is LOCALIZED here because the caller renders `state.error` verbatim.
+// The three refusals keep the wording their existing keys already carry, and
+// the upstream detail never leaves the server — the core logged it already.
+export async function deleteChild(
+  _prev: ChildOpState,
+  formData: FormData,
+): Promise<ChildOpState> {
   // Authorize FIRST, before reading any form field.
   const parent = await requireParent();
+  const t = await getT();
   const res = await deleteChildCore({
     parentProfileId: parent.profileId,
     studentProfileId: f(formData, "student_profile_id"),
   });
-  // The KEY only — never the upstream detail, which the core has already logged.
-  if (!res.ok) console.error("deleteChild: refused", res.errorKey);
   // Revalidate either way: gone on success, still there on refusal, and the
   // dashboard should be showing whichever one actually happened.
   revalidatePath("/dashboard");
+  if (!res.ok) {
+    // The KEY only — never the upstream detail, which the core has already logged.
+    console.error("deleteChild: refused", res.errorKey);
+    return { error: t(res.errorKey) };
+  }
+  return { ok: true };
 }

@@ -54,6 +54,13 @@ rides in is decided when the next build is cut.
   login still worked. It now either deletes the account for real or shows a
   refusal, and it can no longer act on a child the signed-in parent did not
   create.
+- `[web]` A refused delete on the parent dashboard now says why. The refusal
+  already existed server-side, but it only ever reached a server log: the page
+  re-rendered with the child still listed and no explanation, which looks
+  exactly like a mis-clicked confirm. Worse, the confirmation dialog stayed open
+  with both of its buttons disabled until the page was reloaded. The dialog now
+  closes when it is confirmed, and the reason appears under the child's card in
+  the parent's own language.
 - `[internal]` That web action ended in
   `admin.auth.admin.deleteUser(id).catch(() => {})`. auth-js RETURNS its errors
   instead of throwing them, so the catch intercepted almost nothing and the only
@@ -86,10 +93,73 @@ rides in is decided when the next build is cut.
   "could not read the row" must never become "the row is gone" — and a
   malformed child id in the path answers the generic delete-failed key, so a
   client bug cannot be mistaken for a completed deletion.
+- `[store]` A child inside their one-day free trial is no longer listed as
+  “No access” on the parent’s home screen. The trial unlocks the child’s arena
+  and their tests, but the first screen a parent lands on still labelled them
+  as having none while the child was mid-round. The card now reads “Trial” for
+  as long as the trial is actually running.
+- `[internal]` The parent Home card’s per-child entitlement read is now gated
+  on whether the pill it feeds is on screen, and cached for five minutes like
+  the leaderboard summaries beside it. During a giveaway or a free-access
+  window the card renders that window’s own pill and never consults it, so the
+  RPC was spending one round trip per child on every focus to compute a value
+  nothing displayed. The new per-child trial read follows the same gate.
+  Post-purchase invalidation is untouched: `useInvalidateParentData()`
+  invalidates by key prefix, and query-core treats an invalidated query as
+  stale whatever its staleTime, so a bought subject still reaches the pill
+  without an app restart.
+- `[store]` On smaller phones the Ranking tab’s Subject and District pickers
+  cut their last options off behind the phone’s navigation bar, where they
+  could be neither scrolled to nor tapped — with Baku’s twelve rayons in the
+  district list, the last of them was simply unreachable. The picker now ends
+  above the navigation bar and scrolls all the way to its final option, however
+  long the list is, and it shows more of the list at once on a short screen.
+  The Topic and Subtopic pickers on the test setup screen were not affected —
+  they sit in a centred dialog that never reached the navigation bar — but they
+  now measure the safe area too, so they cannot start to.
+- `[internal]` There are four modal option lists in the app and only two of
+  them measured the safe area; the picker Ranking imports padded a flat 24pt,
+  which covers a gesture pill and not a 48pt three-button bar. Under the
+  edge-to-edge windows Android now enforces, a transparent Modal spans the
+  whole screen including that strip, so the rows rendered but their touches
+  belonged to the system, and the list was already at its content end. Both
+  halves are fixed — `insets.bottom` on the container and a bottom padding on
+  the list CONTENT, which is what lets the last row scroll into the clear —
+  and `__tests__/select-sheet-insets.test.ts` now scans every Modal+FlatList in
+  the source for both, so a fifth copy cannot repeat it.
+- `[internal]` That Home gate could not fire on a cold start. The giveaway and
+  free-access flags both default to "no window is running" while their queries
+  are still loading, so the gate opened the moment the children list landed and
+  spent the full per-child round trips before the config arrived to disable
+  them — during a giveaway, which is exactly when a parent opens the app. It
+  now waits for both window reads to settle, and settles for "failed" too: a
+  config that errored is read as "no window" by the card as well, so the reads
+  that make the pill true still have to run. The source-level pull-refresh test
+  meant to protect that guard matched a substring of the sources array and
+  stayed green on an inverted condition; it now parses the array and pins the
+  condition itself.
+- `[web]` A refused ACCOUNT deletion on the website now says so. The website
+  refuses to finish a deletion when any account would survive it — that refusal
+  is what stops us telling somebody their account is gone while their login
+  still works — but it reached nobody: the confirmation dialog stayed open with
+  both of its buttons disabled and the only way out was reloading the page. It
+  is the same defect the child delete above had, in the more destructive of the
+  two actions. The dialog now closes when it is confirmed and the reason appears
+  under the button in the parent's own language; a deletion that does go through
+  still signs out and leaves, exactly as before.
+- `[web]` A child inside their one-day free trial is no longer listed as “No
+  access” on the parent dashboard. This is the same blind spot fixed in the app,
+  and it is worse here: the website is where a parent ACTIVATES the trial, so
+  the parent most likely to read “Giriş yoxdur” was the one who had started one
+  seconds earlier. The pill now reads “Trial” while a trial is running, and
+  “Active” for a child who holds a purchase, an admin comp or a school licence —
+  grants the subscription column never records. It is computed by the same rules
+  as the app's card, so the two cannot disagree, and a failed read falls back to
+  the old label rather than inventing access.
 
 ---
 
-## 1.15.0 — unreleased
+## 1.15.0 — build 5 submitted to App Review, awaiting review (2026-09-04)
 
 **The In-App Purchase release.** This is the build that answers the 2026-08-31
 Guideline 3.1.1 rejection: iOS now sells per-child subject access through Apple,

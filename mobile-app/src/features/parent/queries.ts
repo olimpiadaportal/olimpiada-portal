@@ -86,6 +86,9 @@ export const QK = {
   pricing: ["parent", "subjects-pricing"] as const,
   subscriptions: SUBSCRIPTIONS_KEY,
   entitled: (studentId: string) => [...SUBSCRIPTIONS_KEY, "entitled", studentId] as const,
+  // Under the SAME prefix, for the same reason: a trial is a grant, and every
+  // parent write that can change one already invalidates by this prefix.
+  trial: (studentId: string) => [...SUBSCRIPTIONS_KEY, "trial", studentId] as const,
   catalog: (locale: Locale, studentId: string | null) =>
     ["parent", "oly-catalog", locale, studentId] as const,
   purchases: ["parent", "oly-purchases"] as const,
@@ -269,16 +272,73 @@ export async function fetchEntitledSubjects(
  * filter and disable it elsewhere; the Home pill is a different question —
  * "what does this child hold" — and an entitlement-only grant (admin comp,
  * school licence) is just as invisible to `students.access_status` on Android.
+ *
+ * `enabled` is REQUIRED — no default — and the question the caller has to answer
+ * is "is the pill these rows feed actually on screen?". During a giveaway or an
+ * admin free-access window the card renders THAT window's pill and never
+ * consults this, so an ungated hook spent N round trips on every focus to
+ * compute a value nothing displayed. A default of `true` is how that happened
+ * once; the next caller should have to decide rather than inherit it.
+ *
+ * The 5-minute staleTime is useLeaderboardSummaries' above, and it costs
+ * nothing that matters: the event this must react to is a purchase settling,
+ * and that path is useInvalidateParentData() — invalidation marks the query
+ * INVALIDATED, which query-core treats as stale whatever the staleTime is
+ * (isStaleByTime short-circuits on it). So a bought subject still reaches the
+ * pill immediately; the window only bounds how often an idle screen re-asks a
+ * question whose answer has not changed.
  */
 export function useEntitledSubjectsByChild(
   children: ChildRow[] | undefined,
-  enabled = true,
+  enabled: boolean,
 ) {
   return useQueries({
     queries: (children ?? []).map((c) => ({
       queryKey: QK.entitled(c.profile_id),
       queryFn: () => fetchEntitledSubjects(c.profile_id),
       enabled,
+      staleTime: 5 * 60_000,
+    })),
+  });
+}
+
+/**
+ * Whether one child is inside their one-time Free Trial (migration 140).
+ *
+ * A SEPARATE READ, NOT A WIDENED ONE. child_entitled_subjects excludes
+ * `source = 'trial'` deliberately — see fetchEntitledSubjects — because that
+ * exclusion is the only thing stopping a live trial from suppressing the
+ * purchase offer during the 24 hours the trial exists to convert. Removing it
+ * to feed the Home pill would trade a wrong label for a missing product. So the
+ * trial arrives through its own RPC instead: child_free_trial(uuid) is the
+ * caller-scoped twin of the entitlement one (same reader set, same fail-closed
+ * posture) and it derives `active` from `ends_at` INSIDE the database, so no
+ * screen ever asks the device clock whether a family's trial is over.
+ *
+ * Only `active` survives the parse. `ends_at` and the subject list belong to a
+ * countdown this screen does not draw.
+ *
+ * Safe fallback = NO trial, the opposite direction from the entitlement reader
+ * and correct in both places: an empty entitlement list has to OFFER a product,
+ * while a failed trial read can only cost the nicer of two labels.
+ */
+async function fetchChildFreeTrialActive(studentProfileId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("child_free_trial", {
+    p_student: studentProfileId,
+  });
+  if (error || !data || typeof data !== "object") return false;
+  return (data as { active?: unknown }).active === true;
+}
+
+/** One trial flag per child, positional like the two hooks above; same gate and
+ *  same window, because it feeds the same pill. */
+export function useFreeTrialsByChild(children: ChildRow[] | undefined, enabled: boolean) {
+  return useQueries({
+    queries: (children ?? []).map((c) => ({
+      queryKey: QK.trial(c.profile_id),
+      queryFn: () => fetchChildFreeTrialActive(c.profile_id),
+      enabled,
+      staleTime: 5 * 60_000,
     })),
   });
 }

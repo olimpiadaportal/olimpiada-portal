@@ -2898,8 +2898,13 @@ answer the code does not give for a priced package.
   however byte-perfect the backport is. `FUNCTIONS` is now a name→source map and
   the five round-8 functions point at 128. `reinstateSubject.test.ts` was split
   the same way (`quote_plan_change` → 128, `apply_plan_change` stays 127).
-- **Adding a 013 check changes the rebuild-proof criterion.** 013 is now **128
-  checks**; CLAUDE.md and this file say **127/128 with only `102` failing**.
+- **Adding a 013 check changes the rebuild-proof criterion.** Which is why
+  CLAUDE.md and this file state it as **every check passing except `102`** and
+  never as a ratio — a pinned "N of M" goes stale the next time a migration adds
+  a check, and makes a healthy database look broken. If a number is genuinely
+  needed, COUNT the `as check_name` literals (130 today); do not read it off the
+  last check, because the lettered sub-checks `57b`–`57e` carry no number of
+  their own and leave the highest check number (126) four short of the count.
 - **`checkout_sessions.status` must stay `'paid'` in every arm** — it is what
   `checkout_reversal_candidates` and check 118's `granted_unpaid` read.
 
@@ -3011,8 +3016,9 @@ nowhere safe to run one. There is now, and canonical SQL is confirmed to match.
 
 ### Two procedural facts learned doing it, now in CLAUDE.md
 
-1. **`013` is not purely a schema check.** A from-zero rebuild is proven by 127/128 with ONLY
-   `102` failing. Any other failing check on a fresh build is a real divergence.
+1. **`013` is not purely a schema check.** A from-zero rebuild is proven by EVERY check passing
+   with ONLY `102` failing — state it that way, never as a ratio: the check count grows with
+   almost every migration. Any other failing check on a fresh build is a real divergence.
 2. **A canonical file must be sourced in one uninterrupted run.** `011` takes over two minutes
    and no canonical file self-transacts, so a client timeout mid-file leaves its statements
    COMMITTED. Re-running it then fails on its own half-finished work

@@ -5,6 +5,9 @@ import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { isGiveawayActive } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
+import { getChildFreeTrial } from "@/lib/freeTrial";
+import { isChildEntitled } from "@/lib/childEntitlement";
+import { accessPillKey } from "@/lib/accessPill";
 import { formatPercent } from "@/lib/formatPercent";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { ChildAvatar } from "@/components/ChildAvatar";
@@ -84,6 +87,31 @@ export default async function ParentDashboard() {
     ),
   );
 
+  // The access pill is decided from every rail that can grant access, not from
+  // `students.access_status` alone — see lib/accessPill for the two grants that
+  // column never records (an entitlement-only purchase/comp, and the free
+  // trial, which THIS site is where a parent activates).
+  //
+  // Only for the children whose card actually SHOWS that pill: the giveaway and
+  // a per-child free-access window replace it with their own word, and two RPCs
+  // per child feeding a label nothing renders is a round trip a dashboard does
+  // not need. Both reads fail closed to false, so the pill falls back to the
+  // status column exactly as it did before.
+  const pillChildren = giveawayActive
+    ? []
+    : list.filter((c) => !freeAccessByChild.get(c.profile_id));
+  const grantsByChild = new Map<string, { entitled: boolean; onTrial: boolean }>(
+    await Promise.all(
+      pillChildren.map(async (c) => {
+        const [entitled, trial] = await Promise.all([
+          isChildEntitled(c.profile_id),
+          getChildFreeTrial(c.profile_id),
+        ]);
+        return [c.profile_id as string, { entitled, onTrial: trial.active }] as const;
+      }),
+    ),
+  );
+
   // L-quick: each child's leaderboard summary (rank/points/streak) via the
   // parent-scoped RPC — RLS inside the RPC verifies the parent↔child link, so
   // it is safe to call per child. Only fetched when the flag is on. Any
@@ -141,6 +169,7 @@ export default async function ParentDashboard() {
               const lbRanked = !!lb && lb.rank_month != null;
               const lbProvisional = !!lb && !lbRanked && !!lb.provisional_month;
               const childName = [c.first_name, c.last_name].filter(Boolean).join(" ");
+              const grants = grantsByChild.get(c.profile_id);
               return (
               <div className="card" key={c.profile_id}>
                 <div className="child-card-head">
@@ -166,7 +195,15 @@ export default async function ParentDashboard() {
                     // M10: active free-access interval for THIS child.
                     <span className="pill gvw-access">{t("access.freeAccess")}</span>
                   ) : (
-                    <span className="pill">{t(`access.${c.access_status}`)}</span>
+                    <span className="pill">
+                      {t(
+                        accessPillKey(
+                          c.access_status,
+                          grants?.entitled ?? false,
+                          grants?.onTrial ?? false,
+                        ),
+                      )}
+                    </span>
                   )}
                 </p>
                 {/* L-quick: compact leaderboard chip (rank / percent / streak). */}

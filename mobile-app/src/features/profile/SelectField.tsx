@@ -7,6 +7,7 @@
 // a new bug.
 import React, { useMemo, useState } from "react";
 import { FlatList, Keyboard, KeyboardAvoidingView, Modal, Pressable, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/components/AppText";
 import { TextField } from "@/components/TextField";
 import { useT } from "@/i18n/useT";
@@ -42,6 +43,7 @@ export function SelectField({
 }) {
   const { tokens } = useTheme();
   const { t } = useT();
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = options.find((o) => o.id === value) ?? null;
@@ -136,6 +138,18 @@ export function SelectField({
               onPress={close}
               style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
             />
+            {/* The sheet sits ON the window's bottom edge, and under Android's
+                edge-to-edge windows that edge is BEHIND the gesture/navigation
+                bar — so this padding is the only thing keeping the last option
+                out from under it. A flat spacing.xl covered a 24pt gesture pill
+                and not a 48pt three-button bar, which is how the Ranking
+                subject picker ended up with rows that could be neither scrolled
+                to nor tapped: taps in that strip go to the system. Same
+                insets.bottom + spacing.xl as SheetShell, for the same reason.
+
+                88% (was 70%) is SheetShell's number too: the handle, the title
+                and the search box spend ~120pt before a single option renders,
+                so on a 568pt-tall phone a 70% sheet showed barely five rows. */}
             <View
               style={{
                 backgroundColor: tokens.surface,
@@ -143,8 +157,8 @@ export function SelectField({
                 borderTopRightRadius: radius.xl,
                 paddingHorizontal: spacing.xl,
                 paddingTop: spacing.lg,
-                paddingBottom: spacing.xl,
-                maxHeight: "70%",
+                paddingBottom: insets.bottom + spacing.xl,
+                maxHeight: "88%",
                 gap: spacing.md,
               }}
             >
@@ -176,6 +190,19 @@ export function SelectField({
               <FlatList
                 data={visible}
                 keyExtractor={(o) => o.id}
+                // The list is the sheet's only elastic row. ScrollView's base
+                // style (flexShrink: 1) already shrinks it once the options
+                // overflow the maxHeight box, which is what makes it scroll at
+                // all; flexGrow: 0 keeps a two-option sheet content-sized
+                // instead of stretching to the full 88% (the rules card in
+                // TestsHomeScreen pins the same pair for the same reason).
+                style={{ flexGrow: 0 }}
+                // The CONTENT, not just the container, has to end clear of the
+                // sheet edge: the container padding moves the list's frame up,
+                // this is what lets the LAST row scroll into the clear. Count
+                // of options is irrelevant — the padding travels with the
+                // content, so it holds for six subjects and for sixty schools.
+                contentContainerStyle={{ paddingBottom: spacing.md }}
                 // One tap picks an option even if a keyboard is still up (Android
                 // keeps it over a Modal); without this the first tap is swallowed.
                 keyboardShouldPersistTaps="handled"

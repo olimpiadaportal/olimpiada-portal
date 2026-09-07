@@ -63,6 +63,41 @@ describe("accessPill", () => {
     expect(accessPill("trialing", true)).toEqual({ key: "access.trialing", tone: "ok" });
   });
 
+  // THE THIRD RAIL. activate_free_trial writes no access_status and no
+  // subscription row, and child_entitled_subjects excludes source='trial' on
+  // purpose — so a child mid-rated-round, with an unlocked arena, was labelled
+  // "Giriş yoxdur" on the screen their parent lands on first.
+  it("reports access for a live trial neither other rail can see", () => {
+    expect(accessPill("inactive", false, true)).toEqual({
+      key: "access.trialing",
+      tone: "ok",
+    });
+  });
+
+  // The trial read fails closed to `false`, which must be yesterday's pill
+  // exactly — and omitting the argument altogether is that same fallback, so
+  // no caller can accidentally invent access by forgetting it.
+  it("falls back to the access_status pill when the trial read fails", () => {
+    expect(accessPill("inactive", false, false)).toEqual({
+      key: "access.inactive",
+      tone: "muted",
+    });
+    expect(accessPill("expired", false, false)).toEqual({
+      key: "access.expired",
+      tone: "bad",
+    });
+    expect(accessPill("inactive", false)).toEqual(accessPill("inactive", false, false));
+  });
+
+  // An entitlement outranks a trial: a family holding both bought something,
+  // and that is the truer thing to say about what they hold.
+  it("prefers the entitlement wording over the trial wording", () => {
+    expect(accessPill("inactive", true, true)).toEqual({
+      key: "mob.sub.accessActive",
+      tone: "ok",
+    });
+  });
+
   // Every key it can return has to exist in all three locales, or the fix
   // renders the raw key to a reviewer.
   it("returns only keys the catalogues carry", () => {
@@ -70,6 +105,8 @@ describe("accessPill", () => {
       ["inactive", "trialing", "active", "locked", "expired", "nonsense", null].flatMap((s) => [
         accessPill(s, false).key,
         accessPill(s, true).key,
+        accessPill(s, false, true).key,
+        accessPill(s, true, true).key,
       ]),
     );
     const web = readFileSync(resolve(__dirname, "..", "src", "i18n", "messages.generated.ts"), "utf8");

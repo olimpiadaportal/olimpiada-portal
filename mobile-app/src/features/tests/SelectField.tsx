@@ -4,6 +4,7 @@
 // never display labels — Round-19 forms rule).
 import React, { useMemo, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Modal, Pressable, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Check, ChevronDown } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { useT } from "@/i18n/useT";
@@ -39,6 +40,7 @@ export function SelectField({
   note?: string;
 }) {
   const { t } = useT();
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = options.find((o) => o.id === value) ?? null;
@@ -108,6 +110,19 @@ export function SelectField({
             dialog is vertically centred, so `padding` lifts it clear. */}
         <KeyboardFocusBoundary>
           <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+            {/* The dialog is CENTRED inside this backdrop, so the backdrop's
+                padding is what bounds it — which makes this, not the card, the
+                place the safe-area insets belong.
+                Unlike the profile sheet, this one was never actually reaching
+                the navigation bar: a centred card clamped at a percentage of
+                the window has empty space below it by construction, so the flat
+                spacing.xl was enough in practice. The insets go in anyway
+                because "enough in practice" is a property of today's numbers —
+                a taller card, a shorter window or a deeper system bar each
+                erase the margin silently, and the correct expression costs the
+                same as the lucky one. A percentage maxHeight resolves against
+                this padded content box, so the card cannot reach the notch or
+                the gesture bar however many options it holds. */}
             <Pressable
               accessibilityLabel={label}
               onPress={close}
@@ -115,7 +130,9 @@ export function SelectField({
                 flex: 1,
                 backgroundColor: tint("#000000", 0.55),
                 justifyContent: "center",
-                padding: spacing.xl,
+                paddingHorizontal: spacing.xl,
+                paddingTop: insets.top + spacing.xl,
+                paddingBottom: insets.bottom + spacing.xl,
               }}
             >
               <Pressable
@@ -126,7 +143,15 @@ export function SelectField({
                     borderColor: arena.line,
                     borderWidth: 1,
                     borderRadius: radius.lg,
-                    maxHeight: "70%",
+                    // 85% (was 70%): the header row and the search box eat ~120pt
+                    // before the first option, which left about five rows on a
+                    // 568pt-tall phone. 85% is what the other two arena dialogs
+                    // already use (ReportQuestionSheet, the daily-round rules
+                    // card) — the sheet's own family constant, not a fourth
+                    // number. `overflow: hidden` stays: it is what clips the
+                    // edge-to-edge rows to the rounded corners, and it never
+                    // blocked scrolling (the list shrinks and scrolls inside).
+                    maxHeight: "85%",
                     overflow: "hidden",
                   },
                   shadow("float"),
@@ -183,6 +208,16 @@ export function SelectField({
                 <FlatList
                   data={visible}
                   keyExtractor={(o) => o.id}
+                  // The list is the card's only elastic row: ScrollView's base
+                  // flexShrink lets it shrink and scroll once the options
+                  // overflow the maxHeight box, and flexGrow: 0 keeps a
+                  // three-topic card content-sized instead of stretching to 85%.
+                  style={{ flexGrow: 0 }}
+                  // These rows run edge to edge, so without this the last one
+                  // ends flush against the card's rounded corner and reads as
+                  // "cut off". The padding travels with the CONTENT, so the
+                  // final option always scrolls clear whatever the list length.
+                  contentContainerStyle={{ paddingBottom: spacing.sm }}
                   // Matches the other two SelectFields: an option is picked in ONE
                   // tap even if a keyboard happens to be up over the modal.
                   keyboardShouldPersistTaps="handled"

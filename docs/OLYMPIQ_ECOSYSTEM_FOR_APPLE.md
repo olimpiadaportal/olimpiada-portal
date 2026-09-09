@@ -1,8 +1,36 @@
 # OlympIQ — Complete Product & Compliance Briefing for Apple Developer Enrolment and App Store Connect
 
-**Document status:** written 2026-07-29. Self-contained: everything an assistant needs is on this page.
+> # ⛔ SUPERSEDED — DO NOT PASTE ANY SENTENCE FROM THIS FILE INTO APP STORE CONNECT
+>
+> **Written 2026-07-29, before the app was ever submitted. Annotated 2026-09-09.**
+> Its central factual claim — *"the mobile app contains no purchase functionality
+> of any kind"* — was true and deliberate when written, and is now **FALSE of the
+> iOS binary**, which has sold subject access through In-App Purchase since
+> 1.15.0. Version **1.15.0 was approved and released on 2026-09-09** with **21 IAP
+> products live**.
+>
+> That sentence, or a paraphrase of it, appears at least **thirteen times below**,
+> including inside a ready-to-paste "Notes for Review" block in §11.2 and as a
+> literal **NO** answer to *"Does the app contain in-app purchases?"* in §6.
+> Pasting any of them into a 1.16.0 submission is a false statement to Apple that
+> the App Store's own product list contradicts on sight.
+>
+> **The live sources of truth, in this order:**
+> * `docs/APP_REVIEW_NOTES.md` — what to actually paste, per submission.
+> * `docs/STORE_PAYMENTS_COMPLIANCE.md` — the payments posture, per platform.
+> * `mobile-app/markdowns/STORE_LAUNCH_PACK.md` — the data-safety inventory.
+>
+> **What is still good here:** §2 (the parent/child account model), §4 (the
+> feature walkthrough), §13 (the Azerbaijani glossary) and the reviewer-cannot-
+> create-a-child-session warning in §2 — none of which touch commerce. Those are
+> why the file is kept rather than deleted.
+>
+> **Android is unchanged and still purchase-silent.** The correction below is
+> iOS-only; do not read it as licence to put a price in the Play build.
+
+**Document status:** written 2026-07-29, **superseded 2026-09-09 — read the banner above first.** Self-contained: everything an assistant needs is on this page.
 **Audience:** an AI assistant with no access to the OlympIQ source code, helping the owner (a) enrol in the Apple Developer Program and (b) fill in App Store Connect for the first iOS submission.
-**Reality check before you advise anything:** the app has **never been submitted to any app store**. There is no Apple Developer account yet, no signing certificate, no provisioning profile. The product website domain `olympiq.ai` is **not live yet** — the web app currently runs on a Vercel-provided URL. Several submission blockers are still open and are listed in §12. Do not tell the owner they are ready to submit.
+**Reality check — as it stood on 2026-07-29, retained as the historical record:** the app had **never been submitted to any app store**. There was no Apple Developer account, no signing certificate, no provisioning profile. The domain `olympiq.ai` was not live. Several submission blockers were open and are listed in §12. **All of that has since happened:** the account exists, the domain is live, and the §12 blockers were resolved before 1.15.0 shipped. §12 is now a record of what *was* fixed, not a list of what remains — do not work from it.
 
 **How to use this document:** §1–§5 are product and identity facts. §6–§11 are the answers Apple will ask for. §12 is the list of things that must be fixed *before* any of §6–§11 is worth doing. §13 decodes the Azerbaijani words that will appear in screenshots.
 
@@ -14,7 +42,7 @@ OlympIQ is an Azerbaijani K-12 education app that helps school students in grade
 
 Parents create and manage the family account; each child gets their own login and practises daily, earning points, streaks and a place on skill-based leaderboards.
 
-It is delivered as a website (where parents also pay, in Azerbaijani manat, through an Azerbaijani bank) and as a companion mobile app that contains no payment functionality at all and simply reflects access the family already has.
+It is delivered as a website (where parents also pay, in Azerbaijani manat, through an Azerbaijani bank) and as a mobile app. ⛔ *This sentence used to end "…a companion mobile app that contains no payment functionality at all and simply reflects access the family already has." That is now true only of **Android**. The **iOS** app sells subject access through In-App Purchase (since 1.15.0), and the web and iOS rails are independent — a family may hold access bought either way.*
 
 ---
 
@@ -49,8 +77,11 @@ Additional wrinkle the owner must plan for: the 8-digit ID is **not issued the m
 
 ### 3.2 The mobile app (iOS + Android, one binary, this submission)
 - The same learning experience, native, for both roles.
-- **Purchase-silent by design:** the intended store build contains no checkout, no price, no "Subscribe" button, no link to the website's pricing page, and no QR code — for *either* role. It reads an entitlement the family already holds and unlocks content accordingly.
-- iPhone only, portrait only (iPad is not supported in the current configuration).
+- **Purchase posture is now per-platform** — ⛔ this bullet used to read *"purchase-silent by design"* for both stores, and that is half wrong today:
+  - **iOS sells.** Since 1.15.0 the parent's Subscription tab offers subject access through In-App Purchase, priced by the App Store in the user's own storefront currency. The binary still carries **no price of its own**, no checkout, no link to the website's pricing page and no QR code — the only prices shown are Apple's.
+  - **Android stays purchase-silent**, exactly as this bullet described: no checkout, no price, no "Subscribe" button, for *either* role. It reads an entitlement the family already holds and unlocks content accordingly.
+  - **Children are purchase-incapable on both** — enforced server-side, not hidden in the UI. That part never changed.
+- iPhone **and iPad** — one universal binary (`ios.supportsTablet` is true since 1.16.0; builds up to 1.15.0 were iPhone-only). Portrait on iPhone.
 - Offline: none. The app requires network access.
 
 ### 3.3 What differs
@@ -102,7 +133,7 @@ There is **no user-generated content**: no chat, no messaging, no comments, no f
 | Android package name | `ai.olympiq.app` | Confirmed, already entered in Google Play Console |
 | Current app version | **1.2.0** | Confirmed. Build numbers are managed remotely by the Expo/EAS build service and auto-increment; they are not set by hand |
 | Build tooling | Expo SDK 54 / React Native, built via EAS. Expo organisation account: `olimpiadaplatforms-team`; EAS project id `786a0358-d1db-437e-9fa3-b466b490a8ae` (not a secret) | Confirmed |
-| Platforms in this submission | iPhone only, portrait only. iPad not supported | Confirmed |
+| Platforms in this submission | iPhone **and iPad**, one universal binary. Portrait on iPhone | Confirmed. iPhone-only through 1.15.0; `supportsTablet` was turned on in 1.16.0, which makes iPad screenshots mandatory (`docs/STORE_LISTING_COPY.md` §6.5) and means App Review will test on iPad |
 | Legal/responsible person named in the app's own public About page | **Kamil Piriyev**, "and his partners" | Confirmed (this is the text published in the product) |
 | Tax identification number (VÖEN) | **6300091352** | Confirmed (published publicly in the app) |
 | Legal address | **Peshtatuk village, Lerik District, Republic of Azerbaijan** | Confirmed (published publicly in the app) |
@@ -158,7 +189,9 @@ Based only on what the app itself publishes — an individual's name and an indi
 - Legal name exactly as it appears on the government photo ID you will upload.
 - Address, phone, email.
 - A payment method for the USD 99 annual fee (Apple bills in USD; an Azerbaijani card that supports international transactions is needed — **OWNER MUST CONFIRM** a working card).
-- For paid apps or in-app purchases you would additionally need banking and tax forms (Paid Applications Agreement, W-8BEN or W-8BEN-E, bank account for payouts). **This app is free with no in-app purchases, so those agreements are not required for this submission** — the Free Applications Agreement is enough. If IAP is ever added, the tax/banking layer becomes mandatory.
+- For paid apps or in-app purchases you additionally need banking and tax forms (Paid Applications Agreement, W-8BEN or W-8BEN-E, bank account for payouts). ⛔ **This line used to say those agreements were not required because the app was free. IAP shipped in 1.15.0, so they ARE required — the condition it named ("if IAP is ever added") has been met.** The Free Applications Agreement alone is no longer enough. Two things follow, and they are different:
+  - **Signing is evidently done.** Apple will not approve in-app purchases without an active Paid Applications Agreement, and 21 products are live — so treat the agreement itself as in place rather than re-doing it.
+  - **A payout bank account is a separate step, and it is the open one.** Apple holds proceeds when banking is incomplete: money accrues and simply never arrives, with no rejection and no warning. The complication is specific to this seller and is written up in root `CLAUDE.md` → *Who The Seller Is*: the account on file is **AZN-only at ABB**, AZN appears in no Apple payout material, and the supported currencies are whatever the **Bank Account Currency dropdown** actually offers once Bank Territory is set to Azerbaijan. **Read the live dropdown before opening any account** — and do not repeat the claim that Apple "pays Azerbaijan in EUR", which over-reads a minimum-threshold table.
 
 ---
 
@@ -211,7 +244,7 @@ Apple revised the questionnaire in 2025 (bands are now 4+ / 9+ / 13+ / 16+ / 18+
 
 | Question | Answer | Justification |
 |---|---|---|
-| Does the app contain **in-app purchases**? | **NO** | The binary contains no purchase functionality. Answering YES would contradict the review note in §11 and there are no IAP products configured |
+| Does the app contain **in-app purchases**? | ⛔ **WAS "NO" — THE ANSWER IS NOW YES ON iOS** | *Historical justification, kept to show why it flipped: "the binary contains no purchase functionality … there are no IAP products configured."* **Both halves are now false.** The iOS binary sells subject access through In-App Purchase and **21 non-renewing subscription products are live in App Store Connect**. Answering NO here would be contradicted by Apple's own product list. Android remains purchase-silent, so this row is iOS-only |
 | Does the app contain **advertising**? | **NO** | No ad SDK of any kind is present |
 | **Unrestricted Web Access**? | **NO** | There is no in-app browser and no address bar. There is exactly one web view in the whole app: a non-interactive Google Maps embed on the public Contact screen, which is pointer-disabled, has third-party cookies and file access disabled, and cancels any navigation outside `google.com/maps`. **Caveat: this answer is only fully honest once blocker I5 in §12 is fixed** — today an internally-published notification could contain an arbitrary external link a child could tap |
 | **User-Generated Content / user-to-user communication**? | **NO** | No chat, messaging, comments, forum, or shared free text. Users can set their own name and avatar; the avatar is never shown to other users (leaderboards render initials). News has a like counter only, no comments |
@@ -318,8 +351,17 @@ Payment is a full redirect to the bank's hosted payment page. The app never sees
 
 At the time of writing the platform is running with **payments switched off** (a free-access period), enforced at the database level.
 
-### 9.2 Why the app needs no in-app purchases
-**The mobile app sells nothing.** It is a companion that displays access the family already obtained elsewhere and lets the child consume the content. The app contains no checkout, no price, no subscribe button, no link to a purchase page.
+### 9.2 Why the app needs no in-app purchases — ⛔ ANSWERED THE OTHER WAY BY APPLE, 2026-08-31
+
+> **Apple rejected this exact argument under Guideline 3.1.1** and the finding was
+> accepted as correct. iOS now ships In-App Purchase; the section below is the
+> reasoning that lost. **The Google half still stands** — the consumption-only
+> exemption is real, Android sells nothing, and that is unchanged. What did not
+> survive is applying the same reasoning to Apple.
+>
+> Current posture, per platform: `docs/STORE_PAYMENTS_COMPLIANCE.md`.
+
+**The mobile app sells nothing.** *(True of Android. False of iOS since 1.15.0.)* It is a companion that displays access the family already obtained elsewhere and lets the child consume the content. The app contains no checkout, no price, no subscribe button, no link to a purchase page.
 
 Google Play publishes an explicit general exemption for exactly this: an app may be **consumption-only**, even if it is part of a paid service, provided nothing — digital or physical — can be purchased from within the app. That exemption is unambiguous and Android is on solid ground.
 
@@ -462,15 +504,25 @@ App Store Connect provides one "Sign-in required" username/password pair. Put th
 - **User name:** `[PARENT DEMO EMAIL]`
 - **Password:** `[PARENT DEMO PASSWORD]`
 
-### 11.2 Notes for Review — copy this, fill the placeholders
+### 11.2 Notes for Review — ⛔ DO NOT COPY THIS. IT IS FALSE OF THE SHIPPING BINARY.
+
+> **The block below is retained only to show what was submitted before IAP
+> existed.** Its second paragraph asserts in capitals that the app cannot sell
+> anything; the iOS binary has sold subject access through In-App Purchase since
+> 1.15.0, which is approved and live with 21 products. Pasting this into a
+> submission contradicts App Store Connect's own product list.
+>
+> **Paste `docs/APP_REVIEW_NOTES.md` §2–§7 instead** — it is maintained per
+> submission and its §0 is the reply that got the 3.1.1 rejection overturned.
 
 ```
+--- HISTORICAL, PRE-1.15.0. NOT FOR SUBMISSION. ---
 ABOUT THIS APP
 OlympIQ is a parent-managed education app for school students in Azerbaijan
 (grades 1-11). Students practise multiple-choice academic questions in maths,
 sciences, informatics, English and logic, and appear on skill-based leaderboards.
 
-THIS APP CONTAINS NO PURCHASE FUNCTIONALITY OF ANY KIND.
+THIS APP CONTAINS NO PURCHASE FUNCTIONALITY OF ANY KIND.   <-- NO LONGER TRUE ON iOS
 Accounts and access are provisioned outside the app; nothing can be bought inside
 it by any user or role. There are no prices, no subscribe buttons and no links to
 any purchase page anywhere in the binary. Students are purchase-incapable at the
@@ -554,7 +606,8 @@ The app requests no location, camera, contacts or microphone access.
 OTHER NOTES
  * The app is trilingual: Azerbaijani (default), English and Russian. Use the language
    chip on the login screen or in the account sheet to switch to English.
- * The app is iPhone-only and portrait-only.
+ * The app runs on both iPhone and iPad from a single universal binary. It is designed
+   for portrait and is locked to portrait on iPhone.
  * If you see the word "giveaway" in the app, it refers to a free-access promotional
    period, not a prize draw or contest. There is no gambling, no prizes and no
    virtual currency in the app.
@@ -605,7 +658,19 @@ explicitly DEFERRED by the owner and are tracked in `STATUS.md`. Note that #7's 
 cannot be fixed by renaming: the problem is that a purchase CTA exists in the binary at all,
 so it resolves only with #1.
 
-### 12.1 Commerce — the app is not purchase-silent yet
+### 12.1 Commerce — ✅ RESOLVED BEFORE 1.15.0. HISTORICAL RECORD, NOT A TO-DO LIST.
+
+> Every CRITICAL item below was fixed, and the app was approved and released on
+> 2026-09-09. The runtime payment flag, the public paywall screen, the fabricated
+> invoices and the simulated pay sheet are **gone from the binary** — the posture
+> is a build-time constant, and iOS sells through StoreKit. Kept because the
+> reasoning explains *why* the architecture has the shape it does, and because
+> item 1 is the fact pattern that must never be reintroduced.
+>
+> **Do not action anything in this table.** Live blockers for the next submission
+> are in `docs/APP_REVIEW_NOTES.md` → *BLOCKING CHECKLIST*.
+
+#### *(as written 2026-07-29)* Commerce — the app is not purchase-silent yet
 
 | # | Blocker | Why it causes a problem | Severity |
 |---|---|---|---|

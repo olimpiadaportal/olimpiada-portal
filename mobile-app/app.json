@@ -2,7 +2,7 @@
   "expo": {
     "name": "OlympIQ",
     "slug": "olympiq",
-    "version": "1.15.0",
+    "version": "1.16.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "olympiq",
@@ -17,7 +17,8 @@
     },
     "ios": {
       "bundleIdentifier": "ai.olympiq.app",
-      "supportsTablet": false,
+      "supportsTablet": true,
+      "requireFullScreen": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false

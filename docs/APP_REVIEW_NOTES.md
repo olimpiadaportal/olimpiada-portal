@@ -1,7 +1,9 @@
 # App Review Information — what to paste, and the reply to the 3.1.1 rejection
 
-**Status:** rewritten 2026-09-01 for the **In-App Purchase** build. Not yet
-submitted — the blocking checklist at the end is not satisfied.
+**Status:** rewritten 2026-09-01 for the **In-App Purchase** build; that build,
+**1.15.0, was approved and released on 2026-09-09**. The next submission is
+**1.16.0**, and the blocking checklist at the end applies to it in full — it is a
+per-submission list, not a one-time one.
 
 **READ THIS FIRST: the app changed category.** Every earlier version of this
 file told Apple the app contained no purchase functionality of any kind. That
@@ -138,13 +140,47 @@ Keep it under about 5 minutes.
 
 ## 2. Devices and operating systems tested
 
-Replace with what you actually used.
+**Write what you actually tested on. Do not paste the example.** Apple asks this
+because a reviewer who hits a device-specific bug wants to know whether you would
+have seen it. An invented device list is a false statement in a submission, and
+the honest version — "we could not test on hardware" — has never on its own
+caused a rejection. Saying nothing is also allowed; this field is optional.
 
-> Tested on:
+For 1.15.0 the true answer was that **no Apple hardware was available** and the
+build was verified by automated tests, a code review of the purchase path, and a
+credential check against Apple's App Store Server API — not by a human tapping a
+phone. If that is still true when you next submit, say so plainly rather than
+listing a device you do not own.
+
+> Example only — REPLACE, do not paste:
 > - iPhone (physical device) — iOS 18
 > - iOS Simulator — iPhone 16 Pro Max, iOS 18
->
-> The app is iPhone-only; `supportsTablet` is false and no iPad build is offered.
+
+**Keep this line accurate to the build you are submitting**, because it is the
+sentence a reviewer checks against the binary. For **1.16.0** it reads:
+
+> OlympIQ ships as a single universal binary: it runs on iPhone and on iPad
+> (`ios.supportsTablet` is true). There is no separate iPad build and no
+> iPad-only feature — both devices run the same screens. On a wide window the
+> content is held in a centred column rather than stretched to the full width.
+
+It replaces the old "the app is iPhone-only" line, which was true through 1.15.0
+and became false in 1.16.0 when `ios.supportsTablet` was turned on. Two
+consequences arrived with it and neither is optional: the App Store listing now
+**requires iPad screenshots** (exact specs in `docs/STORE_LISTING_COPY.md`
+§6.5), and **App Review will test on iPad**.
+
+**Do not extend that line with "and it is locked to portrait."** It is on
+iPhone. On iPad it holds only for as long as a deprecated key keeps working, and
+that is not a promise to put in a submission. `UIRequiresFullScreen` — the key an
+app uses to opt out of multitasking, and with it out of rotation — is set, and
+Apple deprecated it in iPadOS 26: "deprecated and will be ignored in a future
+release" (TN3192). It is not ignored yet. Apple stops honoring it "starting in
+iOS 27 and iPadOS 27 … when you build your app with the iOS 27 SDK or later",
+and this app compiles against the iOS 26 SDK (Expo SDK 54 / React Native 0.81),
+so it should still bind on a reviewer's iPad today. But nobody here owns an iPad
+to confirm it, and the guarantee expires with the next Xcode. State what the app
+does, not how it behaves on hardware we have not tested.
 
 ---
 
@@ -277,6 +313,43 @@ because a checklist that quietly passes the items it cannot see is worse than no
 checklist. The `SKIP` items below are the ones you must confirm by hand.
 
 Each item has been observed to produce, or would produce, a failed review.
+
+### New in 1.16.0 — neither of these existed for 1.15.0
+
+Both are consequences of changes made in this round, and **both are done in a
+console, not in code**, so no build fixes them and the preflight cannot see them.
+
+* [ ] **Declare the child GENDER field on BOTH privacy forms before submitting.**
+      Migration 169 added an optional child gender, collected in Add-Child and
+      the child edit screen. **1.16.0 is the first build that collects it**, so
+      submitting with either form un-updated hands the reviewer a binary that
+      contradicts its own declaration — about a **minor's** personal data.
+      - **Play Data safety:** Personal info → Other info, *Collected*, purposes
+        **Analytics AND Account management**. Optionality is **"Data collection
+        is required"** — *not* "users can choose". Play asks per TYPE, and that
+        type also carries the mandatory grade and school; the gender field stays
+        optional in the product, but answering "users can choose" for a type
+        carrying two mandatory fields is the false statement.
+      - **Apple App Privacy:** Other Data → Other Data Types, linked, not
+        tracking, purposes **Analytics AND App Functionality**.
+      - Two purposes on each form because the privacy policy also tells parents
+        that authorised staff read the answer on the child's profile and in
+        exported account reports — which is not analytics.
+      - Neither console needs a new build: App Privacy publishes from App Store
+        Connect on its own, and the Play form is submitted separately from a
+        release. Full inventory: `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2.
+
+* [ ] **Upload 13-inch iPad screenshots.** `ios.supportsTablet` went from
+      `false` to `true` in 1.16.0, which makes them **mandatory** — the version
+      cannot be submitted without them. 2064×2752 or 2048×2732, portrait, 1–10
+      images. Specs: `docs/STORE_LISTING_COPY.md` §6.5. The same flip means
+      **App Review will now test on iPad**, which no previous submission did.
+
+* [ ] **Install 1.16.0 on a real iPad and try to rotate it.** The portrait lock
+      on iPad rests on `requireFullScreen`, which is declared correctly and which
+      TN3192 says is still honored on an iOS 26 SDK build — but that is read off
+      Apple's documentation, not measured. This is the first build where anyone
+      can actually check.
 
 ### The purchase must actually work for the reviewer
 

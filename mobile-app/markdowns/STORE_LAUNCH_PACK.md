@@ -369,10 +369,12 @@ hold to for it: optional at every write, no gate ever reads it, not shared with
 anyone, not used for tracking, removed with the child on deletion, and named in
 section 5 of the privacy policy in all three languages (policy last-updated
 08.09.2026) — in place before the first build that collects it reaches a store.
-**And no `eas update` goes out on the 1.15.0 runtime until BOTH forms above are
-updated.** An OTA is not a submission, so “before the next build” does not cover it,
-and `runtimeVersion: appVersion` would land this field on 1.15.0 build 5 — in App
-Review now — whose declarations are the un-updated ones. Rule and reasoning: root
+**And the build that first collects it is 1.16.0, so BOTH forms above are updated
+BEFORE 1.16.0 is submitted to either store.** The OTA freeze that stood here until
+2026-09-09 is discharged — `expo.version` left 1.15.0, and `runtimeVersion: appVersion`
+means an update published now can never reach a 1.15.0 binary — but the duty behind it
+hardened rather than lapsed: a submitted build hands the reviewer the declaration
+instead of leaving it attached to a binary already out. Rule and reasoning: root
 `CLAUDE.md` → “Releasing a new mobile version”. The converse holds for the §2.1
 rows and is more urgent: grade, city, district, school, the push token and the
 likes are in every build already shipped, so their half of both forms is overdue

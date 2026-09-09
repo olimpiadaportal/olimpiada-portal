@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { useContentGutter } from "@/lib/useContentWidth";
 import { scrollPaddingBottom } from "./keyboardLayout";
 import {
   KeyboardFocusProvider,
@@ -43,6 +44,9 @@ function StaticScreen({ children, padded = true, background }: ScreenProps) {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
   const { keyboardInset, viewProps } = useKeyboardViewInset();
+  // 0 on every phone; on a tablet it centres the content column instead of
+  // letting a layout drawn for 390pt stretch across 1024. See useContentWidth.
+  const gutter = useContentGutter();
   const bg = background ?? tokens.bg;
   const pad = padded ? spacing.lg : 0;
 
@@ -56,8 +60,8 @@ function StaticScreen({ children, padded = true, background }: ScreenProps) {
         // The keyboard inset is 0 unless a keyboard is actually covering this
         // view, so a closed keyboard leaves the original layout untouched.
         paddingBottom: scrollPaddingBottom(insets.bottom, keyboardInset),
-        paddingLeft: pad + insets.left,
-        paddingRight: pad + insets.right,
+        paddingLeft: pad + insets.left + gutter,
+        paddingRight: pad + insets.right + gutter,
       }}
     >
       {children}
@@ -76,6 +80,8 @@ function ScrollScreen({
   const { t } = useT();
   const insets = useSafeAreaInsets();
   const { keyboardInset, scrollProps, focusApi } = useKeyboardAwareScroll();
+  // 0 on every phone; centres the content column on a tablet.
+  const gutter = useContentGutter();
   const bg = background ?? tokens.bg;
   const pad = padded ? spacing.lg : 0;
 
@@ -91,8 +97,8 @@ function ScrollScreen({
             // field's action button above the keyboard. Back to exactly
             // `insets.bottom + pad` the moment the keyboard closes.
             paddingBottom: scrollPaddingBottom(insets.bottom + pad, keyboardInset),
-            paddingLeft: pad + insets.left,
-            paddingRight: pad + insets.right,
+            paddingLeft: pad + insets.left + gutter,
+            paddingRight: pad + insets.right + gutter,
           }}
           refreshControl={
             onRefresh ? (

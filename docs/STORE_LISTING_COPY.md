@@ -13,9 +13,11 @@ which must never appear in store copy (see §5).
 The rest of that pack (data-safety inventory, reviewer notes, age-rating answers) is
 still current; only the listing metadata moved here.
 
-- **Last updated:** 2026-09-08
+- **Last updated:** 2026-09-09
 - **Play status:** submitted for the default `az-AZ` listing
-- **App Store status:** 1.15.0 build 5 in review
+- **App Store status:** 1.15.0 build 5 approved 2026-09-09 and released. **1.16.0 is the
+  next submission**, and it is the first build that collects the child gender field — see
+  the declaration blocker in §8
 
 ---
 
@@ -278,6 +280,46 @@ exact 9:16 natively with no post-processing.
 
 **Promo video** is optional. Left empty.
 
+### 6.5 App Store screenshots — iPad became mandatory in 1.16.0
+
+`ios.supportsTablet` flipped to **true** in 1.16.0, so App Store Connect now demands an
+iPad set alongside the iPhone set already on the listing. Apple asks for the largest
+display in each device family and scales the rest itself, so supplying only those two
+sizes is complete, not a shortcut.
+
+| Family | Required display | Portrait | Landscape |
+|---|---|---|---|
+| iPhone | **6.9-inch** | 1320×2868, 1290×2796 or 1260×2736 | 2868×1320, 2796×1290 or 2736×1260 |
+| iPad | **13-inch** | **2064×2752** or 2048×2732 | 2752×2064 or 2732×2048 |
+
+- **The 13-inch iPad size is required of any binary that runs on iPad.** There is no
+  "the app is phone-shaped so it does not apply" case: the version cannot be submitted
+  without it.
+- Smaller iPad sizes (12.9", 11", 10.5", 9.7") and the 6.5-inch iPhone are **optional** —
+  Apple scales the 13-inch and 6.9-inch sets down to fill them. Supply 6.9-inch for
+  iPhone; 6.5-inch is only required when 6.9-inch is absent.
+- **1 to 10 per display size**, PNG or JPEG. Play's 2–8 rule does not apply here.
+- **No alpha channel, no transparency.** That one fails the *upload*, not the review.
+- **Portrait and landscape are both accepted. Capture portrait** — it is the layout the
+  app is designed in and what the iPhone set already uses — and do not mix orientations
+  inside one set.
+
+> **The trap:** an 11-inch iPad captures at 1668×2388 or 1640×2360, and the 13-inch slot
+> **rejects** both — yet an 11-inch model is the iPad most simulator lists put in front of
+> you. Only a 13-inch device, or the **iPad Pro 13-inch (M4)** simulator, gives 2064×2752
+> natively. Do not upscale an 11-inch capture to fake the size: the text goes visibly
+> soft, and a blurry screenshot is what a reviewer reads against Guideline 2.3.3.
+
+**Per localisation.** Screenshots belong to a localisation, but a language added in App
+Store Connect **inherits the primary language's screenshots** — everything except
+description and keywords defaults from the primary language. The `az` set alone is
+therefore enough to publish all three listings, exactly as the Play feature graphic
+behaves in §6.1. Upload `en` and `ru` sets only if the captures themselves are
+translated, and if you do, that localisation then needs every required size on its own.
+
+The capture rules from §6.4 apply unchanged: the same six screens, no real child's name
+in frame, no price anywhere.
+
 ---
 
 ## 7. Field-by-field differences between the two stores
@@ -291,11 +333,12 @@ exact 9:16 natively with no post-processing.
 | Wide banner | Feature graphic 1024×500, **required** | not used |
 | Icon | 512×512 upload | taken from the binary's 1024×1024 |
 | Phone shots | 2–8, 16:9 or 9:16 | per device class, exact pixel sizes |
-| Tablet shots | 7" + 10" slots | iPad required **only if** the binary supports iPad |
+| Tablet shots | 7" + 10" slots | iPad required if the binary supports iPad — **it does, since 1.16.0** (§6.5) |
 | Release notes | "What's new", 500 | "What's New in This Version", 4000 |
 
-`ios.supportsTablet` is currently **false** in `app.json`, so the App Store will not ask
-for iPad screenshots. If that ever flips to true, iPad captures become mandatory.
+`ios.supportsTablet` is **true** in `app.json` as of 1.16.0, so iPad screenshots are
+mandatory for that submission and every one after it, and App Review will test on iPad.
+Sizes, counts and the localisation rule: **§6.5**.
 
 ---
 
@@ -363,13 +406,17 @@ Recorded here so a later submission does not contradict an earlier one.
   at any time — including to "prefer not to say", which is what taking the answer back
   looks like here. It is **not** withdrawable in the sense of returning to *never asked*:
   "prefer not to say" is itself a stored answer, and the never-asked state exists only for
-  children nobody has answered for. **Not yet submitted** — this row alone goes in with
-  the release that first ships the field, which is the build after 1.15.0 build 5; the
-  four types in the bullet above are for data already shipped and must not wait for it.
-  **Until this form is updated, no `eas update` may be published on the 1.15.0 runtime
-  either** — an OTA is
-  not a submission, so it would put the field on build 5 while this answer still says the
-  data is not collected (root `CLAUDE.md` → “Releasing a new mobile version”).
+  children nobody has answered for. **Not yet submitted, and it now blocks a
+  submission.** This row goes in with the release that first ships the field, and that
+  release exists: it is **1.16.0**.
+  So both forms must carry gender **BEFORE 1.16.0 is submitted to either store** — not in
+  the same session, not after; the four types in the bullet above are for data already
+  shipped and must not wait for it either. The **OTA freeze** that stood here until
+  2026-09-09 is discharged — `expo.version` left 1.15.0, and `runtimeVersion: appVersion`
+  means an update published now can never reach a 1.15.0 binary. The obligation did not
+  lapse with it; it hardened, because a submitted build hands a reviewer the declaration
+  rather than leaving it attached to a binary already out (root `CLAUDE.md` →
+  “Releasing a new mobile version”).
   The iOS half of the same declaration
   (*Other Data → Other Data Types*, linked, not tracking; purposes **Analytics** and
   **App Functionality**, Apple's category for "perform customer support" — it has no
@@ -430,3 +477,5 @@ required; it has been optional since 2026-08-31.
 | 2026-09-08 | Optional child gender (migration 169) added to the data-safety inventory in §8 and in `STORE_LAUNCH_PACK.md` §2 — Play *Personal info → Other info*, iOS *Other Data Types*, optional, not shared, and flagged as a minor's data given by the parent. Neither store form is amended yet. |
 | 2026-09-08 | That entry declared **Analytics only**, which was narrower than the privacy policy amended the same day: the policy tells parents that authorised staff read the answer on the child's profile and in the internal account reports they export, and that is not analytics. Widened to two purposes on each form — Play **Analytics + Account management**, iOS **Analytics + App Functionality** (Apple files customer support there and has no Account management purpose). Also corrected "withdrawable at any time" to what is actually offered: the answer is changeable at any time, including to "prefer not to say", but never returns to *never asked*. |
 | 2026-09-08 | **The declarations were incomplete for data that shipped long before gender.** A review of the whole inventory found the child's grade, city, district and school — collected, linked, required, disclosed in the privacy policy in all three locales — mapped to no type on either form, plus four more unmapped rows (push token, news likes, child sign-in log, profile preferences). Added on Play: **Approximate location** (city + rayon), **Personal info → Other info** (grade + school + gender), **App activity → Other actions**, **Device or other IDs**; changed **Phone number** to optional. Added on iOS: **Coarse Location**, **Device ID**, **Other Data Types**. **Location flips from not-collected to collected on both public listings; Precise location stays No** (the school is an institution with no address or coordinates, so filing it as location would have forced Precise to Yes). The gender row's Play optionality answer flips to *required*, because its type now also carries two mandatory fields. Blocker: the privacy policy says we never collect a child's location. |
+| 2026-09-09 | 1.15.0 build 5 approved and released. The OTA freeze on the gender row is discharged by the move to 1.16.0; the same duty is restated as a **pre-submission blocker** on 1.16.0, the build that first collects the field. |
+| 2026-09-09 | §7 still claimed `ios.supportsTablet` was false and that Apple would therefore never ask for iPad screenshots — 1.16.0 turned it on, so the sentence was backwards and the requirement it dismissed is now a submission blocker. Corrected, and the missing spec written as **§6.5**: the 13-inch iPad size (2064×2752) is required of any iPad-capable binary, 6.9-inch covers iPhone, 1–10 per size, no alpha channel, and a localisation without its own screenshots inherits the primary language's. |

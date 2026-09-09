@@ -23,6 +23,7 @@ import { KeyboardFocusProvider, useKeyboardAwareScroll } from "@/lib/useKeyboard
 import { useTheme } from "@/theme/ThemeProvider";
 import { gradients, radius, shadow, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { useContentGutter } from "@/lib/useContentWidth";
 import type { ChildRow } from "@/lib/data";
 
 /** Soft tint from a 6-digit hex token (#rrggbb + alpha byte). */
@@ -57,6 +58,7 @@ export function ScreenScroll({
   const { t } = useT();
   const insets = useSafeAreaInsets();
   const { keyboardInset, scrollProps, focusApi } = useKeyboardAwareScroll();
+  const gutter = useContentGutter();
   return (
     <KeyboardFocusProvider value={focusApi}>
       <ScrollView
@@ -64,6 +66,14 @@ export function ScreenScroll({
         style={{ flex: 1, backgroundColor: tokens.bg }}
         contentContainerStyle={{
           padding: spacing.lg,
+          // 0 on every phone. On a tablet this centres the content column
+          // instead of letting a layout drawn for a 390pt phone stretch across
+          // 1024pt. It overrides the `padding` above for left/right because
+          // React Native resolves the MORE SPECIFIC property last regardless of
+          // key order — this does not depend on the two lines staying in this
+          // sequence, so reordering them is safe and reordering them is also
+          // not what makes it work.
+          paddingHorizontal: spacing.lg + gutter,
           paddingTop: topInset ? insets.top + spacing.sm : spacing.lg,
           // Grow the CONTENT by the live keyboard overlap so the last field's
           // action button can still be scrolled above the keyboard. Back to

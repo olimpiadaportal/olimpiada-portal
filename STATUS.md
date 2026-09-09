@@ -52,6 +52,153 @@ Endpoints verified live: notifications → 400, intent → 401 (was 404).
 
 ---
 
+## ROUND 67 — APPROVED, AND THE DOCUMENTS THAT NO LONGER MATCHED THE PRODUCT (2026-09-09)
+
+**Apple approved 1.15.0 build 5 with all 21 in-app purchases** (`READY_FOR_DISTRIBUTION`,
+`releaseType: MANUAL`, submission `COMPLETE`). The 2026-08-31 Guideline 3.1.1
+rejection is answered. **The owner then released it: 1.15.0 is LIVE on the App
+Store**, and `expo.version` / `package.json` moved to **1.16.0** for the next build,
+which the owner will make for both stores. Anything below that reads “1.15.0 is not yet
+public” or “the version is untouched” was written before those two events and has been
+corrected in place — do not restore it.
+
+### What was fixed, and why each mattered
+
+**The instruction file told a future session to delete the rail Apple just approved.**
+`CLAUDE.md` still carried “the mobile apps are purchase-silent and reflect entitlement
+only” and “do not pre-build a dormant IAP path”. Both were true when written and stopped
+being true on 2026-09-04. This is the file an agent reads BEFORE touching commerce code,
+so the cost of leaving it was not documentation drift — it was a plausible instruction to
+strip working, approved code as a compliance violation. The posture is now stated per
+platform: **iOS sells through StoreKit; Android stays purchase-silent; the web/ABB rail is
+unchanged.** `docs/STORE_PAYMENTS_COMPLIANCE.md` (labelled authoritative, written entirely
+pre-IAP) got a banner saying the same, its §4.2 marked retired rather than deleted — the
+rule is still right for Android and for any future rail — and its §10 decision 3 (“if Apple
+rejects the purchase-silent build, do we ship IAP on iOS only?”) recorded as answered by
+Apple rather than by us, with the costs it anticipated now real: Apple’s commission on that
+rail, no sibling discount on it, and prices set per product in App Store Connect.
+
+**Submission text contained a fill-in-the-blank.** `docs/APP_REVIEW_NOTES.md` §2 listed a
+device that was never used, marked “Replace with what you actually used”. Pasted as-is that
+is a false statement in a submission. It now records the truth for 1.15.0 — no Apple
+hardware was available; the build was verified by tests, a review of the purchase path and
+a credential check against Apple’s Server API.
+
+**Then the same file grew a second false statement, from this round’s own diff.** It kept a
+paste-ready block quote saying “the app is iPhone-only; `supportsTablet` is false”, plus a
+line framing the flip as a FUTURE event — while the diff that added it had already set
+`supportsTablet: true`. Pasted as written, Apple would be told the binary is iPhone-only by
+the submission for a binary that declares iPad support. The quote now states what 1.16.0 is
+(one universal binary, same screens on both devices) and carries an explicit warning not to
+append “and it is locked to portrait”: true on iPhone, and true on iPad only for as long as
+a deprecated key keeps working, so it is not a sentence to hand a reviewer. (The first draft
+of that warning said `UIRequiresFullScreen` is “ignored on iPadOS 26”; it is not — Apple
+ignores it from the iOS 27 SDK, and this app compiles against the iOS 26 SDK. Corrected
+below.) `docs/STORE_LISTING_COPY.md` §7 had the mirror-image error — it said Apple
+would therefore never ask for iPad screenshots — and the spec it dismissed existed nowhere
+in the repo at any size or count. Both fixed; the spec is now §6.5.
+
+**Portrait was never locked on iPad, and could not have been.** `orientation: "portrait"`
+has been set since the app was created and locks an iPHONE. iOS IGNORES it on a tablet
+unless the app also opts out of Split View — Expo's `RequiresFullScreen` plugin actively
+OVERWRITES the iPad orientation list with all four whenever `supportsTablet` is on without
+`requireFullScreen`, deliberately, because iPad multitasking support is an App Store
+validation requirement (ITMS-90474). So the fix is `supportsTablet: true` WITH
+`requireFullScreen: true`; missing the second fails silently, on a device nobody here
+owns, which is why it is pinned by a test.
+
+**A third key was added in the same change and has now been REMOVED: it never did
+anything.** `android.screenOrientation: "portrait"` does not exist in
+`@expo/config-types`, and `@expo/config-plugins/build/android/Orientation.js` derives
+`android:screenOrientation` from the TOP-LEVEL `orientation` alone (`getOrientation`
+returns `config.orientation`) — the same field iOS reads. So Expo dropped the key without
+a warning, Android was already portrait-locked before it, and its only real effect was to
+make a reader believe Android tablets were covered. A test now asserts its ABSENCE.
+
+**Two limits are recorded rather than assumed, because both are load-bearing and both
+expire.** (1) Apple deprecated `UIRequiresFullScreen` in iPadOS 26 — "deprecated and will
+be ignored in a future release" — and it stops working "starting in iOS 27 and iPadOS 27
+… when you build your app with the iOS 27 SDK or later" (TN3192). Expo 54 compiles against
+the iOS 26 SDK, so by Apple's own statement it should still be honored today — but that
+is an INFERENCE FROM DOCUMENTATION, not a measurement, and it is worth naming as such:
+the shipped 1.15.0 rotated on the owner's iPad. That is not contrary evidence, because
+1.15.0 had `supportsTablet: false` and therefore ran in the iPhone compatibility window,
+which iPadOS 26 resizes on its own terms regardless of what the app declares — a
+different code path from a native iPad app that declares portrait and opts out of
+multitasking. It does mean the first real test of this lock is the owner installing
+1.16.0 on that iPad. It stops working the moment we take an SDK built on Xcode 27,
+and the replacement, `prefersInterfaceOrientationLocked`, is one Apple explicitly "does
+not guarantee" will be honored. (2) Android 16 ignores `screenOrientation` on displays
+sw600dp and wider for apps targeting SDK 36, which Expo 54 does — so an Android TABLET
+rotates and no app.json key stops it. Phones (<sw600dp) are exempt and stay locked.
+
+**`expo-screen-orientation` was considered and NOT installed.** A runtime lock cannot
+reach either tablet. On Android it calls `setRequestedOrientation()`, which Google's own
+table of ignored APIs lists BESIDE the manifest attribute — same mechanism, same result.
+On iPad the library's own documentation says orientation locking requires disabling split
+view, i.e. it DEPENDS on the `requireFullScreen` opt-out we already set rather than
+substituting for it. A dependency that provably cannot change behaviour on any affected
+device is not worth its `npm audit` surface. The only supported Android opt-out is the
+`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` manifest property — an owner decision,
+since Google frames it as temporary and removes it at API 37.
+
+**iPad layouts did not overflow — they stretched.** Nothing clipped; a tree drawn for a
+360–430pt phone simply spread across 1024pt until buttons sat a hand apart and text ran
+past 90 characters a line. Fixed once at the three shared scroll bodies (`Screen`,
+`ScreenScroll`, `ArenaScroll`) with a content gutter rather than per screen — 40 screens
+each guessing a breakpoint is how a design system dies. It is extra horizontal PADDING, not
+a `maxWidth`, so every existing `flex: 1` + `minWidth: 0` row keeps working unchanged; and
+it returns exactly 0 below 560pt, so the phone layout provably cannot regress. Keyed on
+window WIDTH, never `Platform.isPad`: an iPad in a narrow Split View slot wants the phone
+layout, a large Android tablet wants this one.
+
+### Verified
+
+mobile tsc + 52 suites / 803 jest · web tsc + 60 files / 1149 vitest + clean `next build` ·
+admin tsc + 45 files / 870 vitest + `npm audit` 0. `expo.version` and `package.json` were
+held at 1.15.0 while that build was in review — the approved build must not be abandoned —
+and were bumped **together to 1.16.0** once the owner released it; they must stay in step.
+Every guard in `orientation-and-tablet.test.ts` was mutation-tested, each restored
+byte-identically afterwards: `orientation: "default"` fails 1, re-adding
+`android.screenOrientation` fails 1, dropping `requireFullScreen` fails 2, and
+`supportsTablet: false` fails 1 while the paired invariant correctly stays green; removing
+the gutter from one container fails 1.
+
+### Owed, and owned by the owner
+
+1. ~~**Release 1.15.0** in App Store Connect~~ — **DONE.** Released the same day; the app
+   is live, and the version moved on to 1.16.0.
+2. **iPad screenshots** are now MANDATORY for the 1.16.0 submission, and App Review will
+   test on iPad. This is the price of `supportsTablet: true` and it was accepted
+   deliberately. The size is **13-inch, 2064×2752 portrait**, 1–10 of them, and an 11-inch
+   capture is rejected in that slot — full spec, including the localisation rule, in
+   `docs/STORE_LISTING_COPY.md` §6.5.
+3. **Store data-safety declarations — now a BLOCKER on the 1.16.0 submission.** Four items
+   are wrong about builds ALREADY LIVE (Location coarse/approximate, Play device IDs, Other
+   info required, phone optional) and are overdue today, needing no release. Gender is the
+   row that waited for the build that contains it, and that build now exists: **1.16.0
+   carries the field, so both forms must list it BEFORE 1.16.0 is submitted to either
+   store.** Inventory: `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2; console steps:
+   `docs/STORE_LISTING_COPY.md` §8.1.
+4. **Read the amended privacy locales.** Verified against the code, never against intent.
+5. **The OTA freeze on 1.15.0 is DISCHARGED — and became the blocker in item 3.** The
+   version left 1.15.0, and `runtimeVersion: appVersion` means an update published now can
+   never reach a 1.15.0 binary, so the over-the-air hazard is spent. The duty behind it is
+   not: it moved from "publish no OTA" to "do not submit 1.16.0 until both forms declare
+   gender" — stricter, because a reviewer is handed the false declaration rather than
+   inheriting it. Rule: root `CLAUDE.md` → "Releasing a new mobile version"; pinned by
+   `mobile-app/__tests__/ota-data-safety-freeze.test.ts`, which now fails if the blocker
+   goes missing or stops naming the version it blocks.
+
+### A process note worth keeping
+
+Line endings were damaged FOUR times this session by Python text-mode writes converting LF
+source files to CRLF — each time inflating a 2-line change into a 600-line diff that passed
+tsc, tests and build. Nothing mechanical caught it; only a byte-level comparison against
+HEAD did. Use the Edit tool or a byte-careful node script on this repo, never Python text
+mode, and scan endings before committing.
+
+---
 ## ROUND 66 — AN OPTIONAL FIELD ABOUT A CHILD, AND THE EXPORT THAT READS EVERY FAMILY (2026-09-08)
 
 Three surfaces gained a new personal-data field, the admin panel gained its
@@ -287,7 +434,12 @@ staging and to production.
    the shipped app is its own review problem — update both **before the next
    submission**, not after it.
    **OTA FREEZE while they stand un-updated: publish NO `eas update` on the
-   1.15.0 runtime.** An `eas update` is not a submission, so the deadline above
+   1.15.0 runtime. — SUPERSEDED 2026-09-09, see Round 67.** `expo.version` left
+   1.15.0, so the OTA half of this is discharged; the deadline in the paragraph
+   above did NOT lapse with it, it hardened into a blocker on the **1.16.0**
+   submission, which is the build that carries the field. The rest of this
+   paragraph is kept as the reasoning that produced the rule, not as a live
+   instruction. An `eas update` is not a submission, so the deadline above
    does not cover it — and `runtimeVersion: appVersion` makes every change in
    this repo, this one included, deliverable straight onto 1.15.0 build 5, the
    binary in review. That would start asking parents for a child’s gender on a

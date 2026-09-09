@@ -1,0 +1,193 @@
+===========================================================
+  OlympIQ — App Store / Google Play
+  Version: 1.16.0
+===========================================================
+
+  BU BURAXILIŞ YENİ BUILD TƏLƏB EDİR, OTA YENİLƏMƏ YOX.
+  runtimeVersion = appVersion, ona görə 1.16.0 üçün
+  yayımlanan OTA yeniləmə 1.15.0 quruluşuna HEÇ VAXT
+  çatmır. Üstəlik planşet dəstəyi (iOS-da supportsTablet)
+  native konfiqurasiyadır — OTA ilə çatdırıla bilməz.
+  Yəni: hər iki mağaza üçün yeni build.
+
+  Mənbə: CHANGELOG.md → 1.16.0 bölməsinin 13 [store] sətri.
+
+  GÖNDƏRMƏDƏN ƏVVƏL İKİ MƏCBURİ ADDIM:
+  1) App Store siyahısı artıq iPad ekran görüntüləri tələb
+     edir (supportsTablet açıldı) və App Review iPad-də
+     yoxlayacaq.
+  2) Hər iki mağazanın data-safety / App Privacy cavabları
+     uşağın könüllü "Cinsi" sahəsini göstərməlidir.
+     İnventar: mobile-app/markdowns/STORE_LAUNCH_PACK.md §2.
+
+
+-----------------------------------------------------------
+RELEASE NAME  (yalnız Play Console-da görünür, istifadəçiyə YOX)
+-----------------------------------------------------------
+
+1.16.0 — Planşet dəstəyi və düzəlişlər
+
+  Limit: 50 simvol.
+
+
+-----------------------------------------------------------
+SİMVOL SAYI NECƏ HESABLANIR (CRLF-safe)
+-----------------------------------------------------------
+
+  Bu fayl LF sətir sonu ilə saxlanılır, amma mətni Play
+  Console-a və ya App Store Connect-ə kopyalayanda sətir
+  sonu çox vaxt CRLF olur — hər sətir sonu 1 deyil, 2
+  simvol sayılır. Aşağıdakı üç mətnin hər birində 7 sətir
+  sonu var, yəni CRLF-də +7 simvol.
+  Buradakı saylar ARTIQ CRLF ilə hesablanıb və 500 limitinə
+  hər üç dildə ən azı 38 simvol ehtiyat qalır.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — AZƏRBAYCAN  (az-AZ)     433 simvol (CRLF)
+-----------------------------------------------------------
+
+Bu buraxılışda:
+
+• Planşet dəstəyi: əsas ekranlarda məzmun artıq ortada, rahat oxunan enlikdə yerləşir.
+• Valideyn uşağı tətbiqdən silə bilər — təsdiq soruşulur, nəyin silinəcəyi yazılır.
+• Reytinqdə fənn və rayon siyahılarının sonuncu sətirləri artıq əlçatandır.
+• Sınaq müddətindəki uşaq artıq "Giriş yoxdur" kimi görünmür.
+• Uşaq əlavə edərkən könüllü "Cinsi" sualı var; cavabsız qoymaq olar.
+• Məxfilik siyasəti yeniləndi.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — ENGLISH  (en-US)        462 characters (CRLF)
+-----------------------------------------------------------
+
+In this release:
+
+• Tablet support: on the main screens, content now sits in a centred column of readable width.
+• Parents can delete a child from the app, after a confirmation that says what is removed.
+• The last options in the Ranking subject and district lists are reachable again.
+• A child inside their trial is no longer shown as "No access".
+• Add-Child has an optional gender question; it can be left unanswered.
+• The privacy policy was updated.
+
+
+-----------------------------------------------------------
+RELEASE NOTES — РУССКИЙ  (ru-RU)        454 символа (CRLF)
+-----------------------------------------------------------
+
+В этом выпуске:
+
+• Поддержка планшетов: на основных экранах содержимое размещено в центральной колонке удобной ширины.
+• Родитель может удалить ребёнка в приложении — с подтверждением и списком удаляемого.
+• Последние пункты списков предмета и района в рейтинге снова доступны.
+• Ребёнок в пробном периоде больше не отмечен как «Нет доступа».
+• При добавлении ребёнка появился необязательный вопрос о поле.
+• Обновлена политика конфиденциальности.
+
+
+===========================================================
+  NƏYƏ GÖRƏ BURADA QİYMƏT VƏ "ABUNƏ OL" YOXDUR
+===========================================================
+
+1.15.0-dan sonra vəziyyət platformaya görə fərqlidir:
+
+  iOS     — fənn girişi tətbiqin içindən Apple In-App
+            Purchase ilə alınır. Qiyməti Apple özü göstərir;
+            biz heç bir ekranda qiymət yazmırıq.
+  Android — tətbiqdə alış-veriş yoxdur: qiymət yox, "Abunə
+            ol" düyməsi yox, xaricə link yox. Azərbaycan heç
+            bir Google alternativ ödəniş proqramında deyil.
+
+Buraxılış qeydləri mağaza siyahısının bir hissəsidir, ona
+görə hər iki mağazada eyni qayda işləyir: qiymət, "Abunə ol"
+çağırışı, ödəniş linki və ya sayt ünvanı yazılmır.
+
+Bu, təsadüf deyil: Apple 3.1.1(a) və Google Play Payments
+qaydaları Azərbaycan üçün tam qüvvədədir və bu qaydaların
+pozulmasının cəzası tətbiqin rədd edilməsi deyil, developer
+hesabının bağlanmasıdır.
+
+  Limit: hər dil üçün 500 simvol.
+  Yuxarıdakı üç mətn CRLF sətir sonu ilə də bu limitin
+  içindədir: 433 / 462 / 454. Bax "SİMVOL SAYI NECƏ
+  HESABLANIR" bölməsi.
+
+
+===========================================================
+  BU BURAXILIŞDA DÜZƏLƏN, LAKİN QEYDLƏRƏ SALINMAYAN İŞLƏR
+===========================================================
+
+Aşağıdakılar da düzəldilib, sadəcə 500 simvol limitinə
+görə mağaza qeydlərinə salınmayıb (tam siyahı: CHANGELOG.md
+→ "Next build"):
+
+• Uşaq əlavə edilərkən könüllü "Cinsi" cavabı yadda
+  saxlanılmayıbsa, valideynə bu barədə deyilir — uşaq
+  yenə də yaradılır, cavabı sonra redaktə etməklə vermək
+  olar. (Nadir xəta yolu; istifadəçilərin böyük hissəsi
+  heç vaxt görmür.)
+• Həmin xəbərdarlıq sehrbazın hansı addımında olmasından
+  asılı olmayaraq görünür, yalnız son kartda yox.
+• "Cinsi" sualının altındakı izah məxfilik siyasəti ilə
+  eyni sözləri işlədir: cavabı hesabat ixracında səlahiyyətli
+  işçilər görür, uşağın girişinə, suallarına və reytinqinə
+  isə heç bir təsiri yoxdur.
+• Artıq silinmiş uşağı təkrar silmək cəhdi daha "bu uşaq
+  sizin hesabınızda deyil" demir, sakitcə tamamlanır.
+• Rədd edilən silmə əməliyyatı daha "E-poçt və şifrəni
+  daxil edin" yazmır, təsdiqlənmədiyini bildirir.
+• Məxfilik siyasətinin özündəki üç dəqiqləşdirmə: cihazın
+  məkanı heç vaxt soruşulmur (şəhər və rayon isə valideynin
+  yazdığı məlumatdır və yalnız reytinq qruplaşdırması üçündür),
+  valideynin telefon nömrəsi məcburi deyil, könüllü "Cinsi"
+  sahəsi isə siyahıya salındı.
+
+  Qeyd: "Cinsi" sualı mağaza qeydlərində REKLAM kimi deyil,
+  sadə bildiriş kimi yazılıb — bu, uşaq haqqında könüllü
+  sualdır, üstünlük deyil. Sual artıq toplandığı üçün onu
+  qeydlərdən tamam çıxarmaq düzgün olmazdı: valideyn yeni
+  sahəni ilk dəfə formada yox, buraxılış qeydində görməlidir.
+
+
+===========================================================
+  QƏSDƏN VƏD EDİLMƏYƏN İKİ ŞEY
+===========================================================
+
+Buraxılış qeydi ictimai vəddir: mağaza siyahısında yazılan
+hər cümlə yoxlanıla bilən olmalıdır. Aşağıdakı iki iddia
+əvvəlki qaralamada vardı və çıxarıldı.
+
+1) "Tətbiq yan çevrilmir" — ÇIXARILDI.
+   Telefonda portret kilidi 1.15.0-da da var idi
+   (app.json → orientation: "portrait"), yəni bu, bu
+   buraxılışın YENİLİYİ deyil; "artıq çevrilmir" yazmaq
+   telefon üçün yanlış olardı. Planşet üçün isə kilidin
+   bağladığı SÜBUT EDİLMƏYİB: iPadOS 26-da
+   UIRequiresFullScreen köhnəlmiş sayılır və nəzərə
+   alınmaya bilər, tətbiqdə isə iş vaxtı (runtime)
+   orientasiya kilidi yoxdur — expo-screen-orientation
+   quraşdırılmayıb. android.screenOrientation açarı isə
+   Expo konfiqurasiyasında ümumiyyətlə mövcud deyil və
+   heç nə etmir. Sübut olunana qədər vəd edilmir.
+
+2) "iPad-də məzmun ortada" — DARALDILDI.
+   Mərkəzi sütun bir paylaşılan hook-la (useContentGutter)
+   üç sarğıda tətbiq olunur: components/Screen.tsx,
+   features/parent/ui.tsx, features/arena/ui.tsx. Bunlara
+   valideyn paneli, şagird ana səhifəsi, reytinq, formalar
+   və bildiriş qutuları daxildir. Öz kök scroll sahəsini
+   quran ekranlar hələ ALMIR: bütün test axını
+   (TestsHome / Setup / Runner / Result / Review), xəbər
+   siyahısı və məqaləsi, məxfilik ekranı və ictimai
+   marketinq səhifələri. Ona görə mətndə "əsas ekranlarda"
+   yazılıb — bu, doğrudur; "hər yerdə" doğru olmazdı.
+
+  Qeyd (hər iki mağaza üçün): mətnlərdə "iPad" sözü
+  işlədilmir. Eyni üç mətn həm App Store-a, həm Google
+  Play-ə gedir, Play-də isə iPad adlı cihaz yoxdur.
+  Mərkəzi sütun onsuz da pəncərə ENİNƏ görə işləyir
+  (Platform.isPad yox), yəni böyük Android planşetlərində
+  də tətbiq olunur — "planşet" sözü hər iki mağazada
+  eyni dərəcədə doğrudur.
+
+===========================================================

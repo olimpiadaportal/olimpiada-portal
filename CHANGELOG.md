@@ -35,12 +35,54 @@ tester who keeps reporting.
 
 ---
 
-## Next build — unreleased, version not yet assigned
+## 1.16.0 — unreleased; version assigned, build not yet cut
 
-**Deliberately not filed under 1.15.0.** Build 5 of 1.15.0 is already in App
-Store review, so nothing below is in it — filing these lines there would put a
-feature that build does not contain into its release notes. The version this
-rides in is decided when the next build is cut.
+**Deliberately not filed under 1.15.0.** Build 5 of 1.15.0 was approved by Apple
+and released on 2026-09-09, so nothing below is in it — filing these lines there
+would put features that build does not contain into the release notes of a
+version already on the App Store. Release notes for the lines below:
+`mobile-app/store-assets/RELEASE_NOTES_v1.16.0.txt` (13 `[store]` lines).
+
+- `[internal]` Portrait is declared by ONE key: the top-level `orientation`,
+  from which Expo derives BOTH `android:screenOrientation` and iOS's
+  `UISupportedInterfaceOrientations`. Phones were already locked and still are.
+  On iPad the lock is now DECLARED through `requireFullScreen` — the built plist
+  is portrait-only for iPad, confirmed by reading Expo's own config output rather
+  than assumed — and Apple's TN3192 says the key keeps working until an app is
+  built with the iOS 27 SDK, which Expo 54 is not. Whether it then BINDS on real
+  hardware is unverified: nobody here owns an iPad to test on, so this is a
+  correctly-declared lock, not an observed one. On an ANDROID
+  TABLET nothing app-side binds at all: Android 16 ignores the manifest
+  attribute AND `setRequestedOrientation()` above sw600dp. Filed `[internal]`,
+  not `[store]`: "the app no longer rotates" is only true on phones, so it is
+  deliberately absent from the release notes.
+- `[internal]` Removed `android.screenOrientation` from app.json. Expo has no
+  such key — it is absent from `@expo/config-types` and no plugin reads it — so
+  it was dropped silently at build time while reading to a human like an
+  Android lock, hiding the fact that Android tablets have none. A test now pins
+  its ABSENCE, next to the keys that do work.
+- `[store]` iPad layouts no longer stretch. Every screen was drawn for a
+  360-430pt phone; on a 1024pt iPad the same screen spread until buttons sat a
+  hand apart and text ran past 90 characters a line. Content now sits in a
+  centred column of readable width, with the margins growing instead of the
+  content. Phones are untouched - the column only applies above phone width.
+- `[internal]` iOS declares tablet support for the first time (`supportsTablet`
+  with `requireFullScreen`, which is what makes the portrait lock bind there:
+  without it Expo OVERWRITES the iPad orientation list with all four, because
+  iPad multitasking support is an App Store validation requirement). That key
+  is deprecated as of iPadOS 26 and must be migrated when Expo moves to the iOS
+  27 SDK. Consequence for the next submission: the App Store listing now
+  REQUIRES iPad screenshots and App Review will test on iPad.
+- `[internal]` `CLAUDE.md` and `docs/STORE_PAYMENTS_COMPLIANCE.md` still said the
+  mobile apps were purchase-silent and that a dormant IAP path must not be
+  pre-built. Both stopped being true when iOS shipped StoreKit, and the first is
+  the instruction file an agent reads before touching commerce code - it would
+  have read as licence to delete a rail Apple has since approved. The posture is
+  now stated per platform: iOS sells, Android stays silent.
+- `[internal]` `docs/APP_REVIEW_NOTES.md` carried a fill-in-the-blank device list
+  in submission text. It now says to write what was actually tested, and records
+  that no Apple hardware was available for 1.15.0, rather than leaving an example
+  that could be pasted into a form as a false statement.
 
 - `[store]` Add-Child now tells a parent when the optional Gender answer did not
   get saved. The child is still created — a missing statistic must never cost a
@@ -342,10 +384,23 @@ rides in is decided when the next build is cut.
   Required? answer off the table's own optional/required markers and pins it to
   `validateParentRegistration`, so renaming "Xeyr" cannot fail it and
   re-requiring the phone in code cannot pass it.
+- `[internal]` The OTA freeze on the 1.15.0 runtime is discharged and REWRITTEN,
+  not deleted. Its own terms lifted it — the version left 1.15.0, so an update
+  published now can never reach that binary — but the obligation underneath it
+  survived the hazard: 1.16.0 CONTAINS the optional child gender field, so
+  submitting it before Play Data safety and Apple App Privacy declare that data
+  is the same false statement, made to a reviewer instead of inherited by a
+  shipped build. The rule in `CLAUDE.md` now reads as a pre-submission blocker
+  naming the version it blocks, and `STATUS.md`, `docs/STORE_LISTING_COPY.md`,
+  `STORE_LAUNCH_PACK.md` §2 and the release-day preflight say the same thing.
+  `__tests__/ota-data-safety-freeze.test.ts` guards the live hazard rather than
+  the spent one: it no longer retires on a version bump (that is what would
+  have silently retired the duty), and it fails if the blocker goes missing,
+  stops naming both consoles, or stops naming the build it blocks.
 
 ---
 
-## 1.15.0 — build 5 submitted to App Review, awaiting review (2026-09-04)
+## 1.15.0 — RELEASED on the App Store 2026-09-09 (submitted 2026-09-04, approved and released the same day)
 
 **The In-App Purchase release.** This is the build that answers the 2026-08-31
 Guideline 3.1.1 rejection: iOS now sells per-child subject access through Apple,

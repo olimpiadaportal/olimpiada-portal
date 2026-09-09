@@ -20,6 +20,7 @@ import { scrollPaddingBottom } from "@/components/keyboardLayout";
 import { KeyboardFocusProvider, useKeyboardAwareScroll } from "@/lib/useKeyboardAware";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { useContentGutter } from "@/lib/useContentWidth";
 import { useArena } from "./useArena";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
@@ -55,6 +56,7 @@ export function ArenaScroll({
   const { t } = useT();
   const insets = useSafeAreaInsets();
   const { keyboardInset, scrollProps, focusApi } = useKeyboardAwareScroll();
+  const gutter = useContentGutter();
   return (
     <KeyboardFocusProvider value={focusApi}>
       <ScrollView
@@ -62,6 +64,14 @@ export function ArenaScroll({
         style={{ flex: 1, backgroundColor: arena.bg }}
         contentContainerStyle={{
           padding: spacing.lg,
+          // 0 on every phone. On a tablet this centres the content column
+          // instead of letting a layout drawn for a 390pt phone stretch across
+          // 1024pt. It overrides the `padding` above for left/right because
+          // React Native resolves the MORE SPECIFIC property last regardless of
+          // key order — this does not depend on the two lines staying in this
+          // sequence, so reordering them is safe and reordering them is also
+          // not what makes it work.
+          paddingHorizontal: spacing.lg + gutter,
           // Live keyboard overlap on top of the resting padding; exactly
           // `insets.bottom + spacing.xxl` again once the keyboard closes.
           paddingBottom: scrollPaddingBottom(insets.bottom + spacing.xxl, keyboardInset),

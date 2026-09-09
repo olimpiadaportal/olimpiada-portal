@@ -8,9 +8,38 @@
 
 ---
 
+## ⚠ WHAT ACTUALLY HAPPENED — read this before anything below (2026-09-09)
+
+**The purchase-silent-everywhere architecture this document recommends was TRIED ON iOS AND REJECTED.** The analysis below is still correct about the law and the guidelines; it is out of date about our product. Where the two disagree, this banner wins.
+
+| | Status today |
+|---|---|
+| **iOS** | **SELLS through StoreKit.** 21 non-renewing subscriptions (7 subjects × week/month/year). Apple **approved 1.15.0 and all 21 products on 2026-09-09.** |
+| **Android** | **Purchase-silent, unchanged.** No price, no buy CTA, no `olympiq.ai` in a purchasing context. Everything below still applies in full. |
+| **Web (ABB, AZN)** | Unchanged, and the only rail for olympiad packages. |
+
+**The sequence.** A purchase-silent iOS build was submitted and **rejected on 2026-08-31 under Guideline 3.1.1** — the app let a signed-in family use access provisioned outside it. That is §10's open decision 3 ("if Apple rejects the purchase-silent build, do we ship IAP on iOS only?") being answered by Apple rather than by us. IAP shipped on 2026-09-04 and was approved five days later.
+
+**What this does NOT change — every one of these still binds:**
+- Azerbaijan gets **no** anti-steering relief (§2). The Epic carve-out is US-only, the DMA is EEA-only.
+- **Android stays purchase-silent.** There is no IAP on that binary, and Google's consumption-only test is app-wide, so parent tabs included.
+- Payment posture is a **build-time constant, never a server flag** (§4.1). A remotely-switchable checkout in a store binary is still Apple 2.3.1(a).
+- **Never cite 3.1.3(b)** as a reason to avoid IAP — its proviso *requires* matching in-app purchases (§5).
+- Entitlement stays **provider-agnostic** (§4.3). That design is why answering the rejection took days rather than a rewrite.
+
+**What it retires:** §4.2's "do not pre-build IAP" and every blanket statement that the mobile apps contain no purchase capability. Those sentences would now tell a reader to delete live, approved code.
+
+**Why the iOS rail does not breach §4.4's "never in a store build" list:** every price shown is StoreKit's own localized string — the app displays no price of its own, holds no card form, opens no external URL, and a CHILD has no purchase surface on either platform.
+
+---
+
+---
+
 ## 1. The answer in one paragraph
 
 Both stores require their own billing for digital content bought **inside** the app, and **Azerbaijan qualifies for none of the exemptions** that news coverage from 2024–2026 describes — those are scoped to the US, the EEA, Japan, South Korea, India or the Netherlands. ABB therefore **cannot** be used for a purchase made inside the iOS or Android app, and the app cannot link, button, webview, QR-code or nudge a parent toward ABB checkout. The workable architecture is the opposite one: **all purchasing happens on the web, in a browser, paid via ABB; the mobile apps contain no purchase capability of any kind and merely reflect entitlement.** That is explicitly permitted by Google and *tolerated but not guaranteed* by Apple. Our current mobile binary does **not** satisfy this and would be rejected today — see §7.
+
+> **Apple did not tolerate it.** The "tolerated but not guaranteed" hedge in the sentence above is the load-bearing one, and it broke: a purchase-silent iOS build was **rejected on 2026-08-31 under Guideline 3.1.1**. iOS now sells through StoreKit and was approved on 2026-09-09; **Android remains exactly as this paragraph describes.** See the banner at the top of this file. The paragraph is kept unedited because the reasoning is still correct for Android and for anyone re-deriving the position.
 
 ---
 
@@ -95,6 +124,8 @@ Likewise, do not claim 3.1.3(c) Enterprise or 3.1.3(d) Person-to-Person for the 
 
 **All purchasing happens on the web. The mobile apps are purchase-silent and reflect entitlement only.**
 
+> **True of ANDROID and of the web rail. NOT true of iOS since 2026-09-04** — that binary sells through StoreKit and Apple approved it on 2026-09-09. The diagram below still describes the web/ABB rail and the Android app exactly; for iOS, a second arrow now runs `StoreKit purchase → server-side verification with Apple → the same entitlements table`, which is why the table below it is still the single source of truth for access. Banner at the top of this file.
+
 ```
 Parent, in a browser at olympiq.ai
     └── ABB hosted payment page (full redirect)   ← real money, AZN, no store involved
@@ -127,9 +158,15 @@ Also decide now, on paper:
 - **The sibling discount has no native StoreKit or Play Billing primitive.** 2nd child 10% / 3rd+ 15% cascading across a parent's children cannot be expressed natively. If ever forced to IAP we must drop it on mobile, model discounted SKUs, or use offer codes. A server-side rebate paid outside the store would read as circumventing store pricing — high risk. Choose the fallback before it is an emergency.
 - **Prices must stay server-fed.** If IAP ever ships, displayed prices must be the StoreKit/Play-localised price. Note **AZN is not an App Store Connect pricing currency** — Azerbaijan sits in Apple's "Rest of World" region priced in USD, so our 3/9/90 AZN points cannot be expressed natively on iOS.
 
-### 4.2 Do not pre-build IAP
+### 4.2 Do not pre-build IAP — ~~RETIRED 2026-09-04~~
 
-Shipping a binary containing a dormant StoreKit/Play Billing path has the same hidden-feature problem as the current demo path, in reverse. Build it when it is needed.
+> **This rule is retired and must not be acted on.** It was right when written: a dormant StoreKit path in a shipped binary is a hidden feature, exactly like the demo checkout it was warning about. It stopped applying the moment IAP became *needed* rather than speculative — which is what Apple's 2026-08-31 rejection established.
+>
+> **iOS now ships a live, approved StoreKit path.** Nothing about it is dormant: it is the only way an iOS parent can buy subject access, and Apple approved it with all 21 products on 2026-09-09. Deleting it to satisfy this heading would break the app and re-earn the rejection.
+>
+> **The rule still stands for ANDROID.** There is no Play Billing path in that binary and none should be pre-built — build it if and when Google's position or ours changes.
+
+The original reasoning, kept because it is still the right instinct for any *future* rail: shipping a binary containing a dormant billing path has the same hidden-feature problem as a demo checkout, in reverse. Build it when it is needed.
 
 ---
 
@@ -404,7 +441,12 @@ restores correctly when a flag is re-enabled).
 
 1. **Build variants.** Confirm that demo/giveaway commerce becomes internal-build-only and is compiled out of store builds. This changes how investor demos are produced.
 2. **Launch sequencing.** Web-first (ABB, full commerce, no store risk) and mobile later as purchase-silent? Or both together, accepting Apple appeal risk?
-3. **Apple contingency.** If Apple rejects the purchase-silent build twice, do we ship IAP on iOS only (accepting 15–30%, losing the sibling discount on that rail) or withhold the iOS app?
+3. ~~**Apple contingency.** If Apple rejects the purchase-silent build twice, do we ship IAP on iOS only (accepting 15–30%, losing the sibling discount on that rail) or withhold the iOS app?~~
+   **ANSWERED 2026-09-04 — by Apple, on the first rejection rather than the second.** The purchase-silent iOS build was rejected on 2026-08-31 under Guideline 3.1.1; IAP shipped on iOS only, and Apple approved it with all 21 products on 2026-09-09. The costs this question anticipated are now real and should be planned around, not rediscovered:
+   - **Apple takes its commission on the iOS rail.** The web/ABB rail is unaffected.
+   - **The sibling discount does not exist on iOS.** It is a server-side rule over a basket; App Store products are priced individually, so a family buying through the phone pays list price per child. The discount still applies on the web.
+   - **Prices are set per product in App Store Connect**, not from `subjects_pricing`. A price change is now a store operation on 21 products plus a database change, and the two can drift — see the admin panel's App Store products page.
+   - **Non-renewing subscriptions, not auto-renewable**, because access is per child and Apple permits one active auto-renewable subscription per group per Apple ID. Nothing renews itself on any rail; the parent renews by hand.
 4. **Billing entity** — confirm an Azerbaijani-resident legal entity for §8.4.
 5. **Tax ruling** — obtain an advisor's answer on the educational-services VAT exemption before prices are finalised.
 6. **Provider** — proceed with ABB pending written confirmation of recurring/COF support, with Kapital Bank as the designated fallback?

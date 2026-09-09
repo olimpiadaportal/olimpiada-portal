@@ -12,6 +12,7 @@ import type {
   SchoolOpt,
 } from "@/components/CreateChildForm";
 import { AccountDeleteButton } from "@/components/AccountDeleteButton";
+import { AccountsExportButton } from "@/components/AccountsExportButton";
 import { getT, getLocale } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
 import { localStrings } from "./labels";
@@ -282,11 +283,39 @@ export default async function AccountsPage({
       {/* Round 12.1: account CREATION moved to the Free Access page (the
           admin's one-stop create-parent → create-child → schedule flow).
           This section stays list/manage-only: search, edit, delete, reset. */}
-      <FilterBar
-        basePath="/accounts"
-        search={{ value: q, placeholder: t("flt.accountSearch") }}
-        clearLabel={t("qfilter.clear")}
-      />
+      {/* Export sits beside the search/filter bar: it acts on the WHOLE
+          account table, not on the filtered page, so it belongs next to the
+          controls rather than inside them. The bar keeps its own margin; the
+          button is nudged down to line up with the search input. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+          <FilterBar
+            basePath="/accounts"
+            search={{ value: q, placeholder: t("flt.accountSearch") }}
+            clearLabel={t("qfilter.clear")}
+          />
+        </div>
+        <div style={{ paddingTop: 10 }}>
+          <AccountsExportButton
+            strings={{
+              button: t("accounts.export.button"),
+              pending: t("accounts.export.pending"),
+              done: t("accounts.export.done"),
+              failed: t("accounts.export.failed"),
+              signedOut: t("accounts.export.signedOut"),
+              forbidden: t("accounts.export.forbidden"),
+              hint: t("accounts.export.hint"),
+            }}
+          />
+        </div>
+      </div>
 
       {parentProfiles.length === 0 && (
         <section className="card">

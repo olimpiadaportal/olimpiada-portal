@@ -43,9 +43,9 @@ Never proceed with large implementation work without updating `STATUS.md`.
   expected, not a divergence. A from-zero rebuild is therefore proven by **every check passing
   except `102`** — state the criterion that way and NEVER as a ratio: the check count grows with
   almost every migration, so a hard-coded "N of M" goes stale silently and makes a HEALTHY
-  database look broken. If you quote a count anyway, COUNT the `as check_name` literals (130
-  today) and do NOT read the number off the last check: `013` has a LETTERED sub-check family
-  (`57b`–`57e`), so the highest check number (126) is four short of the count. Even when
+  database look broken. If you quote a count anyway, COUNT the `as check_name` literals
+  yourself, and do NOT read it off the last check: `013` has a LETTERED sub-check family
+  (`57b`–`57e`), so the count is the highest check NUMBER plus those four. Even when
   `102` fails, its three reported columns (`rpc_misconfigured`, `failed_invariants`,
   `stale_overloads`) must all be `0` — that is the schema half of that same check. Any OTHER
   failing check on a fresh build is a real divergence between canonical SQL and production, with
@@ -93,6 +93,7 @@ Never proceed with large implementation work without updating `STATUS.md`.
 
 The app entered **Google Play closed testing on 2026-08-26** (12 testers, 14 continuous days, `ai.olympiq.app`, first release 1.12.0). Updates will ship *during* that window, so these consequences are operational, not theoretical:
 
+- **OTA FREEZE — ACTIVE (2026-09-08). Publish NO `eas update` on the 1.15.0 runtime.** `runtimeVersion: appVersion` cuts both ways: it is also what makes every uncut change sitting in this repo deliverable *over the air* onto **1.15.0 build 5, the binary now in App Review**. One of those changes is the optional child **gender** field — a MINOR’s personal data — while build 5’s App Store *App Privacy* and Play *Data safety* answers still say no such data is collected. An OTA would therefore start asking parents for it on a live binary whose declarations say we do not collect it, which is a false data-safety declaration and not something a later patch undoes. **An `eas update` is not a submission**, so the “update both forms before the next submission” deadline in `STATUS.md` and `docs/STORE_LISTING_COPY.md` §8 does not reach this case — that gap is why the freeze is written here, next to the reflex it has to stop. It lifts when EITHER both declarations are updated (inventory: `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2) OR `expo.version` leaves 1.15.0, since an update published for a newer version can never reach a 1.15.0 binary. Delete this bullet then, not before — `mobile-app/__tests__/ota-data-safety-freeze.test.ts` fails if it goes missing while the hazard is still live.
 - **A VERSION BUMP MEANS A NEW BUILD, NOT AN OTA UPDATE.** This follows directly from the `runtimeVersion: appVersion` policy above: 1.12.0 and 1.12.1 are *different* runtime versions, so an EAS Update published for 1.12.1 **never reaches a 1.12.0 binary**. Testers on the old build simply do not receive it and will report the bug as unfixed. If the change must reach existing installs without a store round-trip, ship it as an OTA update **without bumping the version**; if the version is bumped, a new build and a new Play release are mandatory.
 - **Decide which one you are doing BEFORE editing `app.json`.** The bump is what forecloses the OTA path, and it is easy to make reflexively because "every commit touching `mobile-app/` bumps the version" is the rule directly above. That rule assumes a build follows.
 - **New releases do NOT restart the 14-day closed-testing clock.** Google measures *continuous opt-in*, not builds — publishing new versions mid-test is expected and harmless. What restarts it is a tester **uninstalling or leaving the group**, which drops the count below 12. Tester instructions live in `mobile-app/store-assets/TESTER_TELIMATI_AZ.txt` and say so in a box; keep that warning if the file is rewritten.

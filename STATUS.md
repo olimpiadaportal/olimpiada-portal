@@ -52,6 +52,264 @@ Endpoints verified live: notifications → 400, intent → 401 (was 404).
 
 ---
 
+## ROUND 66 — AN OPTIONAL FIELD ABOUT A CHILD, AND THE EXPORT THAT READS EVERY FAMILY (2026-09-08)
+
+Three surfaces gained a new personal-data field, the admin panel gained its
+first full-PII download, and the privacy policy had to move before either could
+honestly be true.
+
+### The column: what NULL means, and why it is not a default
+
+`students.gender` (migration 169, staging then production) is **nullable with no
+default**, over an enum of exactly `female / male / unspecified`. Both halves of
+that shape are load-bearing:
+
+* **NULL is "nobody has been asked yet"** — the true state of all 46 existing
+  children. A `default 'unspecified'` would have backfilled a positive claim
+  ("asked, and declined to answer") onto every parent who was never shown the
+  question, and no report afterwards could separate the two.
+* **`unspecified` is a real answer**, kept separate for the same reason: a
+  parent who is asked and declines is saying something, and it must survive.
+* **An enum, not text**, because this is reported on. A text column becomes
+  `Male` / `male` / `M` / `kişi` inside a year of the first CSV import.
+* **No index.** A few thousand rows, aggregated by staff a few times a year; an
+  index would tax every write to buy nothing.
+
+**The proxy that was rejected.** `students.avatar_key` already holds
+`girl`/`boy` for the preset avatars and was the obvious way to avoid asking at
+all. It records which cartoon a nine-year-old picked, and **14 of 46 children
+use a photo instead** — counting avatars as genders produces a number that looks
+like data and is not.
+
+### Three consequences of this being a minor's personal data
+
+Written into the migration header so a later change cannot quietly undo them:
+**optional at every write** (no form requires it and no gate reads it — nothing
+about access, content or ranking consults the column); **no new reader** (RLS on
+`students` already decides who sees a child's row, and the column inherits that
+and widens nothing); and **the policy must say so before collection**, which is
+not something a migration can assert on the owner's behalf.
+
+That last one is why the policy moved in the same round rather than after it.
+Section 5 enumerates what is stored about a child and did not mention gender, so
+from the moment the field started collecting, the page told parents something
+untrue. Amended in az/en/ru; **`lastUpdated` → 08.09.2026, `effectiveDate`
+deliberately unchanged** — the policy has been in force since 04.08 and this is
+an amendment to it, which is exactly the date section 13 promises we bump.
+
+### The web placeholder that behaved like a value
+
+On the website, "Seçilməyib" sat in the select as a pickable row. A parent who
+had already answered could choose it again; the page reported a successful save
+and then showed the stored answer back, because "field left alone" is precisely
+how the writer expresses "do not change this". It was never a way to retract an
+answer — it only looked like one, which is worse than not offering it. It is now
+the placeholder and nothing else, matching the app, which never offered the row.
+Retracting an answer is "Bildirmək istəmirəm", which is a stored value and does
+survive an unrelated later edit.
+
+### The export: two sheets that cannot disagree
+
+`buildAccountsExport()` takes ONE snapshot and returns both the per-child rows
+and the summary. That is structural rather than disciplinary: there is no second
+entry point producing either half on its own, so no caller is able to pair sheet
+1 with a differently-timed sheet 2. A parent who has never added a child is
+still a row rather than being dropped by the join, and the gender cell keeps the
+four-way distinction the migration exists to preserve — "—" nobody was asked,
+"Not specified" asked and declined, an empty cell when there is no child at all,
+and a never-asked line of its own in the summary.
+
+Security posture, because this response carries every family's name and email
+and every child's 8-digit login id: `requireAdmin()` first; **no input at all**,
+so there is nothing to validate and nothing a caller can widen the query with; a
+`severity: warning` audit row naming who exported and how many rows they took,
+so a full-PII read stands out the way a password reset does; `force-dynamic` +
+`no-store` so no route, CDN or browser cache holds a copy; a 200 000-row refusal
+answered as 413 rather than attempted; and no raw Postgres or ExcelJS text in
+any response.
+
+### Check 127 reports the gap instead of falling into it
+
+`013` gained `127_student_gender_optional`, **catalog-only on purpose**. A check
+whose whole job is "migration 169 never reached this database" has to be able to
+REPORT that; a query that actually selected `students.gender` would abort the
+file before check 102 and take the rest of the validation with it. It asserts
+the enum labels and the *optionality*, because a later `not null` or a `default`
+reads as harmless tidying in a diff and would destroy the NULL/`unspecified`
+distinction silently.
+
+Adding it also moved the numbers CLAUDE.md tells the next agent to compare
+against, which had gone stale for the second time. The criterion there is now
+stated so that it cannot: **every check passes except `102`**, count the `as
+check_name` literals yourself, and the count is the highest check NUMBER plus
+the four lettered sub-checks (`57b`–`57e`) — never the last number in the file.
+
+### Two labels that lied in two languages
+
+The Statistics sheet writes `pctParentsWithChild` and `pctActiveChildren` with
+`numFmt: "0.0%"`, and only the Azerbaijani said so ("…payı"). English read
+"Parents with at least one child" and Russian "Родители хотя бы с одним
+ребёнком" — both promising a headcount over a cell holding a percentage. Now
+"Share of…" / "Доля…" in both.
+
+### exceljs: a supply-area question opened, not answered
+
+Measured rather than guessed: exceljs brings **95 new lockfile entries (70
+distinct package names)** into the panel that reads every family's PII, several
+long deprecated (`inflight`, `fstream`, `unzipper`, `bluebird`, old
+`glob`/`rimraf`). **22 of those 95 exist only for `unzipper`**, the xlsx-READING
+path, which this code never takes. `npm audit` is 0, so this is a judgement
+about supply area and not a vulnerability, and **nothing was removed this
+round**. The alternatives were measured too; the honest finding is that the only
+materially lighter one drops autofilter. Left for the owner to decide, with the
+note that the decision is cheap now and stops being cheap the moment someone is
+working from an exported sheet.
+
+### The bare denial that the same document contradicted
+
+`privacy.s5.notCollected` told parents, in all three languages, that a child's
+**location** is among the things we never collect. Two tables earlier the same
+page lists that child's **city and rayon** — entered by the parent, mandatory,
+and the thing every regional leaderboard groups by — and the store forms are
+about to declare precisely that (Apple Coarse Location, Play Approximate
+location). The three could not all stand, and the false one was the sentence
+written for parents.
+
+**The repair is a distinction, not a quieter denial.** Everything asserted was
+verified in the repository first rather than taken from the brief:
+
+* `mobile-app/app.json` requests **no location permission**. Its
+  `android.permissions` list is `USE_BIOMETRIC` / `USE_FINGERPRINT` only; the iOS
+  `infoPlist` carries photo-library, camera and ATS keys and no `NSLocation*`
+  string; `plugins/withIosPermissionStringDefaults` only copies
+  `locales/en.json` into Android's default `strings.xml`, and that file holds
+  the three permission prompts (photo library, camera, Face ID), so it cannot
+  introduce one either.
+* No `expo-location` dependency anywhere, and no `navigator.geolocation` call in
+  `web-app/src`, `mobile-app/src` or `admin-panel/src`.
+* `public.students` has `city`, `district_id` (historic name for the CITIES
+  table), `city_district_id` (the rayon), `school_id` and `school_name` — **no
+  latitude, no longitude, no address column.** The only coordinates in the
+  schema are `contact.support_map_query` (migration 075), which is OUR office on
+  the contact page, and the maths curriculum's "coordinate system" subtopics.
+
+So the sentence now says both halves: the city and rayon are parent-typed and
+kept only to group the leaderboards; the device's whereabouts are never asked
+for — no permission, no GPS or other sensor, no stored coordinate, no
+home-address field. It is two paragraphs (the blank line is a real paragraph
+break through `CmsProse` on both platforms), and the same words reached the
+phone through `npm run sync-i18n`.
+
+### "Required? Yes" outlived the requirement by eight days
+
+`privacy.s4.parentTable` still answered **Yes** for the parent phone in all
+three languages. It stopped being required on **2026-08-31**, when Apple
+rejected the build under **Guideline 5.1.1(v)**: `validateParentRegistration`
+began accepting a blank (returning NULL, never `""`) and `updateOwnPhoneCore`
+began clearing a given number back to NULL. `parentPhoneOptional.test.ts` pinned
+the CODE from that day. Nothing pinned the POLICY — the one document a parent or
+a store reviewer would consult to find out. The row now says the field may be
+left blank, added later and removed at any time.
+
+### The two guards, and what each is tied to
+
+Both live in `web-app/src/lib/__tests__/policyContent.test.ts` and follow its
+existing idiom: pin the ANSWER, not the words that spell it.
+
+* **Location.** Per locale, the qualified phrase ("cihazın məkanı" / "device
+  location" / "геолокацию устройства") is stripped out of the never-collect
+  paragraph; if the bare word survives, the denial is back. The second paragraph
+  must then name the city AND the rayon — through the same `CHILD_FIELDS` tokens
+  the gender guard uses — and must name all three absent mechanisms (permission,
+  GPS, coordinate). Denying without admitting is exactly how the contradiction
+  got in, so neither half passes alone. The block opens by asserting
+  `CHILD_FIELDS.city` and `.cityDistrictId` are still collected: if either ever
+  stops, that check fails first, and the comment instructs deleting the block
+  rather than editing it — a bare denial would have become true.
+* **Phone.** The row's Required? cell is compared with the table's own markers
+  (equal to the avatar row's, different from the email row's), so renaming
+  "Xeyr" cannot fail it; and the same describe calls
+  `validateParentRegistration` with an empty phone, so re-requiring the number
+  in code cannot pass it.
+
+Checked as a negative control before being believed: the three OLD sentences
+trip the location guard in every locale.
+
+### A third stale claim, found while fixing the first two
+
+`docs/PRIVACY_POLICY.md` ended its never-collected list with **"device
+identifiers"** (`cihaz identifikatoru` / `идентификаторы устройства`) where the
+shipped page says "advertising identifiers or hardware identifiers". The push
+token **is** a device identifier — it is why the Play declaration flips *Device
+or other IDs* to yes — and `usePushRegistration` registers one for a **student**
+session too (the gate is `role !== "parent" && role !== "student"`), so it is
+collected about a child. The document now matches the page.
+
+### Two s4/s5 claims examined and deliberately left alone
+
+* **"Şəhər və rayon | Bəli"** slightly over-states. The city is always required;
+  the rayon only when the chosen city has a rayon catalog — `ChildInfo.cityDistrictId`
+  is optional at the validation layer and the create RPC decides against
+  `city_districts`. It over-declares rather than under-declares, which is the
+  safe direction for a privacy policy, so it was reported and not reworded.
+* **"We do not collect a date of birth or a year of birth"** is TRUE as written.
+  `students.birth_year_optional` exists in the schema but nothing writes it: it
+  appears only in `002` and in the migration-131 server-owned-columns guard, in
+  no form, no server action and no BFF route. A dormant column is not a
+  collected field — but it is one `INSERT` away from making that sentence false,
+  and nothing guards it the way `ChildInfo` guards the rest of the child record.
+
+### Verified
+
+admin `tsc --noEmit` clean; the **whole** admin vitest suite (`npm test` in
+`admin-panel/`) green after the label change — every file, zero failures,
+nothing skipped. Recorded that way on purpose: a file/test count is stale by
+the next round and says less than "all of it ran". Among them the workbook test,
+which
+resolves that row through `tFor("en")` rather than pinning the literal, so it
+followed the correction instead of failing on it. Migration 169 is applied to
+staging and to production.
+
+### What the owner still owes
+
+1. **The store data-safety declarations.** Google Play *Data safety* and Apple
+   *App Privacy* each enumerate what the app collects, and both now understate
+   it: gender is collected, it is optional, and it carries **two** purposes on
+   each form — Analytics for the overall statistics, plus Play **Account
+   management** / Apple **App Functionality** for the authorised staff who read
+   the answer on a child's profile and in the account reports they export, which
+   is what the privacy policy tells parents and is not analytics. (The two forms
+   name that second use differently because Apple has no account-management
+   purpose and files customer support under App Functionality, while Play has
+   no support purpose at all; `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2 is
+   the inventory to fill both in from and carries the reasoning.) Neither
+   form is generated from this repository, and a declaration that disagrees with
+   the shipped app is its own review problem — update both **before the next
+   submission**, not after it.
+   **OTA FREEZE while they stand un-updated: publish NO `eas update` on the
+   1.15.0 runtime.** An `eas update` is not a submission, so the deadline above
+   does not cover it — and `runtimeVersion: appVersion` makes every change in
+   this repo, this one included, deliverable straight onto 1.15.0 build 5, the
+   binary in review. That would start asking parents for a child’s gender on a
+   live build whose App Privacy and Data safety answers say we collect no such
+   thing. The rule is written where the reflex lives — root `CLAUDE.md` →
+   “Releasing a new mobile version” — and pinned by
+   `mobile-app/__tests__/ota-data-safety-freeze.test.ts`. It lifts when both
+   forms are updated, or when `expo.version` leaves 1.15.0.
+2. **Sign-off on the privacy wording** in all three languages. It was written to
+   claim nothing this repository can support: it names both uses (the overall
+   statistics, and the authorised staff who see the answer on the profile and in
+   the account reports they export) and the optionality, and asserts no legal
+   basis, retention period or recipient beyond what already stood. It also
+   promises only what the product does — the answer can be CHANGED at any
+   time, including to "prefer not to say"; it never says "withdrawn", because
+   there is no way back to *never asked*.
+3. **A from-zero rebuild against staging** to exercise check 127. Not run this
+   round; still owed, as it has been since migration 117.
+4. **The exceljs decision** — keep it, or switch while the export is new.
+
+---
+
 ## ROUND 65 — THE APPLE RAIL, CONFIGURED END TO END (2026-09-03)
 
 **Mobile version bumped 1.14.0 → 1.15.0** (minor: In-App Purchase is a feature,

@@ -16,6 +16,7 @@ import { isUuid } from "@/lib/uuid";
 import { writeAuditLog } from "@/lib/audit";
 import { CHILD_AVATAR_BUCKET } from "@/lib/childAvatar";
 import { AVATAR_BUCKET } from "@/lib/auth/avatarCore";
+import { parseStudentGender } from "@/lib/studentGender";
 
 // Internal identifiers (child_unique_id, profile/DB ids) are NEVER editable
 // here — only the human-facing info a parent may correct.
@@ -52,6 +53,18 @@ export async function updateChildProfileCore(params: {
   schoolName: string;
   classGrade: string;
   city: string;
+  /**
+   * Migration 169 — the OPTIONAL gender, for aggregate reporting only.
+   *
+   * OMITTED OR BLANK MEANS "LEAVE THE COLUMN ALONE", which is the whole point
+   * of it being optional here. A surface that does not send the field (and a
+   * parent who never touched the control) must not be able to blank an answer
+   * that was already given — and there is deliberately no way to put the column
+   * back to NULL, because NULL means "never asked" and this parent HAS been
+   * asked. A parent withdrawing an answer picks "prefer not to say"
+   * ('unspecified'), which is a different fact and stays tellable apart.
+   */
+  gender?: string | null;
 }): Promise<UpdateChildProfileCoreResult> {
   const { parentProfileId, studentProfileId } = params;
   if (!isUuid(studentProfileId)) return { ok: false, errorKey: "childedit.err.generic" };
@@ -79,8 +92,9 @@ export async function updateChildProfileCore(params: {
   const city = params.city.trim().slice(0, CITY_MAX) || null;
 
   // Same server-side validation the create flow uses (names present + capped,
-  // city/school/grade ids UUID-shaped, rayon UUID-shaped when given). Returns
-  // i18n keys the UI localizes.
+  // city/school/grade ids UUID-shaped, rayon UUID-shaped when given, gender —
+  // when sent at all — one of the three enum values). Returns i18n keys the UI
+  // localizes.
   const check = validateChildInfo({
     firstName,
     lastName,
@@ -88,8 +102,14 @@ export async function updateChildProfileCore(params: {
     cityDistrictId,
     schoolId,
     gradeId,
+    gender: params.gender,
   });
   if (!check.ok) return { ok: false, validationErrors: check.errors };
+
+  // Parsed a second time for the WRITE (the call above only judged it). Cheap,
+  // pure, and it keeps one whitelist rather than a validator and a separate
+  // cast that could drift apart.
+  const gender = parseStudentGender(params.gender);
 
   // Round 21: mirror the create RPC's requiredness rule — the rayon is
   // MANDATORY whenever the chosen city has active rayons. The client can't be
@@ -122,6 +142,11 @@ export async function updateChildProfileCore(params: {
       city,
       school_name: schoolName,
       class_grade: classGrade,
+      // Migration 169: PRESENT ONLY WHEN THE PARENT ANSWERED. Spreading an
+      // absent value in as `gender: null` would overwrite a stored answer on
+      // every unrelated save — a school correction quietly erasing the field
+      // is exactly the bug the "absent ≠ NULL" rule exists to prevent.
+      ...(gender.ok && gender.value ? { gender: gender.value } : {}),
     })
     .eq("profile_id", studentProfileId);
   if (error) {

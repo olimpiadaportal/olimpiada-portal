@@ -160,3 +160,35 @@ export function formatBakuDate(
   const p = bakuParts(ts);
   return `${p.day} ${monthsFor(locale)[p.month]} ${p.year}`;
 }
+
+// Numeric Baku wall-clock stamp: "YYYY-MM-DD_HH-mm".
+//
+// Lives here because this module owns the Asia/Baku offset, and a stamp built
+// anywhere else would duplicate the constant and drift from it. It needs no
+// Intl and no month names, so the root-locale "M08" hazard the rest of this
+// file guards against cannot apply — hence the plain arithmetic.
+//
+// Used for the Accounts export FILENAME, where the point is that an admin in
+// Baku who clicks at 09:30 gets 09-30 in the name rather than the server's
+// 05-30 UTC.
+export function bakuFileStamp(at: Date = new Date()): string {
+  const p = bakuParts(at.getTime());
+  return `${p.year}-${pad2(p.month + 1)}-${pad2(p.day)}_${pad2(p.hour)}-${pad2(p.minute)}`;
+}
+
+// Sortable Baku wall clock for spreadsheet cells: "YYYY-MM-DD HH:mm".
+//
+// The export writes dates as TEXT in this shape rather than as Excel date
+// cells on purpose: ExcelJS converts a Date with the raw epoch, so a real date
+// cell would render the UTC wall clock and quietly disagree with every date the
+// panel shows. This format sorts lexicographically = chronologically, so the
+// column still sorts correctly in Excel, and the header block names the zone.
+// Returns "" on bad/absent input.
+export function bakuSortableDateTime(
+  iso: string | number | Date | null | undefined,
+): string {
+  const ts = parseTs(iso);
+  if (ts === null) return "";
+  const p = bakuParts(ts);
+  return `${p.year}-${pad2(p.month + 1)}-${pad2(p.day)} ${pad2(p.hour)}:${pad2(p.minute)}`;
+}

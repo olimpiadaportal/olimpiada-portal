@@ -30,6 +30,12 @@ const KEYS = [
   "addchild.avatar.boy", "addchild.avatar.girl", "addchild.avatar.upload",
   "addchild.avatar.replace", "addchild.avatar.removePhoto",
   "addchild.avatar.photoSelected", "addchild.avatar.requirements",
+  // Migration 169 — the OPTIONAL gender field (ChildGenderField); same list as
+  // the Add-Child page, since it is the same control asking the same question.
+  "addchild.field.gender", "addchild.field.genderNone",
+  "addchild.field.genderHint", "addchild.gender.female",
+  "addchild.gender.male", "addchild.gender.unspecified",
+  "addchild.err.genderInvalid", "field.optional",
 ];
 
 // Parent edits a child's profile info after creation (name/grade/city/school).
@@ -49,6 +55,9 @@ export default async function EditChildPage({
     .select(
       "profile_id, first_name, last_name, child_unique_id, class_grade, " +
         "grade_id, district_id, city_district_id, school_id, created_by_parent_profile_id, " +
+        // Migration 169: read so the control shows the stored answer instead of
+        // asking again. NULL comes back as "" — the "not answered" placeholder.
+        "gender, " +
         "avatar_kind, avatar_key, avatar_media_path",
     )
     .eq("profile_id", id)
@@ -129,6 +138,10 @@ export default async function EditChildPage({
           cityDistrictId: c.city_district_id ?? "",
           schoolId: c.school_id ?? "",
           gradeId: c.grade_id ?? "",
+          // Migration 169: NULL ("nobody has been asked yet") → "" → the
+          // placeholder option. Anything the DB holds is already one of the
+          // three enum values; the form re-whitelists on the way back out.
+          gender: c.gender ?? "",
         }}
         initialAvatar={{
           kind: c.avatar_kind ?? "preset",

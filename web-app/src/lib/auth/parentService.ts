@@ -497,7 +497,12 @@ export type AddChildState =
   // Batch H: the child is created WITHOUT a login ID (allocated on subscribe). On
   // success we return the new studentProfileId so the UI sends the parent to the
   // subscribe/plan step (where the 8-digit ID is revealed).
-  | { ok: boolean; studentProfileId?: string; errors?: string[] }
+  //
+  // `warnings` ride along with a SUCCESS: i18n keys for what did not get saved
+  // even though the child did. They are not errors — nothing is retried and
+  // nothing is rolled back — but the wizard must show them, or the parent is
+  // told everything worked when it did not.
+  | { ok: boolean; studentProfileId?: string; errors?: string[]; warnings?: string[] }
   | null;
 
 export async function addChild(
@@ -534,6 +539,10 @@ export async function addChild(
     districtId,
     schoolId,
     cityDistrictId,
+    // Migration 169: OPTIONAL. "" (the wizard's untouched control) → null →
+    // nothing is written and the column keeps its "never asked" NULL. The
+    // string is whitelisted server-side; it is never passed through.
+    gender: f(formData, "gender") || null,
   };
   const result = await createChild({
     parentProfileId: parent.profileId,
@@ -542,7 +551,11 @@ export async function addChild(
   });
   if (!result.ok) return { ok: false, errors: result.errors };
   revalidatePath("/dashboard");
-  return { ok: true, studentProfileId: result.studentProfileId };
+  // The child EXISTS — a partial save is never turned into a failed
+  // registration. Anything the core could not store travels back as a warning
+  // the wizard renders; dropping it here would restore the silence this
+  // returns.
+  return { ok: true, studentProfileId: result.studentProfileId, warnings: result.warnings };
 }
 
 // ---- Child management by the parent (reset password / delete) ---------------
@@ -596,6 +609,10 @@ export async function updateChildProfile(
     schoolName: f(formData, "school_name"),
     classGrade: f(formData, "class_grade"),
     city: f(formData, "city"),
+    // Migration 169: OPTIONAL, and "" means LEAVE IT ALONE — the core never
+    // writes the column unless the parent actually chose something, so an edit
+    // to a school name can never blank an answer already on file.
+    gender: f(formData, "gender"),
   });
   if (!res.ok) {
     // Validation keys are returned RAW (the edit form localizes them);

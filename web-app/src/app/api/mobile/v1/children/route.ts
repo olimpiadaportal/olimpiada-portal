@@ -41,6 +41,18 @@ export async function POST(request: Request): Promise<Response> {
       // city has active rayons (mobile sends it from the M3.1 wizard update).
       cityDistrictId: bodyStr(body, "city_district_id").trim() || null,
       schoolId: bodyStr(body, "school_id").trim() || null,
+      // Migration 169 — the OPTIONAL gender, passed through UNVALIDATED on
+      // purpose: `validateChildInfo` runs lib/studentGender's whitelist inside
+      // createChild, so the enum is enforced in exactly ONE place for the web
+      // action and this route alike. A forged value comes back as
+      // addchild.err.genderInvalid rather than reaching the column.
+      //
+      // ABSENT MUST STAY ABSENT. `bodyStr` answers "" for a missing field (and
+      // for a non-string one, which is a client bug and lands on the safe side
+      // — "not answered" — instead of writing something wrong), and "" || null
+      // is the null the core reads as "leave the column alone". The app omits
+      // the key entirely when the parent never touched the control.
+      gender: bodyStr(body, "gender").trim() || null,
     };
 
     const result = await createChild({
@@ -64,6 +76,11 @@ export async function POST(request: Request): Promise<Response> {
     return okResponse({
       student_profile_id: result.studentProfileId,
       child_unique_id: result.childUniqueId ?? null,
+      // A SUCCESS THAT SAVED LESS THAN IT WAS GIVEN says so here. i18n keys,
+      // like `error` — the app localizes them. The web wizard and this route
+      // share the core, so they shared the silent gender loss too; forwarding
+      // the array is what stops the app from re-inventing it.
+      warnings: result.warnings,
     });
   } catch {
     // Never leak internals (error.message) to any client.

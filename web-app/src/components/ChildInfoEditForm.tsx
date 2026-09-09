@@ -26,6 +26,11 @@ import {
   ChildAvatarPicker,
   type ChildAvatarChoice,
 } from "@/components/ChildAvatarPicker";
+import {
+  ChildGenderField,
+  type ChildGenderChoice,
+} from "@/components/ChildGenderField";
+import { isStudentGender } from "@/lib/studentGender";
 
 type City = { id: string; name: string };
 // NAMING (Round 21): `districts` is the CITIES table (historic naming) —
@@ -68,6 +73,8 @@ export function ChildInfoEditForm({
     cityDistrictId: string;
     schoolId: string;
     gradeId: string;
+    /** Migration 169: the stored gender, or "" when it was never answered. */
+    gender: string;
   };
   /** Parent-managed avatar state (photoUrl = short-lived signed URL). */
   initialAvatar: {
@@ -94,6 +101,14 @@ export function ChildInfoEditForm({
   const [cityDistrictId, setCityDistrictId] = useState(initial.cityDistrictId); // the rayon
   const [schoolId, setSchoolId] = useState(initial.schoolId);
   const [gradeId, setGradeId] = useState(initial.gradeId);
+  // Migration 169 — OPTIONAL gender, seeded from what is stored so the parent
+  // is not asked twice. An unrecognised value (an older enum, a hand-edited
+  // row) falls back to the placeholder rather than being shown as a broken
+  // option; leaving it there posts "" and the core touches nothing, so the
+  // stored value survives a save that could not display it.
+  const [gender, setGender] = useState<ChildGenderChoice>(
+    isStudentGender(initial.gender) ? initial.gender : "",
+  );
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   // Avatar (parent-managed): the picker mirrors the stored state; Save only
@@ -198,6 +213,10 @@ export function ChildInfoEditForm({
     fd.set("city_district_id", cityDistrictId); // the rayon ("" → null server-side)
     fd.set("school_id", schoolId);
     fd.set("grade_id", gradeId);
+    // Migration 169 — OPTIONAL. "" means LEAVE IT ALONE: the core writes the
+    // column only when a value is actually chosen, so saving a corrected school
+    // name can never blank an answer the parent gave earlier.
+    fd.set("gender", gender);
     fd.set("city", cities.find((c) => c.id === districtId)?.name ?? "");
     fd.set("school_name", citySchools.find((s) => s.id === schoolId)?.name ?? "");
     fd.set("class_grade", grades.find((g) => g.id === gradeId)?.name ?? "");
@@ -385,6 +404,18 @@ export function ChildInfoEditForm({
           <span className="field-error">{tt(fieldErrors.grade)}</span>
         )}
       </label>
+
+      {/* Optional gender (migration 169) — never required, never gates
+          anything. Leaving it on the placeholder writes nothing at all, and the
+          placeholder cannot be chosen BACK: on this form that would have read
+          as "erase the answer" and done nothing. Withdrawing an answer is
+          "prefer not to say", which is an answer the column can hold. */}
+      <ChildGenderField
+        value={gender}
+        onChange={setGender}
+        disabled={pending}
+        dict={dict}
+      />
 
       {/* Avatar (parent-managed): preset Boy/Girl, an uploaded photo, or the
           default initials bubble. Saved through its own ownership-checked

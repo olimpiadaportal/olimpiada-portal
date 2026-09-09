@@ -238,7 +238,10 @@ const SCREENS: { file: string; sources: Expected[] }[] = [
     file: "app/(parent)/children/[id]/edit.tsx",
     sources: [
       "childrenQ",
-      { name: "rayonQ", onlyWhen: "child" },
+      // Was `rayonQ`; migration 169 added the optional gender to the same
+      // per-child read, so the query (and its variable) now covers both saved
+      // fields the form preselects from.
+      { name: "savedQ", onlyWhen: "child" },
       "citiesQ",
       "gradesQ",
       "rayonsQ",

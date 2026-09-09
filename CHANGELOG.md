@@ -42,6 +42,61 @@ Store review, so nothing below is in it — filing these lines there would put a
 feature that build does not contain into its release notes. The version this
 rides in is decided when the next build is cut.
 
+- `[store]` Add-Child now tells a parent when the optional Gender answer did not
+  get saved. The child is still created — a missing statistic must never cost a
+  family their account — but the wizard no longer finishes in silence: it says
+  the child was created, the gender was not saved, and that it can be set by
+  editing the child's details. In all three languages, and the app and the
+  website say it in the same words.
+- `[internal]` That answer is written as its own UPDATE after the provisioning
+  transaction, and a failure was logged and dropped: the wizard reported
+  success, the child existed, and the answer the parent gave became a NULL — the
+  value the column defines as "nobody has been asked", which is the one
+  distinction migration 169 exists to keep. It cannot move inside the
+  transaction: `create_child_account` is security-definer, its 11-argument
+  signature is what validation check 66 asserts, and widening it is a migration
+  that must reach staging and production before the code deploys — a push ahead
+  of it would turn a missing optional field into a dead Add-Child. So the write
+  stays outside and stops lying instead. It reads the row back (a PostgREST
+  update matching no row is a 204, not an error), returns a warning key on the
+  success, and still never logs the value — it is a minor's personal data. The
+  mobile Add-Child goes through the same core via `/api/mobile/v1/children` and
+  had the identical defect; both are fixed in the one place, and tests fail if
+  either surface drops the warning on its way to the parent.
+- `[store]` The privacy policy now lists the optional gender a parent may give
+  for a child, in Azerbaijani, English and Russian. It says plainly that the
+  question can be left unanswered or answered "Prefer not to say", that the
+  answer is stored on the child's profile where our own staff can see it like
+  the rest of that profile, that we use it for overall statistics about who
+  uses the platform, and that it never affects the child's access, the
+  questions they are served, their points or their leaderboard position.
+  Section 5 previously listed everything stored about a child and did not
+  mention it, so the page said something untrue to parents from the moment the
+  field started collecting.
+  The "last updated" date moves to 08.09.2026; the effective date does not.
+- `[internal]` That gender sentence said the answer is used "only for overall
+  statistics", and the Accounts export contradicted it: sheet 1 prints each
+  named child's gender on their own row, beside their 8-digit login id and
+  their parent's email. The column is the owner's and stays; the policy now
+  says what happens instead — stored on the profile, staff read it there like
+  the rest of the profile, it feeds overall statistics, it decides nothing.
+  A test fails if any locale narrows the claim back to statistics alone.
+- `[store]` The Gender question in Add-Child now says what the privacy policy
+  says. The hint under it stopped at "stored on the profile and used for
+  overall statistics", leaving out the part the policy was rewritten to admit:
+  authorised staff read the answer per child in the internal account reports
+  they export. A parent decides at that hint, not on the policy page, so it now
+  names that too — and still promises, in all three languages, that the answer
+  changes nothing about the child's access, their tasks or their ranking. The
+  app and the website say it in the same words.
+- `[internal]` Section 6 of the policy promised the internal account reports are
+  built "never to make a decision about an individual child" — the opposite
+  overclaim. Sheet 1 of that export is per-named-child and carries each child's
+  login and access status precisely so staff CAN act on an individual; that is
+  what an account report is for. The promise now covers what it can: the gender
+  answer itself decides nothing about a child, which is a promise migration 169
+  keeps — no access, content or ranking rule reads the column, and no code does.
+  Tests fail if either the hint or section 6 re-narrows.
 - `[store]` Parents can now delete one of their children from the app. The
   child's edit screen has a Delete section that asks for confirmation first and
   says plainly what goes with the account: the child's profile, their 8-digit
@@ -156,6 +211,137 @@ rides in is decided when the next build is cut.
   grants the subscription column never records. It is computed by the same rules
   as the app's card, so the two cannot disagree, and a failed read falls back to
   the old label rather than inventing access.
+- `[store]` Add-Child and the child's edit screen in the app now offer an
+  optional “Cinsi” field — Qız, Oğlan, or “Bildirmək istəmirəm”. Nothing is
+  preselected, nothing requires it, and leaving it alone is a real answer in
+  itself: the account is created exactly as before. It changes nothing about
+  what a child can reach, what they are asked or where they rank; it is only
+  ever counted in aggregate. A parent who edits a school name later without
+  touching the field does not lose an answer they gave earlier.
+- `[web]` On the website, “Seçilməyib” in that same field is now the
+  placeholder only and not something a parent can pick. It could be chosen back
+  after an answer had been saved, and choosing it did nothing: the page said the
+  save succeeded and the field returned to the stored answer, because leaving
+  the field alone is exactly how “do not change this” is expressed. The app
+  never offered that row, so the two now behave the same; a parent who wants to
+  take an answer back picks “Bildirmək istəmirəm”.
+- `[admin]` The Accounts page has an Export Data button next to the search bar
+  that downloads the whole account table as a formatted Excel workbook
+  (`OlympIQ_Accounts_Export_<date>_<time>.xlsx`). Sheet 1 is one row per child
+  with the parent columns repeated, and a parent who has never added a child is
+  still a row rather than being dropped by the join. Sheet 2 is a summary
+  computed from the same read, so the two sheets can never disagree. Gender
+  shows the migration-169 distinction rather than hiding it: "—" means nobody
+  has been asked, "Not specified" means a parent was asked and declined, an
+  empty cell means the parent has no children at all, and the summary counts
+  the never-asked children as their own line. Every export writes an audit row
+  naming who took it and how many rows they took.
+- `[admin]` That audit row was best-effort, and the export did not wait for
+  it. Writing to the audit log needs the server's service-role key, and
+  without one the write was skipped in silence while the file was handed over
+  anyway: an administrator could download every family's names and emails and
+  every child's 8-digit login id with nothing recording that it happened. The
+  export now refuses in that case and says what to fix. A full-PII download
+  that leaves no trace is worse than one that fails.
+- `[admin]` The Azerbaijani note at the foot of the export's Statistics sheet
+  said the per-status breakdowns were below it. They are above it, which is
+  what the English and Russian notes already said.
+- `[admin]` The Export Data button told a Content Manager who reached the
+  export URL that their session had expired and to sign in again. It had not:
+  they were signed in and simply may not export accounts, which signing in
+  again cannot change. The route refused them with a redirect, and a browser
+  follows a redirect, so the button received the login page with a 200 status
+  and had no way to tell that refusal from a dead session. The refusal itself
+  is unchanged — a Content Manager still gets nothing — but it now arrives as
+  a status the button can read, and the message says the export is for
+  administrators only. An expired session still says so, and neither message
+  mentions anything about what the file holds.
+- `[internal]` No OTA update may be published on the 1.15.0 runtime until both
+  stores’ data-safety declarations list the child gender field.
+  `runtimeVersion: appVersion` reads as a safety rail — a bump means a new
+  build, never an update — but while the version does NOT move it is also what
+  makes every change here deliverable straight onto 1.15.0 build 5, the binary
+  in App Review. That would start asking parents for a minor’s gender on a
+  build whose App Privacy and Data safety answers say we collect no such
+  thing. The field was already guarded, but only with “before the next
+  submission”, and an `eas update` is not a submission. The rule now sits in
+  root `CLAUDE.md` beside the OTA advice it has to interrupt, is repeated in
+  the two store-posture documents and in the submission preflight, and
+  `__tests__/ota-data-safety-freeze.test.ts` fails if it goes missing while
+  the version is still 1.15.0 and the field is still collected. It lifts when
+  the declarations are updated, or when the version moves.
+- `[store]` A parent whose child's Gender answer could not be saved is now
+  told so wherever they are in Add-Child, not only on the final card. The app
+  showed that notice on the "child created" screen alone, so a parent whose
+  free-access grant then failed — which keeps the wizard on the form so the
+  grant can be retried — read the grant error and nothing about the answer
+  that had been dropped, and only they can put it back by editing the child.
+  The website already places the same notice outside the wizard's steps for
+  this reason; the app now matches it instead of keeping a second rule.
+- `[internal]` The mobile test now pins that placement rather than the old
+  "the Done card renders it" wording, which passed just as happily with the
+  block nested in the branch that caused the silence. It asserts the render
+  sits before the first phase branch opens and appears exactly once, so both
+  re-nesting it and leaving a duplicate behind fail. Proven by making each
+  mistake and watching the matching assertion fail.
+- `[internal]` The store launch pack's commerce section no longer tells App
+  Review something untrue. Its reviewer note still read "This app contains no
+  purchase functionality of any kind" and described the app as purchase-silent
+  for both roles — written when that was the architecture, and false of iOS from
+  the moment the 2026-08-31 Guideline 3.1.1 rejection was answered by selling
+  subject access through StoreKit. The section now leads with the platform split,
+  because the split is the point: iOS sells through Apple In-App Purchase, and
+  Android stays purchase-silent because Azerbaijan is in no Google
+  alternative-billing or external-link programme and that binary has no billing
+  rail to route a purchase through. There are two reviewer notes now, one per
+  store, and pasting either into the other console is a misstatement. The file
+  keeps its own rule — never submit a note that is untrue of the binary — and
+  gains the converse it was missing: never write "access is provisioned outside
+  the app" to Apple, which is the sentence that became a written confession to
+  3.1.1 the moment a reviewer went looking for one.
+- `[internal]` The submission preflight told the owner that the Play optionality
+  answer for the child gender type is "users can choose". It must answer
+  required: Play asks that question per TYPE, and Personal info > Other info now
+  also carries the mandatory grade and school — the field stays optional in the
+  product, but the type does not. The same check also implied gender was the only
+  declaration still outstanding, which the row-by-row audit disproved: nine
+  collected rows are undeclared on forms that are already live and do not wait
+  for a release, and the parent phone number moves the other way — required to
+  "users can choose", since it became optional on 2026-08-31. Three separate
+  checks now, so the one that is overdue cannot hide behind the one that is not.
+- `[internal]` A comment in the OTA data-safety freeze test described the
+  inventory as "the seven data types". It is ten, and the count is the thing a
+  reader would have trusted.
+- `[store]` The privacy policy no longer tells parents that a child's
+  "location" is something we never collect. It could not be true while the same
+  document lists that child's city and rayon two tables earlier, and while the
+  store forms declare exactly that as Coarse / Approximate location. Section 5
+  now draws the distinction it should always have drawn: the city and the rayon
+  are typed by the parent and kept only to group the leaderboards, and the
+  device's whereabouts are never asked for — no location permission, no GPS or
+  other location sensor, no coordinate stored, and no home-address field
+  anywhere. In all three languages, on the website and on the phone.
+- `[store]` The parent phone number is no longer listed as required in the
+  privacy policy. It stopped being required on 2026-08-31, when the field was
+  made optional and removable under Apple Guideline 5.1.1(v); the table went on
+  answering "Required? Yes" in all three languages for eight days, in the one
+  document a parent would consult to find out. The row now says the field can be
+  left blank, a number added later, and a number removed at any time.
+- `[internal]` The never-collected list in `docs/PRIVACY_POLICY.md` ended with
+  "device identifiers" where the shipped page says "advertising identifiers or
+  hardware identifiers". The push token IS a device identifier — it is why the
+  Play declaration flips Device or other IDs to yes — and a student session
+  registers one too, so the document now matches the page rather than the page
+  matching the document.
+- `[internal]` Two drift guards in the policy test. The first fails if any
+  locale denies location without qualifying it as the DEVICE's, or drops the
+  paragraph admitting the city and rayon, or stops naming the three mechanisms
+  that are genuinely absent — and it is scoped to `CHILD_FIELDS`, so if the
+  platform ever stops collecting a city or a rayon it fails first and says to
+  delete itself rather than be edited. The second reads the phone row's
+  Required? answer off the table's own optional/required markers and pins it to
+  `validateParentRegistration`, so renaming "Xeyr" cannot fail it and
+  re-requiring the phone in code cannot pass it.
 
 ---
 

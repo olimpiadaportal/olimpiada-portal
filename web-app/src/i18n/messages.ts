@@ -1084,6 +1084,36 @@ export const messages: Record<Locale, Record<string, string>> = {
     "addchild.field.selectDistrict": "Rayon seçin",
     "addchild.field.noDistricts": "Bu şəhər üzrə rayon təyin edilməyib",
     "addchild.err.districtRequired": "Rayonu seçin.",
+    // ---- optional gender (migration 169) ---------------------------------
+    // TWO different "no answer" wordings, and the difference is the whole
+    // point: `genderNone` is the PLACEHOLDER — nobody has been asked yet —
+    // while `gender.unspecified` is a parent who WAS asked and chose not to
+    // say. The column stores those separately and no screen may blur them, so
+    // these two strings must never be made to read alike in any locale.
+    // The hint is the POINT OF COLLECTION: a parent decides here, not at
+    // /privacy, so it may not describe the field more narrowly than the policy
+    // does. It therefore names the staff visibility privacy.s5.stored spells
+    // out — the Accounts export prints a child's gender on their own row — and
+    // keeps the part parents actually care about, that nothing about the
+    // child's access, tasks or ranking reads it. Short on purpose: a parent who
+    // is handed a paragraph under a select reads none of it. Wording is kept
+    // VERBATIM with the mobile app's mob.child.gender.* — one product must not
+    // ask a parent the same question in two different voices.
+    "addchild.field.gender": "Cinsi",
+    "addchild.field.genderNone": "Seçilməyib",
+    "addchild.gender.female": "Qız",
+    "addchild.gender.male": "Oğlan",
+    "addchild.gender.unspecified": "Bildirmək istəmirəm",
+    "addchild.field.genderHint":
+      "İstəyə bağlıdır. Övladınızın profilində saxlanılır və ümumi statistika üçün istifadə olunur; səlahiyyətli əməkdaşlarımız onu profildə və daxili hesabatlarda görür. Girişinə, tapşırıqlarına və ya reytinqinə heç bir təsiri yoxdur.",
+    "addchild.err.genderInvalid":
+      "Cins seçimi düzgün deyil. Siyahıdan birini seçin və ya boş buraxın.",
+    // A CREATED CHILD WHOSE ANSWER DID NOT LAND. Shown on a SUCCESS, not as
+    // a failure: the account is real and nothing is retried. It names the
+    // one thing the parent must do, because a dropped answer is now a NULL
+    // that reads as "never asked" and only they can put it back.
+    "addchild.warn.genderNotSaved":
+      "Uşaq yaradıldı, lakin cinsi yadda saxlanılmadı. Onu övladın məlumatlarını redaktə edərək təyin edə bilərsiniz.",
     "subj.math": "Riyaziyyat",
     "subj.english": "İngilis dili",
     "subj.informatics": "İnformatika",
@@ -1315,7 +1345,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Məlumat | Məcburidir? | Niyə toplayırıq\n" +
       "Ad (görünən ad) | Bəli | Hesabı tanımaq və tətbiqdə sizə müraciət etmək üçün\n" +
       "E-poçt ünvanı | Bəli | Giriş açarı; parolun bərpası; hesabla bağlı bildirişlər\n" +
-      "Telefon nömrəsi (beynəlxalq formatda) | Bəli | Hesabla bağlı əlaqə və hesabın bərpası üçün. SMS göndərmirik — SMS funksiyası məhsulda ümumiyyətlə mövcud deyil\n" +
+      "Telefon nömrəsi (beynəlxalq formatda) | Xeyr | İstəyə bağlıdır: sahəni boş buraxa, nömrəni sonradan əlavə edə və istənilən vaxt silə bilərsiniz. Nömrə versəniz, onu yalnız hesabla bağlı əlaqə və hesabın bərpası üçün istifadə edirik. SMS göndərmirik — SMS funksiyası məhsulda ümumiyyətlə mövcud deyil\n" +
       "Parol | Bəli | Giriş üçün. Parolu biz saxlamırıq: o, yalnız autentifikasiya xidmətimizdə şifrələnmiş (hash) formada saxlanılır və heç kim onu geri oxuya bilmir\n" +
       "İnterfeys dili (az / en / ru) | Xeyr | Tətbiqi sizin dilinizdə göstərmək üçün\n" +
       "Profil şəkli (avatar) | Xeyr | Yalnız görünüş üçün. Bu fayl açıq saxlanc bölməsinə yüklənir — «Avatar şəkilləri» hissəsinə baxın\n" +
@@ -1330,6 +1360,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Şəhər və rayon | Bəli | Regional reytinq cədvəlləri üçün\n" +
       "Məktəbin adı | Bəli | Məktəb üzrə reytinq cədvəli üçün\n" +
       "Sinif | Bəli | Uşağa öz sinfinə uyğun sualların verilməsi üçün\n" +
+      "Cinsi | Xeyr | Ümumi statistika üçün; profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür. Valideyn bu sualı boş buraxa və ya «Bildirmək istəmirəm» seçə bilər; uşağın girişinə, ona verilən suallara və reytinqinə heç bir təsiri yoxdur\n" +
       "8 rəqəmli giriş nömrəsi | Server verir | Uşağın giriş açarı. Bu nömrənin son 4 rəqəmi ictimai reytinq cədvəlində göstərilir\n" +
       "Parol | Bəli (valideyn təyin edir) | Giriş üçün. Parol yalnız autentifikasiya xidmətimizdə şifrələnmiş formada saxlanılır\n" +
       "Avatar | Xeyr | Hazır şəkillərdən biri, yaxud yüklənmiş foto. Foto həmişə qapalı saxlancda saxlanılır — «Avatar şəkilləri» hissəsinə baxın\n" +
@@ -1373,10 +1404,46 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.callout":
       "Bu bölmə OlympIQ-in uşaq məxfiliyi siyasətidir. Uşaqlar üçün nəzərdə tutulmuş məhsul olduğumuza görə onu ayrıca yazırıq ki, valideyn hər şeyi bir yerdə görsün.",
     "privacy.s5.storedTitle": "Uşaq haqqında nə saxlanılır",
+    // Migration 169 added the optional gender, and this enumeration is the
+    // policy's exhaustive answer to "what is stored about my child" — leaving
+    // it out would not make the page silent, it would make it FALSE. The
+    // blank line is a paragraph break (toParagraphs), so the promise below
+    // renders as its own paragraph on both the web page and the phone.
+    //
+    // That promise used to end "used ONLY for overall statistics", which was
+    // false the day it was written: the admin Accounts export prints each
+    // child's gender on their own row, beside their name, their 8-digit login
+    // id and their parent's email. The column is the owner's, so the sentence
+    // moved to what the platform actually does — the answer sits on the
+    // profile, authorised staff read it there like the rest of that profile
+    // (s7.staff already discloses that access), it feeds overall statistics,
+    // and it decides nothing. Stating staff access is a fact about internal
+    // access; it adds no legal basis, no retention period and no recipient.
     "privacy.s5.stored":
-      "Yuxarıdakı «Uşaq profili» cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri (cavablar, ballar, faizlər, seriyalar, aktiv günlər, reytinq mövqeyi).",
+      "Yuxarıdakı «Uşaq profili» cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, valideynin istəyə bağlı qeyd etdiyi cins, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri (cavablar, ballar, faizlər, seriyalar, aktiv günlər, reytinq mövqeyi).\n" +
+      "\n" +
+      "Cinsin qeyd edilməsi istəyə bağlıdır: valideyn sualı cavabsız qoya, «Bildirmək istəmirəm» seçə və ya qeyd etdiyini sonradan dəyişə bilər — bunların heç biri uşağın hesabına təsir etmir. Qeyd edildikdən sonra cavab uşağın profilində saxlanılır və profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür; onların ixrac etdiyi daxili hesabat fayllarında da yer alır. Bu məlumat əsasında platformadan kimlərin istifadə etdiyini bütövlükdə görmək üçün ümumi statistika hazırlayırıq. Cins heç nəyi müəyyən etmir: uşağın girişinə, ona verilən suallara, ballarına və reytinq cədvəlindəki yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.",
+    // "Məkan" USED TO STAND ALONE IN THIS LIST, and it was false: the child's
+    // şəhər and rayon are in the «Uşaq profili» table one section up, they are
+    // what groups the leaderboards, and the store forms declare them (Apple
+    // Coarse Location / Play Approximate location). A parent reading the bare
+    // denial was told the opposite of what the same document lists as collected.
+    //
+    // What is true is a DISTINCTION, not a denial, so the sentence makes it: a
+    // parent-typed city and rayon are stored; the DEVICE's whereabouts are never
+    // asked for. Verified in the repository rather than assumed — app.json
+    // requests no location permission (android.permissions is biometric only,
+    // and neither the iOS infoPlist nor plugins/withIosPermissionStringDefaults
+    // carries an NSLocation* string), there is no expo-location dependency and
+    // no navigator.geolocation call anywhere, and public.students has neither a
+    // coordinate column nor a home-address column.
+    //
+    // The blank line is a paragraph break (CmsProse on both platforms), so the
+    // list and the distinction render as two paragraphs.
     "privacy.s5.notCollected":
-      "Uşaq haqqında toplamadığımız məlumatlar: doğum tarixi, e-poçt, telefon nömrəsi, ev ünvanı, məkan, sağlamlıq məlumatı, maliyyə məlumatı, kontaktlar, brauzer tarixçəsi, reklam identifikatorları və avadanlıq identifikatorları.",
+      "Uşaq haqqında toplamadığımız məlumatlar: doğum tarixi, e-poçt, telefon nömrəsi, ev ünvanı, cihazın məkanı, sağlamlıq məlumatı, maliyyə məlumatı, kontaktlar, brauzer tarixçəsi, reklam identifikatorları və avadanlıq identifikatorları.\n" +
+      "\n" +
+      "Şəhər və rayon başqa şeydir: onları uşağı əlavə edərkən valideyn özü seçir və biz onları yalnız reytinq cədvəllərini şəhər və rayon üzrə qruplaşdırmaq üçün saxlayırıq. Uşağın cihazının harada olduğunu isə heç vaxt bilmirik: tətbiq məkan icazəsi istəmir, GPS-i və digər məkan sensorlarını oxumur, heç bir koordinat saxlamır, ev ünvanı üçün isə sahə ümumiyyətlə yoxdur.",
     "privacy.s5.neverTitle": "Uşaq məlumatı ilə nə etmirik",
     "privacy.s5.never":
       "Uşağa reklam göstərmirik və reklam üçün profil qurmuruq.\n" +
@@ -1438,6 +1505,22 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Sui-istifadənin, avtomatlaşdırılmış hücumların və parol seçmə cəhdlərinin qarşısını almaq.\n" +
       "Sizə dəstək göstərmək və sorğularınıza cavab vermək.\n" +
       "Ailənin hansı fənlərə və olimpiada paketlərinə çıxışının olduğunu müəyyən etmək.\n" +
+      // Migration 169: what the optional gender is for. This list is the
+      // policy's exhaustive "what we use the data for", so the purpose has to
+      // stand in it as well as in section 5. The internal account reports are
+      // named beside the statistics because the Accounts export renders a
+      // child's gender per row — "aggregate reporting" alone would be the
+      // narrower half of the truth in a list that claims to be exhaustive.
+      //
+      // The no-decision promise is scoped to the GENDER, not to the report.
+      // Sheet 1 of that export is per-named-child and carries each child's
+      // login and access status precisely so staff CAN act on one child — that
+      // is what an account report is for — so "never a decision about an
+      // individual child" was a promise about the report that the report
+      // contradicts. What is true, and is what a parent needs, is that the
+      // gender answer itself decides nothing: migration 169 forbids any
+      // access, content or ranking rule from reading the column, and none does.
+      "Platformadan kimlərin istifadə etdiyi barədə ümumi statistika hazırlamaq və əməkdaşlarımızın işlədiyi daxili hesabatları formalaşdırmaq; valideynin qeyd etdiyi cins isə uşaq haqqında heç nəyi müəyyən etmir — nə girişini, nə tapşırıqlarını, nə ona verilən sualları, nə də reytinqdəki yerini.\n" +
       "Qanunla tələb olunan hallarda hüquqi öhdəliklərimizi yerinə yetirmək.",
     "privacy.s6.notTitle": "İstifadə etmirik",
     "privacy.s6.not":
@@ -3026,6 +3109,19 @@ export const messages: Record<Locale, Record<string, string>> = {
     "addchild.field.selectDistrict": "Select a district",
     "addchild.field.noDistricts": "No districts are set up for this city",
     "addchild.err.districtRequired": "Select a district.",
+    // ---- optional gender (migration 169) — see the az block for why the two
+    // "no answer" strings must stay distinct.
+    "addchild.field.gender": "Gender",
+    "addchild.field.genderNone": "Not selected",
+    "addchild.gender.female": "Girl",
+    "addchild.gender.male": "Boy",
+    "addchild.gender.unspecified": "Prefer not to say",
+    "addchild.field.genderHint":
+      "Optional. It is stored on your child's profile and used for overall statistics; our authorised staff see it there and in internal account reports. It never affects your child's access, their tasks or their ranking.",
+    "addchild.err.genderInvalid":
+      "That gender value is not valid. Choose one from the list or leave it blank.",
+    "addchild.warn.genderNotSaved":
+      "The child was created, but their gender was not saved. You can set it by editing the child's details.",
     "subj.math": "Mathematics",
     "subj.english": "English",
     "subj.informatics": "Informatics",
@@ -3238,7 +3334,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Data | Required? | Why we collect it\n" +
       "Name (display name) | Yes | To identify the account and address you in the app\n" +
       "Email address | Yes | Your login credential; password reset; account notices\n" +
-      "Phone number (international format) | Yes | Account contact and recovery. We do not send SMS — SMS is not implemented in the product at all\n" +
+      "Phone number (international format) | No | Optional: you can leave the field blank, add a number later and remove it at any time. If you do give one, we use it only to reach you about your account and to help you recover it. We do not send SMS — SMS is not implemented in the product at all\n" +
       "Password | Yes | To sign in. We do not store your password: it is held only by our authentication service in hashed form, which nobody can read back\n" +
       "Interface language (az / en / ru) | No | To show the app in your language\n" +
       "Profile picture (avatar) | No | Cosmetic only. This file goes to a publicly-readable storage area — see «Avatar photos»\n" +
@@ -3253,6 +3349,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "City and district (rayon) | Yes | For regional leaderboards\n" +
       "School name | Yes | For the school leaderboard\n" +
       "Grade | Yes | So the child is served questions that match their grade\n" +
+      "Gender | No | For overall statistics; visible to our authorised staff like the rest of the profile. A parent may leave the question blank or choose «Prefer not to say»; it has no effect on the child's access, on the questions they are served or on their ranking\n" +
       "8-digit login ID | Issued by our server | The child's login credential. The last 4 digits of this number are shown on the public leaderboard\n" +
       "Password | Yes (set by the parent) | To sign in. Held only by our authentication service, in hashed form\n" +
       "Avatar | No | Either a preset image or an uploaded photo. A photo is always kept in private storage — see «Avatar photos»\n" +
@@ -3297,10 +3394,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.callout":
       "This section is OlympIQ's children's privacy policy. Because our product is directed at minors, we set it out separately so a parent can see everything in one place.",
     "privacy.s5.storedTitle": "What is stored about a child",
+    // See the az block for why the gender belongs in this enumeration.
     "privacy.s5.stored":
-      "Everything in the «Child profile» table above: first name, last name, city, district, school, grade, the 8-digit login number, the chosen avatar and look, and practice results (answers, points, percentages, streaks, active days, leaderboard placement).",
+      "Everything in the «Child profile» table above: first name, last name, city, district, school, grade, the optional gender a parent may give, the 8-digit login number, the chosen avatar and look, and practice results (answers, points, percentages, streaks, active days, leaderboard placement).\n" +
+      "\n" +
+      "Giving a gender is entirely optional: a parent can leave the question unanswered, choose «Prefer not to say», or change what they gave later — none of which affects the child's account. Once given, the answer is stored on the child's profile and is visible to our authorised staff in the same way as the rest of that profile, including in the internal account reports they export. We use it to produce overall statistics about who uses the platform. It decides nothing about the child: it has no effect on their access, on the questions they are served, on their points or on their leaderboard position, and it is never shown on a leaderboard.",
+    // See the az block for why a bare "location" denial cannot stand here.
     "privacy.s5.notCollected":
-      "What we never collect about a child: date of birth, email address, phone number, home address, location, health data, financial data, contacts, browsing history, advertising identifiers or hardware identifiers.",
+      "What we never collect about a child: date of birth, email address, phone number, home address, device location, health data, financial data, contacts, browsing history, advertising identifiers or hardware identifiers.\n" +
+      "\n" +
+      "The city and the district are a different matter: the parent chooses them when they add the child, and we keep them only to group the leaderboards by city and district. Where the child's device is, we never learn: the app asks for no location permission, reads no GPS or other location sensor, stores no coordinates, and there is no home address field at all.",
     "privacy.s5.neverTitle": "What we never do with a child's data",
     "privacy.s5.never":
       "We do not show advertising to a child and we do not build advertising profiles.\n" +
@@ -3363,6 +3466,9 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Prevent abuse, automated attacks and password-guessing.\n" +
       "Provide support and answer your requests.\n" +
       "Determine which subjects and olympiad packages the family has access to.\n" +
+      // See the az block for why the promise below names the gender and not
+      // the report.
+      "Produce overall statistics about who uses the platform, and build the internal account reports our staff work from; the gender a parent gives decides nothing about a child — not their access, not their tasks, not the questions they are served and not their ranking.\n" +
       "Meet our legal obligations where the law requires it.",
     "privacy.s6.notTitle": "We do not use it to",
     "privacy.s6.not":
@@ -4950,6 +5056,19 @@ export const messages: Record<Locale, Record<string, string>> = {
     "addchild.field.selectDistrict": "Выберите район",
     "addchild.field.noDistricts": "Для этого города районы не заданы",
     "addchild.err.districtRequired": "Выберите район.",
+    // ---- optional gender (migration 169) — see the az block for why the two
+    // "no answer" strings must stay distinct.
+    "addchild.field.gender": "Пол",
+    "addchild.field.genderNone": "Не выбрано",
+    "addchild.gender.female": "Девочка",
+    "addchild.gender.male": "Мальчик",
+    "addchild.gender.unspecified": "Предпочитаю не указывать",
+    "addchild.field.genderHint":
+      "Необязательно. Хранится в профиле ребёнка и используется для общей статистики; наши уполномоченные сотрудники видят его там и во внутренних отчётах по аккаунтам. На доступ ребёнка, задания и рейтинг это никак не влияет.",
+    "addchild.err.genderInvalid":
+      "Указан недопустимый пол. Выберите вариант из списка или оставьте поле пустым.",
+    "addchild.warn.genderNotSaved":
+      "Ребёнок создан, но пол не сохранился. Указать его можно, отредактировав данные ребёнка.",
     "subj.math": "Математика",
     "subj.english": "Английский язык",
     "subj.informatics": "Информатика",
@@ -5161,7 +5280,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Данные | Обязательно? | Зачем\n" +
       "Имя (отображаемое) | Да | Чтобы опознать аккаунт и обращаться к вам в приложении\n" +
       "Адрес электронной почты | Да | Логин для входа; восстановление пароля; уведомления об аккаунте\n" +
-      "Номер телефона (в международном формате) | Да | Связь по вопросам аккаунта и его восстановление. Мы не отправляем SMS — функции SMS в продукте нет вообще\n" +
+      "Номер телефона (в международном формате) | Нет | Необязательно: поле можно оставить пустым, указать номер позже и удалить его в любой момент. Если вы всё же укажете номер, мы используем его только для связи по вопросам аккаунта и для его восстановления. Мы не отправляем SMS — функции SMS в продукте нет вообще\n" +
       "Пароль | Да | Для входа. Мы не храним ваш пароль: он хранится только в нашем сервисе аутентификации в виде хеша, который невозможно прочитать обратно\n" +
       "Язык интерфейса (az / en / ru) | Нет | Чтобы показывать приложение на вашем языке\n" +
       "Фото профиля (аватар) | Нет | Только для внешнего вида. Этот файл попадает в общедоступное хранилище — см. «Фотографии-аватары»\n" +
@@ -5176,6 +5295,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Город и район | Да | Для региональных таблиц лидеров\n" +
       "Название школы | Да | Для школьной таблицы лидеров\n" +
       "Класс | Да | Чтобы ребёнку выдавались вопросы для его класса\n" +
+      "Пол | Нет | Для общей статистики; виден нашим уполномоченным сотрудникам так же, как остальной профиль. Родитель может оставить этот вопрос без ответа или выбрать «Предпочитаю не указывать»; на доступ ребёнка, на выдаваемые ему вопросы и на рейтинг это никак не влияет\n" +
       "8-значный номер для входа | Выдаёт сервер | Логин ребёнка. Последние 4 цифры этого номера показываются в публичной таблице лидеров\n" +
       "Пароль | Да (задаёт родитель) | Для входа. Хранится только в сервисе аутентификации в виде хеша\n" +
       "Аватар | Нет | Готовое изображение или загруженное фото. Фото всегда хранится в закрытом хранилище — см. «Фотографии-аватары»\n" +
@@ -5222,10 +5342,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.callout":
       "Этот раздел является политикой конфиденциальности OlympIQ в отношении детей. Поскольку наш продукт предназначен для несовершеннолетних, мы выносим его отдельно, чтобы родитель видел всё в одном месте.",
     "privacy.s5.storedTitle": "Что хранится о ребёнке",
+    // См. блок az — почему пол обязан быть в этом перечне.
     "privacy.s5.stored":
-      "Всё, что указано в таблице «Профиль ребёнка» выше: имя, фамилия, город, район, школа, класс, 8-значный номер для входа, выбранный аватар и оформление, а также результаты занятий (ответы, баллы, проценты, серии, активные дни, место в рейтинге).",
+      "Всё, что указано в таблице «Профиль ребёнка» выше: имя, фамилия, город, район, школа, класс, необязательно указываемый родителем пол, 8-значный номер для входа, выбранный аватар и оформление, а также результаты занятий (ответы, баллы, проценты, серии, активные дни, место в рейтинге).\n" +
+      "\n" +
+      "Указывать пол необязательно: родитель может не отвечать на этот вопрос, выбрать «Предпочитаю не указывать» или позже изменить указанное — ничто из этого на аккаунт ребёнка не влияет. Указанный ответ хранится в профиле ребёнка и виден нашим уполномоченным сотрудникам так же, как и остальная часть этого профиля, в том числе во внутренних отчётах по аккаунтам, которые они выгружают. На основании этих данных мы готовим общую статистику о том, кто пользуется платформой. При этом пол ничего не определяет: на доступ ребёнка, на выдаваемые ему вопросы, на баллы и на место в таблице лидеров это не влияет никак, и в таблицах лидеров пол не отображается.",
+    // См. блок az — почему голое отрицание «геолокации» здесь стоять не может.
     "privacy.s5.notCollected":
-      "Что мы о ребёнке не собираем: дату рождения, адрес электронной почты, номер телефона, домашний адрес, геолокацию, данные о здоровье, финансовые данные, контакты, историю браузера, рекламные и аппаратные идентификаторы.",
+      "Что мы о ребёнке не собираем: дату рождения, адрес электронной почты, номер телефона, домашний адрес, геолокацию устройства, данные о здоровье, финансовые данные, контакты, историю браузера, рекламные и аппаратные идентификаторы.\n" +
+      "\n" +
+      "Город и район — это другое: их выбирает сам родитель, когда добавляет ребёнка, и мы храним их только для того, чтобы группировать таблицы лидеров по городу и району. А где находится устройство ребёнка, мы не знаем никогда: приложение не запрашивает разрешение на геолокацию, не считывает GPS и другие датчики местоположения, не сохраняет никаких координат, а поля домашнего адреса нет вообще.",
     "privacy.s5.neverTitle": "Чего мы никогда не делаем с данными ребёнка",
     "privacy.s5.never":
       "Мы не показываем ребёнку рекламу и не строим рекламные профили.\n" +
@@ -5289,6 +5415,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Предотвращать злоупотребления, автоматизированные атаки и подбор паролей.\n" +
       "Оказывать поддержку и отвечать на ваши обращения.\n" +
       "Определять, к каким предметам и олимпиадным пакетам у семьи есть доступ.\n" +
+      // См. блок az — почему обещание относится к полу, а не к отчёту.
+      "Готовить общую статистику о том, кто пользуется платформой, и формировать внутренние отчёты по аккаунтам, с которыми работают наши сотрудники; при этом указанный родителем пол ничего не определяет в отношении ребёнка — ни его доступ, ни задания, ни выдаваемые ему вопросы, ни место в рейтинге.\n" +
       "Выполнять требования закона, когда это обязательно.",
     "privacy.s6.notTitle": "Мы не используем их, чтобы",
     "privacy.s6.not":

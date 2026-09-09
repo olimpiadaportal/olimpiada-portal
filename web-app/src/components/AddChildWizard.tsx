@@ -55,6 +55,10 @@ import {
   ChildAvatarPicker,
   type ChildAvatarChoice,
 } from "@/components/ChildAvatarPicker";
+import {
+  ChildGenderField,
+  type ChildGenderChoice,
+} from "@/components/ChildGenderField";
 import { useLocale, useT } from "@/i18n/I18nProvider";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { subjectLabel } from "@/lib/subjectLabel";
@@ -184,7 +188,16 @@ export function AddChildWizard({
   const [cityDistrictId, setCityDistrictId] = useState(""); // the rayon (Round 21)
   const [schoolId, setSchoolId] = useState("");
   const [gradeId, setGradeId] = useState("");
+  // Migration 169 — OPTIONAL gender. "" is the starting state and stays "" if
+  // the parent walks past it; the action posts nothing and the column keeps its
+  // "never asked" NULL. Never pre-select a value here.
+  const [gender, setGender] = useState<ChildGenderChoice>("");
   const [infoErrors, setInfoErrors] = useState<string[]>([]);
+  // Things that did NOT get saved even though the child did (currently only the
+  // optional gender). Not errors — the wizard moves on — but they stay on
+  // screen for the rest of the flow, because the parent answered a question
+  // whose answer is now missing and only they can put it back from Edit-Child.
+  const [infoWarnings, setInfoWarnings] = useState<string[]>([]);
   // The created child's profile id (returned by addChild; used by
   // subscribeChild / activateChildGiveaway).
   const [studentProfileId, setStudentProfileId] = useState<string | null>(null);
@@ -317,6 +330,8 @@ export function AddChildWizard({
     fd.set("city_district_id", cityDistrictId); // the rayon ("" → null server-side)
     fd.set("school_id", schoolId);
     fd.set("grade_id", gradeId);
+    // Migration 169 — OPTIONAL. "" → the server writes no gender at all.
+    fd.set("gender", gender);
     // Display fallbacks (the DB also stores free-text city/school/grade label).
     fd.set("city", cities.find((c) => c.id === districtId)?.name ?? "");
     fd.set("school_name", citySchools.find((s) => s.id === schoolId)?.name ?? "");
@@ -338,6 +353,8 @@ export function AddChildWizard({
         }
         sid = res.studentProfileId;
         setStudentProfileId(sid);
+        // A success that saved less than it was given says so.
+        setInfoWarnings(res.warnings ?? []);
       }
 
       // Apply the chosen avatar now that the child row exists (the photo path
@@ -444,6 +461,17 @@ export function AddChildWizard({
           </span>
         ))}
       </div>
+
+      {/* OUTSIDE the step body on purpose: the child is already created, so the
+          wizard has moved on, and this must follow the parent to the step they
+          are now on instead of vanishing with the form that produced it. */}
+      {infoWarnings.length > 0 && (
+        <ul className="warn" role="status" style={{ margin: "0 0 16px", paddingLeft: 18 }}>
+          {infoWarnings.map((w, i) => (
+            <li key={i}>{tt(w)}</li>
+          ))}
+        </ul>
+      )}
 
       <div className="wizard-body">
         {/* ============================ STEP — INFO ============================ */}
@@ -589,6 +617,16 @@ export function AddChildWizard({
                 ))}
               </select>
             </label>
+
+            {/* Optional gender (migration 169) — sits with the other facts
+                about the child, never gates anything, and is left blank by
+                simply not touching it. */}
+            <ChildGenderField
+              value={gender}
+              onChange={setGender}
+              disabled={pending}
+              dict={dict}
+            />
 
             <label className="field">
               <span className="field-label">{tt("parent.child.password")} *</span>

@@ -8,13 +8,18 @@
 // the schools without a rayon yet. Client checks are UX only — the BFF re-runs
 // the authoritative validation (a missing rayon maps to
 // addchild.err.districtRequired).
+// Migration 169 adds ONE optional field, gender, and it is optional in the
+// strong sense: no validation entry, no "*", no default selection, and the
+// wire key is omitted entirely when it was never touched. Nothing on the
+// platform reads it — it exists for aggregate reporting, so it must never be
+// able to stop a parent finishing this form.
 import React, { useEffect } from "react";
 import { View } from "react-native";
 import { AppText } from "@/components/AppText";
 import { PasswordField, TextField } from "@/components/TextField";
 import { spacing } from "@/theme/tokens";
 import { formatGradeLabel } from "@/lib/gradeLabel";
-import type { AddChildFields } from "@/lib/api";
+import { CHILD_GENDERS, type AddChildFields, type ChildGender } from "@/lib/api";
 import { useFieldChain } from "@/lib/useFieldChain";
 import { checkNewPassword } from "@/lib/passwordPolicy";
 import { useT } from "@/i18n/useT";
@@ -37,6 +42,9 @@ export type ChildInfo = {
   cityDistrictId: string;
   schoolId: string;
   password: string;
+  /** Migration 169 — OPTIONAL. "" is not a value: it is the un-asked state
+   *  that maps to an ABSENT wire field and therefore to a NULL column. */
+  gender: ChildGender | "";
 };
 
 export const EMPTY_CHILD_INFO: ChildInfo = {
@@ -47,7 +55,38 @@ export const EMPTY_CHILD_INFO: ChildInfo = {
   cityDistrictId: "",
   schoolId: "",
   password: "",
+  // NO DEFAULT SELECTION. A preselected "unspecified" would record a refusal
+  // the parent never made, and one of "female"/"male" would be a guess — both
+  // are indistinguishable from a real answer once they are in the column.
+  gender: "",
 };
+
+/**
+ * The gender options, shared by Add-Child and the child Edit screen.
+ *
+ * FOUR STATES, THREE ROWS. "female"/"male"/"unspecified" are the rows; the
+ * fourth — nobody chose anything — is the trigger sitting on its placeholder,
+ * which is why the placeholder wording ("Seçilməyib") must never read like the
+ * "prefer not to say" row. They mean different things and migration 169's
+ * header forbids collapsing them.
+ */
+export const GENDER_LABEL_KEYS: Record<ChildGender, string> = {
+  female: "mob.child.gender.female",
+  male: "mob.child.gender.male",
+  unspecified: "mob.child.gender.unspecified",
+};
+
+/** The three option values, in the order both screens render them. */
+export const GENDER_VALUES: readonly ChildGender[] = CHILD_GENDERS;
+
+/** Whitelist an arbitrary string (a select callback, a column read straight
+ *  from the database) down to a value this form can hold. Anything else — a
+ *  NULL column, an enum member added later than this build — becomes "", the
+ *  un-asked state, so an unknown value renders as "no answer yet" instead of
+ *  as a wrong answer. UX only: the BFF whitelists the value again. */
+export function asChildGender(value: unknown): ChildGender | "" {
+  return GENDER_VALUES.find((g) => g === value) ?? "";
+}
 
 export type ChildInfoErrors = Partial<Record<keyof ChildInfo, string>>;
 
@@ -120,6 +159,10 @@ export function buildAddChildFields(
     city: catalogs.cities.find((c) => c.id === v.cityId)?.name ?? "",
     school_name: catalogs.schools.find((s) => s.id === v.schoolId)?.name ?? "",
     class_grade: grade?.name ?? "",
+    // Spread, not `gender: v.gender || undefined`: an unanswered field must
+    // leave the KEY off the JSON body entirely, because "absent" is the only
+    // thing the BFF reads as "do not write this column".
+    ...(v.gender ? { gender: v.gender } : {}),
   };
 }
 
@@ -175,6 +218,15 @@ export function ChildInfoForm({
     kind: "option",
     value: d.id,
     label: d.name,
+  }));
+  // Three rows and no "clear" row: the sheet cannot take an answer BACK to the
+  // un-asked state, because there is no wire value for NULL and inventing one
+  // would let a mis-tap erase a real answer. The parent can still change their
+  // mind between the three.
+  const genderItems: SelectItem[] = GENDER_VALUES.map((g) => ({
+    kind: "option",
+    value: g,
+    label: t(GENDER_LABEL_KEYS[g]),
   }));
 
   // Private schools first under their own header, then public (fetch order is
@@ -270,6 +322,26 @@ export function ChildInfoForm({
         error={err("gradeId")}
         closeLabel={t("mob.select.cancel")}
       />
+      {/* Gender — OPTIONAL (migration 169), and the only field on this screen
+          whose label carries no "*". It sits with the other selects rather than
+          after the password so the form stays "type, then pick, then set a
+          password": the field chain below is a run of ONE for that reason and a
+          select dropped into the middle of it would break the run. Nothing
+          validates it and no `errors` entry can exist for it — the wizard's
+          Create button is reachable with the trigger left untouched, which is
+          exactly the fourth state. */}
+      <View style={{ gap: spacing.xs }}>
+        <SelectField
+          label={`${t("mob.child.gender.label")} ${t("field.optional")}`}
+          placeholder={t("mob.child.gender.none")}
+          items={genderItems}
+          value={value.gender}
+          onChange={(g) => onChange({ gender: asChildGender(g) })}
+          disabled={disabled}
+          closeLabel={t("mob.select.cancel")}
+        />
+        <AppText variant="muted">{t("mob.child.gender.hint")}</AppText>
+      </View>
       <View style={{ gap: spacing.xs }}>
         {/* Run 2 of 2: a run of one. It only DISMISSES — the avatar picker and
             the review summary sit between this field and the wizard's CTA, so

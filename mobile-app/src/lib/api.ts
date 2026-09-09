@@ -296,6 +296,14 @@ export function bffHealParentAccount() {
   );
 }
 
+/** Migration 169 — `public.student_gender`. Three VALUES; the fourth state
+ *  ("nobody has been asked") is the ABSENCE of the field, which is why this
+ *  never contains a "null"/"" member: the wire has no way to spell NULL and
+ *  must not grow one. Sending nothing leaves the column exactly as it is —
+ *  unset on create, untouched on edit. */
+export const CHILD_GENDERS = ["female", "male", "unspecified"] as const;
+export type ChildGender = (typeof CHILD_GENDERS)[number];
+
 export type AddChildFields = {
   first_name: string;
   last_name: string;
@@ -310,14 +318,25 @@ export type AddChildFields = {
   city?: string;
   school_name?: string;
   class_grade?: string;
+  /** OPTIONAL, reporting only (migration 169). OMITTED — never "" and never
+   *  null — when the parent made no choice: the server treats an absent field
+   *  as "leave the column alone", so on edit an omission can never erase an
+   *  answer a parent gave earlier. The server re-whitelists the value. */
+  gender?: ChildGender;
 };
 
+/** The child exists once this resolves. `warnings` are i18n keys for what the
+ *  server could NOT store even though the child was created — today only the
+ *  optional gender, which is written after the provisioning transaction. They
+ *  are deliberately not errors (nothing is retried, nothing is rolled back)
+ *  and just as deliberately not silent: a dropped answer becomes a NULL that
+ *  reads as "never asked", and the parent is the only one who can put it back. */
 export const bffAddChild = (fields: AddChildFields) =>
-  bffAuthedPost<{ student_profile_id: string }>(
-    "/api/mobile/v1/children",
-    fields,
-    "auth.child.err.createFailed",
-  );
+  bffAuthedPost<{
+    student_profile_id: string;
+    child_unique_id?: string | null;
+    warnings?: string[];
+  }>("/api/mobile/v1/children", fields, "auth.child.err.createFailed");
 
 /** A per-subject basket (migration 109). Sent as `items`; when it is omitted
  *  the endpoint keeps its legacy `{subject_ids}` shape — which is exactly what

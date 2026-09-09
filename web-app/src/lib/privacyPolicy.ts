@@ -83,7 +83,11 @@ export const PRIVACY_POLICY: PrivacyPolicyStatus = {
   // literal is the fallback a request renders before the settings row is read,
   // and the value an offline phone shows. See resolvePrivacyPolicyStatus below.
   effectiveDate: "04.08.2026",
-  lastUpdated: "04.08.2026",
+  // 08.09.2026: migration 169 added the optional child gender, so section 5's
+  // enumeration of what is stored about a child changed. The effective date is
+  // NOT moved — the policy has been in force since 04.08; this is an amendment
+  // to it, and section 13 promises exactly this date is what we bump.
+  lastUpdated: "08.09.2026",
   // Registered 2026-07-30 (Namecheap). The apex serves the site; www redirects
   // to it at the host level, so the canonical form carries no "www".
   websiteUrl: "olympiq.ai",

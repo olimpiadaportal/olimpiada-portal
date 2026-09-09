@@ -392,6 +392,23 @@ async function checkAppStoreConnect(activeIds) {
 // Things no script on this machine can see. Reported rather than assumed.
 // -----------------------------------------------------------------------------
 function checkManual() {
+  // Neither store form is generated from this repository, so nothing here can
+  // read them. Reported rather than assumed, like the rest of this group.
+  record(
+    SKIP,
+    "data-safety declarations match the section 2 inventory",
+    "OVERDUE TODAY, not next release. The 2026-09-08 row-by-row audit found NINE collected rows that neither form declares, and every one of them ships in builds that are ALREADY LIVE: child grade, school, city+rayon, the push token, news likes, the child sign-in attempt log, profile preferences and the iOS purchase record. So both live declarations are incomplete right now, and neither console needs a new build to fix it — App Privacy publishes from App Store Connect on its own and the Play form is submitted separately from a release. Play adds Location > Approximate location, Personal info > Other info, App activity > Other actions and Device or other IDs; App Privacy adds Location > Coarse Location, Identifiers > Device ID and Other Data > Other Data Types. Precise location stays No on both, and the app requests no location permission — never add one to make a label match. Step-by-step for both consoles: mobile-app/markdowns/STORE_LAUNCH_PACK.md section 6.1.",
+  );
+  record(
+    SKIP,
+    "Play phone-number answer says users can choose",
+    "The parent phone became OPTIONAL on 2026-08-31 (Apple 5.1.1(v)) and it is the only field in its Play type, so the type follows it: change Phone number from \"required\" to \"users can choose\". This is the one answer that moves toward LESS collection, which is exactly why it gets forgotten — but a form claiming a field is required when a parent can skip it is as false as the reverse. Section 4 of the privacy policy still says required too, in all three locales; fix that in the same pass.",
+  );
+  record(
+    SKIP,
+    "data-safety declarations cover the child gender field",
+    "migration 169 added an optional child gender, collected in Add-Child and the child edit screen. Play Data safety (Personal info > Other info, Collected, purposes Analytics AND Account management) and Apple App Privacy (Other Data, linked, not tracking, purposes Analytics AND App Functionality) must BOTH list it before the build that collects it is submitted — two purposes on each form because the privacy policy also tells parents that authorised staff read the answer on the child's profile and in the account reports they export, which is not analytics. The Play OPTIONALITY answer for that type is \"Data collection is required\" — NOT \"users can choose\", which is what this line said until 2026-09-08. Play asks the question per TYPE, not per field, and Personal info > Other info now also carries the mandatory grade and school; the gender FIELD stays optional in the product, but answering \"users can choose\" for a type that also carries two mandatory fields would be the false statement. The inventory to fill both forms in from is mobile-app/markdowns/STORE_LAUNCH_PACK.md section 2. Until they are updated, no eas update may go out on the 1.15.0 runtime either: an OTA is not a submission, and runtimeVersion:appVersion would land the field on 1.15.0 build 5, whose declarations are the un-updated ones (root CLAUDE.md, \"Releasing a new mobile version\").",
+  );
   record(
     SKIP,
     "APPLE_IAP_SANDBOX_GRANTS is not \"off\" in production",

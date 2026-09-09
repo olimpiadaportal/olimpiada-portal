@@ -14,8 +14,12 @@ import "server-only";
 //   happen via SECURITY DEFINER triggers or the SERVICE ROLE. This helper
 //   therefore uses the service-role admin client, created only inside the call
 //   (callers have already passed requireAdmin()/requirePermission()).
-// - Best-effort: an audit failure must NEVER block or fail the mutation — every
+// - Best-effort for MUTATIONS: an audit failure must NEVER block or fail one —
+//   the change is already committed, so undoing it would only lose work. Every
 //   failure path is swallowed and surfaced only in server logs.
+// - It RETURNS whether a row actually landed. Mutation callers ignore that (see
+//   above); it exists for a caller whose data has NOT left the server yet — the
+//   accounts export — which can still turn "not recorded" into a refusal.
 // - Severity MUST match the DB enum public.audit_severity, which is exactly
 //   ('info','warning','critical') — there is NO 'error' member. An out-of-enum
 //   value makes the INSERT throw and silently DROP the row, so AuditSeverity is
@@ -53,13 +57,13 @@ function capMetadata(
   return out;
 }
 
-export async function writeAuditLog(entry: AuditEntry): Promise<void> {
+export async function writeAuditLog(entry: AuditEntry): Promise<boolean> {
   try {
     if (!hasServiceRole()) {
       // Auditing is best-effort: without the service key we cannot write
       // (audit_logs is service-role-only), but the mutation must still succeed.
       console.error("[audit] skipped (no service-role key)", entry.action);
-      return;
+      return false;
     }
     const admin = createAdminClient();
 
@@ -83,9 +87,12 @@ export async function writeAuditLog(entry: AuditEntry): Promise<void> {
       // Non-fatal by design, but do not let a failed write masquerade as a
       // recorded event — make the failure visible in server logs.
       console.error("[audit] failed to record entry", entry.action, error.message);
+      return false;
     }
+    return true;
   } catch (e) {
     // never let auditing break the operation
     console.error("[audit] unexpected error recording entry", entry.action, e);
+    return false;
   }
 }

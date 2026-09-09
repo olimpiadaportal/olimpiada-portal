@@ -7,6 +7,7 @@
 
 import { isUuid } from "@/lib/uuid";
 import { checkNewPassword } from "@/lib/auth/passwordPolicy";
+import { parseStudentGender } from "@/lib/studentGender";
 
 export const CHILD_ID_RE = /^\d{8}$/;
 export const CHILD_PASSWORD_MIN = 8;
@@ -45,6 +46,11 @@ export type ChildInfo = {
   // (create RPC / updateChildProfileCore) against city_districts — never by
   // the client.
   cityDistrictId?: string | null;
+  // Migration 169: OPTIONAL gender, for aggregate reporting only. A raw client
+  // string — lib/studentGender whitelists it. Absent/blank means "not
+  // answered" and no column is written; see that module for why NULL and
+  // 'unspecified' must never be collapsed.
+  gender?: string | null;
 };
 
 export type ValidationResult =
@@ -109,6 +115,13 @@ export function validateChildInfo(info: ChildInfo): ValidationResult {
   if (!isUuid(info.gradeId?.trim() ?? "")) {
     errors.push("addchild.err.gradeRequired");
   }
+  // Migration 169: the gender is NEVER required — a missing one is not an
+  // error and never will be. Optional is not unvalidated, though: a value that
+  // IS sent has to be one the enum accepts, so a forged string is refused here
+  // rather than reaching the column (where it would be a 22P02 the parent sees
+  // as a generic failure).
+  const gender = parseStudentGender(info.gender);
+  if (!gender.ok) errors.push(gender.errorKey);
   return result(errors);
 }
 

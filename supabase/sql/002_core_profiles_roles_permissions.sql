@@ -122,6 +122,11 @@ create table if not exists public.students (
   district_id        uuid,                     -- FK -> districts(id) added in 011 (NB: districts = the CITIES table)
   city_district_id   uuid,                     -- FK -> city_districts(id) added in 011 (intra-city rayon, Round 21)
   birth_year_optional smallint,
+  -- Optional demographic, for aggregate reporting only (migration 169). NULL is
+  -- “never asked” — the true state of every row that predates the field;
+  -- 'unspecified' is a parent who WAS asked and declined. No access, content or
+  -- ranking rule may read this column.
+  gender             public.student_gender,
   -- Parent-created child account fields (Stage 7 business model).
   -- created_by_parent_profile_id index is added in 011.
   created_by_parent_profile_id uuid references public.profiles (id) on delete set null,
@@ -148,6 +153,9 @@ create table if not exists public.students (
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
+
+comment on column public.students.gender is
+  'Optional. NULL = never asked (every row predating migration 169). Never read by any access, content or ranking rule — reporting only.';
 
 -- -----------------------------------------------------------------------------
 -- parent_student_links : the ONLY source of truth for parent access to a student.

@@ -13,9 +13,9 @@ which must never appear in store copy (see §5).
 The rest of that pack (data-safety inventory, reviewer notes, age-rating answers) is
 still current; only the listing metadata moved here.
 
-- **Last updated:** 2026-08-04
+- **Last updated:** 2026-09-08
 - **Play status:** submitted for the default `az-AZ` listing
-- **App Store status:** not started
+- **App Store status:** 1.15.0 build 5 in review
 
 ---
 
@@ -307,20 +307,117 @@ Recorded here so a later submission does not contradict an earlier one.
   the binary is purchase-silent. Revisit when the ABB rail ships, but note that under the
   architecture of record purchasing stays on the web, so this answer may well remain
   unchanged.
-- **Data safety:** collects data = Yes; encrypted in transit = Yes; deletion available =
-  Yes (`https://olympiq.ai/privacy`); partial-deletion-without-account-deletion = No.
-  Six types declared — Name, Email address, Phone number, User IDs, Photos, App
-  interactions — all *Collected*, none *Shared*, none processed ephemerally. Purposes are
-  limited to App functionality, Account management, Analytics (App interactions only) and
-  Fraud prevention/security (User IDs only). Advertising, marketing and Personalisation
-  are deliberately never ticked. Full inventory:
-  `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2.
+- **Data safety — as submitted:** collects data = Yes; encrypted in transit = Yes;
+  deletion available = Yes (`https://olympiq.ai/privacy`);
+  partial-deletion-without-account-deletion = No. Six types declared — Name, Email
+  address, Phone number, User IDs, Photos, App interactions — all *Collected*, none
+  *Shared*, none processed ephemerally. Purposes limited to App functionality, Account
+  management, Analytics (of these six, App interactions only) and Fraud
+  prevention/security (User IDs only). Advertising, marketing and Personalisation are
+  deliberately never ticked.
+- **Data safety — INCOMPLETE AS SUBMITTED (review, 2026-09-08). Four types are missing
+  and one answer is wrong, for data the live builds already collect.** This is not a
+  next-release item: the fields shipped months ago, and Play accepts a Data safety
+  update without a new release. What the six types above never covered:
+  - **Location → Approximate location** — the child's city and rayon, mandatory in
+    Add-Child. Play defines the type by area ("greater than or equal to 3 square
+    kilometers"), not by sensor, and every city and rayon we store is far above that
+    line. **This flips Location from not-collected to collected and puts a "Location"
+    line on the public store listing.** *Precise location stays No*, the app requests no
+    location permission, and the school is deliberately NOT filed here — it is an
+    institution with no address or coordinates in our catalogue, and calling it location
+    would force Precise to Yes. Reasoning: `STORE_LAUNCH_PACK.md` §2.2.
+  - **Personal info → Other info** — the child's grade and school (and the gender row
+    below). Required, because both grade and school are mandatory.
+  - **App activity → Other actions** — graded attempts, answers, points, streaks and
+    news-article likes ("gameplay, likes" are Google's own examples for this type; *App
+    interactions* alone covers navigation, not these).
+  - **Device or other IDs** — the push token (Google's example list includes "Firebase
+    installation ID"). Optional, and it needs the **Developer communications** purpose,
+    which the submitted form has never used, because the push channels include
+    `announcement` and `news`.
+  - **Change: Phone number → "users can choose"**, not required. The parent phone became
+    optional on 2026-08-31 for Apple 5.1.1(v); the form and the privacy policy both still
+    say required.
+  Step-by-step console instructions, in the order each form asks:
+  `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §6.1. Full inventory with every row mapped
+  to a type on BOTH forms: the same file, §2.
+- **Data safety — one type still to add (migration 169, 2026-09-08).** A parent may now
+  give an optional gender for a child. Play has no data type called "gender", so it files
+  under **Personal info → Other info** ("any other personal information such as date of
+  birth, gender identity, veteran status, etc."), declared *Collected* — not *Shared*, not
+  processed ephemerally — and **two** purposes: **Analytics** for the overall
+  statistics, and **Account management** ("the setup or management of a user's account
+  with the developer") for the rest — because the privacy policy amended in the same
+  round tells parents that authorised staff read the answer on the child's profile and in
+  the internal account reports they export, and one staff member reading one child's
+  record is not analytics. It shares its type with the grade and the school, which is why
+  that type's optionality answer is **"data collection is required"** and not, as first
+  written here, "users can choose": Play asks the question per type, and a type carrying
+  two mandatory fields is required whatever else it also carries. The field itself stays
+  optional in the product and in the policy. With the four types above, ten types are
+  declared in total. **It is a minor's data supplied by the parent**, not by the
+  child: the Families policy already applies to us through the target-audience answer
+  below, and the field is optional at every write, read by no access, content or ranking
+  rule, never shown on a leaderboard, removed with the child, and changeable by the parent
+  at any time — including to "prefer not to say", which is what taking the answer back
+  looks like here. It is **not** withdrawable in the sense of returning to *never asked*:
+  "prefer not to say" is itself a stored answer, and the never-asked state exists only for
+  children nobody has answered for. **Not yet submitted** — this row alone goes in with
+  the release that first ships the field, which is the build after 1.15.0 build 5; the
+  four types in the bullet above are for data already shipped and must not wait for it.
+  **Until this form is updated, no `eas update` may be published on the 1.15.0 runtime
+  either** — an OTA is
+  not a submission, so it would put the field on build 5 while this answer still says the
+  data is not collected (root `CLAUDE.md` → “Releasing a new mobile version”).
+  The iOS half of the same declaration
+  (*Other Data → Other Data Types*, linked, not tracking; purposes **Analytics** and
+  **App Functionality**, Apple's category for "perform customer support" — it has no
+  Account management purpose, which is why the two forms name the second use
+  differently) is in `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2, with the reasoning.
 - **Target audience:** every age band except "5 and under" — i.e. 6–8 through 18+. A
   mixed child/adult audience, which is accurate: children use the arena, parents own and
   operate the account. Consequence: Google Play's **Families policy applies**. The
   *Designed for Families programme* opt-in stays **off** (root `CLAUDE.md`; the equivalent
   Apple Kids Category commitment is also declined and is sticky).
 - **Privacy policy URL:** `https://olympiq.ai/privacy`.
+
+### 8.1 Owner checklist — the declaration corrections, in the order each form asks
+
+Console actions only. The reasoning for every choice, and the full row-by-row
+inventory, are in `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2 and §6.1 — if this
+list and that one ever disagree, the launch pack is the source.
+
+**Do this before either console:** amend the privacy policy in az/en/ru. Section 5
+lists "location" among what we never collect about a child while section 4 lists the
+city and rayon as collected — once the stores show a Location line those two contradict
+each other, and the sentence needs to say *device or GPS location, and home address*
+instead of the bare word. In the same pass, section 4 still calls the parent phone
+required; it has been optional since 2026-08-31.
+
+**App Store Connect** → *App Privacy → Data Collection → Edit*:
+
+1. Add **Location → Coarse Location** — App Functionality; linked **Yes**; tracking **No**.
+2. Leave **Precise Location** unticked, and do not add a location permission to the app.
+3. Add **Identifiers → Device ID** (push token) — App Functionality; linked Yes; tracking No.
+4. Add **Other Data → Other Data Types** (grade, school, gender, profile preferences) —
+   App Functionality **+** Analytics; linked Yes; tracking No.
+5. Confirm the existing entries, including **Purchases → Purchase History**, which stays:
+   the iOS binary ships StoreKit IAP.
+6. Publish, then check the product page shows Location under *Data Linked to You*.
+
+**Play Console** → *Policy → App content → Data safety → Manage*:
+
+1. *Data collection and security*: unchanged.
+2. *Data types*: tick **Approximate location**, **Personal info → Other info**, **App
+   activity → Other actions**, **Device or other IDs**. Leave **Precise location** unticked.
+3. *Data usage and handling* — all four are Collected, not Shared, not ephemeral:
+   Approximate location (required; App functionality + Account management) · Other info
+   (**required**; + Analytics) · Other actions (required; App functionality + Analytics) ·
+   Device or other IDs (**optional**; App functionality + Account management + **Developer
+   communications**).
+4. **Change Phone number** from required to "users can choose".
+5. Preview, Save, submit. No new release is needed and none should be waited for.
 
 ---
 
@@ -330,3 +427,6 @@ Recorded here so a later submission does not contradict an earlier one.
 |---|---|
 | 2026-08-04 | Created. Play `az-AZ` listing copy, en/ru translations, asset inventory, icon-inversion finding. Supersedes `STORE_LAUNCH_PACK.md` §1. |
 | 2026-08-04 | Real brand identity landed (`docs/brand/`). Icon and feature graphics regenerated on the navy/purple/gold palette with the investor's tagline; the icon-inversion finding is resolved. |
+| 2026-09-08 | Optional child gender (migration 169) added to the data-safety inventory in §8 and in `STORE_LAUNCH_PACK.md` §2 — Play *Personal info → Other info*, iOS *Other Data Types*, optional, not shared, and flagged as a minor's data given by the parent. Neither store form is amended yet. |
+| 2026-09-08 | That entry declared **Analytics only**, which was narrower than the privacy policy amended the same day: the policy tells parents that authorised staff read the answer on the child's profile and in the internal account reports they export, and that is not analytics. Widened to two purposes on each form — Play **Analytics + Account management**, iOS **Analytics + App Functionality** (Apple files customer support there and has no Account management purpose). Also corrected "withdrawable at any time" to what is actually offered: the answer is changeable at any time, including to "prefer not to say", but never returns to *never asked*. |
+| 2026-09-08 | **The declarations were incomplete for data that shipped long before gender.** A review of the whole inventory found the child's grade, city, district and school — collected, linked, required, disclosed in the privacy policy in all three locales — mapped to no type on either form, plus four more unmapped rows (push token, news likes, child sign-in log, profile preferences). Added on Play: **Approximate location** (city + rayon), **Personal info → Other info** (grade + school + gender), **App activity → Other actions**, **Device or other IDs**; changed **Phone number** to optional. Added on iOS: **Coarse Location**, **Device ID**, **Other Data Types**. **Location flips from not-collected to collected on both public listings; Precise location stays No** (the school is an institution with no address or coordinates, so filing it as location would have forced Precise to Yes). The gender row's Play optionality answer flips to *required*, because its type now also carries two mandatory fields. Blocker: the privacy policy says we never collect a child's location. |

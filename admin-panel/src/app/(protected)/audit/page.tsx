@@ -39,6 +39,8 @@ const ACTION_KEYS: Record<string, string> = {
   // Full parent/child profile edits (Accounts section editors).
   "admin.account.parent.update": "audit.action.account_parent_update",
   "admin.account.child.update": "audit.action.account_child_update",
+  // Full-PII spreadsheet download of every parent/child account.
+  "admin.accounts.export": "audit.action.accounts_export",
   // news.ts
   "admin.news.create": "audit.action.news_create",
   "admin.news.update": "audit.action.news_update",

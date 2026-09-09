@@ -111,6 +111,26 @@ export async function requireAdmin(): Promise<AuthContext> {
   return ctx;
 }
 
+// The same decision as requireAdmin(), REPORTED rather than redirected.
+//
+// A redirect is the right answer for a page and the wrong one for a fetch():
+// the browser follows it and hands the caller the /login or /unauthorized page
+// with status 200, so the caller can only guess which of the two it got. The
+// Accounts export button guessed "your session expired" — false, and useless
+// advice, for a signed-in content manager who simply may not export. Route
+// handlers call this instead and answer with a status the client can read.
+// It refuses exactly who requireAdmin() refuses; only the wording changes.
+export type AdminApiAuth =
+  | { ok: true; ctx: AuthContext }
+  | { ok: false; reason: "unauthenticated" | "notAdmin" };
+
+export async function requireAdminApi(): Promise<AdminApiAuth> {
+  const ctx = await getAuthContext();
+  if (!ctx) return { ok: false, reason: "unauthenticated" };
+  if (!ctx.isAdmin) return { ok: false, reason: "notAdmin" };
+  return { ok: true, ctx };
+}
+
 export async function requirePermission(code: string): Promise<AuthContext> {
   const ctx = await requirePanelAccess();
   if (!ctx.isAdmin && !ctx.permissions.includes(code)) redirect("/unauthorized");

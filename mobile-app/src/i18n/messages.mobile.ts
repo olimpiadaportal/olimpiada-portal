@@ -106,6 +106,27 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.delete.pending": "Silinir…",
     "mob.child.delete.done": "Uşaq hesabı silindi",
     "mob.child.delete.failed": "Uşaq hesabını silmək alınmadı. Bir azdan yenidən cəhd edin.",
+    // ---- optional gender (migration 169) ---------------------------------
+    // Two different "no answer" wordings, and the difference is the whole
+    // point: `none` is the PLACEHOLDER — nobody has been asked yet — while
+    // `unspecified` is a parent who WAS asked and chose not to say. The
+    // column stores those separately and no screen may blur them, so these
+    // two strings must never be made to read alike in any locale.
+    // The hint is the POINT OF COLLECTION and must not describe the field more
+    // narrowly than the policy does: it says the answer is stored on the
+    // child's profile, that authorised staff read it there and in the internal
+    // account reports they export (the Accounts export prints a child's gender
+    // on their own row — "only for overall statistics" would be false), and
+    // that nothing about access, content or ranking touches it.
+    // privacy.s5.stored is the long form; this is what a parent reads at the
+    // moment they decide. VERBATIM with the web app's addchild.field.gender*.
+    "mob.child.gender.label": "Cinsi",
+    "mob.child.gender.none": "Seçilməyib",
+    "mob.child.gender.female": "Qız",
+    "mob.child.gender.male": "Oğlan",
+    "mob.child.gender.unspecified": "Bildirmək istəmirəm",
+    "mob.child.gender.hint":
+      "İstəyə bağlıdır. Övladınızın profilində saxlanılır və ümumi statistika üçün istifadə olunur; səlahiyyətli əməkdaşlarımız onu profildə və daxili hesabatlarda görür. Girişinə, tapşırıqlarına və ya reytinqinə heç bir təsiri yoxdur.",
     "mob.select.cancel": "Ləğv et",
     "mob.select.search": "Axtar…",
     "mob.select.noResults": "Uyğun nəticə tapılmadı",
@@ -319,6 +340,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.delete.pending": "Deleting…",
     "mob.child.delete.done": "Child account deleted",
     "mob.child.delete.failed": "Could not delete the child account. Please try again in a moment.",
+    "mob.child.gender.label": "Gender",
+    "mob.child.gender.none": "Not selected",
+    "mob.child.gender.female": "Girl",
+    "mob.child.gender.male": "Boy",
+    "mob.child.gender.unspecified": "Prefer not to say",
+    "mob.child.gender.hint":
+      "Optional. It is stored on your child's profile and used for overall statistics; our authorised staff see it there and in internal account reports. It never affects your child's access, their tasks or their ranking.",
     "mob.select.cancel": "Cancel",
     "mob.select.search": "Search…",
     "mob.select.noResults": "No matching results",
@@ -518,6 +546,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.child.delete.pending": "Удаление…",
     "mob.child.delete.done": "Аккаунт ребёнка удалён",
     "mob.child.delete.failed": "Не удалось удалить аккаунт ребёнка. Попробуйте ещё раз чуть позже.",
+    "mob.child.gender.label": "Пол",
+    "mob.child.gender.none": "Не выбрано",
+    "mob.child.gender.female": "Девочка",
+    "mob.child.gender.male": "Мальчик",
+    "mob.child.gender.unspecified": "Предпочитаю не указывать",
+    "mob.child.gender.hint":
+      "Необязательно. Хранится в профиле ребёнка и используется для общей статистики; наши уполномоченные сотрудники видят его там и во внутренних отчётах по аккаунтам. На доступ ребёнка, задания и рейтинг это никак не влияет.",
     "mob.select.cancel": "Отмена",
     "mob.select.search": "Поиск…",
     "mob.select.noResults": "Ничего не найдено",

@@ -4552,6 +4552,52 @@ select '126_purchase_offer_reads_ownership' as check_name,
        case when (select own_delegates from verdict) then 'delegates'
             else 'FORKED OR MISSING' end as own_session_reader;
 
+-- -----------------------------------------------------------------------------
+-- 127) STUDENT GENDER IS OPTIONAL, AND STAYS OPTIONAL (migration 169).
+--      The admin Accounts export and the two account screens that feed it now
+--      read students.gender, and a database rebuilt from canonical SQL that
+--      predates the backport has neither the column nor the enum -- so every one
+--      of those queries errors on a schema this file otherwise reports GREEN.
+--      That silent gap is what this check closes.
+--
+--      THE SHAPE IS THE SEMANTICS, which is why it is asserted and not merely
+--      documented. NULLABLE WITH NO DEFAULT is load-bearing: a default of
+--      'unspecified' backfills a positive claim -- "asked, and declined to say"
+--      -- onto every child whose parent was never shown the question, and no
+--      report can separate the two afterwards. NOT NULL makes the field
+--      mandatory at every write, which the migration forbids outright for a
+--      minor's personal data. Either edit reads as harmless tidying in a diff.
+--
+--      The labels are pinned to exactly three, in order: the app's validation
+--      schemas whitelist these strings, so a fourth value would admit a row no
+--      client can render and no export can name.
+--
+--      Catalog-only throughout, per check 126: a check whose whole purpose is
+--      "169 never reached this database" must REPORT that, and a query that
+--      selected students.gender would instead abort the file before check 102.
+-- -----------------------------------------------------------------------------
+select '127_student_gender_optional' as check_name,
+       case when (select string_agg(e.enumlabel::text, ',' order by e.enumsortorder)
+                    from pg_enum e
+                   where e.enumtypid = to_regtype('public.student_gender')::oid)
+                 = 'female,male,unspecified'
+             and exists (select 1 from information_schema.columns
+                          where table_schema='public' and table_name='students'
+                            and column_name='gender' and udt_name='student_gender'
+                            and is_nullable='YES' and column_default is null)
+            then 'PASS' else 'FAIL' end as status,
+       coalesce((select string_agg(e.enumlabel::text, ',' order by e.enumsortorder)
+                   from pg_enum e
+                  where e.enumtypid = to_regtype('public.student_gender')::oid),
+                'TYPE MISSING') as enum_labels,
+       coalesce((select case when c.is_nullable = 'NO'         then 'MANDATORY'
+                             when c.column_default is not null then 'HAS DEFAULT'
+                             else 'optional' end
+                   from information_schema.columns c
+                  where c.table_schema='public' and c.table_name='students'
+                    and c.column_name='gender'),
+                'COLUMN MISSING') as column_state;
+
 -- =============================================================================
 -- End of 013_validation_queries.sql
 -- =============================================================================

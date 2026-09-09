@@ -28,7 +28,7 @@ of them — never a mixture.
 # Bölmə A — OlympIQ Məxfilik Siyasəti
 
 **Qüvvəyə minmə tarixi:** 04.08.2026
-**Son yenilənmə:** 04.08.2026
+**Son yenilənmə:** 08.09.2026
 
 Bu siyasət OlympIQ veb saytına və OlympIQ mobil tətbiqinə (iOS və Android) aiddir.
 
@@ -108,7 +108,7 @@ vaxt onu tamamilə silə bilər.
 |---|---|---|
 | Ad (görünən ad) | Bəli | Hesabı tanımaq və tətbiqdə sizə müraciət etmək üçün |
 | E-poçt ünvanı | Bəli | Giriş açarı; parolun bərpası; hesabla bağlı bildirişlər |
-| Telefon nömrəsi (beynəlxalq formatda) | Bəli | Hesabla bağlı əlaqə və hesabın bərpası üçün. **SMS göndərmirik** — SMS funksiyası məhsulda ümumiyyətlə mövcud deyil |
+| Telefon nömrəsi (beynəlxalq formatda) | Xeyr | **İstəyə bağlıdır** — sahəni boş buraxa, nömrəni sonradan əlavə edə və istənilən vaxt silə bilərsiniz. Nömrə versəniz, onu yalnız hesabla bağlı əlaqə və hesabın bərpası üçün istifadə edirik. **SMS göndərmirik** — SMS funksiyası məhsulda ümumiyyətlə mövcud deyil |
 | Parol | Bəli | Giriş üçün. **Parolu biz saxlamırıq** — o, yalnız autentifikasiya xidmətimizdə şifrələnmiş (hash) formada saxlanılır və heç kim onu oxuya bilmir |
 | İnterfeys dili (az / en / ru) | Xeyr | Tətbiqi sizin dilinizdə göstərmək üçün |
 | Profil şəkli (avatar) | Xeyr | Yalnız görünüş üçün. Bax: A5.4 — bu fayl açıq saxlanc bölməsinə yüklənir |
@@ -126,6 +126,7 @@ tətbiq daxilində dəyişmək mümkün deyil** — bunun üçün bizimlə əlaq
 | Şəhər və rayon | Bəli | Regional reytinq cədvəlləri üçün |
 | Məktəbin adı | Bəli | Məktəb üzrə reytinq cədvəli üçün |
 | Sinif | Bəli | Uşağa öz sinfinə uyğun sualların verilməsi üçün |
+| Cinsi | Xeyr | Ümumi statistika üçün; profilin qalan hissəsi kimi səlahiyyətli əməkdaşlarımıza görünür. Valideyn bu sualı boş buraxa və ya **"Bildirmək istəmirəm"** seçə bilər; uşağın girişinə, ona verilən suallara və reytinqinə heç bir təsiri yoxdur |
 | 8 rəqəmli giriş nömrəsi | Server verir | Uşağın giriş açarı. **Bu nömrənin son 4 rəqəmi ictimai reytinq cədvəlində göstərilir** (bax A5.3) |
 | Parol | Bəli (valideyn təyin edir) | Giriş üçün. Parol yalnız autentifikasiya xidmətimizdə şifrələnmiş formada saxlanılır |
 | Avatar | Xeyr | Hazır şəkillərdən biri, yaxud yüklənmiş foto. Bax A5.4 — yükləmə yolu vacibdir |
@@ -184,12 +185,26 @@ Veb saytda yalnız **işləmək üçün zəruri** kukilər istifadə olunur:
 
 ### A5.1 Uşaq haqqında nə saxlanılır
 
-Yuxarıdakı **A4.2** cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, 8 rəqəmli giriş
-nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri (cavablar, ballar, faizlər, seriyalar, aktiv
-günlər, reytinq mövqeyi).
+Yuxarıdakı **A4.2** cədvəlindəki hər şey: ad, soyad, şəhər, rayon, məktəb, sinif, valideynin istəyə
+bağlı qeyd etdiyi cins, 8 rəqəmli giriş nömrəsi, seçilmiş avatar və görünüş, məşq nəticələri
+(cavablar, ballar, faizlər, seriyalar, aktiv günlər, reytinq mövqeyi).
 
-**Uşaq haqqında toplamadığımız məlumatlar:** doğum tarixi, e-poçt, telefon nömrəsi, ev ünvanı, məkan,
-sağlamlıq məlumatı, maliyyə məlumatı, kontaktlar, brauzer tarixçəsi, cihaz identifikatoru.
+Cinsin qeyd edilməsi istəyə bağlıdır: valideyn sualı cavabsız qoya, **"Bildirmək istəmirəm"** seçə və
+ya qeyd etdiyini sonradan dəyişə bilər — bunların heç biri uşağın hesabına təsir etmir. Qeyd
+edildikdən sonra cavab uşağın profilində saxlanılır və profilin qalan hissəsi kimi səlahiyyətli
+əməkdaşlarımıza görünür; onların ixrac etdiyi daxili hesabat fayllarında da yer alır. Bu məlumat
+əsasında platformadan kimlərin istifadə etdiyini bütövlükdə görmək üçün ümumi statistika hazırlayırıq.
+Cins heç nəyi müəyyən etmir: uşağın girişinə, ona verilən suallara, ballarına və reytinq cədvəlindəki
+yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.
+
+**Uşaq haqqında toplamadığımız məlumatlar:** doğum tarixi, e-poçt, telefon nömrəsi, ev ünvanı,
+cihazın məkanı, sağlamlıq məlumatı, maliyyə məlumatı, kontaktlar, brauzer tarixçəsi, reklam
+identifikatorları və avadanlıq identifikatorları.
+
+**Şəhər və rayon başqa şeydir:** onları uşağı əlavə edərkən valideyn özü seçir və biz onları yalnız
+reytinq cədvəllərini şəhər və rayon üzrə qruplaşdırmaq üçün saxlayırıq. Uşağın cihazının harada
+olduğunu isə heç vaxt bilmirik: tətbiq məkan icazəsi istəmir, GPS-i və digər məkan sensorlarını
+oxumur, heç bir koordinat saxlamır, ev ünvanı üçün isə sahə ümumiyyətlə yoxdur.
 
 ### A5.2 Uşaq məlumatı ilə nə **etmirik**
 
@@ -284,7 +299,8 @@ Nəyin silindiyi və nəyin qaldığı **A9** bölməsində ətraflı yazılıb.
 7. Sui-istifadənin, avtomatlaşdırılmış hücumların və parol seçmə cəhdlərinin qarşısını almaq.
 8. Sizə dəstək göstərmək və sorğularınıza cavab vermək.
 9. Ailənin hansı fənlərə və olimpiada paketlərinə çıxışının olduğunu müəyyən etmək.
-10. Qanunla tələb olunan hallarda hüquqi öhdəliklərimizi yerinə yetirmək.
+10. Platformadan kimlərin istifadə etdiyi barədə ümumi statistika hazırlamaq və əməkdaşlarımızın işlədiyi daxili hesabatları formalaşdırmaq; valideynin qeyd etdiyi cins isə uşaq haqqında heç nəyi müəyyən etmir — nə girişini, nə tapşırıqlarını, nə ona verilən sualları, nə də reytinqdəki yerini.
+11. Qanunla tələb olunan hallarda hüquqi öhdəliklərimizi yerinə yetirmək.
 
 **İstifadə **etmirik**:**
 
@@ -497,7 +513,7 @@ etdiyiniz anlamına gəlir.
 # Part B — OlympIQ Privacy Policy
 
 **Effective date:** 04.08.2026
-**Last updated:** 04.08.2026
+**Last updated:** 08.09.2026
 
 This policy covers the OlympIQ website and the OlympIQ mobile app for iOS and Android.
 
@@ -577,7 +593,7 @@ time.
 |---|---|---|
 | Name (display name) | Yes | To identify the account and address you in the app |
 | Email address | Yes | Your login credential; password reset; account notices |
-| Phone number (international format) | Yes | Account contact and recovery. **We do not send SMS** — SMS is not implemented in the product at all |
+| Phone number (international format) | No | **Optional** — you can leave the field blank, add a number later and remove it at any time. If you do give one, we use it only to reach you about your account and to help you recover it. **We do not send SMS** — SMS is not implemented in the product at all |
 | Password | Yes | To sign in. **We do not store your password** — it is held only by our authentication service in hashed form, which nobody can read back |
 | Interface language (az / en / ru) | No | To show the app in your language |
 | Profile picture (avatar) | No | Cosmetic only. See B5.4 — this file goes to a publicly-readable storage area |
@@ -595,6 +611,7 @@ changed in the app** — contact us instead.
 | City and district (*rayon*) | Yes | For regional leaderboards |
 | School name | Yes | For the school leaderboard |
 | Grade | Yes | So the child is served questions that match their grade |
+| Gender | No | For overall statistics; visible to our authorised staff like the rest of the profile. A parent may leave the question blank or choose **"Prefer not to say"**; it has no effect on the child's access, on the questions they are served or on their ranking |
 | 8-digit login ID | Issued by our server | The child's login credential. **The last 4 digits of this number are shown on the public leaderboard** (see B5.3) |
 | Password | Yes (set by the parent) | To sign in. Held only by our authentication service, in hashed form |
 | Avatar | No | Either a preset image or an uploaded photo. See B5.4 — the upload path matters |
@@ -655,12 +672,26 @@ The website uses **strictly necessary** cookies only:
 
 ### B5.1 What is stored about a child
 
-Everything in the **B4.2** table: first name, last name, city, district, school, grade, the 8-digit login
-number, the chosen avatar and look, and practice results (answers, points, percentages, streaks, active
-days, leaderboard placement).
+Everything in the **B4.2** table: first name, last name, city, district, school, grade, the optional
+gender a parent may give, the 8-digit login number, the chosen avatar and look, and practice results
+(answers, points, percentages, streaks, active days, leaderboard placement).
+
+Giving a gender is entirely optional: a parent can leave the question unanswered, choose **"Prefer not
+to say"**, or change what they gave later — none of which affects the child's account. Once given, the
+answer is stored on the child's profile and is visible to our authorised staff in the same way as the
+rest of that profile, including in the internal account reports they export. We use it to produce
+overall statistics about who uses the platform. It decides nothing about the child: it has no effect
+on their access, on the questions they are served, on their points or on their leaderboard position,
+and it is never shown on a leaderboard.
 
 **What we never collect about a child:** date of birth, email address, phone number, home address,
-location, health data, financial data, contacts, browsing history, device identifiers.
+device location, health data, financial data, contacts, browsing history, advertising identifiers or
+hardware identifiers.
+
+**The city and the district are a different matter:** the parent chooses them when they add the
+child, and we keep them only to group the leaderboards by city and district. Where the child's device
+is, we never learn: the app asks for no location permission, reads no GPS or other location sensor,
+stores no coordinates, and there is no home address field at all.
 
 ### B5.2 What we never do with a child's data
 
@@ -758,7 +789,8 @@ what survives is set out in detail in **B9**.
 7. Prevent abuse, automated attacks and password-guessing.
 8. Provide support and answer your requests.
 9. Determine which subjects and olympiad packages the family has access to.
-10. Meet our legal obligations where the law requires it.
+10. Produce overall statistics about who uses the platform, and build the internal account reports our staff work from; the gender a parent gives decides nothing about a child — not their access, not their tasks, not the questions they are served and not their ranking.
+11. Meet our legal obligations where the law requires it.
 
 **We do not use it to:**
 
@@ -969,7 +1001,7 @@ effect means you accept the updated policy.
 # Часть C — Политика конфиденциальности OlympIQ
 
 **Дата вступления в силу:** 04.08.2026
-**Последнее обновление:** 04.08.2026
+**Последнее обновление:** 08.09.2026
 
 Эта политика распространяется на сайт OlympIQ и на мобильное приложение OlympIQ для iOS и Android.
 
@@ -1051,7 +1083,7 @@ OlympIQ — образовательный продукт для школьни�
 |---|---|---|
 | Имя (отображаемое) | Да | Чтобы опознать аккаунт и обращаться к вам в приложении |
 | Адрес электронной почты | Да | Логин для входа; восстановление пароля; уведомления об аккаунте |
-| Номер телефона (в международном формате) | Да | Связь по вопросам аккаунта и его восстановление. **Мы не отправляем SMS** — функции SMS в продукте нет вообще |
+| Номер телефона (в международном формате) | Нет | **Необязательно** — поле можно оставить пустым, указать номер позже и удалить его в любой момент. Если вы всё же укажете номер, мы используем его только для связи по вопросам аккаунта и для его восстановления. **Мы не отправляем SMS** — функции SMS в продукте нет вообще |
 | Пароль | Да | Для входа. **Мы не храним ваш пароль** — он хранится только в нашем сервисе аутентификации в виде хеша, который невозможно прочитать обратно |
 | Язык интерфейса (az / en / ru) | Нет | Чтобы показывать приложение на вашем языке |
 | Фото профиля (аватар) | Нет | Только для внешнего вида. См. C5.4 — этот файл попадает в общедоступное хранилище |
@@ -1069,6 +1101,7 @@ OlympIQ — образовательный продукт для школьни�
 | Город и район | Да | Для региональных таблиц лидеров |
 | Название школы | Да | Для школьной таблицы лидеров |
 | Класс | Да | Чтобы ребёнку выдавались вопросы для его класса |
+| Пол | Нет | Для общей статистики; виден нашим уполномоченным сотрудникам так же, как остальной профиль. Родитель может оставить этот вопрос без ответа или выбрать **«Предпочитаю не указывать»**; на доступ ребёнка, на выдаваемые ему вопросы и на рейтинг это никак не влияет |
 | 8-значный номер для входа | Выдаёт сервер | Логин ребёнка. **Последние 4 цифры этого номера показываются в публичной таблице лидеров** (см. C5.3) |
 | Пароль | Да (задаёт родитель) | Для входа. Хранится только в сервисе аутентификации в виде хеша |
 | Аватар | Нет | Готовое изображение или загруженное фото. См. C5.4 — способ загрузки имеет значение |
@@ -1127,12 +1160,26 @@ OlympIQ — образовательный продукт для школьни�
 
 ### C5.1 Что хранится о ребёнке
 
-Всё, что указано в таблице **C4.2**: имя, фамилия, город, район, школа, класс, 8-значный номер для входа,
-выбранный аватар и оформление, а также результаты занятий (ответы, баллы, проценты, серии, активные дни,
-место в рейтинге).
+Всё, что указано в таблице **C4.2**: имя, фамилия, город, район, школа, класс, необязательно указываемый
+родителем пол, 8-значный номер для входа, выбранный аватар и оформление, а также результаты занятий
+(ответы, баллы, проценты, серии, активные дни, место в рейтинге).
 
-**Что мы о ребёнке не собираем:** дату рождения, адрес электронной почты, номер телефона, домашний адрес,
-геолокацию, данные о здоровье, финансовые данные, контакты, историю браузера, идентификаторы устройства.
+Указывать пол необязательно: родитель может не отвечать на этот вопрос, выбрать **«Предпочитаю не
+указывать»** или позже изменить указанное — ничто из этого на аккаунт ребёнка не влияет. Указанный
+ответ хранится в профиле ребёнка и виден нашим уполномоченным сотрудникам так же, как и остальная
+часть этого профиля, в том числе во внутренних отчётах по аккаунтам, которые они выгружают. На
+основании этих данных мы готовим общую статистику о том, кто пользуется платформой. При этом пол
+ничего не определяет: на доступ ребёнка, на выдаваемые ему вопросы, на баллы и на место в таблице
+лидеров это не влияет никак, и в таблицах лидеров пол не отображается.
+
+**Что мы о ребёнке не собираем:** дату рождения, адрес электронной почты, номер телефона, домашний
+адрес, геолокацию устройства, данные о здоровье, финансовые данные, контакты, историю браузера,
+рекламные и аппаратные идентификаторы.
+
+**Город и район — это другое:** их выбирает сам родитель, когда добавляет ребёнка, и мы храним их
+только для того, чтобы группировать таблицы лидеров по городу и району. А где находится устройство
+ребёнка, мы не знаем никогда: приложение не запрашивает разрешение на геолокацию, не считывает GPS и
+другие датчики местоположения, не сохраняет никаких координат, а поля домашнего адреса нет вообще.
 
 ### C5.2 Чего мы никогда не делаем с данными ребёнка
 
@@ -1232,7 +1279,8 @@ OlympIQ — образовательный продукт для школьни�
 7. Предотвращать злоупотребления, автоматизированные атаки и подбор паролей.
 8. Оказывать поддержку и отвечать на ваши обращения.
 9. Определять, к каким предметам и олимпиадным пакетам у семьи есть доступ.
-10. Выполнять требования закона, когда это обязательно.
+10. Готовить общую статистику о том, кто пользуется платформой, и формировать внутренние отчёты по аккаунтам, с которыми работают наши сотрудники; при этом указанный родителем пол ничего не определяет в отношении ребёнка — ни его доступ, ни задания, ни выдаваемые ему вопросы, ни место в рейтинге.
+11. Выполнять требования закона, когда это обязательно.
 
 **Мы не используем их, чтобы:**
 

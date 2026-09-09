@@ -7,7 +7,9 @@
 //   subscribe step allocates the ID and sets the canonical synthetic email
 //   (see allocateChildIdFromSubscribe + subscriptionService.subscribeChild).
 //   On any post-createUser failure we delete the orphaned auth user (the RPC's own
-//   transaction already rolled back its DB writes).
+//   transaction already rolled back its DB writes). What CANNOT fail the call —
+//   the optional gender, written after the transaction — comes back as a
+//   `warnings` key instead of a log line nobody reads.
 // resetChildPassword: parent restores their child's ability to sign in
 //   (ownership-checked): refuse an id-less account, reconcile the synthetic
 //   login email, set the password, void the failed-login lockout. See the
@@ -25,10 +27,21 @@ import {
   validateChildPassword,
 } from "@/lib/auth/children";
 import { writeAuditLog } from "@/lib/audit";
+import { parseStudentGender, type StudentGender } from "@/lib/studentGender";
 
 export type CreateChildResult =
   // childUniqueId is now allocated on subscribe, so it is null at create time.
-  | { ok: true; childUniqueId: string | null; studentProfileId: string }
+  //
+  // `warnings` are i18n KEYS for things that went wrong AFTER the child was
+  // committed — the account is real and must be kept, but the parent is not
+  // being told everything worked. Every surface renders them; ignoring the
+  // array is how this field's one member became invisible in the first place.
+  | {
+      ok: true;
+      childUniqueId: string | null;
+      studentProfileId: string;
+      warnings: string[];
+    }
   | { ok: false; errors: string[]; detail?: string };
 
 export async function createChild(params: {
@@ -99,6 +112,36 @@ export async function createChild(params: {
     const studentProfileId: string | undefined = row?.new_student_profile_id;
     if (!studentProfileId) throw new Error("provisioning returned no student id");
 
+    // Migration 169 — the OPTIONAL gender, written as its own patch on the row
+    // the RPC just created, because create_child_account CANNOT carry it: its
+    // 11-arg signature is fixed and versioned (since migration 064) and
+    // validation check 66 asserts precisely that arity exists and the older one
+    // does not. Adding p_gender is therefore a migration + a canonical backport
+    // + a check edit, and all three must reach staging AND production BEFORE
+    // this file is pushed — Vercel deploys on push, so code that names an
+    // argument the database has not got yet fails the RPC outright and turns a
+    // missing optional statistic into a dead Add-Child. Out here it stays.
+    //
+    // ABSENT WRITES NOTHING — `value: null` means the parent left the control
+    // alone, and the column's own meaning of NULL ("never asked") is already
+    // what a fresh row carries.
+    //
+    // NOT FATAL, AND NOT SILENT EITHER. The child, the login and the family
+    // link are all committed by this point, so failing here would send the saga
+    // below into deleting a perfectly good account over an optional statistic —
+    // that must not happen. But neither may this be swallowed: a dropped answer
+    // leaves the column NULL, which reads as "never asked", and telling the two
+    // apart is the entire reason migration 169 kept them distinct. The parent
+    // who DID answer is also the only person who can put it back, so the miss
+    // travels home as a warning. Logged without the value — it is a minor's
+    // personal data and does not belong in a server log.
+    const warnings: string[] = [];
+    const gender = parseStudentGender(info.gender);
+    if (gender.ok && gender.value && !(await storeChildGender(studentProfileId, gender.value))) {
+      console.error("[child] optional gender not stored for", studentProfileId);
+      warnings.push("addchild.warn.genderNotSaved");
+    }
+
     await writeAuditLog(parentProfileId, "parent.child_create", {
       targetTable: "students",
       targetId: studentProfileId,
@@ -124,7 +167,7 @@ export async function createChild(params: {
       }
     }
 
-    return { ok: true, childUniqueId, studentProfileId };
+    return { ok: true, childUniqueId, studentProfileId, warnings };
   } catch (e) {
     // Saga cleanup: remove the orphaned Auth user (cascades the auto-created
     // profile). The RPC transaction already rolled back any partial DB writes.
@@ -133,6 +176,30 @@ export async function createChild(params: {
     const key = (e as { i18nKey?: string }).i18nKey ?? "auth.child.err.createFailed";
     return { ok: false, errors: [key], detail: (e as Error).message };
   }
+}
+
+// Store the optional gender on the freshly created student row and PROVE it
+// landed. True only when the column now holds the submitted value.
+//
+// THE READ-BACK IS NOT BELT AND BRACES. A PostgREST UPDATE whose filter matches
+// no row is not an error — it is a 204 with an empty body — so "the call did not
+// complain" is evidence of nothing, and this update is filtered on an id that
+// came back from another statement. The returned row is the only thing that says
+// the answer survived. Same rule as deleteAuthUserVerified in parentCore:
+// success means the state is what we claimed, not that the API stayed quiet.
+async function storeChildGender(
+  studentProfileId: string,
+  value: StudentGender,
+): Promise<boolean> {
+  const admin = getAdminClient();
+  const { data, error } = await admin
+    .from("students")
+    .update({ gender: value })
+    .eq("profile_id", studentProfileId)
+    .select("gender")
+    .maybeSingle();
+  if (error) return false;
+  return (data as { gender?: string | null } | null)?.gender === value;
 }
 
 export type ResetChildPasswordResult =

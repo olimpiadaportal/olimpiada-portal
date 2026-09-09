@@ -61,6 +61,19 @@ do $$ begin
     ('inactive', 'trialing', 'active', 'locked', 'expired');
 exception when duplicate_object then null; end $$;
 
+-- Optional, self-declared student gender (backported from migration 169).
+-- Aggregate reporting ONLY: no access, content or ranking rule may read it.
+-- NULL is a child nobody has asked; 'unspecified' is a parent who WAS asked
+-- and declined, and the two must never be collapsed into one number.
+do $$ begin
+  create type public.student_gender as enum ('female', 'male', 'unspecified');
+exception when duplicate_object then null; end $$;
+
+comment on type public.student_gender is
+  'Optional, self-declared gender for aggregate reporting. ''unspecified'' is a '
+  'parent who was ASKED and declined; NULL is a child nobody has asked yet. The '
+  'two are not the same and no report may collapse them.';
+
 -- Content lifecycle for questions / tests / daily task packages
 -- (05_ADMIN_PANEL content workflow: draft .. published .. archived/rejected).
 do $$ begin

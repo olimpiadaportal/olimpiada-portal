@@ -7,7 +7,12 @@
 // the rayon field shows only when the city has active rayons (required then,
 // narrows the school list, preselected from the student's saved
 // city_district_id — read directly, RLS-scoped) and posts city_district_id
-// through the ownership-checked BFF.
+// through the ownership-checked BFF. Migration 169 adds ONE optional field,
+// gender: no "*", no validation, and — the part that matters on an EDIT screen
+// — the key is omitted from the request when the parent leaves it alone, so
+// opening this form and pressing Save can never erase an answer given earlier
+// (on the web, or here). The only field on the screen that can go from empty
+// to filled but never back to empty.
 import React, { useMemo, useState } from "react";
 import { View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
@@ -30,8 +35,19 @@ import { formatGradeLabel } from "@/lib/gradeLabel";
 import { fetchChildren, type ChildRow } from "@/lib/data";
 import { resolveChildAvatarSource } from "@/lib/childAvatar";
 import { supabase } from "@/lib/supabase";
-import { bffDeleteChild, bffEditChild, bffResetChildPassword } from "@/lib/api";
-import { filterSchoolsByRayon, rayonsOfCity } from "@/features/parent/ChildInfoForm";
+import {
+  bffDeleteChild,
+  bffEditChild,
+  bffResetChildPassword,
+  type ChildGender,
+} from "@/lib/api";
+import {
+  GENDER_LABEL_KEYS,
+  GENDER_VALUES,
+  asChildGender,
+  filterSchoolsByRayon,
+  rayonsOfCity,
+} from "@/features/parent/ChildInfoForm";
 import {
   ChildAvatarPicker,
   applyChildAvatarChoice,
@@ -137,10 +153,14 @@ function AvatarEditor({ child }: { child: ChildRow }) {
 function EditForm({
   child,
   initialCityDistrictId,
+  initialGender,
 }: {
   child: ChildRow;
   /** The student's saved rayon (students.city_district_id) — preselection. */
   initialCityDistrictId: string;
+  /** The student's saved gender, or "" for a NULL column (never asked) or a
+   *  value this build does not know. "" renders as the placeholder. */
+  initialGender: ChildGender | "";
 }) {
   const { t, locale } = useT();
   const { tokens } = useTheme();
@@ -152,6 +172,10 @@ function EditForm({
   const [cityDistrictId, setCityDistrictId] = useState(initialCityDistrictId); // the rayon
   const [schoolId, setSchoolId] = useState(child.school_id ?? "");
   const [gradeId, setGradeId] = useState(child.grade_id ?? "");
+  // Optional, and NOT part of FieldErrors — there is no state of this field
+  // that can fail. Seeded from the saved column so the parent sees their own
+  // earlier answer rather than a blank that invites re-answering.
+  const [gender, setGender] = useState<ChildGender | "">(initialGender);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -219,6 +243,14 @@ function EditForm({
     level: number;
     name: string;
   }[]).map((g) => ({ id: String(g.id), label: formatGradeLabel(g.level, locale, g.name) }));
+  // Three rows, no "clear" row: the wire has no spelling for NULL, so an
+  // answer can be CHANGED here but never taken back to the un-asked state —
+  // which is what keeps a mis-tap from destroying the distinction migration
+  // 169 exists to preserve.
+  const genderOptions: SelectOption[] = GENDER_VALUES.map((g) => ({
+    id: g,
+    label: t(GENDER_LABEL_KEYS[g]),
+  }));
 
   async function submit() {
     if (pending) return; // double-submit guard
@@ -252,6 +284,11 @@ function EditForm({
         ((gradesQ.data ?? []) as { id: string; name: string }[]).find(
           (g) => String(g.id) === gradeId,
         )?.name ?? "",
+      // Spread, never `gender: gender || null`: an untouched field must leave
+      // the KEY off the body, because absent is the only thing the BFF reads
+      // as "do not write this column". Sending null would overwrite a real
+      // answer with "never asked" — the one thing migration 169 forbids.
+      ...(gender ? { gender } : {}),
     });
     setPending(false);
     if (!res.ok) {
@@ -262,7 +299,7 @@ function EditForm({
     void queryClient.invalidateQueries({ queryKey: ["children"] });
     void queryClient.invalidateQueries({ queryKey: ["parent", "children"] });
     void queryClient.invalidateQueries({
-      queryKey: ["child-rayon", child.profile_id],
+      queryKey: ["child-edit-fields", child.profile_id],
     });
   }
 
@@ -329,6 +366,21 @@ function EditForm({
         onChange={setGradeId}
         error={fieldErrors.grade}
       />
+      {/* Optional (migration 169) — the one label on this screen without a
+          "*", and it saves with the form's existing Save button rather than
+          growing a second submit. `gap: spacing.xs` matches the label/field
+          rhythm the other selects already use, so the hint reads as part of
+          this field and not as a note about the card below it. */}
+      <View style={{ gap: spacing.xs }}>
+        <SelectField
+          label={`${t("mob.child.gender.label")} ${t("field.optional")}`}
+          value={gender}
+          options={genderOptions}
+          placeholder={t("mob.child.gender.none")}
+          onChange={(g) => setGender(asChildGender(g))}
+        />
+        <AppText variant="muted">{t("mob.child.gender.hint")}</AppText>
+      </View>
 
       {/* Read-only identifiers — display only, never editable. */}
       <Card style={{ gap: spacing.sm }}>
@@ -675,20 +727,34 @@ export default function EditChildScreen() {
   const childrenQ = useQuery({ queryKey: ["children"], queryFn: fetchChildren });
   const child = (childrenQ.data ?? []).find((c) => c.profile_id === id) ?? null;
 
-  // The saved rayon is not part of the children list read — fetch it directly
-  // (RLS scopes the row to the linked parent) so the field preselects.
-  const rayonQ = useQuery({
-    queryKey: ["child-rayon", id],
+  // The saved rayon and gender are not part of the children list read — fetch
+  // them directly (RLS scopes the row to the linked parent) so both fields
+  // preselect.
+  //
+  // WHY GENDER IS READ HERE AND NOT ADDED TO fetchChildren. The children list
+  // is the parent's whole-session cache: it backs the Home cards, the subject
+  // sheets and the leaderboard headers. Gender is a minor's personal data that
+  // exactly ONE screen — this one — has any use for, and migration 169 says to
+  // keep it off every payload that does not need it. One extra column on one
+  // per-child read costs nothing; the same column on the shared list would put
+  // it behind five screens that never show it.
+  const savedQ = useQuery({
+    queryKey: ["child-edit-fields", id],
     enabled: !!child,
-    queryFn: async (): Promise<string> => {
+    queryFn: async (): Promise<{ cityDistrictId: string; gender: ChildGender | "" }> => {
       const { data, error } = await supabase
         .from("students")
-        .select("city_district_id")
+        .select("city_district_id, gender")
         .eq("profile_id", id)
         .maybeSingle();
       if (error) throw error;
-      const v = (data as { city_district_id?: string | null } | null)?.city_district_id;
-      return typeof v === "string" ? v : "";
+      const row = data as { city_district_id?: string | null; gender?: string | null } | null;
+      return {
+        cityDistrictId: typeof row?.city_district_id === "string" ? row.city_district_id : "",
+        // NULL (nobody asked yet) and an unrecognised value both land on "",
+        // which renders as the placeholder — never as one of the three answers.
+        gender: asChildGender(row?.gender),
+      };
     },
   });
 
@@ -702,7 +768,7 @@ export default function EditChildScreen() {
   const rayonsQ = useCityDistricts();
   const { refreshing, onRefresh } = usePullRefresh([
     childrenQ,
-    child ? rayonQ : null,
+    child ? savedQ : null,
     citiesQ,
     gradesQ,
     rayonsQ,
@@ -719,20 +785,20 @@ export default function EditChildScreen() {
 
   return (
     <Screen scroll refreshing={refreshing} onRefresh={onRefresh}>
-      {childrenQ.isPending || (child && rayonQ.isPending) ? (
+      {childrenQ.isPending || (child && savedQ.isPending) ? (
         <View style={{ gap: spacing.md, paddingTop: spacing.md }}>
           <Skeleton height={20} width="70%" />
           <Skeleton height={48} />
           <Skeleton height={48} />
           <Skeleton height={48} />
         </View>
-      ) : childrenQ.isError || rayonQ.isError ? (
+      ) : childrenQ.isError || savedQ.isError ? (
         <ErrorRetry
           message={t("mob.boot.error")}
           retryLabel={t("mob.retry")}
           onRetry={() => {
             void childrenQ.refetch();
-            void rayonQ.refetch();
+            void savedQ.refetch();
           }}
         />
       ) : child ? (
@@ -740,7 +806,8 @@ export default function EditChildScreen() {
           <EditForm
             key={child.profile_id}
             child={child}
-            initialCityDistrictId={rayonQ.data ?? ""}
+            initialCityDistrictId={savedQ.data?.cityDistrictId ?? ""}
+            initialGender={savedQ.data?.gender ?? ""}
           />
           <Button
             title={t("childedit.back")}

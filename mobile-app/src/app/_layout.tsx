@@ -7,6 +7,15 @@ import { installAppStateFocus } from "@/lib/queryFocus";
 import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
 import { ToastHost } from "@/components/Toast";
 import { RootGate } from "@/features/boot/RootGate";
+import { initSentry } from "@/lib/sentry";
+
+// MODULE SCOPE, not an effect. Under `expo-router/entry` this file is the
+// earliest application code that runs, and an error thrown during the first
+// render — the boot gate, the theme provider, a bad cached session — happens
+// before any effect fires. Initialising here is what makes those reportable.
+// It is a no-op in dev and whenever EXPO_PUBLIC_SENTRY_DSN is unset; see
+// `src/lib/sentry.ts` for what is and is not sent, and why.
+initSentry();
 
 function ThemedStatusBar() {
   const { theme } = useTheme();

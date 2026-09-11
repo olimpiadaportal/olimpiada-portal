@@ -422,6 +422,33 @@ Recorded here so a later submission does not contradict an earlier one.
   **App Functionality**, Apple's category for "perform customer support" — it has no
   Account management purpose, which is why the two forms name the second use
   differently) is in `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2, with the reasoning.
+- **Data safety — TWO MORE TYPES, from a new third-party recipient (Sentry, 2026-09-11).
+  A pre-submission blocker on 1.16.0, in the same shape as the gender row above and owed
+  in the same console pass.** All three apps (`mobile-app`, `web-app`, `admin-panel`) now
+  link Sentry for crash and error reporting. It is the **first third-party recipient of
+  any data in this product**, which is why the privacy policy gained a Sentry row in
+  az/en/ru on the same day (`privacy.s7.table`; `docs/PRIVACY_POLICY.md` A7/B7/C7).
+  - **Play:** add **App info and performance → Crash logs** and **App info and performance
+    → Diagnostics**. The declared-type count goes from **ten to twelve**. Both
+    *Collected*, **not** *Shared*, not processed ephemerally, purpose **App functionality**
+    — **not Analytics**: the data is read to fix a fault, never to measure behaviour.
+  - **App Store:** add **Diagnostics → Crash Data** and **Diagnostics → Other Diagnostic
+    Data**. Purposes: **App Functionality** only. **Performance Data stays No**, and the
+    only reason it stays No is that tracing is off (`tracesSampleRate: 0`).
+  - **Both are answered "NOT linked to a user" and "not used for tracking"** — the only
+    two types on either form that carry no identity. **That answer is conditional on
+    code, not on policy**, and it holds only while all three of these are true in all
+    three apps: `Sentry.setUser()` is never called anywhere; the PII option is off in
+    every runtime (`sendDefaultPii: false` on `@sentry/react-native`,
+    `dataCollection.userInfo: false` on `@sentry/nextjs` — the option names differ by SDK
+    version on purpose); and the scrubbers still run in `beforeSend`/`beforeBreadcrumb`.
+    Change any one and the honest answer becomes *linked*, on both forms.
+  - **When it is owed:** the SDK is inert until a DSN is set for the build
+    (`EXPO_PUBLIC_SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`), and none is set in any
+    environment yet. If 1.16.0 is built WITH the DSN, both forms must carry these types
+    **before** it is submitted; if it is built without, nothing is owed — but record which
+    way it went, because the binary does not say. Console steps: §8.1 below and
+    `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §6.1; reasoning: the same file, §2.6.
 - **Target audience:** every age band except "5 and under" — i.e. 6–8 through 18+. A
   mixed child/adult audience, which is accurate: children use the arena, parents own and
   operate the account. Consequence: Google Play's **Families policy applies**. The
@@ -466,6 +493,22 @@ required; it has been optional since 2026-08-31.
 4. **Change Phone number** from required to "users can choose".
 5. Preview, Save, submit. No new release is needed and none should be waited for.
 
+**Sentry — the crash/diagnostics types, in the same sitting (pre-submission blocker on
+1.16.0):**
+
+*App Store Connect* → *App Privacy*: add **Diagnostics → Crash Data** and **Diagnostics
+→ Other Diagnostic Data** — App Functionality only; linked **No**; tracking **No**. Leave
+**Performance Data** unticked. Afterwards the product page must show *Diagnostics* under
+**Data Not Linked to You**.
+
+*Play Console* → *Data safety*: tick **App info and performance → Crash logs** and
+**Diagnostics** (ten types become twelve). Both Collected, not Shared, not ephemeral,
+purpose **App functionality** only, optionality **"data collection is required"** (no
+user-facing toggle exists), and **"linked to a user" = No** on both.
+
+Skip this block only if the production build ships without a Sentry DSN — and if so,
+write down that it did.
+
 ---
 
 ## 9. Change log
@@ -478,4 +521,5 @@ required; it has been optional since 2026-08-31.
 | 2026-09-08 | That entry declared **Analytics only**, which was narrower than the privacy policy amended the same day: the policy tells parents that authorised staff read the answer on the child's profile and in the internal account reports they export, and that is not analytics. Widened to two purposes on each form — Play **Analytics + Account management**, iOS **Analytics + App Functionality** (Apple files customer support there and has no Account management purpose). Also corrected "withdrawable at any time" to what is actually offered: the answer is changeable at any time, including to "prefer not to say", but never returns to *never asked*. |
 | 2026-09-08 | **The declarations were incomplete for data that shipped long before gender.** A review of the whole inventory found the child's grade, city, district and school — collected, linked, required, disclosed in the privacy policy in all three locales — mapped to no type on either form, plus four more unmapped rows (push token, news likes, child sign-in log, profile preferences). Added on Play: **Approximate location** (city + rayon), **Personal info → Other info** (grade + school + gender), **App activity → Other actions**, **Device or other IDs**; changed **Phone number** to optional. Added on iOS: **Coarse Location**, **Device ID**, **Other Data Types**. **Location flips from not-collected to collected on both public listings; Precise location stays No** (the school is an institution with no address or coordinates, so filing it as location would have forced Precise to Yes). The gender row's Play optionality answer flips to *required*, because its type now also carries two mandatory fields. Blocker: the privacy policy says we never collect a child's location. |
 | 2026-09-09 | 1.15.0 build 5 approved and released. The OTA freeze on the gender row is discharged by the move to 1.16.0; the same duty is restated as a **pre-submission blocker** on 1.16.0, the build that first collects the field. |
+| 2026-09-11 | **Sentry landed in all three apps — the product's first third-party data recipient — so both declarations gain a category neither has ever carried.** Play: *App info and performance → Crash logs* and *Diagnostics* (ten declared types become twelve). App Store: *Diagnostics → Crash Data* and *Other Diagnostic Data*; *Performance Data* stays No because tracing is off. Both Collected, not Shared, not ephemeral, purpose **App functionality** only — not Analytics — and both answered **not linked to a user**, which is the only "not linked" answer on either form and is conditional on `Sentry.setUser()` never being called, the PII option staying off in every runtime, and the scrubbers running. Recorded as a **pre-submission blocker on 1.16.0**, owed in the same console pass as the gender row. The privacy policy was amended in the same change: Sentry is now a named processor in az/en/ru. |
 | 2026-09-09 | §7 still claimed `ios.supportsTablet` was false and that Apple would therefore never ask for iPad screenshots — 1.16.0 turned it on, so the sentence was backwards and the requirement it dismissed is now a submission blocker. Corrected, and the missing spec written as **§6.5**: the 13-inch iPad size (2064×2752) is required of any iPad-capable binary, 6.9-inch covers iPhone, 1–10 per size, no alpha channel, and a localisation without its own screenshots inherits the primary language's. |

@@ -99,7 +99,7 @@ Header (every tab): **NotificationBell** (when `notifications` flag on; dropdown
 | Biometrics | expo-local-authentication (opt-in app-lock, M4) | |
 | Push | expo-notifications + Expo Push (M4; §10) | flag-gated (`notifications_push`) |
 | OTA | expo-updates (signed) | §18 |
-| Crash/errors | sentry-expo — OPTIONAL, single owner decision (§16); no other analytics SDKs | privacy posture |
+| Crash/errors | **`@sentry/react-native` — WIRED 2026-09-11** (§16; `sentry-expo` is retired upstream and must not be used); no other analytics SDKs | privacy posture |
 | Tests | jest-expo + @testing-library/react-native; Maestro E2E | §19 |
 | Lint | eslint-config-expo + @typescript-eslint | CI gate |
 
@@ -256,7 +256,7 @@ Cold start to Welcome/Home ≤ 2.5s on a mid-tier Android (4GB RAM class); JS bu
 
 ## 16. Observability & error handling
 
-Global error boundary per navigator (branded "something went wrong" + retry/report); BFF/network errors normalized to `{error, retryable}` → standard toast/inline patterns; **sentry-expo optional** — single owner decision (privacy posture, backlog C6): if ON → crashes + handled-error breadcrumbs, PII-scrubbed, EU routing; if OFF → local `expo-updates` release health only. **DECIDED at M4 (2026-07-16): OFF for v1** — no crash SDK ships (cleanest privacy labels + zero new tracking dep); store-vitals dashboards + staged rollout are the release-health signal; revisit post-launch on owner request (backlog C6). No product analytics SDK in v1 (documented). Structured console logging stripped from production builds.
+Global error boundary per navigator (branded "something went wrong" + retry/report); BFF/network errors normalized to `{error, retryable}` → standard toast/inline patterns; **sentry-expo optional** — single owner decision (privacy posture, backlog C6): if ON → crashes + handled-error breadcrumbs, PII-scrubbed, EU routing; if OFF → local `expo-updates` release health only. **DECIDED at M4 (2026-07-16): OFF for v1** — no crash SDK ships (cleanest privacy labels + zero new tracking dep); store-vitals dashboards + staged rollout are the release-health signal; revisit post-launch on owner request (backlog C6). **REVERSED 2026-09-11 — Sentry is now WIRED, and the package is `@sentry/react-native` (`~7.2.0`, the SDK-54 pin), never `sentry-expo`, which upstream deprecated at SDK 50 and no longer patches for security.** Motivation is evidence retention, not analytics: Vercel keeps runtime logs for ONE DAY, so a payment or IAP-receipt failure reported two days later has already lost its evidence. It sends ONLY with a release bundle AND `EXPO_PUBLIC_SENTRY_DSN` set — Expo Go and every dev build send zero. PII off explicitly (`sendDefaultPii: false` — the option name this core has; `dataCollection` belongs to the newer core the two Next apps run and would be silently ignored here), no `setUser`, no replay, no screenshot, no tracing, console breadcrumbs dropped, and a redactor over exception text / breadcrumbs / URLs: `src/lib/sentryScrub.ts`. **The consequence the old line let nobody see: "cleanest privacy labels" was one of the reasons for OFF, and turning it ON makes both store data-safety declarations wrong until they are updated** — §2.6 of `markdowns/STORE_LAUNCH_PACK.md` is the inventory to fix them from, and it must be done before the build carrying a live DSN is submitted. No product analytics SDK in v1 (documented). Structured console logging stripped from production builds.
 
 ## 17. Store & payments compliance
 
@@ -304,7 +304,7 @@ Global error boundary per navigator (branded "something went wrong" + retry/repo
 | Support/contact intake (B5) | Contact screen mirrors web (display-only); if ticketing lands, it becomes a form → BFF endpoint |
 | Question analytics (B7) | Admin-only; no mobile surface |
 | Vercel deploy + domain/SMTP (C1/C2) | Universal links (AASA/assetlinks) + email delivery wait on these; `olympiq://` scheme works regardless |
-| JS test framework backfill (C4) / error monitoring (C6) | Mobile ships lint+jest from M1; sentry-expo honors the same C6 decision |
+| JS test framework backfill (C4) / error monitoring (C6) | Mobile ships lint+jest from M1; C6 was CLOSED on 2026-09-11 by wiring `@sentry/react-native` (NOT `sentry-expo`, which upstream retired at SDK 50) |
 | Schools beyond Bakı (D1) | Add-Child school picker is server-driven (city→school cascade) — scales to any seeded region automatically |
 | Admin MFA / durable rate limiting (C5) | BFF inherits whatever the web adopts — no mobile change |
 | Parent/student idle logout (web gap) | Mobile sessions follow platform norms + optional biometric app-lock (M4); no web dependency |
@@ -327,4 +327,4 @@ Global error boundary per navigator (branded "something went wrong" + retry/repo
 | Timer drift in the test runner | server `remaining_seconds` is truth; resync on every autosave + foreground (web parity) |
 
 ## 23. Owner decisions needed (asked once, at stage starts)
-1. Store accounts (Apple Developer + Play Console) availability (M4); 2. bundle id `ai.olympiq.app` + name "OlympIQ" confirm (M1); 3. commerce posture in `real` mode — read-only vs hidden-CTA wording — and whether demo/giveaway flows run end-to-end on mobile (M2, §17); 4. sentry-expo on/off (M4, §16); 5. Kids-Category posture confirm (M4, §13); 6. push in v1 scope confirm (M4 includes it by default; can be cut to post-launch OTA+store update).
+1. Store accounts (Apple Developer + Play Console) availability (M4); 2. bundle id `ai.olympiq.app` + name "OlympIQ" confirm (M1); 3. commerce posture in `real` mode — read-only vs hidden-CTA wording — and whether demo/giveaway flows run end-to-end on mobile (M2, §17); 4. sentry on/off (M4, §16) — DECIDED: on, 2026-09-11, via `@sentry/react-native`; 5. Kids-Category posture confirm (M4, §13); 6. push in v1 scope confirm (M4 includes it by default; can be cut to post-launch OTA+store update).

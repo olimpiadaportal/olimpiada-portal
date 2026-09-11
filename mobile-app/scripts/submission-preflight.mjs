@@ -411,6 +411,11 @@ function checkManual() {
   );
   record(
     SKIP,
+    "data-safety declarations cover the Sentry crash reports",
+    "The app links @sentry/react-native (wired 2026-09-11). It sends NOTHING unless EXPO_PUBLIC_SENTRY_DSN is set for the build being submitted, so the first question is which way that variable is set on the EAS profile this binary came from — and that is not readable from here. If it IS set, Sentry is a third-party recipient of crash and diagnostic data and BOTH forms are wrong until they say so: Play Data safety adds App info and performance > Crash logs AND Diagnostics; App Store Connect App Privacy adds Diagnostics > Crash Data AND Other Diagnostic Data. Both answer NOT LINKED to the user and NOT used for tracking, which is only true because the SDK never calls setUser, sends no IP (sendDefaultPii: false) and runs every payload through mobile-app/src/lib/sentryScrub.ts — do not change that config and leave these answers standing. Purpose is App functionality, not Analytics. Two settings inside Sentry belong to the same decision and cannot be changed afterwards: pick the EU (Ireland) data region when the org is created, and turn ON Prevent Storing of IP Addresses at org level, because the server can otherwise infer an IP the SDK deliberately withheld. The inventory to fill both forms in from is mobile-app/markdowns/STORE_LAUNCH_PACK.md section 2.6. The privacy policy body (privacy.* keys, az/en/ru) still names only Supabase and Vercel as processors and must list Sentry too.",
+  );
+  record(
+    SKIP,
     "APPLE_IAP_SANDBOX_GRANTS is not \"off\" in production",
     "Set on the Vercel deployment, not here. App Review buys in SANDBOX — with grants off the reviewer pays and receives nothing. Confirm in the Vercel dashboard.",
   );

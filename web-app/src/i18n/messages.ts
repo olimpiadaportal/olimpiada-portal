@@ -1326,7 +1326,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s1.dontTitle": "Nə etmirik",
     "privacy.s1.dont":
       "Reklam yoxdur. Tətbiqdə heç bir reklam şəbəkəsi və ya reklam SDK-sı yoxdur.\n" +
-      "İzləmə yoxdur. Nə mobil tətbiqdə, nə də veb saytda analitika, atribusiya və ya çökmə hesabatı toplayan üçüncü tərəf aləti quraşdırılmayıb. Reklam identifikatoru (IDFA, Android Advertising ID) heç vaxt oxunmur.\n" +
+      "İzləmə yoxdur. Nə mobil tətbiqdə, nə də veb saytda analitika, atribusiya və ya reklam aləti yoxdur; reklam identifikatoru (IDFA, Android Advertising ID) heç vaxt oxunmur. İstifadə etdiyimiz yeganə üçüncü tərəf aləti nasazlıq hesabatı sistemidir (Sentry): ona proqramda xəta baş verdiyi anda texniki hesabat gedir — hərəkətlərinizin qeydi yox. Təfərrüatlar 7-ci bölmədədir.\n" +
       "Məlumatları satmırıq, icarəyə vermirik, mübadilə etmirik və marketinq məqsədi ilə heç kimə ötürmürük.\n" +
       "Cihazınızın məkanını oxumuruq: nə məkan, nə kamera, nə kontakt, nə də mikrofon icazəsi istəmirik. Uşağın profilindəki şəhər və rayonu valideyn siyahıdan özü seçir — onlar cihazdan oxunmur.\n" +
       "Uşaq davranışına görə reklam profili qurmuruq.\n" +
@@ -1578,6 +1578,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     // THIS IS A TABLE KEY: policy-content.test.ts compares the az/en/ru grids, so
     // a row added here must be added to all three or the mobile renderer pairs a
     // value with the wrong heading in a legal document about children's data.
+    //
+    // SENTRY IS A ROW HERE BECAUSE IT IS A PROCESSOR, NOT BECAUSE IT IS SWITCHED
+    // ON (2026-09-11). The three apps link Sentry and each is inert until its DSN
+    // is set, so the declaration has to land BEFORE the first DSN, not after the
+    // first event: Play's Families policy makes an accurate processor list an
+    // obligation for a service children use. The cell wording is deliberately
+    // conditional — it names what Sentry receives and where, not a live/off state,
+    // so it stays true on both sides of the switch. If Sentry.setUser() is ever
+    // called, or a scrubber is removed, "personal details are stripped out" stops
+    // being true and this row is a false statement in a legal document.
     "privacy.s7.table":
       "Xidmət təminatçısı | Rolu | Nə alır | Status\n" +
       "Supabase | Verilənlər bazası, autentifikasiya, fayl saxlancı | Bütün məhsul məlumatları, şifrələnmiş kanal üzərindən | Aktiv\n" +
@@ -1587,6 +1597,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google (FCM) | Android-də push çatdırılması | Yalnız push aktiv olduqda — standart push ötürülməsi | Push aktivləşənə qədər heç nə almır\n" +
       "Google Fonts | Veb saytın bəzi səhifələrində şrift | Brauzerinizin IP ünvanı və identifikasiya sətri | Aktiv (yalnız veb; mobil tətbiqdə yoxdur)\n" +
       "Google Maps | «Əlaqə» səhifəsindəki xəritə | Həmin səhifəni açdığınız anda IP ünvanı və identifikasiya sətri. Hesab məlumatı ötürülmür | Aktiv\n" +
+      "Sentry | Nasazlıq və xəta hesabatları | Texniki xəta məlumatı: xətanın adı, proqram kodumuzun izi, cihazın modeli, əməliyyat sisteminin və tətbiqin versiyası, xətanın baş verdiyi səhifə və ya ekranın ünvanı (sorğu parametrləri olmadan) və tətbiqdə atılmış son addımların qısa izi. Bundan əlavə, əlaqə Sentry-nin serverlərinə çatdığı üçün onlar IP ünvanınızı görür: hesabatın özündə IP ünvanı yoxdur və Sentry hesabında IP ünvanlarının saxlanmasının qarşısını alan tənzimləmə aktivdir. Şəxsi məlumatlar — ad, e-poçt, 8 rəqəmli giriş nömrəsi, məktəb, şəhər — hesabata heç vaxt əlavə olunmur, hesabatın mətni isə göndərilməzdən əvvəl avtomatik süzgəcdən keçir. Ekran şəkli və ekran yazısı ümumiyyətlə göndərilmir | Serverlər Aİ (Avropa İttifaqı) regionunda; yalnız nasazlıq baş verdikdə göndərilir, adi istifadə izlənmir\n" +
       "Apple (App Store) | iPhone və iPad-də tətbiqdaxili ödəniş | Əməliyyatı Apple özü aparır. Ona hər əməliyyat üçün yaratdığımız təsadüfi identifikator ötürülür ki, giriş düzgün uşağa yazılsın. Ad, e-poçt və digər hesab məlumatı ötürülmür | Yalnız iOS-da; Android tətbiqində yoxdur\n" +
       "Ödəniş təminatçısı (bank) | Veb saytda kart ödənişi | Əməliyyat bankın öz səhifəsində aparılır, kart məlumatı bizə çatmır | «Ödənişlər» bölməsinə baxın",
     "privacy.s7.pushOff":
@@ -3354,7 +3365,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s1.dontTitle": "What we never do",
     "privacy.s1.dont":
       "No advertising. There is no ad network and no ad SDK anywhere in the app.\n" +
-      "No tracking. Neither the mobile app nor the website contains any third-party analytics, attribution or crash-reporting tool. We never read an advertising identifier (no IDFA, no Android Advertising ID).\n" +
+      "No tracking. Neither the mobile app nor the website contains any analytics, attribution or advertising tool, and we never read an advertising identifier (no IDFA, no Android Advertising ID). The one third-party tool we do use is a crash reporter (Sentry): it receives a technical report at the moment something breaks — never a record of what you do. Details are in section 7.\n" +
       "We do not sell, rent or trade your data, and we never hand it to anyone for marketing.\n" +
       "We do not read your device's location, and we ask for no location, camera, contacts or microphone permission. The city and district on a child's profile are chosen by a parent from a list — they are not read from a device.\n" +
       "We do not build advertising profiles from a child's behaviour.\n" +
@@ -3556,6 +3567,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google (FCM) | Android push delivery | Only once push is on — standard push transport | Receives nothing until push is enabled\n" +
       "Google Fonts | A font on some website pages | Your browser's IP address and user agent | Active (website only; not in the mobile app)\n" +
       "Google Maps | The map on the «Contact» screen | Your IP address and user agent at the moment that screen is opened. No account data is passed | Active\n" +
+      "Sentry | Crash and error reports | Technical error information: the name of the error, a trace through our own program code, the device model, the operating system version, the app version, the address of the page or screen the error happened on (without the query string) and a short trail of the last steps taken in the app. Sentry's servers also see your IP address, because the connection reaches them: the report itself carries no IP address, and the account setting that prevents Sentry storing one is on. Personal details — a name, an email address, the 8-digit login ID, a school, a city — are never attached to a report, and the text of every report passes an automatic filter before it is sent. No screenshot and no screen recording is ever sent | Servers in the EU region; sent only when something goes wrong — ordinary use is not tracked\n" +
       "Apple (App Store) | In-app payment on iPhone and iPad | Apple runs the transaction itself. It receives a random identifier we create for that transaction, so the access lands on the right child. No name, no email address and no other account data is passed | iOS only; not in the Android app\n" +
       "Payment provider (bank) | Card payments on the website | The transaction runs on the bank's own page, and card details never reach us | See the «Payments» section",
     "privacy.s7.pushOff":
@@ -5303,7 +5315,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s1.dontTitle": "Чего мы не делаем никогда",
     "privacy.s1.dont":
       "Никакой рекламы. В приложении нет ни рекламной сети, ни рекламного SDK.\n" +
-      "Никакой слежки. Ни в мобильном приложении, ни на сайте нет сторонних инструментов аналитики, атрибуции или сбора отчётов о сбоях. Рекламный идентификатор (IDFA, Android Advertising ID) не считывается никогда.\n" +
+      "Никакой слежки. Ни в мобильном приложении, ни на сайте нет аналитических, атрибуционных и рекламных инструментов, а рекламный идентификатор (IDFA, Android Advertising ID) не считывается никогда. Единственный сторонний инструмент, который мы используем, — система отчётов о сбоях (Sentry): ей уходит технический отчёт в момент ошибки, а не запись ваших действий. Подробности — в разделе 7.\n" +
       "Мы не продаём, не сдаём в аренду и не обмениваем ваши данные и не передаём их никому в маркетинговых целях.\n" +
       "Мы не считываем местоположение вашего устройства и не запрашиваем разрешения на геолокацию, камеру, контакты и микрофон. Город и район в профиле ребёнка родитель выбирает из списка сам — с устройства они не считываются.\n" +
       "Мы не строим рекламные профили на основе поведения ребёнка.\n" +
@@ -5506,6 +5518,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google (FCM) | Доставка push на Android | Только после включения push — стандартная передача уведомлений | До включения push не получает ничего\n" +
       "Google Fonts | Шрифт на некоторых страницах сайта | IP-адрес и строку браузера | Активен (только сайт; в мобильном приложении отсутствует)\n" +
       "Google Maps | Карта на странице «Контакты» | IP-адрес и строку браузера в момент открытия этой страницы. Данные аккаунта не передаются | Активен\n" +
+      "Sentry | Отчёты о сбоях и ошибках | Техническая информация об ошибке: название ошибки, трассировка по нашему программному коду, модель устройства, версия операционной системы, версия приложения, адрес страницы или экрана, где произошла ошибка (без параметров запроса), и короткий след последних действий в приложении. Кроме того, серверы Sentry видят ваш IP-адрес, потому что соединение приходит к ним: в самом отчёте IP-адреса нет, а в аккаунте включена настройка, запрещающая Sentry хранить IP-адреса. Личные данные — имя, адрес электронной почты, 8-значный номер для входа, школа, город — к отчёту никогда не прикрепляются, а текст отчёта проходит автоматический фильтр перед отправкой. Снимки экрана и запись экрана не отправляются никогда | Серверы в регионе ЕС; отправляется только при сбое — обычное использование не отслеживается\n" +
       "Apple (App Store) | Оплата внутри приложения на iPhone и iPad | Операцию проводит сама Apple. Ей передаётся случайный идентификатор, который мы создаём для этой операции, чтобы доступ достался нужному ребёнку. Имя, адрес электронной почты и другие данные аккаунта не передаются | Только на iOS; в приложении для Android отсутствует\n" +
       "Платёжный провайдер (банк) | Оплата картой на сайте | Операция проходит на собственной странице банка, данные карты до нас не доходят | См. раздел «Платежи»",
     "privacy.s7.pushOff":

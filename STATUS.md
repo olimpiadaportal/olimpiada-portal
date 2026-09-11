@@ -29,6 +29,37 @@ from: `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2. Console-by-console steps:
 `docs/STORE_LISTING_COPY.md` §8.1. `node mobile-app/scripts/submission-preflight.mjs`
 names it among the checks no script can verify — a SKIP there is not a pass.
 
+**A SECOND ITEM ON THOSE SAME TWO FORMS (2026-09-11).** The mobile app now
+links `@sentry/react-native` (Round 73). It is INERT unless the build is given
+`EXPO_PUBLIC_SENTRY_DSN` — but the moment that variable is set for a store
+build, Sentry becomes a third-party recipient of crash and diagnostic data that
+neither declaration mentions. Play Data safety gains *App info and performance*
+> *Crash logs* and *Diagnostics*; App Privacy gains *Diagnostics* > *Crash Data*
+and *Other Diagnostic Data* — both **not linked to a user**, which is only
+defensible because of how the SDK is configured. Do it in the SAME console pass
+as the gender rows: `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2.6 (reasoning),
+§2 (the blocker, in the same shape as the gender one), §6.1 and
+`docs/STORE_LISTING_COPY.md` §8.1 (console-by-console steps). Play's declared
+types go from **ten to twelve**.
+
+**The privacy-policy half of that is DONE (2026-09-11).** Sentry is a named
+processor in `privacy.s7.table` in az/en/ru and in all three language sections of
+`docs/PRIVACY_POLICY.md` — landed BEFORE the first DSN rather than after the first
+event, because Play's Families policy makes an accurate processor list an
+obligation for a service children use. What remains owed is the two console forms
+themselves, and the DSN decision behind them.
+
+**And it was re-audited against the code on 2026-09-11 (Round 75).** The
+processor row was accurate as far as it went, but the policy ALSO still denied
+owning a crash reporter three sections above it, in all three languages, and the
+row disclosed no IP address while the Google Fonts and Google Maps rows beside it
+did. Both are fixed; the row no longer over-promises that names are filtered out
+(they cannot be — they are never attached instead); and every step from creating
+the Sentry org to the first event now lives in **`docs/SENTRY_OWNER_SETUP.md`**.
+Two of the owner steps there are what keep the published policy TRUE: the **EU
+region**, fixed at org creation and not changeable afterwards, and **Prevent
+Storing of IP Addresses**, which the row now asserts is on.
+
 **Consequence of the iPad work in this round:** the App Store listing now
 REQUIRES iPad screenshots and App Review will test on iPad.
 
@@ -41,6 +72,559 @@ placeholder sites moved to `arena.muted` (the handoff inventory said 16 and
 misfiled four as icons), every one now at or above 4.5:1, and a source-sweeping
 test fails if `dim` is used for text again. The token itself stays at
 `#646463` by owner decision; see Round 72 §1 for the measured ratios.
+---
+
+## ROUND 75 — THE DISCLOSURE NOW MATCHES WHAT IS ACTUALLY SENT (2026-09-11)
+
+**Scope:** the trilingual catalogues, `docs/PRIVACY_POLICY.md`, and one new
+owner runbook. **No `sentry*.ts` source was touched in this round** — the
+scrubbers and the SDK options are unchanged, and every claim below was read off
+them rather than negotiated with them. Still no DSN anywhere, so nothing has
+ever been sent.
+
+Round 73 added Sentry to the processor table. This round audited the rest of the
+policy against the same code and found that the table was not the only place the
+document talks about crash reporting.
+
+### 1. The policy contradicted itself, in three languages
+
+`privacy.s1.dont` — "What we never do", the FIRST thing a parent or a store
+reviewer reads — said, in az/en/ru:
+
+> *Neither the mobile app nor the website contains any third-party analytics,
+> attribution or **crash-reporting** tool.*
+
+That stopped being true the moment the dependency landed, on the same day the
+processor row was added three sections below it. A policy that names Sentry as a
+processor in A7 and denies owning a crash reporter in A1 is worse than one that
+never mentioned it: a reviewer comparing the two reads it as concealment rather
+than as a stale sentence.
+
+The bullet now denies what is still true (analytics, attribution, advertising,
+advertising identifiers) and names the one third-party tool that exists, with a
+pointer to section 7. The item count per locale is unchanged at six, which is
+what `policy-content.test.ts` and its web twin enforce.
+
+### 2. The Sentry row understated what is received — three ways
+
+The row is beside a Google Fonts row and a Google Maps row that both disclose the
+IP address plainly. Sentry's did not, and the other two set the reader's
+expectation for what "what it receives" means in that column.
+
+| Understatement | What the code actually does |
+|---|---|
+| **No IP address disclosed** | Both SDKs withhold it from the PAYLOAD (`dataCollection.userInfo: false` on the two Next apps; `sendDefaultPii: false` on the RN core) — but the ingest server terminates the connection and therefore sees the address regardless of any SDK setting. The row now says so, in the same plain register the Fonts/Maps rows use, and adds the two mitigations that are true: the payload carries none, and the organisation setting that prevents Sentry storing one is on. |
+| **Only the error was named** | A report also carries the address of the page or screen the error happened on (`event.request.url`, passed through `scrubUrl`, which keeps the path shape and replaces the query string), and a breadcrumb trail of the last steps (20 crumbs on web/admin, 30 on mobile; console crumbs dropped outright, DOM crumbs off at both Next init sites). Both are named now. |
+| **Screenshots not mentioned** | `attachScreenshot`/`attachViewHierarchy` are off, and on a children's product that is worth stating rather than leaving to inference. |
+
+### 3. The row also OVER-promised, and that half mattered more
+
+The old cell said personal details "**are stripped out** before anything is
+sent". That describes a filter that catches names — and no such filter can
+exist. A child's first name, school or city is an ordinary word with no shape to
+match, in any of the three languages. `sentryScrub.ts` says so itself, at the
+top, and handles those STRUCTURALLY instead.
+
+So the claim is now made in the two halves that are individually true:
+
+1. **those fields are never ATTACHED to a report** — no `user`, no request body,
+   no cookies, no headers, no query parameters, no stack-frame locals, no
+   `extra`; and
+2. **the text of every report passes an automatic filter** before it is sent.
+
+That is a smaller promise and a true one. It is also the promise the two standing
+review rules below exist to protect.
+
+### 4. Two review rules that no scrubber can enforce — STANDING, not round-scoped
+
+Both are the way this disclosure gets falsified without anyone touching a Sentry
+setting, a scrubber, or this policy:
+
+1. **Never interpolate a child's name, school or city into an Error message.**
+   Names are ordinary words and no regex finds them. If an error must identify a
+   record, throw an internal id and look it up.
+2. **Never call `Sentry.setUser`, in any app.** Not even with a UUID — a
+   `profile_id` joins straight to a named child, and Sentry's own documentation
+   is explicit that the PII options cover only what the SDK sends by default,
+   never what was explicitly set.
+
+### 5. The owner runbook, and the step that silently breaks everything
+
+New: **`docs/SENTRY_OWNER_SETUP.md`** — org creation through first event, with
+the five things that cannot be fixed afterwards marked as such at the top.
+
+The three that are genuinely one-way or invisible:
+
+- **EU region is chosen at ORGANISATION CREATION and cannot be changed.** The
+  policy states the EU in three languages. A US-region org means deleting it and
+  starting again, and the proof is the DSN host (`.ingest.de.sentry.io`).
+- **"Prevent Storing of IP Addresses" is now load-bearing on a legal document.**
+  The row asserts the setting is on. Turning it on is therefore an owner
+  obligation, not a nicety.
+- **Setting the DSN in Vercel is not enough — the app must be REDEPLOYED.** The
+  Sentry origin in the CSP `connect-src` is derived from the DSN at BUILD time
+  (`next.config.mjs` in both Next apps). A deployment built without a DSN carries
+  no Sentry origin, so after the variable is set the SDK initialises, reports
+  itself enabled, and every BROWSER event is blocked by the browser while
+  server-side events still arrive — the project looks half-alive rather than
+  broken. Mobile has the same shape for a different reason: `EXPO_PUBLIC_*` is
+  inlined into the bundle, so it needs a new EAS build.
+
+Also in the runbook: the three project names, the exact env-var names per app
+and the console each is set in, per-project rate limits derived from the Round-74
+allocation (web 80/h, mobile 35/h, admin 20/h), spike protection, the
+source-map token scope, and a four-point first-event check (no IP, no `user`, no
+request data, environment tag correct).
+
+### Files changed
+
+| File | What |
+|---|---|
+| `web-app/src/i18n/messages.ts` | `privacy.s1.dont` bullet 2 (az 1329 · en 3368 · ru 5318); `privacy.s7.table` Sentry row (az 1600 · en 3570 · ru 5521) |
+| `mobile-app/src/i18n/messages.generated.ts` | regenerated by `node mobile-app/scripts/sync-i18n.mjs`; the diff is exactly those two keys × three locales and nothing else |
+| `docs/PRIVACY_POLICY.md` | A1/B1/C1 bullet (52 · 550 · 1053); A7/B7/C7 row (342 · 844 · 1350); status question 26 (1621); Z4 verification row (1648) |
+| `docs/SENTRY_OWNER_SETUP.md` | NEW — the owner runbook |
+| `CHANGELOG.md` | three entries under 1.16.0 |
+
+### Validation
+
+- `node mobile-app/scripts/sync-i18n.mjs` → `az=1327 en=1327 ru=1327`; the
+  generated diff touches `privacy.s1.dont` and `privacy.s7.table` only.
+- `npx jest __tests__/policy-content.test.ts __tests__/store-copy.test.ts` →
+  **47 passed**. The grid-shape assertion (4 columns × 10 rows in all three
+  locales) and the list-count assertion (6 items) both still hold, and the
+  purchase-silence sweep still passes with `privacy.s1.dont` on its allowlist.
+- Line endings verified with node after every write: `messages.ts` 6,039 CRLF /
+  0 LF-only; `PRIVACY_POLICY.md`, `messages.generated.ts` and the new doc LF-only;
+  `CHANGELOG.md` CRLF.
+- **`npm run typecheck` in `web-app/` currently FAILS, and not on anything in
+  this round:** `src/lib/observability/sentryOptions.ts(385,17): TS2304: Cannot
+  find name 'IGNORE_ERRORS'` and `src/lib/__tests__/sentryBudget.test.ts(46,44):
+  TS7006`. Both files belong to the concurrent Sentry work and were not touched
+  here. No file changed in this round is a TypeScript module except
+  `messages.ts`, which is a string catalogue.
+
+### Owner actions (all of them are in `docs/SENTRY_OWNER_SETUP.md` in order)
+
+1. Create the Sentry org **in the EU region** — irreversible, and the policy
+   asserts it.
+2. **Prevent Storing of IP Addresses → ON.** The policy now asserts this too.
+3. Spike protection on; per-project rate limits 80/35/20 per hour.
+4. Three projects; three DSNs into the three consoles under the names in §6 of
+   the runbook.
+5. **Redeploy web and admin after setting the DSN**, or browser events are
+   silently blocked.
+6. Still owed, unchanged: the Play *Data safety* and App Store *App Privacy*
+   crash/diagnostics rows, in the same console pass as the gender rows.
+
+## ROUND 74 — BOUNDING THE SENTRY QUOTA BEFORE A DSN EXISTS (2026-09-11)
+
+**Scope:** `web-app/`, `admin-panel/`, `mobile-app/` — the quota and loading
+half of the Sentry work. The scrubbers were not touched. **No DSN is set
+anywhere yet, which is the only reason these were defects and not an incident.**
+
+### The problem, stated as arithmetic
+
+The free (Developer) plan is **5,000 error OCCURRENCES per month for the whole
+ORGANISATION**, shared by three projects, counted per occurrence, and it cannot
+buy overage. When it is gone there is no monitoring at all until the 1st.
+Nothing in the previous configuration bounded the one shape that actually
+spends it — the SAME fault repeating. `sampleRate` cannot: a retry loop outruns
+a sampler, and sampling discards the RARE events (a failed payment) the
+integration exists to capture.
+
+**Allocation, after holding 1,000 back as headroom:** web-app 2,400/month
+(~80/day) · mobile-app 1,000/month (~33/day) · admin-panel 600/month (~20/day).
+
+**The cap is PER PROCESS** — one serverless instance, one browser tab, one app
+launch — and that is the design, not a shortcut. Ten users hitting the same bug
+still produce ten reports, so BREADTH (the signal that says "widespread")
+survives; what is squeezed is DEPTH, the same fault repeating inside one
+process. A fleet-wide cap is impossible in a serverless process; the org-wide
+hard stop is the per-key rate limit in the Sentry UI, which is why it is an
+owner action below.
+
+Shipped limits: web browser 10/h · 30/day · 3 per issue/hour; web server 20/h ·
+60/day · 4 per issue/hour; admin and mobile 10/h · 30/day · 3 per issue/hour.
+
+### What else was wrong, and why each one mattered
+
+1. **The ignore lists matched the wrong runtime.** Every transport string in all
+   three lists was a BROWSER string ("Failed to fetch" = Chrome, "NetworkError
+   when attempting to fetch resource." = Firefox, "Load failed" = Safari). The
+   outage scenario is a SERVER one: `@supabase/supabase-js` calls global
+   `fetch`, on Node that is undici, and an unreachable Supabase throws
+   `TypeError: fetch failed` — matched by nothing. Read off a running Node
+   24.15.0 rather than remembered: refused/DNS/TLS → `fetch failed`; socket cut
+   mid-body → `terminated` (cause `SocketError: other side closed`,
+   `UND_ERR_SOCKET`); `AbortSignal.timeout()` → `The operation was aborted due
+   to timeout`. The two `TypeError` texts are ANCHORED regexes, because
+   `ignoreErrors` matches substrings and a bare "terminated" would also swallow
+   a real `Workbook stream terminated`.
+2. **Node has no dedupe.** Verified in the installed packages:
+   `@sentry/vercel-edge` lists `dedupeIntegration()` first in its defaults and
+   the browser SDK has it too, but `@sentry/node-core` does not. Added by hand,
+   on the Node runtime only.
+3. **`tracesSampleRate: 0` enables tracing.** `hasSpansEnabled()` tests
+   `!= null`, and its own source comment spells out that zero is not nullish —
+   so the span machinery ran on every request and only the SENDING was
+   suppressed. The keys are now absent rather than zero, in both Next apps, and
+   `webpack.treeshake.removeTracing` sets `__SENTRY_TRACING__ = false`, which is
+   the only thing that stops `@sentry/nextjs` pushing
+   `browserTracingIntegration()` into the browser defaults unconditionally.
+   (Verified in the built bundle: the flag is substituted away.)
+4. **The enablement gate was `NODE_ENV`.** True of any production BUILD,
+   including `next build && next start` on the owner's laptop — which is how a
+   production build gets checked before deploying. With a DSN in `.env.local`
+   that would have sent real events tagged `production` from a machine full of
+   test data. It is now `VERCEL_ENV`, which only Vercel sets. Preview deploys
+   still report, tagged "preview"; one clause deletes that if the owner would
+   rather spend the whole allowance on production.
+5. **A server-rendered crash was billed twice** — once by `onRequestError`,
+   again by `captureException` in the root boundary. The boundary now reports
+   only errors with no `digest`, which is exactly the set that never crossed the
+   server. Fixed in BOTH Next apps: the admin panel had the identical shape.
+
+### The owner decision in this round: the browser SDK left the public pages
+
+The Sentry browser SDK measures **+161.7 KB minified (+45%)** and was in the
+client ENTRY, so every anonymous visitor on the landing page downloaded it over
+Azerbaijani mobile data for a page with no session, no child, no payment and
+nothing to diagnose. It now loads behind a dynamic import, and only on
+`/dashboard`, `/children`, `/analytics`, `/subscription`, `/olympiads`,
+`/leaderboard`, `/notifications`, `/profile`, `/help`, `/child/*` and
+`/checkout/*` — including after a client-side navigation into one of them (a
+parent who signs in from the landing page never reloads the document, so
+checking only the entry URL would have left the most common session
+uninstrumented). Verified against the built manifest: no page's initial chunk
+list contains Sentry code.
+
+**SERVER-SIDE CAPTURE IS UNCHANGED and still covers every route, public ones
+included.** What changed is which pages ship the BROWSER bundle. To reverse:
+load unconditionally in `web-app/src/instrumentation-client.ts`. To extend:
+one line in `AUTHENTICATED_PREFIXES`. Deliberately NOT included — `/login`,
+`/register`, `/forgot-password`, `/reset-password`, `/verify-email`, `/auth/*`:
+public pages whose actual work happens in Server Actions, which the server SDK
+reports in full. The admin panel is fully authenticated and keeps loading the
+SDK everywhere.
+
+**One deliberate exception to the allowlist:** the ROOT error boundary
+(`global-error.tsx`) fetches the SDK on demand wherever it fires, public pages
+included. By then the page has already crashed, so the download costs a healthy
+page nothing and buys the one client-side public-page failure worth a round
+trip — otherwise the landing page could break for everyone and report nothing.
+
+### Owner actions
+
+- **SETTING THE DSN IN VERCEL REQUIRES A REDEPLOY — this one cannot be fixed in
+  code.** The Sentry ingest origin in the CSP is computed at BUILD time. Set
+  `NEXT_PUBLIC_SENTRY_DSN` on a built deployment and the SDK initialises, posts
+  to the ingest host, and is blocked by a `connect-src` computed when no DSN
+  existed: nothing throws, and nothing is reported to Sentry, because Sentry is
+  the thing being blocked. Both Next apps now print a loud `[sentry] NO
+  NEXT_PUBLIC_SENTRY_DSN AT BUILD TIME` block during any production build
+  without one. **Set the variable, then redeploy.**
+- **In Sentry, before any DSN is switched on: set a per-key rate limit on each
+  of the three projects** (~200 events/hour is the figure already agreed for
+  mobile). The code budget bounds ONE process; this is the only org-wide hard
+  stop, and the free plan has no spend cap to fall back on.
+- Nothing here changes the mobile version. `expo.version` stays **1.16.0**, and
+  the gender-declaration blocker above is untouched.
+
+### Validation
+
+Three typechecks clean · `web-app` 1382 vitest (68 files) · `admin-panel` 1031
+vitest (49 files) · `mobile-app` 1268 jest (65 suites) · `next build` clean in
+both Next apps · `next lint` clean on every changed file, `expo lint` clean
+apart from one pre-existing `IapPanel.tsx` warning. Not validated here and not
+validatable from this machine: whether events actually arrive, since no Sentry
+project or DSN exists yet.
+
+## ROUND 73 (mobile half) — SENTRY IN THE CHILDREN'S APP (2026-09-11)
+
+**Scope:** `mobile-app/` only. The web-app and admin-panel halves of this round
+are tracked separately; nothing here touches either.
+
+**Why at all.** Vercel retains runtime logs for ONE DAY. A parent reporting a
+failed payment or a rejected in-app-purchase receipt two days later is reporting
+something for which no evidence exists anywhere. That is an ERROR-retention
+problem, not a metrics problem, and every decision below follows from reading it
+that way.
+
+### What shipped
+
+| File | What |
+|---|---|
+| `mobile-app/src/lib/sentryScrub.ts` | NEW — pure, native-free scrubber: `redact`, `scrubUrl`, `scrubBreadcrumb`, `scrubEvent`, `IGNORED_ERRORS` |
+| `mobile-app/src/lib/sentry.ts` | NEW — `initSentry()`; every option written out, with the reasoning inline |
+| `mobile-app/src/app/_layout.tsx` | `initSentry()` at module scope (line 10) — before first render, so a boot-gate failure is reportable |
+| `mobile-app/app.json` | `@sentry/react-native` added to `expo.plugins` by `npx expo install`. NO options, and deliberately no `authToken` |
+| `mobile-app/eas.json` | `SENTRY_DISABLE_AUTO_UPLOAD=true` on all three build profiles |
+| `mobile-app/__tests__/sentry-scrub.test.ts` | NEW — 24 tests |
+| `mobile-app/__tests__/sentry-posture.test.ts` | NEW — 13 tests |
+| `mobile-app/scripts/submission-preflight.mjs` | New `SKIP` record for the two store declarations |
+| `markdowns/STORE_LAUNCH_PACK.md`, `markdowns/MOBILE_APP_MASTER_PLAN.md`, `docs/OLYMPIQ_ECOSYSTEM_FOR_APPLE.md` | Corrected — all three asserted that no crash SDK exists |
+
+### Dependency justification (house rule)
+
+**`@sentry/react-native@~7.2.0`**, installed with `npx expo install`. That range
+is Expo's own pin for SDK 54 (`node_modules/expo/bundledNativeModules.json`), not
+npm's `latest` (8.x). It is maintained, it is the only crash SDK with a
+first-party Expo config plugin, and it bundles `@sentry/core@10.12.0`.
+**`sentry-expo` was NOT used**: upstream deprecated it at SDK 50 and its own
+README says it will not receive security fixes. Expo's SDK-54 module map still
+lists it as a legacy entry — that entry is a trap. `npm audit` is unchanged at
+18 pre-existing advisories (expo / metro / react-navigation / js-yaml
+transitive); no Sentry package appears in any advisory path — verified by name
+over the resolved tree, not assumed.
+
+### The three decisions that cost the most thought
+
+**1. `sendDefaultPii: false`, NOT `dataCollection`.** The newer core the two Next
+apps run deprecates `sendDefaultPii` in favour of a per-category `dataCollection`
+object. `@sentry/core@10.12.0` — the one bundled here — has NO such option:
+grepped the installed `build/types`, zero hits. Writing it here would be an
+unknown key, silently ignored, and the PII would flow. **So this repository now
+carries two different option names on purpose, and the difference is invisible
+from the config files themselves.** `sentry-posture.test.ts` asserts that the
+Next name never appears here AND that the installed core still lacks it, so a
+future SDK bump fails a test instead of silently inverting the meaning of the
+config.
+
+**2. The sample-rate keys are OMITTED, not set to zero.** `getDefaultIntegrations`
+decides what to load with `typeof option === "number"`, and **zero is a number**.
+`tracesSampleRate: 0` loads the entire tracing stack; `replaysOnErrorSampleRate: 0`
+installs `mobileReplayIntegration`, **which records the screen** — a child's
+dashboard, with their name, avatar, school and scores on it. The plan this round
+executed specified `0` for both. Reading the installed source is what caught it,
+and the test now pins the omission, because "let us be explicit and set these to
+0" is exactly what a careful future reader would do.
+
+**3. What was REFUSED.** `Sentry.wrap(RootLayout)` — it adds a touch breadcrumb
+per tap carrying the touched component tree, plus a React profiler that does
+nothing while tracing is off. `enableAutoSessionTracking` — a session envelope
+per foreground from a child's device, to report a crash-free rate that Play
+Console vitals and App Store Connect already give free. Source-map upload — see
+below.
+
+### The limit that is real, and is not papered over
+
+**Native crashes bypass the JS scrubber.** Both bridges install their own
+`beforeSend` (`ios/RNSentry.mm:201`, `android/…/RNSentryModuleImpl.java:333`) and
+neither calls back into JS, so a hard SIGSEGV/ANR is assembled and sent natively.
+What still holds there: `sendDefaultPii: false` IS forwarded to both native SDKs
+(verified in both bridges), `Sentry.setUser` is never called, and JS breadcrumbs
+reach the native scope only after passing `scrubBreadcrumb`. What does not: iOS's
+own network breadcrumbs. Acceptable **only because no request path in this app
+carries a name or the 8-digit ID** — every `/api/mobile/v1/children/<id>/…` route
+takes `students.profile_id`, a UUID (checked at the call sites, not assumed).
+That property is now load-bearing.
+
+### Source maps: DEFERRED, and made safe rather than left as a landmine
+
+The Expo config plugin patches the native build to run `sentry-cli`. With no
+`SENTRY_AUTH_TOKEN` that CLI exits non-zero and the gradle / xcode step fails —
+i.e. adding error monitoring would have BROKEN EAS builds, which is the opposite
+of the point. `SENTRY_DISABLE_AUTO_UPLOAD=true` is the SDK's own documented off
+switch (`sentry.gradle` gates the upload task on it; both xcode scripts check
+it), so it ships set on every profile and builds behave exactly as they did
+yesterday. Turning source maps ON is then: add the EAS secret, add `SENTRY_ORG` /
+`SENTRY_PROJECT`, and **remove those three `env` blocks in the same change** —
+leaving them is the failure mode where the token is set, the maps are not
+uploaded, and nothing says why. Validate it on a real EAS build, not
+speculatively: `mobile-app` has no `metro.config.js` today, and adding one for
+`getSentryExpoConfig` makes every future build depend on a file that did not
+previously exist.
+
+### Store declarations — a second item on a form that already owed one
+
+Adding Sentry makes **both** live declarations wrong once a DSN is set for a
+store build. This sits beside the existing 1.16.0 gender blocker, not instead of
+it. Details, purposes and the not-linked reasoning:
+`mobile-app/markdowns/STORE_LAUNCH_PACK.md` section 2.6. The privacy-policy half
+is DONE in the same round — Sentry is a named processor in `privacy.s7.table`
+(az/en/ru) and in `docs/PRIVACY_POLICY.md` A7/B7/C7 — so what remains owed is the
+two console forms. See the web+admin half of Round 73 below.
+
+### Owner actions
+
+- `EXPO_PUBLIC_SENTRY_DSN` — plain (non-secret) EAS environment variable on the
+  `preview` and `production` profiles, plus untracked `mobile-app/.env` for local
+  runs. NOT set = the SDK is inert, which is a valid choice; just know which way
+  it is set before submitting.
+- In Sentry, before the first build: **EU (Ireland) data region** (unchangeable
+  later; the data subjects are in Azerbaijan and the org holds minors' data), a
+  separate `olympiq-mobile` project, a **per-key rate limit of ~200 events/hour**
+  (the only HARD cap — client sampling cannot outrun a retry loop), and
+  **Prevent Storing of IP Addresses** at org level.
+- `expo.version` was NOT bumped. 1.16.0 stays 1.16.0.
+
+### Validation
+
+`npx tsc --noEmit` clean · `npx expo lint` 0 errors (1 pre-existing warning in
+`IapPanel.tsx`) · `npx jest` **1243 passed / 64 suites** (was 1206 / 62).
+Not validated here, and it cannot be from this machine: an actual EAS build, and
+whether events arrive in a Sentry project that does not yet exist.
+
+## ROUND 73 (web + admin half, and the declarations) — SENTRY EVERYWHERE IT MUST BE DECLARED (2026-09-11)
+
+**Scope:** `web-app/` and `admin-panel/` code, plus the disclosure and
+declaration surfaces for all three apps. The mobile half is the section above;
+the two are one round split by deployment target, because `web-app/`,
+`admin-panel/` and `mobile-app/` ship independently.
+
+**NO DSN IS SET IN ANY ENVIRONMENT.** Nothing has been sent by any of the three
+apps. That is the only reason everything below is a defect list and not an
+incident, and it is also the window in which the disclosure work is cheap: a
+processor named before the first event is a policy update, a processor named
+after it is a notification.
+
+### TWO REVIEW RULES THAT NO SCRUBBER CAN ENFORCE (permanent, all three apps)
+
+A verifier drove realistic events through the REAL `beforeSend` of each app this
+round. **Child PII survived in two of the three** — first name, last name, the
+8-digit login ID, city, rayon, gender and grade, verbatim, inside an ordinary
+error message. The scrubbers were then fixed. These two rules exist because the
+class of leak they describe is one **no regex can close**, so it has to be caught
+in review instead:
+
+1. **Never interpolate a child's name, school or city into an `Error` message —
+   in any app, in any language, at any layer.** A redactor can find an 8-digit
+   run, an email, a UUID or a JWT because each has a shape. *"Aylin"*, *"Məmmədova"*,
+   *"Bakı"*, *"Nəsimi"* and *"20 nömrəli tam orta məktəb"* are ordinary words, and
+   a pattern that matched them would have to match most of the language. Throw the
+   `students.profile_id` UUID, a row id, or nothing — never the human-readable
+   value. This applies equally to log lines, breadcrumb text, tag values, span
+   names and Server Action error strings, because every one of those can reach an
+   event.
+2. **Never call `Sentry.setUser()`, anywhere, in any app — not even with a
+   UUID.** Both store declarations answer *not linked to a user* for the
+   crash/diagnostics types, and those are the ONLY types on either form answered
+   that way. One `setUser` call anywhere in any of the three codebases makes both
+   answers false, on forms a reviewer reads, and the fix is then a console
+   correction rather than a code change. A UUID is not an exemption: Apple's and
+   Play's question is whether the data is *tied to an identity*, not whether the
+   identifier is human-readable. If per-user grouping is ever genuinely needed,
+   re-read this rule and the "not linked" condition in
+   `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2 first — the declaration changes
+   before the code does.
+
+Neither rule is testable by a scrubber, which is exactly why they are written
+here. What IS testable is already pinned: the posture tests assert the PII option
+per SDK, and the scrub tests assert redaction of every shaped value.
+
+### Dependency justification (house rule) — `@sentry/nextjs@~10.74.0`, two apps
+
+- **What it replaces:** nothing, and that is the point. Vercel retains runtime
+  logs for **one day**. A parent's failed checkout or a broken Server Action
+  reported two days later has no evidence anywhere, and on a live bank rail it
+  cannot be reproduced by hand. This is an error-RETENTION problem; every option
+  set in both apps follows from reading it that way rather than as analytics.
+- **Why this package:** it is the first-party Next.js integration and the only
+  one that instruments all three runtimes (browser, node, edge) plus
+  `global-error.tsx` from one config. The pinned `~10.74.0` bundles
+  `@sentry/core@10.74.0`.
+- **Why the option names DIFFER from the mobile app, on purpose:** this core
+  deprecates `sendDefaultPii` (removed in v11, and *ignored outright* when it
+  appears alongside `dataCollection`) in favour of the per-category
+  `dataCollection` object. `@sentry/react-native@7.2.0` bundles core 10.12.0,
+  which has NO `dataCollection` at all. So the repository carries two different
+  option names for the same intent, the difference is invisible from the config
+  files themselves, and **an option block must never be copy-pasted between a
+  Next app and the mobile app without re-checking which core is installed.**
+- **`npm audit`:** must stay at zero in both apps (house rule). Re-run it after
+  the lockfile changes; no Sentry package may appear in any advisory path.
+- **Bundle cost** is accepted for the web app because the SDK is inert without a
+  DSN and disabled outside production, so a preview deploy and a local checkout
+  carry the code and send nothing.
+
+### The privacy decision that is easy to get backwards
+
+Supplying a `dataCollection` object at all **switches the baseline from
+"`sendDefaultPii` is false, collect nothing" to the spec DEFAULTS, which are
+permissive** — cookies true, request and response headers true, all four
+`httpBodies` targets, URL query params true, database query data true, stack
+frame variables true. A half-written `dataCollection: { userInfo: false }` —
+which reads like the careful modern choice — is therefore **strictly leakier than
+not migrating at all**. On this product that block would have shipped:
+
+- the `POST /api/mobile/v1/auth/child-login` body — an 8-digit login ID and a
+  **plaintext password**;
+- the `sb-*-auth-token` cookie, which *is* a live parent or child session;
+- stack-frame locals from a server throw, which is where
+  `SUPABASE_SERVICE_ROLE_KEY` and `OLIMPIADA_*_DB_URL` live.
+
+Every category is written out explicitly in both apps for that reason. Do not
+tidy away a line because its documented default already matches.
+
+### CSP: one origin, derived, never a wildcard
+
+Both `next.config.mjs` files add **exactly one** origin, on `connect-src` only,
+computed from the DSN's own host — so the header cannot drift from the value the
+SDK is configured with, and an unset DSN widens nothing. Not `*.sentry.io`, not
+`https://*.ingest.sentry.io`. Deliberately **absent**: `worker-src blob:` and any
+`img-src` change, which is what Session Replay would require — Replay is off, and
+leaving the CSP narrow makes a future attempt to enable it fail loudly instead of
+quietly recording a screen full of children's names. The admin panel's
+`frame-ancestors 'none'` is untouched.
+
+### Disclosure and declarations (all three apps)
+
+| Surface | State |
+|---|---|
+| `privacy.s7.table` (az/en/ru) | **DONE** — one Sentry row: role *crash and error reports*; receives *technical error information with personal details stripped*; *EU region*. Wording is conditional, not a live/off state, so it stays true on both sides of the switch |
+| `docs/PRIVACY_POLICY.md` A7 / B7 / C7 | **DONE** — same row, hand-maintained file, all three language sections. Last updated moved to 11.09.2026; the **effective date did not move** |
+| `docs/PRIVACY_POLICY.md` Z4 | **DONE** — the verification table asserted "no analytics / ads / attribution / **crash** SDK", which stopped being true the moment the dependency landed |
+| `mobile-app/src/i18n/messages.generated.ts` | **DONE** — regenerated with `node mobile-app/scripts/sync-i18n.mjs`; the diff is three lines, one per locale, all `privacy.s7.table` |
+| Play *Data safety* | **OWED** — add *App info and performance → Crash logs* and *Diagnostics*. Ten declared types become **twelve** |
+| App Store *App Privacy* | **OWED** — add *Diagnostics → Crash Data* and *Other Diagnostic Data*. *Performance Data* stays **No**, and only because tracing is off |
+| Both, "linked to a user" | **No** — and see the condition below |
+
+The *not linked* answer holds only while all three of these are true, in all
+three apps: `Sentry.setUser()` is never called; the PII option is off in every
+runtime (`sendDefaultPii: false` on the mobile SDK, `dataCollection.userInfo:
+false` on the two Next apps); and the scrubbers run in
+`beforeSend`/`beforeBreadcrumb`. Change any one and the honest answer becomes
+*linked*, on both forms.
+
+Written as a **pre-submission blocker on 1.16.0**, in the same shape as the child
+`gender` one and owed in the **same console pass**:
+`mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2 (blocker), §2.5 (purposes), §2.6
+(reasoning), §6 item 6 and §6.1 (steps); `docs/STORE_LISTING_COPY.md` §8, §8.1
+and the §9 change log.
+
+### Owner actions
+
+- **Decide the DSN before the 1.16.0 build is cut.** Leaving
+  `EXPO_PUBLIC_SENTRY_DSN` unset on the `production` profile is a legitimate
+  answer — that binary collects nothing and no crash/diagnostics declaration is
+  owed. Setting it obliges both forms first. The failure mode is forgetting which
+  way it went, because the binary does not say.
+- **Web env:** `NEXT_PUBLIC_SENTRY_DSN` in Vercel for `web-app` and
+  `admin-panel` (separate Sentry projects). It is public by design — a
+  write-only ingest endpoint, not a credential — which is why it carries the
+  `NEXT_PUBLIC_` prefix. It still never goes in a tracked file.
+- **Source maps (optional, both web apps):** `SENTRY_ORG`, `SENTRY_PROJECT` and
+  `SENTRY_AUTH_TOKEN` — the token is a **build-time secret**, scoped to
+  `project:releases`, and belongs only in Vercel's dashboard.
+- **In Sentry, before the first DSN:** create the org in the **EU (Ireland)**
+  region — it cannot be moved afterwards, and the published privacy policy now
+  states the EU region in all three languages — and turn on **Prevent Storing of
+  IP Addresses** at org level, because Sentry can infer the IP from the
+  connection even though every SDK here withholds it.
+- `expo.version` was **not** bumped. 1.16.0 stays 1.16.0.
+
+### Validation
+
+`node mobile-app/scripts/sync-i18n.mjs` regenerated the mobile catalogue and the
+diff is exactly the three `privacy.s7.table` lines. Line endings were preserved
+per file and verified with node (`web-app/src/i18n/messages.ts` and
+`CHANGELOG.md` are CRLF; the markdown docs and the generated catalogue are LF).
+The trilingual policy-grid tests are the guard that matters here: they compare
+the az/en/ru shape of every policy table, so a row added to one locale and not
+the others fails rather than shipping a legal document that pairs a value with
+the wrong heading.
+
 ---
 
 ## ROUND 72 — CLOSE-OUT: THE DECISIONS THIS ROUND MADE, AND WHO MADE THEM (2026-09-10)

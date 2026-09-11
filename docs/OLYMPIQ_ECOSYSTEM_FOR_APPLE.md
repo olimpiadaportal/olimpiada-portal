@@ -281,7 +281,11 @@ That is the standard exempt case under Category 5 Part 2 of the U.S. Export Admi
 
 **Answer: NO — the app does not use the Advertising Identifier (IDFA).**
 
-There is no advertising SDK, no attribution SDK and no analytics SDK anywhere in the app. The full third-party dependency tree (about 1,300 packages) was swept for the names of every common analytics, tracking, advertising, attribution and crash-reporting vendor — Firebase Analytics, Sentry, Bugsnag, Crashlytics, Amplitude, Mixpanel, Segment, AppsFlyer, Adjust, Branch, OneSignal, Braze, Facebook SDK, AdMob, Google Analytics — and **none is present**. The app never reads any device identifier: no IDFA, no identifierForVendor, no Android ID, no installation id.
+There is no advertising SDK, no attribution SDK and no product-analytics SDK anywhere in the app. The full third-party dependency tree (about 1,300 packages) was swept for the names of every common analytics, tracking, advertising, attribution and crash-reporting vendor — Firebase Analytics, Bugsnag, Crashlytics, Amplitude, Mixpanel, Segment, AppsFlyer, Adjust, Branch, OneSignal, Braze, Facebook SDK, AdMob, Google Analytics — and **none is present**.
+
+**ONE EXCEPTION, ADDED 2026-09-11, AND IT IS NAMED HERE RATHER THAN LEFT TO BE FOUND: `@sentry/react-native`.** This paragraph previously listed Sentry among the vendors that were absent, and that sentence was true until that date. Sentry is a **crash-reporting** SDK, not an analytics or attribution one: it receives an exception, a stack trace, the device model, the OS and app versions and a short breadcrumb trail when the app fails. It performs no tracking as Apple defines it — no data is linked to a user or device identity, none is shared with a data broker, and none is combined with data from other apps. Specifically: `sendDefaultPii` is `false`, so the payload carries no IP address and the device name is deleted before it is sent — but Sentry's ingest servers still SEE the connection IP, and the org-level “Prevent Storing of IP Addresses” setting is what stops it being retained. The privacy policy discloses it that way rather than claiming the address is never seen, and this sentence must keep agreeing with it, `Sentry.setUser()` is never called anywhere in the app, session replay and screenshots are disabled, and every payload passes a redactor that strips identifiers before it leaves the device (`mobile-app/src/lib/sentryScrub.ts`). It is inert in any build that is not given a DSN. The App Privacy answer that follows from this is *Diagnostics → Crash Data and Other Diagnostic Data*, **collected, NOT linked to the user, NOT used for tracking** (§8).
+
+The app never reads any device identifier for advertising or attribution purposes: no IDFA, no identifierForVendor, no Android ID.
 
 Consequently the app **does not need and does not show an App Tracking Transparency prompt**, and `expo-tracking-transparency` is not installed.
 
@@ -291,9 +295,9 @@ Consequently the app **does not need and does not show an App Tracking Transpare
 
 ### 8.1 The headline statements
 - **Data Used to Track You: NONE.** No data is linked with third-party data for advertising or measurement, and no data is shared with a data broker.
-- **Data Not Linked to You: NONE.** Everything the app collects is tied to a family account by design.
-- Everything below is **Data Linked to You**.
-- There is **no third-party analytics, advertising, attribution or crash-reporting SDK** in the app.
+- **Data Not Linked to You: ONE category — Diagnostics** (crash reports, since 2026-09-11; see §7.5 and the row below). Everything ELSE the app collects is tied to a family account by design.
+- Everything below except Diagnostics is **Data Linked to You**.
+- There is **no third-party analytics, advertising or attribution SDK** in the app. There is one crash-reporting SDK, `@sentry/react-native`, configured so that nothing it sends identifies a person or a device — §7.5.
 
 ### 8.2 The table
 
@@ -315,7 +319,8 @@ Consequently the app **does not need and does not show an App Tracking Transpare
 | **Financial Info** | **No** | — | — | — | |
 | **Browsing History / Search History** | **No** | — | — | — | |
 | **Sensitive Info** | **No** | — | — | — | |
-| **Diagnostics / Crash Data / Performance Data** | **No** | — | — | — | No crash-reporting or performance SDK is installed |
+| **Diagnostics → Crash Data, Other Diagnostic Data** | **Yes** (since 2026-09-11) | App Functionality | **Not linked** | **No** | `@sentry/react-native`, and only when the build is given a DSN. No IP, no device name, no `setUser`, no replay, no screenshot; payloads pass a redactor (§7.5) |
+| **Diagnostics → Performance Data** | **No** | — | — | — | Tracing and profiling are switched off; the sample-rate options are not set at all |
 | **Advertising Data** | **No** | — | — | — | No ads |
 | **Device ID** | **No** | — | — | — | No IDFA, no vendor id, no hardware identifier is ever read |
 | **Push token + basic device info** | Yes | Yes | No | App Functionality | If push notifications are enabled, a push token is stored together with the device *model name*, OS version and app version — no advertising id, no persistent hardware identifier |
@@ -775,7 +780,7 @@ For an assistant that needs the short version:
 | Does it need Sign in with Apple? | **No** — the app offers no third-party or social login, so Guideline 4.8 is not triggered |
 | In-app account deletion? | **Yes**, on the parent profile ("Danger Zone", two-step confirm). The student profile deliberately has none — say so in the review notes |
 | Uses IDFA? | **No** |
-| Data used to track you? | **None**. No analytics, advertising, attribution or crash SDK exists |
+| Data used to track you? | **None**. No analytics, advertising or attribution SDK exists; the one crash-reporting SDK links nothing to a user or device identity (§7.5) |
 | App Tracking Transparency prompt? | **Not shown and not required** |
 | Export compliance | Exempt — standard HTTPS/TLS and OS keychain only. Declare no non-exempt encryption |
 | Permissions | Photo library (avatars), notifications (optional), Face ID (optional app lock). Nothing else |

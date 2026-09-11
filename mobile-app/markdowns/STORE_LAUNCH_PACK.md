@@ -97,9 +97,13 @@ OlympIQ — платформа подготовки к олимпиадам дл
 ## 2. Data-safety / privacy inventory (single source of truth)
 
 This table feeds BOTH the iOS App Privacy labels and the Play Data Safety form.
-Posture: **no ads, no third-party tracking or analytics SDKs (sentry OFF for v1 —
-§16 decision), no data sold or shared with third parties.** All traffic is TLS-only
-to our own backend (Supabase + the OlympIQ web BFF). Account deletion is available
+Posture: **no ads, no tracking, no product-analytics SDK, no data sold or shared
+with third parties.** Traffic goes to our own backend (Supabase + the OlympIQ web
+BFF) over TLS, with **ONE third-party recipient as of 2026-09-11: Sentry**, which
+receives crash and error reports only. The blanket "no third-party SDKs (sentry OFF
+for v1 — §16 decision)" claim that stood here is RETIRED — see the Crash/diagnostics
+row below and §2.6, and do not restore the old sentence from an older copy of this
+file. Account deletion is available
 in-app (parent profile → delete account) and removes the family's data.
 
 > **TWO CATEGORIES FLIP FROM "NOT COLLECTED" TO COLLECTED (review, 2026-09-08).
@@ -116,6 +120,39 @@ in-app (parent profile → delete account) and removes the family's data.
 > a change that waits for the next release. Both consoles accept a data-safety /
 > App-Privacy update without a new build; do it now. (Only the gender row is
 > genuinely "next release": that field has not shipped yet.)
+
+> **TWO MORE TYPES, AND THEY ARE A PRE-SUBMISSION BLOCKER ON 1.16.0 — written in
+> the same shape as the gender row, and owed in the SAME console pass
+> (2026-09-11).** All three apps now link Sentry, so both forms gain a category
+> neither has ever carried. Play: **App info and performance → Crash logs** AND
+> **App info and performance → Diagnostics** — declared types go from **10 to 12**.
+> App Store: **Diagnostics → Crash Data** AND **Diagnostics → Other Diagnostic
+> Data**. Both *Collected*, **not** *Shared*, **not linked to a user**, purpose
+> **App functionality** — **not Analytics**, because nothing here measures
+> behaviour — and not processed ephemerally. Apple's **Performance Data stays No**,
+> and the only reason it stays No is that tracing is off (`tracesSampleRate: 0` /
+> `tracesSampleRate` unset-to-zero in every runtime). Turn tracing on and that
+> answer changes too.
+>
+> **THE "NOT LINKED" ANSWER IS CONDITIONAL, AND THE CONDITIONS ARE CODE, NOT
+> POLICY.** It is defensible only while all three hold, in all three apps:
+> `Sentry.setUser()` is **never called anywhere**; the PII option is off in every
+> runtime (`sendDefaultPii: false` on `@sentry/react-native`,
+> `dataCollection.userInfo: false` on `@sentry/nextjs` — **the option names differ
+> by SDK version on purpose**, §2.6); and the scrubbers still run in
+> `beforeSend`/`beforeBreadcrumb`. If any one of those changes, the honest answer
+> becomes **linked to a user** on both forms and the declaration must be corrected
+> before the next submission. Do not treat it as a settled answer that a code
+> change cannot reach.
+>
+> **WHEN IT IS OWED.** The SDK is inert until a DSN is configured for the build
+> (`EXPO_PUBLIC_SENTRY_DSN` on mobile, `NEXT_PUBLIC_SENTRY_DSN` on the two web
+> targets) and no DSN exists in any environment today — that is the only reason
+> this is a defect list and not an incident. Submitting a store binary built WITH
+> the DSN before the forms carry these types makes both declarations false in front
+> of a reviewer. Console steps: §6.1. Full reasoning: §2.6. The privacy policy half
+> is already done — Sentry is a named processor in `privacy.s7.table` (az/en/ru)
+> and in `docs/PRIVACY_POLICY.md` A7/B7/C7 as of 2026-09-11.
 
 Every row below that is collected carries the type it is declared under on BOTH
 forms. A row with a blank mapping column is a declaration gap, not a shorthand —
@@ -142,24 +179,27 @@ uniform, so they are stated here once instead of as three columns.
 | Child sign-in attempt log (8-digit ID, SHA-256 IP hash, outcome, time) | Server | Identifiers → User ID | Personal info → User IDs | Yes | Required |
 | StoreKit transaction reference → entitlement | **iOS binary only** | Purchases → Purchase History | — (the Android binary has no purchase path) | Yes | Required on iOS |
 | Profile preferences (interface language, notification channels, child palette/theme) | User | Other Data → Other Data Types | — (§2.4) | Yes | Optional |
-| Crash/diagnostics | — | **Not collected** (no crash SDK) | **Not collected** | — | — |
+| Crash + error reports (stack trace, device model/OS, app + OTA version, breadcrumbs) | App, via **Sentry** | Diagnostics → Crash Data **and** Other Diagnostic Data | App info and performance → **Crash logs** and **Diagnostics** | **No** — §2.6 | Not user-facing; sent automatically |
 | Contacts, ads identifiers, precise location, health data, payment card data, date/year of birth | — | **Not collected** | **Not collected** | — | — |
 
 iOS label summary — *Data Linked to You:* Contact Info (name, email, phone), User
 Content (avatar photo), Identifiers (User ID **and Device ID**), **Location (Coarse
 Location)**, Usage Data (Product Interaction), Purchases (Purchase History — the iOS
 binary ships StoreKit IAP), Other Data (grade, school, gender, profile preferences).
-*Data Not Collected:* Financial Info, Sensitive Info, Contacts, Health & Fitness,
-Browsing/Search History, Diagnostics, Precise Location. *Data Used to Track You:*
-**none**.
+*Data NOT Linked to You:* **Diagnostics (Crash Data, Other Diagnostic Data)** — the
+one category that is collected but carries no identity; §2.6 says why that answer is
+defensible. *Data Not Collected:* Financial Info, Sensitive Info, Contacts, Health &
+Fitness, Browsing/Search History, **Performance Data** (tracing is off), Precise
+Location. *Data Used to Track You:* **none**.
 
 Play Data Safety summary — collects data Yes; encrypted in transit Yes; in-app
 deletion Yes; partial deletion without account deletion No; no data shared; no ads;
-independent security review not claimed. **Ten types**, all *Collected*, none
+independent security review not claimed. **Twelve types**, all *Collected*, none
 *Shared*, none ephemeral: Name, Email address, Phone number, User IDs, **Other
 info**, **Approximate location**, Photos, App interactions, **Other actions**,
-**Device or other IDs**. (The four in bold are the additions; the previously
-submitted form declared six.)
+**Device or other IDs**, **Crash logs**, **Diagnostics**. (The six in bold are the
+additions; the previously submitted form declared six.) The last two are the only
+ones answered "**not linked to a user**"; every other type is linked.
 
 ### 2.1 What the 2026-09-08 review found
 
@@ -311,6 +351,16 @@ them. Nothing about a child's access, the questions they are served, their point
 or their leaderboard position reads this column, and it never appears on a
 leaderboard.
 
+**Crash logs and diagnostics (Sentry, added 2026-09-11) — purposes on each form.**
+iOS *Diagnostics → Crash Data* and *Other Diagnostic Data*: **App Functionality
+only**. Play *Crash logs* and *Diagnostics*: **App functionality only**. Analytics is
+deliberately NOT ticked on either — the data is read to fix a fault, never to measure
+what a user does, and ticking it would misdescribe the one category on both forms
+that is answered *not linked to a user*. These are also the only two types on either
+form that carry no identity: everything else we declare is linked. Tick Analytics
+only if the data is ever genuinely used that way, and if it is, re-read the "not
+linked" condition in §2 first.
+
 **TWO purposes on each form, not one — and the two forms name the second one
 differently.** The privacy policy tells parents two separate things about this
 answer: that we build overall statistics from it, AND that authorised staff see it
@@ -379,6 +429,71 @@ instead of leaving it attached to a binary already out. Rule and reasoning: root
 rows and is more urgent: grade, city, district, school, the push token and the
 likes are in every build already shipped, so their half of both forms is overdue
 today and must not wait for a release the way this row does.
+
+### 2.6 Sentry — the one third-party recipient (added 2026-09-11)
+
+The app now links `@sentry/react-native` and, when a DSN is configured for the
+build, sends **crash and error reports** to Sentry. This is the first third-party
+recipient of any data in this product, so the line "no third-party SDKs" above had
+to go; it is not a rewording.
+
+**WHEN THE OBLIGATION ATTACHES.** The SDK sends nothing unless BOTH are true: the
+bundle is a release bundle and `EXPO_PUBLIC_SENTRY_DSN` is set for that build. A
+store binary built WITHOUT the DSN collects nothing and the declaration below is not
+owed. A store binary built WITH it collects, and the declaration is owed **before**
+that build is submitted — the same rule, and the same reason, as the gender row.
+Deciding not to set the DSN on the production profile is a legitimate answer;
+forgetting which way it was set is not.
+
+**WHAT IS SENT:** the exception type and message, the JS/native stack, device model,
+OS version, app version, the OTA update id and channel, and up to 30 breadcrumbs.
+
+**WHAT IS NOT, and how that is enforced** — `mobile-app/src/lib/sentryScrub.ts`, with
+`__tests__/sentry-scrub.test.ts` and `__tests__/sentry-posture.test.ts` failing if any
+of it regresses:
+
+- `sendDefaultPii: false` — no IP address, no request headers, and no native
+  `device.name`, which on both platforms is habitually a person's first name.
+- `Sentry.setUser()` is never called, anywhere, not even with a UUID. This is why
+  the two new rows answer **not linked to a user** on both forms.
+- No screenshot, no view hierarchy, no session replay, no performance tracing.
+- Console breadcrumbs are dropped wholesale; URL query strings are dropped whole;
+  exception messages, breadcrumb text and tag values are run through a redactor that
+  removes the `c<8-digit>@children.invalid` login shape, bare 8-digit runs, emails,
+  phone numbers, UUIDs and JWTs before the event leaves the device.
+- Stack-frame locals are deleted, so a crash inside the test runner cannot carry a
+  child's in-flight answers off the device.
+
+**WHAT CANNOT BE CLAIMED.** A hard native crash is assembled and sent by the iOS and
+Android SDKs without passing through the JS scrubber. `sendDefaultPii: false` is
+forwarded to both, and no request path in this app carries a name or the 8-digit ID
+(every `/api/mobile/v1/children/<id>/…` route takes `students.profile_id`), so the
+residue is device/OS context and URL paths. That is what the "Other Diagnostic Data"
+half of the Apple answer covers.
+
+**Purposes.** iOS: **App Functionality** only — not Analytics, because nothing here
+measures behaviour. Play: **Crash logs** and **Diagnostics** under *App functionality*
+(add *Analytics* only if the data is ever actually used that way). Not *Shared*, not
+ephemeral, not tracking.
+
+**Sentry's own settings matter to this answer.** Turn on **Prevent Storing of IP
+Addresses** at the organisation level: the SDK withholds the IP, but Sentry can still
+infer it from the connection unless that setting is on, and an inferred IP would make
+"not linked to a user" harder to defend. Pick the **EU (Ireland) data region** when
+the org is created — the data subjects are in Azerbaijan, the product holds minors'
+data, and the region cannot be changed afterwards.
+
+**The privacy policy says this too — DONE 2026-09-11.** Section 2.6 of this pack is a
+store-form answer, not a disclosure to parents, and the two are separate obligations.
+The policy body now carries a **Sentry row in az/en/ru** (`privacy.s7.table`, mirrored
+into `docs/PRIVACY_POLICY.md` A7/B7/C7): role *crash and error reports*; what it
+receives *technical error information with the personal details stripped out*; where
+*the EU region*. It landed **before the first DSN**, not after the first event, because
+Play's Families policy makes an accurate processor list an obligation for a service
+children use. The wording is deliberately conditional rather than a live/off state, so
+it stays true on both sides of the switch — but it stops being true if
+`Sentry.setUser()` is ever called or a scrubber is removed, which would make a legal
+document about children's data say something false.
 
 Permissions requested: **photo library** (avatar upload, optional), **notifications**
 (opt-in at login, iOS provisional first), **biometrics** (opt-in app-lock; Face ID
@@ -650,6 +765,14 @@ store review fields (never in this repo).
    flipped ON in admin Settings — see RELEASE_RUNBOOK §4.
 5. Production Supabase built from canonical SQL (001→012, 014, 015, 016, 013 last)
    and production env vars set in EAS (`production` profile) — never dev keys.
+6. **Sentry: decide the DSN, then declare it.** Before 1.16.0 is submitted, either
+   (a) leave `EXPO_PUBLIC_SENTRY_DSN` unset on the `production` profile, in which
+   case the store binary collects nothing and no crash/diagnostics declaration is
+   owed, or (b) set it and add the two types to BOTH forms first (§6.1). Forgetting
+   which way it was set is the failure mode; a build with the DSN and a form without
+   the types is a false declaration. If the DSN is set, the Sentry organisation must
+   be created in the **EU (Ireland)** region — it cannot be moved afterwards, and
+   the published privacy policy states the EU region in all three languages.
 
 ### 6.1 Data-safety declarations to correct — OWNER, DO THIS NOW
 
@@ -684,7 +807,8 @@ form walks you through it:
    → Product Interaction (App Functionality + Analytics), Purchases → Purchase
    History (**keep it** — the iOS binary ships StoreKit IAP).
 6. Confirm the No answers: Financial Info, Sensitive Info, Contacts, Health &
-   Fitness, Browsing/Search History, Diagnostics.
+   Fitness, Browsing/Search History. **Diagnostics is no longer among them** — see
+   the Sentry block at the end of this section; *Performance Data* stays No.
 7. **Publish**, then load the App Store product page and check that "Location"
    appears under *Data Linked to You*.
 
@@ -713,3 +837,41 @@ form walks you through it:
    audience includes children. The answer to give if asked: it is a parent-entered
    administrative area (city and rayon) used to group leaderboards, the app requests
    no location permission, reads no sensor, and stores no coordinate.
+
+**Sentry — the crash/diagnostics types. PRE-SUBMISSION BLOCKER ON 1.16.0, and it
+belongs in this same console pass (2026-09-11).** Do it in the same sitting as the
+rows above; a second visit to either console is a second chance to forget.
+
+*App Store Connect* → *App Privacy → Data Collection → Edit*:
+
+1. Add **Diagnostics → Crash Data**. Purposes: **App Functionality** only. Linked to
+   the user: **No**. Used for tracking: **No**.
+2. Add **Diagnostics → Other Diagnostic Data**, same three answers. (It covers what a
+   hard native crash carries — device/OS context and URL paths — which never passes
+   through the JS scrubber; §2.6.)
+3. Leave **Diagnostics → Performance Data** unticked. It is No *because tracing is
+   off*, not because Sentry is absent.
+4. Do not tick Analytics on either. Nothing here measures behaviour.
+5. Publish, then check the product page shows **Diagnostics** under *Data Not Linked
+   to You* — not under *Data Linked to You*.
+
+*Play Console* → *Policy → App content → Data safety → Manage*:
+
+1. *Data types* → **App info and performance**: tick **Crash logs** and
+   **Diagnostics**. With the four types from the list above, the form now declares
+   **twelve** types.
+2. *Data usage and handling*, for each of the two: **Collected**, **not Shared**, not
+   processed ephemerally, purpose **App functionality** only.
+3. Optionality: neither is user-facing, so answer **"Data collection is required"** —
+   there is no in-app toggle a user could set.
+4. **"Is this data linked to a user?" → NO**, for both. These two are the only types
+   on the whole form answered that way; every other type is linked. The answer is
+   true only while `Sentry.setUser()` is never called, the PII option stays off in
+   every runtime, and the scrubbers run — §2 states the condition and §2.6 the
+   enforcement.
+5. Preview, Save, submit.
+
+**If the production build ships WITHOUT a DSN**, none of the above is owed — but
+write down which way it was decided, because the next person cannot tell from the
+binary. And if the DSN is set later, these types must land on both forms **before**
+the first store build that carries it.

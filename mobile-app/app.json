@@ -82,7 +82,8 @@
         }
       ],
       "./plugins/withIosPermissionStringDefaults",
-      "expo-iap"
+      "expo-iap",
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true

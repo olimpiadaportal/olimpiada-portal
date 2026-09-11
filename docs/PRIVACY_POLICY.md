@@ -28,7 +28,7 @@ of them — never a mixture.
 # Bölmə A — OlympIQ Məxfilik Siyasəti
 
 **Qüvvəyə minmə tarixi:** 04.08.2026
-**Son yenilənmə:** 10.09.2026
+**Son yenilənmə:** 11.09.2026
 
 Bu siyasət OlympIQ veb saytına və OlympIQ mobil tətbiqinə (iOS və Android) aiddir.
 
@@ -49,9 +49,10 @@ qısa və dürüst olmağa çalışırıq.
 **Nə etmirik:**
 
 - ❌ **Reklam yoxdur.** Tətbiqdə heç bir reklam şəbəkəsi, reklam SDK-sı yoxdur.
-- ❌ **İzləmə yoxdur.** Nə mobil tətbiqdə, nə veb saytda analitika, atribusiya və ya çökmə hesabatı
-  toplayan üçüncü tərəf alətləri quraşdırılmayıb. Reklam identifikatoru (IDFA, Android Advertising ID)
-  heç vaxt oxunmur.
+- ❌ **İzləmə yoxdur.** Nə mobil tətbiqdə, nə veb saytda analitika, atribusiya və ya reklam aləti yoxdur; reklam
+  identifikatoru (IDFA, Android Advertising ID) heç vaxt oxunmur. İstifadə etdiyimiz yeganə üçüncü tərəf aləti
+  nasazlıq hesabatı sistemidir (Sentry): ona proqramda xəta baş verdiyi anda texniki hesabat gedir —
+  hərəkətlərinizin qeydi yox. Təfərrüatlar A7-də.
 - ❌ **Məlumatları satmırıq, icarəyə vermirik, mübadilə etmirik** və marketinq məqsədi ilə heç kimə
   ötürmürük.
 - ❌ **Cihazınızın məkanını oxumuruq**: nə məkan, nə kamera, nə kontakt, nə də mikrofon icazəsi
@@ -338,6 +339,7 @@ yalnız öz funksiyası üçün lazım olanı alır:
 | **Google (FCM)** | Android-də push çatdırılması | Yalnız push aktiv olduqda — standart push ötürülməsi | Push aktivləşənə qədər heç nə almır |
 | **Google Fonts** | Veb saytın bəzi səhifələrində şrift | Brauzerinizin IP ünvanı və identifikasiya sətri | Aktiv (yalnız veb; mobil tətbiqdə yoxdur) |
 | **Google Maps** | "Əlaqə" səhifəsindəki xəritə | Həmin səhifəni açdığınız anda IP ünvanı və identifikasiya sətri. **Hesab məlumatı ötürülmür** | Aktiv |
+| **Sentry** | Nasazlıq və xəta hesabatları | Texniki xəta məlumatı: xətanın adı, proqram kodumuzun izi, cihazın modeli, əməliyyat sisteminin və tətbiqin versiyası, xətanın baş verdiyi səhifə və ya ekranın ünvanı (sorğu parametrləri olmadan) və tətbiqdə atılmış son addımların qısa izi. Bundan əlavə, əlaqə Sentry-nin serverlərinə çatdığı üçün onlar **IP ünvanınızı** görür: hesabatın özündə IP ünvanı yoxdur və Sentry hesabında IP ünvanlarının saxlanmasının qarşısını alan tənzimləmə aktivdir. **Şəxsi məlumatlar — ad, e-poçt, 8 rəqəmli giriş nömrəsi, məktəb, şəhər — hesabata heç vaxt əlavə olunmur**, hesabatın mətni isə göndərilməzdən əvvəl avtomatik süzgəcdən keçir. Ekran şəkli və ekran yazısı ümumiyyətlə göndərilmir | Serverlər Aİ (Avropa İttifaqı) regionunda; yalnız nasazlıq baş verdikdə göndərilir, adi istifadə izlənmir |
 | **Apple (App Store)** | iPhone və iPad-də tətbiqdaxili ödəniş | Əməliyyatı Apple özü aparır. Ona hər əməliyyat üçün yaratdığımız təsadüfi identifikator ötürülür ki, giriş düzgün uşağa yazılsın. Ad, e-poçt və digər hesab məlumatı ötürülmür | Yalnız iOS-da; Android tətbiqində yoxdur |
 | **Ödəniş təminatçısı (bank)** | Veb saytda kart ödənişi | Əməliyyat bankın öz səhifəsində aparılır, kart məlumatı bizə çatmır | Bax A8 |
 
@@ -524,7 +526,7 @@ etdiyiniz anlamına gəlir.
 # Part B — OlympIQ Privacy Policy
 
 **Effective date:** 04.08.2026
-**Last updated:** 10.09.2026
+**Last updated:** 11.09.2026
 
 This policy covers the OlympIQ website and the OlympIQ mobile app for iOS and Android.
 
@@ -545,9 +547,10 @@ children's data, we try to be short and honest.
 **What we never do:**
 
 - ❌ **No advertising.** There is no ad network and no ad SDK anywhere in the app.
-- ❌ **No tracking.** Neither the mobile app nor the website contains any third-party analytics,
-  attribution or crash-reporting tool. We never read an advertising identifier (no IDFA, no Android
-  Advertising ID).
+- ❌ **No tracking.** Neither the mobile app nor the website contains any analytics, attribution or advertising
+  tool, and we never read an advertising identifier (no IDFA, no Android Advertising ID). The one third-party
+  tool we do use is a crash reporter (Sentry): it receives a technical report at the moment something breaks —
+  never a record of what you do. Details are in B7.
 - ❌ **We do not sell, rent or trade your data**, and we never hand it to anyone for marketing.
 - ❌ **We do not read your device's location**, and we ask for no location, camera, contacts or
   microphone permission. The city and district on a child's profile are chosen by a parent from a
@@ -838,6 +841,7 @@ receives only what its function requires:
 | **Google (FCM)** | Android push delivery | Only once push is on — standard push transport | Receives nothing until push is enabled |
 | **Google Fonts** | A font on some website pages | Your browser's IP address and user agent | Active (website only; not in the mobile app) |
 | **Google Maps** | The map on the "Contact" screen | Your IP address and user agent at the moment that screen is opened. **No account data is passed** | Active |
+| **Sentry** | Crash and error reports | Technical error information: the name of the error, a trace through our own program code, the device model, the operating system version, the app version, the address of the page or screen the error happened on (without the query string) and a short trail of the last steps taken in the app. Sentry's servers also see **your IP address**, because the connection reaches them: the report itself carries no IP address, and the account setting that prevents Sentry storing one is on. **Personal details — a name, an email address, the 8-digit login ID, a school, a city — are never attached to a report**, and the text of every report passes an automatic filter before it is sent. No screenshot and no screen recording is ever sent | Servers in the EU region; sent only when something goes wrong — ordinary use is not tracked |
 | **Apple (App Store)** | In-app payment on iPhone and iPad | Apple runs the transaction itself. It receives a random identifier we create for that transaction, so the access lands on the right child. No name, no email address and no other account data is passed | iOS only; not in the Android app |
 | **Payment provider (bank)** | Card payments on the website | The transaction runs on the bank's own page, and card details never reach us | See B8 |
 
@@ -1025,7 +1029,7 @@ effect means you accept the updated policy.
 # Часть C — Политика конфиденциальности OlympIQ
 
 **Дата вступления в силу:** 04.08.2026
-**Последнее обновление:** 10.09.2026
+**Последнее обновление:** 11.09.2026
 
 Эта политика распространяется на сайт OlympIQ и на мобильное приложение OlympIQ для iOS и Android.
 
@@ -1046,9 +1050,10 @@ OlympIQ — образовательный продукт для школьни�
 **Чего мы не делаем никогда:**
 
 - ❌ **Никакой рекламы.** В приложении нет ни рекламной сети, ни рекламного SDK.
-- ❌ **Никакой слежки.** Ни в мобильном приложении, ни на сайте нет сторонних инструментов аналитики,
-  атрибуции или сбора отчётов о сбоях. Рекламный идентификатор (IDFA, Android Advertising ID) не
-  считывается никогда.
+- ❌ **Никакой слежки.** Ни в мобильном приложении, ни на сайте нет аналитических, атрибуционных и рекламных
+  инструментов, а рекламный идентификатор (IDFA, Android Advertising ID) не считывается никогда. Единственный
+  сторонний инструмент, который мы используем, — система отчётов о сбоях (Sentry): ей уходит технический отчёт в
+  момент ошибки, а не запись ваших действий. Подробности — в C7.
 - ❌ **Мы не продаём, не сдаём в аренду и не обмениваем ваши данные** и не передаём их никому в
   маркетинговых целях.
 - ❌ **Мы не считываем местоположение вашего устройства** и не запрашиваем разрешения на геолокацию,
@@ -1342,6 +1347,7 @@ OlympIQ могут просматривать данные аккаунтов и
 | **Google (FCM)** | Доставка push на Android | Только после включения push — стандартная передача уведомлений | До включения push не получает ничего |
 | **Google Fonts** | Шрифт на некоторых страницах сайта | IP-адрес и строку браузера | Активен (только сайт; в мобильном приложении отсутствует) |
 | **Google Maps** | Карта на странице «Контакты» | IP-адрес и строку браузера в момент открытия этой страницы. **Данные аккаунта не передаются** | Активен |
+| **Sentry** | Отчёты о сбоях и ошибках | Техническая информация об ошибке: название ошибки, трассировка по нашему программному коду, модель устройства, версия операционной системы, версия приложения, адрес страницы или экрана, где произошла ошибка (без параметров запроса), и короткий след последних действий в приложении. Кроме того, серверы Sentry видят **ваш IP-адрес**, потому что соединение приходит к ним: в самом отчёте IP-адреса нет, а в аккаунте включена настройка, запрещающая Sentry хранить IP-адреса. **Личные данные — имя, адрес электронной почты, 8-значный номер для входа, школа, город — к отчёту никогда не прикрепляются**, а текст отчёта проходит автоматический фильтр перед отправкой. Снимки экрана и запись экрана не отправляются никогда | Серверы в регионе ЕС; отправляется только при сбое — обычное использование не отслеживается |
 | **Apple (App Store)** | Оплата внутри приложения на iPhone и iPad | Операцию проводит сама Apple. Ей передаётся случайный идентификатор, который мы создаём для этой операции, чтобы доступ достался нужному ребёнку. Имя, адрес электронной почты и другие данные аккаунта не передаются | Только на iOS; в приложении для Android отсутствует |
 | **Платёжный провайдер (банк)** | Оплата картой на сайте | Операция проходит на собственной странице банка, данные карты до нас не доходят | См. C8 |
 
@@ -1585,7 +1591,7 @@ before publication.
 | 8 | **Server log / IP retention** at Vercel and Supabase | A7 / B7 and A4.3 / B4.3 / C4.3 state a retention period as a placeholder. A dashboard-only setting |
 | 9 | **What Supabase Auth's own logs retain.** This inventory covered only `public.*` tables. Supabase Auth keeps `auth.users` (with `last_sign_in_at`) and its own audit log, which **does record IP addresses** for sign-in events. Confirm before anyone reads the "we store the IP only as a hash" line as covering everything | Our application audit log genuinely stores no IP or user agent — the columns exist but no code writes them. Supabase's own layer is separate |
 | 10 | **Database backup retention** and whether point-in-time recovery is on. Deletion cascades live rows; backups are outside our code's control | B9.4 backup row |
-| 11 | **Legal characterisation of Supabase / Vercel / Expo / Apple / Google** — "processors acting on our instructions" vs "third parties with whom data is shared". Changes what the store privacy label must say | A7 / B7 / C7 |
+| 11 | **Legal characterisation of Supabase / Vercel / Expo / Apple / Google / Sentry** — "processors acting on our instructions" vs "third parties with whom data is shared". Changes what the store privacy label must say | A7 / B7 / C7 |
 
 ### Product decisions that should be made BEFORE publishing
 
@@ -1612,6 +1618,7 @@ the practice changes, the policy paragraph must change with it.
 | 22 | **Is any email actually sent?** No outbound mail provider is configured (`NOTIFICATIONS_SMTP_URL` is empty; the delivery function returns `not_configured`), and password-reset email is not operational. The only mail that could be sent today is whatever Supabase Auth's built-in mailer sends. Confirm before the policy describes email use | Not operational |
 | 23 | **Has any payment ever been taken?** Payments are switched off at the database level (`assert_payments_enabled()` raises while the mode is `off`; `provider` defaults to `'none'`), there is no `web-app/src/lib/payments/` directory, and no provider is integrated. The policy describes the payment rail in the future tense — confirm nothing has already been charged | No provider integrated |
 | 24 | **Which payment provider will it be, and should it be named in advance?** | Undecided |
+| 26 | **Is Sentry live?** The SDK is linked in all three apps but every runtime is disabled until a DSN is set, and no DSN exists in any environment yet, so nothing has been sent. The A7 / B7 / C7 row is written conditionally ("sent only when something goes wrong") so it is true either way — but three things are owed **before** the first DSN, and the row is a false statement without them: the **EU data region** must be chosen when the Sentry organisation is created (it cannot be changed afterwards, and the row states the EU); **Prevent Storing of IP Addresses** must be on at the organisation level, because Sentry's ingest sees the connection IP however the SDK is configured, and the row now says the setting is on; and each app must be **REDEPLOYED after its DSN is set**, because the Sentry origin in the Content-Security-Policy is derived at build time. Step-by-step: `docs/SENTRY_OWNER_SETUP.md` | Linked, not enabled |
 
 ### Related non-policy blocker (fix alongside)
 
@@ -1637,7 +1644,8 @@ Kept so a future reader can re-check a claim without re-reading the whole codeba
 
 | Claim in the policy | Verified against |
 |---|---|
-| No analytics / ads / attribution / crash SDK | All 1,344 resolved packages in `mobile-app/package-lock.json`, 438 in `web-app`, 499 in `admin-panel`, swept against every common vendor name — zero real matches |
+| No analytics / ads / attribution SDK | All 1,344 resolved packages in `mobile-app/package-lock.json`, 438 in `web-app`, 499 in `admin-panel`, swept against every common vendor name — zero real matches |
+| A crash/error SDK now EXISTS — this row used to say "no crash SDK" and stopped being true on 2026-09-11 | `@sentry/react-native` in `mobile-app`, `@sentry/nextjs` in `web-app` and `admin-panel`. It is inert until a DSN is set (`EXPO_PUBLIC_SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`), puts **no IP address in the payload** (`sendDefaultPii: false` on the RN core, `dataCollection.userInfo: false` on the two Next apps) — but Sentry's ingest still sees the connection IP, which is why A7 / B7 / C7 discloses it and why **Prevent Storing of IP Addresses** is an owner action, not a nicety — and never calls `Sentry.setUser()`. Config: `mobile-app/src/lib/sentry.ts`, `web-app/src/lib/observability/sentryOptions.ts`, `admin-panel/src/lib/sentry/options.ts`; redaction: the `sentryScrub` module beside each |
 | No advertising identifier is read | No `expo-tracking-transparency`, no IDFA/vendor-id/Android-ID call site anywhere |
 | Passwords are never stored by us | `supabase/sql/002` — `child_credentials` has no hash column; `pgcrypto` is enabled only for `gen_random_uuid()` |
 | The IP is stored as a SHA-256 hash, never raw | `supabase/sql/002` `child_login_attempts`; hashing at `web-app/src/app/api/mobile/v1/auth/child-login/route.ts` |

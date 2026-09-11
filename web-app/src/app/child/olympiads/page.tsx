@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { startOlympiad } from "@/lib/auth/childActions";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { subjectLabelOrNull } from "@/lib/subjectLabel";
 import { pickTranslation } from "@/lib/localizedName";
 import { formatLongDate } from "@/lib/formatDate";
 import {
@@ -196,9 +196,13 @@ export default async function ChildOlympiadsPage({
       const tr = pickTranslation<PackageTr>(p.olympiad_package_translations, locale);
       const n = poolCounts.get(p.id) ?? 0;
       const questionsText = `${n} ${t("oly4.questions")}`;
-      const subject: string | null = p.subjects?.name
-        ? subjectLabel(t, p.subjects?.code, p.subjects.name)
-        : null;
+      // Guarded on the RESOLVED label: `subjects.name` is the frozen import
+      // key and may be blank while the translation is perfectly good.
+      const subject: string | null = subjectLabelOrNull(
+        t,
+        p.subjects?.code,
+        p.subjects?.name,
+      );
       const typeName: string | null = p.olympiad_types?.name ?? null;
       let coverUrl: string | null = null;
       const m = p.media_assets;

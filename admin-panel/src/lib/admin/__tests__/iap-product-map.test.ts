@@ -36,6 +36,14 @@ vi.mock("@/lib/admin/guards", () => ({
   requireAdmin: () => requireAdmin(),
   requirePanelAccess: () => requireAdmin(),
 }));
+// The catalogue names each subject in the READER's language now, so the module
+// reads the locale cookie. Pinned to az — the default — because these
+// assertions are about guards and writes, not about which language a label is
+// rendered in.
+vi.mock("@/i18n/server", () => ({
+  getT: async () => (k: string) => k,
+  getLocale: async () => "az",
+}));
 vi.mock("@/lib/admin/audit", () => ({
   writeAuditLog: async (a: {
     action: string;

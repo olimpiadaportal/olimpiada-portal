@@ -3,7 +3,9 @@
 // and the olympiad dialogs use, so no client component ever calls the i18n layer.
 import type { T } from "@/i18n/server";
 import type { SubjectDeleteStrings } from "@/components/SubjectDeleteButton";
+import type { PriceCellStrings } from "@/components/PriceCell";
 import type { SubjectFormStrings } from "./SubjectForm";
+import type { PriceInterval } from "@/lib/admin/pricing-shared";
 
 export function subjectDeleteStrings(t: T): SubjectDeleteStrings {
   return {
@@ -63,14 +65,15 @@ export function subjectDeleteStrings(t: T): SubjectDeleteStrings {
 export function subjectFormStrings(t: T, submitLabel: string): SubjectFormStrings {
   return {
     name: t("subj.field.name"),
+    nameEn: t("subj.field.nameEn"),
+    nameRu: t("subj.field.nameRu"),
+    nameFallbackHint: t("subj.nameFallbackHint"),
+    // Edit screen only — the form renders it beside the actual key.
+    importNameHint: t("subj.importNameHint"),
     status: t("subj.field.status"),
     prices: t("subj.field.prices"),
     pricesHint: t("subj.pricesHint"),
-    interval: {
-      week: t("subj.interval.week"),
-      month: t("subj.interval.month"),
-      year: t("subj.interval.year"),
-    },
+    interval: intervalLabels(t),
     submit: submitLabel,
     saving: t("manage.saving"),
     saved: t("subj.saved"),
@@ -79,6 +82,36 @@ export function subjectFormStrings(t: T, submitLabel: string): SubjectFormString
     // The platform bills in AZN only; subjects_pricing.currency defaults to it
     // and no admin surface writes anything else.
     currency: "AZN",
+  };
+}
+
+/** Həftəlik / Aylıq / İllik — the column headers AND the form legends. */
+export function intervalLabels(t: T): Record<PriceInterval, string> {
+  return {
+    week: t("subj.interval.week"),
+    month: t("subj.interval.month"),
+    year: t("subj.interval.year"),
+  };
+}
+
+/**
+ * Copy for the inline price cell, minus the per-cell accessible label the
+ * caller composes from the subject name and the cycle.
+ *
+ * ONE PLACE, TWO SCREENS. The list renders three cells per row and the edit
+ * page renders three for the one subject; both post to the same
+ * saveSubjectPrice action, so the wording has to come from one function or the
+ * two screens will drift into describing the same operation differently.
+ */
+export function subjectPriceCellStrings(t: T): Omit<PriceCellStrings, "ariaLabel"> {
+  return {
+    save: t("action.save"),
+    saving: t("manage.saving"),
+    saved: t("settings.saved"),
+    // Singular on purpose — it renders under one input, in one cell. The
+    // plural subj.err.price belongs to the create form's three-field fieldset.
+    invalidAmount: t("subj.err.priceCell"),
+    notSet: t("subj.priceNotSet"),
   };
 }
 

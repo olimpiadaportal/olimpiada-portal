@@ -89,7 +89,7 @@ function Chip({ icon, label }: { icon?: React.ReactNode; label: string }) {
 }
 
 /** Cover area: image (or brand-gradient fallback) + bottom scrim with the
- *  title. Scrim ink is the fixed contrast contract (#0a0e1a → white text) so
+ *  title. Scrim ink is the fixed contrast contract (#100e0e → white text) so
  *  it reads on any cover photo in any theme. The price chip that used to sit
  *  beside the title is gone — no amount renders anywhere in this app. */
 function CoverHeader({
@@ -147,7 +147,7 @@ function CoverHeader({
       )}
 
       <LinearGradient
-        colors={["transparent", "rgba(10,14,26,0.78)"]}
+        colors={["transparent", "rgba(16,14,14,0.78)"]}
         style={{
           position: "absolute",
           left: 0,

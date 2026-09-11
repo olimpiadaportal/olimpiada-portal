@@ -1,6 +1,7 @@
 // i18n runtime. Resolution chain (web getT()/I18nProvider parity):
-//   CMS override (site_content via get_mobile_content) → mobile overlay →
-//   synced web catalog → az fallback → the raw key.
+//   CMS override (site_content via get_mobile_content) → admin-managed subject
+//   names (subject_translations, `subj.db.<code>`) → mobile overlay → synced
+//   web catalog → az fallback → the raw key.
 // The locale is clamped to the admin-enabled set from get_mobile_config().
 import { create } from "zustand";
 import * as SecureStore from "expo-secure-store";
@@ -30,14 +31,28 @@ export function clampLocale(
   return sup[0] ?? defaultLocale;
 }
 
-/** Build a translator for one locale with optional CMS overrides layered on top. */
+/**
+ * Build a translator for one locale with the two DATABASE layers on top of the
+ * bundled catalogs.
+ *
+ * `overrides` is the site_content CMS (any key). `subjectNames` is the
+ * admin-managed subject display names from subject_translations, published
+ * under their own `subj.db.<code>` namespace (migration 171) — a namespace the
+ * bundled catalogs do not use at all, so this layer EXTENDS the dictionary
+ * rather than shadowing it, and subjectLabel() reads it before `subj.<code>`.
+ * Both layers are optional and both degrade to "absent": a failed fetch means
+ * the bundled catalog renders, never a blank label.
+ */
 export function createT(
   locale: Locale,
   overrides?: Record<string, string> | null,
+  subjectNames?: Record<string, string> | null,
 ): (key: string) => string {
   return (key: string) => {
     const o = overrides?.[key];
     if (o && o.length > 0) return o;
+    const s = subjectNames?.[key];
+    if (s && s.length > 0) return s;
     return (
       mobileMessages[locale]?.[key] ??
       messages[locale]?.[key] ??

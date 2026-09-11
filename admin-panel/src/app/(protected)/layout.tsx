@@ -9,7 +9,6 @@ import { getAdminInboxSnapshot } from "@/lib/admin/notif-inbox";
 import { BELL_LIMIT } from "@/lib/admin/notif-types";
 import { getLocale, getT } from "@/i18n/server";
 import { localStrings as locationStrings } from "./locations/labels";
-import { localStrings as pricingStrings } from "./pricing/labels";
 import { localStrings as alertsStrings } from "./alerts/labels";
 import { localStrings as curriculumStrings } from "./curriculum/labels";
 
@@ -35,12 +34,13 @@ export default async function ProtectedLayout({
   // Nav labels not yet in the shared dictionary fall back to the local
   // trilingual module strings (t() returns the key itself when missing) —
   // currently nav.locations (Round 21 merged Cities/Districts/Schools),
-  // nav.pricing (subscription pricing), nav.alerts (received alerts page) and
-  // nav.curriculum (Round 52 merged Topics/Subtopics tree).
+  // nav.alerts (received alerts page) and nav.curriculum (Round 52 merged
+  // Topics/Subtopics tree). The pricing dictionary left this chain on
+  // 2026-09-10 with the Qiymətlər entry: the screen folded into Subjects, whose
+  // label has always come from messages.ts.
   const ltAlerts = alertsStrings(locale);
   const localFallbacks = [
     locationStrings(locale),
-    pricingStrings(locale),
     ltAlerts,
     curriculumStrings(locale),
   ];

@@ -1,6 +1,7 @@
 import React from "react";
-import { Redirect, Stack, useRouter, useSegments } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { BackButton } from "@/components/BackButton";
+import { GroupRedirect } from "@/lib/TabRedirect";
 import { useAuthStore } from "@/features/auth/authStore";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
@@ -26,9 +27,21 @@ export default function PublicLayout() {
       AUTH_SCREENS.includes(screen) ||
       // Children never see commerce: students are also bounced off pricing.
       (role === "student" && screen === "pricing");
+    // <GroupRedirect>, not <Redirect>: this bounce fires on the ROOT stack,
+    // where a replace mints a NEW route key and leaves the group the user was
+    // already in sitting underneath a second copy of itself — back then pops
+    // between two identical Home screens. popToOrReplace() pops back to the one
+    // copy that exists.
+    //
+    // The LOGIN RESET is preserved, and it is the reason the helper falls back
+    // to replace rather than navigate: signing in happens with `(public)` as
+    // the ONLY root route, POP_TO finds no `(parent)` to pop to, and so drops
+    // the current route and appends the target — the entire `(public)` group,
+    // login screen included, leaves the stack exactly as it did before. A
+    // signed-out screen holding a child's credentials stays unreachable.
     if (offLimits) {
-      if (role === "parent") return <Redirect href="/(parent)/(tabs)/home" />;
-      return <Redirect href="/(student)/(tabs)/home" />;
+      if (role === "parent") return <GroupRedirect href="/(parent)/(tabs)/home" />;
+      return <GroupRedirect href="/(student)/(tabs)/home" />;
     }
   }
 

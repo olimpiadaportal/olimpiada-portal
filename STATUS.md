@@ -6,49 +6,964 @@ This is the live implementation tracker for the OlympIQ project.
 
 Claude Code must read this file at the beginning of every coding session and update it before and after every implementation task.
 
-## RESUME POINT (2026-09-03, owner away ~3h) — SUBMISSION IN FLIGHT
+## RESUME POINT (2026-09-10) — 1.15.0 IS LIVE; 1.16.0 IS BLOCKED ON TWO FORMS
 
-Where things stand mid-release, so nothing is re-derived on return:
+The previous resume point described the 1.15.0 submission as in flight. It
+landed: **Apple approved 1.15.0 and all 21 in-app products on 2026-09-09 and it
+is released on the App Store** (Round 67). That checklist is done and has been
+removed rather than left to be re-worked.
 
-**DONE this session:** age-rating questionnaire completed (Parental Controls =
-YES — accurate per Apple's definition and cannot raise the 4+ rating; Step 7
-"Age Categories and Override" = **Not Applicable**, deliberately — Made for Kids
-is the sticky Guideline 1.3 trap and was offered because the app computes to
-4+). **There is NO in-app-purchase declaration anywhere in App Store Connect** —
-the earlier instruction to set one was wrong; Apple derives the badge from
-approved products. The IAP checkbox that does exist is Google Play's.
+**Where the mobile app stands.** `expo.version` is **1.16.0, unreleased — build
+not cut**. Everything in `CHANGELOG.md` under 1.16.0 is in the working tree and
+reaches nobody until a build is made and submitted.
 
-**iOS build:** version **1.15.0, buildNumber 4** (EAS remote build numbers —
-this is why Apple saw "1.0 (3)" before: `app.json` said 1.14.0 but the old
-build predated the bump). Build succeeded; `eas submit --latest` is **queued
-server-side** ("waiting for an available submitter" = Expo's queue, not an
-error; Ctrl+C only stops watching). Check:
-https://expo.dev/accounts/olimpiadaplatforms-team/projects/olympiq/submissions
+**THE ONE BLOCKER, and it is pre-submission, not pre-OTA.** 1.16.0 collects an
+optional child `gender` — a minor's personal data — while Google Play *Data
+safety* and Apple *App Privacy* both still answer that no such data is
+collected. **Both declarations are updated BEFORE 1.16.0 is submitted to either
+store**; submitting first makes a false statement on a form each reviewer reads.
+The OTA hazard that used to sit here is genuinely spent (the version left
+1.15.0, and `runtimeVersion: appVersion` means an update published now can never
+reach a 1.15.0 binary) — the obligation is not. Inventory to fill the forms
+from: `mobile-app/markdowns/STORE_LAUNCH_PACK.md` §2. Console-by-console steps:
+`docs/STORE_LISTING_COPY.md` §8.1. `node mobile-app/scripts/submission-preflight.mjs`
+names it among the checks no script can verify — a SKIP there is not a pass.
 
-**Env vars:** web-app has the six `APPLE_IAP_*` (In-App Purchase key + the
-4-cert root bundle from `docs/apple/apple-roots.pem`, validated through the
-server's own parser); admin-panel has the four `APP_STORE_CONNECT_*` (the API
-key — NOT the purchase key; the two issuer ids differ). Both redeployed.
-Endpoints verified live: notifications → 400, intent → 401 (was 404).
+**Consequence of the iPad work in this round:** the App Store listing now
+REQUIRES iPad screenshots and App Review will test on iPad.
 
-**ON RETURN, in order:**
-1. **Admin panel → /iap → activate all 21 subject products.** All are
-   READY_TO_SUBMIT so the store preflight should allow each. A refusal names
-   its cause; "storeNotConfigured" = Vercel vars didn't land.
-2. Confirm the build reached App Store Connect (processing takes ~10–15 min
-   after upload).
-3. App Store Connect → version page (sidebar shows "1.0 Rejected"): set the
-   version string to **1.15.0**, attach build 4.
-4. **Attach all 21 IAPs** in the "In-App Purchases and Subscriptions" section
-   on that page — it only renders when products are Ready to Submit. Skipping
-   it = reviewer sees purchase UI with nothing purchasable = 3.1.1 again.
-5. Paste the rewritten review notes (`docs/APP_REVIEW_NOTES.md` §§2–7 + §0
-   Resolution Center reply) + demo parent/child credentials. NOTHING from the
-   "Historical — DO NOT PASTE" appendix.
-6. **Free-access window decision** (open until 2026-09-26): include the §4
-   demo-account paragraph, or wait until the 27th to submit.
-7. `node ./mobile-app/scripts/submission-preflight.mjs` → zero FAILs.
-8. Submit.
+**Database:** migrations `170`, `171` and `172` are applied to **staging and
+production** (2026-09-10) and backported into the canonical root files. Nothing
+is waiting on a migration. The from-zero rebuild proof is owed.
+
+**Open, not blocking:** nothing on `dim`. The sweep is finished — 17 text and
+placeholder sites moved to `arena.muted` (the handoff inventory said 16 and
+misfiled four as icons), every one now at or above 4.5:1, and a source-sweeping
+test fails if `dim` is used for text again. The token itself stays at
+`#646463` by owner decision; see Round 72 §1 for the measured ratios.
+---
+
+## ROUND 72 — CLOSE-OUT: THE DECISIONS THIS ROUND MADE, AND WHO MADE THEM (2026-09-10)
+
+**What this entry is.** Rounds 69–71 record three of this round's threads in
+depth. This is the round's close-out: the threads that had no entry at all
+(reachability, back navigation, the RLS forgery), the owner decision taken on
+`ARENA_DARK.dim`, and the database state everything else assumes. Where a
+thread already has its own round, the reasoning is not repeated — the pointer
+is, so a reader lands on the full argument rather than a summary of it.
+
+Nothing here is a file list. `CHANGELOG.md` holds what shipped; this holds why
+it took the shape it did.
+
+### 1. The owner decided `ARENA_DARK.dim` stays — SIGNED OFF, no longer open
+
+Round 70 left this as "the owner's call". **He made it on 2026-09-10: the token
+does not move.** Recomputed and confirmed against the shipped palette:
+
+| ink tier | hex | bg | bg2 | panel | panel2 |
+|---|---|---|---|---|---|
+| `ink` | `#f3f3f1` | 17.32 | 16.07 | 15.10 | 13.63 |
+| `muted` | `#8f8d8d` | 5.83 | 5.41 | 5.08 | 4.59 |
+| `dim` | `#646463` | 3.25 | 3.01 | **2.83** | **2.56** |
+
+WCAG AA wants 4.5:1 for text under 18pt, so `dim` fails on every arena surface.
+The hue pass did not cause that and could not have: the blue it replaced
+(`#56638a`) measured the identical 2.83 on `panel`, because contrast is
+luminance and the swap was luminance-matched by construction.
+
+**Why the decision is not a concession.** The remedy that gets proposed every
+time is "lighten it to about `#858585`". That number is quoted off `panel`, and
+it does not survive `panel2` — `#858585` measures 4.10 there. Walking the greys
+to the first one that clears 4.5:1 on **all four** arena surfaces lands on
+`#8c8c8c`. `muted` is `#8f8d8d`. **An AA-compliant `dim` IS `muted`** — three
+code points apart, indistinguishable on a phone. The third ink tier cannot
+exist at AA at all, so "fixing" the token would not flatten the hierarchy, it
+would delete it. Keeping the token is the only way to keep three tiers.
+
+**What the decision costs, and where the cost was paid.** It is defensible only
+while `dim` is confined to what it is for. An audit said it was not: roughly a
+dozen sites were rendering READABLE TEXT in it at 11–13pt, plus two
+`placeholderTextColor` uses. So the token was kept and the read strings moved to
+**`muted`**, which clears AA on all four surfaces (4.59–5.83). `dim` carries
+icons, hairlines and decoration, which WCAG 1.4.3 does not govern. That move did
+NOT finish in the round that claimed it did — see "the sweep is finished" below,
+which is the part to read if you only read one.
+
+Two things the audit turned up that the site list did not have:
+
+* **`OlympiadsScreen`'s "held" status chip** — a 12pt `variant="label"` on
+  `panel2`, i.e. `dim` at **2.56:1** — the worst text reading the audit had
+  found at that point, and superseded twice by the sweep below (2.51:1 and
+  1.63:1). Its two sibling statuses are already full inks (`lime`, `gold`); only
+  the quiet one was unreadable.
+* **`BoardList`'s `dim` prop was already dead.** The PARENT leaderboard passed
+  `dim: tokens.muted` — it had aliased the tier away long ago. Both of the
+  prop's consumers are text (the 11pt context line under a name, the 9pt
+  provisional badge), so the prop is gone rather than re-pointed, and the two
+  boards now share one secondary ink.
+
+`ArenaEyebrow`'s default moved with them: an 11pt uppercase mono section label
+is read, not decoration, and one call site was already overriding it to `muted`
+by hand.
+
+Recorded in three places on purpose, because a token comment is what the next
+call site actually sees: `ARENA_DARK`'s doc comment states the rule ("It is NOT
+a text colour"), the token line says `ICONS/DECORATION ONLY; text takes muted`,
+and `__tests__/dark-theme-neutrality.test.ts` now reads as an accepted decision
+rather than an outstanding TODO — it asserts the failing ratios ON PURPOSE, and
+adds the proof that lightening was refused for a reason (it walks the greys to
+`#8c8c8c` and pins it against `muted`) plus the other half of the trade (muted
+clears AA on all four surfaces; the tokens file states the rule).
+
+**The sweep is finished — and it is a test now, not a claim (2026-09-10, next
+round).** Three places said the move to `muted` was complete while it was not:
+`ARENA_DARK`'s doc comment, this document, and `dark-theme-neutrality.test.ts`
+twice. **SEVENTEEN** readable-text sites were still painted in `dim` behind the
+claim — the handoff inventory here listed eleven of them, with `TestRunnerScreen`
+line numbers already stale by two. All seventeen are on `muted` now:
+
+| file | sites moved to `muted` |
+|---|---|
+| `SelectField.tsx` | trigger placeholder, note label, search `placeholderTextColor`, "no results" |
+| `ReportQuestionSheet.tsx` | message `placeholderTextColor`, remaining-characters counter |
+| `TestReviewScreen.tsx` | inactive tab count, `Q##` index, fallback-language note |
+| `TestRunnerScreen.tsx` | save-state label, `Q##` index, flag-legend labels |
+| `TestsHomeScreen.tsx` | done-card monogram, rated meta, practice meta, attempt date |
+| `ui.tsx` | `StatusPill` `tone="off"` label |
+
+No line numbers in that table on purpose: the enforcing test prints `file:line`
+on failure, so the inventory does not have to be maintained by hand — which is
+how the last one went stale.
+
+**Two of the seventeen were worse than anything the decision was reasoned
+against**, and neither appeared on any inventory:
+
+* **`StatusPill` `tone="off"`** painted its LABEL in the same `dim` it grounds
+  itself in — a 12pt label over its own 14% tint, **2.51:1** on `panel` (2.26:1
+  on `panel2`), against the 2.56 worst case the owner actually weighed. Ground
+  and label are two different reads: the tint and border keep `dim`, the label
+  takes `muted` → **4.50:1**, the strongest label in that pill family after
+  `lime` and `gold` (its `blue` and `red` siblings measure 3.25 and 4.39).
+* **The done-card subject monogram** took `dim` at **0.55 opacity** over its own
+  tint — **1.63:1**, the worst reading in the app; it was following the badge
+  down twice. The badge keeps desaturating, because that IS the "done" signal;
+  the glyph now takes the same ink as the subject name beside it → **5.16:1**,
+  against that name's 5.47:1 at the same opacity.
+
+**Nothing enforced the confinement, so now something does.**
+`__tests__/dark-theme-neutrality.test.ts` asserted token RATIOS only — "`dim` is
+not a text colour" was prose with seventeen live violations behind it. It now
+sweeps the source and fails on `dim` reaching a `color` prop on a non-icon, a
+`placeholderTextColor`, or a `color:` style property (in React Native that
+property paints text and nothing else) — **directly or through a local alias**,
+which is the arm that matters: both of the two worst sites were aliases
+(`const accent = done ? arena.dim : …`), and a regex hunting for `arena.dim`
+beside `<AppText>` would have missed the pair of them. Icons are allowed by
+name, from whatever the file imports from `lucide-react-native`. The sweep
+carries its own fixture so it cannot rot into a no-op, and it was mutation-tested
+on the real files: a direct `<AppText>`, both aliases, a `placeholderTextColor`
+and a `color:` style each failed the suite with the exact `file:line prop`, an
+icon keeping `dim` did NOT fail, and every file was restored byte-identically.
+
+**Nothing is left on `dim` for text.** What remains in `src/` is five lucide
+icons (`Calendar`, `ChevronDown`, `CircleMinus`, `CloudUpload`, `History`) and
+two decoration aliases — the status pill's tint/border and the done card's badge
+ground.
+
+### 2. The reachability contract — and the pass that caused the bug it fixed
+
+Testers reported the consent tick and the Start button "at the bottom of the
+screen where they can't touch it". Two different mechanisms wearing one shape:
+a SCREEN put its primary action at the end of a ~900pt scroll, so on a 320×568
+phone the control the user was looking for first was several screenfuls down;
+and a DIALOG clamped itself at `maxHeight: "85%"` of the whole window while
+measuring no safe-area inset at all. A transparent RN Modal is its own native
+window, and under the edge-to-edge windows Android now enforces that window
+spans the navigation bar — so 85% centred leaves 7.5% of the window beneath the
+card, which on a 640pt phone is exactly a 48pt three-button bar. Worse, the
+control that ENABLED the action lived inside the dialog's scroll body while the
+button lived outside it: on a short screen the tick scrolled out of sight and
+the button stayed visible and permanently inert, with nothing on screen saying
+why.
+
+**The fix is a contract, not five patches**, because five is how many copies of
+this had already drifted. An action area is a NON-SCROLLING sibling laid out
+BELOW a `flex: 1` body (`components/ActionArea.tsx` + the pure
+`components/actionAreaLayout.ts`); the body yields the space, the bar is
+`flexShrink: 0` and cannot be squeezed out, and nothing is ever hidden behind it
+because it never overlays anything. The reservation is structural rather than a
+bottom padding somebody has to keep in sync with a bar whose height changes with
+the locale and the font scale. Insets and keyboard overlap arrive as MEASURED
+numbers; there is no device constant in the geometry file.
+
+**The part worth keeping in the record: the previous small-screen pass created
+this bug.** That pass fixed the Ranking pickers by giving the bar
+`flexShrink: 0` — the body can no longer squeeze the bar. Nothing in that said
+the bar cannot outgrow the WINDOW, and at the 1.3× font scale `AppText` allows,
+a bar carrying a wrapped consent line, a warning and an error above its button
+does exactly that. The bar is now capped against itself: its CONTENT (not the
+padded box, or the padding that lifts it over an open keyboard would eat the
+whole allowance) is capped at half the space the bar actually has and scrolls
+inside it. The ceiling comes from the measured window minus keyboard overlap,
+and returns "no cap" — never zero — for a measurement that has not landed. A fix
+that reserves space by hand tends to create the next version of itself; a fix
+that reserves it structurally does not.
+
+The keyboard lift is taken on the outer shell rather than on the scroll body,
+deliberately: measuring it on the body is a feedback loop — lift the bar, the
+body shrinks, the body stops overlapping the keyboard, the bar drops.
+
+### 3. Back navigation: one rule, then the router's own default, then the path the rule could not reach
+
+Three sequential fixes for one tester report, and each was necessary but not
+sufficient. All three matter because they fail differently.
+
+**The rule.** A tab route is never PUSHED and never REPLACED; it is POPPED BACK
+TO. Both role groups are Stacks anchored on their `(tabs)` navigator, so
+navigating to a tab path from a screen stacked above it diverges at the GROUP
+STACK and mounts a SECOND copy of the tab navigator instead of switching a tab
+(`replace` is no safer — it mints a new route key, so the original stays
+underneath). GO_BACK travels from the deepest FOCUSED navigator upward, so it
+then reaches the duplicate first. Because the duplicate lives in navigation
+STATE, the on-screen back bar, Android hardware back and the iOS swipe gesture
+all broke together — which is why this is one rule in `src/lib/navigation.ts`
+(`goToTab`/`popToOrReplace`) and `TabRedirect.tsx` for the guard redirects, not
+one handler per screen.
+
+**Why the symptom survived it.** The navigator that remained still answered the
+press with React Navigation's default `backBehavior: "firstRoute"` — "go to
+`routes[0]`", which is `home` in both groups. Removing the duplicate removed the
+swallower and left the default doing the same thing. Both `<Tabs>` now declare
+`backBehavior="history"`. `history` and not `fullHistory` on purpose: it
+de-duplicates, so the tab history holds one entry per tab, bottoms out, and
+hands the press up to the Stack and then to Android — no cycling, and a
+deep-linked tab bubbles out on the first press instead of inventing a Home the
+user never visited.
+
+**The path the rule could not reach, and why it is not a helper bug.** The rule
+is enforced by `dismissTo()`, and POP_TO pops back to a route inside *the stack
+it is dispatched at* — which expo-router picks by finding where the target and
+the live state first differ. From a secondary screen inside the group that is
+the group Stack, and the rule holds. But `(public)` is a THIRD root group, and
+profile → FAQ pushes it OVER the group the user is signed into; from there the
+first difference is the root route itself, so POP_TO lands on the ROOT. It drops
+`(public)`, keeps the group route, and hands it nested
+`{ screen: "(tabs)", params: { screen: "<tab>" } }`. The group Stack is told
+nothing and is still showing `profile` — and React Navigation then DERIVES
+`NAVIGATE { name: "(tabs)" }` from those unconsumed params, which StackRouter
+answers by PUSHING, because `(tabs)` is not the route on top. Second tab tree,
+back lands on `profile`. Two conditions had to hold at once (a secondary screen
+above `(tabs)` AND a `(public)` screen above the group), which is why it
+outlived the first two fixes.
+
+**Why the fix is a route param and not another `router.*` call.** The offending
+action is the library's to build, not ours, and while a foreign group holds
+focus the group Stack is unaddressable: an untargeted POP/POP_TO_TOP is
+dispatched from the deepest FOCUSED navigator and only bubbles UP, so it never
+reaches a stack that is not in the focused chain, and a targeted action only
+ever lands where the divergence computed it. Sequencing two calls does not help
+either — `linkTo()` computes its action at CALL time from the live root state,
+while the queue dispatches in an effect, so the second call is computed against
+the state the first has not yet changed. What IS reachable is the one flag
+StackRouter reads off the group route's own params: `pop`. `NAVIGATE { pop: true }`
+searches the stack (`routes.findLast`) and keeps everything UP TO the match —
+POP_TO's behaviour under NAVIGATE's name — and `createParamsFromAction` merges a
+screen's `initialParams` UNDER the action's params. So the root layout seeds
+`GROUP_ENTRY_PARAMS` (`{ pop: true }`, declared beside the rule in
+`src/lib/navigation.ts`, wired in `features/boot/RootGate.tsx`) onto `(parent)`
+and `(student)`. One dispatch, one tab navigator, the stale screen popped, back
+leaves the app.
+
+Blast radius, checked rather than assumed: only a ROOT-LEVEL entry into a group
+rewrites those params, and the only ones the app makes are these two helpers'
+POP_TO — a navigation that starts inside the group diverges below the root and
+never touches them. PUSH ignores `pop`, so a cross-group deep link onto a
+secondary screen still pushes and still keeps its back target.
+
+**Two smaller duplicates in the same family.** `openTarget()` pushed a non-tab
+target with no de-duplication, so a notification for the screen already on top
+opened an identical copy — nothing changed on screen and the next back press
+read as dead, because it only popped the copy. It now takes the current path
+(`usePathname()`) as a REQUIRED argument and skips that case; the comparison
+ignores `(group)` segments, which never appear in a URL. And a DEFERRED deep
+link (auth-required, opened signed out) pushed `/(public)/login` even when Login
+was already focused, leaving `[login, login]`; it uses `popToOrReplace()` now,
+which pops to the Login already there and still replaces when there is none.
+
+Deliberately unchanged, and pinned so they stay that way: login/logout/role
+redirects still reset the whole group (you must not be able to swipe back into a
+signed-out session holding a child's data), onboarding still replaces itself,
+and submitting an attempt still replaces the runner with the result. The
+cross-group sequence is now driven end to end through the real
+`@react-navigation/routers` StackRouter in `__tests__/back-to-parent-menu.test.ts`,
+with the route names read out of the layout files and the seed read out of
+RootGate — delete either and the test fails with the state the router actually
+produces (`["(tabs)", "profile", "(tabs)"]`, back → `profile`) rather than with
+a restatement of the rule.
+
+### 4. `subjects.name` is now a FROZEN IMPORT KEY — the rule, not the history
+
+Round 69 has the full argument. The consequence that outlives it, and that the
+next person to touch a subject needs:
+
+`public.subject_translations` (migration 171) holds what a family reads, one row
+per locale. `subjects.name` holds what a MACHINE matches: three bulk-import RPCs
+in `011` resolve a subject with `where name = (meta ->> 'subject')`. An admin
+rename therefore writes the three translation rows and **must not touch
+`name`** — every upload file an admin has been reusing for months would stop
+matching. `name` and the Azerbaijani display name are allowed to diverge, and
+that divergence is the design, not drift.
+
+Two corollaries this round had to chase down separately, both of which follow
+from the freeze rather than from the rename:
+
+* **Sorting.** Every list resolved its label through `subjectLabel()` and then
+  SORTED on `subjects.name`. The two agreed only because 171 seeded the
+  translations from those same strings — so the order looked right until the
+  first rename, then stayed put while the labels moved. It also meant an English
+  or Russian reader got an order derived from a name they never see. Collation
+  is now keyed on the ACTIVE locale with full BCP-47 tags: Azerbaijani is not
+  accented Latin, q sorts before l and x before i, so a bare `localeCompare()`
+  is wrong for somebody in every case.
+* **Notifications** (migration 172). Two producers build their text INSIDE the
+  database, where there is no `subjectLabel()`: the 3/2/1-day renewal chain and
+  the 12h/1h/ended trial chain. After a rename they would name the subject by an
+  internal import key — on the most consequential message this platform sends a
+  paying parent, asking them to act within three days. Both now read
+  `subject_translations` and keep `subjects.name` as a fallback. This
+  deliberately did NOT become a localization project:
+  `profiles.preferred_locale` is unused and the renewal chain stays
+  Azerbaijani-only.
+
+### 5. The RLS forgery hole on `parent_student_links` (migration 170)
+
+`psl_insert` and `psl_update` constrained `parent_profile_id` and nothing else —
+not `student_profile_id`, not `status`. The classic shape: the policy guarded
+the row's OWNER column and left the column that actually confers the privilege
+unconstrained. That table is the single source of truth for parental access;
+`is_parent_linked_to_student()` is one EXISTS over it, is SECURITY DEFINER so
+the table's own RLS never re-filters it, and roughly twenty SELECT policies plus
+the private child-avatar storage gate read it as their authorization fact.
+
+**One statement, not two.** `status` defaults to `pending`, but nothing revoked
+the column, so a client could supply `active` in the INSERT itself — meaning
+tightening `psl_update` alone would have fixed nothing, and both policies had to
+be replaced together.
+
+**Blast radius was takeover, not disclosure.** `parentOwnsChild` accepts an
+active link as ownership and gates `resetChildPassword` on it, and the same
+forged link exposes `students.child_unique_id`. Both halves of a minor's login —
+the 8-digit ID and a password of the attacker's choosing — from one forged row.
+
+**Not exploited and not reachable**, and that was checked rather than assumed:
+the FK requires a real `students.profile_id`, and an audit of all 199 database
+functions (76 reachable by `authenticated`), every BFF route and every
+PostgREST-readable table found no path that hands a parent a foreign child's
+uuid. Production held 48 links and none violated the new predicate. Validation
+check 128 pins it.
+
+### 6. Phone numbers: why the third attempt is the one that holds (Round 71)
+
+Full reasoning in Round 71. The one line worth carrying forward: **both
+hand-rolled attempts produced a DIFFERENT, PERFECTLY WELL-FORMED number**, which
+is the worst available failure mode — nothing rejected it, because there was
+nothing wrong with it except that it belonged to somebody else. An Italian
+number lost the 0 that is part of it; a St Petersburg number lost the 8 of its
+area code. National trunk-prefix rules are per-country data, not a rule you can
+write; `libphonenumber-js` is Google's published data for ~250 countries and
+that is the whole justification. The web and mobile copies are byte-identical
+and a shared input matrix is asserted row-for-row by both suites, because the
+website is the surface that takes payment and a family must not end up with two
+different numbers on file.
+
+The editor seed is a separate defect with the same blast radius: the phone
+editor opened EMPTY however long a number had been on file, and since the field
+became optional an empty submit means "delete it" — so opening the editor to
+CHECK your own number was enough to lose it. The seed splits the stored number
+and verifies the split by recomposing it, so a bad plan can never turn a saved
+number into a different well-formed one; it leaves the whole number on screen
+instead.
+
+### 7. The exam runner: the duplicate the pinning created, and the half of the report that was never geometry
+
+**§2's fix produced a visible regression on the highest-stakes screen, and it is
+the shape to watch for whenever a control is PROMOTED rather than moved.** The
+pinned bar renders Təsdiqlə when the student is on the last question. The
+runner's in-scroll block — the mobile port of the web sidebar's
+`tst-side-actions` — rendered its own gradient Təsdiqlə *unconditionally*. Both
+were correct in isolation; nothing in either patch was wrong; and a student
+reaching question 25 was asked to submit twice, in two different button styles,
+one under the other. A promotion is not a move until the thing it was promoted
+from is removed.
+
+**Decision: the pinned bar owns the primary action, and the scroll keeps only
+Cancel.** Cancel stays deliberately unpinned — it scores nothing and cannot be
+undone, so it must not sit under the thumb that has been tapping İrəli
+twenty-four times; reachability is for the action the student is looking for,
+not for the one they must never hit by accident.
+
+**The cost, recorded because it is a real one.** Submitting BEFORE the last
+question now goes through the palette (tap the last cell, submit there) instead
+of a button on every question. That is one extra tap on a 25-question round,
+where the palette is five rows directly above the button that used to be there.
+It is worse for a long olympiad attempt — `questions_per_attempt` goes to 500 —
+and if a tester reports it, the fix is NOT to put the second button back: it is
+to give the pinned bar a submit affordance that does not collide with Next.
+Gating the in-scroll one to `!isLast` was considered and refused: it would put
+the primary action in two different places depending on the question, which is
+the inconsistency this whole pass exists to remove.
+
+**The other half of "the button does nothing" was never geometry.** The setup
+screen's Start is press-through-disabled ON PURPOSE, so that a tap on a visibly
+inert button explains itself. For an incomplete topic selection it did. For the
+consent tick it did not: `start()` read `if (!consent || starting) return;` and
+said nothing at all — at every screen size, on every device, which is why moving
+the row could never have fixed it. The two causes wore one sentence in the
+owner's report, and fixing the loud one made the quiet one look fixed too.
+`setupBlocker()` (features/tests/logic.ts) now returns THE reason — `"selection"`
+before `"consent"`, because naming the tick while the picker is still empty
+sends the student back up past the field they came to fill — and both reasons
+render as a sentence in the same pinned bar as the tick and the button.
+Mobile-only key (`test.setup.consentWarn`, az/en/ru in the overlay): the web
+setup page disables its button outright and never reaches this branch.
+
+**A centred, non-scrolling column is the worst way to overflow.** The
+check-your-inbox screen after registration was `flex: 1` + `justifyContent:
+"center"` around a content-sized card, and centring splits the excess between
+the two ends: past the window height the card was clipped at the TOP *and* the
+BOTTOM simultaneously, with no scroll to reach either. At 320×568 with the 1.3×
+font scale AppText allows, the ru strings already exceed it — and the screen
+makes itself worse the moment the user acts, because a successful Resend
+inserts `verify.resent` (~99 ru characters, four lines at 1.3×) directly above
+the button. It is now a scrolling body with Resend pinned; the outcome line
+travels with the button it explains, into the bar the ceiling in §2 protects.
+
+**A test that names a guarantee and asserts a spelling is worse than no test.**
+The runner's "does not disturb the engine it sits on" case listed five engine
+guarantees and proved three of them by checking that an IDENTIFIER appeared
+somewhere in a 1,430-line file — `addListener("beforeRemove"`,
+`BackHandler.addEventListener(...)`, `deadlineFromRemaining` — and asserted the
+fifth (the answer-sync indicator) not at all. Every one of those strings
+survives deleting the `preventDefault()` inside the handler, returning `false`
+from the back handler, or replacing the tick with a decrement: it survives
+exactly the regressions it was written to catch, while reading in a diff as
+coverage of the most dangerous screen in the app. It is now six cases, each
+asserting the behaviour-bearing expression where it lives (handler bodies are
+extracted by brace-matching, not searched for by name).
+
+**Every new guard was mutation-tested: 16 of 16 mutations were detected, and
+every file was restored byte-identically (sha256 before == after).** The
+principle the exercise enforces: a source-text test earns its place only when
+breaking the guarantee breaks the test. Sixteen deliberate regressions —
+removing `|| submitting` from Prev, firing the RPC from the bar, deleting
+`preventDefault()`, returning `false` from hardware back, decrementing the
+countdown, swallowing the save-failure state, moving autosave into the bar,
+re-adding the duplicate Submit, putting `...pad` after the padding override,
+making the confirm dialog dismissable mid-request, restoring the silent consent
+return, deleting the blocker's consent case, making the first delete press
+submit, bypassing the delete machine, dropping the request's own step check,
+un-pinning Resend and re-centring the verify card — each failed the case that
+names it and nothing else, except two that correctly failed a sibling property
+test as well.
+
+**The two-step account deletion had no test at all, and its rule lived in a JSX
+prop.** `bffDeleteAccount()` takes the parent, every child under them and every
+answer those children ever gave; there is no undo. The gate was
+`if (step === 1) setStep(2); else void confirmDelete();` inside a button —
+rewritten this round, pinned by nothing, and one reasonable-looking future edit
+("call confirmDelete on press") from deleting an account on a single tap. The
+machine is now `features/profile/deleteAccount.ts` and there are TWO locks,
+because the button and the request are separate code and only one of them is on
+screen: `advanceDelete()` can return `submit: true` only from the final step,
+and `confirmDelete()` re-checks `canRequestDelete(step)` before it sends
+anything. Closing returns to CLOSED, never to step 1 — a sheet that reopened at
+the final prompt would be one tap from deleting the account — and the two steps
+ask DIFFERENT questions, because a repeated identical prompt trains a user to
+tap through it, which is the opposite of a confirmation.
+
+### Database state this round assumes
+
+**Migrations `170`, `171` and `172` are APPLIED to STAGING and PRODUCTION,
+2026-09-10.** All three are backported into their canonical root files
+(`003`/`010`/`011`/`012`/`013` between them) and carry validation checks 128
+and 129. Nothing in this round's code is waiting on a migration, and no
+migration is waiting on a deploy — which is the order CLAUDE.md requires
+(database first, then push, because Vercel deploys the moment a commit lands).
+
+The from-zero rebuild proof was NOT run this round. It is owed, not optional.
+
+### Validation
+
+`mobile-app` **1165 jest across 61 suites**, `tsc --noEmit` clean, `expo lint`
+clean apart from one pre-existing unused-variable warning in `IapPanel.tsx`.
+The dark-theme suite is 46 of those, three of them new around the `dim`
+decision. §7 added 41 cases to the count it measured (1124): the rewritten
+engine block and the runner's single-Submit pin, the double-count guard at both
+screens that apply it, ConfirmModal's in-flight modality, the setup blocker,
+the check-your-inbox contract, and a new suite for the two-step account
+deletion. Web and admin suites are untouched by this entry's work (no web or
+admin SOURCE file changed in it) and were re-run to confirm it.
+
+### Next
+
+The mobile blocker is unchanged and is a PRE-SUBMISSION one, not an OTA one:
+**1.16.0 collects an optional child `gender` — a minor's personal data — while
+Play *Data safety* and Apple *App Privacy* still answer that no such data is
+collected. Both declarations are updated BEFORE 1.16.0 is submitted to either
+store.** See CLAUDE.md → "Releasing a new mobile version".
+
+---
+
+## ROUND 71 — THE NUMBERING PLANS ARE NOT OURS TO MAINTAIN (2026-09-10)
+
+**The third attempt at one bug, and the first that is not a guess.** A parent's
+phone number was being normalised to E.164 by hand, and both previous rules
+produced a DIFFERENT, PERFECTLY WELL-FORMED number — the worst failure mode
+available, because `E164_RE`, the server's `PHONE_RE` and
+`chk_profiles_phone_e164` all accept it and the parent simply has a stranger's
+number on file.
+
+- **Attempt 1** (`national.replace(/^0+/, "")`): greedy and country-blind.
+  Correct for Azerbaijan, correct by accident across most of Europe, wrong for
+  Italy — whose plan has NO trunk prefix, so Rome's `+39 06 …` became
+  `+39 6 …` — and inert for every plan whose trunk digit is not `0`.
+- **Attempt 2** (`TRUNK_PREFIX_BY_DIAL`, a hand-maintained table): cured Italy
+  and **introduced a blocker**. `"7" -> "8"` strips the first digit of real
+  Russian AREA codes (812 St Petersburg, 831, 843, 844, 845, 846, 861, 862,
+  863, 87xx), so a pasted `+7 812 123 45 67` was stored as `+7 121 234 567`.
+  The same table defaulted every unlisted plan to `0`, eating a real digit in
+  Benin and San Marino, and left Lithuania and Belarus (trunk `8`) unstripped.
+
+**The fix is to stop deciding.** `libphonenumber-js` (the maintained JS port of
+Google's libphonenumber, MIT, **zero dependencies**) now makes every
+numbering-plan decision, including the ones made while a number is still half
+typed (`AsYouType`).
+
+### What was built
+
+- **`src/lib/phoneE164.ts`, byte-identical in `web-app/` and `mobile-app/`** —
+  the `subjectLabel.ts` twin pattern, and the web suite asserts the two files
+  match byte for byte (so does `countries.ts` and the shared fixture).
+  `parseToE164(nationalOrFull, dialCode)` accepts a national number with or
+  without its trunk prefix, a `+` number, the `00` IDD form, the `(0)`
+  convention, separators, and bare digits that already carry the country code.
+  `composeE164`, `applyPhoneEdit`, `splitE164`, `matchDialCode`, `countryFor`
+  and `E164_RE` moved there too; `PhoneField` re-exports them, so no call site
+  changed its import.
+- **Deleted:** `TRUNK_PREFIX_BY_DIAL`, `trunkPrefixForDial`, `stripTrunkPrefix`
+  and every call site. `countries.ts` is now a picker list and nothing else —
+  and is byte-identical to the web copy for the first time.
+- **`PHONE_MAX_DIGITS` replaces `PHONE_MAX_LEN`.** The old cap was 14
+  CHARACTERS INCLUDING SEPARATORS, so an 11-digit number written out with
+  spaces lost its final digit **and then composed into a valid E.164 number
+  belonging to somebody else**. The new bound counts DIGITS and is **asked of
+  the library** (`Metadata` + `possibleLengths()` over `getCountries()` = 17,
+  Indonesia) rather than guessed, so it cannot go stale against the metadata.
+- **The web rail was still on attempt 1.** `sanitizeNational`'s
+  `replace(/^0+/, "")` was live on `olympiq.ai` — the surface that charges
+  cards — so a parent got a different stored number depending on where they
+  signed up. Both rails now compose through the same function. The web field's
+  `NATIONAL_RE` (a 4–12 digit claim, false at both ends — San Marino is 10,
+  an Italian landline can be 11) is gone; the single `E164_RE` check on the
+  composed value is strictly stronger.
+- **The `00` typing bug the last round missed:** `00994` typed one character at
+  a time had its final keystroke refused as an autofill blank (the digits moved
+  into the country chip, which reads as "the field was emptied", and only the
+  `+` draft had an exemption). The blank refusal now also exempts a dial code
+  the user was **extending** — the field's digits are a prefix of the arriving
+  digits — which keeps a bare `+994` landing on top of a full number refused.
+
+### Decisions worth keeping
+
+- **`min` metadata, not `max`** (82 kB raw / **18.9 kB gzipped**, vs 154 kB /
+  38.7 kB). The acceptance bar is `isPossible()` — a LENGTH check against the
+  plan — deliberately not `isValid()`, which also requires the number to fall
+  in a published RANGE. A range opened after this metadata snapshot is a real
+  number a real parent holds; `isValid()` would refuse to let them save it, and
+  Benin's legacy 8-digit numbers already fail it today. Length is the strongest
+  check that cannot go stale into a false negative.
+- **A draft never carries a `+` unless the user typed one.** A number the
+  library cannot read still composes to something non-empty — a number on
+  screen must never be read as "no number given", which is what makes the
+  OPTIONAL field leavable — but the picker's dial code is never promoted into
+  an E.164-shaped string. This closes a hole the old code had: an Azerbaijani
+  number one digit short composed into `+9945012345`, which every regex in the
+  stack accepts. It now composes to `9945012345`, which none of them do.
+
+### Known limits (not regressions; pre-existing constraint shape)
+
+`E164_RE` / `chk_profiles_phone_e164` accept 7–15 digits. The library's metadata
+admits totals from 6 (an Austrian 4-digit short code) to 19 (a 17-digit
+Indonesian NSN), so numbers at those extremes are refused by the app's own
+constraint with a normal validation error. Widening that would need a migration
+and was not in scope.
+
+### Validation
+
+`mobile 1079 jest / web 1297 vitest / admin 948 vitest`, all green; both
+typechecks clean; `next build` clean for both apps; `npm audit` 0 in web-app and
+unchanged (18 pre-existing expo/metro toolchain advisories, none implicating the
+new dependency) in mobile-app. The shared matrix
+(`src/lib/__tests__/phoneMatrix.ts` ≡ `mobile-app/__tests__/phoneMatrix.ts`) is
+run row-for-row by BOTH suites: AZ local (all six operator codes), AZ
+international, `+994 (0)50 …`, `00994`, Italy Rome and Milan, Russia `8 926 …`
+and `+7 812 …`, Kazakhstan, Benin (both formats), San Marino, Lithuania,
+Belarus, NANP 10- and 11-digit, Hungary, UK `(0)`, Türkiye, Germany, Côte
+d'Ivoire, empty, bare `+`, and idempotency on every row.
+
+---
+
+## ROUND 70 — THE TOKEN THE NEUTRAL PASS EXEMPTED BY MISTAKE (2026-09-10)
+
+Round 69's dark-palette pass flattened every surface in the mobile dark theme to
+near-zero chroma and left **one** surface at full strength. This round fixes that
+token, sweeps the rest of the palette for the same error, and turns the reasoning
+into a test. No component, layout, spacing or hierarchy changed; the mobile
+version stays **1.16.0** (unreleased, build not yet cut — see Round 69).
+
+### The real defect was the CLASSIFICATION, not the hex
+
+The neutral pass sorted every token into two boxes — *neutral surface* or *brand
+accent* — and the palette has **three roles**. `APP_DARK.pillBg` is a SURFACE
+that carries the accent hue: it sits at chip lightness by design (L\*ab 15.01 vs
+chipBg's 15.13, a 1.003:1 luminance ratio), so HUE is the only thing separating
+the two and its chroma is the entire signal. Filed as an accent, it was exempted
+from the sweep and kept the web's C\*ab 24.7 while every neighbour dropped to
+<= 1.4. That value was never "the accent"; it was correct only while the
+surfaces around it were navy at C\*ab 16-21. Against neutral ones the same
+number reads as a foreign navy block, which is exactly what the reviewer saw.
+
+The relation that broke is measurable and it held in BOTH themes before: the
+pill was *the chip surface, tinted*. Light: pillBg and chipBg are the SAME hex
+(`#f7f0fe`), dE00 = 0. Old dark: dE00 = 1.98. After the neutral pass: **17.33**.
+
+**`#182447` -> `#232532`.** Chroma cut to C\*ab 9.2 — the same whisper the light
+pill already carries over its own ground (`#f7f0fe` is C\*ab 7.6) — hue held at
+287 deg (the accent is 293), and L\*ab held at **15.01** so relative luminance
+moved 0.0191088 -> 0.0191075, a change of 1.3e-6. Contrast is luminance, so
+nothing moved: `pillText` on `pillBg` **8.2899:1 -> 8.2900:1**, and the tab bar's
+accent ink on the same ground 3.3772:1 -> 3.3773:1. dE00 to chipBg is now 8.78 —
+about 9x the discrimination threshold, so it still reads as tinted rather than
+collapsing into the chip.
+
+### The sweep: every remaining chroma, with a verdict
+
+Fourteen surfaces and neutral inks measure C\*ab 0.60-1.35 (RGB spread 1-2) —
+all correctly neutral, none missed. Ten brand accents measure C\*ab 34.8-100.4
+(spread 96-255) — all correctly saturated, including the blue ones. **Nothing
+sits between except the pill.** `pillText` (C\*ab 34.8) is an INK and stays a
+full accent; that is the pair's whole logic — the ground whispers, the label
+speaks. Outside `tokens.ts` there are no dark-theme colour literals to sweep:
+`ARENA_BTN_INK` is `#100e0e` (= arena.bg, neutral), the dark shadow is pure
+black, the `#ffffff` literals are ink on accent fills, and `Avatar`'s eight
+pastel pairs are a categorical identity palette that is theme-independent and
+whose whole function is hue.
+
+### The ring track: a luminance step, bought DOWNWARD
+
+Student home's rank ring drew its track with `arena.bg2` on `arena.panel` —
+1.064:1, 3.02 L\*ab, dE00 1.88. That is the weakest pair the palette ships and,
+for a bare 9px arc with no border or shadow to help, it is at the discrimination
+threshold. Worth stating precisely: the chroma component here was only ever
+worth 0.32 of dE00 (the old navy pair measured 2.20), so the loss is small — but
+it landed on the one pair that had nothing else to spare.
+
+Track moved to `arena.bg`: **1.147:1, 6.87 L\*ab, dE00 4.22.** It goes DOWN, not
+up, and that is the load-bearing part. The obvious fix is `line` (1.306:1, 9.74
+L\*ab — twice the step), and it is wrong: the brand gradient is painted ON the
+track, and its purple stop measures **3.38:1 over `bg` but only 2.26:1 over
+`line`**. Going lighter buys separation by taking the ring's primary read below
+the 3:1 non-text floor. The test pins both halves so a later "make it more
+visible" pass fails at the assertion instead of in review.
+
+Measured and deliberately NOT changed: `TestResultScreen`'s ring uses `panel2`
+on `panel` — dE00 3.22, comfortably above threshold, so it is not the same
+defect. Its sweep-on-track does measure 2.66:1, which is a separate pre-existing
+non-text-contrast miss on a screen this round was not asked to touch. Recorded
+here rather than fixed silently.
+
+### Nothing fell
+
+Checked exhaustively — every same-palette token pair in both dark palettes, not
+just the sixteen the test lists. The hue pass had 35 pairs drift down, worst
+-0.0082. **This round's changes make nothing fall further.** The pill re-tint
+moves 13 pairs; 11 rise, and the two that drift (bg/pillBg, surface/pillBg —
+surface-vs-surface, not legibility pairs) drift by **2e-5**, four decimal places
+under that worst case. `ARENA_DARK.dim` was not touched: still 2.83:1 on panel,
+still the owner's call, still asserted as failing on purpose.
+
+### The test now fails in BOTH directions
+
+`__tests__/dark-theme-neutrality.test.ts` grew a third classification list
+(`TINTED_SURFACES`) and a chroma budget with walls on both sides, because both
+sides are errors: a neutral that regains saturation fails, a brand accent that
+gets desaturated fails, and the tinted pill fails if it reaches ink strength OR
+is flattened to grey. The completeness assertion spans all three lists, so a
+future session cannot dodge the window by re-filing the token — every other list
+rejects the value. Verified by mutation: restoring `#182447` fails 1 test,
+flattening to `#262625` fails 2, reverting the ring track fails 1.
+
+**Validation:** mobile `npx tsc --noEmit` clean; `npx jest` **938/938 across 57
+suites** (the neutrality suite itself went 25 -> 37). No i18n strings changed, so
+no trilingual work was owed. `app.json` / `package.json` remain 1.16.0.
+
+---
+
+## ROUND 69 — A RENAME THAT NOW REACHES THE READER (2026-09-10)
+
+Round 68, directly below, **REFUSED three name fields**: no `subject_translations`
+table existed and the change needed edits in two apps that round was not allowed
+to touch. That refusal is now LIFTED and its conditions met — migration
+`2026_09_10_171_subject_translations.sql` adds the table, `subjectLabel()` resolves
+`subj.db.<code>` ahead of the shipped catalog in both web and mobile, and the
+Subjects form takes az/en/ru. Read the two sections in order: 68 is not stale, it
+is the state this round changed.
+
+### The mobile version stays at 1.16.0 — a decision, not an oversight
+
+`mobile-app/` changed this round (`src/lib/subjectLabel.ts`, the i18n layer, the
+generated catalog), and CLAUDE.md says every commit including `mobile-app/` bumps
+`expo.version`. **It is 1.16.0 and it stays at 1.16.0.** Verified in this round:
+`mobile-app/app.json` → `expo.version: "1.16.0"` and `mobile-app/package.json` →
+`"version": "1.16.0"` agree, and `runtimeVersion.policy` is `appVersion`. Neither
+file is to be touched.
+
+**Why.** The rule exists so that a **RELEASED** version maps 1:1 to a store
+release — a bump forces a new build, because with `runtimeVersion: appVersion` an
+OTA update published for 1.16.1 can never reach a 1.16.0 binary. **1.16.0 is
+UNRELEASED and NOT YET BUILT** (`CHANGELOG.md`: *"1.16.0 — unreleased; version
+assigned, build not yet cut"*). No binary carrying it exists on any device or in
+any store, so there is no install for these changes to be stranded from and no
+store release for a new number to describe. They ride 1.16.0 itself. Bumping to
+1.16.1 would mint a version that ships nothing 1.16.0 does not, silently retire a
+number that was never used, and split one build's changelog across two release
+headings — including this round's own `[store]` line, already filed under 1.16.0.
+
+**When this stops being true:** the moment a 1.16.0 build is cut. After that, the
+next `mobile-app/` change bumps, exactly as the rule says. Do not "fix" this by
+bumping.
+
+### The rename appears within a minute, and the form now says so
+
+`getSubjectNameRows()` (`web-app/src/lib/flags.ts`) is wrapped in
+`unstable_cache(…, { revalidate: 60 })`, so a rename can take up to a minute to
+show on the site — long enough for the admin who just saved it to reload, see the
+old name and file a bug. Two ways to answer that; the smaller one was taken.
+
+* **Revalidate from the admin action — REJECTED, because it cannot work.** The
+  admin panel is a SEPARATE deployment. A `revalidateTag()`/`revalidatePath()`
+  called there drops THAT app's cache and never the web app's. The same wall is
+  already recorded in `web-app/src/app/api/maintenance-status/route.ts`, where a
+  4-second poll exists for precisely this reason. Making it work means a public
+  revalidation webhook in web-app, a shared secret to protect it, and an outbound
+  call from the subject action — three new moving parts and a new public endpoint,
+  bought for a one-minute delay on a **name**.
+* **Say so where it matters — TAKEN.** The hint already rendered under the three
+  name fields (`subj.nameFallbackHint` in `admin-panel/src/i18n/messages.ts`, wired
+  through `manage/subjects/strings.ts` → `SubjectForm.tsx`) gained one clause in
+  az/en/ru: the change appears on the site and in the app within a minute. No new
+  key, no new prop, no component change — three string values.
+
+**Dropping the cache was not an option**, and the reason is now recorded at the
+cache site itself: a subject label renders on nearly every public page and across
+the whole parent/child area, so an uncached read is a database round-trip per
+request on the hottest path in the product.
+
+### Comments corrected
+
+`subjectLabel.ts` described the shipped catalog as "also CMS-overridable", which
+stopped being the useful description once the DB layer resolves first: step 2 is
+now reachable ONLY when step 1 found nothing — no `subject_translations` row for
+that locale, an unreadable DB, or a deploy that landed ahead of migration 171.
+Corrected in **both** copies; `web-app/src/lib/subjectLabel.ts` and
+`mobile-app/src/lib/subjectLabel.ts` remain **byte-identical**, which
+`web-app/src/lib/__tests__/subjectRename.test.ts` asserts.
+
+`CHANGELOG.md` carried an `[admin]` bullet documenting `subj.nameLocaleHint` — the
+hint this same working tree deleted — contradicting both its replacement and the
+`[store]` bullet twenty lines above it. Rewritten to describe what actually
+shipped.
+
+### Still owed
+
+Migration `171` is **NOT applied** to either database. Staging first, then
+production, and **before** the web deploy that reads `subject_translations`
+(CLAUDE.md: database first, then push — a database ahead of its code is inert,
+code ahead of its database is broken). Until it is applied, every read path falls
+back to the shipped catalog and both apps render exactly as they do today, which
+is what the fallback is for.
+
+---
+
+## ROUND 68 — TWO SCREENS FOR ONE PAIR OF TABLES (admin panel, 2026-09-10)
+
+**Scope: `admin-panel/` only. No migration, no database change, no SQL file
+touched, and not one row of `subjects_pricing` written by this round.**
+
+### What was actually wrong
+
+The task read as "merge Prices into Subjects", which sounds like a layout
+change. It was not. `/pricing` and `/manage/subjects` were **two screens
+rendering the same `subjects × subjects_pricing` join, and both could WRITE
+it** — `/pricing` through a per-cell `saveSubjectPrice`, Subjects through a
+create/edit form that posted name, status and three amounts in one submission.
+Nothing about the merge is new capability; the work was deciding which of the
+two write paths survives and deleting the other, because leaving both live is
+how the amounts get lost.
+
+### The decision, and why
+
+**One action per table.**
+
+* `saveSubjectPrice` (lib/admin/pricing.ts) owns `subjects_pricing`. It posts a
+  subject id, an interval and an amount. It reads no name and no status.
+* `createSubject` / `updateSubject` (lib/admin/actions.ts) own the `subjects`
+  row. **`updateSubject` no longer writes prices at all** —
+  `parseSubjectForm(formData, t, /* withPrices */ false)` does not even look at
+  a `price_*` field, so a forged one is ignored rather than written.
+
+That makes the two correctness requirements properties of the code's SHAPE:
+
+* *Editing a subject must not reset its prices* — `updateSubject` has no code
+  path that reaches `subjects_pricing` except one read-only publish check.
+* *Changing a price must not touch the name or status* — `saveSubjectPrice`
+  never selects, and never writes, the `subjects` table.
+
+**Creation still writes both**, and that is deliberate: a subject born unpriced
+is invisible on every family-facing surface (they build their lists from PRICED
+rows, which is what hid Elm and Fizika from `/services`), and `createSubject`
+writes the three prices BEFORE applying the requested status so
+"published implies sellable" holds at birth. `writeSubjectPrices` and its
+skip-unchanged-cycle rule are unchanged; they are now reached only from
+creation, and the tests were re-pointed there rather than deleted.
+
+### The hazard the old form actually carried
+
+Worth naming, because "keep the three inputs on the edit form too" is the
+obvious way to undo this: that form re-posted all three amounts every time a
+NAME was saved, from values server-rendered when the page loaded. Two admins,
+or one admin with a tab open, and a rename silently overwrites a reprice made in
+between — with no version, no conflict and no audit signal that anything was
+lost. The skip-unchanged rule made it quieter, not safer: the stale value is
+still "changed" relative to the new one.
+
+### The interlock had to be re-derived, not assumed
+
+Removing prices from the edit form turned its **status dropdown into a second
+route into `'active'`** — and the old ordering ("write the prices, then the
+status") was the only thing that had made publishing through it safe. So
+`updateSubject` now runs the same check `transitionSubject` runs: moving a
+subject to `'active'` requires all three cycles priced AND `status='active'` in
+`subjects_pricing`, else it refuses with `subj.publishBlocked`. A read failure
+counts as NOT complete — refusing to publish on bad information is recoverable;
+publishing an unsellable subject is the silent failure this invariant exists for.
+Moves that HIDE a subject never consult pricing, because archiving is the way
+out of a bad state rather than a reward for being in a good one.
+
+### The Apple coupling: made visible, in two places
+
+Creating a subject here does not create an Apple product. `iap_products`
+(migration 164) maps `(platform, scope, subject_id, interval)` to a store
+product id, and `mobile-app/src/features/iap/catalog.ts` intersects the ACTIVE
+rows with StoreKit's own priced products — a subject missing from either side is
+simply not offered. **No error, no log, no admin-side signal.** An admin who
+creates a subject, prices it, publishes it and then checks an iPhone concludes
+the platform is broken.
+
+Two surfaces, not one:
+
+1. A warn card (`IapNotice`, built from the panel's existing `setting-card-warn`
+   vocabulary) on the create form, and on the edit page of any subject whose
+   products are not all live. Trilingual, with the 4-step order: create and
+   price here → add one product per cycle under `/iap` → create those exact ids
+   in App Store Connect and get them approved → come back and activate.
+2. A per-row **"iOS-da satılmır"** badge on the Subjects list, beside the
+   existing "no price" one, computed from the live product map — the precedent
+   the map itself suggested, since a paragraph on a form nobody revisits is not
+   a signal.
+
+**The slug is deliberately NOT auto-composed.** `slugifyCode()` produces
+underscores, which `ck_iap_product_id_shape` rejects, and a store product id is
+permanent and public — migration 164 chose `logic` over `az_language` for
+exactly that reason. The notice tells the admin to enter it by hand on `/iap`,
+where the preview exists; nothing here mints a product id.
+
+### Refused, and why
+
+* **Three name fields.** `subjects.name` is a single `text` column holding the
+  Azerbaijani name; there is no `subject_translations` table. The displayed
+  label comes from `subjectLabel(t, code, name)` in `web-app/` and `mobile-app/`,
+  which resolves `subj.<code>` and falls back to the raw column. Adding EN/RU
+  name fields would need a migration PLUS edits in two apps this round is not
+  allowed to touch — and collapsing three inputs into one column would orphan
+  nothing today but would lie about where the names live. Instead the field
+  states the consequence: **a new subject shows its Azerbaijani name in all
+  three languages until `subj.<newcode>` is added to both dictionaries.** That
+  gap is real and this panel cannot close it.
+* **Removing the delete button from the row.** The brief said "edit, inline
+  price, activate/deactivate, nothing else", but `SubjectDeleteButton` is the
+  previewed-and-confirmed migration-111 flow and the only guarded route to
+  removing a subject. Read as "add no new actions", not "delete a working one".
+* **Deleting the `/pricing` route.** It was a sidebar entry for months, so it is
+  bookmarked. It redirects to `/manage/subjects`, the same treatment Round 21
+  gave Cities / Districts / Schools.
+* **A migration.** `subjects` is `code text not null unique` with no CHECK, no
+  enum and no `alter table` anywhere; the seed uses `on conflict (code) do
+  nothing` and the 7th subject arrived as an ordinary row in migration 151.
+  Adding a subject is a FORM, not a schema change, and the whole pipeline
+  already exists.
+
+### Moves that were mechanical but load-bearing
+
+`app/(protected)/pricing/shared.ts` was imported by **eight** modules outside
+that route (including `lib/admin/olympiad.ts`, for `parsePackagePriceAmount`).
+Deleting the directory would have taken the money parser with it, so it moved to
+`lib/admin/pricing-shared.ts` FIRST. `PriceCell.tsx` moved to `components/` for
+the same reason — it is now rendered by two screens. Both were `git mv`d, not
+copied; there is still exactly one price cell and one price action.
+`pricing/labels.ts` (a local trilingual dict) is gone: the surviving strings
+moved into `src/i18n/messages.ts` under `subj.*` as its own header always asked,
+the duplicates folded into the `subj.*` keys that already said the same thing,
+and `pricing.empty` ("Add a subject under Subjects first") was dropped as
+self-referential once merged. The layout's `navLabel` fallback chain lost the
+pricing dictionary with it.
+
+### Content-Manager gating: unchanged at all four layers
+
+Nav `adminOnly` (now on `nav.subjects`, in the TAKSONOMİYA group), the layout
+filter, `requireAdmin()` as the first statement of every page and every action,
+and `admin_upsert_subject_price`'s own in-body `is_admin()` guard with no
+`has_permission()` escape hatch. No `permission:` field was introduced — the
+layout returns on `adminOnly` first, so one would be inert and would invite
+someone to grant it later.
+
+### Validation
+
+`npx tsc --noEmit` clean · `npx next build` clean · `npx next lint` clean (one
+pre-existing `SiteTypography` a11y warning, untouched) · **`npx vitest run` —
+45 files, 901 tests, all passing** (was 870; +31). The four that failed after
+the change were the ones pinning the behaviour deliberately removed — the
+edit-form price writes — and were rewritten to pin the replacement rather than
+loosened. New coverage in
+`src/lib/admin/__tests__/subject-pricing-actions.test.ts`: guard-before-FormData
+on `saveSubjectPrice`, its uuid / interval / seven bad-amount refusals, no raw
+Postgres message, no duplicate audit row; **price-preserved-on-rename** and
+**name-preserved-on-price-change** as named tests; the forged-`price_month`
+case; the status-dropdown publish interlock; and a small suite asserting the
+merge itself (the redirect does no data work, no `/pricing` nav entry survives,
+the cell was lifted rather than copied, both Apple surfaces exist, the Apple
+copy ships in three languages and still names App Store Connect and the silence).
+
+### Owed, and NOT folded in
+
+`public.iap_products` and `public.iap_purchase_intents` exist only in
+`supabase/sql/migrations/2026_08_31_164_…` and were never backported into a
+canonical root file — a from-zero rebuild of `001`–`016` produces a database
+with **no `iap_products` table**. That is pre-existing house-rule debt, out of
+scope here, and it is why `loadIosProducts()` treats a read failure as
+`"unknown"` rather than as `"no"`: the new badge must not fail the Subjects
+screen on a database that legitimately has no product map yet. Its own backport
+is a separate reviewed change.
 
 ---
 
@@ -812,7 +1727,40 @@ published in the app), registered in Lerik rayonu, Peştətük. No MMC, no ASC, 
 legal entity. Recorded in `CLAUDE.md` so it is never re-derived; it changes the
 Apple enrolment type, the US tax form, and the App Store seller name.
 
-### THE BLOCKER: the account supplied is AZN-only
+### ~~THE BLOCKER: the account supplied is AZN-only~~ — ✅ RESOLVED 2026-09-10
+
+**Read this first; the section below is the investigation, kept because its
+reasoning was right and should not be re-run.** App Store Connect → *Agreements,
+Tax, and Banking* now reads, verified from the live page:
+
+| Row | Value |
+|---|---|
+| Free Apps Agreement | **Active** (Sep 1 2026 – Aug 5 2027) |
+| **Paid Apps Agreement** | **Active** (same term) — this is the one IAP requires |
+| Bank account | **International Bank of Azerbaijan OJSC — Active** |
+| Bank currency | **EUR** |
+| Royalty currencies | **USD** |
+| W-8BEN / Certificate of Foreign Status | **Active**, both submitted Sep 2 2026 |
+| Digital Services Act | **Active**, 27 countries |
+
+Two things the investigation below got right and one label that misleads:
+
+* **The mechanism was predicted correctly.** "Each currency is a separate account
+  with its own IBAN in Azerbaijan, so this is a NEW account either way" — that is
+  exactly what happened. A **EUR account was opened**, alongside the existing AZN
+  one.
+* **The refusal to quote "Apple pays Azerbaijan in EUR" as policy was correct and
+  still stands.** EUR is what this seller's dropdown offered and what was opened.
+  That is an observation about one account, not a schedule of supported payout
+  currencies, and the minimum-threshold table still does not establish one.
+* **"International Bank of Azerbaijan" IS ABB.** Same bank, English name. Nothing
+  moved institutions — do not read the table above as a change of bank. The AZN
+  account at ABB is untouched and remains the merchant account for the web manat
+  rail. Two accounts, two rails, one bank.
+
+Nothing below is an open action. *(Original investigation follows.)*
+
+#### THE BLOCKER *(as investigated 2026-09-02)*: the account supplied is AZN-only
 
 ABB (Azərbaycan Beynəlxalq Bankı), Sabail branch, BIC `IBAZAZ2X`. The requisites
 document names exactly **one** account and marks it `(AZN)`. Form questions 2.1
@@ -1799,7 +2747,7 @@ it in this change regardless of the rest.
   silently drops grade-less rows and rows whose grade is no longer a package target —
   and §3's select-all plus §4's bulk Delete would then act on a set the admin never
   saw. Build the options as the UNION of row grades and package target grades, add a
-  NO_GRADE sentinel (the existing topic filter already does this with a `" none"`
+  NO_GRADE sentinel (the existing topic filter already does this with a `"\u0000none"`
   sentinel), and keep the filter INSIDE the existing `filtered` memo so the
   selection-pruning invariant holds.
 - **Rotations and in-flight attempts are safe.** The prune collapses the seen array

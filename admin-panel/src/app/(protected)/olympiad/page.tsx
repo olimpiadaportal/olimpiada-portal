@@ -4,6 +4,11 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { getT, getLocale } from "@/i18n/server";
 import { FilterBar } from "@/components/FilterBar";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
+import {
+  SUBJECT_DISPLAY_EMBED,
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import type { OlympiadPackageDeleteStrings } from "@/components/OlympiadPackageDeleteButton";
 import {
@@ -39,7 +44,8 @@ export default async function OlympiadListPage({
 }) {
   await requireAdmin();
   const t = await getT();
-  const lt = olympiadLocalStrings(await getLocale());
+  const locale = await getLocale();
+  const lt = olympiadLocalStrings(locale);
   const supabase = await createClient();
   const sp = await searchParams;
 
@@ -76,7 +82,7 @@ export default async function OlympiadListPage({
     let qb = supabase
       .from("olympiad_packages")
       .select(
-        "id, status, price_amount, sale_starts_at, sale_ends_at, subjects(name), olympiad_package_translations(locale, title)",
+        `id, status, price_amount, sale_starts_at, sale_ends_at, ${SUBJECT_DISPLAY_EMBED}, olympiad_package_translations(locale, title)`,
       );
     if (searchIds) qb = qb.in("id", searchIds);
     if (subject) qb = qb.eq("subject_id", subject);
@@ -89,7 +95,7 @@ export default async function OlympiadListPage({
 
   const [list, { data: subjects }] = await Promise.all([
     loadRows(),
-    supabase.from("subjects").select("id, name").order("name"),
+    supabase.from("subjects").select(SUBJECT_DISPLAY_SELECT),
   ]);
 
   const az = (r: any): string =>
@@ -176,10 +182,14 @@ export default async function OlympiadListPage({
             value: subject,
             allLabel: t("qfilter.allSubjects"),
             ariaLabel: t("oly2.subject"),
-            options: ((subjects ?? []) as any[]).map((s) => ({
-              value: s.id,
-              label: String(s.name),
-            })),
+            // Display name + display order: sorting on `subjects.name` sorts
+            // by the frozen import key, which nobody but the importer sees.
+            options: ((subjects ?? []) as any[])
+              .map((s) => ({
+                value: s.id,
+                label: subjectDisplayName(s, locale),
+              }))
+              .sort((a, b) => a.label.localeCompare(b.label, locale)),
           },
           {
             key: "status",
@@ -229,7 +239,7 @@ export default async function OlympiadListPage({
                   return (
                     <tr key={r.id}>
                       <td>{az(r)}</td>
-                      <td>{r.subjects?.name ?? "—"}</td>
+                      <td>{subjectDisplayName(r.subjects, locale) || "—"}</td>
                       <td className="nowrap">{r.price_amount} AZN</td>
                       <td className="nowrap">
                         <span className={`pill ${lifecyclePillClass(state)}`}>

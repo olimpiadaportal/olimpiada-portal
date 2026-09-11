@@ -57,6 +57,12 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { preflightStoreProduct } from "@/lib/admin/appStoreConnect";
+import { getLocale } from "@/i18n/server";
+import {
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+  type SubjectTranslationRow,
+} from "@/lib/admin/subject-display";
 
 // The ONLY platform this screen can produce. Never read from client input.
 // See ANDROID PURCHASE-SILENCE above.
@@ -197,7 +203,7 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
   // product for an archived subject could never be activated anyway, so
   // offering it would only invite a permanent, useless store id.
   const [allSubjectsRes, allPackagesRes] = await Promise.all([
-    supabase.from("subjects").select("id, name, status").order("name"),
+    supabase.from("subjects").select(SUBJECT_DISPLAY_SELECT),
     supabase
       .from("olympiad_packages")
       .select("id, code, status, olympiad_package_translations(locale, title)")
@@ -224,11 +230,25 @@ export async function listIapCatalogue(): Promise<IapCatalogue> {
     );
   }
 
-  const subjectRows = (allSubjectsRes.data ?? []) as {
+  // Named the way the Subjects screen names them — an admin binding an App
+  // Store product to a subject is looking at the same catalogue. The product
+  // id beside it is the machine handle here; `subjects.name` is a THIRD string
+  // and would only make the row ambiguous. `.order("name")` went with the
+  // column — it sorted by the invisible key — and the sort moved here.
+  const locale = await getLocale();
+  const subjectRows = ((allSubjectsRes.data ?? []) as {
     id: string;
     name: string;
+    code: string | null;
     status: string | null;
-  }[];
+    subject_translations?: SubjectTranslationRow[] | null;
+  }[])
+    .map((s) => ({
+      id: String(s.id),
+      name: subjectDisplayName(s, locale),
+      status: s.status ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, locale));
   const packageRows = (allPackagesRes.data ?? []) as {
     id: string;
     code: string;

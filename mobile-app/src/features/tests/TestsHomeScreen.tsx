@@ -12,7 +12,7 @@
 // start_daily_round_attempt('today') serves a fresh set (the old Round-21
 // readiness pre-flight RPC was DROPPED server-side).
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,7 +20,7 @@ import { Check, History, Play, RotateCcw } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
 import { SectionHeader } from "@/components/SectionHeader";
 import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
-import { radius, shadow, spacing, type ArenaTokens } from "@/theme/tokens";
+import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import type { Locale } from "@/i18n";
 import { subjectLabel } from "@/lib/subjectLabel";
@@ -30,6 +30,7 @@ import { useMobileConfig } from "@/lib/configQueries";
 import { startDailyRoundAttempt } from "./api";
 import { useRecentAttempts, useSubjectAccess } from "./queries";
 import { dailyCardState, displayStatus, findLiveAttempt, type DailyCardState } from "./logic";
+import { ArenaDialog } from "./ArenaDialog";
 import { ArenaButton, Notice, Panel, StatusPill, Eyebrow, tint, useArena } from "./ui";
 import type { AttemptListRow } from "./types";
 
@@ -325,6 +326,11 @@ function SubjectCard({
   // Dim + desaturate the done card via the neutral dim token (no new library);
   // the score link below stays OUTSIDE the dimmed wrappers.
   const accent = done ? arena.dim : arena.blue;
+  // The monogram is a LETTER, and it was following the badge down TWICE: `dim`
+  // inside a row already at 0.55 opacity rendered at 1.63:1. The badge keeps
+  // desaturating — that is the "done" signal — while the glyph on it takes the
+  // same ink as the subject name beside it, 5.16:1 at the same 0.55.
+  const initialInk = done ? arena.ink : arena.blue;
 
   const startRound = async () => {
     if (starting) return;
@@ -380,7 +386,7 @@ function SubjectCard({
             justifyContent: "center",
           }}
         >
-          <AppText variant="title" color={accent}>
+          <AppText variant="title" color={initialInk}>
             {name.trim()[0]?.toUpperCase() ?? "?"}
           </AppText>
         </View>
@@ -389,7 +395,7 @@ function SubjectCard({
             {name}
           </AppText>
           {/* Web today-card meta parity: "<no-limit badge> · rated". */}
-          <AppText color={arena.dim} style={{ fontSize: 12 }} numberOfLines={2}>
+          <AppText color={arena.muted} style={{ fontSize: 12 }} numberOfLines={2}>
             {t("test.rounds.timedBadge")} · {t("test.rounds.rated")}
           </AppText>
         </View>
@@ -497,6 +503,16 @@ function SubjectCard({
 // calls the EXISTING startDailyRoundAttempt('today') path unchanged. Consent
 // resets every time the gate re-opens; the backdrop/back close is blocked while
 // the RPC is pending so a mid-flight tap can't strand the attempt.
+//
+// SMALL-SCREEN REACHABILITY (owner report). The consent tick used to sit at the
+// bottom of the dialog's inner ScrollView while the Start button sat outside
+// it. On a 320×568 phone — or on ANY phone with the OS font scale raised, which
+// is the commoner case — the four az/ru rule bullets wrap to three lines each,
+// the card hits its clamp, and the tick scrolls out of sight while a visible,
+// permanently disabled Start button stays on screen with nothing to explain it.
+// The tick now rides in the ArenaDialog's ActionArea WITH the button it
+// enables: the two can never be separated by a scroll boundary again, and the
+// shell's flex clamp plus safe-area padding keep both off the gesture bar.
 // ---------------------------------------------------------------------------
 function DailyRoundRulesGate({
   arena,
@@ -531,117 +547,49 @@ function DailyRoundRulesGate({
   ];
 
   return (
-    <Modal
+    <ArenaDialog
+      arena={arena}
       visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={pending ? undefined : onClose}
-    >
-      <Pressable
-        accessibilityLabel={t("profile.cancel")}
-        onPress={pending ? undefined : onClose}
-        style={{
-          flex: 1,
-          backgroundColor: tint("#000000", 0.55),
-          justifyContent: "center",
-          padding: spacing.xl,
-        }}
-      >
-        {/* Inner pressable swallows taps so the card never closes itself.
-            maxHeight + the scrolling middle keep the consent/actions reachable
-            on short screens (320pt-class) instead of clipping. */}
-        <Pressable
-          onPress={() => {}}
-          style={[
-            {
-              backgroundColor: arena.panel,
-              borderColor: arena.line,
-              borderWidth: 1,
-              borderRadius: radius.xl,
-              padding: spacing.xl,
+      title={t("test.rounds.rulesTitle")}
+      dismissLabel={t("profile.cancel")}
+      onDismiss={pending ? undefined : onClose}
+      actions={
+        <View style={{ gap: spacing.md }}>
+          {/* Required consent tick (web .drs-consent) — in the action area, not
+              in the scroll, because it is what un-disables the button below. */}
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: consent }}
+            accessibilityLabel={t("test.setup.consent")}
+            onPress={() => setConsent((v) => !v)}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
               gap: spacing.md,
-              maxHeight: "85%",
-            },
-            shadow("float"),
-          ]}
-        >
-          <AppText variant="title" color={arena.ink}>
-            {t("test.rounds.rulesTitle")}
-          </AppText>
-
-          {/* Facts + rules + consent scroll when the card hits maxHeight;
-              flexGrow:0 keeps the card content-sized otherwise. */}
-          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ gap: spacing.md }}>
-            {/* Exam facts (web .drs-facts). */}
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-              {facts.map((f) => (
-                <View
-                  key={f}
-                  style={{
-                    backgroundColor: tint(arena.lime, 0.12),
-                    borderColor: tint(arena.lime, 0.45),
-                    borderWidth: 1,
-                    borderRadius: 999,
-                    paddingVertical: 4,
-                    paddingHorizontal: spacing.md,
-                  }}
-                >
-                  <AppText variant="label" color={arena.lime} style={{ fontSize: 11 }}>
-                    {f}
-                  </AppText>
-                </View>
-              ))}
-            </View>
-
-            {/* Daily rule bullets (web .drs-rules). */}
-            <View style={{ gap: spacing.sm }}>
-              {rules.map((r) => (
-                <View key={r} style={{ flexDirection: "row", gap: spacing.sm }}>
-                  <AppText color={arena.lime} style={{ fontSize: 14, lineHeight: 20 }}>
-                    {"•"}
-                  </AppText>
-                  <AppText color={arena.muted} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
-                    {r}
-                  </AppText>
-                </View>
-              ))}
-            </View>
-
-            {/* Required consent tick (web .drs-consent). */}
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: consent }}
-              accessibilityLabel={t("test.setup.consent")}
-              onPress={() => setConsent((v) => !v)}
-              style={({ pressed }) => ({
-                flexDirection: "row",
+              minHeight: 44,
+              opacity: pressed ? 0.8 : 1,
+            })}
+          >
+            <View
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: radius.sm,
+                borderWidth: 2,
+                borderColor: consent ? arena.lime : arena.line,
                 alignItems: "center",
-                gap: spacing.md,
-                minHeight: 44,
-                opacity: pressed ? 0.8 : 1,
-              })}
+                justifyContent: "center",
+              }}
             >
-              <View
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: radius.sm,
-                  borderWidth: 2,
-                  borderColor: consent ? arena.lime : arena.line,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {consent ? <Check size={16} color={arena.lime} strokeWidth={3} /> : null}
-              </View>
-              <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
-                {t("test.setup.consent")}
-              </AppText>
-            </Pressable>
-          </ScrollView>
+              {consent ? <Check size={16} color={arena.lime} strokeWidth={3} /> : null}
+            </View>
+            <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
+              {t("test.setup.consent")}
+            </AppText>
+          </Pressable>
 
           {/* Actions — confirm stays disabled until consent is ticked. */}
-          <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.sm }}>
+          <View style={{ flexDirection: "row", gap: spacing.md }}>
             <ArenaButton
               arena={arena}
               kind="ghost"
@@ -661,9 +609,44 @@ function DailyRoundRulesGate({
               style={{ flex: 1 }}
             />
           </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </View>
+      }
+    >
+      {/* Exam facts (web .drs-facts). */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+        {facts.map((f) => (
+          <View
+            key={f}
+            style={{
+              backgroundColor: tint(arena.lime, 0.12),
+              borderColor: tint(arena.lime, 0.45),
+              borderWidth: 1,
+              borderRadius: 999,
+              paddingVertical: 4,
+              paddingHorizontal: spacing.md,
+            }}
+          >
+            <AppText variant="label" color={arena.lime} style={{ fontSize: 11 }}>
+              {f}
+            </AppText>
+          </View>
+        ))}
+      </View>
+
+      {/* Daily rule bullets (web .drs-rules). */}
+      <View style={{ gap: spacing.sm }}>
+        {rules.map((r) => (
+          <View key={r} style={{ flexDirection: "row", gap: spacing.sm }}>
+            <AppText color={arena.lime} style={{ fontSize: 14, lineHeight: 20 }}>
+              {"•"}
+            </AppText>
+            <AppText color={arena.muted} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
+              {r}
+            </AppText>
+          </View>
+        ))}
+      </View>
+    </ArenaDialog>
   );
 }
 
@@ -735,7 +718,7 @@ function ReplayRow({
           <AppText variant="label" color={arena.ink} style={{ fontSize: 16 }}>
             {name}
           </AppText>
-          <AppText color={arena.dim} style={{ fontSize: 12 }} numberOfLines={1}>
+          <AppText color={arena.muted} style={{ fontSize: 12 }} numberOfLines={1}>
             {t("kind.practice")} · {t("test.rounds.practiceMeta")}
           </AppText>
         </View>
@@ -866,7 +849,7 @@ function AttemptRow({
             </View>
           ) : null}
         </View>
-        <AppText color={arena.dim} style={{ fontSize: 12 }}>
+        <AppText color={arena.muted} style={{ fontSize: 12 }}>
           {fmtDate(when, locale)}
         </AppText>
       </View>

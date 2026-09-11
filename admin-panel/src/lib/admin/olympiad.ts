@@ -24,7 +24,7 @@ import {
 } from "@/lib/admin/bulk-validate";
 import { getT, getLocale, type T } from "@/i18n/server";
 import { parseIsoTimestamp } from "@/lib/admin/datetime";
-import { parsePackagePriceAmount } from "@/app/(protected)/pricing/shared";
+import { parsePackagePriceAmount } from "@/lib/admin/pricing-shared";
 import { olympiadLocalStrings } from "@/lib/admin/olympiad-strings";
 import { withLocalStrings } from "@/lib/admin/question-flow-labels";
 import { rejectUnclaimableMedia } from "@/lib/admin/bulk-media";

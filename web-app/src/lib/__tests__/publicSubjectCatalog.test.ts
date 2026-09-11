@@ -104,10 +104,14 @@ function failingClient(error: unknown) {
 
 let catalog: SubjectRow[] = CATALOG;
 let readError: unknown = null;
+let locale = "az";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/i18n/server", () => ({
   getT: vi.fn(async () => (key: string) => DICT[key] ?? key),
+  // The page orders its catalog with a collator keyed on the ACTIVE locale, so
+  // the locale is part of what it renders, not merely of its text.
+  getLocale: vi.fn(async () => locale),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () =>
@@ -125,6 +129,7 @@ beforeEach(() => {
   touched = [];
   catalog = CATALOG;
   readError = null;
+  locale = "az";
 });
 
 describe("/subjects renders the admin's catalog", () => {
@@ -164,6 +169,31 @@ describe("/subjects renders the admin's catalog", () => {
   it("sorts on the resolved label, not on the raw Azerbaijani name", async () => {
     const html = await render();
     expect(html.indexOf("Kimya")).toBeLessThan(html.indexOf("Riyaziyyat"));
+  });
+
+  it("orders the catalog in the READER's alphabet, not the runtime's", async () => {
+    // Azerbaijani is not accented Latin: q sorts BEFORE l. The page shipped
+    // resolving each label correctly and then comparing the results with a bare
+    // localeCompare() — the server runtime's default collation — directly under
+    // a comment claiming it had handled the reader's alphabet. So the default
+    // (Azerbaijani) reader of this page got the English order.
+    //
+    // Same rows, same labels, two locales, two orders: that is the assertion.
+    // Drop the locale argument again and the "en" half still passes.
+    catalog = [
+      { id: MATH, code: "latin_dili", name: "Latın dili", status: "active" },
+      { id: LOGIC, code: "qrammatika", name: "Qrammatika", status: "active" },
+    ];
+    const shown = (html: string) =>
+      html
+        .split("<strong>")
+        .slice(1)
+        .map((chunk) => chunk.split("</strong>")[0]);
+
+    locale = "az";
+    expect(shown(await render())).toEqual(["Qrammatika", "Latın dili"]);
+    locale = "en";
+    expect(shown(await render())).toEqual(["Latın dili", "Qrammatika"]);
   });
 
   it("degrades to the empty notice instead of throwing when the read fails", async () => {

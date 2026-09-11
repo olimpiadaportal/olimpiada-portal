@@ -72,6 +72,13 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     // login form's parent.err.required — "enter your email and password" under a
     // delete confirmation.
     "mob.err.confirmRequired": "Əməliyyat təsdiqlənmədi. Zəhmət olmasa yenidən cəhd edin.",
+    // ---- THE OTHER HALF OF "THE BUTTON DOES NOTHING" ------------------
+    // The setup CTA is press-through-disabled so a tap can explain itself, and
+    // for a missing topic it does (test.setup.selectWarn, in the web catalog).
+    // The consent tick had no sentence at all: the handler returned in silence
+    // and the student was told nothing. Mobile-only because the web setup page
+    // disables its button outright and never reaches this branch.
+    "test.setup.consentWarn": "Sınağa başlamaq üçün qaydaları oxuduğunu təsdiqlə.",
     "mob.retry": "Yenidən cəhd et",
     "mob.refresh.failed": "Yeniləmək alınmadı. İnternet bağlantını yoxla.",
     "mob.refreshing": "Yenilənir…",
@@ -312,6 +319,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.err.serverUnavailable": "The server isn't responding right now. Please try again shortly.",
     "mob.err.network": "Couldn't reach the server. Check your connection and try again.",
     "mob.err.confirmRequired": "The action wasn't confirmed. Please try again.",
+    "test.setup.consentWarn": "Please confirm you've read the rules before starting the test.",
     "mob.retry": "Try again",
     "mob.refresh.failed": "Couldn't refresh. Check your connection.",
     "mob.refreshing": "Refreshing…",
@@ -518,6 +526,7 @@ export const mobileMessages: Record<Locale, Record<string, string>> = {
     "mob.err.serverUnavailable": "Сервер сейчас не отвечает. Повторите попытку чуть позже.",
     "mob.err.network": "Не удалось связаться с сервером. Проверьте подключение и попробуйте снова.",
     "mob.err.confirmRequired": "Действие не подтверждено. Пожалуйста, попробуйте ещё раз.",
+    "test.setup.consentWarn": "Пожалуйста, отметь, что прочитал(а) правила, чтобы начать тест.",
     "mob.retry": "Повторить",
     "mob.refresh.failed": "Не удалось обновить. Проверьте подключение.",
     "mob.refreshing": "Обновление…",

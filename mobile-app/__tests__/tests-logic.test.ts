@@ -17,6 +17,7 @@ import {
   remainingFrom,
   resultBreakdown,
   reviewCounts,
+  setupBlocker,
   setupSelectionValid,
   timerLevel,
   usedMinutes,
@@ -319,6 +320,39 @@ describe("setup validation (Round-19 contract)", () => {
     expect(setupSelectionValid("t", true, "")).toBe(false);
     expect(setupSelectionValid("t", true, "s")).toBe(true);
     expect(setupSelectionValid("t", false, "")).toBe(true); // waived: zero subtopics
+  });
+
+  it("names the ONE reason the start button is inert", () => {
+    // "The button does nothing" had two causes. The geometric one (the row sat
+    // below the fold on a short phone) is fixed by the action area; this is the
+    // other one — start() read `if (!consent) return` and said nothing, so a
+    // student who had picked a topic and not ticked the box got silence back at
+    // EVERY screen size. Selection is reported first: it is the first thing on
+    // the page, and naming the tick while the picker is empty sends the student
+    // back up past the field they actually came to fill.
+    expect(setupBlocker("", false, "", false)).toBe("selection");
+    expect(setupBlocker("", false, "", true)).toBe("selection");
+    expect(setupBlocker("t", true, "", true)).toBe("selection");
+    expect(setupBlocker("t", true, "s", false)).toBe("consent");
+    expect(setupBlocker("t", false, "", false)).toBe("consent");
+    expect(setupBlocker("t", true, "s", true)).toBeNull();
+    expect(setupBlocker("t", false, "", true)).toBeNull();
+  });
+
+  it("is null only when there is genuinely nothing missing", () => {
+    // The property the screen leans on in both directions: `null` is the only
+    // value that lets start() reach the RPC, and a non-null value is the only
+    // thing that produces a sentence. A missing case is a silent no-op again.
+    for (const topicId of ["", "t"]) {
+      for (const hasSubs of [true, false]) {
+        for (const subId of ["", "s"]) {
+          for (const consent of [true, false]) {
+            const complete = setupSelectionValid(topicId, hasSubs, subId) && consent;
+            expect(setupBlocker(topicId, hasSubs, subId, consent) === null).toBe(complete);
+          }
+        }
+      }
+    }
   });
 });
 

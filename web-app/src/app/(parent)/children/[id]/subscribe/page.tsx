@@ -4,6 +4,7 @@ import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { fetchTaughtSubjectIds } from "@/lib/childSubjects";
 import { keepTaughtSubjects } from "@/lib/gradeSubjects";
+import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 import { getT } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { isChildFreeAccessActive } from "@/lib/freeAccess";
@@ -112,6 +113,7 @@ export default async function SubscribePage({
   const parent = await requireParent();
   const { id } = await params;
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
 
   const { data: child } = await supabase
@@ -202,10 +204,28 @@ export default async function SubscribePage({
   // hiding a subject the family already pays for would leave it in the plan the
   // editor submits with no card to remove it from — bought once, unremovable
   // forever. A pre-existing mis-sale must stay visible so it can be cancelled.
-  const subjects = keepTaughtSubjects(
-    Array.from(map.values()),
-    taught && new Set([...taught, ...covered.map((c) => c.subjectId)]),
-  ).sort((a, b) => a.name.localeCompare(b.name));
+  //
+  // ORDERED BY WHAT THE PARENT ACTUALLY READS. `subjects.name` is the frozen
+  // bulk-import match key since migration 171 — it deliberately stops following
+  // a rename, and it holds one Azerbaijani string for every reader — so sorting
+  // on it while rendering subjectLabel() produced a list whose order matched
+  // nothing on screen. A bare localeCompare() would not be enough either: with
+  // no locale it collates in the RUNTIME's default, and Azerbaijani's
+  // ə/ğ/ş/ç/ü/ö/ı/İ only order correctly under the reader's own.
+  //
+  // This page hand-rolled that collator first; the logic now lives in
+  // lib/subjectLabel so every subject list in both apps shares it — including
+  // its full BCP-47 tag ("az-Latn-AZ", not a bare "az", which resolves to CLDR
+  // root wherever Azerbaijani data is absent). The helper resolves each label
+  // once and hands it back, which is what both lists on this page need.
+  const subjects = sortSubjectsByLabel(
+    t,
+    locale,
+    keepTaughtSubjects(
+      Array.from(map.values()),
+      taught && new Set([...taught, ...covered.map((c) => c.subjectId)]),
+    ),
+  );
 
   const dict: Record<string, string> = {};
   for (const k of KEYS) dict[k] = t(k);
@@ -222,10 +242,19 @@ export default async function SubscribePage({
   // server-side so `endsAt` is authoritative; the countdown re-derives from it
   // and never stores anything client-side.
   const trial = await getChildFreeTrial(id);
-  const locale = await getLocale();
   // What the parent would get if they activated right now. Preview only — the
   // RPC computes the real window from its own clock.
   const trialEndsPreview = formatShortDate(new Date(Date.now() + 24 * 3600 * 1000), locale);
+  // THE SAME DEFECT, ONE LAYER DOWN. `child_free_trial` returns the trial's
+  // subjects as the raw `subjects.name`, ordered by it, and the status panel
+  // printed them verbatim — so an English or Russian parent read an English or
+  // Russian panel with Azerbaijani subjects inside it, and after a rename nobody
+  // read the current name at all. Resolved and re-ordered here; the panel takes
+  // them as a prop and keeps holding no i18n of its own.
+  const trialSubjects = sortSubjectsByLabel(t, locale, trial.subjects).map((s) => ({
+    id: s.id,
+    name: s.label,
+  }));
 
   // An unfinished payment for THIS CHILD - a checkout that was opened and never
   // completed, or one the gateway declined. Resolved here, server-side, so the
@@ -314,7 +343,7 @@ export default async function SubscribePage({
         </>
       ) : trial.active ? (
         <>
-          <FreeTrialStatusPanel trial={trial} d={dict} />
+          <FreeTrialStatusPanel trial={trial} subjects={trialSubjects} d={dict} />
           {sub?.id ? (
             <ManageSubjects
               studentId={id}
@@ -349,13 +378,13 @@ export default async function SubscribePage({
         <FreeTrialActivation
           studentId={id}
           childName={`${(child as any).first_name ?? ""} ${(child as any).last_name ?? ""}`.trim()}
-          subjects={subjects.map((s: any) => ({ id: s.id, name: s.name }))}
+          subjects={subjects.map((s) => ({ id: s.id, name: s.label }))}
           endsAtPreview={trialEndsPreview}
           d={dict}
         />
       ) : (
         <>
-          <FreeTrialStatusPanel trial={trial} d={dict} />
+          <FreeTrialStatusPanel trial={trial} subjects={trialSubjects} d={dict} />
           <SubscribeForm
             studentId={id}
             subjects={subjects}

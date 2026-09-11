@@ -9,6 +9,20 @@
 // the runner's own controls).
 // M3.2 restyle: presentation-only chrome (TimerPill pulse, AnsweredBar, lucide
 // glyphs, option/palette skins) — every engine flow above is byte-identical.
+//
+// SMALL-SCREEN REACHABILITY (owner report: "in exams"). Geri / İrəli / Təsdiqlə
+// used to be an ordinary child at the end of the question scroll, so a long
+// question body — or a raised OS font scale, or an option list with figures —
+// pushed the SUBMIT button below the fold on a short window and the student
+// could not finish the attempt. The row now sits in the shared ActionArea below
+// the scroll body (components/ActionArea.tsx): a non-scrolling, safe-area-padded
+// region the content cannot push off the bottom edge. Nothing about the ENGINE
+// moved with it — the leave guard, the in-flight submit lock, the countdown and
+// the answer-sync indicator are the same code in the same places; the
+// palette and the CANCEL button stay in the scroll, which is where a
+// destructive "cancel the attempt" belongs. The scroll's own Təsdiqlə is gone:
+// with the bar rendering one on the last question, keeping it showed a student
+// two submit buttons for one action.
 import React, {
   useCallback,
   useEffect,
@@ -38,10 +52,14 @@ import {
   CloudUpload,
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
+import { ActionAreaShell } from "@/components/ActionArea";
+import { scrollBodyBottomInset } from "@/components/actionAreaLayout";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useAuthStore } from "@/features/auth/authStore";
+import { useContentGutter } from "@/lib/useContentWidth";
+import { backOrTo } from "@/lib/navigation";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { publicStorageUrl } from "@/lib/data";
 import {
@@ -257,6 +275,10 @@ export function TestRunnerScreen({
   const { arena } = useArena();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // 0 on every phone. Above 560pt the ActionArea applies it to the pinned row
+  // unconditionally, so the body has to apply it too or the buttons and the
+  // question they belong to sit in two different columns on a tablet.
+  const gutter = useContentGutter();
 
   const q = useTestAttempt(attemptId, locale, attemptId.length > 0);
   const attempt = q.data?.attempt ?? null;
@@ -286,9 +308,18 @@ export function TestRunnerScreen({
 
   const pad = {
     paddingTop: insets.top + spacing.md,
-    paddingLeft: spacing.lg + insets.left,
-    paddingRight: spacing.lg + insets.right,
+    paddingLeft: spacing.lg + insets.left + gutter,
+    paddingRight: spacing.lg + insets.right + gutter,
     paddingBottom: insets.bottom + spacing.xl,
+  } as const;
+
+  // The same padding for the PLAYER's scrolling body, minus the bottom
+  // safe-area inset: the action row below it touches the window edge now, so
+  // that inset is the bar's, and counting it twice would float the palette a
+  // navigation bar's height above the buttons.
+  const scrollPad = {
+    ...pad,
+    paddingBottom: scrollBodyBottomInset(insets.bottom, true) + spacing.xl,
   } as const;
 
   if (q.isPending || isGraded) {
@@ -327,7 +358,7 @@ export function TestRunnerScreen({
           arena={arena}
           kind="ghost"
           title={t("test.run.back")}
-          onPress={() => router.replace(homeTab)}
+          onPress={() => backOrTo(router, homeTab)}
         />
       </View>
     );
@@ -342,7 +373,7 @@ export function TestRunnerScreen({
       resumed={resumed}
       rated={rated}
       arena={arena}
-      pad={pad}
+      scrollPad={scrollPad}
     />
   );
 }
@@ -361,7 +392,7 @@ function RunnerActive({
   resumed,
   rated,
   arena,
-  pad,
+  scrollPad,
 }: {
   attemptId: string;
   attempt: TestAttemptData;
@@ -370,7 +401,8 @@ function RunnerActive({
   /** is_rated from the own attempt row — null while loading (badge hidden). */
   rated: boolean | null;
   arena: ArenaTokens;
-  pad: object;
+  /** Body padding: the screen's insets with the bottom one left to the bar. */
+  scrollPad: object;
 }) {
   const { t, locale } = useT();
   const router = useRouter();
@@ -486,7 +518,7 @@ function RunnerActive({
   const publishStatus = useCallback(
     (status: "graded" | "canceled") => {
       queryClient.setQueryData(
-        TQK.attemptRow(attemptId, profileId ?? "-"),
+        TQK.attemptRow(attemptId, profileId),
         (prev: AttemptRowMeta | null | undefined) =>
           prev
             ? {
@@ -726,12 +758,17 @@ function RunnerActive({
     setLeaveOpen(false);
     const action = pendingActionRef.current;
     pendingActionRef.current = null;
+    // The guard exists to ASK, not to redirect: when navigation was already
+    // under way (beforeRemove handed us its action) we replay exactly that
+    // action, so the on-screen back arrow, Android hardware back and the iOS
+    // swipe all resume the destination the user chose. Only a leave the user
+    // asked for with no pending action falls back, and it falls back to going
+    // BACK — never to a tab replace, which would leave a second tab navigator
+    // above the real one and send the next back press Home (lib/navigation.ts).
     if (action) {
       (navigation as any).dispatch(action);
-    } else if (router.canGoBack()) {
-      router.back();
     } else {
-      router.replace(homeTab);
+      backOrTo(router, homeTab);
     }
   };
 
@@ -777,7 +814,10 @@ function RunnerActive({
         finishedRef.current = true;
         clearDraft(attemptId);
         publishStatus("canceled");
-        router.replace(homeTab);
+        // The attempt is gone, so leaving is a BACK: it lands on the tab the
+        // child actually started from (Tests or Olympiads) instead of stacking
+        // a second copy of the tab navigator over it.
+        backOrTo(router, homeTab);
         return;
       }
       setFatal(t("test.err.generic"));
@@ -808,13 +848,61 @@ function RunnerActive({
         : t("test.run.daily")
       : t("test.run.title");
 
-  return (
+  // ---- The pinned navigation row (Prev / Next-or-Submit) ----
+  // Lifted out of the scroll: this is the only way through the attempt and the
+  // only way to finish it, so it may never depend on how long the question is.
+  // The guards are the ones that were already here — `submitting` blocks
+  // movement while a submit is in flight, and Submit still opens the confirm
+  // dialog rather than submitting on the spot.
+  const navActions = (
+    <View style={{ flexDirection: "row", gap: spacing.md }}>
+      <ArenaButton
+        arena={arena}
+        kind="ghost"
+        title={t("arena.quizPrev")}
+        icon={<ChevronLeft size={16} color={arena.ink} strokeWidth={2.5} />}
+        disabled={idx === 0 || submitting}
+        onPress={() => {
+          if (idx === 0 || submitting) return;
+          goTo(idx - 1);
+        }}
+        style={{ flex: 1 }}
+      />
+      {!isLast ? (
+        <ArenaButton
+          arena={arena}
+          title={t("test.run.next")}
+          icon={<ChevronRight size={16} color="#ffffff" strokeWidth={2.5} />}
+          disabled={submitting}
+          onPress={() => {
+            if (submitting) return;
+            goTo(idx + 1);
+          }}
+          style={{ flex: 1 }}
+        />
+      ) : (
+        <ArenaButton
+          arena={arena}
+          title={t("test.run.submit")}
+          pending={submitting}
+          pendingTitle={t("test.run.submitting")}
+          onPress={() => {
+            setFatal(null);
+            setSubmitOpen(true);
+          }}
+          style={{ flex: 1 }}
+        />
+      )}
+    </View>
+  );
+
+  const body = (
     // No pull-to-refresh here on purpose: a running attempt is a timed,
     // autosaved session behind a leave guard — re-reading it mid-answer would
     // fight the local draft and the deadline.
     <ScrollView
       style={{ flex: 1, backgroundColor: arena.bg }}
-      contentContainerStyle={[pad, { gap: spacing.lg }]}
+      contentContainerStyle={[scrollPad, { gap: spacing.lg }]}
     >
       {/* ---- Top bar: title + timer, answered progress, counter + save state ----
            WRAPS on a narrow phone. This row holds a title, a rated/practice
@@ -908,7 +996,7 @@ function RunnerActive({
                   ? arena.red
                   : saveState === "saved"
                     ? arena.lime
-                    : arena.dim
+                    : arena.muted
               }
               style={{ fontSize: 12, flexShrink: 1 }}
               numberOfLines={1}
@@ -970,7 +1058,7 @@ function RunnerActive({
               justifyContent: "space-between",
             }}
           >
-            <AppText variant="mono" color={arena.dim} style={{ fontSize: 13 }}>
+            <AppText variant="mono" color={arena.muted} style={{ fontSize: 13 }}>
               Q{String(idx + 1).padStart(2, "0")}
             </AppText>
             <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
@@ -1123,48 +1211,10 @@ function RunnerActive({
         </Panel>
       ) : null}
 
-      {/* ---- Prev / Next / Submit ---- */}
-      <View style={{ flexDirection: "row", gap: spacing.md }}>
-        <ArenaButton
-          arena={arena}
-          kind="ghost"
-          title={t("arena.quizPrev")}
-          icon={<ChevronLeft size={16} color={arena.ink} strokeWidth={2.5} />}
-          disabled={idx === 0 || submitting}
-          onPress={() => {
-            if (idx === 0 || submitting) return;
-            goTo(idx - 1);
-          }}
-          style={{ flex: 1 }}
-        />
-        {!isLast ? (
-          <ArenaButton
-            arena={arena}
-            title={t("test.run.next")}
-            icon={<ChevronRight size={16} color="#ffffff" strokeWidth={2.5} />}
-            disabled={submitting}
-            onPress={() => {
-              if (submitting) return;
-              goTo(idx + 1);
-            }}
-            style={{ flex: 1 }}
-          />
-        ) : (
-          <ArenaButton
-            arena={arena}
-            title={t("test.run.submit")}
-            pending={submitting}
-            pendingTitle={t("test.run.submitting")}
-            onPress={() => {
-              setFatal(null);
-              setSubmitOpen(true);
-            }}
-            style={{ flex: 1 }}
-          />
-        )}
-      </View>
-
-      {/* ---- Palette ---- */}
+      {/* ---- Palette ----
+           Prev / Next / Submit used to sit HERE, at the end of the question.
+           It is in the ActionArea below the scroll now (navActions), so a long
+           question can no longer push the way out of the attempt off-screen. */}
       <Panel arena={arena} style={{ gap: spacing.md }}>
         <AppText variant="label" color={arena.muted}>
           {t("test.run.palette")}
@@ -1250,7 +1300,7 @@ function RunnerActive({
               <View
                 style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }}
               />
-              <AppText color={arena.dim} style={{ fontSize: 11 }}>
+              <AppText color={arena.muted} style={{ fontSize: 11 }}>
                 {label}
               </AppText>
             </View>
@@ -1258,32 +1308,32 @@ function RunnerActive({
         </View>
       </Panel>
 
-      {/* ---- Submit / cancel ---- */}
-      <View style={{ gap: spacing.md }}>
-        <ArenaButton
-          arena={arena}
-          kind="gradient"
-          title={t("test.run.submit")}
-          icon={<Check size={16} color="#ffffff" strokeWidth={2.5} />}
-          pending={submitting}
-          pendingTitle={t("test.run.submitting")}
-          onPress={() => {
-            setFatal(null);
-            setSubmitOpen(true);
-          }}
-        />
-        <ArenaButton
-          arena={arena}
-          kind="danger"
-          title={t("test.run.cancel")}
-          disabled={canceling || submitting}
-          onPress={() => {
-            if (canceling || submitting) return;
-            setFatal(null);
-            setCancelOpen(true);
-          }}
-        />
-      </View>
+      {/* ---- Cancel the attempt ----
+           THE SUBMIT BUTTON THAT USED TO SIT HERE IS GONE, and its absence is
+           the fix for a regression this block caused the moment the navigation
+           row was pinned: this one rendered UNCONDITIONALLY, while the pinned
+           bar renders Təsdiqlə when `isLast`, so a student reaching the final
+           question was offered TWO submit buttons, one under the other, for one
+           action. The pinned bar keeps it, because it is the only control a
+           long question body can never push below the fold — which is the whole
+           point of the bar. Finishing before the last question is what the
+           palette directly above is for: tap the last cell, submit there.
+
+           CANCEL STAYS IN THE SCROLL, deliberately. It scores nothing and
+           cannot be undone, so it must not sit under the thumb that is tapping
+           İrəli twenty-four times; reachability is for the action the student
+           is looking for, not for the one they must never hit by accident. */}
+      <ArenaButton
+        arena={arena}
+        kind="danger"
+        title={t("test.run.cancel")}
+        disabled={canceling || submitting}
+        onPress={() => {
+          if (canceling || submitting) return;
+          setFatal(null);
+          setCancelOpen(true);
+        }}
+      />
 
       {/* ---- Submit confirm (shows the unanswered count) ----
            The dialog STAYS OPEN for the whole request: its primary is the
@@ -1372,5 +1422,11 @@ function RunnerActive({
         />
       ) : null}
     </ScrollView>
+  );
+
+  return (
+    <ActionAreaShell background={arena.bg} borderColor={arena.line} actions={navActions}>
+      {body}
+    </ActionAreaShell>
   );
 }

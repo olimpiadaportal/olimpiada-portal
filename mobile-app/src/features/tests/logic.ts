@@ -441,6 +441,34 @@ export function setupSelectionValid(
   return topicId !== "" && (!hasSubtopics || subtopicId !== "");
 }
 
+/**
+ * WHY THE START BUTTON IS INERT — or null when it is not.
+ *
+ * The setup CTA is press-through-disabled on purpose (ArenaButton
+ * `pressThroughDisabled`): a tap on it must EXPLAIN itself rather than be
+ * swallowed. For an incomplete selection it always did. For the consent tick it
+ * never did — the handler read `if (!consent) return` and the screen said
+ * nothing at all, at every screen size, which is the non-geometric half of the
+ * owner's "the button does nothing" report (the geometric half was the row
+ * sitting below the fold, and that one is fixed).
+ *
+ * Both reasons come back from ONE function so that a caller cannot answer one
+ * of them and forget the other — the exact shape of the defect. SELECTION wins
+ * when both are missing: it is the first thing on the page and the thing the
+ * student came to choose, so naming the tick first would send them back up past
+ * an empty picker.
+ */
+export function setupBlocker(
+  topicId: string,
+  hasSubtopics: boolean,
+  subtopicId: string,
+  consent: boolean,
+): "selection" | "consent" | null {
+  if (!setupSelectionValid(topicId, hasSubtopics, subtopicId)) return "selection";
+  if (!consent) return "consent";
+  return null;
+}
+
 // ---- result time context ---------------------------------------------------------------
 
 /**

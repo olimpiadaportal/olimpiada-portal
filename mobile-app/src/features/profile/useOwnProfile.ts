@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { publicStorageUrl } from "@/lib/data";
 import { useAuthStore } from "@/features/auth/authStore";
+import { accountScoped } from "@/features/auth/accountScope";
 
 export type OwnProfile = {
   displayName: string;
@@ -17,7 +18,7 @@ export type OwnProfile = {
 export function useOwnProfile() {
   const profileId = useAuthStore((s) => s.profileId);
   return useQuery({
-    queryKey: ["own-profile", profileId],
+    queryKey: accountScoped(["own-profile"] as const, profileId),
     enabled: !!profileId,
     queryFn: async (): Promise<OwnProfile> => {
       const [userRes, rowRes] = await Promise.all([

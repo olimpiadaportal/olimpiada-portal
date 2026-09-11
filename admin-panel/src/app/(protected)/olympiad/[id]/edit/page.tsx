@@ -19,6 +19,10 @@ import {
 } from "@/lib/admin/olympiad-lifecycle";
 import { formatBakuDateTime } from "@/lib/admin/datetime";
 import { mergeLocalDict } from "@/lib/admin/question-flow-labels";
+import {
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 import { localDict } from "../../labels";
 
 const FORM_KEYS = [
@@ -165,7 +169,7 @@ export default async function EditOlympiadPage({
       // the second job by breaking the first: a package whose subject was later
       // archived would lose its header name and open with an empty select that
       // silently reassigns the package on the next save.
-      supabase.from("subjects").select("id, name, status").order("name"),
+      supabase.from("subjects").select(SUBJECT_DISPLAY_SELECT),
       supabase.from("grades").select("id, name, level").order("level"),
       // PRIVATE pool: questions owned by THIS package only, with what the
       // list needs (az/primary body excerpt, option count, image flag).
@@ -242,16 +246,25 @@ export default async function EditOlympiadPage({
       updatedAt: String(q.updated_at ?? "").slice(0, 10),
     };
   });
-  const allSubjects = (subjects ?? []) as any[];
+  // Resolved to the DISPLAY name once, for both jobs: the header line naming
+  // this package's subject and the select below. Sorted here because ordering
+  // the query by `subjects.name` orders by the frozen bulk-import key.
+  const allSubjects = ((subjects ?? []) as any[])
+    .map((s) => ({
+      id: String(s.id),
+      status: String(s.status ?? ""),
+      label: subjectDisplayName(s, locale),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, locale));
   const subjectName =
-    allSubjects.find((s) => s.id === (pkg as any).subject_id)?.name ?? "";
+    allSubjects.find((s) => s.id === (pkg as any).subject_id)?.label ?? "";
   // Pickable = ACTIVE, plus whatever this package already points at. An
   // archived subject must not be attachable to anything new, but the one
   // already attached has to stay selectable or saving any other field on this
   // form would quietly move the package off it.
   const subjectOptions = allSubjects
     .filter((s) => s.status === "active" || s.id === (pkg as any).subject_id)
-    .map((s) => ({ value: s.id, label: String(s.name) }));
+    .map((s) => ({ value: s.id, label: s.label }));
   // Published pool size per target grade (drives the Grades & Pools manager).
   const publishedByGrade = new Map<string, number>();
   for (const q of (poolQuestions ?? []) as any[]) {
@@ -378,6 +391,11 @@ export default async function EditOlympiadPage({
             perAttempt: Number(g.perAttempt || (pkg as any).questions_per_attempt || 0),
           }))}
           dict={{ ...poolDict, "pend.loading": t("pend.loading"), "pend.processing": t("pend.processing"), "pend.deleting": t("pend.deleting") }}
+          // Collation only — every string it renders is already translated
+          // above. The grade filter and the two bulk dialogs order display
+          // labels, and az/en/ru disagree about both the alphabet and where
+          // "10" belongs next to "3".
+          locale={locale}
           // Selection + bulk delete (migration 112). The package code IS asked
           // for — admin_delete_olympiad_questions compares it under the
           // package's row lock — and the acknowledgement is demanded on top,

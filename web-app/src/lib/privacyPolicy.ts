@@ -83,11 +83,16 @@ export const PRIVACY_POLICY: PrivacyPolicyStatus = {
   // literal is the fallback a request renders before the settings row is read,
   // and the value an offline phone shows. See resolvePrivacyPolicyStatus below.
   effectiveDate: "04.08.2026",
-  // 08.09.2026: migration 169 added the optional child gender, so section 5's
-  // enumeration of what is stored about a child changed. The effective date is
-  // NOT moved — the policy has been in force since 04.08; this is an amendment
-  // to it, and section 13 promises exactly this date is what we bump.
-  lastUpdated: "08.09.2026",
+  // 10.09.2026: the store-declaration accuracy pass. Sections 1, 5, 7, 8, 11
+  // and 12 were corrected — purchases are now described per platform (iOS sells
+  // through the App Store, Android sells nothing, the web rail is the bank), the
+  // bare "we never ask for your location" became the true distinction between a
+  // device sensor and a parent-typed city/rayon, and the delete-a-child right no
+  // longer points at the website only. 08.09.2026 was the previous bump
+  // (migration 169, the optional child gender in section 5). The effective date
+  // is NOT moved — the policy has been in force since 04.08; these are
+  // amendments to it, and section 13 promises exactly this date is what we bump.
+  lastUpdated: "10.09.2026",
   // Registered 2026-07-30 (Namecheap). The apex serves the site; www redirects
   // to it at the host level, so the canonical form carries no "www".
   websiteUrl: "olympiq.ai",

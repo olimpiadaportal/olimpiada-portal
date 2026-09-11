@@ -25,6 +25,10 @@ import { requireAdmin } from "@/lib/admin/guards";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, hasServiceRole } from "@/lib/supabase/admin";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
+import {
+  SUBJECT_DISPLAY_EMBED,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 import { getT, getLocale } from "@/i18n/server";
 import { localStrings } from "@/app/(protected)/subscriptions/labels";
 import {
@@ -121,10 +125,14 @@ function childName(s: { first_name: string | null; last_name: string | null } | 
 }
 
 /** Per-subject cycles/periods off an embedded subscription_subjects list. A
- *  NULL cycle is a pre-109 row and inherits the subscription's default. */
-function subjectPlans(r: any): SubjectPlanRow[] {
+ *  NULL cycle is a pre-109 row and inherits the subscription's default.
+ *
+ *  The subject is named the way the PARENT's invoice names it, in the admin's
+ *  locale — this row is what a support conversation is held over, and the
+ *  bulk-import key is a string the family has never seen. */
+function subjectPlans(r: any, locale: string): SubjectPlanRow[] {
   return ((r?.subscription_subjects ?? []) as any[]).map((s) => ({
-    name: s.subjects?.name ?? "—",
+    name: subjectDisplayName(s.subjects, locale) || "—",
     interval: s.interval ?? r?.interval ?? "month",
     periodEnd: s.current_period_end ?? null,
     pendingInterval: s.pending_interval ?? null,
@@ -137,6 +145,7 @@ export async function listSubscriptions(
 ): Promise<SubscriptionListResult> {
   await requireAdmin(); // authorize FIRST
   if (!hasServiceRole()) return { rows: [], total: 0, loadError: true };
+  const locale = await getLocale();
 
   const page = Number.isFinite(params.page) && params.page >= 1 ? params.page : 1;
   const status = (SUBSCRIPTION_STATUSES as readonly string[]).includes(params.status)
@@ -227,7 +236,7 @@ export async function listSubscriptions(
        next_renewal_at, created_at, updated_at, student_profile_id, owner_parent_profile_id,
        students(first_name, last_name),
        profiles!owner_parent_profile_id(display_name, email),
-       subscription_subjects(subject_id, interval, pending_interval, current_period_end, remove_at, subjects(name))`,
+       subscription_subjects(subject_id, interval, pending_interval, current_period_end, remove_at, ${SUBJECT_DISPLAY_EMBED})`,
       { count: "exact" },
     );
 
@@ -257,9 +266,9 @@ export async function listSubscriptions(
     parentName: r.profiles?.display_name || "—",
     parentEmail: r.profiles?.email ?? null,
     subjectNames: ((r.subscription_subjects ?? []) as any[])
-      .map((s) => s.subjects?.name)
+      .map((s) => subjectDisplayName(s.subjects, locale))
       .filter(Boolean),
-    subjectPlans: subjectPlans(r),
+    subjectPlans: subjectPlans(r, locale),
     nextRenewalAt: r.next_renewal_at ?? null,
     interval: r.interval,
     status: r.status,
@@ -302,6 +311,7 @@ export async function getSubscriptionDetail(
   if (!UUID_RE.test(id)) return null;
   if (!hasServiceRole()) return null;
 
+  const locale = await getLocale();
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("child_subscriptions")
@@ -313,7 +323,7 @@ export async function getSubscriptionDetail(
        student_profile_id, owner_parent_profile_id,
        students(first_name, last_name, access_status, child_unique_id),
        profiles!owner_parent_profile_id(display_name, email),
-       subscription_subjects(subject_id, interval, pending_interval, current_period_end, remove_at, subjects(name))`,
+       subscription_subjects(subject_id, interval, pending_interval, current_period_end, remove_at, ${SUBJECT_DISPLAY_EMBED})`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -340,9 +350,9 @@ export async function getSubscriptionDetail(
     parentName: r.profiles?.display_name || "—",
     parentEmail: r.profiles?.email ?? null,
     subjectNames: ((r.subscription_subjects ?? []) as any[])
-      .map((s) => s.subjects?.name)
+      .map((s) => subjectDisplayName(s.subjects, locale))
       .filter(Boolean),
-    subjectPlans: subjectPlans(r),
+    subjectPlans: subjectPlans(r, locale),
     nextRenewalAt: r.next_renewal_at ?? null,
     interval: r.interval,
     status: r.status,

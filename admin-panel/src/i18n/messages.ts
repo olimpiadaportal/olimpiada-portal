@@ -247,11 +247,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.title": "Fənlər",
     "subj.subtitle":
       "Fənləri yarat, qiymətləndir, dərc et və arxivlə. Burada dərc edilən fənn eyni anda saytda, valideyn və şagird panelində görünür.",
-    "subj.new": "Yeni fənn",
+    "subj.new": "Fənn əlavə et",
     "subj.newTitle": "Yeni fənn",
     "subj.editTitle": "Fənnə düzəliş et",
     "subj.infoHeading": "Fənn məlumatı",
-    "subj.field.name": "Fənnin adı",
+    "subj.field.name": "Fənnin adı (Azərbaycanca)",
+    "subj.field.nameEn": "Fənnin adı (İngiliscə)",
+    "subj.field.nameRu": "Fənnin adı (Rusca)",
     "subj.field.status": "Vəziyyət",
     "subj.field.prices": "Abunəlik qiymətləri (AZN)",
     "subj.pricesHint":
@@ -276,7 +278,58 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.err.name": "Fənnin adı 1–120 simvol olmalıdır.",
     "subj.err.price":
       "Hər qiymət 0-dan böyük, 10000-dən çox olmayan və ən çoxu 2 onluq rəqəmli olmalıdır.",
+    // Eyni qayda, amma BİR xana üçün: sətir daxilindəki qiymət xanası yalnız öz
+    // məbləğini yoxlayır, ona görə orada «hər qiymət» yanlış ünvana işarə edir.
+    "subj.err.priceCell":
+      "Bu qiymət 0-dan böyük, 10000-dən çox olmayan və ən çoxu 2 onluq rəqəmli olmalıdır.",
     "subj.err.priceSave": "Qiymət yadda saxlanmadı. Əvvəlki qiymət qüvvədə qalır.",
+    "subj.err.nameSave":
+      "Adlar yadda saxlanmadı — fənn hələ də köhnə adla görünür. Yenidən cəhd edin.",
+    // Səhifə açıq ikən vəziyyəti başqası dəyişib: ad yadda saxlanılır, vəziyyət
+    // isə toxunulmadan qalır və bu, susqun deyil, açıq şəkildə bildirilir.
+    "subj.err.staleStatus":
+      "Bu səhifə açıq olduğu müddətdə fənnin vəziyyətini başqası dəyişib. Ona görə yalnız adlar yadda saxlanıldı, vəziyyət isə indiki halında qaldı. Səhifəni yeniləyin və lazım olsa, vəziyyəti yenidən dəyişin.",
+    // ---- /pricing ekranının Fənlərə birləşdirilməsi (2026-09-10) ----
+    // Ayrıca "Qiymətlər" səhifəsi ləğv edildi; qiymətlər indi Fənlər siyahısında
+    // və fənnin redaktə səhifəsində sətir daxilində dəyişdirilir.
+    "subj.priceNotSet": "Qiymət təyin edilməyib",
+    "subj.currencyNote": "Bütün qiymətlər AZN ilə göstərilir.",
+    // Siyahı ekranı üçün tək sətir: valyuta + xananın ayrıca yadda saxlanması.
+    "subj.priceListNote":
+      "Qiymətlər AZN ilə göstərilir və hər xana ayrıca yadda saxlanılır.",
+    "subj.repriceNote":
+      "Ödəniş zamanı qiymət həmişə serverdə yenidən hesablanır. Mövcud abunəliklər yenilənənə və ya dəyişdirilənə qədər köhnə qiymətlə davam edir.",
+    "subj.priceInlineHint":
+      "Hər qiymət ayrıca yadda saxlanılır. Qiyməti dəyişmək fənnin adına və vəziyyətinə toxunmur; adı dəyişmək isə qiymətlərə toxunmur.",
+    // VAXT İDDİASI DƏQİQ OLMALIDIR. Saytdakı gecikmə 60 saniyəlik keşdir
+    // (web-app/src/lib/flags.ts, unstable_cache revalidate: 60). Mobil tətbiq
+    // isə ayrı işləyir: fənn adları sorğusunun staleTime dəyəri 5 dəqiqədir və
+    // heç nə onu ləğv etmir (mobile-app/src/lib/configQueries.ts), yəni ad
+    // tətbiq növbəti dəfə açılanda yenilənir. Əvvəllər burada hər ikisi üçün
+    // «bir dəqiqə» yazılırdı — tətbiq üçün bu doğru deyildi.
+    "subj.nameFallbackHint":
+      "Şagird və valideyn fənni öz dilində bu adlarla görür. İngilis və ya rus xanası boş qalarsa, həmin dildə Azərbaycanca ad göstərilir. Yeni ad saytda bir dəqiqəyədək gec görünə bilər; mobil tətbiqdə isə tətbiq növbəti dəfə açılanda görünür.",
+    // Ad dəyişikliyi yalnız görünən adları dəyişir. Toplu yükləmə faylları fənni
+    // `subjects.name` sütunu ilə tapır və o sütun yaradılışdan sonra sabit qalır —
+    // əks halda köhnə adı yazan bütün fayllar səssizcə sıradan çıxardı.
+    "subj.importNameHint":
+      "Toplu yükləmə faylları fənni bu daxili adla tanıyır və ad dəyişikliyi ona toxunmur:",
+    // Apple ilə bağlı xəbərdarlıq: burada fənn yaratmaq Apple məhsulu yaratmır.
+    "subj.iapHeading": "Apple App Store: yeni fənn iOS-da dərhal satılmır",
+    "subj.iapNotice":
+      "Burada fənn yaratmaq Apple məhsulu yaratmır. iOS-da abunəlik yalnız App Store Connect-də üç ayrıca məhsul — həftəlik, aylıq və illik — yaradılıb qiymətləndirildikdən və Apple tərəfindən təsdiqləndikdən sonra mümkün olur. O vaxtadək bu fənn iOS tətbiqinin alış siyahısında ümumiyyətlə görünmür: xəta verilmir, sadəcə orada olmur. Sayt (ABB, AZN) və Android bundan asılı deyil — fənn qiymətləri daxil edilib dərc olunan kimi saytda satılır.",
+    "subj.iapSteps":
+      "Ardıcıllıq: 1) fənni burada yaradın, hər üç qiyməti daxil edin və dərc edin — «App Store məhsulları» ekranı yalnız dərc olunmuş fənləri təklif edir; 2) həmin ekranda hər dövr üçün bir məhsul əlavə edin (həftəlik, aylıq, illik) — yeni sətir həmişə bağlı yaradılır; 3) App Store Connect-də eyni məhsul nömrələrini yaradın, qiymətlərini təyin edin və Apple-ın təsdiqini alın; 4) buraya qayıdıb hər üç sətri satışa çıxarın. Hər üç məhsul təsdiqlənib satışa çıxarılmayınca valideyn bu fənni iOS-da ala bilmir.",
+    "subj.iosNotSellable": "iOS-da satılmır",
+    "subj.iosNotSellableHint":
+      "Bu fənnin hər üç dövr üçün aktiv App Store məhsulu yoxdur, ona görə iOS tətbiqində alına bilmir. Saytdakı satışa təsiri yoxdur.",
+    "subj.iosSellable": "iOS-da satışdadır",
+    // ÜÇÜNCÜ VƏZİYYƏT — «yox»un yumşaq forması DEYİL. App Store məhsullarının
+    // siyahısı oxunmayanda cavab bilinmir; bunu «satılmır» kimi yazmaq işlək
+    // məhsulu nahaq yerə ittiham etmək olardı.
+    "subj.iosUnknown": "iOS statusu yoxlanılmadı",
+    "subj.iosUnknownHint":
+      "App Store məhsullarının siyahısı oxunmadı, ona görə bu fənnin iOS-da satılıb-satılmadığı bilinmir. Bu, fənndə problem olduğunu göstərmir. Səhifəni yeniləyin; təkrarlanarsa «App Store məhsulları» bölməsini yoxlayın.",
     "nav.topics": "Mövzular",
     "nav.subtopics": "Alt mövzular",
     "nav.cities": "Şəhərlər",
@@ -2070,11 +2123,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.title": "Subjects",
     "subj.subtitle":
       "Create, price, publish and archive subjects. A subject published here shows up on the website, the parent panel and the student panel at the same time.",
-    "subj.new": "New subject",
+    "subj.new": "Add subject",
     "subj.newTitle": "New subject",
     "subj.editTitle": "Edit subject",
     "subj.infoHeading": "Subject details",
-    "subj.field.name": "Subject name",
+    "subj.field.name": "Subject name (Azerbaijani)",
+    "subj.field.nameEn": "Subject name (English)",
+    "subj.field.nameRu": "Subject name (Russian)",
     "subj.field.status": "Status",
     "subj.field.prices": "Subscription prices (AZN)",
     "subj.pricesHint":
@@ -2099,7 +2154,52 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.err.name": "The subject name must be 1–120 characters.",
     "subj.err.price":
       "Each price must be above 0, at most 10000, with up to 2 decimal places.",
+    // The same rule stated for ONE cell: the inline editor validates its own
+    // amount and nothing else, so "each price" there points at the wrong thing.
+    "subj.err.priceCell":
+      "This price must be above 0, at most 10000, with up to 2 decimal places.",
     "subj.err.priceSave": "The price was not saved. The previous price still applies.",
+    "subj.err.nameSave":
+      "The names were not saved — the subject still shows its previous name. Please try again.",
+    // Somebody moved the status while this page was open: the rename is kept,
+    // the status is left alone, and the refusal is stated rather than swallowed.
+    "subj.err.staleStatus":
+      "Someone else changed this subject's status while this page was open, so only the names were saved and the status was left as it now stands. Refresh the page and change the status again if you still want to.",
+    // ---- The /pricing screen merged into Subjects (2026-09-10) ----
+    // The separate "Pricing" page is gone; prices are now edited inline on the
+    // Subjects list and on the subject edit page.
+    "subj.priceNotSet": "No price set",
+    "subj.currencyNote": "All prices are shown in AZN.",
+    // One line for the list screen: the currency plus the per-cell save.
+    "subj.priceListNote":
+      "Prices are shown in AZN, and each cell is saved on its own.",
+    "subj.repriceNote":
+      "Checkout always reprices on the server. Existing subscriptions keep their current price until they renew or change.",
+    "subj.priceInlineHint":
+      "Each price is saved on its own. Changing a price does not touch the subject's name or status, and renaming a subject does not touch its prices.",
+    "subj.nameFallbackHint":
+      "These are the names students and parents see in their own language. Leave English or Russian empty and that language falls back to the Azerbaijani name. A new name can take up to a minute to appear on the website; in the app it appears the next time the app is opened.",
+    // A rename changes the visible names only. Bulk-import files resolve a
+    // subject through the `subjects.name` column, which is fixed at creation —
+    // rewriting it would silently break every file naming the old string.
+    "subj.importNameHint":
+      "Bulk-import files identify this subject by its internal name, and renaming does not change it:",
+    // The Apple warning: creating a subject here does not create an Apple product.
+    "subj.iapHeading": "Apple App Store: a new subject is not sold on iOS right away",
+    "subj.iapNotice":
+      "Creating a subject here does not create an Apple product. On iOS it can only be bought once three separate products — weekly, monthly and yearly — are created in App Store Connect, priced, and approved by Apple. Until then the subject simply does not appear in the iOS purchase list: no error, it is just absent. The website (ABB, AZN) and Android are unaffected — the subject sells on the web as soon as it is priced and published.",
+    "subj.iapSteps":
+      "The order: 1) create the subject here, enter all three prices and publish it — the App Store products screen offers published subjects only; 2) on that screen add one product per cycle (weekly, monthly, yearly); a new row is always created switched off; 3) in App Store Connect create those same product ids, set their prices and get them approved by Apple; 4) come back and put all three rows on sale. Until all three products are approved and on sale, a parent cannot buy this subject on iOS.",
+    "subj.iosNotSellable": "not sold on iOS",
+    "subj.iosNotSellableHint":
+      "This subject has no active App Store product for all three cycles, so it cannot be bought in the iOS app. Selling on the website is unaffected.",
+    "subj.iosSellable": "on sale on iOS",
+    // A THIRD STATE, not a softer "no". When the App Store product list cannot
+    // be read the answer is unknown, and printing that as "not sold" would
+    // accuse a live product of being missing.
+    "subj.iosUnknown": "iOS status not checked",
+    "subj.iosUnknownHint":
+      "The App Store product list could not be read, so whether this subject sells on iOS is unknown. It does not mean anything is wrong with the subject. Reload the page, and if it keeps happening, check the App Store products section.",
     "nav.topics": "Topics",
     "nav.subtopics": "Subtopics",
     "nav.cities": "Cities",
@@ -3879,11 +3979,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.title": "Предметы",
     "subj.subtitle":
       "Создавайте предметы, задавайте цены, публикуйте и архивируйте. Опубликованный здесь предмет сразу появляется на сайте, в панели родителя и в панели ученика.",
-    "subj.new": "Новый предмет",
+    "subj.new": "Добавить предмет",
     "subj.newTitle": "Новый предмет",
     "subj.editTitle": "Редактирование предмета",
     "subj.infoHeading": "Данные предмета",
-    "subj.field.name": "Название предмета",
+    "subj.field.name": "Название предмета (на азербайджанском)",
+    "subj.field.nameEn": "Название предмета (на английском)",
+    "subj.field.nameRu": "Название предмета (на русском)",
     "subj.field.status": "Статус",
     "subj.field.prices": "Цены подписки (AZN)",
     "subj.pricesHint":
@@ -3908,7 +4010,52 @@ export const messages: Record<Locale, Record<string, string>> = {
     "subj.err.name": "Название предмета должно содержать от 1 до 120 символов.",
     "subj.err.price":
       "Каждая цена должна быть больше 0, не более 10000 и максимум с 2 знаками после запятой.",
+    // То же правило, но для ОДНОЙ ячейки: встроенный редактор проверяет только
+    // свою сумму, поэтому «каждая цена» там указывает не на то.
+    "subj.err.priceCell":
+      "Эта цена должна быть больше 0, не более 10000 и максимум с 2 знаками после запятой.",
     "subj.err.priceSave": "Цена не сохранена. Прежняя цена остаётся в силе.",
+    "subj.err.nameSave":
+      "Названия не сохранены — предмет по-прежнему отображается под старым названием. Попробуйте ещё раз.",
+    // Пока страница была открыта, статус изменил кто-то другой: переименование
+    // сохраняется, статус остаётся нетронутым, и об этом сообщается прямо.
+    "subj.err.staleStatus":
+      "Пока эта страница была открыта, статус предмета изменил кто-то другой, поэтому сохранены только названия, а статус остался таким, какой он сейчас. Обновите страницу и при необходимости измените статус ещё раз.",
+    // ---- Экран /pricing объединён с «Предметами» (2026-09-10) ----
+    // Отдельной страницы «Цены» больше нет: цены редактируются прямо в списке
+    // предметов и на странице редактирования предмета.
+    "subj.priceNotSet": "Цена не задана",
+    "subj.currencyNote": "Все цены указаны в AZN.",
+    // Одна строка для экрана списка: валюта плюс сохранение каждой ячейки.
+    "subj.priceListNote":
+      "Цены указаны в AZN, и каждая ячейка сохраняется отдельно.",
+    "subj.repriceNote":
+      "При оплате цена всегда пересчитывается на сервере. Действующие подписки сохраняют текущую цену до продления или изменения.",
+    "subj.priceInlineHint":
+      "Каждая цена сохраняется отдельно. Изменение цены не затрагивает название и статус предмета, а переименование предмета не затрагивает его цены.",
+    "subj.nameFallbackHint":
+      "Именно эти названия ученик и родитель видят на своём языке. Если оставить английское или русское поле пустым, там будет показано азербайджанское название. Новое название появляется на сайте не позднее чем через минуту, а в приложении — при следующем открытии приложения.",
+    // Переименование меняет только видимые названия. Файлы массовой загрузки
+    // находят предмет по столбцу `subjects.name`, а он задаётся один раз при
+    // создании — иначе все файлы со старым названием тихо перестали бы работать.
+    "subj.importNameHint":
+      "Файлы массовой загрузки определяют предмет по этому внутреннему названию, и переименование его не меняет:",
+    // Предупреждение об Apple: создание предмета здесь не создаёт продукт Apple.
+    "subj.iapHeading": "Apple App Store: новый предмет не сразу продаётся в iOS",
+    "subj.iapNotice":
+      "Создание предмета здесь не создаёт продукт Apple. В iOS его можно будет купить только после того, как в App Store Connect будут созданы три отдельных продукта — недельный, месячный и годовой, — им назначена цена и они одобрены Apple. До этого предмет просто не появляется в списке покупок в iOS: ошибки нет, его там нет. Сайт (ABB, AZN) и Android от этого не зависят — предмет продаётся на сайте, как только у него заданы цены и он опубликован.",
+    "subj.iapSteps":
+      "Порядок: 1) создайте предмет здесь, укажите все три цены и опубликуйте его — на экране «Продукты App Store» доступны только опубликованные предметы; 2) на этом экране добавьте по одному продукту на период (недельный, месячный, годовой) — новая строка всегда создаётся выключенной; 3) в App Store Connect создайте те же идентификаторы продуктов, задайте им цены и получите одобрение Apple; 4) вернитесь сюда и выставьте все три строки в продажу. Пока все три продукта не одобрены и не выставлены в продажу, родитель не может купить этот предмет в iOS.",
+    "subj.iosNotSellable": "не продаётся в iOS",
+    "subj.iosNotSellableHint":
+      "У этого предмета нет активного продукта App Store для всех трёх периодов, поэтому в приложении для iOS его нельзя купить. На продажу через сайт это не влияет.",
+    "subj.iosSellable": "продаётся в iOS",
+    // ТРЕТЬЕ состояние, а не смягчённое «нет». Если список продуктов App Store
+    // не прочитан, ответ неизвестен, и выводить его как «не продаётся» значит
+    // напрасно обвинять работающий продукт.
+    "subj.iosUnknown": "статус iOS не проверен",
+    "subj.iosUnknownHint":
+      "Список продуктов App Store не удалось прочитать, поэтому неизвестно, продаётся ли этот предмет в iOS. Это не означает, что с предметом что-то не так. Обновите страницу, а если повторится — проверьте раздел «Продукты App Store».",
     "nav.topics": "Темы",
     "nav.subtopics": "Подтемы",
     "nav.cities": "Города",

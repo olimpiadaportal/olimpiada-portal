@@ -6,11 +6,9 @@
 // The collapsed trigger shows only the ISO code + dial (e.g. "AZ +994") — no
 // long country name. Opening it reveals a searchable list where each row shows
 // the full country name + dial code for easy picking. A hidden `phone` input
-// carries the composed E.164 value (+dial + national) into FormData. Client
-// validity (4–12 digit national part AND the composed value matching the
-// server/DB E.164 rule) is enforced via setCustomValidity on the visible
-// national input so the browser blocks submit; server-side validation in
-// registerParent remains the source of truth.
+// carries the composed E.164 value into FormData. Client validity is enforced
+// via setCustomValidity on the visible national input so the browser blocks
+// submit; server-side validation in registerParent remains the source of truth.
 //
 // THE FIELD IS OPTIONAL (2026-08-31). Apple rejected the iOS build under
 // Guideline 5.1.1(v) — an app may not REQUIRE personal information its core
@@ -19,37 +17,31 @@
 // (which the server normalizes to NULL). Leaving it blank on the profile form
 // is therefore also how a parent CLEARS a number they gave earlier. Do not put
 // `required` back to "make the data cleaner" — it is a store rejection.
+//
+// AND THE NUMBER ITSELF IS READ BY @/lib/phoneE164 (2026-09-10), a file that is
+// byte-identical to the mobile app's copy and hands every numbering-plan
+// decision to libphonenumber-js. This component used to carry its own
+// `sanitizeNational`, whose `replace(/^0+/, "")` stripped every leading zero
+// from every country — right for Azerbaijan, and wrong for Italy, where the 0
+// of "+39 06 …" is a digit of the number, for Benin, for San Marino, and inert
+// for the plans whose trunk digit is "8". THIS IS THE RAIL THAT CHARGES CARDS,
+// and until this change a parent got a DIFFERENT stored number depending on
+// whether they signed up on the website or in the app. Both rails now compose
+// through the same function, and a shared input matrix
+// (src/lib/__tests__/phoneMatrix.ts, consumed by both suites) pins them to the
+// same answer row by row.
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { COUNTRIES, DEFAULT_ISO2 } from "@/lib/countries";
+import { COUNTRIES } from "@/lib/countries";
+import {
+  applyPhoneEdit,
+  composeE164,
+  countryFor,
+  splitE164,
+  E164_RE,
+  type PhoneValue,
+} from "@/lib/phoneE164";
+import { phoneEditorSeed } from "@/lib/phoneEditor";
 import { useT } from "@/i18n/I18nProvider";
-
-// Mirrors the server regex in parentService.ts and chk_profiles_phone_e164.
-const E164_RE = /^\+[1-9][0-9]{6,14}$/;
-const NATIONAL_RE = /^[0-9]{4,12}$/;
-
-// Strip the separators people naturally type (spaces/dashes/parentheses/dots),
-// then any leading 0 used in national dialing (e.g. "050 123-45-67" → "501234567").
-function sanitizeNational(raw: string): string {
-  return raw.replace(/[\s\-().]/g, "").replace(/^0+/, "");
-}
-
-// Splits a stored E.164 number back into (country, national) so the EDIT case
-// opens on the number the parent already has. Dial codes overlap (+1 vs +1242,
-// +7 vs +7…), so the LONGEST matching prefix wins; among countries sharing one
-// dial code the first entry is used — the pair still recomposes to the exact
-// same E.164 string, which is all that is submitted.
-function splitE164(value: string): { iso2: string; national: string } {
-  const digits = /^\+[1-9][0-9]{6,14}$/.test(value) ? value.slice(1) : "";
-  if (!digits) return { iso2: DEFAULT_ISO2, national: "" };
-  let best: { iso2: string; dial: string } | null = null;
-  for (const c of COUNTRIES) {
-    if (digits.startsWith(c.dial) && (!best || c.dial.length > best.dial.length)) {
-      best = { iso2: c.iso2, dial: c.dial };
-    }
-  }
-  if (!best) return { iso2: DEFAULT_ISO2, national: "" };
-  return { iso2: best.iso2, national: digits.slice(best.dial.length) };
-}
 
 export function PhoneField({
   locale,
@@ -91,12 +83,24 @@ export function PhoneField({
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const seed = useMemo(() => splitE164(initialE164 ?? ""), [initialE164]);
-  const [iso2, setIso2] = useState<string>(seed.iso2);
-  const [national, setNational] = useState(seed.national);
+  // VERIFIED seed, not a bare splitE164 -- see @/lib/phoneEditor. A stored
+  // number libphonenumber cannot read opened this editor EMPTY, and an empty
+  // submit is a deliberate CLEAR, so pressing Save without editing deleted
+  // the parent's number. phoneEditorSeed recomposes the split and falls back
+  // to an international draft when it does not round-trip, so the field can
+  // never be blank over a stored value. The mobile rail carries the
+  // byte-identical twin.
+  const seed = useMemo(() => phoneEditorSeed(initialE164).value, [initialE164]);
+  const [value, setValue] = useState<PhoneValue>(seed);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hl, setHl] = useState(0);
+  // A ref, not state: `applyPhoneEdit` only READS focus, and re-rendering on
+  // focus would buy nothing. A browser's autofill writes into an UNFOCUSED
+  // input when a dataset is chosen in a sibling field, so this flag is what
+  // separates "the user cleared it" from "something else did".
+  const focused = useRef(false);
+  const { iso2, national } = value;
 
   // Localized country names via Intl.DisplayNames, falling back to the stored
   // English name for codes Intl doesn't know (e.g. XK) or older environments.
@@ -134,33 +138,45 @@ export function PhoneField({
     );
   }, [options, query]);
 
-  const dial = COUNTRIES.find((c) => c.iso2 === iso2)?.dial ?? "";
-  const e164 = national ? `+${dial}${national}` : "";
+  const dial = countryFor(iso2).dial;
+  const e164 = composeE164(dial, national);
 
   // Custom validity on the VISIBLE input so native form validation blocks
   // submit on a HALF-TYPED number. An EMPTY field is valid — the field is
   // optional — which is what the `nat &&` guard below already encodes.
-  function applyValidity(el: HTMLInputElement, nat: string, d: string) {
-    const ok = NATIONAL_RE.test(nat) && E164_RE.test(`+${d}${nat}`);
-    el.setCustomValidity(nat && !ok ? invalidMessage : "");
+  //
+  // ONE check, not two. This used to also demand a 4–12 DIGIT national part,
+  // which is a numbering-plan claim of its own and false at both ends (San
+  // Marino's 0549 886377 is 10, an Italian landline can be 11). The composed
+  // value is now the library's, and a number the library could not read
+  // composes to something E164_RE rejects — so the single E.164 check is
+  // strictly stronger than the pair it replaces.
+  function applyValidity(el: HTMLInputElement, next: PhoneValue) {
+    const composed = composeE164(countryFor(next.iso2).dial, next.national);
+    el.setCustomValidity(next.national && !E164_RE.test(composed) ? invalidMessage : "");
+  }
+
+  function commit(next: PhoneValue, el?: HTMLInputElement | null) {
+    setValue(next);
+    const target = el ?? inputRef.current;
+    if (target) applyValidity(target, next);
   }
 
   function selectCountry(nextIso2: string) {
-    setIso2(nextIso2);
+    commit({ iso2: nextIso2, national });
     setOpen(false);
     setQuery("");
-    const d = COUNTRIES.find((c) => c.iso2 === nextIso2)?.dial ?? "";
-    if (inputRef.current) applyValidity(inputRef.current, national, d);
     // Return focus to the number field so typing can continue immediately.
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }
 
   function onNationalChange(e: React.ChangeEvent<HTMLInputElement>) {
-    // No hard truncation beyond maxLength: an over-long paste should surface
-    // the validity message rather than be silently cut to a wrong number.
-    const nat = sanitizeNational(e.target.value);
-    setNational(nat);
-    applyValidity(e.target, nat, dial);
+    // The trunk prefix stays ON SCREEN — it is how the number is written
+    // locally, and deleting it mid-entry moves the caret out from under the
+    // user. It comes off once, in `composeE164`, and only where the plan says
+    // it is one. An over-long paste is capped by DIGITS, so the separators
+    // people group with never cost a digit.
+    commit(applyPhoneEdit({ raw: e.target.value, prev: value, focused: focused.current }), e.target);
   }
 
   // Close on outside click / Escape; focus the search box when opening.
@@ -299,9 +315,19 @@ export function PhoneField({
           type="text"
           inputMode="tel"
           autoComplete="tel-national"
-          maxLength={20}
+          /* No `maxLength`: a CHARACTER cap counts the spaces people group
+             digits with, so a long number written out loses its last digit and
+             then composes into a well-formed number belonging to someone else.
+             `applyPhoneEdit` caps DIGITS instead, at the longest national
+             number any plan the library knows of allows. */
           value={national}
           onChange={onNationalChange}
+          onFocus={() => {
+            focused.current = true;
+          }}
+          onBlur={() => {
+            focused.current = false;
+          }}
           placeholder={placeholder}
         />
       </div>

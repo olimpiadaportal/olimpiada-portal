@@ -15,6 +15,7 @@ import {
 import { fetchMyNewsLikes, setNewsLike, type NewsListItem } from "@/lib/data";
 import { isSupabaseConfigured } from "@/lib/env";
 import { useAuthStore } from "@/features/auth/authStore";
+import { accountScoped } from "@/features/auth/accountScope";
 import {
   nextLikedIds,
   patchArticleLikeCount,
@@ -31,7 +32,8 @@ const NEWS_ARTICLE_KEY = ["news-article"] as const;
 
 /** Per-profile so a second account on the same device can never inherit it
  *  (sign-out clears the whole cache anyway — this is belt and braces). */
-export const newsLikesKey = (profileId: string) => ["news-likes", profileId] as const;
+export const newsLikesKey = (profileId: string) =>
+  accountScoped(["news-likes"] as const, profileId);
 
 /** Stable empty set: a fresh one per render would re-render every card. */
 const NO_LIKES: ReadonlySet<string> = new Set<string>();

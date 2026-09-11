@@ -15,7 +15,7 @@
 // to filled but never back to empty.
 import React, { useMemo, useState } from "react";
 import { View } from "react-native";
-import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Trash2, TriangleAlert } from "lucide-react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -32,7 +32,9 @@ import { useFieldChain } from "@/lib/useFieldChain";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { checkNewPassword } from "@/lib/passwordPolicy";
 import { formatGradeLabel } from "@/lib/gradeLabel";
-import { fetchChildren, type ChildRow } from "@/lib/data";
+import { goToTab } from "@/lib/navigation";
+import { TabRedirect } from "@/lib/TabRedirect";
+import { type ChildRow } from "@/lib/data";
 import { resolveChildAvatarSource } from "@/lib/childAvatar";
 import { supabase } from "@/lib/supabase";
 import {
@@ -54,6 +56,8 @@ import {
   type ChildAvatarChoice,
 } from "@/features/parent/ChildAvatarPicker";
 import {
+  QK,
+  useChildren,
   useCities,
   useCityDistricts,
   useGrades,
@@ -64,7 +68,14 @@ import {
 import { SheetShell, childDisplayName } from "@/features/parent/ui";
 import { SelectField, type SelectOption } from "@/features/profile/SelectField";
 import { useAuthStore } from "@/features/auth/authStore";
+import { accountScoped } from "@/features/auth/accountScope";
 import { showToast } from "@/features/toast/toastStore";
+
+/** The rayon + gender read below. Scoped to the CHILD (features/auth/
+ *  accountScope.ts): gender is a minor's personal data and must never be
+ *  addressable by another account's session on the same device. */
+const childEditFieldsKey = (studentId: string) =>
+  accountScoped(["child-edit-fields"] as const, studentId);
 
 type FieldErrors = Partial<
   Record<"first" | "last" | "city" | "district" | "school" | "grade", string>
@@ -116,8 +127,7 @@ function AvatarEditor({ child }: { child: ChildRow }) {
       return;
     }
     setSaved(true);
-    void queryClient.invalidateQueries({ queryKey: ["children"] });
-    void queryClient.invalidateQueries({ queryKey: ["parent", "children"] });
+    void queryClient.invalidateQueries({ queryKey: QK.childrenRoot });
   }
 
   return (
@@ -296,10 +306,9 @@ function EditForm({
       return;
     }
     setSaved(true);
-    void queryClient.invalidateQueries({ queryKey: ["children"] });
-    void queryClient.invalidateQueries({ queryKey: ["parent", "children"] });
+    void queryClient.invalidateQueries({ queryKey: QK.childrenRoot });
     void queryClient.invalidateQueries({
-      queryKey: ["child-edit-fields", child.profile_id],
+      queryKey: childEditFieldsKey(child.profile_id),
     });
   }
 
@@ -527,6 +536,9 @@ function PasswordReset({ childId }: { childId: string }) {
             submitBehavior="blurAndSubmit"
             showLabel={t("mob.pw.show")}
             hideLabel={t("mob.pw.hide")}
+            // A CHILD credential: never offered to a password manager. See
+            // PASSWORD_AUTOFILL in components/TextField.tsx.
+            purpose="none"
             error={error}
           />
           {/* The FILLED button is this field's own submit, directly under it.
@@ -580,7 +592,6 @@ function DeleteChild({ child }: { child: ChildRow }) {
   const { t } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const invalidateParentData = useInvalidateParentData();
   const myProfileId = useAuthStore((s) => s.profileId);
 
@@ -621,17 +632,18 @@ function DeleteChild({ child }: { child: ChildRow }) {
       return;
     }
     // Invalidate BEFORE navigating: the Home list this screen returns to must
-    // have dropped the card, not re-render a child that no longer exists. Both
-    // keys, because this screen reads ["children"] while the parent surface
-    // reads ["parent", "children"] — the same split the edit save already
-    // handles above.
+    // have dropped the card, not re-render a child that no longer exists. ONE
+    // key now — this screen used to read a second, unscoped ["children"] cache
+    // of its own and every writer here had to remember to invalidate both.
     invalidateParentData();
-    void queryClient.invalidateQueries({ queryKey: ["children"] });
     showToast(t("mob.child.delete.done"), "ok");
-    // replace(), not back(): this screen edits a profile that is gone and must
-    // not stay in the back stack. `pending` deliberately stays true across the
-    // transition, so nothing here can be fired twice on the way out.
-    router.replace("/(parent)/(tabs)/home");
+    // Not back(): this screen edits a profile that is gone and must not stay
+    // in the back stack. goToTab() pops the stack down to the tab navigator
+    // that is already mounted underneath — a replace() to the tab route would
+    // mount a SECOND one, and the next back press would be swallowed by it and
+    // land on Home (lib/navigation.ts). `pending` deliberately stays true
+    // across the transition, so nothing here can be fired twice on the way out.
+    goToTab(router, "/(parent)/(tabs)/home");
   }
 
   // KNOWN AND DIFFERENT hides the zone; UNRESOLVED does not. `profileId` is
@@ -724,7 +736,7 @@ export default function EditChildScreen() {
   const id = typeof params.id === "string" ? params.id : "";
   const queryClient = useQueryClient();
 
-  const childrenQ = useQuery({ queryKey: ["children"], queryFn: fetchChildren });
+  const childrenQ = useChildren();
   const child = (childrenQ.data ?? []).find((c) => c.profile_id === id) ?? null;
 
   // The saved rayon and gender are not part of the children list read — fetch
@@ -739,7 +751,7 @@ export default function EditChildScreen() {
   // per-child read costs nothing; the same column on the shared list would put
   // it behind five screens that never show it.
   const savedQ = useQuery({
-    queryKey: ["child-edit-fields", id],
+    queryKey: childEditFieldsKey(id),
     enabled: !!child,
     queryFn: async (): Promise<{ cityDistrictId: string; gender: ChildGender | "" }> => {
       const { data, error } = await supabase
@@ -780,7 +792,7 @@ export default function EditChildScreen() {
 
   if (childrenQ.isSuccess && !child) {
     // Unknown/foreign id — never render a form for someone else's child.
-    return <Redirect href="/(parent)/(tabs)/home" />;
+    return <TabRedirect href="/(parent)/(tabs)/home" />;
   }
 
   return (

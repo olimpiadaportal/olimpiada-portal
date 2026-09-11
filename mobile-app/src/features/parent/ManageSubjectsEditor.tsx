@@ -43,7 +43,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
 import { bffQuoteSubjectChange, bffUpdateSubjects, type SubjectChangeQuote } from "@/lib/api";
 import { useT } from "@/i18n/useT";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { subjectLabel, sortSubjectsByLabel } from "@/lib/subjectLabel";
 import {
   INTERVAL_NAME_KEY,
   fmtBakuDate,
@@ -239,7 +239,7 @@ export type CoveredSubject = {
 
 export function ManageSubjectsEditor({
   studentId,
-  subjects,
+  subjects: subjectRows,
   covered: coveredRows,
   defaultInterval,
   addsDisabled = false,
@@ -265,6 +265,23 @@ export function ManageSubjectsEditor({
   const { tokens } = useTheme();
   const { t, locale } = useT();
   const iv: Interval = isInterval(defaultInterval) ? defaultInterval : "month";
+
+  // READING ORDER, and it is decided HERE rather than where the list is
+  // fetched (2026-09-10). `groupPricing()` hands back an arbitrary, cache-safe
+  // order on purpose: it runs inside a react-query queryFn keyed without a
+  // locale, so an order chosen there would freeze at the language of the first
+  // fetch. This component has the reader's language (useT), and it is the only
+  // thing that renders the list, so the sort belongs to it.
+  //
+  // Sorted on the RESOLVED label — every row below prints
+  // subjectLabel(t, s.code, s.name), so ordering on the raw `subjects.name`
+  // import key would put the checkboxes in an order matching nothing on
+  // screen. `locale` is in the deps because switching language REORDERS this
+  // list, not merely its text: Azerbaijani puts q before l and x before i.
+  const subjects = useMemo(
+    () => sortSubjectsByLabel(t, locale, subjectRows),
+    [subjectRows, t, locale],
+  );
 
   // Each subject's OWN cycle, so a row is priced and labelled on the cycle the
   // parent actually pays for it — not on one plan-wide interval.

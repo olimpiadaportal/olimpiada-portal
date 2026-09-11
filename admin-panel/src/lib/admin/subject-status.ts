@@ -27,7 +27,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { PRICE_INTERVALS } from "@/app/(protected)/pricing/shared";
+import { PRICE_INTERVALS } from "@/lib/admin/pricing-shared";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -138,10 +138,9 @@ export async function transitionSubject(formData: FormData): Promise<void> {
     console.error("[admin] subject transition failed", error.code ?? "unknown");
   }
 
-  // Both the list and the pricing page show a subject's status, and /services
-  // on the web reads it too — but that is a different deployment and revalidates
-  // on its own 60s cache.
+  // Both Subjects screens show a subject's status, and /services on the web
+  // reads it too — but that is a different deployment and revalidates on its
+  // own 60s cache. (/pricing is no longer a screen; it redirects here.)
   revalidatePath("/manage/subjects");
   revalidatePath(`/manage/subjects/${id}/edit`);
-  revalidatePath("/pricing");
 }

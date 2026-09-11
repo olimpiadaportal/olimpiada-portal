@@ -18,24 +18,38 @@ import {
   submitTestAttempt,
 } from "./api";
 import { isGiveawayNow, resultBreakdown } from "./logic";
+import { accountScoped } from "@/features/auth/accountScope";
 
+/**
+ * Every key here is account-scoped (features/auth/accountScope.ts) — this is
+ * the most sensitive cache in the app and a family phone hosts more than one
+ * child. The three attempt-payload keys carry the profile id too even though an
+ * attempt uuid is already unguessable: it makes "this entry belongs to a
+ * session" a property of the key, which is what lets the sign-in reset drop
+ * them by predicate instead of by a list.
+ *
+ * The ["tests", …] prefixes are unchanged, so the screens' existing
+ * invalidateQueries({ queryKey: ["tests","attempts"] }) / ["tests","access"]
+ * calls still match.
+ */
 export const TQK = {
-  access: (profileId: string, giveaway: boolean) =>
-    ["tests", "access", profileId, giveaway] as const,
-  attempts: (profileId: string) => ["tests", "attempts", profileId] as const,
+  access: (profileId: string | null, giveaway: boolean) =>
+    accountScoped(["tests", "access", giveaway] as const, profileId),
+  attempts: (profileId: string | null) =>
+    accountScoped(["tests", "attempts"] as const, profileId),
   // locale is part of the key on purpose: setLocale() only mutates the zustand
   // store and never touches the query cache, so a locale-less key would keep
   // serving the previous language until staleTime expired (migration 114).
-  setup: (subjectId: string, profileId: string, locale: Locale) =>
-    ["tests", "setup", subjectId, profileId, locale] as const,
-  attempt: (attemptId: string, locale: Locale) =>
-    ["tests", "attempt", attemptId, locale] as const,
-  attemptRow: (attemptId: string, profileId: string) =>
-    ["tests", "attempt-row", attemptId, profileId] as const,
-  result: (attemptId: string, locale: Locale) =>
-    ["tests", "result", attemptId, locale] as const,
-  review: (attemptId: string, locale: Locale) =>
-    ["tests", "review", attemptId, locale] as const,
+  setup: (subjectId: string, profileId: string | null, locale: Locale) =>
+    accountScoped(["tests", "setup", subjectId, locale] as const, profileId),
+  attempt: (attemptId: string, locale: Locale, profileId: string | null) =>
+    accountScoped(["tests", "attempt", attemptId, locale] as const, profileId),
+  attemptRow: (attemptId: string, profileId: string | null) =>
+    accountScoped(["tests", "attempt-row", attemptId] as const, profileId),
+  result: (attemptId: string, locale: Locale, profileId: string | null) =>
+    accountScoped(["tests", "result", attemptId, locale] as const, profileId),
+  review: (attemptId: string, locale: Locale, profileId: string | null) =>
+    accountScoped(["tests", "review", attemptId, locale] as const, profileId),
 };
 
 /** Server-resolved giveaway mode with client-side lazy window expiry. */
@@ -56,7 +70,7 @@ export function useSubjectAccess() {
   const profileId = useAuthStore((s) => s.profileId);
   const { active: giveaway, settled } = useGiveawayActive();
   return useQuery({
-    queryKey: TQK.access(profileId ?? "-", giveaway),
+    queryKey: TQK.access(profileId, giveaway),
     queryFn: () => fetchSubjectAccess(profileId as string, giveaway),
     enabled: !!profileId && settled,
     staleTime: 60_000,
@@ -67,7 +81,7 @@ export function useSubjectAccess() {
 export function useRecentAttempts() {
   const profileId = useAuthStore((s) => s.profileId);
   return useQuery({
-    queryKey: TQK.attempts(profileId ?? "-"),
+    queryKey: TQK.attempts(profileId),
     queryFn: () => fetchRecentAttempts(profileId as string),
     enabled: !!profileId,
     staleTime: 15_000,
@@ -78,7 +92,7 @@ export function useRecentAttempts() {
 export function useSetupTopics(subjectId: string, locale: Locale) {
   const profileId = useAuthStore((s) => s.profileId);
   return useQuery({
-    queryKey: TQK.setup(subjectId, profileId ?? "-", locale),
+    queryKey: TQK.setup(subjectId, profileId, locale),
     queryFn: () => fetchSetupTopics(subjectId, profileId as string, locale),
     enabled: !!profileId && subjectId.length > 0,
     staleTime: 5 * 60_000,
@@ -106,8 +120,9 @@ export function useSetupTopics(subjectId: string, locale: Locale) {
  * background-refetched out from under the child.
  */
 export function useTestAttempt(attemptId: string, locale: Locale, enabled: boolean) {
+  const profileId = useAuthStore((s) => s.profileId);
   return useQuery({
-    queryKey: TQK.attempt(attemptId, locale),
+    queryKey: TQK.attempt(attemptId, locale, profileId),
     queryFn: () => fetchTestAttempt(attemptId, locale),
     enabled,
     staleTime: Infinity, // never background-refetch under a running attempt
@@ -129,7 +144,7 @@ export function useTestAttempt(attemptId: string, locale: Locale, enabled: boole
 export function useAttemptRow(attemptId: string, enabled = true) {
   const profileId = useAuthStore((s) => s.profileId);
   return useQuery({
-    queryKey: TQK.attemptRow(attemptId, profileId ?? "-"),
+    queryKey: TQK.attemptRow(attemptId, profileId),
     queryFn: () => fetchAttemptRow(attemptId, profileId as string),
     enabled: enabled && !!profileId && attemptId.length > 0,
     staleTime: 0,
@@ -143,8 +158,9 @@ export function useAttemptRow(attemptId: string, enabled = true) {
  * web result-page contract) + the answered/skipped breakdown from own rows.
  */
 export function useTestResult(attemptId: string, locale: Locale, enabled: boolean) {
+  const profileId = useAuthStore((s) => s.profileId);
   return useQuery({
-    queryKey: TQK.result(attemptId, locale),
+    queryKey: TQK.result(attemptId, locale, profileId),
     queryFn: async () => {
       const [result, rows] = await Promise.all([
         submitTestAttempt(attemptId, null, locale),
@@ -165,8 +181,9 @@ export function useTestResult(attemptId: string, locale: Locale, enabled: boolea
  * unmounts (anti-cheat rule, master plan §13).
  */
 export function useTestReview(attemptId: string, locale: Locale, enabled = true) {
+  const profileId = useAuthStore((s) => s.profileId);
   return useQuery({
-    queryKey: TQK.review(attemptId, locale),
+    queryKey: TQK.review(attemptId, locale, profileId),
     queryFn: () => fetchTestReview(attemptId, locale),
     enabled: enabled && attemptId.length > 0,
     staleTime: Infinity,

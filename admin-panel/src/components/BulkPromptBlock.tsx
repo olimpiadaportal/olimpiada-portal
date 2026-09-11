@@ -270,6 +270,10 @@ export function BulkPromptBlock({
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
 
+  // The DISPLAY name, and correctly so: the prompt only tells the model what
+  // the questions are about ("Subject: Riyaziyyat"). It is never written into
+  // `meta.subject` — the generated rows carry no subject at all, and the server
+  // stamps the frozen import key from the batch selection before the RPC runs.
   const subjectName = subjects.find((s) => s.value === subjectId)?.label ?? "";
   const gradeName = grades.find((g) => g.value === gradeId)?.label ?? "";
   const ready = subjectId !== "" && gradeId !== "";
@@ -291,7 +295,13 @@ export function BulkPromptBlock({
           .filter((st) => st.topic_id === tp.id)
           .map((st) => st.name),
       }))
-      .sort((a, b) => (a.term ?? 9) - (b.term ?? 9) || a.name.localeCompare(b.name));
+      // "az", not the prompt's target `locale`: `topics.name` is the canonical
+      // AZERBAIJANI curriculum string and goes into the prompt verbatim, so the
+      // collation belongs to the text being ordered, not to the language the
+      // questions come back in. Bare (as it was) collated in the server
+      // runtime's default and put ə, ç and ş after z. Twin of
+      // lib/admin/curriculum-shared.ts, which orders these same names.
+      .sort((a, b) => (a.term ?? 9) - (b.term ?? 9) || a.name.localeCompare(b.name, "az"));
     return buildPrompt({
       subject: subjectName,
       grade: gradeName,

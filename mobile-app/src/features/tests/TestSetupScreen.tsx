@@ -3,12 +3,25 @@
 // taxonomy) then Subtopic — BOTH MANDATORY, subtopic waived only when the
 // topic has zero subtopics; changing topic resets the subtopic; pressing the
 // (visually) disabled Start surfaces the trilingual warning + highlights the
-// missing field. The instructions/consent gate precedes
+// missing field — for EITHER reason it can be disabled, the incomplete
+// selection and the unticked consent box (setupBlocker in ./logic; a press
+// that reports nothing is the "the button does nothing" half that geometry
+// never explained). The instructions/consent gate precedes
 // start_topic_test_attempt; client checks are UX only — the RPC re-enforces
 // everything server-side. Wording follows the Round-20 PRACTICE contract
 // (migration 057: untimed, unrated — web TestSetup parity: qCount/noLimit/
 // noPoints facts, rulePractice1/2 + rule3/4, practiceScoring). The
 // validation/start flow is byte-identical to M3.
+//
+// SMALL-SCREEN REACHABILITY (owner report). The consent tick and the Start
+// button used to be the LAST things on a page that is ~900pt tall in az and
+// taller in ru — three screenfuls on a 320x568 phone, and more again with the
+// OS font scale raised. A tester looking for "start" had to read the whole
+// rules panel to find it, and it ended up in the last screenful where the
+// Android gesture strip lives. Both now sit in the shared ActionArea below the
+// scroll body (components/ActionArea.tsx): a non-scrolling, safe-area-padded
+// row the page cannot push off the bottom edge, with the tick beside the button
+// it enables so a disabled Start is never unexplained.
 import React, { useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -24,15 +37,19 @@ import {
   Save,
 } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
+import { ActionAreaShell } from "@/components/ActionArea";
+import { scrollBodyBottomInset } from "@/components/actionAreaLayout";
 import { SectionHeader } from "@/components/SectionHeader";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { subjectLabel } from "@/lib/subjectLabel";
+import { useContentGutter } from "@/lib/useContentWidth";
+import { backOrTo } from "@/lib/navigation";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { startTopicTestAttempt } from "./api";
 import { useSetupTopics, useSubjectAccess } from "./queries";
-import { setupSelectionValid } from "./logic";
+import { setupBlocker } from "./logic";
 import { SelectField } from "./SelectField";
 import { ArenaButton, BackBar, Eyebrow, Notice, Panel, tint, useArena } from "./ui";
 
@@ -41,6 +58,11 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
   const { arena } = useArena();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // 0 on every phone. Above 560pt the ActionArea applies this gutter to the
+  // pinned row whatever the body does, so the body has to apply it too — with
+  // it missing, the tick and Start sat in a centred 560pt column while the
+  // topic pickers above them spanned the whole tablet.
+  const gutter = useContentGutter();
 
   const accessQ = useSubjectAccess();
   const topicsQ = useSetupTopics(subjectId, locale);
@@ -56,16 +78,21 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
 
   const pad = {
     paddingTop: insets.top + spacing.md,
-    paddingLeft: spacing.lg + insets.left,
-    paddingRight: spacing.lg + insets.right,
+    paddingLeft: spacing.lg + insets.left + gutter,
+    paddingRight: spacing.lg + insets.right + gutter,
     paddingBottom: insets.bottom + spacing.xl,
     gap: spacing.lg,
   } as const;
 
-  const goBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/(student)/(tabs)/tests");
-  };
+  // Same padding for the SCROLLING body, minus the bottom safe-area inset:
+  // with an action area below, that inset belongs to the bar, and counting it
+  // twice would float the last panel a navigation bar's height above it.
+  const scrollPad = {
+    ...pad,
+    paddingBottom: scrollBodyBottomInset(insets.bottom, true) + spacing.xl,
+  } as const;
+
+  const goBack = () => backOrTo(router, "/(student)/(tabs)/tests");
 
   if (accessQ.isPending || topicsQ.isPending) {
     return (
@@ -112,21 +139,36 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
   const topics = topicsQ.data ?? [];
   const topic = topics.find((tp) => tp.id === topicId) ?? null;
   const hasSubs = (topic?.subtopics.length ?? 0) > 0;
-  const selectionValid = setupSelectionValid(topicId, hasSubs, subId);
+  // The ONE reason the CTA is inert, or null. Recomputed every render, so a
+  // warning clears itself the moment the student supplies what it named.
+  const blocker = setupBlocker(topicId, hasSubs, subId, consent);
 
-  const showWarn = warned && !selectionValid;
+  const showWarn = warned && blocker === "selection";
+  const showConsentWarn = warned && blocker === "consent";
   const topicInvalid = showWarn && topicId === "";
   const subInvalid = showWarn && topicId !== "" && hasSubs && subId === "";
-  const startDisabled = starting || !consent || !selectionValid;
+  const startDisabled = starting || blocker !== null;
+  // Both keys are STATIC t() calls: check-i18n-keys.mjs only sweeps literals,
+  // and a warning that renders its own key as text is the failure this whole
+  // fix is about.
+  const warnText = showWarn
+    ? t("test.setup.selectWarn")
+    : showConsentWarn
+      ? t("test.setup.consentWarn")
+      : null;
 
   const start = async () => {
-    // A press on the visually-disabled button surfaces the selection warning
-    // (web wrapper-click parity); consent/pending presses stay inert.
-    if (!selectionValid) {
+    // A press on the visually-disabled button SAYS WHAT IS MISSING (web
+    // wrapper-click parity). It said it for the selection and stayed silent for
+    // the consent tick, so a student who had picked a topic and not ticked the
+    // box tapped the CTA and got nothing back — at every screen size, which is
+    // why moving the row did not fix it. One branch now covers both reasons,
+    // and it cannot go quiet again without `blocker` losing a case.
+    if (blocker !== null) {
       setWarned(true);
       return;
     }
-    if (!consent || starting) return;
+    if (starting) return;
     setStarting(true);
     setServerError(null);
     try {
@@ -158,10 +200,10 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
     { key: "test.setup.rule4", Glyph: Ban },
   ] as const;
 
-  return (
+  const body = (
     <ScrollView
       style={{ flex: 1, backgroundColor: arena.bg }}
-      contentContainerStyle={pad}
+      contentContainerStyle={scrollPad}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -289,62 +331,84 @@ export function TestSetupScreen({ subjectId }: { subjectId: string }) {
           </AppText>{" "}
           {t("test.setup.practiceScoring")}
         </AppText>
-
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: consent }}
-          accessibilityLabel={t("test.setup.consent")}
-          onPress={() => setConsent((c) => !c)}
-          style={({ pressed }) => ({
-            flexDirection: "row",
-            alignItems: "center",
-            gap: spacing.md,
-            minHeight: 44,
-            paddingVertical: spacing.xs,
-            opacity: pressed ? 0.8 : 1,
-          })}
-        >
-          <View
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: 8,
-              borderWidth: 2,
-              borderColor: consent ? arena.lime : arena.line,
-              backgroundColor: consent ? tint(arena.lime, 0.18) : "transparent",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {consent ? <Check size={15} color={arena.lime} strokeWidth={3} /> : null}
-          </View>
-          <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
-            {t("test.setup.consent")}
-          </AppText>
-        </Pressable>
-
-        {showWarn ? (
-          <AppText color={arena.red} style={{ fontSize: 13 }}>
-            {t("test.setup.selectWarn")}
-          </AppText>
-        ) : null}
-        {serverError ? (
-          <AppText color={arena.red} style={{ fontSize: 13 }}>
-            {serverError}
-          </AppText>
-        ) : null}
-
-        <ArenaButton
-          arena={arena}
-          kind="gradient"
-          title={t("test.setup.start")}
-          pendingTitle={t("test.setup.starting")}
-          pending={starting}
-          disabled={startDisabled}
-          pressThroughDisabled
-          onPress={start}
-        />
       </Panel>
     </ScrollView>
+  );
+
+  // The consent tick travels WITH the button it gates. Splitting them is what
+  // produced a visible, permanently inert Start on a short screen.
+  const actions = (
+    <View style={{ gap: spacing.md }}>
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: consent }}
+        accessibilityLabel={t("test.setup.consent")}
+        onPress={() => setConsent((c) => !c)}
+        style={({ pressed }) => ({
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing.md,
+          minHeight: 44,
+          opacity: pressed ? 0.8 : 1,
+        })}
+      >
+        <View
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 8,
+            borderWidth: 2,
+            borderColor: consent
+              ? arena.lime
+              : showConsentWarn
+                ? arena.red
+                : arena.line,
+            backgroundColor: consent ? tint(arena.lime, 0.18) : "transparent",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {consent ? <Check size={15} color={arena.lime} strokeWidth={3} /> : null}
+        </View>
+        <AppText color={arena.ink} style={{ flex: 1, fontSize: 14, lineHeight: 20 }}>
+          {t("test.setup.consent")}
+        </AppText>
+      </Pressable>
+
+      {/* WHAT IS MISSING — in the action area with the tick and the button, so
+          the answer is never the thing that scrolled away, and announced so a
+          screen reader hears it on a press that changes nothing visible. */}
+      {warnText ? (
+        <AppText
+          accessibilityLiveRegion="polite"
+          color={arena.red}
+          style={{ fontSize: 13 }}
+        >
+          {warnText}
+        </AppText>
+      ) : null}
+      {serverError ? (
+        <AppText color={arena.red} style={{ fontSize: 13 }}>
+          {serverError}
+        </AppText>
+      ) : null}
+
+      <ArenaButton
+        arena={arena}
+        kind="gradient"
+        title={t("test.setup.start")}
+        pendingTitle={t("test.setup.starting")}
+        pending={starting}
+        disabled={startDisabled}
+        pressThroughDisabled
+        onPress={start}
+      />
+    </View>
+  );
+
+  return (
+    <ActionAreaShell background={arena.bg} borderColor={arena.line} actions={actions}>
+      {body}
+    </ActionAreaShell>
   );
 }

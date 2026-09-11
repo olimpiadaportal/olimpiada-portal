@@ -18,6 +18,10 @@ import { getAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { defaultLocale, locales, type Locale } from "@/i18n/config";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import {
+  SUBJECT_NAMES_SELECT,
+  type SubjectNameRow,
+} from "@/lib/subjectNames";
+import {
   PRIVACY_POLICY,
   resolvePrivacyPolicyStatus,
   type PrivacyPolicyOverrides,
@@ -154,6 +158,71 @@ const fetchSiteContentRows = unstable_cache(
 export const getContentOverrides = cache(async (): Promise<ContentOverrides> => {
   if (!isServiceRoleConfigured) return {};
   return (await fetchSiteContentRows()).overrides;
+});
+
+/**
+ * ADMIN-MANAGED SUBJECT DISPLAY NAMES (migration 171).
+ *
+ * `subject_translations` holds one name per (subject, locale). The i18n layer
+ * publishes the current locale's names under `subj.db.<code>`, which
+ * subjectLabel() reads BEFORE the shipped catalog — that is what makes
+ * renaming a subject in the admin panel visible on every surface at once.
+ * Before this existed the catalog won and a rename changed nothing.
+ *
+ * SAFE FALLBACK = an empty list, and it is load-bearing rather than tidy: the
+ * table arrives in a migration, so a deploy that lands before the migration
+ * does (or a database where it was rolled back) must render exactly as it does
+ * today — the shipped az/en/ru catalog — not a page of blank subject names.
+ * Every failure path below returns [].
+ *
+ * Read through the service-role client like every other cached lookup in this
+ * file. The table is public-read, so this is convenience rather than
+ * privilege: nothing cookie- or header-bound may run inside unstable_cache,
+ * and the request client is both.
+ *
+ * THE 60s WINDOW IS REAL, AND IT IS DISCLOSED IN THE ADMIN UI RATHER THAN
+ * CLOSED. A rename can take up to a minute to show on the site, and the admin
+ * panel cannot shorten that: it is a SEPARATE deployment, so a revalidateTag()
+ * or revalidatePath() called from a subject action drops THAT app's cache and
+ * never this one — the same wall already recorded in
+ * app/api/maintenance-status/route.ts. Closing it would mean a public
+ * revalidation webhook here, a shared secret to protect it with, and an
+ * outbound call from the admin action: three new moving parts and a new public
+ * endpoint, bought for a one-minute delay on a NAME. So the Subjects form says
+ * so instead, under the three name fields, in az/en/ru — see
+ * `subj.nameFallbackHint` in admin-panel/src/i18n/messages.ts.
+ *
+ * THAT HINT COVERS TWO WINDOWS AND THIS IS THE SHORTER ONE. The mobile app
+ * reads the same names through its own query, whose staleTime is FIVE minutes
+ * with nothing invalidating it (mobile-app/src/lib/configQueries.ts), so on
+ * that side a rename lands when the app is next opened. The hint said "within
+ * a minute" for both surfaces until 2026-09-10, which was true here and false
+ * there; if this 60 ever changes, that sentence changes with it.
+ *
+ * Do NOT "fix" this by dropping the cache. A subject label renders on nearly
+ * every page of the site and the whole parent/child area, so an uncached read
+ * is a database round-trip per request on the hottest path there is.
+ */
+const fetchSubjectNameRows = unstable_cache(
+  async (): Promise<SubjectNameRow[]> => {
+    try {
+      const supabase = getAdminClient();
+      const { data, error } = await supabase
+        .from("subjects")
+        .select(SUBJECT_NAMES_SELECT);
+      if (error || !data) return [];
+      return data as unknown as SubjectNameRow[];
+    } catch {
+      return [];
+    }
+  },
+  ["subject-name-rows-v1"],
+  { revalidate: 60 },
+);
+
+export const getSubjectNameRows = cache(async (): Promise<SubjectNameRow[]> => {
+  if (!isServiceRoleConfigured) return [];
+  return fetchSubjectNameRows();
 });
 
 /**

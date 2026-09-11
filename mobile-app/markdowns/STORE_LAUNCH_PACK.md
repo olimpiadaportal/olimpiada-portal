@@ -388,6 +388,65 @@ usage string set via the expo-local-authentication plugin). Nothing else.
 
 ## 3. Children's-data & account-model posture (reviewer-facing)
 
+### 3.0 Play Families policy — SETTLED 2026-09-10. Do not re-litigate the age groups.
+
+The Play **Target audience** declaration is **6-8 · 9-12 · 13-15 · 16-17 · 18 and
+over**, with *Aged 5 and under* unchecked. That is correct on the merits (the
+product serves grades 1-11, ~ages 6-17, plus the parent who holds the account)
+and it was accepted for closed testing. **Leave it alone.** Changing it
+re-triggers review for nothing.
+
+Declaring any child age group makes the **Families Policy Requirements** apply in
+full — there is no threshold and no "primarily directed at children" test:
+*"Any apps that include children in their target audience must comply with Google
+Play's Families Policy Requirements."* Three consequences, each verified against
+Google's own wording:
+
+**A NEUTRAL AGE SCREEN IS NOT OWED, AND ADDING ONE WOULD BE A REGRESSION.** The
+requirement is conditional everywhere Google states it, and all three triggers
+are absent here:
+  * *Ads* — "Any ads that may be shown to children must comply with … A neutral
+    age screen must be implemented so that any ads not suitable for children are
+    only shown to older audiences." There is no ad SDK in the binary, so Play
+    does not even ask the question.
+  * *Unapproved SDKs* — apps targeting both children and older audiences must not
+    use them "unless they are used behind a neutral age screen **or implemented
+    in a way that does not result in the collection of data from children**."
+    This app takes the second route by default.
+  * *The advertising ID* — this is what an age screen actually exists for: it
+    manufactures a "known not to be a child" state so an app may do for adults
+    what it must never do for children. This app transmits no AAID, so it never
+    needs that state.
+
+Adding one anyway would collect a **date of birth from a child**, falsifying the
+current declaration that birth date is not collected, to solve a problem that
+does not exist — and Google names the bad implementation explicitly
+("presetting the birth date to the required age … or indicating that a certain
+age is required"), which is the only shape that would fit this app's flow.
+
+**THE 18+ BOX IS PROTECTIVE, NOT EXTRA BURDEN.** The absolute prohibitions — no
+AAID transmission, no unapproved SDKs, no location permission — are written for
+apps that *"solely target children"*. Because parents genuinely use this app and
+18+ is checked, none of them reach it. Do not "tidy" 18+ away.
+
+**THIS ANSWER FLIPS THE DAY ANY OF THREE THINGS ENTERS THE ANDROID BINARY:** an
+ad SDK, an AAID read, or any third-party SDK not cleared for child-directed use.
+A neutral age screen becomes mandatory immediately, and retroactively for builds
+already shipped. Anyone adding analytics "just to see usage" must read this
+paragraph first.
+
+**THE REAL RISK IS FORM ACCURACY, NOT THE AGE GROUPS.** Declaring child ages
+makes Play Console accuracy a *Families-policy* obligation, and the penalty tier
+is removal rather than rejection: *"Misrepresentation of any information about
+your app in the Play Console … may result in removal or suspension of your app."*
+That is why §2 of this document is a submission gate and not a formality.
+
+**Designed for Families remains OPT-IN and remains declined** (see the bullet
+below). Declining breaches nothing.
+
+### 3.1 The account model itself
+
+
 - The app is a **parent-managed education service**: only adults (parents) register,
   with email + password. Children cannot self-register anywhere in the product.
 - A child account is created BY the parent and signs in with a server-issued 8-digit

@@ -324,6 +324,7 @@ export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T
             onChangeText={setPw}
             showLabel={t("mob.pw.show")}
             hideLabel={t("mob.pw.hide")}
+            purpose="none"
           />
           <PasswordField
             {...chain.field(1)}
@@ -332,6 +333,7 @@ export function StudentPasswordSection({ uniqueId, t }: { uniqueId: string; t: T
             onChangeText={setConfirm}
             showLabel={t("mob.pw.show")}
             hideLabel={t("mob.pw.hide")}
+            purpose="none"
           />
           {error ? (
             <AppText variant="muted" color={tokens.danger}>

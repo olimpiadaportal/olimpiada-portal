@@ -13,6 +13,7 @@
 //     only accepts enabled themes — no service role anywhere.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { accountScoped } from "@/features/auth/accountScope";
 import { publicStorageUrl } from "@/lib/data";
 import { useAuthStore } from "@/features/auth/authStore";
 import type { ArenaPalette } from "@/theme/tokens";
@@ -42,7 +43,7 @@ export type StudentProfile = {
 };
 
 export const studentProfileKey = (profileId: string | null) =>
-  ["student-profile", profileId] as const;
+  accountScoped(["student-profile"] as const, profileId);
 
 export function useStudentProfile(opts?: { enabled?: boolean }) {
   const profileId = useAuthStore((s) => s.profileId);
@@ -143,7 +144,7 @@ export function useStickerThemes() {
 }
 
 export const stickerSelectionKey = (profileId: string | null) =>
-  ["sticker-selection", profileId] as const;
+  accountScoped(["sticker-selection"] as const, profileId);
 
 /** The child's selected theme id (null = stickers off). */
 export function useStickerSelection() {

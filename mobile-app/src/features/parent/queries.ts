@@ -15,6 +15,8 @@ import {
   type ChildRow,
 } from "@/lib/data";
 import { groupPricing, type SubjectOption } from "./commerce";
+import { useAuthStore } from "@/features/auth/authStore";
+import { accountScoped } from "@/features/auth/accountScope";
 import type { Locale } from "@/i18n";
 
 // NAMING (web Round 21 parity): the `districts` table is the CITIES catalog
@@ -80,32 +82,67 @@ async function fetchOlympiadPoolCounts(packageIds: string[]): Promise<Map<string
 // key is the day a settled purchase stops reaching the screens.
 const SUBSCRIPTIONS_KEY = ["parent", "subscriptions"] as const;
 
+// The other three ROOTS, for the same reason as SUBSCRIPTIONS_KEY above. Since
+// account scope is appended at the END of a key (features/auth/accountScope.ts),
+// a root stays a pure PREFIX and keeps matching every account's entry under it —
+// which is what useInvalidateParentData() needs: it invalidates "the children
+// list", not "this parent's children list", and must not have to know who is
+// signed in to do it.
+const CHILDREN_KEY = ["parent", "children"] as const;
+const FREE_ACCESS_KEY = ["parent", "free-access"] as const;
+const PURCHASES_KEY = ["parent", "oly-purchases"] as const;
+
 export const QK = {
-  children: ["parent", "children"] as const,
-  freeAccess: ["parent", "free-access"] as const,
-  pricing: ["parent", "subjects-pricing"] as const,
-  subscriptions: SUBSCRIPTIONS_KEY,
-  entitled: (studentId: string) => [...SUBSCRIPTIONS_KEY, "entitled", studentId] as const,
+  // ---- invalidation prefixes (account-agnostic on purpose) ----
+  childrenRoot: CHILDREN_KEY,
+  freeAccessRoot: FREE_ACCESS_KEY,
+  subscriptionsRoot: SUBSCRIPTIONS_KEY,
+  purchasesRoot: PURCHASES_KEY,
+
+  // ---- the PARENT's own reads: scoped to the signed-in parent ----
+  children: (parentId: string | null) => accountScoped(CHILDREN_KEY, parentId),
+  freeAccess: (parentId: string | null) => accountScoped(FREE_ACCESS_KEY, parentId),
+  subscriptions: (parentId: string | null) =>
+    accountScoped([...SUBSCRIPTIONS_KEY, "list"] as const, parentId),
+  purchases: (parentId: string | null) => accountScoped(PURCHASES_KEY, parentId),
+
+  // ---- per-CHILD reads: the child's profile id IS the account scope, which
+  // is what makes one family's row unaddressable by another ----
+  entitled: (studentId: string) =>
+    accountScoped([...SUBSCRIPTIONS_KEY, "entitled"] as const, studentId),
   // Under the SAME prefix, for the same reason: a trial is a grant, and every
   // parent write that can change one already invalidates by this prefix.
-  trial: (studentId: string) => [...SUBSCRIPTIONS_KEY, "trial", studentId] as const,
+  trial: (studentId: string) =>
+    accountScoped([...SUBSCRIPTIONS_KEY, "trial"] as const, studentId),
   catalog: (locale: Locale, studentId: string | null) =>
-    ["parent", "oly-catalog", locale, studentId] as const,
-  purchases: ["parent", "oly-purchases"] as const,
+    accountScoped(["parent", "oly-catalog", locale] as const, studentId),
+  leaderboard: (studentId: string) => accountScoped(["parent", "lb"] as const, studentId),
+
+  // ---- world-readable catalogues: the same answer for every account, so
+  // scoping them would only re-fetch the catalogue on every sign-in. Pricing
+  // included: fetchSubjectsPricing() defaults gradeId to null, which SKIPS the
+  // caller-scoped grade rule. ----
+  pricing: ["parent", "subjects-pricing"] as const,
   grades: ["catalog", "grades"] as const,
   cities: ["catalog", "cities"] as const,
   cityDistricts: ["catalog", "city-districts"] as const,
   schools: (cityId: string) => ["catalog", "schools", cityId] as const,
   poolCounts: (ids: string) => ["parent", "oly-pool-counts", ids] as const,
-  leaderboard: (studentId: string) => ["parent", "lb", studentId] as const,
 };
 
+/** The signed-in profile id — the account every key above is scoped to. */
+export function useAccountId(): string | null {
+  return useAuthStore((s) => s.profileId);
+}
+
 export function useChildren() {
-  return useQuery({ queryKey: QK.children, queryFn: fetchChildren });
+  const accountId = useAccountId();
+  return useQuery({ queryKey: QK.children(accountId), queryFn: fetchChildren });
 }
 
 export function useParentFreeAccess() {
-  return useQuery({ queryKey: QK.freeAccess, queryFn: fetchParentFreeAccess });
+  const accountId = useAccountId();
+  return useQuery({ queryKey: QK.freeAccess(accountId), queryFn: fetchParentFreeAccess });
 }
 
 /** Per-subject pricing grouped to one option per subject. */
@@ -117,7 +154,8 @@ export function useSubjectOptions() {
 }
 
 export function useChildSubscriptions() {
-  return useQuery({ queryKey: QK.subscriptions, queryFn: fetchChildSubscriptions });
+  const accountId = useAccountId();
+  return useQuery({ queryKey: QK.subscriptions(accountId), queryFn: fetchChildSubscriptions });
 }
 
 /** Round 40: CHILD-scoped catalog — keyed and fetched by the selected child's
@@ -138,7 +176,12 @@ export function useOlympiadCatalog(
 }
 
 export function useOlympiadPurchases(enabled = true) {
-  return useQuery({ queryKey: QK.purchases, queryFn: fetchOlympiadPurchases, enabled });
+  const accountId = useAccountId();
+  return useQuery({
+    queryKey: QK.purchases(accountId),
+    queryFn: fetchOlympiadPurchases,
+    enabled,
+  });
 }
 
 export function useGrades() {
@@ -347,9 +390,9 @@ export function useFreeTrialsByChild(children: ChildRow[] | undefined, enabled: 
 export function useInvalidateParentData() {
   const qc = useQueryClient();
   return () => {
-    void qc.invalidateQueries({ queryKey: QK.children });
-    void qc.invalidateQueries({ queryKey: QK.subscriptions });
-    void qc.invalidateQueries({ queryKey: QK.purchases });
-    void qc.invalidateQueries({ queryKey: QK.freeAccess });
+    void qc.invalidateQueries({ queryKey: QK.childrenRoot });
+    void qc.invalidateQueries({ queryKey: QK.subscriptionsRoot });
+    void qc.invalidateQueries({ queryKey: QK.purchasesRoot });
+    void qc.invalidateQueries({ queryKey: QK.freeAccessRoot });
   };
 }

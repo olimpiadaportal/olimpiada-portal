@@ -11,16 +11,22 @@
 //
 // NOTE: the sibling discount is a FIXED business rule (2nd 10% / 3rd+ 15%) —
 // it is intentionally NOT editable here and must never become a setting.
+//
+// SCOPE, AND WHY IT IS NARROW. This action writes ONE (subject, interval)
+// amount. It never reads a name and never reads a status, so a reprice cannot
+// rename or publish a subject no matter what a forged form posts. Its
+// counterparts — createSubject / updateSubject in lib/admin/actions.ts — own
+// the subject ROW and (since the /pricing merge, 2026-09-10) no longer write
+// prices on edit at all. Two tables, two actions, no overlap.
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
-import { getT, getLocale } from "@/i18n/server";
+import { getT } from "@/i18n/server";
 import {
   PRICE_INTERVALS,
   parsePriceAmount,
   type PriceInterval,
-} from "@/app/(protected)/pricing/shared";
-import { localStrings } from "@/app/(protected)/pricing/labels";
+} from "@/lib/admin/pricing-shared";
 
 const UUID_SHAPE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -51,8 +57,14 @@ export async function saveSubjectPrice(
   }
   const amount = parsePriceAmount(amountRaw);
   if (amount === null) {
-    const lt = localStrings(await getLocale());
-    return { error: lt("pricing.err.amount") };
+    const t = await getT();
+    // CELL-SCOPED WORDING. This state is rendered inside the ONE cell that
+    // submitted it, under that one input — "each price must be…" reads there
+    // as a rule about all three cycles and sends the admin to inspect the two
+    // amounts beside it, which are fine. subj.err.price keeps the plural
+    // phrasing for the create form, where all three fields really are
+    // validated together.
+    return { error: t("subj.err.priceCell") };
   }
 
   const supabase = await createClient();
@@ -76,10 +88,11 @@ export async function saveSubjectPrice(
 
   // Audit: the RPC writes its own audit row (SECURITY DEFINER), so no
   // duplicate writeAuditLog() here.
-  revalidatePath("/pricing");
-  // The Subjects list prints the same three amounts and the "not sellable"
-  // flag derived from them, so a reprice here must not leave that screen
-  // showing the old figure.
+  //
+  // Both Subjects screens print these amounts and the "not sellable" flag
+  // derived from them, so a reprice must not leave either showing the old
+  // figure. (/pricing is gone — it now redirects here.)
   revalidatePath("/manage/subjects");
+  revalidatePath("/manage/subjects/" + subjectId + "/edit");
   return { ok: true };
 }

@@ -129,9 +129,31 @@ const fetchPublicSubjectPricing = unstable_cache(
 
       // Only offer subjects sellable on at least one interval, in a stable
       // order (the DB returns rows unordered).
+      //
+      // THIS ORDER IS CACHE STABILITY, NOT DISPLAY ORDER — and the distinction
+      // is what makes it correct rather than lazy. This function is the body of
+      // an `unstable_cache` keyed `["public-subject-pricing"]`, with no locale
+      // in the key, serving ANONYMOUS visitors: one payload is handed to az, en
+      // and ru readers alike. Any locale-aware sort here would therefore be
+      // decided by whichever visitor happened to populate the cache and then
+      // served to the other two for the next 60 seconds — a display order that
+      // is wrong for most readers AND non-deterministic about which ones.
+      // Nor is resolving the display name here the way out. A display name is
+      // PER-LOCALE, so it would have to enter the cache KEY — turning one
+      // shared catalog into three, and making this reader depend on a request
+      // property (the reader's language) that a cached, request-free data
+      // function has no business knowing.
+      //
+      // So this sorts on `id`: locale-independent, cache-safe and openly
+      // arbitrary. The catalog is put into reading order by the component that
+      // owns the reader's language — PricingConfigurator, via
+      // sortSubjectsByLabel(t, locale, …). Sorting on `name` would have looked
+      // more helpful and been the trap: it reads as an intended display order
+      // while being neither (it is the frozen import key, and Azerbaijani for
+      // everyone), which is exactly how the bug survived review the first time.
       const subjects = Array.from(byId.values())
         .filter((s) => PLAN_INTERVALS.some((iv) => s.prices[iv] !== undefined))
-        .sort((a, b) => a.name.localeCompare(b.name, "az"));
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       return { ok: true, subjects };
     } catch {
       return { ok: false, subjects: [] };

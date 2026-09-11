@@ -1,6 +1,6 @@
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { createClient } from "@/lib/supabase/server";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 
 // The PUBLIC subject catalog — read from Admin → Subjects, not from a literal.
 //
@@ -26,6 +26,7 @@ import { subjectLabel } from "@/lib/subjectLabel";
 // still missing" — the complaint this page exists to answer.
 export default async function SubjectsPage() {
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -36,9 +37,18 @@ export default async function SubjectsPage() {
   // Sorted on the RESOLVED label, not on the raw az `name`: the catalog stores
   // Azerbaijani names, so ordering in SQL would leave an English or Russian
   // visitor with an alphabet that is not theirs.
-  const subjects = (error ? [] : ((data ?? []) as { id: string; code: string | null; name: string }[]))
-    .map((s) => ({ id: s.id, label: subjectLabel(t, s.code, s.name) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  //
+  // The comparator is keyed on the ACTIVE locale, which is the half this used
+  // to miss: it resolved each label correctly and then compared them with a
+  // bare localeCompare(), i.e. in whatever collation the SERVER runtime
+  // defaults to. The default reader of this page is Azerbaijani, and
+  // Azerbaijani is not accented Latin — q sorts before l, x before i — so the
+  // comment above was true about the labels and wrong about the order.
+  const subjects = sortSubjectsByLabel(
+    t,
+    locale,
+    error ? [] : ((data ?? []) as { id: string; code: string | null; name: string }[]),
+  ).map((s) => ({ id: s.id, label: s.label }));
 
   return (
     <section className="prose">

@@ -2,6 +2,14 @@
 // parity), ChildIdField (dedicated 8-digit numeric entry, grouped "1234 5678"
 // display, autofill OFF — child credentials never hit password managers).
 //
+// AUTOFILL IS DECLARED, NOT GUESSED (2026-09-10). Left unset, Android's autofill
+// framework identifies fields by HEURISTIC and iOS falls back to its own — which
+// is how a form ends up with a phone field the platform believes it may rewrite.
+// Every credential field in this app therefore states its own combination
+// explicitly, and PasswordField makes the one distinction that cannot be
+// guessed: a password being CHOSEN versus one being RECALLED (see
+// `PasswordPurpose`).
+//
 // All three take part in the app-wide keyboard contract:
 //   * they forward `ref`, so a screen can chain focus ("Next" -> next field).
 //     React 19 passes `ref` as a plain prop, so no forwardRef — the codebase
@@ -46,7 +54,13 @@ export function TextField({ label, error, style, ref, ...rest }: BaseProps) {
       <TextInput
         {...rest}
         ref={setRef}
-        accessibilityLabel={label}
+        // AN EXPLICIT accessibilityLabel WINS. This line sits AFTER the spread,
+        // so it used to overwrite a caller's own label with `undefined`
+        // whenever `label` was absent — and `label` is absent exactly where the
+        // caller has to supply one by hand: a composite field (PhoneField)
+        // renders one visible label above a ROW of controls, leaving its text
+        // input to reach a screen reader as an unnamed "edit box".
+        accessibilityLabel={rest.accessibilityLabel ?? label}
         placeholderTextColor={tokens.muted}
         onFocus={(e) => {
           setFocused(true);
@@ -90,20 +104,107 @@ function EyeIcon({ off, color }: { off: boolean; color: string }) {
   );
 }
 
+/** Which credential a password field holds — see `PASSWORD_AUTOFILL`. */
+export type PasswordPurpose = "new" | "current" | "none";
+
+/**
+ * iOS Password AutoFill rules for a password about to be CHOSEN, kept in
+ * lock-step with `checkNewPassword` (@/lib/passwordPolicy): 8–128 characters,
+ * one uppercase letter, one ASCII symbol. Without it iOS's strong-password
+ * generator can produce a password our own client-side check then rejects.
+ *
+ * The symbol set is spelled out rather than using Apple's `required: special`,
+ * because Apple's "special" class INCLUDES THE SPACE and `PASSWORD_SPECIAL_RE`
+ * does not — a generated password whose only symbol was a space would fail on
+ * the very next line.
+ */
+export const NEW_PASSWORD_RULES =
+  "minlength: 8; maxlength: 128; required: upper; required: [-!#$%&*+=?@^_~];";
+
+type PasswordAutofill = {
+  autoComplete: TextInputProps["autoComplete"];
+  textContentType: TextInputProps["textContentType"];
+  importantForAutofill: TextInputProps["importantForAutofill"];
+  passwordRules?: string;
+};
+
+/**
+ * The three answers, in one table so a test can read them and no call site can
+ * invent a fourth.
+ *
+ * `new-password` / `current-password` are the CROSS-PLATFORM spellings. RN maps
+ * them itself — `new-password` -> Android `password-new`, iOS `newPassword`
+ * (TextInput.js:830 and :870) — and the Android-only spellings (`password-new`,
+ * `password`) produce NOTHING on iOS, because `autoComplete` is dropped entirely
+ * there (`Platform.OS === 'android' ? … : undefined`) and iOS reads only the
+ * derived `textContentType`. The union is RN's own, so the compiler checks these
+ * against node_modules rather than against anybody's memory.
+ *
+ * WHY CHILD CREDENTIALS GET NOTHING (deliberate). A child signs in with an
+ * 8-DIGIT SERVER-ISSUED ID and the PARENT's password, and neither belongs in a
+ * credential store:
+ *
+ *   * the ID is an account number for a MINOR — not a username the child chose
+ *     or can change — and children sign in on shared family devices where the
+ *     password manager belongs to somebody else;
+ *   * the password is the PARENT's. Both platforms key saved credentials to the
+ *     app's associated domain and there is exactly one domain here, so a manager
+ *     that learned "<8 digits> + <parent password>" would file a SECOND
+ *     credential against the same domain as the parent's own. The next parent
+ *     login gets an ambiguous picker, and an "update saved password?" prompt on
+ *     the child sheet can overwrite the parent's real entry — an account
+ *     lockout, produced by a convenience feature.
+ *
+ * Hence `off` + `importantForAutofill: "no"` (on Android `off` is a hint, the
+ * flag is the exclusion). `oneTimeCode` on iOS is not a claim about the content
+ * so much as the value that reliably suppresses the automatic strong-password
+ * overlay on a `secureTextEntry` field — `"none"` does not, and that overlay is
+ * exactly the "shall I save this?" path being refused here. It predates this
+ * change and is kept on purpose.
+ */
+export const PASSWORD_AUTOFILL: Record<PasswordPurpose, PasswordAutofill> = {
+  new: {
+    autoComplete: "new-password",
+    textContentType: "newPassword",
+    importantForAutofill: "yes",
+    passwordRules: NEW_PASSWORD_RULES,
+  },
+  current: {
+    autoComplete: "current-password",
+    textContentType: "password",
+    importantForAutofill: "yes",
+  },
+  none: {
+    autoComplete: "off",
+    textContentType: "oneTimeCode",
+    importantForAutofill: "no",
+  },
+};
+
 export function PasswordField({
   label,
   error,
   showLabel,
   hideLabel,
-  isParentCredential = false,
+  purpose = "none",
   ref,
   ...rest
 }: BaseProps & {
   showLabel: string;
   hideLabel: string;
-  /** Only PARENT credentials get autofill hints; child fields never do. */
-  isParentCredential?: boolean;
+  /**
+   * WHICH credential this field holds. A password manager offers to SAVE on a
+   * password being chosen and to FILL on one being recalled, so this is the one
+   * thing the platform cannot work out for itself — and getting it wrong is why
+   * sign-up never offered to save the password it had just watched a parent
+   * type.
+   *
+   * Defaults to "none", so a field that forgets to answer stays out of every
+   * credential store instead of guessing its way into one.
+   */
+  purpose?: PasswordPurpose;
 }) {
+  const autofill = PASSWORD_AUTOFILL[purpose];
   const { tokens } = useTheme();
   const [visible, setVisible] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -128,12 +229,15 @@ export function PasswordField({
         <TextInput
           {...rest}
           ref={setRef}
-          accessibilityLabel={label}
+          // An explicit label wins here too — see TextField above.
+          accessibilityLabel={rest.accessibilityLabel ?? label}
           secureTextEntry={!visible}
           autoCapitalize="none"
           autoCorrect={false}
-          textContentType={isParentCredential ? "password" : "oneTimeCode"}
-          autoComplete={isParentCredential ? "password" : "off"}
+          textContentType={autofill.textContentType}
+          autoComplete={autofill.autoComplete}
+          importantForAutofill={autofill.importantForAutofill}
+          passwordRules={autofill.passwordRules}
           placeholderTextColor={tokens.muted}
           onFocus={(e) => {
             setFocused(true);
@@ -188,6 +292,7 @@ type ChildIdFieldProps = Omit<
   | "autoComplete"
   | "autoCorrect"
   | "importantForAutofill"
+  | "textContentType"
 > & {
   label: string;
   error?: string | null;
@@ -237,7 +342,8 @@ export function ChildIdField({
       <TextInput
         {...rest}
         ref={setRef}
-        accessibilityLabel={label}
+        // An explicit label wins here too — see TextField above.
+        accessibilityLabel={rest.accessibilityLabel ?? label}
         value={grouped}
         onChangeText={(text) => {
           const digits = text.replace(/\D/g, "").slice(0, CHILD_ID_LEN);
@@ -250,9 +356,14 @@ export function ChildIdField({
         inputMode="numeric"
         keyboardType="number-pad"
         maxLength={CHILD_ID_LEN + 1}
+        // A minor's account number, never a username: see PASSWORD_AUTOFILL for
+        // why nothing about a child credential may reach a password manager.
+        // `textContentType` is stated rather than left to RN's `off` -> `none`
+        // derivation, so the iOS half survives an edit to `autoComplete`.
         autoComplete="off"
         autoCorrect={false}
         importantForAutofill="no"
+        textContentType="none"
         placeholder={placeholder}
         placeholderTextColor={tokens.muted}
         onFocus={(e) => {

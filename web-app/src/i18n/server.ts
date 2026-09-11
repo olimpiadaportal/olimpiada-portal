@@ -2,7 +2,12 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { messages } from "./messages";
 import { defaultLocale, type Locale } from "./config";
-import { getLocaleSettings, getContentOverrides } from "@/lib/flags";
+import {
+  getLocaleSettings,
+  getContentOverrides,
+  getSubjectNameRows,
+} from "@/lib/flags";
+import { buildSubjectNameDict } from "@/lib/subjectNames";
 
 export type T = (key: string) => string;
 
@@ -27,12 +32,19 @@ export async function getT(): Promise<T> {
   // affects SERVER-rendered text (server components call getT); client components
   // import `messages` directly and are unaffected (documented v1 scope).
   const overrides = await getContentOverrides();
+  // Admin-managed SUBJECT names (migration 171), published under their own
+  // `subj.db.<code>` keys. They are not overrides of a catalog string — the
+  // catalog has no such key — so they simply extend the dictionary, and
+  // subjectLabel() reads them before `subj.<code>`. Empty when the table is
+  // unreadable or the migration has not been applied, which is the whole point:
+  // the shipped catalog keeps rendering.
+  const subjectNames = buildSubjectNameDict(await getSubjectNameRows(), locale);
   return (key: string) => {
     const o = overrides[key];
     if (o) {
       const v = o[locale];
       if (v && v.trim()) return v;
     }
-    return dict[key] ?? fallback[key] ?? key;
+    return subjectNames[key] ?? dict[key] ?? fallback[key] ?? key;
   };
 }

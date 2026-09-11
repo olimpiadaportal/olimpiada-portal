@@ -138,12 +138,38 @@ export function buildOffers(
       displayPrice: product.displayPrice,
     });
   }
-  // Grouped by subject, shortest period first — the order a parent scans. Sorted
-  // on the DB name rather than the translated label so the grouping is stable
-  // across locales; the visible label is resolved by the screen.
+  // Grouped by subject, shortest period first — the order a parent scans.
+  //
+  // GROUPING BY PRODUCT IDENTITY, NOT BY READING ORDER, and unlike every other
+  // subject list in this app that is deliberate: an offer row is one SKU, the
+  // three intervals of a subject must stay adjacent so the sheet reads as one
+  // block per subject, and IapPanel resolves the visible label itself with
+  // subjectLabel(). What this list must be is the SAME every time — a set of
+  // purchase buttons that reshuffles between renders is how a parent taps the
+  // year when they meant the week.
+  //
+  // It said that before (2026-09-10) and did not deliver it: `localeCompare()`
+  // with no locale collates in the runtime default, which on Hermes follows the
+  // DEVICE locale — so the "stable across locales" order was neither stable nor
+  // display-ordered, and two devices could disagree. A plain code-point
+  // comparison is what "independent of the reader's language" actually looks
+  // like, and it is the only kind of comparison this sort wants.
+  //
+  // The keys are the two things a rename cannot move: `subjects.name` is the
+  // FROZEN bulk-import key (migration 171 stopped it following a rename), and
+  // `subjectId` breaks the tie so that subjects sharing a name — or carrying
+  // none at all — still group instead of interleaving their intervals.
+  //
+  // Sorting by the DISPLAYED label here would be the mistake: the label is
+  // per-locale, buildOffers has no translator, and re-sorting a priced SKU list
+  // by text a screen resolves later is exactly the coupling that keeps this
+  // function pure and testable.
+  const byCodePoint = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   return offers.sort((a, b) => {
-    const byName = (a.subjectName ?? "").localeCompare(b.subjectName ?? "");
+    const byName = byCodePoint(a.subjectName ?? "", b.subjectName ?? "");
     if (byName !== 0) return byName;
+    const bySubject = byCodePoint(a.subjectId, b.subjectId);
+    if (bySubject !== 0) return bySubject;
     return (INTERVAL_ORDER[a.interval] ?? 9) - (INTERVAL_ORDER[b.interval] ?? 9);
   });
 }

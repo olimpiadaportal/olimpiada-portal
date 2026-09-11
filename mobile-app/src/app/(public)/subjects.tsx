@@ -36,7 +36,7 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { radius, spacing } from "@/theme/tokens";
 import { useContentOverrides } from "@/lib/configQueries";
 import { fetchActiveSubjects } from "@/lib/data";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useT } from "@/i18n/useT";
 
@@ -73,12 +73,18 @@ export default function Subjects() {
   });
   const { refreshing, onRefresh } = usePullRefresh([overridesQ, subjectsQ]);
 
-  const subjects = (subjectsQ.data ?? [])
-    .map((s) => ({ id: s.id, label: subjectLabel(t, s.code, s.name), Icon: ICONS[s.code ?? ""] ?? BookOpen }))
-    // Sorted on the RESOLVED label: the catalog stores Azerbaijani names, so
-    // ordering in SQL would hand an English or Russian reader someone else's
-    // alphabet.
-    .sort((a, b) => a.label.localeCompare(b.label));
+  // Sorted on the RESOLVED label: the catalog stores Azerbaijani names, so
+  // ordering in SQL would hand an English or Russian reader someone else's
+  // alphabet. The comparator is keyed on the ACTIVE locale — the half this used
+  // to miss. It resolved every label correctly and then compared them with a
+  // bare localeCompare(), i.e. Hermes's default collation, while the default
+  // reader of this screen is Azerbaijani, whose alphabet puts q before l and x
+  // before i.
+  const subjects = sortSubjectsByLabel(t, locale, subjectsQ.data ?? []).map((s) => ({
+    id: s.id,
+    label: s.label,
+    Icon: ICONS[s.code ?? ""] ?? BookOpen,
+  }));
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.bg }}>

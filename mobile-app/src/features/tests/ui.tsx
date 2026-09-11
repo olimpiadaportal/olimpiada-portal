@@ -133,8 +133,16 @@ export function StatusPill({
   /** Optional leading lucide glyph (sized ~12–14 by the caller). */
   icon?: React.ReactNode;
 }) {
+  // GROUND and LABEL are two different reads, and only three of the four tones
+  // can serve as both. The neutral "off" tone grounds itself in `dim`, a
+  // decoration token — a 12pt label painted in it over its own 14% tint measured
+  // 2.51:1 on `panel` (2.26:1 on `panel2`), below anything the dim decision was
+  // weighed against. The tint and the border keep `dim`; the label takes `muted`
+  // and reads at 4.50:1 on `panel`, the strongest label in this family after
+  // lime and gold.
   const color =
     tone === "ok" ? arena.lime : tone === "bad" ? arena.red : tone === "run" ? arena.blue : arena.dim;
+  const labelColor = tone === "off" ? arena.muted : color;
   return (
     <View
       style={{
@@ -151,7 +159,7 @@ export function StatusPill({
       }}
     >
       {icon ?? null}
-      <AppText variant="label" color={color} style={{ fontSize: 12 }}>
+      <AppText variant="label" color={labelColor} style={{ fontSize: 12 }}>
         {label}
       </AppText>
     </View>

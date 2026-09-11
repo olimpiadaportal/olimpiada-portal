@@ -75,8 +75,11 @@ export const PRIVACY_POLICY: PrivacyPolicyStatus = {
   // Set 2026-08-04. Also admin-editable (migration 097); this literal is the
   // offline/first-paint fallback. See resolvePrivacyPolicyStatus below.
   effectiveDate: "04.08.2026",
-  // 08.09.2026 — the optional child gender (migration 169) entered section 5.
-  lastUpdated: "08.09.2026",
+  // 10.09.2026 — store-declaration accuracy pass: purchases described per
+  // platform, the location denial replaced by the device-vs-parent-typed
+  // distinction, delete-a-child no longer website-only. (08.09.2026 was the
+  // optional child gender, migration 169, entering section 5.)
+  lastUpdated: "10.09.2026",
   // Registered 2026-07-30 (Namecheap). The apex serves the site; www redirects
   // to it at the host level, so the canonical form carries no "www".
   websiteUrl: "olympiq.ai",

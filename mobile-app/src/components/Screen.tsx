@@ -5,6 +5,8 @@ import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useContentGutter } from "@/lib/useContentWidth";
+import { ActionArea, ActionAreaShell } from "./ActionArea";
+import { scrollBodyBottomInset } from "./actionAreaLayout";
 import { scrollPaddingBottom } from "./keyboardLayout";
 import {
   KeyboardFocusProvider,
@@ -21,6 +23,14 @@ type ScreenProps = {
    *  list, which carries its own RefreshControl). */
   refreshing?: boolean;
   onRefresh?: () => void;
+  /**
+   * The screen's primary action(s). Given here rather than at the end of the
+   * children, they are laid out in the shared ActionArea BELOW the body: a
+   * non-scrolling, safe-area-padded row the body can never push off the bottom
+   * edge of a short phone. See components/actionAreaLayout.ts for the bug this
+   * answers and why the reservation is structural rather than a padding.
+   */
+  actions?: React.ReactNode;
 };
 
 /**
@@ -40,7 +50,7 @@ export function Screen(props: ScreenProps) {
   return props.scroll ? <ScrollScreen {...props} /> : <StaticScreen {...props} />;
 }
 
-function StaticScreen({ children, padded = true, background }: ScreenProps) {
+function StaticScreen({ children, padded = true, background, actions }: ScreenProps) {
   const { tokens } = useTheme();
   const insets = useSafeAreaInsets();
   const { keyboardInset, viewProps } = useKeyboardViewInset();
@@ -49,22 +59,38 @@ function StaticScreen({ children, padded = true, background }: ScreenProps) {
   const gutter = useContentGutter();
   const bg = background ?? tokens.bg;
   const pad = padded ? spacing.lg : 0;
+  const hasActions = Boolean(actions);
 
+  const bodyPadding = {
+    paddingTop: insets.top,
+    // The keyboard inset is 0 unless a keyboard is actually covering this
+    // view, so a closed keyboard leaves the original layout untouched. With an
+    // action area below, the bottom inset belongs to the BAR — adding it here
+    // too would float the body a navigation bar's height above it.
+    paddingBottom: scrollPaddingBottom(
+      scrollBodyBottomInset(insets.bottom, hasActions),
+      hasActions ? 0 : keyboardInset,
+    ),
+    paddingLeft: pad + insets.left + gutter,
+    paddingRight: pad + insets.right + gutter,
+  } as const;
+
+  // This View is `flex: 1`, so its measured frame does not move when the bar
+  // below grows for the keyboard — which is what keeps that measurement from
+  // feeding back on itself. Same node in both branches, so a screen without
+  // actions renders exactly the tree it always did.
   return (
-    <View
-      {...viewProps}
-      style={{
-        flex: 1,
-        backgroundColor: bg,
-        paddingTop: insets.top,
-        // The keyboard inset is 0 unless a keyboard is actually covering this
-        // view, so a closed keyboard leaves the original layout untouched.
-        paddingBottom: scrollPaddingBottom(insets.bottom, keyboardInset),
-        paddingLeft: pad + insets.left + gutter,
-        paddingRight: pad + insets.right + gutter,
-      }}
-    >
-      {children}
+    <View {...viewProps} style={{ flex: 1, backgroundColor: bg }}>
+      <View style={[{ flex: 1 }, bodyPadding]}>{children}</View>
+      {hasActions ? (
+        <ActionArea
+          background={bg}
+          borderColor={tokens.border}
+          keyboardInset={keyboardInset}
+        >
+          {actions}
+        </ActionArea>
+      ) : null}
     </View>
   );
 }
@@ -75,6 +101,7 @@ function ScrollScreen({
   background,
   refreshing = false,
   onRefresh,
+  actions,
 }: ScreenProps) {
   const { tokens } = useTheme();
   const { t } = useT();
@@ -84,40 +111,54 @@ function ScrollScreen({
   const gutter = useContentGutter();
   const bg = background ?? tokens.bg;
   const pad = padded ? spacing.lg : 0;
+  const hasActions = Boolean(actions);
+
+  const body = (
+    <View style={{ flex: 1, backgroundColor: bg }}>
+      <ScrollView
+        {...scrollProps}
+        contentContainerStyle={{
+          paddingTop: insets.top + pad,
+          // Grow the CONTENT by the keyboard overlap rather than shrinking the
+          // container: the scroll range stays long enough to bring the last
+          // field's action button above the keyboard. Back to exactly
+          // `insets.bottom + pad` the moment the keyboard closes.
+          paddingBottom: scrollPaddingBottom(
+            scrollBodyBottomInset(insets.bottom, hasActions) + pad,
+            keyboardInset,
+          ),
+          paddingLeft: pad + insets.left + gutter,
+          paddingRight: pad + insets.right + gutter,
+        }}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={tokens.accent}
+              colors={[tokens.accent]}
+              // The content is padded by the top inset, so the Android spinner
+              // has to start below it too.
+              progressViewOffset={insets.top}
+              accessibilityLabel={t("mob.refreshing")}
+            />
+          ) : undefined
+        }
+      >
+        {children}
+      </ScrollView>
+    </View>
+  );
 
   return (
-    <View style={{ flex: 1, backgroundColor: bg }}>
-      <KeyboardFocusProvider value={focusApi}>
-        <ScrollView
-          {...scrollProps}
-          contentContainerStyle={{
-            paddingTop: insets.top + pad,
-            // Grow the CONTENT by the keyboard overlap rather than shrinking the
-            // container: the scroll range stays long enough to bring the last
-            // field's action button above the keyboard. Back to exactly
-            // `insets.bottom + pad` the moment the keyboard closes.
-            paddingBottom: scrollPaddingBottom(insets.bottom + pad, keyboardInset),
-            paddingLeft: pad + insets.left + gutter,
-            paddingRight: pad + insets.right + gutter,
-          }}
-          refreshControl={
-            onRefresh ? (
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={tokens.accent}
-                colors={[tokens.accent]}
-                // The content is padded by the top inset, so the Android spinner
-                // has to start below it too.
-                progressViewOffset={insets.top}
-                accessibilityLabel={t("mob.refreshing")}
-              />
-            ) : undefined
-          }
-        >
-          {children}
-        </ScrollView>
-      </KeyboardFocusProvider>
-    </View>
+    <KeyboardFocusProvider value={focusApi}>
+      {hasActions ? (
+        <ActionAreaShell background={bg} borderColor={tokens.border} actions={actions}>
+          {body}
+        </ActionAreaShell>
+      ) : (
+        body
+      )}
+    </KeyboardFocusProvider>
   );
 }

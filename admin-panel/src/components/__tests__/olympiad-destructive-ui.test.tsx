@@ -115,6 +115,7 @@ function renderManager() {
   return render(
     <OlympiadQuestionManager
       dict={{}}
+      locale="az"
       bulkStrings={BULK}
       packageId="dddddddd-4444-4444-8444-444444444444"
       packageCode={PKG_CODE}

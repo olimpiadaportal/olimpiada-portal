@@ -28,7 +28,7 @@ of them — never a mixture.
 # Bölmə A — OlympIQ Məxfilik Siyasəti
 
 **Qüvvəyə minmə tarixi:** 04.08.2026
-**Son yenilənmə:** 08.09.2026
+**Son yenilənmə:** 10.09.2026
 
 Bu siyasət OlympIQ veb saytına və OlympIQ mobil tətbiqinə (iOS və Android) aiddir.
 
@@ -54,10 +54,12 @@ qısa və dürüst olmağa çalışırıq.
   heç vaxt oxunmur.
 - ❌ **Məlumatları satmırıq, icarəyə vermirik, mübadilə etmirik** və marketinq məqsədi ilə heç kimə
   ötürmürük.
-- ❌ **Məkanınızı, kameranızı, kontaktlarınızı və mikrofonunuzu istəmirik.**
+- ❌ **Cihazınızın məkanını oxumuruq**: nə məkan, nə kamera, nə kontakt, nə də mikrofon icazəsi
+  istəmirik. Uşağın profilindəki şəhər və rayonu valideyn siyahıdan özü seçir — onlar cihazdan
+  oxunmur.
 - ❌ **Uşaq davranışına görə reklam profili qurmuruq.**
-- ❌ **Kart məlumatlarınızı görmürük.** Mobil tətbiqdə alış prosesi yoxdur — alış yalnız veb saytda
-  həyata keçirilir.
+- ❌ **Kart məlumatlarınızı görmürük.** iPhone və iPad-də alış App Store vasitəsilə gedir; Android
+  tətbiqində alış ümumiyyətlə yoxdur; veb saytda isə ödəniş bankın öz səhifəsində aparılır.
 
 ---
 
@@ -201,8 +203,9 @@ yerinə heç bir təsiri yoxdur; reytinq cədvəllərində də göstərilmir.
 cihazın məkanı, sağlamlıq məlumatı, maliyyə məlumatı, kontaktlar, brauzer tarixçəsi, reklam
 identifikatorları və avadanlıq identifikatorları.
 
-**Şəhər və rayon başqa şeydir:** onları uşağı əlavə edərkən valideyn özü seçir və biz onları yalnız
-reytinq cədvəllərini şəhər və rayon üzrə qruplaşdırmaq üçün saxlayırıq. Uşağın cihazının harada
+**Şəhər, rayon və məktəb başqa şeydir:** uşağı əlavə edərkən onları valideyn siyahıdan özü seçir.
+Bunlar hesabın qurulmasının bir hissəsidir, şagirdin öz profilində göstərilir və reytinq cədvəllərini
+şəhər, rayon və məktəb üzrə məhz onlar qruplaşdırır. Uşağın cihazının harada
 olduğunu isə heç vaxt bilmirik: tətbiq məkan icazəsi istəmir, GPS-i və digər məkan sensorlarını
 oxumur, heç bir koordinat saxlamır, ev ünvanı üçün isə sahə ümumiyyətlə yoxdur.
 
@@ -277,8 +280,9 @@ foto isə **yalnız profildən ayrılır**: şəkil artıq profildə görünmür
 - **Tam ailə hesabını silmək:** valideyn profili → "Təhlükəli zona" → "Hesabı sil" → iki mərhələli
   təsdiq. Bu, valideyn hesabını **və yaratdığı bütün uşaq profillərini** silir. Həm veb saytda, həm də
   mobil tətbiqdə mövcuddur.
-- **Yalnız bir uşağı silmək:** hazırda **yalnız veb saytda** — valideyn panelindən. Mobil tətbiqdə ayrıca
-  uşaq silmək imkanı yoxdur.
+- **Yalnız bir uşağı silmək:** veb saytda valideyn panelində uşağın kartındakı **"Uşağı sil"**
+  düyməsi ilə; mobil tətbiqdə isə uşağın **"Uşağın məlumatını redaktə et"** səhifəsində
+  **"Təhlükəli zona"** → **"Uşağı sil"**. Hər iki halda təsdiq soruşulur.
 - **Şagird heç nə silə bilmir.**
 
 Silinmə **dərhal baş verir** — gözləmə müddəti, geri qaytarma və ya "arxivə salma" yoxdur.
@@ -334,7 +338,8 @@ yalnız öz funksiyası üçün lazım olanı alır:
 | **Google (FCM)** | Android-də push çatdırılması | Yalnız push aktiv olduqda — standart push ötürülməsi | Push aktivləşənə qədər heç nə almır |
 | **Google Fonts** | Veb saytın bəzi səhifələrində şrift | Brauzerinizin IP ünvanı və identifikasiya sətri | Aktiv (yalnız veb; mobil tətbiqdə yoxdur) |
 | **Google Maps** | "Əlaqə" səhifəsindəki xəritə | Həmin səhifəni açdığınız anda IP ünvanı və identifikasiya sətri. **Hesab məlumatı ötürülmür** | Aktiv |
-| **Ödəniş təminatçısı** | Gələcəkdə vebdə ödəniş | — | **Hazırda heç bir ödəniş təminatçısı qoşulmayıb** (bax A8) |
+| **Apple (App Store)** | iPhone və iPad-də tətbiqdaxili ödəniş | Əməliyyatı Apple özü aparır. Ona hər əməliyyat üçün yaratdığımız təsadüfi identifikator ötürülür ki, giriş düzgün uşağa yazılsın. Ad, e-poçt və digər hesab məlumatı ötürülmür | Yalnız iOS-da; Android tətbiqində yoxdur |
+| **Ödəniş təminatçısı (bank)** | Veb saytda kart ödənişi | Əməliyyat bankın öz səhifəsində aparılır, kart məlumatı bizə çatmır | Bax A8 |
 
 Bundan əlavə, məlumatı yalnız aşağıdakı hallarda paylaşa bilərik:
 
@@ -352,21 +357,26 @@ məlumat Azərbaycandan kənarda saxlanılırsa, bu, burada açıq yazılmalıd�
 
 ## A8. Ödənişlər
 
-- **Mobil tətbiqdə alışı tamamlamaq mümkün deyil**: kart formu, kart məlumatlarının daxil edilməsi və
-  ödəniş addımı tətbiqdə mövcud deyil.
-- Ödənişlər yalnız **veb saytda, brauzerdə, Azərbaycan manatı ilə** həyata keçirilir.
-- Ödəniş bankın öz səhifəsinə tam yönləndirmə ilə aparılacaq. **Kart nömrəsi, CVV və digər kart
-  məlumatları heç vaxt OlympIQ serverlərinə düşməyəcək və bizdə saxlanılmayacaq.**
-- Verilənlər bazasında ödənişlə bağlı yalnız məbləğ, valyuta, status və təminatçının əməliyyat nömrəsi
-  qeyd olunacaq.
+- **Alışın harada mümkün olduğu platformadan asılıdır:** iPhone və iPad-də valideyn fənn girişini
+  App Store-un tətbiqdaxili alışı ilə ala bilər; **Android tətbiqində alış ümumiyyətlə yoxdur**;
+  veb saytda isə valideyn brauzerdə, **Azərbaycan manatı ilə** ödəniş edir.
+- **Kart məlumatlarınızı heç bir halda görmürük.** iPhone və iPad-də əməliyyatı əvvəldən axıradək
+  App Store aparır; veb saytda isə ödəniş bankın öz səhifəsinə tam yönləndirmə ilə gedir.
+- **Kart nömrəsi, CVV və digər kart məlumatları nə bir yolla, nə də digəri ilə OlympIQ serverlərinə
+  düşmür və bizdə saxlanılmır.**
+- Verilənlər bazasında **veb ödənişi** üzrə yalnız məbləğ, valyuta, status və təminatçının əməliyyat
+  nömrəsi qeyd olunur; **App Store alışı** üzrə isə həmin alış üçün yaratdığımız təsadüfi identifikator
+  (girişin düzgün uşağa yazılması üçün), Apple-ın əməliyyat nömrəsi və məhsulun kodu.
 
-**Qiymətlərin göstərilməsi ödəniş rejimindən asılıdır.** Ödənişlər söndürülü olduğu müddətdə mobil
-tətbiqin heç bir yerində qiymət göstərilmir. Ödənişlər aktivləşdirilərsə, tətbiq valideynə və ya hesabı
-olmayan ziyarətçiyə abunə qiymətlərini **yalnız məlumat üçün** göstərə bilər; **şagird sessiyasında
-qiymət heç vaxt göstərilmir** və alış heç bir halda tətbiqin özündə tamamlana bilmir.
+**Qiymətlərin göstərilməsi platformadan asılıdır.** iPhone və iPad-də valideynə göstərilən qiymət
+App Store-un öz mətnidir — onu Apple formalaşdırır, tətbiqin özündə saxlanılan qiymət yoxdur.
+**Android tətbiqində heç bir yerdə qiymət göstərilmir.** **Şagird sessiyasında isə heç bir platformada
+qiymət, ödəniş üsulu və alış düyməsi göstərilmir** — uşaq heç nə ala bilmir, bu, serverdə tətbiq olunan
+qaydadır.
 
-**Hazırkı vəziyyət:** platformada ödənişlər **söndürülüb** və heç bir ödəniş təminatçısı hələ inteqrasiya
-olunmayıb. `[OWNER MUST CONFIRM: dərc anında bu vəziyyət dəyişibsə, bu bölmə yenilənməlidir və
+**Hazırkı vəziyyət:** veb saytda kart ödənişləri hazırda **söndürülüb** — heç kimdən məbləğ silinmir.
+iPhone və iPad-də isə fənn girişi App Store vasitəsilə **alına bilər** (2026-09-09-dan etibarən).
+`[OWNER MUST CONFIRM: dərc anında veb ödənişlərinin vəziyyəti dəyişibsə, bu bölmə yenilənməlidir və
 təminatçının adı əlavə edilməlidir.]`
 
 ---
@@ -468,7 +478,7 @@ Parolunuzu heç kimlə paylaşmayın.
 | Uşağın parolunu sıfırlamaq | Tətbiqdə: valideyn → uşağı redaktə et |
 | Uşağın avatarını dəyişmək və ya silmək | Tətbiqdə: valideyn və ya şagird profili |
 | Bildirişləri söndürmək | Tətbiqdəki bildiriş tənzimləmələri; həmçinin cihazın sistem parametrləri |
-| Bir uşağı silmək | Veb saytda: valideyn paneli |
+| Bir uşağı silmək | Veb saytda: valideyn panelində uşağın kartındakı "Uşağı sil"; tətbiqdə: "Uşağın məlumatını redaktə et" → "Təhlükəli zona" |
 | Bütün ailə hesabını silmək | Tətbiqdə və veb saytda: profil → Təhlükəli zona |
 | Məlumatların nüsxəsini almaq | Bizə yazın |
 | Şikayət etmək və ya sual vermək | Bizə yazın |
@@ -487,14 +497,15 @@ göstərilib-göstərilməyəcəyi hüquqşünasla dəqiqləşdirilməlidir.]`
 | **Bildirişlər** | Yalnız sistemə daxil olduqdan sonra və yalnız funksiya aktiv olduqda | Yeni raund, nəticə, seriya və hesabla bağlı bildirişlər üçün. **Reklam üçün heç vaxt.** İmtina etsəniz, bir daha soruşulmur |
 | **Barmaq izi / Face ID** | Yalnız siz tətbiq kilidini özünüz aktivləşdirdikdə | Tətbiqi parol yazmadan açmaq üçün. Kilidi həm açmaq, həm bağlamaq üçün təsdiq tələb olunur |
 
-**Sizdən heç vaxt istəmirik:** kamera, məkan, kontaktlar, mikrofon, təqvim, sağlamlıq, Bluetooth, izləmə
-icazəsi (App Tracking Transparency). Tətbiq kameranı heç vaxt açmır və şəkil çəkmək imkanı ümumiyyətlə
-yoxdur.
+**Sizdən heç vaxt bu icazələri istəmirik:** kamera, məkan, kontaktlar, mikrofon, təqvim, sağlamlıq,
+Bluetooth, izləmə icazəsi (App Tracking Transparency). Tətbiq cihazın məkanını oxumur; uşağın
+profilindəki şəhər və rayonu valideyn özü seçir (bax A5). Tətbiq kameranı heç vaxt açmır və şəkil
+çəkmək imkanı ümumiyyətlə yoxdur.
 
 > **Android üçün dürüst qeyd:** istifadə etdiyimiz foto seçimi komponenti (`expo-image-picker`) öz
-> manifestində kamera və yaddaş icazələrini elan edir, buna görə onları telefonun "Tətbiq haqqında"
-> siyahısında görə bilərsiniz. Tətbiq bu icazələrdən istifadə etmir və sizə kamera sorğusu göstərmir.
-> `[OWNER MUST CONFIRM: bu icazələri build zamanı manifestdən çıxarmaq daha dürüst həlldir]`
+> manifestində yaddaş icazələrini elan edir, buna görə onları telefonun "Tətbiq haqqında"
+> siyahısında görə bilərsiniz. Tətbiq bu icazələrdən istifadə etmir. **Kamera icazəsi 1.16.0-dan
+> etibarən quruluşdan tamamilə çıxarılıb** — artıq telefonun icazə siyahısında görünmür.
 
 ---
 
@@ -513,7 +524,7 @@ etdiyiniz anlamına gəlir.
 # Part B — OlympIQ Privacy Policy
 
 **Effective date:** 04.08.2026
-**Last updated:** 08.09.2026
+**Last updated:** 10.09.2026
 
 This policy covers the OlympIQ website and the OlympIQ mobile app for iOS and Android.
 
@@ -538,10 +549,12 @@ children's data, we try to be short and honest.
   attribution or crash-reporting tool. We never read an advertising identifier (no IDFA, no Android
   Advertising ID).
 - ❌ **We do not sell, rent or trade your data**, and we never hand it to anyone for marketing.
-- ❌ **We never ask for your location, camera, contacts or microphone.**
+- ❌ **We do not read your device's location**, and we ask for no location, camera, contacts or
+  microphone permission. The city and district on a child's profile are chosen by a parent from a
+  list — they are not read from a device.
 - ❌ **We do not build advertising profiles from a child's behaviour.**
-- ❌ **We never see your card details.** There is no checkout in the mobile app — purchases happen only
-  on the website.
+- ❌ **We never see your card details.** On iPhone and iPad a purchase goes through the App Store; the
+  Android app has no purchase at all; on the website payment goes through the bank's own page.
 
 ---
 
@@ -688,8 +701,9 @@ and it is never shown on a leaderboard.
 device location, health data, financial data, contacts, browsing history, advertising identifiers or
 hardware identifiers.
 
-**The city and the district are a different matter:** the parent chooses them when they add the
-child, and we keep them only to group the leaderboards by city and district. Where the child's device
+**The city, the district and the school are a different matter:** a parent chooses them from a list
+when they add a child. They are part of setting the account up, they are shown on the child's own
+profile, and they are what groups the leaderboards by city, district and school. Where the child's device
 is, we never learn: the app asks for no location permission, reads no GPS or other location sensor,
 stores no coordinates, and there is no home address field at all.
 
@@ -767,8 +781,9 @@ file remains in the public storage area. (This is separate from full account del
 - **Delete the whole family account:** parent profile → "Danger Zone" → "Delete account" → a two-step
   confirmation. This deletes the parent account **and every child profile the parent created**. Available
   both on the website and in the mobile app.
-- **Delete a single child:** currently **on the website only**, from the parent dashboard. The mobile app
-  has no delete-a-child option.
+- **Delete a single child:** on the website, use **"Delete child"** on the child's card in the parent
+  dashboard; in the mobile app, open the child's **"Edit child info"** page → **"Danger zone"** →
+  **"Delete child"**. Either way you are asked to confirm.
 - **A student can delete nothing.**
 
 Deletion is **immediate** — there is no waiting period, no undo and no "archive" state. What is erased and
@@ -823,7 +838,8 @@ receives only what its function requires:
 | **Google (FCM)** | Android push delivery | Only once push is on — standard push transport | Receives nothing until push is enabled |
 | **Google Fonts** | A font on some website pages | Your browser's IP address and user agent | Active (website only; not in the mobile app) |
 | **Google Maps** | The map on the "Contact" screen | Your IP address and user agent at the moment that screen is opened. **No account data is passed** | Active |
-| **Payment provider** | Future web payments | — | **No payment provider is integrated today** (see B8) |
+| **Apple (App Store)** | In-app payment on iPhone and iPad | Apple runs the transaction itself. It receives a random identifier we create for that transaction, so the access lands on the right child. No name, no email address and no other account data is passed | iOS only; not in the Android app |
+| **Payment provider (bank)** | Card payments on the website | The transaction runs on the bank's own page, and card details never reach us | See B8 |
 
 Beyond this, we may share data only:
 
@@ -841,22 +857,29 @@ deployment. If data is stored outside Azerbaijan, that must be stated openly her
 
 ## B8. Payments
 
-- **A purchase can never be completed in the mobile app**: there is no card form, no card entry and no
-  payment step in the app at all.
-- Payments happen only **on the website, in a browser, in Azerbaijani manat**.
-- Payment uses a full redirect to the bank's own hosted page. **Card numbers, CVV codes and other card
-  details never reach OlympIQ servers and are never stored by us.**
-- Our database records only the amount, the currency, the status and the provider's transaction
-  reference.
+- **Where a purchase is possible depends on the platform:** on iPhone and iPad a parent can buy subject
+  access through the App Store's own in-app purchase; **the Android app has no purchase at all**; on
+  the website a parent pays in a browser, **in Azerbaijani manat**.
+- **We never see your card details, on either route.** On iPhone and iPad the App Store handles the
+  transaction from end to end; on the website payment uses a full redirect to the bank's own hosted page.
+- **Card numbers, CVV codes and other card details never reach OlympIQ servers by either route, and are
+  never stored by us.**
+- For a **website payment** our database records only the amount, the currency, the status and the
+  provider's transaction reference. For an **App Store purchase** it records the random identifier we
+  create for that purchase (so the access lands on the right child), Apple's transaction reference and
+  the product code.
 
-**No price is shown in the mobile apps, in any mode.** Prices and purchasing exist only on the website.
-This is a property of the app itself, not a setting: the mobile builds contain no price, no purchase
-button and no checkout, so nothing a parent or a student does inside the app can produce one.
+**Which prices are shown depends on the platform.** On iPhone and iPad the price a parent sees is the
+App Store's own localized string — Apple produces it, and the app stores no price of its own. **The
+Android build shows no price anywhere**; that is a property of the binary, not a setting. **In a
+student session no price, no payment option and no purchase button is shown on any platform** — a
+child cannot buy anything, and that is enforced on the server.
 
-**Current status:** card payments are integrated with our acquiring bank (AzeriCard, through
-Azerbaijan-resident billing), but **no card payment is being taken at the moment** — nobody is being
-charged. Access granted during a free promotional period involves no card and no payment data at all.
-When charging is open it happens only on the website, and is never completed inside the mobile apps.
+**Current status:** card payments on the website are integrated with our acquiring bank (AzeriCard,
+through Azerbaijan-resident billing), but **no card payment is being taken at the moment** — nobody is
+being charged there. Access granted during a free promotional period involves no card and no payment
+data at all. On iPhone and iPad, subject access can be bought through the App Store (live since
+2026-09-09); the Android app has no purchase at all.
 
 ---
 
@@ -957,7 +980,7 @@ anyone.
 | Reset a child's password | In the app: parent → edit child |
 | Change or remove a child's avatar | In the app: parent or student profile |
 | Turn notifications off | Notification preferences in the app, and your device's system settings |
-| Delete one child | On the website: parent dashboard |
+| Delete one child | On the website: "Delete child" on the child's card in the parent dashboard; in the app: "Edit child info" → "Danger zone" |
 | Delete the whole family account | In the app and on the website: profile → Danger Zone |
 | Get a copy of your data | Write to us |
 | Complain or ask a question | Write to us |
@@ -976,14 +999,15 @@ authority should be named — to be settled with a lawyer.]`
 | **Notifications** | Only after signing in, and only when the feature is enabled | For new rounds, results, streaks and account notices. **Never for advertising.** If you decline, you are never asked again |
 | **Fingerprint / Face ID** | Only when you turn on the optional app lock yourself | To open the app without typing a password. Turning the lock both on *and* off requires a successful check |
 
-**We never ask you for:** camera, location, contacts, microphone, calendar, health, Bluetooth, or tracking
-permission (App Tracking Transparency). The app never opens the camera and has no way to take a photo at
-all.
+**We never ask you for any of these permissions:** camera, location, contacts, microphone, calendar,
+health, Bluetooth, or tracking (App Tracking Transparency). The app does not read your device's
+location; the city and district on a child's profile are chosen by a parent (see B5). The app never
+opens the camera and has no way to take a photo at all.
 
-> **An honest note for Android:** the photo-picker component we use (`expo-image-picker`) declares camera
-> and storage permissions in its own manifest, so you may see them listed in the phone's App info screen.
-> The app never uses them and never shows you a camera prompt.
-> `[OWNER MUST CONFIRM: stripping these permissions at build time is the more honest fix]`
+> **An honest note for Android:** the photo-picker component we use (`expo-image-picker`) declares
+> storage permissions in its own manifest, so you may see them listed in the phone's App info screen.
+> The app never uses them. **From 1.16.0 the camera permission is removed from the build entirely**,
+> so it no longer appears in that list at all.
 
 ---
 
@@ -1001,7 +1025,7 @@ effect means you accept the updated policy.
 # Часть C — Политика конфиденциальности OlympIQ
 
 **Дата вступления в силу:** 04.08.2026
-**Последнее обновление:** 08.09.2026
+**Последнее обновление:** 10.09.2026
 
 Эта политика распространяется на сайт OlympIQ и на мобильное приложение OlympIQ для iOS и Android.
 
@@ -1027,10 +1051,12 @@ OlympIQ — образовательный продукт для школьни�
   считывается никогда.
 - ❌ **Мы не продаём, не сдаём в аренду и не обмениваем ваши данные** и не передаём их никому в
   маркетинговых целях.
-- ❌ **Мы не запрашиваем геолокацию, камеру, контакты и микрофон.**
+- ❌ **Мы не считываем местоположение вашего устройства** и не запрашиваем разрешения на геолокацию,
+  камеру, контакты и микрофон. Город и район в профиле ребёнка родитель выбирает из списка сам — с
+  устройства они не считываются.
 - ❌ **Мы не строим рекламные профили на основе поведения ребёнка.**
-- ❌ **Мы не видим данные вашей карты.** В мобильном приложении нет оформления покупки — покупки
-  совершаются только на сайте.
+- ❌ **Мы не видим данные вашей карты.** На iPhone и iPad покупка проходит через App Store, в
+  приложении для Android покупок нет вообще, а на сайте оплата проходит на собственной странице банка.
 
 ---
 
@@ -1176,8 +1202,9 @@ OlympIQ — образовательный продукт для школьни�
 адрес, геолокацию устройства, данные о здоровье, финансовые данные, контакты, историю браузера,
 рекламные и аппаратные идентификаторы.
 
-**Город и район — это другое:** их выбирает сам родитель, когда добавляет ребёнка, и мы храним их
-только для того, чтобы группировать таблицы лидеров по городу и району. А где находится устройство
+**Город, район и школа — это другое:** их выбирает из списка сам родитель, когда добавляет ребёнка.
+Они нужны, чтобы завести аккаунт, отображаются в профиле самого ученика и именно по ним группируются
+таблицы лидеров — по городу, району и школе. А где находится устройство
 ребёнка, мы не знаем никогда: приложение не запрашивает разрешение на геолокацию, не считывает GPS и
 другие датчики местоположения, не сохраняет никаких координат, а поля домашнего адреса нет вообще.
 
@@ -1257,8 +1284,9 @@ OlympIQ — образовательный продукт для школьни�
 - **Удалить весь семейный аккаунт:** профиль родителя → «Опасная зона» → «Удалить аккаунт» →
   двухшаговое подтверждение. Это удаляет аккаунт родителя **и все созданные им профили детей**. Доступно
   и на сайте, и в мобильном приложении.
-- **Удалить одного ребёнка:** сейчас **только на сайте**, из панели родителя. В мобильном приложении
-  отдельного удаления ребёнка нет.
+- **Удалить одного ребёнка:** на сайте — кнопкой **«Удалить ребёнка»** на карточке ребёнка в панели
+  родителя; в мобильном приложении — на странице **«Изменить данные ребёнка»** → **«Опасная зона»** →
+  **«Удалить ребёнка»**. В обоих случаях запрашивается подтверждение.
 - **Ученик не может удалить ничего.**
 
 Удаление происходит **немедленно** — периода ожидания, отмены и «архива» не предусмотрено. Что именно
@@ -1314,7 +1342,8 @@ OlympIQ могут просматривать данные аккаунтов и
 | **Google (FCM)** | Доставка push на Android | Только после включения push — стандартная передача уведомлений | До включения push не получает ничего |
 | **Google Fonts** | Шрифт на некоторых страницах сайта | IP-адрес и строку браузера | Активен (только сайт; в мобильном приложении отсутствует) |
 | **Google Maps** | Карта на странице «Контакты» | IP-адрес и строку браузера в момент открытия этой страницы. **Данные аккаунта не передаются** | Активен |
-| **Платёжный провайдер** | Будущая оплата на сайте | — | **Сейчас ни один платёжный провайдер не подключён** (см. C8) |
+| **Apple (App Store)** | Оплата внутри приложения на iPhone и iPad | Операцию проводит сама Apple. Ей передаётся случайный идентификатор, который мы создаём для этой операции, чтобы доступ достался нужному ребёнку. Имя, адрес электронной почты и другие данные аккаунта не передаются | Только на iOS; в приложении для Android отсутствует |
+| **Платёжный провайдер (банк)** | Оплата картой на сайте | Операция проходит на собственной странице банка, данные карты до нас не доходят | См. C8 |
 
 Кроме этого, мы можем передать данные только:
 
@@ -1332,21 +1361,27 @@ OlympIQ могут просматривать данные аккаунтов и
 
 ## C8. Платежи
 
-- **Завершить покупку в мобильном приложении невозможно**: в нём нет ни формы карты, ни ввода данных
-  карты, ни шага оплаты.
-- Оплата возможна только **на сайте, в браузере, в азербайджанских манатах**.
-- Оплата будет проходить полным перенаправлением на собственную страницу банка. **Номер карты, код CVV и
-  другие данные карты никогда не попадут на серверы OlympIQ и у нас храниться не будут.**
-- В нашей базе будут фиксироваться только сумма, валюта, статус и номер операции у провайдера.
+- **Где возможна покупка, зависит от платформы:** на iPhone и iPad родитель может купить доступ к
+  предметам через встроенную покупку App Store; **в приложении для Android покупки нет вообще**; на
+  сайте родитель платит в браузере, **в азербайджанских манатах**.
+- **Данные вашей карты мы не видим ни в одном из этих случаев.** На iPhone и iPad операцию полностью
+  проводит App Store; на сайте оплата проходит полным перенаправлением на собственную страницу банка.
+- **Ни тем, ни другим путём номер карты, код CVV и другие данные карты не попадают на серверы OlympIQ
+  и у нас не хранятся.**
+- По **оплате на сайте** в нашей базе фиксируются только сумма, валюта, статус и номер операции у
+  провайдера. По **покупке в App Store** — случайный идентификатор, который мы создаём для этой покупки
+  (чтобы доступ достался нужному ребёнку), номер операции у Apple и код продукта.
 
-**Показ цен зависит от режима оплаты.** Пока платежи отключены, цены не показываются ни в одном разделе
-мобильного приложения. Если платежи включат, приложение может показывать цены подписки **для информации**
-родителю или посетителю без аккаунта; **в сессии ученика цены не показываются никогда**, и завершить
-покупку внутри приложения нельзя ни в каком режиме.
+**Показ цен зависит от платформы.** На iPhone и iPad цена, которую видит родитель, — это собственная
+локализованная строка App Store: её формирует Apple, никаких своих цен приложение не хранит. **В сборке
+для Android цены не показываются нигде** — это свойство самой сборки, а не настройка. **В сессии ученика
+ни на одной платформе не показываются ни цена, ни способ оплаты, ни кнопка покупки** — ребёнок ничего
+купить не может, и это обеспечивается на сервере.
 
-**Текущее состояние:** платежи на платформе **отключены**, и ни один платёжный провайдер пока не
-подключён. `[OWNER MUST CONFIRM: если к моменту публикации это изменилось, раздел нужно обновить и указать
-провайдера.]`
+**Текущее состояние:** оплата картой на сайте сейчас **отключена** — ни с кого не списываются средства.
+На iPhone и iPad доступ к предметам **можно купить** через App Store (с 2026-09-09).
+`[OWNER MUST CONFIRM: если к моменту публикации состояние оплаты на сайте изменилось, раздел нужно
+обновить и указать провайдера.]`
 
 ---
 
@@ -1448,7 +1483,7 @@ OlympIQ могут просматривать данные аккаунтов и
 | Сбросить пароль ребёнка | В приложении: родитель → изменить ребёнка |
 | Изменить или удалить аватар ребёнка | В приложении: профиль родителя или ученика |
 | Отключить уведомления | Настройки уведомлений в приложении, а также системные настройки устройства |
-| Удалить одного ребёнка | На сайте: панель родителя |
+| Удалить одного ребёнка | На сайте: «Удалить ребёнка» на карточке ребёнка в панели родителя; в приложении: «Изменить данные ребёнка» → «Опасная зона» |
 | Удалить весь семейный аккаунт | В приложении и на сайте: профиль → Опасная зона |
 | Получить копию своих данных | Напишите нам |
 | Пожаловаться или задать вопрос | Напишите нам |
@@ -1467,14 +1502,15 @@ OlympIQ могут просматривать данные аккаунтов и
 | **Уведомления** | Только после входа в аккаунт и только если функция включена | Для новых раундов, результатов, серий и сообщений об аккаунте. **Никогда для рекламы.** Если вы откажете, повторно запрос не появится |
 | **Отпечаток пальца / Face ID** | Только если вы сами включите блокировку приложения | Чтобы открывать приложение без ввода пароля. Для включения *и* выключения блокировки требуется успешная проверка |
 
-**Мы никогда не запрашиваем у вас:** камеру, геолокацию, контакты, микрофон, календарь, данные о
-здоровье, Bluetooth и разрешение на отслеживание (App Tracking Transparency). Приложение никогда не
-открывает камеру, и сделать фото в нём невозможно.
+**Мы никогда не запрашиваем у вас эти разрешения:** камеру, геолокацию, контакты, микрофон, календарь,
+данные о здоровье, Bluetooth и отслеживание (App Tracking Transparency). Местоположение устройства
+приложение не считывает; город и район в профиле ребёнка выбирает родитель (см. C5). Приложение
+никогда не открывает камеру, и сделать фото в нём невозможно.
 
 > **Честное примечание для Android:** используемый нами компонент выбора фото (`expo-image-picker`)
-> объявляет разрешения на камеру и хранилище в собственном манифесте, поэтому вы можете увидеть их в
-> списке на экране «О приложении». Приложение ими не пользуется и запрос камеры вам не показывает.
-> `[OWNER MUST CONFIRM: честнее убрать эти разрешения из манифеста на этапе сборки]`
+> объявляет разрешения на хранилище в собственном манифесте, поэтому вы можете увидеть их в
+> списке на экране «О приложении». Приложение ими не пользуется. **Начиная с 1.16.0 разрешение на
+> камеру полностью удалено из сборки** — в этом списке оно больше не появляется.
 
 ---
 

@@ -12,7 +12,9 @@ import {
   getPublicSiteSettings,
   getContentOverrides,
   getContentFontSizes,
+  getSubjectNameRows,
 } from "@/lib/flags";
+import { buildSubjectNameDict } from "@/lib/subjectNames";
 import { getSiteTypography, googleFontHref, fontStackFor } from "@/lib/siteTypography";
 import { cmsFontSizeVar, responsiveFontSize } from "@/lib/cmsTypography";
 import { I18nProvider } from "@/i18n/I18nProvider";
@@ -65,6 +67,21 @@ export default async function RootLayout({
     const v = tri[locale];
     if (v && v.trim()) clientDict[key] = v;
   }
+  // Admin-managed SUBJECT display names (migration 171), under their own
+  // `subj.db.<code>` keys — the ones subjectLabel() reads before the shipped
+  // `subj.<code>` catalog. This has to happen HERE as well as in getT(): the
+  // subject label is rendered by client components too (the Add-Child wizard,
+  // the subscribe form, the pricing configurator, ManageSubjects), and they
+  // read this dictionary rather than calling the i18n layer. Omitting it would
+  // have left a rename working on server-rendered pages and silently not
+  // working on exactly the screens where a parent picks a subject.
+  //
+  // ~20 short strings, so the payload cost is nil, and an empty map (migration
+  // not yet applied, table unreadable) simply leaves the catalog in charge.
+  Object.assign(
+    clientDict,
+    buildSubjectNameDict(await getSubjectNameRows(), locale),
+  );
   // The privacy-policy BODY is ~30 KB of text in az and ~44 KB in ru. This dict
   // is serialized into the HTML of EVERY page, so shipping it everywhere to
   // render it on three would be a site-wide payload regression. Every consumer

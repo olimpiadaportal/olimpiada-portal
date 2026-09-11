@@ -23,6 +23,7 @@ import { SectionHeader } from "@/components/SectionHeader";
 import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { spacing, radius } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
+import { backOrTo, goToTab } from "@/lib/navigation";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { useAttemptRow, useTestResult } from "./queries";
@@ -137,7 +138,7 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
           arena={arena}
           kind="ghost"
           title={t("test.run.back")}
-          onPress={() => router.replace(homeTab)}
+          onPress={() => backOrTo(router, homeTab)}
         />
       </View>
     );
@@ -179,7 +180,7 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
       <BackBar
         arena={arena}
         label={isOlympiad ? t("test.result.backToOlympiads") : t("test.result.newTest")}
-        onPress={() => router.replace(homeTab)}
+        onPress={() => goToTab(router, homeTab)}
       />
 
       <View style={{ gap: spacing.sm }}>
@@ -290,7 +291,7 @@ export function TestResultScreen({ attemptId }: { attemptId: string }) {
           arena={arena}
           kind="ghost"
           title={isOlympiad ? t("test.result.backToOlympiads") : t("test.result.newTest")}
-          onPress={() => router.replace(homeTab)}
+          onPress={() => goToTab(router, homeTab)}
         />
       </View>
 

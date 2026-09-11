@@ -8,7 +8,43 @@
 // does not need. The label therefore carries an "(optional)" suffix and an
 // empty field emits the EMPTY STRING (see composeE164), which every server path
 // normalizes to NULL. Do not reinstate a mandatory phone.
-import React, { useMemo, useState } from "react";
+//
+// THE VALUE LIVES IN THE CALLER (2026-09-10, owner bug report: a parent typed a
+// phone number, moved to the password field, and the phone was CLEARED — on
+// both platforms). The country + national pair used to be this component's OWN
+// useState, so anything that remounted this subtree reset it to the default
+// country and an empty number, with nothing on screen to say so. It is now a
+// controlled `value` / `onChange` pair owned by the screen (`usePhoneValue`) —
+// state a remount of THIS component cannot reach. `onChangeE164` still emits
+// exactly what it always emitted, so no submit path changed.
+//
+// AND THE SANITISER REFUSES TO BLANK A FILLED FIELD (`applyPhoneEdit`). Six of
+// the seven candidate causes were eliminated with file:line evidence; the one
+// left standing is PLATFORM AUTOFILL, which writes into UNFOCUSED inputs when a
+// dataset is chosen in a sibling field — and a dataset carrying no phone writes
+// an EMPTY value. That is precisely "focus the password, watch the phone
+// empty". A write that would turn a filled number into nothing is therefore
+// refused unless the user is demonstrably doing it themselves. RN then restores
+// the refused text for free: TextInput._onChange always bumps two useState
+// values, so the input re-renders and its useLayoutEffect pushes `props.value`
+// back to the native view (react-native/Libraries/Components/TextInput/
+// TextInput.js:200 and :493). That only works while the value is CONTROLLED —
+// the two halves of this fix hold each other up.
+//
+// AND THE TRUNK PREFIX IS THE LIBRARY'S CALL, NOT THIS FILE'S (2026-09-10).
+// A national number is WRITTEN with its trunk prefix — "050 123 45 67" in Baku
+// — and that is what a person types, what a contact card holds and what Android
+// autofill hands this field now that it declares `tel-national`. E.164 has no
+// room for it (+994 50 123 45 67), so it comes off ONCE, at compose time, and
+// the digits stay on screen exactly as they were entered. WHICH digits count is
+// a fact about the numbering PLAN that nothing in this repository decides any
+// more: `@/lib/phoneE164` hands the text to libphonenumber-js and returns what
+// it says. Two hand-rolled attempts came first — a greedy leading-zero strip
+// that flattened Italy's +39 06 …, then a hand-maintained trunk table that ate
+// the 8 of Russia's 812 area code — and both produced a DIFFERENT, perfectly
+// well-formed number that every check in this stack accepted.
+
+import React, { useMemo, useRef, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -28,23 +64,46 @@ import { TextField } from "./TextField";
 import { useTheme } from "@/theme/ThemeProvider";
 import { fontSize, radius, spacing } from "@/theme/tokens";
 import { KeyboardFocusBoundary } from "@/lib/useKeyboardAware";
-import { COUNTRIES, DEFAULT_ISO2, type Country } from "@/lib/countries";
+import { COUNTRIES } from "@/lib/countries";
+import {
+  applyPhoneEdit,
+  composeE164,
+  countryFor,
+  EMPTY_PHONE,
+  type PhoneValue,
+} from "@/lib/phoneE164";
 import { useT } from "@/i18n/useT";
 
-export const E164_RE = /^\+[1-9][0-9]{6,14}$/;
+// EVERY RULE ABOUT WHAT A NUMBER MEANS LIVES IN @/lib/phoneE164, in a file that
+// is byte-identical to the web app's copy — one composition, one answer,
+// whichever surface the parent used. They are re-exported from here because
+// that is where the screens, the profile editor and the suites already import
+// them from, and a component that renders a phone field is an honest place to
+// look for them. What stays in THIS file is the React surface.
+export {
+  applyPhoneEdit,
+  composeE164,
+  countryFor,
+  matchDialCode,
+  parseToE164,
+  splitE164,
+  E164_RE,
+  EMPTY_PHONE,
+  PHONE_MAX_DIGITS,
+  type PhoneValue,
+} from "@/lib/phoneE164";
 
 /**
- * "" when there is no national number at all — NOT a bare "+994".
+ * The two lines a screen uses to own a phone value:
  *
- * This is load-bearing for the optional field: callers test the emitted value
- * for emptiness to decide "no number given". Returning the dial code alone made
- * a field the user typed into and then cleared look like a MALFORMED number
- * rather than an absent one, so an optional field became un-leavable the moment
- * it was touched.
+ *   const [phoneValue, setPhoneValue] = usePhoneValue();
+ *   <PhoneField value={phoneValue} onChange={setPhoneValue} onChangeE164={setPhone} … />
+ *
+ * Deliberately a plain useState in the CALLER's component, so the value
+ * outlives any remount of the field itself.
  */
-export function composeE164(dial: string, national: string): string {
-  const digits = national.replace(/[^\d]/g, "").replace(/^0+/, "");
-  return digits ? `+${dial}${digits}` : "";
+export function usePhoneValue(initial: PhoneValue = EMPTY_PHONE) {
+  return useState<PhoneValue>(initial);
 }
 
 export function PhoneField({
@@ -52,6 +111,8 @@ export function PhoneField({
   searchPlaceholder,
   closeLabel,
   error,
+  value,
+  onChange,
   onChangeE164,
   inputRef,
   returnKeyType,
@@ -62,6 +123,9 @@ export function PhoneField({
   searchPlaceholder: string;
   closeLabel: string;
   error?: string | null;
+  /** Controlled: the country + national pair, owned by the caller. */
+  value: PhoneValue;
+  onChange: (next: PhoneValue) => void;
   onChangeE164: (value: string) => void;
   /**
    * Handle on the NATIONAL-NUMBER input, so a form can chain focus through the
@@ -83,12 +147,21 @@ export function PhoneField({
   const { t } = useT();
   const optionalRaw = t("field.optional");
   const optionalSuffix = optionalRaw === "field.optional" ? "" : optionalRaw;
-  const [country, setCountry] = useState<Country>(
-    () => COUNTRIES.find((c) => c.iso2 === DEFAULT_ISO2) ?? COUNTRIES[0],
-  );
-  const [national, setNational] = useState("");
+  // ONE string for the eye and for the screen reader. The national input sits
+  // in a ROW beside the country trigger, so it cannot carry a visible label of
+  // its own — and with no explicit `accessibilityLabel` it reaches a
+  // screen-reader user as a bare "edit box", the label above it announced as
+  // unrelated text. No new i18n string: this is the label already on screen, so
+  // it is trilingual by construction.
+  const fieldLabel = optionalSuffix ? `${label} ${optionalSuffix}` : label;
+  const country = countryFor(value.iso2);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // A ref, not state: `applyPhoneEdit` only READS focus, and re-rendering on
+  // focus would buy nothing. The platform writes into an UNFOCUSED input, so
+  // this flag is what separates "the user cleared it" from "something else
+  // did".
+  const focused = useRef(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -101,8 +174,9 @@ export function PhoneField({
     );
   }, [query]);
 
-  function update(c: Country, n: string) {
-    onChangeE164(composeE164(c.dial, n));
+  function commit(next: PhoneValue) {
+    onChange(next);
+    onChangeE164(composeE164(countryFor(next.iso2).dial, next.national));
   }
 
   // iOS renders `phone-pad` as a keypad with NO return key at all, so a focus
@@ -121,15 +195,13 @@ export function PhoneField({
   // keyboardType`, and `tel` maps to `phone-pad`), so leaving it set would make
   // the `keyboardType` switch a silent no-op.
   //
-  // No validation changes: the sanitizer below already strips everything except
+  // No validation changes: the sanitizer above already strips everything except
   // digits and spaces, and the server re-validates the composed E.164 anyway.
   const iosNeedsReturnKey = Platform.OS === "ios" && Boolean(onSubmitEditing);
 
   return (
     <View style={{ gap: spacing.xs }}>
-      <AppText variant="label">
-        {optionalSuffix ? `${label} ${optionalSuffix}` : label}
-      </AppText>
+      <AppText variant="label">{fieldLabel}</AppText>
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <Pressable
           accessibilityRole="button"
@@ -151,18 +223,35 @@ export function PhoneField({
           <AppText variant="muted">+{country.dial}</AppText>
         </Pressable>
         <View style={{ flex: 1 }}>
+          {/* AUTOFILL, DECLARED PRECISELY. `tel-national` is the Android hint
+              for a number WITHOUT its country code, which is exactly what this
+              input holds — plain `tel` invited a full E.164 number into a
+              national field. RN drops `autoComplete` entirely on iOS
+              (TextInput.js: `Platform.OS === 'android' ? … : undefined`) and
+              iOS has no content type for a national-only number, so
+              `telephoneNumber` is the closest true statement there;
+              `applyPhoneEdit` strips the dial code a contact card fills in and
+              moves the country trigger to match. */}
           <TextField
             ref={inputRef}
-            value={national}
-            onChangeText={(t) => {
-              const clean = t.replace(/[^\d ]/g, "").slice(0, 14);
-              setNational(clean);
-              update(country, clean);
+            value={value.national}
+            accessibilityLabel={fieldLabel}
+            onChangeText={(text) =>
+              commit(applyPhoneEdit({ raw: text, prev: value, focused: focused.current }))
+            }
+            onFocus={() => {
+              focused.current = true;
+            }}
+            onBlur={() => {
+              focused.current = false;
             }}
             inputMode={iosNeedsReturnKey ? undefined : "tel"}
             keyboardType={iosNeedsReturnKey ? "numbers-and-punctuation" : "phone-pad"}
-            autoComplete="tel"
+            autoComplete="tel-national"
             textContentType="telephoneNumber"
+            importantForAutofill="yes"
+            autoCapitalize="none"
+            autoCorrect={false}
             returnKeyType={returnKeyType}
             submitBehavior={submitBehavior}
             onSubmitEditing={onSubmitEditing}
@@ -203,12 +292,18 @@ export function PhoneField({
                 paddingRight: insets.right + spacing.lg,
               }}
             >
+              {/* A country SEARCH box, not a credential: nothing typed here
+                  should ever reach an autofill service or a password manager. */}
               <TextField
                 value={query}
                 onChangeText={setQuery}
                 placeholder={searchPlaceholder}
                 autoFocus
                 autoCorrect={false}
+                autoCapitalize="none"
+                autoComplete="off"
+                textContentType="none"
+                importantForAutofill="no"
               />
               <FlatList
                 data={filtered}
@@ -218,8 +313,7 @@ export function PhoneField({
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => {
-                      setCountry(item);
-                      update(item, national);
+                      commit({ iso2: item.iso2, national: value.national });
                       setOpen(false);
                       setQuery("");
                     }}

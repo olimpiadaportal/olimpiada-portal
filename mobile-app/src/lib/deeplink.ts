@@ -35,7 +35,9 @@ type RouteRule = {
   /** The expo-router target. */
   target: string;
   /** Public rules only: a signed-in session lands on ITS surface instead
-   *  (e.g. /news → the role's own news tab). */
+   *  (e.g. /news → the role's own news tab; every AUTH path → the role's own
+   *  home, so a signed-in user is never sent to a login screen for the
+   *  `(public)` guard to bounce back). */
   roleTargets?: Partial<Record<"parent" | "student", string>>;
   /** Public rules only: roles that must never open it — children never see
    *  commerce, so /pricing blocks student sessions. */
@@ -63,7 +65,23 @@ const RULES: RouteRule[] = [
   { prefix: "/child/news", audience: "student", target: "/(student)/(tabs)/news" },
   { prefix: "/child/notifications", audience: "student", target: "/(student)/notifications" },
   { prefix: "/child/profile", audience: "student", target: "/(student)/profile" },
-  { prefix: "/child-login", audience: "public", target: "/(public)/login?tab=student" },
+  // AUTH PATHS AND A SIGNED-IN SESSION. These four rules resolve to a LOGIN /
+  // REGISTER / WELCOME screen, and opening one while signed in is the
+  // duplicate-navigator bug one level up: the target is pushed onto the ROOT
+  // stack, the `(public)` guard immediately bounces it, and the bounce mints a
+  // SECOND copy of the whole `(parent)`/`(student)` group above the one the
+  // user was already in — after which back pops between two identical Home
+  // screens. `roleTargets` is the fix at the source: a session that is already
+  // signed in never resolves an auth screen at all, it resolves its OWN home,
+  // which openTarget() reaches through goToTab() without pushing anything.
+  // (`(public)/_layout.tsx` still guards the paths that do not come through
+  // here, and now uses <GroupRedirect> so its bounce cannot duplicate either.)
+  {
+    prefix: "/child-login",
+    audience: "public",
+    target: "/(public)/login?tab=student",
+    roleTargets: { parent: "/(parent)/(tabs)/home", student: "/(student)/(tabs)/home" },
+  },
   { prefix: "/child", exact: true, audience: "student", target: "/(student)/(tabs)/home" },
   // Parent surface. A child's olympiad page (notification action_url) → the
   // olympiads tab; other /children/... paths keep landing on the parent home.
@@ -83,8 +101,18 @@ const RULES: RouteRule[] = [
   { prefix: "/profile", audience: "parent", target: "/(parent)/profile" },
   // Public surface. The (public) guard now only bounces signed-in users off
   // the AUTH screens, so info/news targets are reachable in-session too.
-  { prefix: "/login", audience: "public", target: "/(public)/login" },
-  { prefix: "/register", audience: "public", target: "/(public)/register" },
+  {
+    prefix: "/login",
+    audience: "public",
+    target: "/(public)/login",
+    roleTargets: { parent: "/(parent)/(tabs)/home", student: "/(student)/(tabs)/home" },
+  },
+  {
+    prefix: "/register",
+    audience: "public",
+    target: "/(public)/register",
+    roleTargets: { parent: "/(parent)/(tabs)/home", student: "/(student)/(tabs)/home" },
+  },
   // News: signed-in readers get their own list tab, and a single-slug article
   // opens the ROLE's own article route (own shell theme + back behavior);
   // signed out, marketing links keep landing on the public surface.
@@ -118,7 +146,13 @@ const RULES: RouteRule[] = [
   { prefix: "/subjects", audience: "public", target: "/(public)/subjects" },
   { prefix: "/faq", audience: "public", target: "/(public)/faq" },
   { prefix: "/contact", audience: "public", target: "/(public)/contact" },
-  { prefix: "/", exact: true, audience: "public", target: "/(public)/welcome" },
+  {
+    prefix: "/",
+    exact: true,
+    audience: "public",
+    target: "/(public)/welcome",
+    roleTargets: { parent: "/(parent)/(tabs)/home", student: "/(student)/(tabs)/home" },
+  },
 ];
 
 export type ResolvedLink =

@@ -1175,7 +1175,15 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Hər fənnin öz dövrü və öz qiyməti var. Bir fənni silsəniz, digərləri öz dövrləri ilə davam edir.",
     "terms.olympiad":
       "Olimpiada paketləri birdəfəlik alınır və ömürlük qalır. Onlar da geri qaytarılmır.",
-    "terms.currency": "Bütün ödənişlər Azərbaycan manatı (AZN) ilə aparılır.",
+    // SCOPED ON 2026-09-10. These purchase terms describe the WEB rail — AZN, the
+    // bank's hosted page, no refunds. None of that governs an App Store purchase:
+    // the price is StoreKit's localized string, the currency is the storefront's,
+    // and refunds are Apple's to grant under Apple's own policy. The terms.* prefix
+    // is dropped from the mobile bundle by sync-i18n (WEB_ONLY_PREFIXES) and no
+    // mobile screen links to /terms, so the fix is to SCOPE the sentence here —
+    // never to import terms.* into the app.
+    "terms.currency":
+      "Bu şərtlər bu veb saytda edilən ödənişlərə aiddir: bütün ödənişlər Azərbaycan manatı (AZN) ilə aparılır. iPhone və iPad tətbiqindən App Store vasitəsilə edilən alışlar isə Apple-ın öz şərtləri, valyutası və geri qaytarma qaydaları ilə tənzimlənir.",
     "terms.ack": "Ödənişə keçməklə yuxarıdakı şərtləri qəbul etmiş olursunuz.",
     "terms.page.title": "Ödəniş şərtləri",
     "terms.page.intro":
@@ -1301,14 +1309,28 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Yalnız hesabın işləməsi üçün lazım olan məlumatı toplayırıq: valideynin əlaqə məlumatları, uşağın adı, məktəbi, sinfi və məşq nəticələri.\n" +
       "Uşağın hesabını valideyn yaradır və idarə edir. Uşaq özü qeydiyyatdan keçə bilmir.\n" +
       "Valideyn istənilən vaxt tətbiqin içindən bütün ailə hesabını silə bilər.",
+    // PLATFORM SPLIT, DO NOT COLLAPSE IT BACK (2026-09-10). The last bullet used
+    // to read "there is no checkout in the mobile app — purchases happen only on
+    // the website". That has been false since 1.15.0: iOS ships StoreKit IAP
+    // (21 products, approved 2026-09-09), so a parent DOES complete a purchase
+    // inside the iPhone/iPad binary. It is still true on Android, which sells
+    // nothing. The bullet now names all three rails as a factual description —
+    // no price, no CTA, nothing comparative — because this same string is
+    // compiled into the purchase-silent ANDROID binary and read by store
+    // reviewers beside the App Privacy / Data safety forms.
+    //
+    // The location bullet moved from a denial to a DISTINCTION for the same
+    // reason: both stores now declare coarse/approximate location, and that
+    // declared item is the city and rayon a parent picks from a dropdown, not a
+    // sensor reading. See privacy.s5.notCollected for the long form.
     "privacy.s1.dontTitle": "Nə etmirik",
     "privacy.s1.dont":
       "Reklam yoxdur. Tətbiqdə heç bir reklam şəbəkəsi və ya reklam SDK-sı yoxdur.\n" +
       "İzləmə yoxdur. Nə mobil tətbiqdə, nə də veb saytda analitika, atribusiya və ya çökmə hesabatı toplayan üçüncü tərəf aləti quraşdırılmayıb. Reklam identifikatoru (IDFA, Android Advertising ID) heç vaxt oxunmur.\n" +
       "Məlumatları satmırıq, icarəyə vermirik, mübadilə etmirik və marketinq məqsədi ilə heç kimə ötürmürük.\n" +
-      "Məkanınızı, kameranızı, kontaktlarınızı və mikrofonunuzu istəmirik.\n" +
+      "Cihazınızın məkanını oxumuruq: nə məkan, nə kamera, nə kontakt, nə də mikrofon icazəsi istəmirik. Uşağın profilindəki şəhər və rayonu valideyn siyahıdan özü seçir — onlar cihazdan oxunmur.\n" +
       "Uşaq davranışına görə reklam profili qurmuruq.\n" +
-      "Kart məlumatlarınızı görmürük. Mobil tətbiqdə alış prosesi yoxdur — alış yalnız veb saytda həyata keçirilir.",
+      "Kart məlumatlarınızı görmürük. iPhone və iPad-də alış App Store vasitəsilə gedir; Android tətbiqində alış ümumiyyətlə yoxdur; veb saytda isə ödəniş bankın öz səhifəsində aparılır.",
 
     "privacy.s2.title": "Biz kimik və bizimlə necə əlaqə saxlamaq olar",
     "privacy.s2.product": "Məhsul",
@@ -1438,12 +1460,22 @@ export const messages: Record<Locale, Record<string, string>> = {
     // no navigator.geolocation call anywhere, and public.students has neither a
     // coordinate column nor a home-address column.
     //
+    // The purpose clause was widened on 2026-09-10: "only to group the
+    // leaderboards" understated it in two ways a reviewer checking the coarse-
+    // location declaration would land on. The city/rayon/school are MANDATORY
+    // arguments to create_child_account (011_…sql:1051-1082 — the rayon is
+    // required when the city has active rayons), so they are part of
+    // provisioning the account, and the child's own profile screen displays
+    // them back (mobile studentSections.tsx). The same document already
+    // treats them as profile data in s4.childEditable and s11.table, so the
+    // "only" contradicted our own text one section away.
+    //
     // The blank line is a paragraph break (CmsProse on both platforms), so the
     // list and the distinction render as two paragraphs.
     "privacy.s5.notCollected":
       "Uşaq haqqında toplamadığımız məlumatlar: doğum tarixi, e-poçt, telefon nömrəsi, ev ünvanı, cihazın məkanı, sağlamlıq məlumatı, maliyyə məlumatı, kontaktlar, brauzer tarixçəsi, reklam identifikatorları və avadanlıq identifikatorları.\n" +
       "\n" +
-      "Şəhər və rayon başqa şeydir: onları uşağı əlavə edərkən valideyn özü seçir və biz onları yalnız reytinq cədvəllərini şəhər və rayon üzrə qruplaşdırmaq üçün saxlayırıq. Uşağın cihazının harada olduğunu isə heç vaxt bilmirik: tətbiq məkan icazəsi istəmir, GPS-i və digər məkan sensorlarını oxumur, heç bir koordinat saxlamır, ev ünvanı üçün isə sahə ümumiyyətlə yoxdur.",
+      "Şəhər, rayon və məktəb başqa şeydir: uşağı əlavə edərkən onları valideyn siyahıdan özü seçir. Bunlar hesabın qurulmasının bir hissəsidir, şagirdin öz profilində göstərilir və reytinq cədvəllərini şəhər, rayon və məktəb üzrə məhz onlar qruplaşdırır. Uşağın cihazının harada olduğunu isə heç vaxt bilmirik: tətbiq məkan icazəsi istəmir, GPS-i və digər məkan sensorlarını oxumur, heç bir koordinat saxlamır, ev ünvanı üçün isə sahə ümumiyyətlə yoxdur.",
     "privacy.s5.neverTitle": "Uşaq məlumatı ilə nə etmirik",
     "privacy.s5.never":
       "Uşağa reklam göstərmirik və reklam üçün profil qurmuruq.\n" +
@@ -1488,7 +1520,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.removeTitle": "Valideyn uşağın məlumatını necə silir",
     "privacy.s5.removeList":
       "Tam ailə hesabını silmək: valideyn profili → «Təhlükəli zona» → «Hesabı sil» → iki mərhələli təsdiq. Bu, valideyn hesabını və onun yaratdığı bütün uşaq profillərini silir. Həm veb saytda, həm də mobil tətbiqdə mövcuddur.\n" +
-      "Yalnız bir uşağı silmək: hazırda yalnız veb saytda, valideyn panelindən. Mobil tətbiqdə ayrıca uşaq silmək imkanı yoxdur.\n" +
+      "Yalnız bir uşağı silmək: veb saytda valideyn panelində uşağın kartındakı «Uşağı sil» düyməsi ilə; mobil tətbiqdə isə uşağın «Uşağın məlumatını redaktə et» səhifəsində «Təhlükəli zona» → «Uşağı sil». Hər iki halda təsdiq soruşulur.\n" +
       "Şagird heç nə silə bilmir.",
     "privacy.s5.removeNote":
       "Silinmə dərhal baş verir — gözləmə müddəti, geri qaytarma və ya arxivə salma yoxdur. Nəyin silindiyi və nəyin qaldığı «Məlumatların saxlanması və silinməsi» bölməsində ətraflı yazılıb.",
@@ -1537,6 +1569,15 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Dürüst olmaq üçün bunu da yazırıq: OlympIQ-in səlahiyyətli administratorları və kontent menecerləri daxili idarəetmə panelində hesab və təlim məlumatlarına baxa bilər — xidmətin işləməsi, kontentin idarə olunması və dəstək sorğularına cavab vermək üçün. Çıxış rola görə məhdudlaşdırılıb: verilənlər bazasında sətir səviyyəsində təhlükəsizlik (RLS) tətbiq olunur və hər daxili rol yalnız öz işi üçün lazım olan icazələrə malikdir. Administratorların hesablar və kontent üzərində əməliyyatları audit jurnalına yazılır.",
     "privacy.s7.intro":
       "Məlumatlarınızı satmırıq. Aşağıdakı xidmət təminatçıları xidmətin işləməsi üçün lazımdır və hər biri yalnız öz funksiyası üçün lazım olanı alır:",
+    // APPLE APPEARS TWICE ON PURPOSE (2026-09-10). The APNs row is about push
+    // and stays accurate. The App Store row is about MONEY, and was missing:
+    // every StoreKit purchase hands Apple an appAccountToken — a per-intent UUID
+    // bound to one child (migration 2026_08_31_164) — so Apple receives something
+    // from us the moment iOS sells, which the old table denied by omission.
+    //
+    // THIS IS A TABLE KEY: policy-content.test.ts compares the az/en/ru grids, so
+    // a row added here must be added to all three or the mobile renderer pairs a
+    // value with the wrong heading in a legal document about children's data.
     "privacy.s7.table":
       "Xidmət təminatçısı | Rolu | Nə alır | Status\n" +
       "Supabase | Verilənlər bazası, autentifikasiya, fayl saxlancı | Bütün məhsul məlumatları, şifrələnmiş kanal üzərindən | Aktiv\n" +
@@ -1546,7 +1587,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google (FCM) | Android-də push çatdırılması | Yalnız push aktiv olduqda — standart push ötürülməsi | Push aktivləşənə qədər heç nə almır\n" +
       "Google Fonts | Veb saytın bəzi səhifələrində şrift | Brauzerinizin IP ünvanı və identifikasiya sətri | Aktiv (yalnız veb; mobil tətbiqdə yoxdur)\n" +
       "Google Maps | «Əlaqə» səhifəsindəki xəritə | Həmin səhifəni açdığınız anda IP ünvanı və identifikasiya sətri. Hesab məlumatı ötürülmür | Aktiv\n" +
-      "Ödəniş təminatçısı | Gələcəkdə vebdə ödəniş | — | «Ödənişlər» bölməsinə baxın",
+      "Apple (App Store) | iPhone və iPad-də tətbiqdaxili ödəniş | Əməliyyatı Apple özü aparır. Ona hər əməliyyat üçün yaratdığımız təsadüfi identifikator ötürülür ki, giriş düzgün uşağa yazılsın. Ad, e-poçt və digər hesab məlumatı ötürülmür | Yalnız iOS-da; Android tətbiqində yoxdur\n" +
+      "Ödəniş təminatçısı (bank) | Veb saytda kart ödənişi | Əməliyyat bankın öz səhifəsində aparılır, kart məlumatı bizə çatmır | «Ödənişlər» bölməsinə baxın",
     "privacy.s7.pushOff":
       "Hazırda push bildirişləri işləmir: funksiya server tərəfdə söndürülüb, buna görə cihaz nişanı ümumiyyətlə yaradılmır və Expo, Apple və Google bu funksiya üzrə heç nə almır.",
     "privacy.s7.pushOn":
@@ -1559,15 +1601,28 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s7.regionLabel": "Serverlərin yerləşdiyi region",
 
     "privacy.s8.title": "Ödənişlər",
+    // THE STRONGEST FORM OF THE SAME CORRECTION AS s1.dont, and the one that
+    // ships inside the binary. Bullet 1 used to say "a purchase can never be
+    // completed in the mobile app" and bullet 2 "payments happen only on the
+    // website". Both are false on iOS since 1.15.0. Rewritten per platform:
+    // iOS sells through StoreKit, Android sells nothing, the web rail is the
+    // bank redirect — stated as data-processing facts, which is what section 8
+    // owes the reader anyway (what card data we see, and what we keep).
+    //
+    // Bullet 4 also under-described the iOS rail: an App Store purchase persists
+    // an intent row whose id IS the appAccountToken, plus Apple's transaction id
+    // and the product id. It says so now.
+    //
+    // LIST KEY: az/en/ru must keep the same line count (4).
     "privacy.s8.list":
-      "Mobil tətbiqdə alışı tamamlamaq mümkün deyil: kart formu, kart məlumatlarının daxil edilməsi və ödəniş addımı tətbiqdə mövcud deyil.\n" +
-      "Ödənişlər yalnız veb saytda, brauzerdə və Azərbaycan manatı ilə həyata keçirilir.\n" +
-      "Ödəniş bankın öz səhifəsinə tam yönləndirmə ilə aparılır. Kart nömrəsi, CVV və digər kart məlumatları heç vaxt OlympIQ serverlərinə düşmür və bizdə saxlanılmır.\n" +
-      "Verilənlər bazasında ödənişlə bağlı yalnız məbləğ, valyuta, status və təminatçının əməliyyat nömrəsi qeyd olunur.",
+      "Alışın harada mümkün olduğu platformadan asılıdır: iPhone və iPad-də valideyn fənn girişini App Store-un tətbiqdaxili alışı ilə ala bilər; Android tətbiqində alış ümumiyyətlə yoxdur; veb saytda isə valideyn brauzerdə, Azərbaycan manatı ilə ödəniş edir.\n" +
+      "Kart məlumatlarınızı heç bir halda görmürük. iPhone və iPad-də əməliyyatı əvvəldən axıradək App Store aparır; veb saytda isə ödəniş bankın öz səhifəsinə tam yönləndirmə ilə gedir.\n" +
+      "Kart nömrəsi, CVV və digər kart məlumatları nə bir yolla, nə də digəri ilə OlympIQ serverlərinə düşür və bizdə saxlanılmır.\n" +
+      "Verilənlər bazasında veb ödənişi üzrə yalnız məbləğ, valyuta, status və təminatçının əməliyyat nömrəsi qeyd olunur; App Store alışı üzrə isə həmin alış üçün yaratdığımız təsadüfi identifikator (girişin düzgün uşağa yazılması üçün), Apple-ın əməliyyat nömrəsi və məhsulun kodu.",
     "privacy.s8.statusOff":
-      "Hazırkı vəziyyət: kart ödənişləri bankla inteqrasiya olunub, lakin hazırda heç bir kart ödənişi alınmır — heç kimdən məbləğ silinmir. Ödənişlər açıq olduğu vaxt yalnız burada, veb saytda həyata keçirilir və mobil tətbiqlərin içində heç vaxt tamamlanmır.",
+      "Hazırkı vəziyyət: veb saytdakı kart ödənişləri bankla inteqrasiya olunub, lakin hazırda heç bir kart ödənişi alınmır — heç kimdən məbləğ silinmir. iPhone və iPad-də fənn girişi App Store vasitəsilə ayrıca alına bilər; Android tətbiqində alış prosesi yoxdur.",
     "privacy.s8.statusOn":
-      "Hazırkı vəziyyət: ödənişlər açıqdır və yalnız burada, veb saytda, bankın öz ödəniş səhifəsi vasitəsilə həyata keçirilir. Mobil tətbiqlərin içində alış heç vaxt tamamlanmır.",
+      "Hazırkı vəziyyət: ödənişlər açıqdır. Veb saytda ödəniş bankın öz ödəniş səhifəsi vasitəsilə aparılır; iPhone və iPad-də fənn girişi App Store vasitəsilə alına bilər; Android tətbiqində alış prosesi yoxdur.",
 
     "privacy.s9.title": "Məlumatların saxlanması və silinməsi",
     "privacy.s9.activeTitle": "Hesab aktiv olduğu müddətdə",
@@ -1631,11 +1686,11 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Nə etmək istəyirsiniz | Necə\n" +
       "Valideynin adını, telefonunu, parolunu və ya avatarını dəyişmək | Tətbiqdə: profil səhifəsi\n" +
       "Valideynin e-poçtunu dəyişmək | Tətbiqdə mümkün deyil — bizə yazın\n" +
-      "Uşağın adını, soyadını, şəhərini, rayonunu, məktəbini və ya sinfini dəyişmək | Tətbiqdə: valideyn, sonra «Uşağı redaktə et»\n" +
-      "Uşağın parolunu sıfırlamaq | Tətbiqdə: valideyn, sonra «Uşağı redaktə et»\n" +
+      "Uşağın adını, soyadını, şəhərini, rayonunu, məktəbini və ya sinfini dəyişmək | Tətbiqdə və veb saytda: valideyn, sonra «Uşağın məlumatını redaktə et»\n" +
+      "Uşağın parolunu sıfırlamaq | Tətbiqdə və veb saytda: valideyn, sonra «Uşağın məlumatını redaktə et»\n" +
       "Uşağın avatarını dəyişmək və ya silmək | Tətbiqdə: valideyn və ya şagird profili\n" +
       "Bildirişləri söndürmək | Tətbiqdəki bildiriş tənzimləmələri; həmçinin cihazın sistem parametrləri\n" +
-      "Bir uşağı silmək | Veb saytda: valideyn paneli\n" +
+      "Bir uşağı silmək | Veb saytda: valideyn panelində uşağın kartındakı «Uşağı sil»; tətbiqdə: «Uşağın məlumatını redaktə et» → «Təhlükəli zona»\n" +
       "Bütün ailə hesabını silmək | Tətbiqdə və veb saytda: profil, sonra «Təhlükəli zona»\n" +
       "Məlumatların nüsxəsini almaq | Bizə yazın\n" +
       "Şikayət etmək və ya sual vermək | Bizə yazın",
@@ -1648,8 +1703,14 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Foto kitabxanası | Yalnız siz «avatarı dəyiş» düyməsinə basdıqda | Profil şəkli seçmək üçün. Hazır avatarlar defolt seçimdir — foto yükləmək məcburi deyil\n" +
       "Bildirişlər | Yalnız sistemə daxil olduqdan sonra və yalnız funksiya aktiv olduqda | Yeni raund, nəticə, seriya və hesabla bağlı bildirişlər üçün. Reklam üçün heç vaxt. İmtina etsəniz, bir daha soruşulmur\n" +
       "Barmaq izi / Face ID | Yalnız siz tətbiq kilidini özünüz aktivləşdirdikdə | Tətbiqi parol yazmadan açmaq üçün. Kilidi həm açmaq, həm də bağlamaq üçün təsdiq tələb olunur",
+    // The enumeration is about DEVICE PERMISSIONS, and "we never ask for the
+    // location permission" is literally true — no expo-location, no NSLocation*
+    // key, no ACCESS_*_LOCATION, no geolocation call. But it was read beside a
+    // published "Location: collected" declaration, where an unqualified
+    // "location" reads as a contradiction. The added sentence says which is
+    // which; the declared item is the parent-typed city and rayon.
     "privacy.s12.never":
-      "Sizdən heç vaxt istəmirik: kamera, məkan, kontaktlar, mikrofon, təqvim, sağlamlıq məlumatı, Bluetooth və izləmə icazəsi (App Tracking Transparency). Tətbiq kameranı heç vaxt açmır və şəkil çəkmək imkanı ümumiyyətlə yoxdur. Android üçün dürüst qeyd: istifadə etdiyimiz foto seçimi komponenti öz manifestində kamera və yaddaş icazələrini elan edir, buna görə telefonun «Tətbiq haqqında» siyahısında onları görə bilərsiniz — tətbiq bu icazələrdən istifadə etmir və sizə kamera sorğusu göstərmir.",
+      "Sizdən heç vaxt bu icazələri istəmirik: kamera, məkan, kontaktlar, mikrofon, təqvim, sağlamlıq məlumatı, Bluetooth və izləmə icazəsi (App Tracking Transparency). Tətbiq cihazın məkanını oxumur; uşağın profilindəki şəhər və rayonu valideyn özü seçir (bax: uşaq məlumatları bölməsi). Tətbiq kameranı heç vaxt açmır və şəkil çəkmək imkanı ümumiyyətlə yoxdur. Android üçün dürüst qeyd: istifadə etdiyimiz foto seçimi komponenti öz manifestində yaddaş icazələrini elan edir, buna görə telefonun «Tətbiq haqqında» siyahısında onları görə bilərsiniz — tətbiq bu icazələrdən istifadə etmir. Kamera icazəsi isə quruluşdan tamamilə çıxarılıb.",
 
     "privacy.s13.title": "Bu siyasətdə dəyişikliklər",
     "privacy.s13.body":
@@ -3181,7 +3242,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Each subject has its own period and its own price. Removing one subject leaves the others running on their own cycles.",
     "terms.olympiad":
       "Olympiad packages are bought once and stay yours for life. They are not refunded either.",
-    "terms.currency": "All payments are made in Azerbaijani manat (AZN).",
+    "terms.currency":
+      "These terms cover payments made on this website: all of them are made in Azerbaijani manat (AZN). A purchase made through the App Store from the iPhone or iPad app is governed instead by Apple's own terms, currency and refund policy.",
     "terms.ack": "By continuing to payment you accept the terms above.",
     "terms.page.title": "Payment terms",
     "terms.page.intro":
@@ -3294,9 +3356,9 @@ export const messages: Record<Locale, Record<string, string>> = {
       "No advertising. There is no ad network and no ad SDK anywhere in the app.\n" +
       "No tracking. Neither the mobile app nor the website contains any third-party analytics, attribution or crash-reporting tool. We never read an advertising identifier (no IDFA, no Android Advertising ID).\n" +
       "We do not sell, rent or trade your data, and we never hand it to anyone for marketing.\n" +
-      "We never ask for your location, camera, contacts or microphone.\n" +
+      "We do not read your device's location, and we ask for no location, camera, contacts or microphone permission. The city and district on a child's profile are chosen by a parent from a list — they are not read from a device.\n" +
       "We do not build advertising profiles from a child's behaviour.\n" +
-      "We never see your card details. There is no checkout in the mobile app — purchases happen only on the website.",
+      "We never see your card details. On iPhone and iPad a purchase goes through the App Store; the Android app has no purchase at all; on the website payment goes through the bank's own page.",
 
     "privacy.s2.title": "Who we are and how to reach us",
     "privacy.s2.product": "Product",
@@ -3403,7 +3465,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.notCollected":
       "What we never collect about a child: date of birth, email address, phone number, home address, device location, health data, financial data, contacts, browsing history, advertising identifiers or hardware identifiers.\n" +
       "\n" +
-      "The city and the district are a different matter: the parent chooses them when they add the child, and we keep them only to group the leaderboards by city and district. Where the child's device is, we never learn: the app asks for no location permission, reads no GPS or other location sensor, stores no coordinates, and there is no home address field at all.",
+      "The city, the district and the school are a different matter: a parent chooses them from a list when they add a child. They are part of setting the account up, they are shown on the child's own profile, and they are what groups the leaderboards by city, district and school. Where the child's device is, we never learn: the app asks for no location permission, reads no GPS or other location sensor, stores no coordinates, and there is no home address field at all.",
     "privacy.s5.neverTitle": "What we never do with a child's data",
     "privacy.s5.never":
       "We do not show advertising to a child and we do not build advertising profiles.\n" +
@@ -3449,7 +3511,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.removeTitle": "How a parent removes a child's data",
     "privacy.s5.removeList":
       "Delete the whole family account: parent profile → «Danger Zone» → «Delete account» → a two-step confirmation. This deletes the parent account and every child profile the parent created. Available both on the website and in the mobile app.\n" +
-      "Delete a single child: currently on the website only, from the parent dashboard. The mobile app has no delete-a-child option.\n" +
+      "Delete a single child: on the website, use «Delete child» on the child's card in the parent dashboard; in the mobile app, open the child's «Edit child info» page → «Danger zone» → «Delete child». Either way you are asked to confirm.\n" +
       "A student can delete nothing.",
     "privacy.s5.removeNote":
       "Deletion is immediate — there is no waiting period, no undo and no archive state. What is erased and what survives is set out in detail in «Retention and deletion».",
@@ -3494,7 +3556,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google (FCM) | Android push delivery | Only once push is on — standard push transport | Receives nothing until push is enabled\n" +
       "Google Fonts | A font on some website pages | Your browser's IP address and user agent | Active (website only; not in the mobile app)\n" +
       "Google Maps | The map on the «Contact» screen | Your IP address and user agent at the moment that screen is opened. No account data is passed | Active\n" +
-      "Payment provider | Future web payments | — | See the «Payments» section",
+      "Apple (App Store) | In-app payment on iPhone and iPad | Apple runs the transaction itself. It receives a random identifier we create for that transaction, so the access lands on the right child. No name, no email address and no other account data is passed | iOS only; not in the Android app\n" +
+      "Payment provider (bank) | Card payments on the website | The transaction runs on the bank's own page, and card details never reach us | See the «Payments» section",
     "privacy.s7.pushOff":
       "Push notifications are not operational today: the feature is switched off server-side, so no device token is ever created and Expo, Apple and Google receive nothing at all for it.",
     "privacy.s7.pushOn":
@@ -3508,14 +3571,14 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     "privacy.s8.title": "Payments",
     "privacy.s8.list":
-      "A purchase can never be completed in the mobile app: there is no card form, no card entry and no payment step in the app at all.\n" +
-      "Payments happen only on the website, in a browser, in Azerbaijani manat.\n" +
-      "Payment uses a full redirect to the bank's own hosted page. Card numbers, CVV codes and other card details never reach OlympIQ servers and are never stored by us.\n" +
-      "Our database records only the amount, the currency, the status and the provider's transaction reference.",
+      "Where a purchase is possible depends on the platform: on iPhone and iPad a parent can buy subject access through the App Store's own in-app purchase; the Android app has no purchase at all; on the website a parent pays in a browser, in Azerbaijani manat.\n" +
+      "We never see your card details, on either route. On iPhone and iPad the App Store handles the transaction from end to end; on the website payment uses a full redirect to the bank's own hosted page.\n" +
+      "Card numbers, CVV codes and other card details never reach OlympIQ servers by either route, and are never stored by us.\n" +
+      "For a website payment our database records only the amount, the currency, the status and the provider's transaction reference. For an App Store purchase it records the random identifier we create for that purchase (so the access lands on the right child), Apple's transaction reference and the product code.",
     "privacy.s8.statusOff":
-      "Current status: card payments are integrated with our bank, but no card payment is being taken at the moment — nobody is being charged. When charging is open it happens only here, on the website, and is never completed inside the mobile apps.",
+      "Current status: card payments on this website are integrated with our bank, but no card payment is being taken at the moment — nobody is being charged. On iPhone and iPad subject access can be bought separately through the App Store; the Android app has no purchase at all.",
     "privacy.s8.statusOn":
-      "Current status: payments are open and happen only here, on the website, through the bank's own hosted payment page. A purchase is never completed inside the mobile apps.",
+      "Current status: payments are open. On this website they go through the bank's own hosted payment page; on iPhone and iPad subject access is bought through the App Store; the Android app has no purchase at all.",
 
     "privacy.s9.title": "Retention and deletion",
     "privacy.s9.activeTitle": "While the account is open",
@@ -3581,11 +3644,11 @@ export const messages: Record<Locale, Record<string, string>> = {
       "What you want to do | How\n" +
       "Change the parent name, phone, password or avatar | In the app: profile page\n" +
       "Change the parent email address | Not possible in the app — write to us\n" +
-      "Change a child's name, city, district, school or grade | In the app: parent, then «Edit child»\n" +
-      "Reset a child's password | In the app: parent, then «Edit child»\n" +
+      "Change a child's name, city, district, school or grade | In the app and on the website: parent, then «Edit child info»\n" +
+      "Reset a child's password | In the app and on the website: parent, then «Edit child info»\n" +
       "Change or remove a child's avatar | In the app: parent or student profile\n" +
       "Turn notifications off | Notification preferences in the app, and your device's system settings\n" +
-      "Delete one child | On the website: parent dashboard\n" +
+      "Delete one child | On the website: «Delete child» on the child's card in the parent dashboard; in the app: «Edit child info» → «Danger zone»\n" +
       "Delete the whole family account | In the app and on the website: profile, then «Danger Zone»\n" +
       "Get a copy of your data | Write to us\n" +
       "Complain or ask a question | Write to us",
@@ -3599,7 +3662,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Notifications | Only after signing in, and only when the feature is enabled | For new rounds, results, streaks and account notices. Never for advertising. If you decline, you are never asked again\n" +
       "Fingerprint / Face ID | Only when you turn on the optional app lock yourself | To open the app without typing a password. Turning the lock both on and off requires a successful check",
     "privacy.s12.never":
-      "We never ask you for: camera, location, contacts, microphone, calendar, health, Bluetooth, or tracking permission (App Tracking Transparency). The app never opens the camera and has no way to take a photo at all. An honest note for Android: the photo-picker component we use declares camera and storage permissions in its own manifest, so you may see them listed in the phone's App info screen — the app never uses them and never shows you a camera prompt.",
+      "We never ask you for any of these permissions: camera, location, contacts, microphone, calendar, health, Bluetooth, or tracking (App Tracking Transparency). The app does not read your device's location; the city and district on a child's profile are chosen by a parent (see the section on a child's data). The app never opens the camera and has no way to take a photo at all. An honest note for Android: the photo-picker component we use declares storage permissions in its own manifest, so you may see them listed in the phone's App info screen — the app never uses them. The camera permission has been removed from the build entirely.",
 
     "privacy.s13.title": "Changes to this policy",
     "privacy.s13.body":
@@ -5128,7 +5191,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "У каждого предмета свой период и своя цена. Удаление одного предмета не влияет на остальные.",
     "terms.olympiad":
       "Олимпиадные пакеты покупаются один раз и остаются навсегда. Они также не подлежат возврату.",
-    "terms.currency": "Все платежи производятся в азербайджанских манатах (AZN).",
+    "terms.currency":
+      "Эти условия относятся к платежам на этом сайте: все они производятся в азербайджанских манатах (AZN). Покупка, совершённая через App Store в приложении для iPhone или iPad, регулируется собственными условиями, валютой и правилами возврата Apple.",
     "terms.ack": "Переходя к оплате, вы принимаете условия выше.",
     "terms.page.title": "Условия оплаты",
     "terms.page.intro":
@@ -5241,9 +5305,9 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Никакой рекламы. В приложении нет ни рекламной сети, ни рекламного SDK.\n" +
       "Никакой слежки. Ни в мобильном приложении, ни на сайте нет сторонних инструментов аналитики, атрибуции или сбора отчётов о сбоях. Рекламный идентификатор (IDFA, Android Advertising ID) не считывается никогда.\n" +
       "Мы не продаём, не сдаём в аренду и не обмениваем ваши данные и не передаём их никому в маркетинговых целях.\n" +
-      "Мы не запрашиваем геолокацию, камеру, контакты и микрофон.\n" +
+      "Мы не считываем местоположение вашего устройства и не запрашиваем разрешения на геолокацию, камеру, контакты и микрофон. Город и район в профиле ребёнка родитель выбирает из списка сам — с устройства они не считываются.\n" +
       "Мы не строим рекламные профили на основе поведения ребёнка.\n" +
-      "Мы не видим данные вашей карты. В мобильном приложении нет оформления покупки — покупки совершаются только на сайте.",
+      "Мы не видим данные вашей карты. На iPhone и iPad покупка проходит через App Store, в приложении для Android покупок нет вообще, а на сайте оплата проходит на собственной странице банка.",
 
     "privacy.s2.title": "Кто мы и как с нами связаться",
     "privacy.s2.product": "Продукт",
@@ -5351,7 +5415,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.notCollected":
       "Что мы о ребёнке не собираем: дату рождения, адрес электронной почты, номер телефона, домашний адрес, геолокацию устройства, данные о здоровье, финансовые данные, контакты, историю браузера, рекламные и аппаратные идентификаторы.\n" +
       "\n" +
-      "Город и район — это другое: их выбирает сам родитель, когда добавляет ребёнка, и мы храним их только для того, чтобы группировать таблицы лидеров по городу и району. А где находится устройство ребёнка, мы не знаем никогда: приложение не запрашивает разрешение на геолокацию, не считывает GPS и другие датчики местоположения, не сохраняет никаких координат, а поля домашнего адреса нет вообще.",
+      "Город, район и школа — это другое: их выбирает из списка сам родитель, когда добавляет ребёнка. Они нужны, чтобы завести аккаунт, отображаются в профиле самого ученика и именно по ним группируются таблицы лидеров — по городу, району и школе. А где находится устройство ребёнка, мы не знаем никогда: приложение не запрашивает разрешение на геолокацию, не считывает GPS и другие датчики местоположения, не сохраняет никаких координат, а поля домашнего адреса нет вообще.",
     "privacy.s5.neverTitle": "Чего мы никогда не делаем с данными ребёнка",
     "privacy.s5.never":
       "Мы не показываем ребёнку рекламу и не строим рекламные профили.\n" +
@@ -5398,7 +5462,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "privacy.s5.removeTitle": "Как родитель удаляет данные ребёнка",
     "privacy.s5.removeList":
       "Удалить весь семейный аккаунт: профиль родителя → «Опасная зона» → «Удалить аккаунт» → двухшаговое подтверждение. Это удаляет аккаунт родителя и все созданные им профили детей. Доступно и на сайте, и в мобильном приложении.\n" +
-      "Удалить одного ребёнка: сейчас только на сайте, из панели родителя. В мобильном приложении отдельного удаления ребёнка нет.\n" +
+      "Удалить одного ребёнка: на сайте — кнопкой «Удалить ребёнка» на карточке ребёнка в панели родителя; в мобильном приложении — на странице «Изменить данные ребёнка» → «Опасная зона» → «Удалить ребёнка». В обоих случаях запрашивается подтверждение.\n" +
       "Ученик не может удалить ничего.",
     "privacy.s5.removeNote":
       "Удаление происходит немедленно — периода ожидания, отмены и архива не предусмотрено. Что именно удаляется и что остаётся, подробно описано в разделе «Хранение и удаление данных».",
@@ -5442,7 +5506,8 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Google (FCM) | Доставка push на Android | Только после включения push — стандартная передача уведомлений | До включения push не получает ничего\n" +
       "Google Fonts | Шрифт на некоторых страницах сайта | IP-адрес и строку браузера | Активен (только сайт; в мобильном приложении отсутствует)\n" +
       "Google Maps | Карта на странице «Контакты» | IP-адрес и строку браузера в момент открытия этой страницы. Данные аккаунта не передаются | Активен\n" +
-      "Платёжный провайдер | Будущая оплата на сайте | — | См. раздел «Платежи»",
+      "Apple (App Store) | Оплата внутри приложения на iPhone и iPad | Операцию проводит сама Apple. Ей передаётся случайный идентификатор, который мы создаём для этой операции, чтобы доступ достался нужному ребёнку. Имя, адрес электронной почты и другие данные аккаунта не передаются | Только на iOS; в приложении для Android отсутствует\n" +
+      "Платёжный провайдер (банк) | Оплата картой на сайте | Операция проходит на собственной странице банка, данные карты до нас не доходят | См. раздел «Платежи»",
     "privacy.s7.pushOff":
       "Сейчас push-уведомления не работают: функция отключена на сервере, поэтому токен устройства вообще не создаётся, и Expo, Apple и Google по этой функции не получают ничего.",
     "privacy.s7.pushOn":
@@ -5456,14 +5521,14 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     "privacy.s8.title": "Платежи",
     "privacy.s8.list":
-      "Завершить покупку в мобильном приложении невозможно: в нём нет ни формы карты, ни ввода данных карты, ни шага оплаты.\n" +
-      "Оплата возможна только на сайте, в браузере, в азербайджанских манатах.\n" +
-      "Оплата проходит полным перенаправлением на собственную страницу банка. Номер карты, код CVV и другие данные карты никогда не попадают на серверы OlympIQ и у нас не хранятся.\n" +
-      "В нашей базе фиксируются только сумма, валюта, статус и номер операции у провайдера.",
+      "Где возможна покупка, зависит от платформы: на iPhone и iPad родитель может купить доступ к предметам через встроенную покупку App Store; в приложении для Android покупки нет вообще; на сайте родитель платит в браузере, в азербайджанских манатах.\n" +
+      "Данные вашей карты мы не видим ни в одном из этих случаев. На iPhone и iPad операцию полностью проводит App Store; на сайте оплата проходит полным перенаправлением на собственную страницу банка.\n" +
+      "Ни тем, ни другим путём номер карты, код CVV и другие данные карты не попадают на серверы OlympIQ и у нас не хранятся.\n" +
+      "По оплате на сайте в нашей базе фиксируются только сумма, валюта, статус и номер операции у провайдера. По покупке в App Store — случайный идентификатор, который мы создаём для этой покупки (чтобы доступ достался нужному ребёнку), номер операции у Apple и код продукта.",
     "privacy.s8.statusOff":
-      "Текущее состояние: приём карт подключён к нашему банку, но сейчас оплата картой не взимается — ни с кого не списываются средства. Когда оплата открыта, она проходит только здесь, на сайте, и никогда не завершается внутри мобильных приложений.",
+      "Текущее состояние: приём карт на этом сайте подключён к нашему банку, но сейчас оплата картой не взимается — ни с кого не списываются средства. На iPhone и iPad доступ к предметам можно купить отдельно, через App Store; в приложении для Android покупки нет.",
     "privacy.s8.statusOn":
-      "Текущее состояние: оплата открыта и проходит только здесь, на сайте, через собственную платёжную страницу банка. Внутри мобильных приложений покупка не завершается никогда.",
+      "Текущее состояние: оплата открыта. На этом сайте она проходит через собственную платёжную страницу банка; на iPhone и iPad доступ к предметам покупается через App Store; в приложении для Android покупки нет.",
 
     "privacy.s9.title": "Хранение и удаление данных",
     "privacy.s9.activeTitle": "Пока аккаунт активен",
@@ -5528,11 +5593,11 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Что вы хотите сделать | Как\n" +
       "Изменить имя, телефон, пароль или аватар родителя | В приложении: страница профиля\n" +
       "Изменить адрес электронной почты родителя | В приложении невозможно — напишите нам\n" +
-      "Изменить имя, город, район, школу или класс ребёнка | В приложении: родитель, затем «Изменить данные ребёнка»\n" +
-      "Сбросить пароль ребёнка | В приложении: родитель, затем «Изменить данные ребёнка»\n" +
+      "Изменить имя, город, район, школу или класс ребёнка | В приложении и на сайте: родитель, затем «Изменить данные ребёнка»\n" +
+      "Сбросить пароль ребёнка | В приложении и на сайте: родитель, затем «Изменить данные ребёнка»\n" +
       "Изменить или удалить аватар ребёнка | В приложении: профиль родителя или ученика\n" +
       "Отключить уведомления | Настройки уведомлений в приложении, а также системные настройки устройства\n" +
-      "Удалить одного ребёнка | На сайте: панель родителя\n" +
+      "Удалить одного ребёнка | На сайте: «Удалить ребёнка» на карточке ребёнка в панели родителя; в приложении: «Изменить данные ребёнка» → «Опасная зона»\n" +
       "Удалить весь семейный аккаунт | В приложении и на сайте: профиль, затем «Опасная зона»\n" +
       "Получить копию своих данных | Напишите нам\n" +
       "Пожаловаться или задать вопрос | Напишите нам",
@@ -5546,7 +5611,7 @@ export const messages: Record<Locale, Record<string, string>> = {
       "Уведомления | Только после входа в аккаунт и только если функция включена | Для новых раундов, результатов, серий и сообщений об аккаунте. Никогда для рекламы. Если вы откажете, повторно запрос не появится\n" +
       "Отпечаток пальца / Face ID | Только если вы сами включите блокировку приложения | Чтобы открывать приложение без ввода пароля. Для включения и выключения блокировки требуется успешная проверка",
     "privacy.s12.never":
-      "Мы никогда не запрашиваем у вас: камеру, геолокацию, контакты, микрофон, календарь, данные о здоровье, Bluetooth и разрешение на отслеживание (App Tracking Transparency). Приложение никогда не открывает камеру, и сделать фото в нём невозможно. Честное примечание для Android: используемый нами компонент выбора фото объявляет разрешения на камеру и хранилище в собственном манифесте, поэтому вы можете увидеть их в списке на экране «О приложении» — приложение ими не пользуется и запрос камеры вам не показывает.",
+      "Мы никогда не запрашиваем у вас эти разрешения: камеру, геолокацию, контакты, микрофон, календарь, данные о здоровье, Bluetooth и отслеживание (App Tracking Transparency). Местоположение устройства приложение не считывает; город и район в профиле ребёнка выбирает родитель (см. раздел о данных ребёнка). Приложение никогда не открывает камеру, и сделать фото в нём невозможно. Честное примечание для Android: используемый нами компонент выбора фото объявляет разрешения на хранилище в собственном манифесте, поэтому вы можете увидеть их в списке на экране «О приложении» — приложение ими не пользуется. Разрешение на камеру полностью удалено из сборки.",
 
     "privacy.s13.title": "Изменения в этой политике",
     "privacy.s13.body":

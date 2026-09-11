@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { withLocalStrings } from "@/lib/admin/question-flow-labels";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
+import {
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 import { FilterBar, type FilterBarSelect } from "@/components/FilterBar";
 import {
   SUBTOPIC_MATCH_MAX,
@@ -165,14 +169,20 @@ export default async function CurriculumPage({
     // team actually works — but nothing showed the backlog, so it reached 604
     // rows in ten days unnoticed. One number, at the top, is the whole fix.
     db.rpc("curriculum_translation_gaps"),
-    db.from("subjects").select("id, name, status").order("name").range(0, 499),
+    // Selected with its translations and SORTED IN TYPESCRIPT below: ordering
+    // by `name` would order the filter select by the frozen import key, which
+    // after a rename is a sequence with no visible logic at all.
+    db.from("subjects").select(SUBJECT_DISPLAY_SELECT).range(0, 499),
     db.from("grades").select("id, name, level").order("level").range(0, 99),
   ]);
-  const subjects: SubjectItem[] = ((subjectRows ?? []) as any[]).map((r) => ({
-    id: String(r.id),
-    name: String(r.name),
-    status: String(r.status),
-  }));
+  const subjects: SubjectItem[] = ((subjectRows ?? []) as any[])
+    .map((r) => ({
+      id: String(r.id),
+      // The name a parent reads, not the import key — see SubjectItem.
+      name: subjectDisplayName(r, locale),
+      status: String(r.status),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, locale));
   const grades: GradeItem[] = ((gradeRows ?? []) as any[]).map((r) => ({
     id: String(r.id),
     name: String(r.name),

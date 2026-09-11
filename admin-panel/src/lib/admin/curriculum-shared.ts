@@ -126,6 +126,14 @@ export function parsePageParam(raw: unknown, totalPages: number): number {
 
 export type SubjectItem = {
   id: string;
+  /**
+   * The DISPLAY name in the admin's own locale — what a parent reads, resolved
+   * by subjectDisplayName(). NOT `subjects.name`, which is the frozen bulk-
+   * import key: every use of this field on the Curriculum screens is a label
+   * (the filter select, the group headings, the topic/subtopic pickers), and a
+   * label showing the import key is a second name for a subject nobody else in
+   * the product calls by it.
+   */
   name: string;
   status: string;
 };

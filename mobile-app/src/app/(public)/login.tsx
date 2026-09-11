@@ -141,6 +141,13 @@ export default function Login() {
 
         {tab === "parent" ? (
           <View style={{ gap: spacing.lg }}>
+            {/* AUTOFILL. This pair is the FILL side of the app's one
+                credential: e-mail + the password the parent already chose, so
+                `purpose="current"` (Register's twin says "new" — a password
+                manager offers to SAVE there and to FILL here, and the two hints
+                are what tell it which). `importantForAutofill="yes"` is the
+                Android half; the `autoComplete` hint alone does not enrol the
+                view. */}
             <Card style={{ gap: spacing.lg }}>
               <TextField
                 {...parentChain.field(0)}
@@ -154,6 +161,7 @@ export default function Login() {
                 keyboardType="email-address"
                 autoComplete="email"
                 textContentType="emailAddress"
+                importantForAutofill="yes"
               />
               <PasswordField
                 {...parentChain.field(1)}
@@ -163,7 +171,7 @@ export default function Login() {
                 onChangeText={setParentPw}
                 showLabel={t("mob.pw.show")}
                 hideLabel={t("mob.pw.hide")}
-                isParentCredential
+                purpose="current"
               />
               {error ? (
                 <AppText variant="muted" color={tokens.danger}>
@@ -212,6 +220,13 @@ export default function Login() {
               onChangeDigits={setChildId}
               onComplete={() => childChain.focus(1)}
             />
+            {/* NO AUTOFILL, deliberately — `purpose="none"`, and ChildIdField
+                excludes itself. This pair is a MINOR's account number plus the
+                PARENT's password, filed against the same app domain as the
+                parent's own credential; a manager that learned it would offer
+                the parent an ambiguous picker and could overwrite their real
+                saved entry. The reasoning in full: PASSWORD_AUTOFILL in
+                components/TextField.tsx. */}
             <PasswordField
               {...childChain.field(1)}
               label={t("mob.parentPassword")}
@@ -219,6 +234,7 @@ export default function Login() {
               onChangeText={setChildPw}
               showLabel={t("mob.pw.show")}
               hideLabel={t("mob.pw.hide")}
+              purpose="none"
             />
             {error ? (
               <AppText variant="muted" color={tokens.danger}>

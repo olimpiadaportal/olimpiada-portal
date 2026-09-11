@@ -211,6 +211,17 @@ export async function fetchTaughtSubjectIds(
   return taughtSubjectSet(data, error);
 }
 
+/**
+ * ORDER HERE IS DETERMINISM, NOT DISPLAY ORDER. `.order("name")` sorts on the
+ * bulk-import match key migration 171 FROZE — a column that deliberately stops
+ * following a rename and holds one Azerbaijani string for every reader — so it
+ * cannot be the order a screen shows. It is kept as a stable base for the
+ * caller's sort, nothing more.
+ *
+ * Every caller renders subjectLabel() and must therefore order the list with
+ * sortSubjectsByLabel(t, locale, …), which this function cannot do for them: it
+ * is a plain data reader with no translator and no locale.
+ */
 export async function fetchActiveSubjects(gradeId?: string | null) {
   const [{ data, error }, taught] = await Promise.all([
     supabase.from("subjects").select("id, code, name").eq("status", "active").order("name"),

@@ -24,6 +24,7 @@ import { ProgressRing } from "@/components/ProgressRing";
 import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { formatPercent } from "@/lib/formatPercent";
+import { goToTab } from "@/lib/navigation";
 import { subjectLabel } from "@/lib/subjectLabel";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
@@ -71,7 +72,7 @@ function MiniStat({ value, label }: { value: string; label: string }) {
         {value}
       </AppText>
       <AppText
-        color={arena.dim}
+        color={arena.muted}
         numberOfLines={2}
         style={{
           fontFamily: MONO,
@@ -140,7 +141,7 @@ function Ticker({ points, accuracy, rounds }: { points: number; accuracy: number
   // One copy of the line; tickerLive/tickerToday are lime bold (web <b>).
   const run = (measure: boolean) => (
     <AppText
-      color={arena.dim}
+      color={arena.muted}
       numberOfLines={1}
       onLayout={measure ? (e) => setRunWidth(Math.ceil(e.nativeEvent.layout.width)) : undefined}
       style={[textStyle, { flexShrink: 0 }]}
@@ -169,7 +170,7 @@ function Ticker({ points, accuracy, rounds }: { points: number; accuracy: number
       importantForAccessibility="no-hide-descendants"
     >
       {reduceMotion ? (
-        <AppText color={arena.dim} numberOfLines={1} style={textStyle}>
+        <AppText color={arena.muted} numberOfLines={1} style={textStyle}>
           {t("arena.tickerLive")} · {t("arena.statPoints")} {points} · {t("arena.statAccuracy")}{" "}
           {accuracy}% · {t("arena.statRounds")} {rounds} · {t("arena.tickerToday")} · OlympIQ
         </AppText>
@@ -226,7 +227,7 @@ function StrengthBar({ name, pct }: { name: string; pct: number }) {
 export default function StudentArena() {
   const { t, locale } = useT();
   const router = useRouter();
-  const { arena } = useArena();
+  const { arena, theme } = useArena();
   const config = useMobileConfig();
   const access = useArenaAccess();
   const subjectsQ = useMySubjects();
@@ -361,8 +362,14 @@ export default function StudentArena() {
   const streakCurrent = streak?.current ?? 0;
   const streakBest = streak?.best ?? 0;
 
-  const goTests = () => router.push("/(student)/(tabs)/tests");
-  const goRanking = () => router.push("/(student)/(tabs)/ranking");
+  // goToTab(), not push(): a tab route is never pushed anywhere in this app.
+  // From here it happens to be harmless (expo-router downgrades PUSH to
+  // NAVIGATE when the divergence point is the Tabs navigator itself), but the
+  // rule holds without exception so the next screen that copies these two
+  // lines while stacked over the tabs cannot resurrect the duplicate-tab-
+  // navigator bug. See lib/navigation.ts.
+  const goTests = () => goToTab(router, "/(student)/(tabs)/tests");
+  const goRanking = () => goToTab(router, "/(student)/(tabs)/ranking");
 
   return (
     <ArenaScroll refreshing={refreshing} onRefresh={onRefresh}>
@@ -416,12 +423,38 @@ export default function StudentArena() {
               a gradient ring + ministats ---- */}
       <ArenaPanel style={{ gap: spacing.lg, alignItems: "center" }}>
         <ArenaEyebrow>{t("arena.rankLabel")}</ArenaEyebrow>
+        {/* The unfilled TRACK has to read against the panel without any help
+            from hue, now that the dark palette is neutral — and THE TOKEN THAT
+            DOES THAT IS NOT THE SAME ONE IN BOTH THEMES. A bare `arena.bg` was
+            chosen here against the dark palette alone and halved the LIGHT
+            ring's read (1.062:1 -> 1.031:1; 2.43 -> 1.23 L*ab on the default
+            palette), because a light panel is pure white and `bg` is the
+            lightest surface the palette owns. Each theme takes its step away
+            from its OWN panel:
+
+              * dark -> `bg`, the inset groove one tier deeper than `panel`:
+                1.147:1, 6.87 L*ab (dE00 4.22), against `bg2`'s 1.064:1 / 3.02
+                L*ab — the weakest pair the palette ships. Buying the step
+                UPWARD instead (`line`: 1.306:1, 9.74 L*ab) is the trap, because
+                the gradient sweep is painted ON the track and its purple stop
+                measures 3.38:1 over `bg` but only 2.26:1 over `line`;
+              * light -> `line`, the palette's own hairline and the only
+                direction white leaves open: 1.275–1.296:1 (9.5–10.1 L*ab) on
+                every one of the 27 palettes, with the purple stop still at
+                4.40–4.47:1 over it, so the dark trap does not transfer. It is
+                also the colour ArenaPanel already draws its border in, so the
+                track reads as a drawn ring rather than as a smudge.
+
+            The ORANGE stop is light's weak half whatever the track is — 2.36:1
+            even against the white panel itself — so it is not a number this
+            choice can be made on, and __tests__/dark-theme-neutrality.test.ts
+            pins it as failing rather than letting a later pass chase it. */}
         <ProgressRing
           progress={ringProgress}
           size={132}
           strokeWidth={9}
           gradient
-          trackColor={arena.bg2}
+          trackColor={theme === "dark" ? arena.bg : arena.line}
         >
           <AppText
             color={arena.lime}

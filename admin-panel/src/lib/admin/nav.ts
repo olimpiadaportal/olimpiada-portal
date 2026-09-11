@@ -68,10 +68,17 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "nav.accounts", href: "/accounts", adminOnly: true },
       { label: "nav.freeAccess", href: "/free-access", adminOnly: true },
-      // Per-subject subscription prices (week/month/year). Administrator-only —
-      // Content Managers must never reach pricing. Distinct from nav.subscriptions
-      // below (subscription lifecycle monitoring/management).
-      { label: "nav.pricing", href: "/pricing", adminOnly: true },
+      // 2026-09-10: the "Qiymətlər" entry was REMOVED from this group. Per-subject
+      // subscription prices (week/month/year) are edited inline on the Subjects
+      // screen under TAKSONOMİYA — a subject and its three cycle prices are one
+      // thing to manage, and two entries meant two screens writing the same
+      // subjects_pricing rows. /pricing still resolves: it redirects to
+      // /manage/subjects for anyone holding the old bookmark. The Administrator-only
+      // posture did not move with it — nav.subjects is adminOnly, both Subjects
+      // pages call requireAdmin(), and admin_upsert_subject_price has its own
+      // in-body is_admin() guard with no has_permission() escape hatch, so a
+      // Content Manager still cannot reach pricing at any layer.
+      //
       // The App Store product map (public.iap_products, migration 164) — which
       // store product id sells which subject/package, and whether it is live.
       // Sits next to Pricing because it answers the neighbouring question, but

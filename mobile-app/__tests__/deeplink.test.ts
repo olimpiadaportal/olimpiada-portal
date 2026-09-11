@@ -38,9 +38,13 @@ describe("resolveDeepLink allowlist", () => {
   it("opens public routes for everyone", () => {
     expect(resolveDeepLink("/", null)).toEqual({ kind: "open", target: "/(public)/welcome" });
     expect(resolveDeepLink("/login", null)).toEqual({ kind: "open", target: "/(public)/login" });
-    expect(resolveDeepLink("/child-login", "parent")).toEqual({
+    expect(resolveDeepLink("/child-login", null)).toEqual({
       kind: "open",
       target: "/(public)/login?tab=student",
+    });
+    expect(resolveDeepLink("/register", null)).toEqual({
+      kind: "open",
+      target: "/(public)/register",
     });
     // Signed out, marketing links stay on the public surface as today.
     expect(resolveDeepLink("/news/some-article", null)).toEqual({
@@ -50,6 +54,62 @@ describe("resolveDeepLink allowlist", () => {
     expect(resolveDeepLink("/news", null)).toEqual({
       kind: "open",
       target: "/(public)/welcome",
+    });
+  });
+
+  // The duplicate-navigator fix lives in the `roleTargets` of these four rules.
+  // Signed in, an auth path must resolve the session's OWN home: resolving the
+  // login/welcome screen instead would push it onto the ROOT stack, the
+  // `(public)` guard would bounce it, and the bounce mints a SECOND copy of the
+  // role group above the one the user is already standing in. Both directions
+  // are asserted — drop a roleTargets entry and the signed-in half fails.
+  it("resolves the auth paths to the signed-in role's home (public screen when signed out)", () => {
+    // /child-login
+    expect(resolveDeepLink("/child-login", null)).toEqual({
+      kind: "open",
+      target: "/(public)/login?tab=student",
+    });
+    expect(resolveDeepLink("/child-login", "parent")).toEqual({
+      kind: "open",
+      target: "/(parent)/(tabs)/home",
+    });
+    expect(resolveDeepLink("/child-login", "student")).toEqual({
+      kind: "open",
+      target: "/(student)/(tabs)/home",
+    });
+    // /login
+    expect(resolveDeepLink("/login", null)).toEqual({ kind: "open", target: "/(public)/login" });
+    expect(resolveDeepLink("/login", "parent")).toEqual({
+      kind: "open",
+      target: "/(parent)/(tabs)/home",
+    });
+    expect(resolveDeepLink("/login", "student")).toEqual({
+      kind: "open",
+      target: "/(student)/(tabs)/home",
+    });
+    // /register
+    expect(resolveDeepLink("/register", null)).toEqual({
+      kind: "open",
+      target: "/(public)/register",
+    });
+    expect(resolveDeepLink("/register", "parent")).toEqual({
+      kind: "open",
+      target: "/(parent)/(tabs)/home",
+    });
+    expect(resolveDeepLink("/register", "student")).toEqual({
+      kind: "open",
+      target: "/(student)/(tabs)/home",
+    });
+    // "/" — the marketing root is an auth entry point too (welcome carries the
+    // sign-in CTAs), so a signed-in tap lands on the role home, not welcome.
+    expect(resolveDeepLink("/", null)).toEqual({ kind: "open", target: "/(public)/welcome" });
+    expect(resolveDeepLink("/", "parent")).toEqual({
+      kind: "open",
+      target: "/(parent)/(tabs)/home",
+    });
+    expect(resolveDeepLink("/", "student")).toEqual({
+      kind: "open",
+      target: "/(student)/(tabs)/home",
     });
   });
 

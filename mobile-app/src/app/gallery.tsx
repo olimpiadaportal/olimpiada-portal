@@ -20,7 +20,7 @@ import { AppTabBarItem, appTabPalette, arenaTabPalette } from "@/components/AppT
 import { TabIcon } from "@/components/TabIcon";
 import { Segmented } from "@/components/Segmented";
 import { ChildIdField, PasswordField, TextField } from "@/components/TextField";
-import { PhoneField } from "@/components/PhoneField";
+import { PhoneField, usePhoneValue } from "@/components/PhoneField";
 import { EmptyState, ErrorRetry, GateNotice, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import {
@@ -41,6 +41,7 @@ export default function Gallery() {
   const locale = useLocaleStore((s) => s.locale);
   const setLocale = useLocaleStore((s) => s.setLocale);
   const [childId, setChildId] = useState("1234567");
+  const [phoneValue, setPhoneValue] = usePhoneValue();
   const [palette, setPalette] = useState<ArenaPalette>("default");
   const [step, setStep] = useState(0);
   const [ring, setRing] = useState(0.72);
@@ -240,6 +241,8 @@ export default function Gallery() {
             label={t("parent.auth.phone")}
             searchPlaceholder={t("parent.auth.phoneSearch")}
             closeLabel={t("drawer.close")}
+            value={phoneValue}
+            onChange={setPhoneValue}
             onChangeE164={() => {}}
           />
         </Card>

@@ -2055,6 +2055,14 @@ a.qpage-link:hover {
   cursor: help;
 }
 
+/* The iOS product map could not be READ — which is not the same claim as "this
+   subject has no product". Same chip shape so the row still scans as one line
+   of flags, dashed so an unchecked subject is never mistaken for a confirmed
+   gap. */
+.pricing-unknown {
+  border-style: dashed;
+}
+
 .qpage-ellipsis {
   padding: 0 4px;
   color: var(--muted);
@@ -2980,10 +2988,15 @@ a.qpage-link:hover {
    Round 53: the olympiad screens join them. The package list row gained a
    second action, and the package edit page carries the pool table — 9 columns
    once the selection checkbox is in — which at 1120px had nowhere to go but
-   sideways. Same opt-in, same mechanism: a class on the page root. */
+   sideways. Same opt-in, same mechanism: a class on the page root.
+   2026-09-10: the Subjects list joins them. Absorbing /pricing took it from
+   four columns to six, three of which hold the inline price editor
+   (.price-cell is 200px minimum), and the row actions had nowhere left to
+   sit. */
 .admin-content:has(.locations-page),
 .admin-content:has(.questions-page),
 .admin-content:has(.subscriptions-page),
+.admin-content:has(.subjects-page),
 .admin-content:has(.olympiad-page) {
   max-width: 1560px;
 }

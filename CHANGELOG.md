@@ -41,8 +41,149 @@ tester who keeps reporting.
 and released on 2026-09-09, so nothing below is in it — filing these lines there
 would put features that build does not contain into the release notes of a
 version already on the App Store. Release notes for the lines below:
-`mobile-app/store-assets/RELEASE_NOTES_v1.16.0.txt` (13 `[store]` lines).
+`mobile-app/store-assets/RELEASE_NOTES_v1.16.0.txt` — written from EVERY
+`[store]` line in this section, counted when the build is cut. (There is no
+count here on purpose: this section grew from 13 such lines to well over thirty
+in one round, and a number in prose beside a list that keeps growing sends a
+release-note writer home early.)
 
+- `[store]` The last question of an exam no longer offers TWO submit buttons.
+  The Geri / İrəli / Təsdiqlə row was moved below the question scroll so it can
+  always be reached; the older Təsdiqlə under the question palette stayed where
+  it was and kept rendering on every question, so a student reaching question 25
+  was asked to submit twice, in two different button styles, one under the
+  other. The pinned row keeps the submit button. The palette block keeps Cancel,
+  which is deliberately NOT pinned — cancelling an attempt scores nothing and
+  cannot be undone, so it must not sit where a thumb rests. Finishing before the
+  last question now goes through the palette: tap the last cell and submit
+  there.
+
+- `[store]` Pressing Başla on the topic-test screen without ticking the rules box
+  now says what is missing, in Azerbaijani, English and Russian. It used to do
+  nothing at all — no message, no highlight — which is the other half of the
+  "the button does nothing" report: one cause was the button sitting below the
+  fold on a small phone, and that one was fixed, but this one was never about
+  the screen size and happened on every device. A missing topic already
+  explained itself; the consent tick now does too, in the same place, and the
+  tick is outlined in red while it is the thing being asked for.
+
+- `[store]` The "check your inbox" screen shown after signing up now scrolls, and
+  its Resend button can no longer be pushed off the screen. The card was
+  centred in a column that does not scroll, so once its text was taller than the
+  window it was cut off at the top AND the bottom at once — worst on a small
+  phone with large system text, and worse still after pressing Resend, because
+  the confirmation line that appears sits directly above the button. Resend is
+  the only control on that screen and the account cannot be used until the mail
+  arrives, so it is now pinned above the system bar with its outcome message
+  beside it.
+
+- `[internal]` The exam runner's engine guarantees are now asserted instead of
+  spelled. The test that claimed the pinned row "does not disturb the engine it
+  sits on" named five guarantees and proved three of them by checking that an
+  identifier appeared somewhere in a 1,430-line file — which survives deleting
+  the `preventDefault()` in the leave guard, returning `false` from Android
+  hardware back, or replacing the countdown tick with a decrement. It is now six
+  cases that read the actual handler bodies. Added with it: the double-count
+  guard behind the runner's and the setup screen's scroll padding (including the
+  spread ORDER, which silently restores the inset it removed), and ConfirmModal's
+  in-flight modality — backdrop, Android back and the secondary button are all
+  inert while a submit or a cancel is deciding the attempt. Every new guard was
+  mutation-tested: 16 deliberate regressions, 16 detected, every file restored
+  byte-identically.
+
+- `[internal]` The two-step confirmation on account deletion has a test, and its
+  rule has a home. Deleting the account removes the parent, every child and
+  every answer they ever gave, with no undo — and the whole two-press rule was
+  three expressions inside a button prop, rewritten this round and pinned by
+  nothing. It is now `features/profile/deleteAccount.ts`, with two locks rather
+  than one: the button can only ever advance from the first prompt, and the
+  request itself refuses to send from any step but the final one. Backing out
+  returns to closed, never to the second prompt.
+- `[store]` Opening the phone editor on the parent profile and pressing Save no
+  longer deletes the stored number. The editor opened EMPTY however long a
+  number had been on file, and since the phone became optional an empty submit
+  means "delete it" — so checking your own number was enough to lose it. The
+  editor now opens on the number that is stored and keeps mirroring it until
+  something is actually edited, so Save with no change rewrites the same number.
+  Clearing the field by hand still removes it: the phone stays optional, which
+  is what Apple 5.1.1(v) required. The stored number is split back into country
+  + national by libphonenumber-js and the split is verified by recomposing it,
+  so a plan whose trunk-prefix rules are wrong can never turn a saved number
+  into a different, well-formed one — the whole number stays on screen instead.
+- `[store]` A phone number entered in the app is now stored correctly whatever
+  country it belongs to. The app used to decide by hand which leading digits a
+  country dials before its own numbers and drops when calling internationally —
+  and got it wrong twice, silently: an Italian number lost the 0 that is part of
+  it (Rome's +39 06 … became +39 6 …), and a St Petersburg number lost the 8 of
+  its area code (+7 812 … became +7 12 …). Nothing rejected either one; they are
+  well-formed numbers that simply belong to somebody else. Every such decision
+  is now made by libphonenumber-js, Google's published numbering data for ~250
+  countries. Typing a number the international way with 00 instead of + also
+  works now — the keystroke that completed the country code used to be swallowed
+  — and a long number written out with spaces no longer loses its last digit to
+  the length limit, which counted the spaces.
+- `[web]` The website and the app now compose a phone number through the same
+  code, so a parent who signs up on `olympiq.ai` and one who signs up in the app
+  end up with the identical number on file. They did not: the website still
+  carried the old strip-every-leading-zero rule, and it is the surface that
+  takes payment. The shared file is byte-identical in both apps and a shared
+  input matrix — Azerbaijani, Italian, Russian, Turkish, German, British,
+  Hungarian, Lithuanian, Belarusian, Beninese, Sammarinese, Ivorian and North
+  American numbers — is asserted row for row by both test suites.
+- `[store]` The rank ring on the student home screen reads again in LIGHT mode.
+  Its unfilled track had been moved one surface deeper for the neutral dark
+  palette and tested only there; the same token is the LIGHTEST surface a light
+  palette owns, so on white the track's contrast fell from 1.062:1 to 1.031:1
+  and it effectively disappeared. The track is theme-aware now — the deeper
+  groove in dark (1.147:1), the palette's own hairline in light (1.275–1.296:1
+  on all 27 palettes) — and the ring's brand gradient is untouched.
+- `[store]` Renaming a subject in the admin panel now actually renames it,
+  and it renames it per language. It used to be a silent no-op: every visible
+  subject label came from the apps' own built-in az/en/ru dictionary, which
+  beat the single name column in the database, so the save succeeded, the
+  audit log recorded it, and the website, the parent tabs and the student
+  arena all kept printing the old name in all three languages. Only a
+  BRAND-NEW subject fell through to the stored name, which is why creating one
+  looked fine and editing one did not. A subject name is content and the
+  product is trilingual, so "just read the column" would have traded a broken
+  rename for Azerbaijani labels in the English and Russian apps — the names now
+  live one per locale in `subject_translations` (migration 171, seeded with
+  exactly the strings the dictionary resolved, so nothing moved on day one) and
+  the Subjects form has three name fields, az required, en/ru falling back to
+  az. Reaches web, admin and mobile.
+- `[internal]` The per-locale subject name reaches all ~50 label call sites
+  through the i18n layer rather than a new argument: `subjectLabel()` reads
+  `subj.db.<code>`, which `getT()`/the root layout dictionary (web) and
+  `useT()` (mobile) publish for the current locale. Threading a translation
+  through instead would have meant editing every screen and widening several
+  `returns table` SQL functions that hand back a flat `subject_name` — a far
+  larger change than the defect, and one where a single missed call site
+  silently restores the bug. Migration 171 is applied to staging and
+  production, 2026-09-10, seeded from the shipped dictionary so nothing moved
+  on the day.
+- `[web]` The Free Trial screen names subjects in the parent's own language.
+  Two lists on `/children/<id>/subscribe` — the picker a parent chooses trial
+  subjects from, and the panel listing an active or finished trial — were the
+  last parent-facing places printing the raw `subjects.name` column, so an
+  English or Russian parent read Azerbaijani subject names there while every
+  other screen spoke their language. Migration 171 sharpened that rather than
+  causing it: the column is now the frozen bulk-import key, so a rename stopped
+  reaching these two lists at all. Both resolve through `subjectLabel()` like
+  every other surface, and both are ordered by the name actually on screen,
+  compared with the reader's own collation — Azerbaijani sorts q before l and x
+  before i, which no default comparator does.
+- `[internal]` The two notification producers that build their text inside the
+  database — the 3/2/1-day renewal chain (in-app and email; renewals are manual,
+  so that chain is the entire retention mechanism) and the 12h/1h/ended
+  free-trial chain — read the subject's display name from `subject_translations`
+  instead of the frozen `subjects.name`. Without it, the most consequential
+  message this platform sends a paying parent would, after any rename, name the
+  subject by an internal import key. The renewal chain stays Azerbaijani-only on
+  purpose (`profiles.preferred_locale` is unused, and fixing a name must not
+  quietly become localizing notifications); the trial chain was already az/en/ru
+  from `free_trials.locale`, so its subject names now follow that same locale
+  instead of sitting untranslated inside a translated sentence. Migration 172,
+  backported into 011, applied to staging and production 2026-09-10.
 - `[internal]` Portrait is declared by ONE key: the top-level `orientation`,
   from which Expo derives BOTH `android:screenOrientation` and iOS's
   `UISupportedInterfaceOrientations`. Phones were already locked and still are.
@@ -56,6 +197,31 @@ version already on the App Store. Release notes for the lines below:
   attribute AND `setRequestedOrientation()` above sw600dp. Filed `[internal]`,
   not `[store]`: "the app no longer rotates" is only true on phones, so it is
   deliberately absent from the release notes.
+- `[internal]` Closed an RLS write hole on `parent_student_links`. `psl_insert`
+  and `psl_update` constrained only `parent_profile_id`, never
+  `student_profile_id` and never `status` — so one INSERT naming an arbitrary
+  student uuid, with `status` set to `active` in the same statement, granted a
+  parent full parental authority over another family's child. Not two
+  statements as first supposed: nothing revoked the `status` column, so no
+  promote step was needed, and tightening `psl_update` alone would have fixed
+  nothing. Blast radius was takeover rather than disclosure — `parentOwnsChild`
+  accepts an active link as ownership and gates `resetChildPassword` on it,
+  while the same link exposes `students.child_unique_id`: both halves of a
+  minor's login from one forged row. NOT exploited and not reachable: the FK
+  requires a real `students.profile_id`, and an audit of all 199 database
+  functions (76 reachable by `authenticated`), every BFF route and every
+  PostgREST-readable table found no path that hands a parent a foreign child's
+  uuid — `lb_rows` is service-role only and `get_leaderboard` uses the id only
+  inside a boolean. Both policies now require the caller to be the child's
+  creator. Migration 170, applied to staging and production 2026-09-10;
+  production held 48 links and none violated the new predicate. Validation
+  check 128 pins it.
+- `[store]` The app no longer asks for camera access. Nothing in it ever
+  opened the camera — the only picker calls are the photo library — but an
+  unused `NSCameraUsageDescription` shipped in the iOS build and the picker
+  declared `CAMERA` in its Android manifest, so the permission appeared in the
+  phone's App info list and contradicted a privacy policy that said we never ask
+  for it. Both are now stripped from the build.
 - `[internal]` Removed `android.screenOrientation` from app.json. Expo has no
   such key — it is absent from `@expo/config-types` and no plugin reads it — so
   it was dropped silently at build time while reading to a human like an
@@ -398,6 +564,568 @@ version already on the App Store. Release notes for the lines below:
   have silently retired the duty), and it fails if the blocker goes missing,
   stops naming both consoles, or stops naming the build it blocks.
 
+- `[store]` The privacy policy no longer says the app has no checkout. It said
+  "there is no checkout in the mobile app - purchases happen only on the
+  website" in three places (the at-a-glance summary, the whole Payments
+  section, and the payment-status paragraph), and that stopped being true on
+  2026-09-09 when Apple approved the 21 in-app products. It is now stated per
+  platform: on iPhone and iPad a purchase goes through the App Store, the
+  Android app has no purchase at all, and on the website payment goes through
+  the bank's own page. Deliberately flat and non-comparative - the same string
+  is compiled into the purchase-silent Android binary, so it names no price, no
+  CTA and nothing about one route being better than another.
+- `[store]` The policy stopped denying something the store forms declare. It
+  said "we never ask for your location", which a reviewer reads beside Apple's
+  Coarse Location and Play's Approximate location entries and scores as a
+  contradiction. The denial is now the true distinction: we do not read the
+  device's location - no permission, no GPS, no coordinates, no home-address
+  field anywhere - and what the forms declare is the city and rayon a parent
+  picks from a list when adding a child. Nothing about the app changed; the
+  sentence did.
+- `[store]` Section 5 said the city and district are kept "only to group the
+  leaderboards". Two other uses were missing and a reviewer checking the
+  location declaration lands on exactly that sentence: they are required to
+  create the child's account at all, and the child's own profile screen shows
+  them back. The school is named alongside them for the same reason.
+- `[store]` The policy told parents that deleting a single child was a website-
+  only thing. The app gained that button in 1.16.0, and both the deletion
+  section and the rights table now point at it - understating a deletion right
+  is a worse error than a stale feature note.
+- `[store]` Apple is now listed in the third-party table as what it actually is
+  on iOS: the party that runs the transaction. It appeared only as APNs, with
+  the status "receives nothing until push is enabled", while every StoreKit
+  purchase hands it a per-purchase identifier bound to one child. The table
+  also says what Apple does NOT get - no name, no email, no other account data.
+- `[internal]` The Payments section now describes what each rail leaves in our
+  database: amount, currency, status and the provider's reference for a web
+  payment; the purchase-intent identifier, Apple's transaction reference and
+  the product code for an App Store purchase. The old bullet described only the
+  web rail and read as if it were the whole inventory.
+- `[web]` The purchase terms said "all payments are made in Azerbaijani manat"
+  and that payments are never refunded, with no scope. Neither governs an App
+  Store purchase - the currency is the storefront's and refunds are Apple's to
+  grant - so `terms.currency` now scopes the terms to this website and points
+  at Apple's own policy for the other route. The `terms.*` prefix is dropped
+  from the mobile bundle and no mobile screen links to /terms, so this is a web
+  correction and must not be fixed by importing those strings into the app.
+- `[internal]` All of the above landed in az, en and ru in the same change, in
+  `web-app/src/i18n/messages.ts` (the source the mobile catalogue is generated
+  from), in `docs/PRIVACY_POLICY.md` (three standalone language parts) and in
+  the policy's Last updated date, now 10.09.2026 in both apps' `privacyPolicy
+  .ts`. The effective date does not move - section 13 promises that the Last
+  updated date is what an amendment bumps.
+- `[admin]` Subscription pricing moved INTO the Subjects screen. The separate
+  “Qiymətlər” page is gone from the sidebar; every subject row now carries its
+  weekly / monthly / yearly amount as an editable AZN cell, saved one cell at a
+  time. `/pricing` redirects to `/manage/subjects` so an old bookmark still
+  lands somewhere sensible.
+- `[admin]` The subject edit form no longer carries the three price inputs, and
+  that is a data-loss fix rather than a layout change. It used to re-post all
+  three amounts every time a name was saved, from values read off a page that
+  could be minutes old — a rename could silently overwrite somebody else's
+  reprice. Prices are now written only by the per-cell action, which posts a
+  subject id, an interval and an amount and nothing else.
+- `[admin]` A subject's status dropdown can no longer publish an unpriced
+  subject. With prices off that form it had become a second route into “Public”
+  that skipped the interlock the publish button enforces; it now runs the same
+  check and refuses with the same message.
+- `[admin]` Adding a subject states, in all three languages, that creating it
+  here does NOT create an Apple product: on iOS it cannot be bought until three
+  App Store Connect products (weekly, monthly, yearly) exist, are priced and are
+  approved, and until then the subject is simply absent from the iOS purchase
+  list with no error anywhere. The website and Android are unaffected.
+- `[admin]` The Subjects list gained an “iOS-da satılmır” badge beside the
+  existing “no price” one, computed from the live `iap_products` map, so the
+  same silence is visible per subject rather than only on the create form. A
+  subject whose products are all live shows nothing; a subject whose product map
+  cannot be read is reported as unknown rather than accused of being missing.
+- `[admin]` The hint under the subject name fields now describes what those
+  fields actually do: the three names are what a parent or a student reads in
+  their own language, and an empty English or Russian field falls back to the
+  Azerbaijani one. It used to say the English and Russian names came from the
+  apps' built-in dictionaries — which is the behaviour this round removed.
+- `[admin]` That hint promised a rename reaches "the website and the app within
+  a minute", in all three languages. Only the website half was true: the web
+  read is a 60-second cache, but the app's subject-name query has a five-minute
+  staleTime and nothing invalidates it, so on a phone the new name lands when
+  the app is next opened. The sentence now says both, separately, and the
+  reasoning sits next to the 60 in `web-app/src/lib/flags.ts` so the two cannot
+  drift apart again.
+- `[admin]` A subject edit page left open while somebody else archived the
+  subject could silently re-publish it: the form's status was written
+  unconditionally over the row the action had just re-read. The status change is
+  now refused when the stored status has moved since the page was rendered — the
+  rename still saves, and the admin is told in all three languages that the
+  status changed under them, rather than having the change dropped in silence.
+- `[admin]` The Apple notice on the Subjects screens gave an order nobody could
+  follow: its step 2 sent the admin to App Store products, which offers
+  published subjects only, before the subject had been published. Rewritten into
+  the four steps that actually work, in all three languages. The publish refusal
+  also stopped being announced twice by a screen reader, and the three stacked
+  hints above the Subjects filter bar are now one line.
+- `[admin]` The panel stopped showing two different names for one subject. Once
+  a rename moved the visible name into `subject_translations`, only the Subjects
+  screen followed it: Curriculum, Questions, the question editor, Olympiads,
+  Notifications, Question reports, Free access, App Store products and
+  Subscriptions all still selected `subjects.name` and printed it, so a renamed
+  subject read one way on one screen and another way on ten. Every one of them
+  now resolves the name the same way the Subjects screen does — the admin's own
+  language, falling back to Azerbaijani — through one shared helper, and each of
+  those lists is sorted by the name it prints instead of by the hidden one.
+- `[admin]` The two places where the hidden name IS the subject keep showing it
+  and say so: the edit form's import hint, which already names it as the string
+  bulk-import files match on, and the importer itself, which stamps that string
+  onto every row it accepts. Renaming a subject still does not touch it.
+- `[store]` Dark mode is a neutral charcoal instead of a dark blue. The owner
+  reported the dark theme reading as dark-BLUE, and it measured that way: every
+  surface had a blue channel well above red and green (the app background
+  `#0a0e1a` is 10,14,26; the card border `#26314f` is 38,49,79 — blue 30 above
+  green). All fifteen dark surface and neutral-ink tokens across the parent app
+  and the student arena were replaced with near-greys, plus the cover-photo
+  scrim and the dark splash background. Nothing was redesigned: no component,
+  no layout, no spacing and no visual hierarchy changed, and the brand accents
+  keep their hue — including the blue ones (the `#2f6bff` accent, the arena
+  lime/blue/red/gold, and the accent-tinted pill). Neutral describes the
+  surfaces, not the brand.
+- `[internal]` Each replacement is LUMINANCE-MATCHED to the blue it replaced
+  rather than picked by eye, which is what let the hue change without touching
+  accessibility: contrast is luminance, so holding luminance holds every ratio.
+  No pair moved by more than 0.03 and no WCAG grade changed —
+  `__tests__/dark-theme-neutrality.test.ts` re-derives all sixteen ratios plus
+  the neutrality invariant, so neither can regress.
+- `[internal]` The dark palette is now MOBILE-AUTHORED and deliberately diverges
+  from the web, which keeps the frozen blue reference design. Three files
+  instructed a future session to re-sync it — the `tokens.ts` header,
+  `markdowns/MOBILE_APP_MASTER_PLAN.md` §2 and `mobile-app/CLAUDE.md` — and all
+  three now record the override; the test fails if any of them loses it. The
+  divergence cannot leak the other way: `web-app/scripts/gen-palettes.mjs` emits
+  light tokens only, and nothing under `mobile-app/` reads `globals.css`.
+- `[store]` The quietest grey in the student arena no longer carries text you
+  have to read. Roughly a dozen small labels — the home screen's stat captions
+  and ticker, the ranking screen's streak and rank captions, the context line
+  and provisional badge under a name on a leaderboard, an olympiad's question
+  count and its "held" status chip, and every section eyebrow — were printed in
+  the faintest of the three ink tiers, which on a dark card measures as little
+  as 2.56:1 against 4.5:1 for readable text. They now use the middle tier, which
+  is legible on every surface. Nothing moved, nothing was restyled, and icons
+  are unchanged.
+- `[internal]` OWNER DECISION, 2026-09-10, and it is closed: `ARENA_DARK.dim`
+  STAYS at `#646463` and is asserted as failing AA on purpose. The measured
+  tiers are ink 17.32/16.07/15.10/13.62, muted 5.83/5.41/5.08/4.59 and dim
+  3.25/3.01/2.83/2.56 on bg/bg2/panel/panel2. The hue pass did not cause the
+  miss — the blue it replaced measured the identical 2.83 — and the usual remedy
+  does not exist: "lighten it to about `#858585`" is quoted off `panel` and
+  measures 4.10 on `panel2`, and the first grey clearing AA on all four surfaces
+  is `#8c8c8c`, three code points from muted's `#8f8d8d`. An AA-compliant `dim`
+  IS `muted`, so the third tier cannot exist at AA and "fixing" it would delete
+  the hierarchy rather than flatten it. The debt is paid on the other side
+  instead: the readable strings move to `muted` (the `[store]` line above) and
+  `dim` is icons, hairlines and decoration only — though that sweep did NOT
+  finish in this round, which is what the two entries below are about. Stated in
+  the token's own doc comment, on the token line, and pinned by
+  `__tests__/dark-theme-neutrality.test.ts`, which walks the greys to `#8c8c8c`
+  so the refusal arrives with its proof. `BoardList`'s `dim` prop is gone rather
+  than re-pointed: both of its consumers were text, and the parent leaderboard
+  had already been aliasing it to `muted`.
+- `[store]` The rest of the faint text in the exam screens is readable now. The
+  pass above moved the labels it knew about and left seventeen behind: the topic
+  picker's placeholder, its note and its "no results" line, the report-a-problem
+  box's placeholder and character counter, the question number on the exam and
+  review cards, the saving/saved note, the counts on the review tabs, the
+  answer-key legend, and the daily card's meta lines and attempt dates. Two were
+  worse than anything else in the app — the "skipped" chip printed its label in
+  the same faint grey it is tinted with, and the letter on a finished subject
+  card was faded twice over, once by the colour and again by the card's fade.
+  All seventeen use the readable middle tier now. Icons are untouched, and a
+  finished card still fades exactly as it did.
+- `[internal]` The confinement that makes the `dim` decision defensible is a
+  TEST now rather than a sentence. `tokens.ts`, `STATUS.md` and
+  `__tests__/dark-theme-neutrality.test.ts` (twice) all said the move to `muted`
+  was complete while SEVENTEEN readable-text sites were still on `dim`. Two of
+  them were worse than the 2.56 worst case the decision was weighed against:
+  `StatusPill` tone `"off"` painted its 12pt label in the same `dim` it grounds
+  itself in — 2.51:1 on `panel`, 2.26:1 on `panel2` — and the done-card monogram
+  took `dim` at 0.55 opacity over that tint, 1.63:1. They measure 4.50:1 and
+  5.16:1 now; the pill's tint and the badge's ground keep `dim`, because the
+  ground and the label are two different reads. The test sweeps the SOURCE and
+  fails on `dim` reaching a `color` prop on a non-icon, a `placeholderTextColor`
+  or a `color:` style — directly or through a local alias, which is the arm that
+  matters, since both of the worst two hid behind
+  `const accent = done ? arena.dim : …` and a regex looking beside `<AppText>`
+  would have missed them. Icons are allowlisted from each file's
+  `lucide-react-native` imports. The sweep carries its own fixture so it cannot
+  rot into a no-op, and it was mutation-tested on the real files: five
+  reintroductions each failed with the exact `file:line prop`, an icon keeping
+  `dim` did not, and every file was restored byte-identically.
+- `[store]` The accent pill in dark mode is a tint again, not a navy block. The
+  charcoal pass flattened every surface around it and left the pill's own
+  background at the old blue palette's full strength, so the active tab pill and
+  every accent chip read as a foreign block dropped onto a grey app. Its
+  background keeps the accent hue at a fraction of the strength — the same
+  whisper the light theme already used — and the label on it is unchanged.
+- `[store]` The rank ring on the student home screen shows its unfilled portion
+  again. The ring's track was told apart from the card behind it mostly by
+  colour; once both went grey, the two were almost the same shade and the ring
+  looked like a floating arc. The track is now a step darker.
+- `[internal]` Root cause of both, and the reason they were missed: the neutral
+  pass sorted every token into two boxes, neutral or brand accent, and the
+  palette has three roles. `pillBg` is a TINTED SURFACE — accent hue at surface
+  strength — and filing it as an accent exempted it from the sweep entirely. It
+  went `#182447` -> `#232532`: CIELAB chroma 24.7 -> 9.2 (its neighbours sit at
+  <= 1.4, its own ink at 34.8, the light-mode pill at 7.6), hue held at 287, and
+  L*ab held at 15.01 so relative luminance moved 1.3e-6. Contrast is luminance:
+  `pillText` on `pillBg` is 8.2899:1 -> 8.2900:1 and the tab bar's accent ink on
+  it is 3.3772:1 -> 3.3773:1. Across every pair in both dark palettes, nothing
+  falls further than 2e-5 — four decimal places under the 0.0082 worst case the
+  hue pass itself recorded.
+- `[internal]` A full sweep of the remaining chroma found no other missed
+  neutral: the fourteen surfaces and neutral inks all measure C*ab <= 1.4, and
+  the ten brand accents all measure >= 30 with nothing in between except the one
+  pill. `__tests__/dark-theme-neutrality.test.ts` now enforces the three tiers as
+  a budget with walls on both sides — a neutral that regains saturation fails, a
+  brand accent that gets desaturated fails, and the tinted pill fails if it
+  reaches ink strength OR is flattened to grey.
+- `[internal]` The home ring's track moved `arena.bg2` -> `arena.bg`: 1.064:1
+  (3.02 L*ab, dE00 1.88 — the weakest pair the palette ships, at the
+  discrimination threshold for a 9px arc) to 1.147:1 (6.87 L*ab, dE00 4.22). It
+  goes DOWN rather than up on purpose: the brand gradient is painted on the
+  track, and its purple stop measures 3.38:1 over `bg` but only 2.26:1 over the
+  lighter `line`, so buying separation upward would cost the ring its main read.
+  The test pins that trade so a later "make it more visible" pass fails here.
+- `[store]` (tester) The phone number no longer disappears from the sign-up
+  form. A parent typed it, moved on to the password, and came back to an empty
+  field — on both platforms. The number is now held by the form itself rather
+  than by the phone box, so nothing can reset it, and the box refuses any change
+  that would wipe a number it was not watching the parent delete. The same field
+  on the parent profile is fixed by the same change, and clearing the number on
+  purpose still works — it is an optional field and has to stay one.
+- `[store]` Signing in and signing up now work with the phone's own password
+  manager. Registration offers to SAVE the password a parent has just chosen and
+  login offers to FILL the one they already have; the same field used to be
+  described to both platforms as an existing password, so neither screen ever
+  offered to remember anything. Names, e-mail and the phone number fill from the
+  phone's own contact card, and a number pasted in full international form now
+  moves the country flag instead of being doubled onto the dial code. The
+  STUDENT sign-in deliberately offers nothing: an 8-digit child ID is not a
+  username, and the password behind it belongs to the parent.
+- `[internal]` The two halves of the phone fix are constructions, not a
+  diagnosis, because the cause cannot be observed from here. Six candidates were
+  eliminated with file:line evidence and the survivor was platform autofill,
+  which writes into UNFOCUSED inputs when a dataset is picked in a sibling
+  field. So: (1) `PhoneField` is controlled and its value is owned by the
+  screen, which a remount cannot reach; (2) `applyPhoneEdit` refuses any pass
+  that would leave a field that HAD digits with none, unless the input actually
+  held focus and the text really arrived empty. RN restores the refused text for
+  free — `TextInput._onChange` always bumps two useState values, so the input
+  re-renders and its layout effect pushes `props.value` back to the native view
+  — but only while the value is CONTROLLED, which is why neither half works
+  alone.
+- `[internal]` Autofill is now DECLARED on every credential field rather than
+  left to platform heuristics, which is what let a service believe it might
+  rewrite the phone row in the first place. `PasswordField` takes a `purpose` of
+  new / current / none, defaulting to none so a field that forgets to answer
+  stays out of every credential store. The spellings are the cross-platform ones
+  RN maps itself — `new-password`, never the Android-only `password-new`, which
+  produces nothing at all on iOS — and the compiler checks them against RN's own
+  union rather than anyone's memory. The phone asks for `tel-national`, which is
+  what that input actually holds. iOS strong-password rules are pinned to
+  `checkNewPassword` and spell their symbol set out rather than using Apple's
+  `special` class, which includes the space our policy rejects. 39 new jest
+  assertions cover the refusal, the controlled value and every field's hints.
+- `[web]` Subject lists are ordered by the name the reader actually sees, in
+  the reader's own alphabet. Every list resolved its labels through
+  `subjectLabel()` and then SORTED on `subjects.name` — the column migration
+  171 froze as the bulk-import match key. The two agreed only because 171
+  seeded the translations from those same strings, so the order looked right
+  until the first rename and then stayed put while the labels moved. The same
+  column also holds one Azerbaijani string for every reader, so an English or
+  Russian parent got an order derived from a name they never see. Fixed at the
+  Add-Child subject picker, the `/services` and `/register` configurator, both
+  leaderboard subject pickers, the parent analytics tabs and the public
+  `/subjects` catalogue. `lib/pricing.ts` deliberately does NOT sort by label:
+  its cache has no locale in the key and serves anonymous visitors, so it
+  orders arbitrarily (by id) and the configurator — which knows the reader's
+  language — orders what it renders.
+- `[store]` The same reordering reaches the app: the public subjects screen,
+  both leaderboard subject pickers and the parent analytics subject tabs.
+- `[internal]` Collation is keyed on the ACTIVE locale, not a hard-coded "az".
+  Four sites compared resolved labels with a bare `localeCompare()` — the
+  runtime's default collation — and two of them carried comments claiming they
+  had solved exactly that problem. Azerbaijani is not accented Latin: q sorts
+  before l and x before i, so a list ordered for an az reader is wrong for a ru
+  one and vice versa. `sortSubjectsByLabel()` / `subjectComparator()` now live
+  in `lib/subjectLabel.ts` (byte-identical in both apps, as its twin test
+  requires), use full BCP-47 tags — `az-Latn-AZ`, never a bare `az` that
+  resolves to CLDR root where the data is missing, the same trap behind the
+  old "2026 M08 22" date bug — and fall back twice rather than throwing, since
+  Hermes builds Intl from the operating system. The subscribe screen's
+  hand-rolled collator was folded onto the shared one.
+- `[store]` Three more lists that the sweep above missed. The manage-subjects
+  checkboxes — the screen a parent adds or drops a subject from — were ordered
+  by `subjects.name` in the runtime's default collation while every row printed
+  the translated label. The order now comes from the label, in the reader's
+  alphabet, and it is decided by the screen rather than by the fetch: the
+  cached read has no locale in its key, so an order chosen there would have
+  frozen at whatever language the app was in when it first loaded and survived
+  every later switch. It sorts by id instead — arbitrary, stable, and labelled
+  as such.
+- `[internal]` The iOS purchase sheet groups its offers by product identity, and
+  now genuinely does. Its comment already said the grouping was deliberately
+  locale-INDEPENDENT so the three intervals of a subject stay adjacent — but it
+  delivered that with a bare `localeCompare()`, whose collation follows the
+  DEVICE locale on Hermes, so it was neither stable nor display-ordered and two
+  phones could disagree. It is a plain code-point comparison now, with the
+  subject id breaking ties so subjects sharing a name (or carrying none) cannot
+  interleave their week/month/year rows.
+- `[admin]` The olympiad question pool's grade filter and both of its bulk
+  dialogs order grades for the reader. The filter collated in the server's
+  default locale; the delete and archive confirmations used a bare `.sort()`,
+  i.e. UTF-16 code units, which listed the grades as 10, 11, 3 — in the one
+  list an admin is asked to read carefully before agreeing to destroy
+  questions. All three share one collator built from the admin's locale, now a
+  required prop, and the AI prompt block orders curriculum topics in `az`,
+  matching the language those names are written in.
+- `[internal]` The sweeps that missed the five sites above are widened so they
+  cannot miss the next one. They matched `label.localeCompare(` literally, so
+  `a.name.localeCompare(b.name)` and `(a.subjectName ?? "").localeCompare(…)`
+  both slipped through the test written to catch them; they now flag ANY
+  locale-less `localeCompare` in web-app, admin-panel and mobile-app, strip
+  comments instead of exempting whole files (three of them quote the
+  anti-pattern while explaining it), and the admin sweep carries a short,
+  reasoned list of the sorts that compare machine keys rather than labels.
+- `[internal]` A subject with a blank `name` column but good translations no
+  longer renders nameless. Five screens guarded on the RAW column before
+  resolving — `subjects?.name ? subjectLabel(…) : ""` — which rejected the row
+  before the resolver could find the translation that would have named it, in
+  all three languages at once. They guard on the resolved label now, through
+  `subjectLabelOrNull()`. Both defect shapes are swept repo-wide by test rather
+  than pinned per file: each is the obvious thing to write, each typechecks,
+  and each looks fine until a subject is renamed or the reader is not
+  Azerbaijani.
+- `[store]` (tester) Back goes where you came from. Anywhere a screen led on
+  to one of the bottom tabs — tapping a notification in the inbox, leaving a
+  test result or the answer review, finishing the add-child wizard — back landed
+  on Home/Arena instead, and a SECOND press was what finally reached the screen
+  the tester had come from. It now returns to the screen, and to the TAB, that
+  was actually open: a parent who opened News from Analytics goes back to
+  Analytics, and a child who left the test chain onto Olympiads goes back to
+  Tests. The on-screen back arrow, the Android back button and the iOS swipe all
+  agree, and the app still exits on a back press from a tab rather than cycling.
+- `[internal]` The cause was one rule the app did not have: a tab route must
+  never be pushed or replaced. Both role groups are Stacks anchored on their
+  `(tabs)` navigator, so a push()/replace() carrying a tab path from a screen
+  stacked above it diverges at the GROUP STACK and mounts a SECOND copy of the
+  tab navigator rather than switching a tab (replace mints a new key, so the
+  original stays underneath). GO_BACK travels from the deepest FOCUSED
+  navigator upward, so it then reaches that duplicate first, and React
+  Navigation's default backBehavior ("firstRoute") does not decline it — it
+  jumps to the first tab. Because the duplicate lives in navigation STATE, the
+  on-screen back bar, Android hardware back and the iOS swipe all broke
+  together, which is why the fix is one rule and not one handler. `goToTab()`
+  pops back to the tab navigator already mounted (POP_TO, via `dismissTo`) and
+  `backOrTo()` is the single home for "go back, or to the parent route if there
+  is no history"; `<TabRedirect>` is the same fix for the guard redirects.
+  Deliberately unchanged: login/logout/role redirects still replace the whole
+  group (you must not be able to swipe back into a signed-out session), the
+  onboarding still replaces itself, and submitting an attempt still replaces
+  the runner with the result.
+- `[store]` (tester) On small phones the "I've read and understood the rules"
+  tick and the Start button under it could not be reached. Before a topic test
+  they were the last things on a page three screenfuls long, so a child had to
+  scroll past every rule to find the button they were looking for first — and
+  it landed in the bottom strip of the screen, where a phone's own navigation
+  gestures live. In the daily exam's rules dialog it was worse: on a short
+  screen, or on any phone with the system font size raised, the tick scrolled
+  out of sight inside the dialog while the Start button stayed visible and
+  greyed out, with nothing on screen to say why it did nothing. Both screens now
+  keep the tick and the button together in a row that stays on screen while the
+  rules scroll above it, always clear of the navigation bar and the home
+  indicator. Nothing moves on a large phone, where everything already fitted.
+- `[store]` (tester) The exam dialogs no longer reach behind the phone's
+  navigation bar. The confirm dialogs that end an exam — submit, cancel, leave —
+  had no height limit at all, so a long Azerbaijani or Russian message on a
+  short screen simply grew the box until its two buttons were off the bottom of
+  the display, with no way to scroll to them. Every dialog in the test screens
+  now ends above the system bars and scrolls its own text instead of pushing its
+  buttons away.
+- `[internal]` One shared contract replaces four hand-rolled footers, because
+  four is how many copies of the modal option list drifted apart last week. An
+  action area is now a NON-SCROLLING sibling below a `flex: 1` body
+  (`components/ActionArea.tsx` + the pure `components/actionAreaLayout.ts`), so
+  the space it needs is reserved structurally rather than by a bottom padding
+  somebody has to keep in sync with a bar whose height changes with the locale
+  and the font scale — mobile-app/CLAUDE.md's "no hardcoded widths/heights for
+  layout", applied to the one place the repo kept re-deriving it. All four
+  bodies take an `actions` prop (`Screen`, `ScreenScroll`, `ArenaScroll` and the
+  test setup page), and the safe-area inset is handed to whichever element
+  actually touches the window edge, so body and bar can never both count it. The
+  keyboard lift is measured on the outer shell rather than on the scroll body on
+  purpose: taking it from the body is a feedback loop — lift the bar, the body
+  shrinks, the body no longer overlaps the keyboard, the bar drops.
+- `[internal]` The three arena dialogs were written three times over and all
+  three carried the same two defects: not one measured a safe-area inset, and
+  the clamp was `maxHeight: "85%"` of the WHOLE window. A transparent RN Modal
+  is its own native window and under Android's edge-to-edge windows it spans the
+  navigation bar too — the mechanism the Ranking picker was fixed for — so 85%
+  centred leaves 7.5% of the window under the card, which on a 640pt phone is a
+  48pt three-button bar exactly. `features/tests/ArenaDialog.tsx` is now the only
+  place a dialog window is opened: insets on the backdrop, a flex clamp instead
+  of a percentage, a scrolling body and a fixed action row. And the rule that
+  produced the report is stated as a rule — anything the primary action DEPENDS
+  ON belongs with the action, never on the far side of a scroll boundary.
+  `__tests__/action-area-reachability.test.ts` pins all of it, including that
+  the consent tick is inside the action region and appears exactly once, and
+  that a fixed height cannot come back into the shared bar.
+- `[store]` (tester) A long question can no longer push the exam's own buttons
+  off the screen. Geri / İrəli / Təsdiqlə sat at the very end of the question —
+  under its text, its figure, five answer options and the question map — so on a
+  short phone, or with the system font size raised, a long question put SUBMIT
+  below the bottom edge and a student who had answered everything could not
+  finish the attempt. The three buttons now stay in a row of their own at the
+  bottom of the exam screen while the question scrolls above them, always clear
+  of the navigation bar. Nothing about the exam itself changed: the timer, the
+  automatic answer saving, the "are you sure" confirmation and the leave warning
+  all behave exactly as before, and "Cancel the attempt" deliberately stays at
+  the end of the page rather than under a resting thumb.
+- `[store]` The account-deletion confirmation now fits on every phone. Its
+  buttons had no safe-area padding at all, so on an Android phone with the
+  three-button navigation bar the lower part of "Sil" and "Ləğv et" sat behind
+  the system bar; and with the system font size raised, the confirmation
+  paragraph plus an error message grew the panel until the buttons left the
+  screen entirely, with nothing to scroll. The text now scrolls and the two
+  buttons stay put, above the navigation bar. This is the most destructive
+  action in the app, and it was the one screen with none of these protections.
+- `[store]` A long maintenance or update message can no longer hide the button
+  that gets you out of it. Those screens print a message written in the admin
+  panel, with no length limit, and they replace the whole app — there is no back
+  and no tabs, so the single button is the only control that exists. The message
+  now scrolls and the button is pinned below it.
+- `[internal]` The shared action bar is now capped against ITSELF, which is the
+  hole the previous round left. `flexShrink: 0` says the body cannot squeeze the
+  bar; nothing in that said the bar cannot outgrow the window, and at the 1.3x
+  font scale `AppText` allows, a bar carrying a wrapped consent line, a warning
+  and an error above its button does. Its CONTENT is now capped at half the
+  space the bar actually has and scrolls inside that — the content and not the
+  padded box, or the same padding that lifts the bar over an open keyboard would
+  eat the whole allowance and leave the buttons no height. The ceiling is
+  computed from the measured window minus any keyboard overlap
+  (`actionAreaMaxHeight`), never from a device constant, and returns "no cap" —
+  never zero — for a measurement that has not landed. The exam runner, the
+  account-deletion sheet (`components/SheetDialog.tsx`, the parent-side twin of
+  `ArenaDialog`) and the boot screens all moved onto the contract in the same
+  change, and the test now also pins that a body applies the same tablet gutter
+  its bar does: the two test-chain screens imported neither, so above 560pt the
+  buttons would have sat in a centred column while the content spanned the slab.
+
+- `[internal]` Second half of that fix, and the reason the first was necessary
+  but not sufficient. Removing the duplicate tab navigator removed the
+  SWALLOWER; the navigator that remained still answered the press with React
+  Navigation's default `backBehavior: "firstRoute"`
+  — "go to routes[0]", which is `home` in both the parent and the student group
+  — so the symptom the report was about survived the fix. Both `<Tabs>` now
+  declare `backBehavior="history"`: a parent who opened News from Analytics goes
+  back to Analytics, and a child who left the test chain onto Olympiads goes
+  back to Tests. It also still EXITS correctly, which is why `history` was
+  chosen over `fullHistory`: it de-duplicates, so the tab history holds one
+  entry per tab, bottoms out, and hands the press up to the Stack and then to
+  Android — no cycling, and a deep-linked tab bubbles on the first press rather
+  than inventing a Home the user never visited. Three duplicate-minting call
+  sites were closed with the same rule one level up, on the root stack: an
+  allowlisted `/login`, `/register`, `/child-login` or `/` opened while signed
+  in now resolves to the session's own home instead of a public auth screen the
+  guard has to bounce (the bounce was a `replace`, which minted a SECOND copy of
+  the whole parent/student group); that guard uses `<GroupRedirect>` regardless;
+  and the post-registration back button pops to the Login already in the stack
+  instead of adding a second one. The login and logout resets are untouched and
+  pinned — `popToOrReplace` still collapses the whole public group when the
+  target group is not on the stack, so a signed-out screen holding a child's
+  data can never be swiped back into. `__tests__/back-to-parent-menu.test.ts`
+  drives the real `@react-navigation/routers` TabRouter with the tab names and
+  the `backBehavior` read out of the layout files, so changing either layout
+  fails with the destination that choice actually produces.
+
+- `[store]` The last reachable way to end up with two tab bars is closed. From
+  a child or parent account, opening Profile and then an information page (FAQ,
+  About, Contact) and then tapping a notification or a link that leads to one of
+  the bottom tabs mounted the whole tab bar a SECOND time: the tab changed, but
+  back went to Profile instead of leaving the app, and everything underneath was
+  still open. It now lands on the tab with nothing stacked behind it, exactly as
+  it does from anywhere else in the app.
+- `[internal]` Why that one path outlived the round that fixed the rest. It
+  needs two things at once — a secondary screen above `(tabs)` AND a `(public)`
+  screen above the whole group on the ROOT stack — and in that state
+  `dismissTo()` is dispatched at the ROOT, not at the group Stack: it drops
+  `(public)`, keeps the group route and hands it nested
+  `{ screen: "(tabs)", params: { screen: "<tab>" } }` params. The group Stack is
+  told nothing and is still showing `profile`, so React Navigation DERIVES a
+  `NAVIGATE { name: "(tabs)" }` from those params — and StackRouter answers
+  NAVIGATE by PUSHING anything that is not already on top. That derived action
+  is the library's to build, and no `router.*` call can address the group Stack
+  while a foreign group holds focus (an untargeted POP never reaches it; a
+  targeted one only lands where the divergence put it). StackRouter does read
+  one flag off the group route's own params, `pop`, which makes NAVIGATE pop
+  back to an existing route instead of pushing — so the root layout seeds
+  `GROUP_ENTRY_PARAMS` (`{ pop: true }`, declared beside the rule in
+  `lib/navigation.ts`) onto `(parent)` and `(student)` via `initialParams`. One
+  dispatch, one tab navigator, the stale screen popped. The flag reaches nothing
+  else: only root-level entries into a group carry it, PUSH ignores it, and a
+  navigation that starts inside the group never rewrites those params.
+  `__tests__/back-to-parent-menu.test.ts` now drives the real
+  `@react-navigation/routers` StackRouter through the whole sequence, with the
+  route names read out of the layout files and the seed read out of RootGate —
+  remove either and it fails with the state the router actually produces,
+  `["(tabs)", "profile", "(tabs)"]` and a back press that lands on `profile`.
+  The login and logout resets are re-pinned in the same file.
+- `[store]` Tapping a notification for the screen you are already reading no
+  longer does nothing-but-something: it used to open a second identical copy of
+  that screen, so nothing appeared to change and the next back press looked
+  dead — it was only closing the duplicate. The same link now leaves you where
+  you are. A deferred link that sends a signed-out user to the login screen
+  behaves the same way instead of stacking a second login.
+- `[internal]` `openTarget()` takes the current path (`usePathname()`) as a
+  REQUIRED argument and skips a non-tab target that is already on top; tab
+  targets keep going through `goToTab()`, whose POP_TO cannot duplicate. The
+  comparison ignores `(group)` segments, which never appear in a URL, so the
+  allowlist's `/(parent)/notifications` matches the pathname's
+  `/notifications`. RootGate's deferred-link branch moved from `push()` to
+  `popToOrReplace()`. Also corrected the student tab layout's `backBehavior`
+  comment, which described a router that does not exist in React Navigation 7
+  and a route removal that `href: null` does not perform — it is a tab-bar
+  change (`tabBarButton: () => null`), and the screen stays in `routeNames` and
+  stays deep-linkable.
+- `[store]` One account's data can no longer follow another onto the same
+  phone. If a parent's session ended on its own — a revoked token, a refresh
+  that failed — rather than through the Log out button, the app kept the cached
+  screens and any half-finished exam answers, and the next child to sign in
+  could be shown them. The family device is the normal case for this product,
+  so the sign-out the app performs FOR you now tears the same account state
+  down, and signing in starts from a clean slate either way. One thing it
+  deliberately cannot match: the Log out button also de-registers the push
+  token, and that delete runs under an own-row policy needing a still-valid
+  session, which by definition is gone on the involuntary path. The row is left
+  for the server to invalidate the next time it is used; the app-icon badge,
+  which needs no session, is cleared on both paths.
+- `[internal]` Restored signed-in coverage for the four deep-link auth rules
+  that gained `roleTargets`. The only assertion exercising a signed-in role was
+  replaced by the signed-out case in the same round the behaviour was added, so
+  the fix that stops a second tab navigator being mounted was covered by
+  nothing. Both directions are asserted now, and the indentation of those four
+  properties was corrected to match their siblings.
+- `[internal]` The teardown is one function
+  (`features/auth/sessionTeardown.ts`) called by BOTH the `signOut()` action and
+  the `onAuthStateChange("SIGNED_OUT")` handler — the drift between two
+  hand-written copies was the defect, so the fix is that there is only one copy.
+  A third function resets on sign-IN, for the session that ends with no teardown
+  at all (the OS kills the app). Underneath both: every query key carrying
+  account data now ends in an account-scope marker
+  (`features/auth/accountScope.ts`), so a stale entry is UNREACHABLE from another
+  profile even if a teardown were missed, and the sign-in reset selects entries
+  by that marker instead of by a list that would go stale. World-readable
+  catalogue reads stay unscoped on purpose — including the config RootGate gates
+  the tree on, which is why sign-in does not simply clear everything. Screens
+  that used to keep a second, unscoped copy of the children list
+  (parent analytics, the child edit screen) now share the one scoped key.
+  Pinned by `__tests__/session-teardown.test.ts`.
 ---
 
 ## 1.15.0 — RELEASED on the App Store 2026-09-09 (submitted 2026-09-04, approved and released the same day)

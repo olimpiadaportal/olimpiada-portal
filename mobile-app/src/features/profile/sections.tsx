@@ -3,8 +3,8 @@
 // double-confirm danger zone. Presentational + local state only; privileged
 // flows go through the BFF client (bffUpdateParentPhone / bffDeleteAccount /
 // bffChangeOwnPassword).
-import React, { useState } from "react";
-import { Modal, Pressable, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { View } from "react-native";
 import {
   KeyRound,
   Mail,
@@ -17,15 +17,24 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { CmsProse } from "@/components/CmsProse";
 import { ListRow } from "@/components/ListRow";
-import { E164_RE, PhoneField } from "@/components/PhoneField";
+import { SheetDialog } from "@/components/SheetDialog";
+import { E164_RE, PhoneField, usePhoneValue } from "@/components/PhoneField";
 import { PasswordField } from "@/components/TextField";
 import { useTheme } from "@/theme/ThemeProvider";
-import { radius, shadow, spacing } from "@/theme/tokens";
+import { spacing } from "@/theme/tokens";
 import { bffChangeOwnPassword, bffDeleteAccount, bffUpdateParentPhone } from "@/lib/api";
 import { checkNewPassword } from "@/lib/passwordPolicy";
 import { useFieldChain } from "@/lib/useFieldChain";
 import { useAuthStore } from "@/features/auth/authStore";
 import { AvatarSection } from "./AvatarPicker";
+import { phoneEditorSeed } from "./phoneEditor";
+import {
+  advanceDelete,
+  canRequestDelete,
+  closeDelete,
+  openDelete,
+  type DeleteStep,
+} from "./deleteAccount";
 import { type OwnProfile } from "./useOwnProfile";
 
 type T = (key: string) => string;
@@ -97,9 +106,23 @@ function InfoRow({
 /* ------------------------------- phone number ------------------------------ */
 
 /**
- * Add/edit module for the parent's contact number. Registration makes the
- * phone mandatory, so this exists to fill legacy nulls and to correct a stale
- * number — it deliberately offers no way to clear the field back to empty.
+ * Add / edit / CLEAR module for the parent's contact number.
+ *
+ * THE PHONE IS OPTIONAL (Apple Guideline 5.1.1(v), 2026-08-31). Registration no
+ * longer demands one, an account may have none, and emptying this field by hand
+ * is a deliberate clear that the BFF stores as NULL. The comment that stood here
+ * asserted the opposite on both counts — "registration makes the phone
+ * mandatory" and "it deliberately offers no way to clear the field back to
+ * empty" — and that stale description is precisely what hid the data loss below
+ * for as long as it lasted: an editor that opens EMPTY is harmless only while an
+ * empty submit means "no change".
+ *
+ * So the editor is SEEDED from the stored number (`phoneEditorSeed`, which
+ * verifies its own split by recomposing it) and keeps mirroring that number
+ * until the parent actually edits something. Opening the editor to check a
+ * number and pressing Save now rewrites the same number; clearing the field by
+ * hand still submits "" and still deletes it. Cancel discards the edit, because
+ * the mirror resumes the moment `edited` is cleared.
  */
 export function PhoneSection({
   current,
@@ -113,10 +136,42 @@ export function PhoneSection({
 }) {
   const { tokens } = useTheme();
   const [open, setOpen] = useState(false);
-  const [phone, setPhone] = useState("");
+  // Country + national number live HERE, not inside PhoneField: state the
+  // screen owns survives a remount of the field, and the field itself refuses
+  // a write it did not watch the user make (see applyPhoneEdit). `phone`
+  // stays the composed E.164 string this section submits.
+  //
+  // The stored number, split into the two halves the editor needs, and proven
+  // to recompose back into itself. One computation feeds BOTH the initial state
+  // and the mirror below, so the field and the value being submitted can never
+  // come from different readings of `current`.
+  const seed = useMemo(() => phoneEditorSeed(current), [current]);
+  const [phoneValue, setPhoneValue] = usePhoneValue(seed.value);
+  const [phone, setPhone] = useState(seed.e164);
+  // True once the parent has changed something in the field. It is the whole
+  // difference between "Save the number I just typed" and "Save the number that
+  // is already stored", and it is what lets the mirror below stay on without
+  // ever writing over someone's typing.
+  const [edited, setEdited] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  // THE EDITOR MIRRORS THE STORED NUMBER UNTIL THE PARENT EDITS IT.
+  //
+  // Seeding once at mount is not enough and seeding on the Edit press is not
+  // either: `current` arrives from a React Query read (useOwnProfile), so it is
+  // null on the first render and can still be null when a parent on a slow
+  // connection taps Edit. Both of those seeds would leave the field empty with a
+  // number in the database — the data-loss shape all over again. Re-seeding
+  // whenever `current` changes closes that window, and the `edited` guard is
+  // what keeps it from being the OTHER bug: a stored value landing on top of
+  // half-typed input.
+  useEffect(() => {
+    if (edited) return;
+    setPhoneValue(seed.value);
+    setPhone(seed.e164);
+  }, [seed, edited, setPhoneValue]);
 
   async function submit() {
     if (pending) return;
@@ -143,6 +198,10 @@ export function PhoneSection({
     }
     setDone(true);
     setOpen(false);
+    // Back to mirroring: the next open re-seeds from whatever the refetch
+    // below brings back, so a saved edit is never re-submitted from stale
+    // local state.
+    setEdited(false);
     // Collapsing back to the summary means the stored value is on screen
     // again — it has to be the one that was just saved, not the cached one.
     onSaved();
@@ -186,6 +245,13 @@ export function PhoneSection({
             searchPlaceholder={t("parent.auth.phoneSearch")}
             closeLabel={t("drawer.close")}
             error={error}
+            value={phoneValue}
+            onChange={(next) => {
+              // Both callbacks fire together from PhoneField's `commit`, so
+              // marking the edit here covers typing AND picking a country.
+              setEdited(true);
+              setPhoneValue(next);
+            }}
             onChangeE164={setPhone}
             returnKeyType="done"
             submitBehavior="blurAndSubmit"
@@ -206,6 +272,9 @@ export function PhoneSection({
               onPress={() => {
                 setOpen(false);
                 setError(null);
+                // Cancel now actually cancels: dropping the flag hands the
+                // field back to the mirror, which restores the stored number.
+                setEdited(false);
               }}
             />
           </View>
@@ -280,7 +349,7 @@ export function PasswordSection({ t }: { t: T }) {
             onChangeText={setPw}
             showLabel={t("mob.pw.show")}
             hideLabel={t("mob.pw.hide")}
-            isParentCredential
+            purpose="new"
           />
           <PasswordField
             {...chain.field(1)}
@@ -289,7 +358,7 @@ export function PasswordSection({ t }: { t: T }) {
             onChangeText={setConfirm}
             showLabel={t("mob.pw.show")}
             hideLabel={t("mob.pw.hide")}
-            isParentCredential
+            purpose="new"
           />
           {error ? (
             <AppText variant="muted" color={tokens.danger}>
@@ -345,13 +414,19 @@ export function LinkRow({
 
 export function DangerZone({ t, onDeleted }: { t: T; onDeleted: () => void }) {
   const { tokens } = useTheme();
-  // 0 = closed, 1 = first confirm, 2 = final confirm.
-  const [step, setStep] = useState<0 | 1 | 2>(0);
+  // 0 = closed, 1 = first confirm, 2 = final confirm — and the transitions
+  // between them live in ./deleteAccount, not in the JSX below. See that file
+  // for why the rule is not three inline expressions in a button prop.
+  const [step, setStep] = useState<DeleteStep>(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function confirmDelete() {
-    if (pending) return;
+    // TWO locks, and they guard different things. `pending` is one request at
+    // a time; `canRequestDelete` is "this account has been confirmed twice"
+    // — re-checked HERE, at the only place that can actually delete anything,
+    // so that a future edit to the button cannot make one press enough.
+    if (pending || !canRequestDelete(step)) return;
     setPending(true);
     setError(null);
     const res = await bffDeleteAccount();
@@ -360,13 +435,15 @@ export function DangerZone({ t, onDeleted }: { t: T; onDeleted: () => void }) {
       setError(t(res.error));
       return;
     }
-    setStep(0);
+    setStep(closeDelete());
     onDeleted();
   }
 
   const close = () => {
     if (pending) return;
-    setStep(0);
+    // Back to CLOSED, never back to step 1: a sheet that reopened at the final
+    // prompt would be one tap from deleting the account.
+    setStep(closeDelete());
     setError(null);
   };
 
@@ -390,67 +467,69 @@ export function DangerZone({ t, onDeleted }: { t: T; onDeleted: () => void }) {
         </AppText>
       </View>
       <CmsProse text={t("prof2.dangerHint")} gap={spacing.sm} style={{ fontSize: 12 }} />
-      <Button title={t("profile.deleteAccount")} variant="danger" onPress={() => setStep(1)} />
+      <Button
+        title={t("profile.deleteAccount")}
+        variant="danger"
+        onPress={() => setStep(openDelete())}
+      />
 
-      <Modal visible={step > 0} transparent animationType="slide" onRequestClose={close}>
-        <Pressable
-          accessibilityLabel={t("profile.cancel")}
-          onPress={close}
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)" }}
-        />
-        <View
-          style={[
-            {
-              backgroundColor: tokens.surface,
-              borderTopLeftRadius: radius.xl,
-              borderTopRightRadius: radius.xl,
-              padding: spacing.xl,
-              gap: spacing.lg,
-            },
-            shadow("float", tokens.shadow),
-          ]}
-        >
-          <View
-            style={{
-              alignSelf: "center",
-              width: 44,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: tokens.border,
-            }}
-          />
-          <AppText variant="title" color={tokens.danger}>
-            {t("account.delete")}
-          </AppText>
-          <AppText>
-            {step === 1 ? t("account.deleteConfirm") : t("mob.prof.deleteFinal")}
-          </AppText>
-          {error ? (
-            <AppText variant="muted" color={tokens.danger}>
-              {error}
-            </AppText>
-          ) : null}
-          <View style={{ flexDirection: "row", gap: spacing.md }}>
-            <Button
-              title={step === 1 ? t("account.delete") : t("profile.deleteAccount")}
-              variant="danger"
-              pending={pending}
-              style={{ flex: 1 }}
-              onPress={() => {
-                if (step === 1) setStep(2);
-                else void confirmDelete();
-              }}
-            />
-            <Button
-              title={t("profile.cancel")}
-              variant="ghost"
-              disabled={pending}
-              style={{ flex: 1 }}
-              onPress={close}
-            />
+      {/* The confirm sheet is on the shared contract (components/SheetDialog):
+          safe-area padded, flex-clamped, paragraph scrolls, buttons pinned. It
+          used to be a hand-rolled Modal with a flat 24pt bottom padding, no
+          maxHeight and no scroll — so on a three-button Android phone the
+          buttons sat behind the navigation bar, and at a raised font scale the
+          ~180-character confirmation grew the card until they left the window
+          entirely. On the single most destructive action in the app. */}
+      <SheetDialog
+        visible={step > 0}
+        title={t("account.delete")}
+        titleColor={tokens.danger}
+        dismissLabel={t("profile.cancel")}
+        // Strictly modal while the delete request is in flight: the account's
+        // fate is being decided and a stray backdrop tap must not walk away
+        // from it. `close` is already inert during `pending`; this removes the
+        // dead tap as well.
+        onDismiss={pending ? undefined : close}
+        actions={
+          <View style={{ gap: spacing.md }}>
+            {/* The error rides with the BUTTONS, not with the paragraph: it is
+                what explains the button the user is about to press again, so it
+                must never be the thing that scrolled out of sight. */}
+            {error ? (
+              <AppText accessibilityLiveRegion="polite" variant="muted" color={tokens.danger}>
+                {error}
+              </AppText>
+            ) : null}
+            <View style={{ flexDirection: "row", gap: spacing.md }}>
+              <Button
+                title={step === 1 ? t("account.delete") : t("profile.deleteAccount")}
+                variant="danger"
+                pending={pending}
+                style={{ flex: 1 }}
+                onPress={() => {
+                  // The press cannot both advance the sheet and send the
+                  // request: `advanceDelete` returns submit=true only from the
+                  // final step, so the first press is always just a question.
+                  const next = advanceDelete(step);
+                  setStep(next.step);
+                  if (next.submit) void confirmDelete();
+                }}
+              />
+              <Button
+                title={t("profile.cancel")}
+                variant="ghost"
+                disabled={pending}
+                style={{ flex: 1 }}
+                onPress={close}
+              />
+            </View>
           </View>
-        </View>
-      </Modal>
+        }
+      >
+        {/* Two DIFFERENT questions, on purpose. Repeating the same sentence
+            teaches a user to tap through it, which is not a confirmation. */}
+        <AppText>{step === 1 ? t("account.deleteConfirm") : t("mob.prof.deleteFinal")}</AppText>
+      </SheetDialog>
     </Card>
   );
 }

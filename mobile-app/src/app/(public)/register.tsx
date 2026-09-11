@@ -24,7 +24,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
 import { PasswordField, TextField } from "@/components/TextField";
-import { PhoneField, E164_RE } from "@/components/PhoneField";
+import { PhoneField, E164_RE, usePhoneValue } from "@/components/PhoneField";
 import { Card } from "@/components/Card";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { ResendConfirmation } from "@/components/ResendConfirmation";
@@ -32,6 +32,7 @@ import { radius, spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 import { useFieldChain } from "@/lib/useFieldChain";
+import { backOrTo, popToOrReplace } from "@/lib/navigation";
 import { checkNewPassword } from "@/lib/passwordPolicy";
 import { useAuthStore } from "@/features/auth/authStore";
 
@@ -43,15 +44,19 @@ export default function Register() {
 
   // Register is always pushed (welcome CTA or the Login link), but a cold deep
   // link can make it the stack root — then Login is the natural place back.
-  const goBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/(public)/login");
-  };
+  const goBack = () => backOrTo(router, "/(public)/login");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // The phone is TWO pieces of state, and both live HERE rather than inside
+  // PhoneField. Owner bug: typing a number and moving to the password cleared
+  // it. State owned by the screen survives anything that remounts the field —
+  // and the platform autofill that is the remaining suspect cannot blank it
+  // either, because `applyPhoneEdit` refuses a write it did not watch the user
+  // make. `phone` stays the composed E.164 string every submit path reads.
+  const [phoneValue, setPhoneValue] = usePhoneValue();
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
   // The i18n KEY, not the rendered sentence — the language switcher above can
@@ -120,15 +125,39 @@ export default function Register() {
 
   if (verifySent) {
     return (
-      <Screen>
+      // SCROLLS, AND THE ACTION IS PINNED — the same contract as every other
+      // screen in this pass (components/actionAreaLayout.ts). This state was a
+      // non-scrolling `flex: 1` column that CENTRED a content-sized card, and
+      // centring is what made it dangerous: past the window height the overflow
+      // is split between the two ends, so the card was clipped at the TOP and
+      // the BOTTOM at once with no way to reach either. At 320x568 with the
+      // 1.3x font scale AppText allows, the ru strings already exceed the
+      // column — and the first thing the user DOES here makes it worse, because
+      // a successful Resend inserts verify.resent (~99 ru characters, four
+      // lines at 1.3x) directly above the button. The card now gives way and
+      // scrolls; Resend cannot move, because it is the only control on the
+      // screen and the account is unusable until it is pressed.
+      <Screen
+        scroll
+        actions={<ResendConfirmation email={email.trim()} startOnCooldown />}
+      >
         {/* The account now exists pending verification, so back must not
             re-open the submitted form — it leads to Login, where the user
-            lands after confirming the email. */}
+            lands after confirming the email.
+
+            popToOrReplace(), not replace(): Register is USUALLY pushed FROM
+            Login, so the stack already holds it and a replace left
+            `[…, login, login]` — the first back press then re-rendered the
+            same screen and read as a dead tap. POP_TO returns to the login
+            route that is already there; when there is none (the welcome CTA
+            replaces itself into Register, and a cold /register deep link makes
+            it the stack root) it replaces, which is what this line did before
+            and is still correct — the submitted form must not stay behind. */}
         <BackButton
           label={t("arena.quizPrev")}
-          onPress={() => router.replace("/(public)/login")}
+          onPress={() => popToOrReplace(router, "/(public)/login")}
         />
-        <View style={{ flex: 1, justifyContent: "center", gap: spacing.xl }}>
+        <View style={{ gap: spacing.xl, paddingTop: spacing.sm }}>
           <Card variant="hero" style={{ alignItems: "center", gap: spacing.md }}>
             <View
               style={{
@@ -164,7 +193,6 @@ export default function Register() {
             <AppText variant="muted" style={{ textAlign: "center" }}>
               {t("verify.hint")}
             </AppText>
-            <ResendConfirmation email={email.trim()} startOnCooldown />
           </Card>
         </View>
       </Screen>
@@ -194,6 +222,14 @@ export default function Register() {
             {t("parent.auth.registerNote")}
           </AppText>
         </View>
+        {/* AUTOFILL. Every field states its own hints — an unset field is one
+            the platform identifies by heuristic, and a heuristic that guesses
+            wrong is what lets an autofill service believe it may rewrite a row
+            it never filled. `importantForAutofill="yes"` is the Android half
+            (the `autoComplete` hint alone does not enrol the view); iOS reads
+            the derived `textContentType`, which is why the password below says
+            "new" and its twin on Login says "current" — a manager offers to
+            SAVE here and to FILL there. */}
         <Card style={{ gap: spacing.lg }}>
           <TextField
             {...chain.field(0)}
@@ -201,8 +237,11 @@ export default function Register() {
             placeholder={t("parent.auth.firstNamePh")}
             value={firstName}
             onChangeText={setFirstName}
+            autoCapitalize="words"
+            autoCorrect={false}
             autoComplete="given-name"
             textContentType="givenName"
+            importantForAutofill="yes"
           />
           <TextField
             {...chain.field(1)}
@@ -210,8 +249,11 @@ export default function Register() {
             placeholder={t("parent.auth.lastNamePh")}
             value={lastName}
             onChangeText={setLastName}
+            autoCapitalize="words"
+            autoCorrect={false}
             autoComplete="family-name"
             textContentType="familyName"
+            importantForAutofill="yes"
           />
           <TextField
             {...chain.field(2)}
@@ -225,11 +267,14 @@ export default function Register() {
             keyboardType="email-address"
             autoComplete="email"
             textContentType="emailAddress"
+            importantForAutofill="yes"
           />
           <PhoneField
             label={t("parent.auth.phone")}
             searchPlaceholder={t("parent.auth.phoneSearch")}
             closeLabel={t("drawer.close")}
+            value={phoneValue}
+            onChange={setPhoneValue}
             onChangeE164={setPhone}
             // The composite exposes only its national-number input to a chain.
             inputRef={phoneField.ref}
@@ -245,7 +290,7 @@ export default function Register() {
             onChangeText={setPassword}
             showLabel={t("mob.pw.show")}
             hideLabel={t("mob.pw.hide")}
-            isParentCredential
+            purpose="new"
           />
           {error ? (
             <AppText variant="muted" color={tokens.danger}>

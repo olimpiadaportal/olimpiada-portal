@@ -28,6 +28,11 @@ import {
   withLocalStrings,
 } from "@/lib/admin/question-flow-labels";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
+import {
+  SUBJECT_DISPLAY_EMBED,
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 
 // ---------------------------------------------------------------------------
 // Round 9 — Questions upgrades: server pagination, text search, cascading
@@ -183,7 +188,11 @@ export default async function QuestionsPage({
     selectOptions,
     editorTaxonomy,
   ] = await Promise.all([
-    supabase.from("subjects").select("id, name, status").order("name"),
+    // Display names, not the frozen import key: every use below is a LABEL
+    // (the filter cascade, the editor's subject select, the bulk-import
+    // picker). Sorted in TypeScript because `.order("name")` would sort by
+    // that key. The key itself is shown on the subject edit form, labelled.
+    supabase.from("subjects").select(SUBJECT_DISPLAY_SELECT),
     supabase.from("grades").select("id, name, level").order("level"),
     supabase
       .from("question_types")
@@ -223,8 +232,16 @@ export default async function QuestionsPage({
   // already parent-filtered, and — unlike a bare select() — PAGED, so the
   // curriculum's 1077 subtopics are not silently cut at PostgREST's 1000-row
   // cap. Extra fields (grade_id/term) are simply unused here.
+  const subjectRows = ((subjects ?? []) as any[])
+    .map((r) => ({
+      id: String(r.id),
+      name: subjectDisplayName(r, locale),
+      status: String(r.status ?? ""),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, locale));
+
   const taxonomy: Taxonomy = {
-    subjects: (subjects ?? []) as Taxonomy["subjects"],
+    subjects: subjectRows.map((s) => ({ id: s.id, name: s.name })),
     topics: editorTaxonomy.topics,
     subtopics: editorTaxonomy.subtopics,
   };
@@ -245,9 +262,9 @@ export default async function QuestionsPage({
 
   // Bulk-import modal inputs: ACTIVE subjects only (grades have no status) and
   // active question-type names for the short reference hint.
-  const bulkSubjects: FilterOption[] = ((subjects ?? []) as any[])
+  const bulkSubjects: FilterOption[] = subjectRows
     .filter((s) => s.status === "active")
-    .map((s) => ({ value: s.id, label: String(s.name) }));
+    .map((s) => ({ value: s.id, label: s.name }));
   const activeTypeNames: string[] = ((qtypes ?? []) as any[])
     .filter((r) => r.status === "active")
     .map((r) => String(r.name));
@@ -632,7 +649,7 @@ async function QuestionResults({
     let qb = supabase
       .from("questions")
       .select(
-        "id, status, primary_locale, term, created_at, subjects(name), grades(name), topics(name), question_translations(locale, body), question_explanations(locale)",
+        `id, status, primary_locale, term, created_at, ${SUBJECT_DISPLAY_EMBED}, grades(name), topics(name), question_translations(locale, body), question_explanations(locale)`,
         { count: "exact" },
       )
       // PRIVATE olympiad-package questions are excluded from the general list.
@@ -730,7 +747,7 @@ async function QuestionResults({
 
   const display: QuestionRow[] = list.map((r) => ({
     id: r.id,
-    subject: r.subjects?.name ?? "—",
+    subject: subjectDisplayName(r.subjects, locale) || "—",
     grade: r.grades?.name ?? "—",
     lang: langName(r.primary_locale),
     // Embedded topics.name via questions.topic_id (NULL topic → em dash).

@@ -26,10 +26,11 @@ import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { fetchActiveSubjects } from "@/lib/data";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 import { SelectField } from "@/features/profile/SelectField";
 import { useStudentProfile } from "@/features/profile/studentProfile";
 import { useAuthStore } from "@/features/auth/authStore";
+import { accountScoped } from "@/features/auth/accountScope";
 import { useArena } from "@/features/arena/useArena";
 import { ArenaChip, ArenaEyebrow, ArenaPanel, ArenaScroll } from "@/features/arena/ui";
 import { BoardRowList, MONO, lbFormatValue } from "./BoardList";
@@ -60,13 +61,17 @@ export function RankingScreen() {
   const selfProfileQ = useStudentProfile({ enabled: leaderboardOn });
 
   const scopeIdsQ = useQuery({
-    queryKey: ["student", "lb-scope-ids", profileId],
+    queryKey: accountScoped(["student", "lb-scope-ids"] as const, profileId),
     queryFn: () => fetchScopeIds(profileId!),
     enabled: leaderboardOn && !!profileId,
     staleTime: 5 * 60_000,
   });
   const subjectsQ = useQuery({
-    queryKey: ["catalog", "active-subjects"],
+    // Account-scoped despite the "catalog" prefix: fetchActiveSubjects() with no
+    // grade argument runs my_taught_subjects, so this list is narrowed to the
+    // CALLER — and the parent leaderboard screen calls it the same way. One
+    // shared key handed whichever of the two asked second the other's answer.
+    queryKey: accountScoped(["catalog", "active-subjects"] as const, profileId),
     // Called through an arrow, never passed by reference: React Query hands a
     // queryFn its CONTEXT object as the first argument, and fetchActiveSubjects
     // now takes an optional gradeId there — a context object would fall into
@@ -82,12 +87,21 @@ export function RankingScreen() {
   const [subjectSel, setSubjectSel] = useState<string | null>(null);
   const [districtSel, setDistrictSel] = useState<string | null>(null);
 
+  // ORDERED BY WHAT THE STUDENT SEES. fetchActiveSubjects orders on the frozen
+  // `subjects.name` import key for determinism only; this screen renders the
+  // resolved label, so the reading order belongs here, where t() and the locale
+  // are. `t` is in the dependency list because a language switch reorders the
+  // list, not just its text.
   const activeSubjects = useMemo(
     () =>
-      ((subjectsQ.data ?? []) as { id: string; code: string | null; name: string }[]).filter(
-        (s) => !!s.id,
+      sortSubjectsByLabel(
+        t,
+        locale,
+        ((subjectsQ.data ?? []) as { id: string; code: string | null; name: string }[]).filter(
+          (s) => !!s.id,
+        ),
       ),
-    [subjectsQ.data],
+    [subjectsQ.data, t, locale],
   );
   const gradeId = scopeIdsQ.data?.gradeId ?? null;
   const cityId = scopeIdsQ.data?.cityId ?? null;
@@ -150,12 +164,12 @@ export function RankingScreen() {
     enabled: leaderboardOn && !!profileId && !scopeIdsQ.isPending,
   });
   const meQ = useQuery({
-    queryKey: ["student", "lb-me", ...argsKey],
+    queryKey: accountScoped(["student", "lb-me", ...argsKey] as const, profileId),
     queryFn: () => fetchMyRank(args),
     enabled: leaderboardOn && !!profileId && !scopeIdsQ.isPending,
   });
   const streakQ = useQuery({
-    queryKey: ["student", "lb-streak"],
+    queryKey: accountScoped(["student", "lb-streak"] as const, profileId),
     queryFn: fetchStreakStatus,
     enabled: leaderboardOn && !!profileId && board === "streak",
   });
@@ -208,9 +222,9 @@ export function RankingScreen() {
     scope === "subject"
       ? (activeSubjects.find((s) => s.id === subjectId) ?? null)
       : null;
-  const selectedSubjectName = selectedSubjectRow
-    ? subjectLabel(t, selectedSubjectRow.code, selectedSubjectRow.name)
-    : null;
+  // Already resolved by the sort above — re-resolving is how a picker and the
+  // caption under it drift apart.
+  const selectedSubjectName = selectedSubjectRow ? selectedSubjectRow.label : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: arena.bg }}>
@@ -258,7 +272,7 @@ export function RankingScreen() {
                   value={subjectId ?? ""}
                   options={activeSubjects.map((s) => ({
                     id: s.id,
-                    label: subjectLabel(t, s.code, s.name),
+                    label: s.label,
                   }))}
                   onChange={(id) => setSubjectSel(id)}
                   placeholder={t("lb.subjectLabel")}
@@ -321,7 +335,7 @@ export function RankingScreen() {
                   >
                     {streak.current} {t("lb.days")}
                   </AppText>
-                  <AppText color={arena.dim} style={{ fontSize: 12 }}>
+                  <AppText color={arena.muted} style={{ fontSize: 12 }}>
                     {t("lb.streak.current")}
                   </AppText>
                 </View>
@@ -332,7 +346,7 @@ export function RankingScreen() {
                   >
                     {streak.best} {t("lb.days")}
                   </AppText>
-                  <AppText color={arena.dim} style={{ fontSize: 12 }}>
+                  <AppText color={arena.muted} style={{ fontSize: 12 }}>
                     {t("lb.streak.best")}
                   </AppText>
                 </View>
@@ -373,7 +387,6 @@ export function RankingScreen() {
                 colors={{
                   ink: arena.ink,
                   muted: arena.muted,
-                  dim: arena.dim,
                   line: arena.line,
                   selfBg: arena.panel2,
                   highlight: arena.lime,
@@ -387,7 +400,7 @@ export function RankingScreen() {
               viewer themselves — even when the list is empty. The threshold
               comes from the my-rank payload. */}
           {!loading && !listQ.isError && showProvisionalLegend(board, rows, me) ? (
-            <AppText color={arena.dim} style={{ fontSize: 12 }}>
+            <AppText color={arena.muted} style={{ fontSize: 12 }}>
               {t("lb.provisionalHint").replace("{n}", String(me!.min_attempts))}
             </AppText>
           ) : null}
@@ -422,7 +435,7 @@ export function RankingScreen() {
           }}
         >
           <View style={{ gap: 2, flexShrink: 1 }}>
-            <AppText color={arena.dim} style={{ fontSize: 12 }}>
+            <AppText color={arena.muted} style={{ fontSize: 12 }}>
               {t("lb.myRank.title")}
             </AppText>
             {me && me.rank !== null ? (

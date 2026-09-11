@@ -7,7 +7,7 @@
 // mounted Stack, so it can never block the app the way the gates do.
 import React, { useEffect, useRef } from "react";
 import { AppState, Platform, View } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, usePathname } from "expo-router";
 import * as ExpoLinking from "expo-linking";
 import Constants from "expo-constants";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,6 +19,7 @@ import {
   storePendingLink,
 } from "@/lib/deeplink";
 import { isSupabaseConfigured } from "@/lib/env";
+import { GROUP_ENTRY_PARAMS, openTarget, popToOrReplace } from "@/lib/navigation";
 import { clampLocale, useLocaleStore } from "@/i18n";
 import { useAuthStore } from "@/features/auth/authStore";
 import { ensureAndroidChannels, initPushDisplay } from "@/features/push/registration";
@@ -41,6 +42,9 @@ const PLATFORM: "ios" | "android" = Platform.OS === "ios" ? "ios" : "android";
 
 export function RootGate() {
   const router = useRouter();
+  // The screen currently on top, as a URL (no `(group)` segments). openTarget()
+  // needs it to tell "open this" from "you are already looking at this".
+  const pathname = usePathname();
   const queryClient = useQueryClient();
   const config = useMobileConfig();
 
@@ -123,20 +127,31 @@ export function RootGate() {
     const resolved = resolveDeepLink(`/${path.replace(/^\/+/, "")}`, authedRole);
     if (!resolved) return;
     if (resolved.kind === "open") {
-      router.push(resolved.target as never);
+      // openTarget(), not push(): a tab target pushed onto a group stack that is
+      // already showing a secondary screen mounts a SECOND tab navigator, and
+      // back then lands on Home instead of that screen (lib/navigation.ts).
+      // `pathname` is what lets it skip a link for the screen already on top,
+      // which push() answered with an identical copy and a dead back press.
+      openTarget(router, resolved.target, pathname);
     } else if (resolved.kind === "deferred") {
       storePendingLink(resolved.path, resolved.audience);
-      router.push("/(public)/login" as never);
+      // popToOrReplace(), not push(): the link may well have arrived WHILE the
+      // user is looking at Login (it is the screen a signed-out session lands
+      // on), and pushing it again left `[…, login, login]` — the same screen
+      // re-rendered, under a back arrow that only pops the copy. POP_TO finds
+      // the Login already in the stack and stays on it; when there is none it
+      // replaces, which is how the welcome screen already exits.
+      popToOrReplace(router, "/(public)/login" as never);
     }
     // "mismatch": the link belongs to the other role — stay on the own home.
-  }, [booted, url, authStatus, role, router]);
+  }, [booted, url, authStatus, role, router, pathname]);
 
   // Replay a deferred link right after sign-in resolves the matching role.
   useEffect(() => {
     if (authStatus !== "signedIn" || (role !== "parent" && role !== "student")) return;
     const target = consumePendingLink(role);
-    if (target) router.push(target as never);
-  }, [authStatus, role, router]);
+    if (target) openTarget(router, target, pathname);
+  }, [authStatus, role, router, pathname]);
 
   // Push: register behind signed-in + role + notifications_push flag (flag
   // OFF = zero registration calls); notification taps route action_url
@@ -193,9 +208,23 @@ export function RootGate() {
   // so navigation state survives a lock/unlock cycle. The update card is
   // painted BEFORE the lock so a locked app never shows an update prompt over
   // its own lock screen.
+  //
+  // The two authenticated groups are the ONLY root screens declared here, and
+  // only so GROUP_ENTRY_PARAMS can be seeded onto them — every other root route
+  // (index, (public), gallery) is still picked up from the file system and
+  // keeps its options, because expo-router appends whatever a layout did not
+  // list. Read THE CROSS-GROUP HALF in lib/navigation.ts for why the seed
+  // exists: `pop` is what makes the nested NAVIGATE that React Navigation
+  // derives from these routes' params POP BACK to the mounted `(tabs)` instead
+  // of pushing a second copy of the whole tab navigator, when a deep link or a
+  // notification jumps to a tab while a `(public)` screen sits over the group.
+  // Without it, back lands on the secondary screen the user had already left.
   return (
     <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(parent)" initialParams={GROUP_ENTRY_PARAMS} />
+        <Stack.Screen name="(student)" initialParams={GROUP_ENTRY_PARAMS} />
+      </Stack>
       {optionalUpdate ? (
         <UpdateAvailableOverlay
           storeUrl={optionalUpdate.storeUrl}

@@ -1,4 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
+import { getLocale } from "@/i18n/server";
+import {
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 
 // Loads select options for the question editor. Returns a map keyed by the
 // question column name (subject_id / grade_id) → [{ value, label }]. Since the
@@ -22,12 +27,30 @@ export async function loadQuestionOptions(): Promise<
     }));
   }
 
+  // Subjects do NOT go through `named`: its `select("id, name")` returns the
+  // frozen bulk-import key, and this select is a LABEL an admin picks from.
+  // The display name comes from subject_translations in the admin's own locale,
+  // and the sort moves here with it — ordering by the key orders by a string
+  // nobody in the product sees.
+  async function subjectOptions() {
+    const locale = await getLocale();
+    const { data } = await supabase
+      .from("subjects")
+      .select(SUBJECT_DISPLAY_SELECT);
+    return (data ?? [])
+      .map((r: any) => ({
+        value: r.id as string,
+        label: subjectDisplayName(r, locale),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, locale));
+  }
+
   // Promise.all, not two awaits in an object literal. Object properties are
   // evaluated in order, so `subject_id: await ...` fully completed before the
   // grades request was even issued — two serial round trips on every render of
   // the questions list, for two independent lookups.
   const [subject_id, grade_id] = await Promise.all([
-    named("subjects"),
+    subjectOptions(),
     named("grades", "level"),
   ]);
   return { subject_id, grade_id };

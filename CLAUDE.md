@@ -180,15 +180,34 @@ Do not re-derive this and do not assume a company exists. Four consequences:
   Changing that later means incorporating a real legal entity and moving the app
   to an Organization account. Do not promise the brand name as the seller, and
   do not file trade-name paperwork expecting Apple to accept it.
-- **The bank account on file is AZN-only, at ABB (BIC `IBAZAZ2X`), and almost
-  certainly cannot receive App Store proceeds.** AZN appears in no Apple currency
-  material and has no offshore clearing. **But do not state that Apple "pays
-  Azerbaijan in EUR" — that over-reads the source.** The only Apple page pairing
-  Azerbaijan with a currency is the *minimum payment threshold* table, which is
-  an exceptions list for thresholds, not a schedule of supported payout
-  currencies. The supported currencies are whatever the **Bank Account Currency
-  dropdown** actually offers once Bank Territory is set to Azerbaijan. **Read the
-  live dropdown before telling anyone which account to open** — see `STATUS.md`.
+- **PAYOUT BANKING IS RESOLVED AND ACTIVE (verified in App Store Connect,
+  2026-09-10). Do not reopen it.** *Agreements, Tax, and Banking* reads:
+  - **Free Apps Agreement — Active**, and **Paid Apps Agreement — Active**
+    (both Sep 1 2026 – Aug 5 2027). The Paid Apps Agreement is what IAP requires;
+    it is signed. Do not tell anyone it is outstanding.
+  - **Bank account: International Bank of Azerbaijan OJSC, Active. Bank currency
+    EUR, royalty currency USD.** Note that *International Bank of Azerbaijan* IS
+    ABB (Azərbaycan Beynəlxalq Bankı) — the same bank as the AZN account, not a
+    different one. What resolved the blocker was opening a **separate EUR
+    account** there, which is exactly what the old warning predicted would be
+    necessary: in Azerbaijan the currency is encoded in the IBAN, so each
+    currency is its own account.
+  - **Tax forms: W-8BEN and the U.S. Certificate of Foreign Status — both
+    Active**, submitted Sep 2 2026. Individual forms, correctly, per the bullets
+    above.
+  - **Digital Services Act compliance — Active**, 27 countries.
+  - **The AZN account at ABB is a DIFFERENT account for a DIFFERENT rail** and is
+    unaffected: it is the merchant account for the web/ABB manat rail. Two
+    accounts, two purposes. Do not "consolidate" them.
+  - *Superseded history, kept only so it is not re-derived:* this bullet used to
+    say the account on file was AZN-only and "almost certainly cannot receive App
+    Store proceeds". That was true of the account known on 2026-09-02 and is no
+    longer the situation. The related caution still stands on its own terms —
+    **never claim Apple "pays Azerbaijan in EUR" as a general rule**, because the
+    only Apple page pairing Azerbaijan with a currency is the *minimum payment
+    threshold* table, an exceptions list rather than a schedule of supported
+    payout currencies. EUR is what this seller's dropdown offered and what was
+    opened; it is an observation, not a policy.
 
 **NEVER commit the identity or banking documents.** Passport number, personal
 number, date of birth, account number and IBAN are exactly what the Secret

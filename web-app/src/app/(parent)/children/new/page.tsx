@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { requireParent } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getT } from "@/i18n/server";
+import { getT, getLocale } from "@/i18n/server";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { getParentFreeAccess } from "@/lib/freeAccess";
 import { parsePlanParams } from "@/lib/pricingConfigurator";
+import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 import { AddChildWizard } from "@/components/AddChildWizard";
 
 // All i18n keys the (client) wizard needs, resolved server-side into a dict.
@@ -102,6 +103,7 @@ export default async function NewChildPage({
 }) {
   await requireParent();
   const t = await getT();
+  const locale = await getLocale();
   const supabase = await createClient();
   const search = await searchParams;
 
@@ -192,12 +194,26 @@ export default async function NewChildPage({
   // subject with a live price used to stay tickable here while /services
   // correctly dropped it. Filter it out so the two catalogs agree (this is also
   // what the hand-off comment below has always claimed).
-  // Sorting matches lib/pricing.ts's "az" collation so the wizard lists
-  // subjects in the same order the configurator did.
-  const subjects = Array.from(map.values())
-    .filter((sub) => sub.active)
-    .map(({ active: _active, ...rest }) => rest)
-    .sort((a, b) => a.name.localeCompare(b.name, "az"));
+  //
+  // ORDERED BY WHAT THE PARENT READS. This used to sort on `subjects.name` —
+  // the bulk-import match key migration 171 FROZE — while the wizard renders
+  // subjectLabel(), so the order matched the visible labels only until the
+  // first rename, and never matched them at all for an English or Russian
+  // parent (that column holds one Azerbaijani string for every reader). Same
+  // helper, same reasoning as the subscribe screen.
+  //
+  // Resolving server-side is safe here precisely because the wizard is not
+  // free to disagree: it re-resolves the identical string from the root
+  // layout's client dictionary, which publishes the same `subj.db.<code>` keys
+  // getT() does. The label is then dropped again — leaving it on would
+  // serialize a string into the page that the client already computes.
+  const subjects = sortSubjectsByLabel(
+    t,
+    locale,
+    Array.from(map.values())
+      .filter((sub) => sub.active)
+      .map(({ active: _active, ...rest }) => rest),
+  ).map(({ label: _label, ...rest }) => rest);
 
   // Hand-off from the public /services configurator:
   // `?plan=<uuid>:<cycle>,…` (migration 109), with the older

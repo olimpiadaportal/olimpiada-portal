@@ -5,7 +5,7 @@ import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
 import { formatPercent } from "@/lib/formatPercent";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { subjectComparator, subjectLabel } from "@/lib/subjectLabel";
 import { CmsProse } from "@/components/CmsProse";
 import {
   AnalyticsDashboard,
@@ -143,7 +143,13 @@ export default async function ParentAnalytics({
           platformSubjects.push({ id: s.id, name: subjectLabel(t, s.code, s.name) });
         }
       }
-      platformSubjects.sort((a, b) => a.name.localeCompare(b.name));
+      // These names are already RESOLVED labels (subjectLabel above), so the
+      // comparator has to be the reader's. A bare localeCompare() sorts them in
+      // the SERVER runtime's default collation, which is not Azerbaijani — the
+      // default language of this page — and Azerbaijani is not accented Latin:
+      // q comes before l, x before i.
+      const compare = subjectComparator(locale);
+      platformSubjects.sort((a, b) => compare(a.name, b.name));
     } catch {
       // No pricing readable → locked tabs simply won't render (active still do).
     }

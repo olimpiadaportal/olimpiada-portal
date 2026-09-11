@@ -22,7 +22,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { getT } from "@/i18n/server";
+import { getLocale, getT } from "@/i18n/server";
 import { fillTemplate } from "@/lib/admin/olympiad-per-attempt";
 import { removeMediaAssets } from "@/lib/admin/media-sweep";
 import { SUBJECT_DELETE_WORD } from "@/lib/admin/subject-delete-word";
@@ -47,6 +47,11 @@ export type SubjectQuestionSplit = {
 
 export type SubjectDeletionPreview = {
   id: string;
+  /**
+   * The DISPLAY name in the admin's locale — what the dialog puts in front of
+   * a person about to delete something. Not `subjects.name`, which is the
+   * bulk-import key and stops tracking the visible name after a rename.
+   */
   name: string;
   /** Typed by the admin to confirm; also shown, since `code` is not a UI field. */
   code: string;
@@ -83,6 +88,46 @@ function localizeBlocks(raw: unknown, lt: (key: string) => string): string[] {
 }
 
 /**
+ * The name to PUT IN FRONT OF THE ADMIN for this subject, in their own locale.
+ *
+ * WHY THE RPC'S ANSWER IS NOT USED DIRECTLY. admin_preview_subject_deletion
+ * returns `subjects.name`, and since migration 171 that column is the frozen
+ * bulk-import key rather than a label — updateSubject stops rewriting it, so a
+ * renamed subject keeps the name it was created with there for ever. A dialog
+ * headed "Delete İngilis dili?" about a subject the panel everywhere else calls
+ * "English / İngilis dili" is asking the admin to recognise something they have
+ * not seen for months, in the one dialog whose entire job is recognition.
+ *
+ * A missing translation or a failed read falls back to the key, which is
+ * exactly the pre-171 dialog: degraded, never wrong, never blank.
+ */
+async function subjectDisplayName(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  subjectId: string,
+  fallback: string,
+): Promise<string> {
+  const locale = await getLocale();
+  const { data, error } = await supabase
+    .from("subject_translations")
+    .select("locale, name")
+    .eq("subject_id", subjectId);
+  if (error || !Array.isArray(data)) {
+    if (error) {
+      console.error(
+        "[admin] subject deletion name lookup failed",
+        error.code ?? "unknown",
+      );
+    }
+    return fallback;
+  }
+  const byLocale = new Map<string, string>();
+  for (const r of data as { locale: string | null; name: string | null }[]) {
+    byLocale.set(String(r.locale ?? ""), String(r.name ?? "").trim());
+  }
+  return byLocale.get(locale) || byLocale.get("az") || fallback;
+}
+
+/**
  * Side-effect free. Drives the confirmation dialog: what is blocking, what the
  * purge would cost, and the code the admin has to type.
  */
@@ -103,9 +148,13 @@ export async function loadSubjectDeletionPreview(
   }
 
   const p = data as Record<string, any>;
+  const id = String(p.subject?.id ?? subjectId);
   return {
-    id: String(p.subject?.id ?? subjectId),
-    name: String(p.subject?.name ?? ""),
+    id,
+    // The DISPLAY name — see subjectDisplayName. The typed confirmation token
+    // is unaffected: it is the literal word SİL, compared inside the database,
+    // and it never was the subject's name.
+    name: await subjectDisplayName(supabase, id, String(p.subject?.name ?? "")),
     code: String(p.subject?.code ?? ""),
     status: String(p.subject?.status ?? ""),
     ok: Boolean(p.ok),

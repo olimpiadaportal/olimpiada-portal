@@ -6,7 +6,22 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/features/auth/authStore";
+import { accountScoped } from "@/features/auth/accountScope";
 import { setAppBadge } from "@/features/push/badge";
+
+/**
+ * THE INBOX IS THE MOST PERSONAL LIST IN THE APP and both roles have one, so
+ * both keys are account-scoped (features/auth/accountScope.ts): a parent and a
+ * child sharing one phone used to share one cache entry here, and the Realtime
+ * channel is already per-profile. The ["notifications"] prefix is unchanged, so
+ * refresh() and the two screens' refetchQueries still sweep both.
+ */
+const NQK = {
+  inbox: (profileId: string | null, limit: number) =>
+    accountScoped(["notifications", "inbox", limit] as const, profileId),
+  unread: (profileId: string | null) =>
+    accountScoped(["notifications", "unread"] as const, profileId),
+};
 
 export type NotificationItem = {
   id: string;
@@ -94,12 +109,12 @@ export function useNotifications(limit = PAGE_LIMIT) {
   const queryClient = useQueryClient();
 
   const inbox = useQuery({
-    queryKey: ["notifications", "inbox", limit],
+    queryKey: NQK.inbox(profileId, limit),
     queryFn: () => fetchInbox(limit),
     enabled: !!profileId,
   });
   const unread = useQuery({
-    queryKey: ["notifications", "unread"],
+    queryKey: NQK.unread(profileId),
     queryFn: fetchUnread,
     enabled: !!profileId,
   });

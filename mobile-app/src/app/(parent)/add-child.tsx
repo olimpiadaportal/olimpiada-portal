@@ -30,6 +30,7 @@ import { radius, spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { useMobileConfig } from "@/lib/configQueries";
 import { formatGradeLabel } from "@/lib/gradeLabel";
+import { goToTab } from "@/lib/navigation";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { bffActivateFree, bffAddChild } from "@/lib/api";
 import {
@@ -403,10 +404,14 @@ export default function AddChildScreen() {
               {/* No warning block here on purpose — it renders above the
                   phases so it is also visible when the wizard never reaches
                   this card. Duplicating it would show it twice on "done". */}
+              {/* goToTab(), not replace(): replacing this screen with the
+                  tab route mounts a SECOND tab navigator over the one already
+                  under this wizard, and the next back press then lands on Home
+                  through it instead of popping (lib/navigation.ts). */}
               <Button
                 title={t("parent.dash.title")}
                 style={{ alignSelf: "stretch" }}
-                onPress={() => router.replace("/(parent)/(tabs)/home")}
+                onPress={() => goToTab(router, "/(parent)/(tabs)/home")}
               />
               <Button
                 title={t("parent.child.another")}

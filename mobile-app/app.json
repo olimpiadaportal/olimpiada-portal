@@ -24,7 +24,6 @@
           "NSAllowsArbitraryLoads": false
         },
         "NSPhotoLibraryUsageDescription": "OlympIQ uses this only when you choose a profile picture — for example, picking a photo for your child's profile so they can recognise their own account. The photo is stored only as a profile image and is never used for anything else.",
-        "NSCameraUsageDescription": "OlympIQ uses this only for profile pictures — for example, adding a photo to your child's profile so they can recognise their own account. Photos are stored only as a profile image and are never used for anything else.",
         "CFBundleLocalizations": [
           "az",
           "en",
@@ -57,7 +56,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 96,
           "dark": {
-            "backgroundColor": "#14101f"
+            "backgroundColor": "#131212"
           }
         }
       ],
@@ -73,6 +72,13 @@
         "expo-local-authentication",
         {
           "faceIDPermission": "OlympIQ Face ID-dən yalnız tətbiqin kilidini açmaq üçün istifadə edir — bunu özünüz Hesab bölməsində aktivləşdirirsiniz. Üz məlumatları qurğunuzu heç vaxt tərk etmir."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       "./plugins/withIosPermissionStringDefaults",

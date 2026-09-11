@@ -48,6 +48,15 @@ const MIGRATION_134 = join(SQL, "migrations", "2026_08_22_134_giveaway_lifecycle
 const MIGRATION_138 = join(
   SQL, "migrations", "2026_08_25_138_notification_email_delivery.sql",
 );
+// 172 re-issued it AGAIN, to read the subject DISPLAY name from
+// subject_translations. Migration 171 froze `subjects.name` as the internal
+// bulk-import match key -- it deliberately stops following a rename -- so this
+// warning had begun naming a lapsing subject by a string no family has ever
+// seen. Same rule as above, applied again: the parity check follows the
+// migration that wrote the function LAST, which is now this one.
+const MIGRATION_172 = join(
+  SQL, "migrations", "2026_09_10_172_notification_subject_names.sql",
+);
 const CANONICAL_011 = join(SQL, "011_indexes_constraints_functions_triggers.sql");
 
 function read(abs: string): string {
@@ -164,11 +173,27 @@ describe("the copy is legal inside a purchase-silent app", () => {
 
 describe("the reminder chain and its backport", () => {
   const migration138 = read(MIGRATION_138);
+  const migration172 = read(MIGRATION_172);
 
-  it("carries migration 138's body VERBATIM into 011", () => {
-    // 138 is the migration that wrote this function LAST. Comparing against 130
-    // or 134 would fail however correct the backport is.
-    expect(canonical).toContain(sqlFunction(migration138, "notify_expiring_subscriptions").trimEnd());
+  it("carries migration 172's body VERBATIM into 011", () => {
+    // 172 is the migration that wrote this function LAST. Comparing against 130,
+    // 134 or 138 would fail however correct the backport is -- the trap this
+    // pointer has now been re-aimed at three times.
+    expect(canonical).toContain(sqlFunction(migration172, "notify_expiring_subscriptions").trimEnd());
+  });
+
+  it("names the subject by its DISPLAY name, not by the import key", () => {
+    // The message that decides whether a family keeps access identified the
+    // subject by `subjects.name`, which 171 froze as the bulk-import match key.
+    // az only, deliberately: profiles.preferred_locale is unused and every body
+    // here is an Azerbaijani literal, so fixing the NAME must not quietly turn
+    // into localizing the notification.
+    const live = sqlCode(sqlFunction(canonical, "notify_expiring_subscriptions"));
+    expect(live).toContain("public.subject_translations");
+    expect(live).toContain("tr_az.locale = 'az'");
+    // string_agg drops NULLs, so an unguarded read would silently shorten the
+    // list of lapsing subjects rather than fail.
+    expect(live).toContain("nullif(btrim(subj.name), '')");
   });
 
   it("asks for the email channel, because in-app alone reaches nobody", () => {
@@ -192,6 +217,7 @@ describe("the reminder chain and its backport", () => {
   it("restates the revoke, because create-or-replace preserves ACLs", () => {
     for (const [label, sql] of [
       ["migration 138", migration138],
+      ["migration 172", migration172],
       ["canonical 011", canonical],
     ] as const) {
       expect(sql, label).toContain(

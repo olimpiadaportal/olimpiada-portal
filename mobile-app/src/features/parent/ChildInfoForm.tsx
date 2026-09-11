@@ -355,6 +355,9 @@ export function ChildInfoForm({
           submitBehavior="blurAndSubmit"
           showLabel={t("mob.pw.show")}
           hideLabel={t("mob.pw.hide")}
+          // A CHILD credential, even though a parent types it: see
+          // PASSWORD_AUTOFILL in components/TextField.tsx.
+          purpose="none"
           error={err("password")}
         />
         <AppText variant="muted">{t("parent.child.passwordHint")}</AppText>

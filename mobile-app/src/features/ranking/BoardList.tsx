@@ -26,10 +26,12 @@ type T = (key: string) => string;
 export type BoardListColors = {
   /** Primary text (names, values). */
   ink: string;
-  /** Secondary text (ranks outside the top 3). */
+  /** Secondary text: ranks outside the top 3, the context line under the
+   *  name, the provisional badge. Both boards passed a separate `dim` for the
+   *  quiet text and the PARENT board already aliased it to `muted`; the arena's
+   *  `dim` misses AA for text, so the tier is gone and this is the one
+   *  secondary ink. */
   muted: string;
-  /** Faint context line under the name. */
-  dim: string;
   /** Row separators. */
   line: string;
   /** Self-row background tint. */
@@ -174,7 +176,7 @@ export function BoardRowList({
                 // city + rayon then school + grade for realistic az names, and
                 // the full context is on the student's own profile card.
                 <AppText
-                  color={colors.dim}
+                  color={colors.muted}
                   style={{ fontSize: 11 }}
                   numberOfLines={2}
                   ellipsizeMode="tail"
@@ -194,7 +196,7 @@ export function BoardRowList({
                   }}
                 >
                   <AppText
-                    color={colors.dim}
+                    color={colors.muted}
                     style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 }}
                   >
                     {t("lb.provisional")}

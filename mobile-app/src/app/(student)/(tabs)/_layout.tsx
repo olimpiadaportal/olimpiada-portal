@@ -39,6 +39,25 @@ export default function StudentTabs() {
   return (
     <Tabs
       tabBar={(p) => <AppTabBar {...p} palette={arenaTabPalette(arena)} />}
+      // Same decision as the parent tabs, where the reasoning is written out:
+      // back goes to the previously focused tab, not to routes[0] (`home` =
+      // Arena). It is the LEAVE path of the whole test chain — Result "Yeni
+      // test", Review "Testlərə qayıt", the runner's cancel and the leave
+      // guard's fallback all pop back onto the Tests tab, and every one of them
+      // then answered back with Arena.
+      //
+      // The flag-gated tabs are the reason to say it again here rather than
+      // just point at the parent layout. `href: null` is a TAB BAR change, not
+      // a router change: expo-router turns it into `tabBarButton: () => null`
+      // plus `tabBarItemStyle: { display: "none" }` (which is what AppTabBar
+      // filters on), and the screen stays in `routeNames`, stays in `routes`
+      // and stays reachable by a deep link or a notification tap. So "order"
+      // ("the tab to the left") could answer back with a tab that has no
+      // button on this child's screen, and no flag flip ever moves the focused
+      // tab on its own — nothing is removed, so nothing falls back anywhere.
+      // "history" answers with a tab the child actually visited, which is the
+      // only one of the three that is honest about where they came from.
+      backBehavior="history"
       screenOptions={{
         headerStyle: { backgroundColor: arena.panel },
         headerTitleStyle: { color: arena.ink, fontWeight: weight.bold },

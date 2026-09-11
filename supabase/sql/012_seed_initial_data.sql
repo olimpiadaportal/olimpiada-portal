@@ -144,6 +144,66 @@ insert into public.subjects (code, name, status) values
 on conflict (code) do nothing;
 
 -- -----------------------------------------------------------------------------
+-- Subject DISPLAY names in all three languages (migration 171).
+--
+-- These are not decoration: since 171 the app reads a subject's label from
+-- subject_translations FIRST, so a database seeded without them would render
+-- every subject with its Azerbaijani `name` to English and Russian readers --
+-- and would render `az_language` as "Məntiq" only by luck of that column. The
+-- strings below are exactly what the apps' built-in `subj.<code>` dictionary
+-- resolves (web-app/src/i18n/messages.ts, mirrored into the mobile catalog by
+-- scripts/sync-i18n.mjs), so a from-zero rebuild looks identical to production
+-- and 013's check 129 passes on it.
+--
+-- `azerbaycan_dili` is deliberately absent: that subject is not seeded here
+-- either (it arrives via migration 151, which requires it and never creates
+-- it). The join below simply matches nothing for a code that does not exist.
+--
+-- ON CONFLICT DO NOTHING so a rerun never reverts an admin's rename.
+-- -----------------------------------------------------------------------------
+insert into public.subject_translations (subject_id, locale, name)
+select s.id, v.locale::public.content_locale, v.name
+  from public.subjects s
+  join (values
+    ('math',        'az', 'Riyaziyyat'),
+    ('math',        'en', 'Mathematics'),
+    ('math',        'ru', 'Математика'),
+    ('english',     'az', 'İngilis dili'),
+    ('english',     'en', 'English'),
+    ('english',     'ru', 'Английский язык'),
+    ('informatics', 'az', 'İnformatika'),
+    ('informatics', 'en', 'Informatics'),
+    ('informatics', 'ru', 'Информатика'),
+    ('elm',         'az', 'Elm'),
+    ('elm',         'en', 'Science'),
+    ('elm',         'ru', 'Естественные науки'),
+    ('fizika',      'az', 'Fizika'),
+    ('fizika',      'en', 'Physics'),
+    ('fizika',      'ru', 'Физика'),
+    -- `az_language` is the LOGIC subject; the code is the historical misnomer
+    -- documented above, which the dictionary has always corrected.
+    ('az_language', 'az', 'Məntiq'),
+    ('az_language', 'en', 'Logic'),
+    ('az_language', 'ru', 'Логика')
+  ) as v(code, locale, name) on v.code = s.code
+on conflict (subject_id, locale) do nothing;
+
+-- Any subject seeded or created outside the list above still needs all three
+-- locales, or check 129 fails and that subject reads Azerbaijani-only. Its own
+-- `name` in all three is the honest default -- it is exactly what such a
+-- subject displayed before 171, in every language. A blank `name` (the column
+-- is not null but has no not-blank constraint) falls back to the `code`, which
+-- is what subjectLabel() renders as its own last resort anyway -- skipping such
+-- a row instead would leave that subject with zero locales and fail check 129.
+-- Kept identical to section D2 of migration 2026_09_10_171.
+insert into public.subject_translations (subject_id, locale, name)
+select s.id, l.locale::public.content_locale,
+       coalesce(nullif(btrim(s.name), ''), s.code)
+  from public.subjects s
+ cross join (values ('az'), ('en'), ('ru')) as l(locale)
+on conflict (subject_id, locale) do nothing;
+
+-- -----------------------------------------------------------------------------
 -- Predefined solid-color wallpapers (child dashboard). Image wallpapers are
 -- added later by an admin via the wallpaper-assets bucket.
 -- -----------------------------------------------------------------------------

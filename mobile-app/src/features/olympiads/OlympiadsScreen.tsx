@@ -35,6 +35,7 @@ import { subjectLabel } from "@/lib/subjectLabel";
 import { fmtDate } from "@/features/parent/commerce";
 import { SheetShell } from "@/features/parent/ui";
 import { useAuthStore } from "@/features/auth/authStore";
+import { accountScoped } from "@/features/auth/accountScope";
 import { useArena } from "@/features/arena/useArena";
 import {
   ArenaButton,
@@ -54,8 +55,10 @@ import { buildOlympiadDetailRows, sharedGradeValue } from "./details";
 import { TypeMarquee } from "./TypeMarquee";
 
 // Photo-scrim overlay: sits ON TOP of arbitrary cover images, so it cannot
-// come from theme tokens (must hold in every theme/palette).
-const SCRIM = ["transparent", "rgba(10, 14, 26, 0.82)"] as const;
+// come from theme tokens (must hold in every theme/palette). Neutralised with
+// the rest of the dark surfaces (2026-09-10) and luminance-matched, so the ink
+// contract against SCRIM_INK is unchanged.
+const SCRIM = ["transparent", "rgba(16, 14, 14, 0.82)"] as const;
 const SCRIM_INK = "#ffffff";
 
 type StatusKind = "upcoming" | "planned" | "held";
@@ -95,7 +98,9 @@ export function OlympiadsScreen() {
   const olympiadOn = config.data?.flags.olympiadModule === true;
 
   const catalogQ = useQuery({
-    queryKey: ["student", "oly-catalog", locale],
+    // get_my_olympiad_catalog() is role-aware and scopes a student to THEIR
+    // grade, so this is a per-account answer wearing a catalogue's name.
+    queryKey: accountScoped(["student", "oly-catalog", locale] as const, profileId),
     queryFn: () => fetchOlympiadCatalog(locale),
     enabled: olympiadOn,
   });
@@ -112,12 +117,12 @@ export function OlympiadsScreen() {
     staleTime: 5 * 60_000,
   });
   const ownedQ = useQuery({
-    queryKey: ["student", "oly-owned", profileId, locale],
+    queryKey: accountScoped(["student", "oly-owned", locale] as const, profileId),
     queryFn: () => fetchOwnedOlympiads(profileId!, locale),
     enabled: olympiadOn && !!profileId,
   });
   const liveQ = useQuery({
-    queryKey: ["student", "oly-live", profileId],
+    queryKey: accountScoped(["student", "oly-live"] as const, profileId),
     queryFn: () => fetchLiveOlympiadAttempt(profileId!),
     enabled: olympiadOn && !!profileId,
     staleTime: 0,
@@ -214,7 +219,7 @@ export function OlympiadsScreen() {
 
   const detailStatus = detail ? statusOf(detail, now) : null;
   const statusColor = (kind: StatusKind): string =>
-    kind === "upcoming" ? arena.lime : kind === "held" ? arena.dim : arena.gold;
+    kind === "upcoming" ? arena.lime : kind === "held" ? arena.muted : arena.gold;
 
   return (
     <View style={{ flex: 1, backgroundColor: arena.bg }}>
@@ -465,7 +470,7 @@ export function OlympiadsScreen() {
                       <AppText variant="label" color={arena.ink}>
                         {o.title}
                       </AppText>
-                      <AppText color={arena.dim} style={{ fontSize: 12 }}>
+                      <AppText color={arena.muted} style={{ fontSize: 12 }}>
                         {o.questions} {t("arena.questionsShort")}
                         {live?.packageId === o.packageId
                           ? ` · ${t("test.home.continueSub")}`

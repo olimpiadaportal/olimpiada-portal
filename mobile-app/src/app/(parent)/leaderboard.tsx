@@ -26,7 +26,7 @@ import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import { fetchActiveSubjects } from "@/lib/data";
 import { formatGradeLabel } from "@/lib/gradeLabel";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 import { SelectField } from "@/features/profile/SelectField";
 import { BoardRowList, lbFormatValue } from "@/features/ranking/BoardList";
 import {
@@ -38,12 +38,14 @@ import {
   type Scope,
 } from "@/features/ranking/data";
 import {
+  useAccountId,
   useChildren,
   useCities,
   useCityDistricts,
   useGrades,
   useSchools,
 } from "@/features/parent/queries";
+import { accountScoped } from "@/features/auth/accountScope";
 import { ChildChips, childDisplayName, ScreenScroll } from "@/features/parent/ui";
 
 /** Token-themed filter chip (the parent-surface twin of ArenaChip). */
@@ -95,12 +97,18 @@ export default function ParentLeaderboard() {
   const { t, locale } = useT();
   const router = useRouter();
   const config = useMobileConfig();
+  const accountId = useAccountId();
 
   const leaderboardOn = config.data?.flags.leaderboard === true;
 
-  // ---- catalogs (world-readable; the same sources the Add-Child flow uses) --
+  // ---- catalogs (the grades/cities/rayons/schools reads below ARE world-
+  // readable; the subject list above them is not — see its own note) --
   const subjectsQ = useQuery({
-    queryKey: ["catalog", "active-subjects"],
+    // Account-scoped: fetchActiveSubjects() with no grade argument runs
+    // my_taught_subjects, so this answers per CALLER — and the student ranking
+    // screen calls it identically. One shared key handed whichever of the two
+    // asked second the other's list.
+    queryKey: accountScoped(["catalog", "active-subjects"] as const, accountId),
     // Called through an arrow, never passed by reference: React Query hands a
     // queryFn its CONTEXT object as the first argument, and fetchActiveSubjects
     // now takes an optional gradeId there — a context object would fall into
@@ -123,9 +131,17 @@ export default function ParentLeaderboard() {
   const [schoolSel, setSchoolSel] = useState<string | null>(null);
   const [childSel, setChildSel] = useState<string | null>(null);
 
-  const activeSubjects = (
-    (subjectsQ.data ?? []) as { id: string; code: string | null; name: string }[]
-  ).filter((s) => !!s.id);
+  // ORDERED BY WHAT THE PARENT SEES. fetchActiveSubjects orders on the frozen
+  // `subjects.name` import key for determinism only; the picker below renders
+  // the resolved label, so the reading order has to be settled here, where the
+  // translator and the locale exist.
+  const activeSubjects = sortSubjectsByLabel(
+    t,
+    locale,
+    ((subjectsQ.data ?? []) as { id: string; code: string | null; name: string }[]).filter(
+      (s) => !!s.id,
+    ),
+  );
   const grades = ((gradesQ.data ?? []) as { id: string; level: number; name: string }[]).filter(
     (g) => !!g.id,
   );
@@ -199,7 +215,7 @@ export default function ParentLeaderboard() {
   const childId =
     kids.find((k) => k.profile_id === childSel)?.profile_id ?? kids[0]?.profile_id ?? null;
   const posQ = useQuery({
-    queryKey: ["parent", "lb-pos", childId ?? "-", ...argsKey],
+    queryKey: accountScoped(["parent", "lb-pos", ...argsKey] as const, childId),
     queryFn: () => fetchChildLeaderboardPosition(childId!, args),
     enabled: leaderboardOn && scopeUsable && !!childId,
   });
@@ -302,7 +318,7 @@ export default function ParentLeaderboard() {
               value={subjectId ?? ""}
               options={activeSubjects.map((s) => ({
                 id: s.id,
-                label: subjectLabel(t, s.code, s.name),
+                label: s.label,
               }))}
               onChange={(id) => setSubjectSel(id)}
               placeholder={t("lb.subjectLabel")}
@@ -404,7 +420,6 @@ export default function ParentLeaderboard() {
               colors={{
                 ink: tokens.text,
                 muted: tokens.muted,
-                dim: tokens.muted,
                 line: tokens.border,
                 selfBg: tokens.chipBg,
                 highlight: tokens.accent,

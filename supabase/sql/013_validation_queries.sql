@@ -24,7 +24,7 @@ with expected(name) as (
     ('profiles'),('roles'),('permissions'),('role_permissions'),('profile_roles'),
     ('parents'),('students'),('parent_student_links'),('child_login_attempts'),
     ('districts'),('city_districts'),('schools'),('grades'),('subjects'),('topics'),('subtopics'),
-    ('topic_translations'),('subtopic_translations'),
+    ('subject_translations'),('topic_translations'),('subtopic_translations'),
     ('question_types'),('difficulty_levels'),('olympiad_types'),('sources'),
     ('questions'),('question_translations'),('answer_options'),
     ('answer_option_translations'),('question_explanations'),('tests'),('test_questions'),
@@ -4597,6 +4597,225 @@ select '127_student_gender_optional' as check_name,
                   where c.table_schema='public' and c.table_name='students'
                     and c.column_name='gender'),
                 'COLUMN MISSING') as column_state;
+
+-- -----------------------------------------------------------------------------
+-- 128) parent_student_links write policies are CREATOR-SCOPED (migration 170).
+--
+--      WHY THIS IS ASSERTED AND NOT MERELY DOCUMENTED. This table is, in its
+--      own words (002), "the ONLY source of truth for parent access to a
+--      student": is_parent_linked_to_student() is one EXISTS over it, and ~20
+--      SELECT policies plus the private child-avatar storage gate read that
+--      helper as their authorization fact. Until 170 the two write policies
+--      constrained ONLY parent_profile_id -- they pinned who the row said the
+--      parent was and never said which child it handed them -- so an ordinary
+--      authenticated parent could INSERT an already-'active' link naming any
+--      student_profile_id and inherit the whole parental view of another
+--      family's minor, plus that child's password reset through the app's
+--      parentOwnsChild helper. The FK to students(profile_id) meant the id had
+--      to be real, so the only thing standing in the way was the unguessability
+--      of a gen_random_uuid. That is obscurity, not access control, and it
+--      fails silently the day any endpoint, log, export or support screen
+--      echoes a student profile id.
+--
+--      A REGRESSION HERE IS INVISIBLE. Nothing breaks, no query errors, no
+--      count moves; the policy simply stops constraining the column that
+--      confers the privilege. So the assertion is on the STORED PREDICATE, and
+--      it is deliberately shape-based rather than text-exact: pg_policies
+--      renders the planner's normalized form, which legitimately differs from
+--      the source spelling, and a check pinned to formatting would go red on a
+--      harmless reformat and then be ignored (check 123).
+--
+--      BOTH HALVES OF THE UPDATE MATTER, which is why qual AND with_check are
+--      probed separately: qual (the OLD row) is what stops promoting someone
+--      else's link to 'active', with_check (the NEW row) is what stops
+--      repointing student_profile_id at a foreign child. A fix applied to only
+--      one of them looks done and is not.
+--
+--      psl_select and psl_delete are asserted present but NOT constrained here:
+--      reading your own links and deleting your own link are not escalations,
+--      and 170 deliberately left them alone.
+-- -----------------------------------------------------------------------------
+with psl as (
+  select p.policyname,
+         coalesce(p.qual, '')       as qual,
+         coalesce(p.with_check, '') as wchk,
+         p.cmd,
+         p.roles::text[]            as roles
+    from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'parent_student_links'
+), verdict as (
+  select
+    -- INSERT: the WITH CHECK must name the student column and tie it to the
+    -- caller's own created children.
+    (select count(*) from psl
+      where policyname = 'psl_insert' and cmd = 'INSERT'
+        and position('student_profile_id'           in wchk) > 0
+        and position('created_by_parent_profile_id' in wchk) > 0
+        and position('current_profile_id'           in wchk) > 0) = 1 as insert_scoped,
+    -- UPDATE: the same, on the OLD row and the NEW row.
+    (select count(*) from psl
+      where policyname = 'psl_update' and cmd = 'UPDATE'
+        and position('student_profile_id'           in qual) > 0
+        and position('created_by_parent_profile_id' in qual) > 0
+        and position('student_profile_id'           in wchk) > 0
+        and position('created_by_parent_profile_id' in wchk) > 0) = 1 as update_scoped,
+    -- Neither write policy may be reachable by anon, and both stay scoped to
+    -- `authenticated` (an ALL-roles policy would also serve anon).
+    (select count(*) from psl
+      where policyname in ('psl_insert','psl_update')
+        and (roles && array['anon','public'] or roles is null)) = 0 as no_anon_writer,
+    -- No SECOND write policy may exist: policies are OR-ed, so one permissive
+    -- leftover re-opens the hole while the tightened pair still reads correct.
+    (select count(*) from psl where cmd in ('INSERT','UPDATE','ALL')) = 2 as no_extra_writer,
+    -- The untouched pair is still present.
+    (select count(*) from psl where policyname in ('psl_select','psl_delete')) = 2 as reader_intact,
+    -- RLS is on at all -- the policies are decoration without it.
+    (select relrowsecurity from pg_class
+      where oid = 'public.parent_student_links'::regclass) as rls_on,
+    -- The FK that forces a real student id (defence in depth, not the control).
+    exists (select 1 from pg_constraint
+             where conrelid = 'public.parent_student_links'::regclass
+               and contype = 'f'
+               and confrelid = 'public.students'::regclass) as fk_present,
+    -- The legitimate writer must stay out of reach of the roles this check
+    -- constrains; it is SECURITY DEFINER + service_role and bypasses RLS.
+    -- Probed by OID over every overload, never by a text signature: a signature
+    -- that no longer resolves makes has_function_privilege RAISE, which would
+    -- abort this whole file instead of reporting one FAIL.
+    coalesce((select bool_and(not has_function_privilege('authenticated', pr.oid, 'EXECUTE'))
+                from pg_proc pr
+                join pg_namespace n on n.oid = pr.pronamespace
+               where n.nspname = 'public' and pr.proname = 'create_child_account'),
+             true) as writer_locked
+)
+select '128_psl_write_policies_creator_scoped' as check_name,
+       case when insert_scoped and update_scoped and no_anon_writer
+                 and no_extra_writer and reader_intact and rls_on
+                 and fk_present and writer_locked
+            then 'PASS' else 'FAIL' end as status,
+       case when insert_scoped then 'ok' else 'psl_insert UNCONSTRAINED' end as insert_policy,
+       case when update_scoped then 'ok' else 'psl_update UNCONSTRAINED' end as update_policy,
+       case when no_extra_writer and no_anon_writer then 'ok'
+            else 'EXTRA OR ANON-REACHABLE WRITE POLICY' end as writer_surface,
+       case when rls_on and fk_present and reader_intact and writer_locked then 'ok'
+            else 'rls/fk/reader/definer regression' end as substrate
+  from verdict;
+
+
+-- 129) Subject display names are trilingual (migration 171). The defect this
+--      guards is a SILENT one and it shipped once already: `subjects.name` held
+--      one Azerbaijani string, the apps resolved the visible label from their
+--      own `subj.<code>` dictionary FIRST, and the dictionary won -- so renaming
+--      a seeded subject wrote the row, wrote the audit entry, and changed
+--      nothing a family could see, in any of the three languages.
+--
+--      GUARDED AGAINST AN UNAPPLIED 171. Every row-level clause below reaches
+--      the table through query_to_xml() instead of naming it in a FROM. A bare
+--      `from public.subject_translations` is resolved at PARSE time, so on any
+--      database where 171 has not run yet -- production, until it does -- this
+--      one statement aborted the WHOLE file with `relation
+--      "public.subject_translations" does not exist` and the checks after it
+--      never ran. A to_regclass() guard alone does NOT fix that: the guard is
+--      evaluated, the table reference is not. Same motive as check 103's tbl_ok
+--      CTE, one step further because this check reads ROWS and not just
+--      catalog. With the table absent the counters come back NULL and the
+--      status is a clean FAIL.
+--
+--      What each part defends:
+--
+--        * the table must exist WITH RLS and the same public-read/admin-write
+--          posture as `subjects` itself. The landing subject strip, /services,
+--          /subjects and the public olympiad catalog are ANONYMOUS surfaces; a
+--          narrower SELECT renames a subject only for signed-in readers, which
+--          is the same class of bug with a smaller blast radius;
+--        * the SELECT GRANT to anon and authenticated. RLS decides WHICH ROWS a
+--          reader may see; the grant decides whether it may read the table AT
+--          ALL, and the two fail differently -- with no grant PostgREST hands
+--          the mobile app an empty set, subjectLabel() falls through to the
+--          shipped `subj.<code>` dictionary, every subject keeps its old name
+--          in all three languages and nothing errors anywhere. 010's `alter
+--          default privileges` is GRANTOR-SCOPED and covers only tables created
+--          by the role that ran it, which is why 171 and 003 grant explicitly
+--          and why the grant is asserted here rather than assumed;
+--        * ck_subject_tr_name_not_blank is what makes the read chain unable to
+--          render an EMPTY label -- the admin action stores the az value when a
+--          locale field is left blank rather than writing '';
+--        * ALL THREE locales, for every subject that is not archived. Two out of
+--          three is the worst outcome available: the product reads correctly in
+--          two languages and silently Azerbaijani in the third, and nothing
+--          anywhere reports it. `archived` subjects are excluded because they
+--          are no longer shown to anyone and blocking a rebuild over a retired
+--          row would be noise.
+--
+--      DELIBERATELY NOT ASSERTED: that the az row equals `subjects.name`. An
+--      earlier draft did assert it, believing a rename writes both. It does not,
+--      and must not -- three bulk-import RPCs in 011 (:3026, :3185, :6857)
+--      resolve a subject BY NAME, so `subjects.name` is an import match key that
+--      a rename deliberately leaves alone. The two are EXPECTED to diverge the
+--      first time an admin renames a subject, and asserting equality would turn
+--      every working rename into a FAIL here.
+--
+--      NOTE for a from-zero rebuild: 012 seeds the six canonical subjects with
+--      the dictionary strings, so this passes on a schema-only database. It is
+--      NOT a content-coverage check like 102 -- there is no row count here that
+--      a fresh build cannot reach.
+with tbl as (
+  select to_regclass('public.subject_translations') as rel
+), rowdoc as (
+  -- One round trip, three counters, executed only when the table is there.
+  select case when (select rel from tbl) is not null then
+    query_to_xml($q$
+      select
+        (select count(*)
+           from public.subjects s
+          where s.status <> 'archived'
+            and (select count(distinct t.locale)
+                   from public.subject_translations t
+                  where t.subject_id = s.id) <> 3)          as missing_locale,
+        (select count(*) from public.subject_translations
+          where btrim(name) = '')                           as blank_labels,
+        (select count(*) from public.subject_translations)  as total_rows
+    $q$, false, true, '')
+  end as doc
+), facts as (
+  select (xpath('/row/missing_locale/text()', doc))[1]::text::int as subjects_missing_a_locale,
+         (xpath('/row/blank_labels/text()',   doc))[1]::text::int as blank_labels,
+         (xpath('/row/total_rows/text()',     doc))[1]::text::int as translation_rows
+    from rowdoc
+)
+select '129_subject_translations_trilingual' as check_name,
+       case when (select rel from tbl) is not null
+             and (select relrowsecurity from pg_class where oid = (select rel from tbl))
+             -- public read + admin write, exactly two policies, like `subjects`.
+             and (select count(*) from pg_policies
+                   where schemaname = 'public'
+                     and tablename = 'subject_translations') = 2
+             and exists (select 1 from pg_policies
+                          where schemaname = 'public'
+                            and tablename = 'subject_translations'
+                            and cmd = 'SELECT' and qual = 'true')
+             and exists (select 1 from pg_policies
+                          where schemaname = 'public'
+                            and tablename = 'subject_translations'
+                            and cmd = 'ALL'
+                            and position('is_admin' in coalesce(qual, '')) > 0
+                            and position('is_admin' in coalesce(with_check, '')) > 0)
+             -- Baseline privileges. The oid overload returns NULL rather than
+             -- raising when `rel` is NULL, so it needs no guard of its own.
+             and has_table_privilege('anon',          (select rel from tbl), 'SELECT')
+             and has_table_privilege('authenticated', (select rel from tbl), 'SELECT')
+             -- The shape constraints the read chain depends on.
+             and exists (select 1 from pg_constraint where conname = 'uq_subject_locale')
+             and exists (select 1 from pg_constraint
+                          where conname = 'ck_subject_tr_name_not_blank')
+             -- No blank label can reach a reader.
+             and (select blank_labels from facts) = 0
+             -- Every live subject carries az AND en AND ru.
+             and (select subjects_missing_a_locale from facts) = 0
+            then 'PASS' else 'FAIL' end as status,
+       (select subjects_missing_a_locale from facts) as subjects_missing_a_locale,
+       (select blank_labels from facts)              as blank_labels,
+       (select translation_rows from facts)          as translation_rows;
 
 -- =============================================================================
 -- End of 013_validation_queries.sql

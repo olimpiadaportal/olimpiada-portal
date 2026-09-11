@@ -695,7 +695,7 @@ export function AddChildWizard({
                           onRemove={(id) => setPlan((prev) => removePlanSubject(prev, id))}
                           disabled={pending}
                           locale={locale}
-                          t={tt}
+                          t={t}
                         />
                       );
                     })}
@@ -798,7 +798,7 @@ export function AddChildWizard({
                 }
                 loading={!quote}
                 locale={locale}
-                t={tt}
+                t={t}
               />
             </div>
           </div>

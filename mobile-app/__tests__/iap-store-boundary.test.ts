@@ -294,6 +294,71 @@ describe("only priced, sellable, uncovered subject products are offered", () => 
       "b.year",
     ]);
   });
+
+  // -------------------------------------------------------------------------
+  // THE GROUPING IS LOCALE-INDEPENDENT ON PURPOSE (2026-09-10)
+  // -------------------------------------------------------------------------
+  // Every other subject list in this app is ordered by the DISPLAYED label in
+  // the reader's collation. This one is deliberately the opposite, and the
+  // difference is the point: an offer row is a SKU, its three intervals must
+  // stay adjacent, IapPanel resolves the visible label itself, and a list of
+  // purchase buttons that reshuffles is how a parent taps the year when they
+  // meant the week.
+  //
+  // It CLAIMED that before and did not deliver it: a bare localeCompare()
+  // follows the device locale on Hermes, so two phones could disagree. These
+  // pin the claim to a comparison that cannot vary — and they fail under ANY
+  // collator, which is what makes them worth having.
+  it("orders on code points, not on any locale's alphabet", () => {
+    // "Ə" is U+018F, above "Z" by code point and BELOW it in every alphabet
+    // that has the letter — az sorts ə right after e. So this ordering is
+    // reachable only by a code-point comparison: an az, en or root collator
+    // would all put Ələkbərov first and fail this.
+    const rows = [
+      row({ productId: "z", subjectId: "s2", subjectName: "Zoologiya" }),
+      row({ productId: "e", subjectId: "s3", subjectName: "Ələkbərov" }),
+    ];
+    const products: StoreProduct[] = rows.map((r) => ({
+      id: r.productId,
+      displayPrice: "X",
+      title: null,
+    }));
+    expect(buildOffers(rows, products, []).map((o) => o.productId)).toEqual([
+      "z",
+      "e",
+    ]);
+  });
+
+  it("keeps a subject's intervals together even when two share a name", () => {
+    // The name is the frozen import key and nothing forces it to be unique or
+    // even present. Without the subjectId tie-break, two subjects called the
+    // same thing interleaved their week/month/year rows into one unreadable
+    // block of six buttons.
+    const rows = [
+      row({ productId: "b.year", subjectId: "s2", subjectName: null, interval: "year" }),
+      row({ productId: "a.year", subjectId: "s1", subjectName: null, interval: "year" }),
+      row({ productId: "b.week", subjectId: "s2", subjectName: null, interval: "week" }),
+      row({ productId: "a.week", subjectId: "s1", subjectName: null, interval: "week" }),
+    ];
+    const products: StoreProduct[] = rows.map((r) => ({
+      id: r.productId,
+      displayPrice: "X",
+      title: null,
+    }));
+    expect(buildOffers(rows, products, []).map((o) => o.productId)).toEqual([
+      "a.week",
+      "a.year",
+      "b.week",
+      "b.year",
+    ]);
+  });
+
+  it("the catalogue holds no localeCompare at all", () => {
+    // Source-level, because the behaviour above is only ever wrong on a device
+    // whose locale differs from the CI runner's — i.e. never here.
+    const code = codeOnly(readFileSync(join(IAP_DIR, "catalog.ts"), "utf8"));
+    expect(code).not.toContain("localeCompare");
+  });
 });
 
 describe("every new string ships in all three languages", () => {

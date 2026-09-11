@@ -2,7 +2,8 @@ import type { Locale } from "@/i18n/config";
 
 // Local trilingual strings for the Curriculum Structure screen (the merged
 // Subject → Topic → Subtopic tree that replaced /manage/topics and
-// /manage/subtopics). Same pattern as locations/labels.ts and pricing/labels.ts:
+// /manage/subtopics). Same pattern as locations/labels.ts (the pricing one is
+// gone — that screen merged into Subjects and its strings moved to messages.ts):
 // keys that already live in the shared dictionary (action.*, field.status,
 // manage.select, manage.saving, flt.noMatches, modal.close, pend.deleting,
 // term.1…term.4, status.*) still come from getT() — these are only the gaps.

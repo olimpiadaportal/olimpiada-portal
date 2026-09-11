@@ -4,7 +4,7 @@ import { requireChild } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { subjectLabelOrNull } from "@/lib/subjectLabel";
 import { ChildNavActive } from "@/components/ChildNav";
 
 type TopicRow = { topic_id: string | null; name: string | null; total: number; correct: number };
@@ -91,6 +91,14 @@ export default async function TestResultPage({
 
   const topics = (result.topics ?? []).filter((tp) => tp.total > 0);
 
+  // Resolved ONCE, and guarded on the RESOLVED label rather than on the raw
+  // `subjects.name`: that column is the frozen bulk-import match key and may be
+  // blank while the subject's translations are fine, in which case the old
+  // guard dropped a perfectly nameable subject from this header. Hoisted out of
+  // the JSX because the separator dot below has to make the same decision — two
+  // conditions derived from two different values is how a stray " · " appears.
+  const subjectName = subjectLabelOrNull(t, a.subjects?.code, a.subjects?.name);
+
   return (
     <>
       {/* Kind-aware nav highlight (shared route — see ChildNav). */}
@@ -103,10 +111,10 @@ export default async function TestResultPage({
           {isOlympiad && (
             <>
               <span>{t("test.run.olympiad")}</span>
-              {a.subjects?.name ? <span aria-hidden="true"> · </span> : null}
+              {subjectName ? <span aria-hidden="true"> · </span> : null}
             </>
           )}
-          {a.subjects?.name ? subjectLabel(t, a.subjects?.code, a.subjects.name) : ""}
+          {subjectName ?? ""}
         </p>
         {/* Round 51 (audit): olympiad results are practice-only — say so where
             the score is shown, or the child reasonably assumes it counted. */}

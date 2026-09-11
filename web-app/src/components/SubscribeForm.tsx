@@ -173,7 +173,7 @@ export function SubscribeForm({
             groups: r.groups ?? null,
           }}
           locale={locale}
-          t={tt}
+          t={t}
         />
         <Link className="btn" href="/dashboard">
           {tt("parent.dash.title")}
@@ -274,7 +274,7 @@ export function SubscribeForm({
                 onRemove={(id) => setPlan((prev) => removePlanSubject(prev, id))}
                 disabled={pending}
                 locale={locale}
-                t={tt}
+                t={t}
               />
             );
           })}
@@ -315,7 +315,7 @@ export function SubscribeForm({
                 groups: quote.groups ?? null,
               }}
               locale={locale}
-              t={tt}
+              t={t}
             />
             {/* Says WHY "due today" is zero, so a 0,00 does not read as free
                 forever. Rendered from the same server quote as the figure. */}

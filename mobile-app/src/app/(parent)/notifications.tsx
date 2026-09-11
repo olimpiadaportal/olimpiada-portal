@@ -7,7 +7,7 @@
 import React, { useMemo, useState } from "react";
 import { RefreshControl, SectionList, View } from "react-native";
 import { BellOff } from "lucide-react-native";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -16,6 +16,7 @@ import { spacing } from "@/theme/tokens";
 import { useTheme } from "@/theme/ThemeProvider";
 import { useT } from "@/i18n/useT";
 import { isSafeRelativeUrl, resolveDeepLink } from "@/lib/deeplink";
+import { openTarget } from "@/lib/navigation";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import {
   useNotifications,
@@ -35,6 +36,7 @@ export default function ParentNotifications() {
   const { t, locale } = useT();
   const { tokens } = useTheme();
   const router = useRouter();
+  const pathname = usePathname();
   const queryClient = useQueryClient();
   const { items, loading, error, unreadCount, refresh, markRead, markAllRead, remove } =
     useNotifications(50);
@@ -83,10 +85,16 @@ export default function ParentNotifications() {
   // Root-relative paths (action_url or a markdown link in the body) go through
   // the SAME deep-link allowlist as push/universal links; anything that does
   // not resolve to an openable parent target falls back to the detail sheet.
+  //
+  // openTarget(), not router.push(): half the allowlist resolves to a TAB
+  // (/dashboard/news, /analytics, /subscription, /olympiads, /children/…), and
+  // pushing a tab route from this screen — which is itself stacked on top of
+  // the tabs — mounts a SECOND tab navigator whose back press lands on Home
+  // instead of returning here. See lib/navigation.ts.
   const openPath = (path: string): boolean => {
     const resolved = resolveDeepLink(path, "parent");
     if (resolved && resolved.kind === "open") {
-      router.push(resolved.target as never);
+      openTarget(router, resolved.target, pathname);
       return true;
     }
     return false;

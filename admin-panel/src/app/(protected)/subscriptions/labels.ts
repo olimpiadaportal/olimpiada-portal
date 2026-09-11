@@ -1,7 +1,7 @@
 import type { Locale } from "@/i18n/config";
 
 // Local trilingual strings for the admin Subscriptions section (list, detail,
-// lifecycle actions). Mirrors the pricing/labels.ts pattern: only the GAPS not
+// lifecycle actions). Mirrors the locations/labels.ts pattern: only the GAPS not
 // already in the shared dictionary (src/i18n/messages.ts) live here — reusable
 // strings (action.cancel, action.save, manage.saving, modal.close, err.server,
 // flt.noMatches, qfilter.clear, qpage.*, manage.back) still come from getT().

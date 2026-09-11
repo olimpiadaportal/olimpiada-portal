@@ -125,13 +125,13 @@ const CATALOGUE_KEYS: string[] = Array.from(
  */
 const ALLOWED: Record<string, string> = {
   "privacy.s1.dont":
-    "«There is no checkout in the mobile app — purchases happen only on the website.» A statement that the app has no checkout.",
+    "«On iPhone and iPad a purchase goes through the App Store; the Android app has no purchase at all; on the website payment goes through the bank's own page.» A factual statement of WHERE purchasing exists, rewritten 2026-09-10 because the old wording («there is no checkout in the mobile app») stopped being true when iOS shipped StoreKit. No price, no CTA, nothing comparative — and on the binary this test guards, Android, the sentence is still a statement of absence.",
   "privacy.s3.points":
     "«A child can never buy anything. This is enforced on the server, not merely hidden.» The child-safety disclosure itself.",
   "privacy.s5.never":
     "«We never encourage a child to buy anything. No price, no payment option and no purchase button is displayed in a student session.» Names the ban in order to disclaim it.",
   "privacy.s8.list":
-    "The payments section of the privacy policy: no card form in the app, a full redirect to the bank, PAN/CVV never reaching our servers, and what the database keeps. It names the currency ('in Azerbaijani manat') as a data-processing fact — no amount, no CTA, no URL. Required disclosure; judged to read as reassurance, not steering.",
+    "The payments section of the privacy policy, rewritten per platform on 2026-09-10: iOS sells through the App Store, the Android app sells nothing, the web rail is a full redirect to the bank. PAN/CVV never reach our servers on either route, and the bullets say what the database keeps for each. It names the currency ('in Azerbaijani manat') as a data-processing fact — no amount, no CTA, no URL. Required disclosure; judged to read as reassurance, not steering.",
   "privacy.s9.erased":
     "The account-deletion inventory — «subscriptions, access entitlements, discount and coupon records» is a category of DATA that gets erased, not an offer.",
   "privacy.s9.survivesTable":

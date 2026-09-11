@@ -6,11 +6,23 @@
 // thin gradient accent bar, lucide glyph chips, one clear CTA. Fast — no
 // animation gating.
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, BackHandler, Linking, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  BackHandler,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Download, Wrench } from "lucide-react-native";
 import { AppText } from "@/components/AppText";
+import { ActionAreaShell } from "@/components/ActionArea";
+import {
+  ACTION_AREA_PADDING_SIDE,
+  scrollBodyBottomInset,
+} from "@/components/actionAreaLayout";
 import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -70,27 +82,79 @@ function GlyphChip({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CenteredShell({ children }: { children: React.ReactNode }) {
+/**
+ * The boot-state shell: brand, message, one clear way out.
+ *
+ * IT SCROLLS, AND THE WAY OUT IS PINNED. The body of a maintenance or
+ * force-update screen is an ADMIN-SUPPLIED trilingual message of unbounded
+ * length — nothing in the admin panel caps it, az and ru run long, and the OS
+ * font scale multiplies whatever it is. As a non-scrolling centred `flex: 1`
+ * column with the CTA as its last child, a long message pushed "Yenilə" off the
+ * bottom of the screen, and these screens replace the whole navigator: there is
+ * no back, no tab, no gesture — that button is the only control that exists. A
+ * message a content manager types is not allowed to strand the user.
+ *
+ * So the message scrolls (centred while it still fits, so nothing changes on
+ * the screens that always fitted) and the action goes in the shared ActionArea
+ * below it. Same contract as every other screen: components/actionAreaLayout.ts.
+ */
+function CenteredShell({
+  children,
+  actions,
+}: {
+  children: React.ReactNode;
+  /** The way out. Pinned below the scroll; omitted on the states without one. */
+  actions?: React.ReactNode;
+}) {
   const { tokens } = useTheme();
   // These screens replace the whole navigator, so nothing else is applying
   // insets for them: a flat padding put the title under the notch and the CTA
   // under the home indicator on tall content. Same treatment as LockOverlay.
   const insets = useSafeAreaInsets();
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: tokens.bg,
+  const hasActions = Boolean(actions);
+
+  const body = (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: tokens.bg }}
+      contentContainerStyle={{
+        // flexGrow + centre: identical to the old layout while the content
+        // fits, and the moment it does not, it simply becomes a scroll.
+        flexGrow: 1,
         alignItems: "center",
         justifyContent: "center",
         paddingHorizontal: spacing.xxl,
         paddingTop: insets.top + spacing.xxl,
-        paddingBottom: insets.bottom + spacing.xxl,
+        // With an action area below, the bottom inset belongs to the BAR.
+        paddingBottom: scrollBodyBottomInset(insets.bottom, hasActions) + spacing.xxl,
         gap: spacing.xl,
       }}
     >
       {children}
-    </View>
+    </ScrollView>
+  );
+
+  if (!hasActions) return body;
+
+  return (
+    <ActionAreaShell
+      background={tokens.bg}
+      borderColor={tokens.border}
+      actions={
+        // The bar's own gutter is spacing.lg; this shell's column is inset by
+        // spacing.xxl, so the difference keeps the buttons in the same column
+        // as the text above them instead of a hand's width wider.
+        <View
+          style={{
+            gap: spacing.md,
+            paddingHorizontal: spacing.xxl - ACTION_AREA_PADDING_SIDE,
+          }}
+        >
+          {actions}
+        </View>
+      }
+    >
+      {body}
+    </ActionAreaShell>
   );
 }
 
@@ -153,7 +217,39 @@ export function ForceUpdateScreen({
   // Say so, and clear it on the next attempt.
   const [openFailed, setOpenFailed] = useState(false);
   return (
-    <CenteredShell>
+    <CenteredShell
+      // The store button is the ONLY control on this screen — the navigator is
+      // not mounted, so there is no back and no tab. It is pinned, and the
+      // "could not open the store" line is pinned with it: an explanation for a
+      // button that did nothing is useless if it is off-screen.
+      actions={
+        // No store URL configured means there is genuinely nothing to press —
+        // the screen is then a message, and a bar with nothing in it would just
+        // be a hairline across the bottom. (openFailed cannot be set without
+        // the button, so it does not need its own branch here.)
+        canOpenStore ? (
+          <>
+            {openFailed ? (
+              <AppText
+                accessibilityLiveRegion="polite"
+                variant="muted"
+                color={tokens.danger}
+                style={{ textAlign: "center" }}
+              >
+                {t("mob.update.openFailed")}
+              </AppText>
+            ) : null}
+            <Button
+              title={t("mob.update.cta")}
+              variant="gradient"
+              onPress={() => {
+                void openStore(storeUrl).then((ok) => setOpenFailed(!ok));
+              }}
+            />
+          </>
+        ) : undefined
+      }
+    >
       <BrandMark size={56} />
       <GlyphChip>
         <Download size={30} color={tokens.accent} strokeWidth={2} />
@@ -164,20 +260,6 @@ export function ForceUpdateScreen({
       <AppText variant="muted" style={{ textAlign: "center" }}>
         {body || t("mob.update.body")}
       </AppText>
-      {canOpenStore ? (
-        <Button
-          title={t("mob.update.cta")}
-          variant="gradient"
-          onPress={() => {
-            void openStore(storeUrl).then((ok) => setOpenFailed(!ok));
-          }}
-        />
-      ) : null}
-      {openFailed ? (
-        <AppText variant="muted" color={tokens.danger} style={{ textAlign: "center" }}>
-          {t("mob.update.openFailed")}
-        </AppText>
-      ) : null}
     </CenteredShell>
   );
 }
@@ -290,14 +372,21 @@ export function UnknownRoleScreen({
 }) {
   const { t } = useT();
   return (
-    <CenteredShell>
+    <CenteredShell
+      // Same reason as the force-update screen: this state replaces the
+      // navigator, so retry and sign-out are the only two controls in the app.
+      actions={
+        <>
+          <Button title={t("mob.retry")} onPress={onRetry} variant="ghost" />
+          <Button title={t("drawer.logout")} onPress={onSignOut} variant="danger" />
+        </>
+      }
+    >
       <BrandMark size={56} />
       <AccentBar />
       <AppText variant="muted" style={{ textAlign: "center" }}>
         {t("mob.boot.error")}
       </AppText>
-      <Button title={t("mob.retry")} onPress={onRetry} variant="ghost" />
-      <Button title={t("drawer.logout")} onPress={onSignOut} variant="danger" />
     </CenteredShell>
   );
 }

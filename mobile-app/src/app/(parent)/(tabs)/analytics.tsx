@@ -20,18 +20,19 @@ import { EmptyState, ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { useTheme } from "@/theme/ThemeProvider";
 import { spacing } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 import { useMobileConfig } from "@/lib/configQueries";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import {
   fetchChildDashboard,
   fetchChildLeaderboardSummary,
   fetchChildSubscriptions,
-  fetchChildren,
   fetchSubjectsPricing,
   type DashboardScope,
 } from "@/lib/data";
 import { groupPricing } from "@/features/parent/commerce";
+import { QK, useAccountId, useChildren } from "@/features/parent/queries";
+import { accountScoped } from "@/features/auth/accountScope";
 import {
   ChildChips,
   DashboardBody,
@@ -82,7 +83,11 @@ export default function ParentAnalytics() {
   // Requested subject ("all" | uuid); clamped at render (loop-safe, no effects).
   const [subjectSel, setSubjectSel] = useState<string | null>(null);
 
-  const childrenQ = useQuery({ queryKey: ["children"], queryFn: fetchChildren });
+  // useChildren(), not a second inline read: this screen used to keep its OWN
+  // unscoped ["children"] cache of the same rows, which every writer then had
+  // to remember to invalidate twice.
+  const accountId = useAccountId();
+  const childrenQ = useChildren();
   const kids = (childrenQ.data ?? []).map((c) => ({
     id: c.profile_id,
     name: `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || (c.child_unique_id ?? "—"),
@@ -94,7 +99,7 @@ export default function ParentAnalytics() {
   // the child's LIVE subscription rows.
   const giveawayActive = config.data?.payment.mode === "giveaway";
   const subsQ = useQuery({
-    queryKey: ["parent", "subscriptions"],
+    queryKey: QK.subscriptions(accountId),
     queryFn: fetchChildSubscriptions,
     enabled: !!childId,
   });
@@ -120,10 +125,17 @@ export default function ParentAnalytics() {
         if (!map.has(s.id)) map.set(s.id, { id: s.id, code: s.code, name: s.name });
       }
     }
-    return Array.from(map.values())
-      .map((s) => ({ id: s.id, label: subjectLabel(t, s.code, s.name) }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [subsQ.data, pricedQ.data, childId, giveawayActive, t]);
+    // Ordered on the RESOLVED label with a comparator keyed on the ACTIVE
+    // locale. The label half was already right; the comparison was a bare
+    // localeCompare(), i.e. Hermes's default collation, while the default
+    // reader here is Azerbaijani — an alphabet that puts q before l and x
+    // before i. `locale` joins the dependency list because switching language
+    // reorders this list, not merely its text.
+    return sortSubjectsByLabel(t, locale, Array.from(map.values())).map((s) => ({
+      id: s.id,
+      label: s.label,
+    }));
+  }, [subsQ.data, pricedQ.data, childId, giveawayActive, t, locale]);
 
   // "" = no unlocked subject; "all" only with >1 subject (web clamp parity).
   const selectedSubject = resolveSubjectSelection(
@@ -143,14 +155,17 @@ export default function ParentAnalytics() {
     // locale is part of the key: setLocale() only mutates the zustand store and
     // never touches the query cache, so a locale-less key would keep serving the
     // previous language after a switch (migration 114).
-    queryKey: ["child-dashboard", childId, mode, subjectParam ?? "all", locale],
+    queryKey: accountScoped(
+      ["child-dashboard", mode, subjectParam ?? "all", locale] as const,
+      childId,
+    ),
     enabled: wantDash,
     queryFn: () => fetchChildDashboard(childId!, subjectParam, locale, 30, scope),
   });
 
   const leaderboardOn = config.data?.flags.leaderboard === true;
   const lbQ = useQuery({
-    queryKey: ["child-lb-summary", childId],
+    queryKey: accountScoped(["child-lb-summary"] as const, childId),
     enabled: !!childId && leaderboardOn,
     queryFn: () => fetchChildLeaderboardSummary(childId!),
   });

@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getPaymentModeInfo } from "@/lib/paymentMode";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { subjectLabelOrNull } from "@/lib/subjectLabel";
 import { pickTranslation } from "@/lib/localizedName";
 import { formatLongDate } from "@/lib/formatDate";
 import { formatAzn } from "@/lib/pricingConfigurator";
@@ -265,9 +265,9 @@ export default async function ParentOlympiadCatalogPage() {
       title: tr?.title ?? "—",
       desc: typeof tr?.description === "string" ? tr.description.trim() : "",
       coverUrl,
-      subject: p.subjects?.name
-        ? subjectLabel(t, p.subjects?.code, p.subjects.name)
-        : null,
+      // Guarded on the RESOLVED label: `subjects.name` is the frozen import
+      // key and may be blank while the translation is perfectly good.
+      subject: subjectLabelOrNull(t, p.subjects?.code, p.subjects?.name),
       typeName: p.olympiad_types?.name ?? null,
       dateText: Number.isFinite(ts) ? fmt(ts) : null,
       gradeIds: gradeSet,

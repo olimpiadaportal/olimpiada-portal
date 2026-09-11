@@ -8,7 +8,7 @@ import { CancelSubscription } from "@/components/CancelSubscription";
 import { BillingTabs } from "@/components/BillingTabs";
 import { Segmented } from "@/components/Segmented";
 import { getPerSubjectPrices } from "@/lib/pricing";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { subjectLabelOrNull } from "@/lib/subjectLabel";
 import { resolveChildAvatarUrl } from "@/lib/childAvatar";
 import { ChildAvatar } from "@/components/ChildAvatar";
 import { CmsProse } from "@/components/CmsProse";
@@ -205,12 +205,16 @@ export default async function ParentSubscription({
             .in("child_subscription_id", liveSubIds);
           for (const row of (covered ?? []) as any[]) {
             const list = subjectsBySub.get(row.child_subscription_id) ?? [];
-            const nm = row.subjects?.name;
-            if (nm) list.push(subjectLabel(t, row.subjects?.code, nm));
+            // RESOLVED FIRST, then guarded. `subjects.name` is the frozen
+            // import key: blank there does not mean the subject is nameless, it
+            // means its name lives in subject_translations — and the old order
+            // dropped exactly those subjects out of the plan summary.
+            const nm = subjectLabelOrNull(t, row.subjects?.code, row.subjects?.name);
+            if (nm) list.push(nm);
             subjectsBySub.set(row.child_subscription_id, list);
             const rows = planBySub.get(row.child_subscription_id) ?? [];
             rows.push({
-              name: nm ? subjectLabel(t, row.subjects?.code, nm) : "—",
+              name: nm ?? "—",
               // A legacy row inherits the subscription's cycle.
               interval:
                 row.interval ??

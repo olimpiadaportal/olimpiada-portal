@@ -17,6 +17,10 @@ import {
   type FreeAccessWizardStrings,
 } from "@/components/FreeAccessWizard";
 import { getT, getLocale } from "@/i18n/server";
+import {
+  SUBJECT_DISPLAY_EMBED,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 
 // Admin-only Free-Access module. Round 12.2: this page is now a single GUIDED,
 // SEQUENTIAL wizard — Step 1 Parent → Step 2 Child → Step 3 Schedule — where
@@ -54,7 +58,7 @@ export default async function FreeAccessPage() {
       // all.
       supabase
         .from("subjects_pricing")
-        .select("subject_id, interval, subjects(name, status)")
+        .select(`subject_id, interval, ${SUBJECT_DISPLAY_EMBED}`)
         .eq("status", "active"),
       supabase.from("districts").select("id, name").eq("status", "active").order("name"),
       // Round 21: a child in a city that HAS rayons must be given one, and
@@ -96,7 +100,9 @@ export default async function FreeAccessPage() {
     for (const r of (pricingRes.data ?? []) as any[]) {
       // Unpublished or archived in Admin → Subjects => not offered here either.
       if (r.subjects?.status !== "active") continue;
-      const name = r.subjects?.name ?? "—";
+      // The name the parent sees on the subject they are being granted, not
+      // the bulk-import key.
+      const name = subjectDisplayName(r.subjects, locale) || "—";
       const entry = bySubject.get(r.subject_id) ?? {
         name,
         intervals: new Set<string>(),
@@ -108,7 +114,7 @@ export default async function FreeAccessPage() {
       id,
       name: s.name,
       intervals: Array.from(s.intervals),
-    })).sort((a, b) => a.name.localeCompare(b.name));
+    })).sort((a, b) => a.name.localeCompare(b.name, locale));
   }
 
   const createParentStrings: AccountCreateStrings = {

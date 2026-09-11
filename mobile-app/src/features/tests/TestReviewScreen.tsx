@@ -16,6 +16,7 @@ import { ErrorRetry, Skeleton } from "@/components/StatusViews";
 import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
 import { useT } from "@/i18n/useT";
 import { publicStorageUrl } from "@/lib/data";
+import { backOrTo, goToTab } from "@/lib/navigation";
 import { useAttemptRow, useTestReview } from "./queries";
 import {
   LETTERS,
@@ -110,7 +111,7 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
           arena={arena}
           kind="ghost"
           title={t("test.run.back")}
-          onPress={() => router.replace(homeTab)}
+          onPress={() => backOrTo(router, homeTab)}
           style={{ marginHorizontal: spacing.xl }}
         />
       </View>
@@ -133,14 +134,12 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
       <BackBar
         arena={arena}
         label={t("test.review.backToResult")}
-        onPress={() => {
-          if (router.canGoBack()) router.back();
-          else
-            router.replace({
-              pathname: "/(student)/test/result/[attemptId]",
-              params: { attemptId },
-            });
-        }}
+        onPress={() =>
+          backOrTo(router, {
+            pathname: "/(student)/test/result/[attemptId]",
+            params: { attemptId },
+          })
+        }
       />
       <View style={{ gap: spacing.sm }}>
         <Eyebrow arena={arena}>{t("test.result.eyebrow")}</Eyebrow>
@@ -196,7 +195,7 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
               >
                 <AppText
                   variant="mono"
-                  color={active ? "#ffffff" : arena.dim}
+                  color={active ? "#ffffff" : arena.muted}
                   style={{ fontSize: 12 }}
                 >
                   {tab.count}
@@ -214,20 +213,18 @@ export function TestReviewScreen({ attemptId }: { attemptId: string }) {
       <ArenaButton
         arena={arena}
         title={t("test.review.backToResult")}
-        onPress={() => {
-          if (router.canGoBack()) router.back();
-          else
-            router.replace({
-              pathname: "/(student)/test/result/[attemptId]",
-              params: { attemptId },
-            });
-        }}
+        onPress={() =>
+          backOrTo(router, {
+            pathname: "/(student)/test/result/[attemptId]",
+            params: { attemptId },
+          })
+        }
       />
       <ArenaButton
         arena={arena}
         kind="ghost"
         title={isOlympiad ? t("test.result.backToOlympiads") : t("test.result.newTest")}
-        onPress={() => router.replace(homeTab)}
+        onPress={() => goToTab(router, homeTab)}
       />
     </View>
   );
@@ -293,7 +290,7 @@ function ReviewCard({
         }}
       >
         {/* Real position in the attempt, even when filtered (web parity). */}
-        <AppText variant="mono" color={arena.dim} style={{ fontSize: 13 }}>
+        <AppText variant="mono" color={arena.muted} style={{ fontSize: 13 }}>
           Q{String(index + 1).padStart(2, "0")}
         </AppText>
         <StatusPill
@@ -468,7 +465,7 @@ function ReviewCard({
           {/* Says WHY the text above is in another language, so a known content
               gap does not read as a broken translation. */}
           {q.explanationIsFallback ? (
-            <AppText color={arena.dim} style={{ fontSize: 12, lineHeight: 17 }}>
+            <AppText color={arena.muted} style={{ fontSize: 12, lineHeight: 17 }}>
               {t("test.review.explAzNote")}
             </AppText>
           ) : null}

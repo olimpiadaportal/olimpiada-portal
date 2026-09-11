@@ -336,7 +336,7 @@ begin
   foreach t in array array[
     'profiles','roles','permissions','parents','students','parent_student_links',
     'districts','city_districts','schools','grades','subjects','topics','subtopics',
-    'topic_translations','subtopic_translations',
+    'subject_translations','topic_translations','subtopic_translations',
     'question_types','difficulty_levels','olympiad_types','sources',
     'questions','question_translations','answer_options','answer_option_translations',
     'question_explanations','tests',
@@ -10275,12 +10275,36 @@ begin
            (ss.current_period_end::date - now()::date)                     as days_left,
            s.first_name,
            s.last_name,
-           string_agg(distinct coalesce(nullif(btrim(subj.name), ''), '—'), ', ')
+           -- MIGRATION 172 -- THE DISPLAY NAME, NOT THE IMPORT KEY. Migration
+           -- 171 froze `subjects.name` as the bulk-import match key (three RPCs
+           -- in this file resolve a subject with `where name = meta->>'subject'`)
+           -- and moved the visible az/en/ru names into subject_translations, so
+           -- a rename deliberately leaves `name` alone. Reading it here named a
+           -- subject, in a warning sent to a paying parent, by a string that
+           -- family has never seen -- and after any rename, by one that exists
+           -- nowhere else in the product.
+           --
+           -- az AND ONLY az. profiles.preferred_locale is unused, so every
+           -- server-generated body in this function is an Azerbaijani literal.
+           -- The goal is that the az name shown is the CURRENT az display name,
+           -- NOT that notifications become trilingual -- that is a separate
+           -- change with a recipient-locale decision behind it.
+           string_agg(distinct coalesce(nullif(btrim(tr_az.name), ''),
+                                        nullif(btrim(subj.name), ''),
+                                        '—'), ', ')
              as subject_names
     from public.child_subscriptions cs
     join public.subscription_subjects ss on ss.child_subscription_id = cs.id
     join public.students s              on s.profile_id = cs.student_profile_id
     left join public.subjects subj      on subj.id = ss.subject_id
+    -- LEFT, and locale-pinned. A subject carrying no az row -- unreachable
+    -- after 171's seed and its own assert, but this join outlives that
+    -- guarantee -- falls back to subj.name above rather than dropping out of
+    -- the warning. uq_subject_locale makes the join at most 1:1, so it cannot
+    -- duplicate a subscription row into the aggregate.
+    left join public.subject_translations tr_az
+                                        on tr_az.subject_id = subj.id
+                                       and tr_az.locale = 'az'
     where cs.status in ('trialing', 'active')
       -- A subject the parent has ALREADY chosen to drop is not lapsing, it is
       -- ending on purpose. Warning about it would be nagging.
@@ -10591,8 +10615,39 @@ begin
       select * into v_note from public.free_trial_notice(
         v_row.locale, v_rung,
         nullif(v_row.child_name, ''),
-        coalesce((select string_agg(sub.name, ', ' order by sub.name)
-                  from public.subjects sub where sub.id = any(v_row.subject_ids)), ''),
+        -- MIGRATION 172 -- the DISPLAY name, in the language this notice is
+        -- actually written in. Unlike every other producer here, free_trial_notice()
+        -- below renders its title and body in az/en/ru from free_trials.locale --
+        -- the parent chose that language when they activated the trial. Only the
+        -- subject list stayed `subjects.name`, the frozen bulk-import key, so an
+        -- English parent read an English sentence with an Azerbaijani subject
+        -- inside it, and after a rename nobody read the current name at all.
+        -- This is NOT new localization: the sentence around it was already
+        -- localized and this makes the hole in it consistent.
+        --
+        -- Fallback chain, most specific first: the reader's locale -> az -> the
+        -- raw column -> the code, so a subject can never silently vanish from a
+        -- sentence that is about to list it. The locale is re-normalized exactly
+        -- as free_trial_notice does rather than trusted from the row.
+        coalesce((
+          select string_agg(q.nm, ', ' order by q.nm)
+            from (
+              select coalesce(nullif(btrim(tr.name), ''),
+                              nullif(btrim(tr_az.name), ''),
+                              nullif(btrim(sub.name), ''),
+                              sub.code) as nm
+                from public.subjects sub
+                left join public.subject_translations tr
+                       on tr.subject_id = sub.id
+                      and tr.locale = (case
+                                         when v_row.locale in ('az', 'en', 'ru')
+                                         then v_row.locale else 'az'
+                                       end)::public.content_locale
+                left join public.subject_translations tr_az
+                       on tr_az.subject_id = sub.id
+                      and tr_az.locale = 'az'
+               where sub.id = any(v_row.subject_ids)
+            ) q), ''),
         v_row.ends_at);
 
       -- ends_at is IN the key, so a reissued trial would start a fresh series

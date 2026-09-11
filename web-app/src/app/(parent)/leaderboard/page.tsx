@@ -6,7 +6,7 @@ import { getT, getLocale } from "@/i18n/server";
 import { isFeatureEnabled } from "@/lib/flags";
 import { formatGradeLabel } from "@/lib/gradeLabel";
 import { formatPercent } from "@/lib/formatPercent";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { sortSubjectsByLabel } from "@/lib/subjectLabel";
 import { LeaderboardSubjectSelect } from "@/components/LeaderboardSubjectSelect";
 import { Segmented } from "@/components/Segmented";
 
@@ -134,9 +134,21 @@ export default async function ParentLeaderboardPage({
       .select("id", { count: "exact", head: true })
       .eq("status", "active"),
   ]);
-  const activeSubjects = (
-    (subjectRows ?? []) as { id: string; code: string | null; name: string }[]
-  ).filter((s) => !!s.id);
+  // ORDERED BY WHAT THE READER SEES, not by the frozen import key. The query
+  // above still asks the database for `name` order, and that is now purely a
+  // DETERMINISTIC BASE for this stable sort: two subjects whose labels collate
+  // equal keep a fixed relative order instead of following whatever the planner
+  // happened to return. The VISIBLE order is the resolved label's, in the
+  // reader's own alphabet — `subjects.name` stopped following a rename in
+  // migration 171 and holds one Azerbaijani string for every reader, so it was
+  // never the right key for a picker that renders subjectLabel().
+  const activeSubjects = sortSubjectsByLabel(
+    t,
+    locale,
+    ((subjectRows ?? []) as { id: string; code: string | null; name: string }[]).filter(
+      (s) => !!s.id,
+    ),
+  );
   const grades = ((gradeRows ?? []) as { id: string; level: number; name: string }[]).filter(
     (g) => !!g.id,
   );
@@ -475,7 +487,7 @@ export default async function ParentLeaderboardPage({
                 value={subjectId ?? ""}
                 options={activeSubjects.map((s) => ({
                   id: s.id,
-                  name: subjectLabel(t, s.code, s.name),
+                  name: s.label,
                   href: href({ ...cur, subject: s.id }),
                 }))}
               />

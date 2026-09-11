@@ -21,6 +21,10 @@ import {
 } from "@/components/NotificationTemplates";
 import { SETTING_META, FLAG_META, LOCALE_OPTIONS } from "@/lib/admin/settings-meta";
 import { getT, getLocale } from "@/i18n/server";
+import {
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 import { localStrings } from "./labels";
 
 // Notifications module — Administrator-only (nav entry is adminOnly and the page
@@ -65,7 +69,10 @@ export default async function NotificationsPage() {
     // written now), not any historical view — a campaign that already went out
     // keeps its stored audience_filter regardless. An archived subject is one
     // the admin has withdrawn, so it should not be a target for new sends.
-    supabase.from("subjects").select("id, name").eq("status", "active").order("name"),
+    supabase
+      .from("subjects")
+      .select(SUBJECT_DISPLAY_SELECT)
+      .eq("status", "active"),
     // ACTIVE olympiad packages (az titles) for the olympiad_buyers audience.
     supabase
       .from("olympiad_packages")
@@ -75,10 +82,15 @@ export default async function NotificationsPage() {
     supabase.from("system_settings").select("key, value_json"),
   ]);
 
-  const subjects: SubjectOption[] = ((subjectRows ?? []) as any[]).map((s) => ({
-    id: s.id,
-    name: s.name,
-  }));
+  // The audience picker names a subject the way a parent's invoice does, not
+  // the way an import file does — and sorts by that name, since ordering on
+  // `subjects.name` orders by the invisible import key.
+  const subjects: SubjectOption[] = ((subjectRows ?? []) as any[])
+    .map((s) => ({
+      id: s.id,
+      name: subjectDisplayName(s, locale),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, locale));
 
   // az title preferred; any translation, then the internal code as fallback.
   const packages: PackageOption[] = ((packageRows ?? []) as any[])

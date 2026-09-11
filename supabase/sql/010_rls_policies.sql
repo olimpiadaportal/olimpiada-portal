@@ -40,7 +40,7 @@ begin
     'parents','students','parent_student_links',
     'child_unique_ids','child_credentials','child_login_attempts',
     'districts','city_districts','schools','grades','subjects','topics','subtopics',
-    'topic_translations','subtopic_translations',
+    'subject_translations','topic_translations','subtopic_translations',
     'wallpapers','child_wallpaper_selections',
     'sticker_themes','sticker_images','child_sticker_selections',
     'question_types','difficulty_levels','olympiad_types','sources',
@@ -200,14 +200,51 @@ create policy "psl_select" on public.parent_student_links for select to authenti
     or public.is_admin()
   );
 
+-- WRITES ARE CREATOR-SCOPED (migration 170). The predicate used to constrain only
+-- parent_profile_id -- it pinned WHO the row said the parent was and said nothing
+-- about WHICH CHILD it handed them, so any authenticated parent could INSERT an
+-- already-'active' link naming an arbitrary student_profile_id (status is
+-- client-settable: no column-level revoke, no BEFORE trigger, no CHECK) and
+-- inherit the full parental view of another family's minor plus, through the
+-- app's parentOwnsChild helper, that child's password reset. Only the
+-- unguessability of profiles.id stood in the way, and uuid secrecy is not access
+-- control. Both policies now require the named student to be one the caller
+-- CREATED, on the old row (USING: no promoting someone else's link) and the new
+-- row (WITH CHECK: no repointing student_profile_id). Nothing legitimate is
+-- affected: no client code writes this table, and the sole SQL writer,
+-- create_child_account (011), is SECURITY DEFINER + service_role and bypasses RLS.
 drop policy if exists "psl_insert" on public.parent_student_links;
 create policy "psl_insert" on public.parent_student_links for insert to authenticated
-  with check (parent_profile_id = public.current_profile_id() or public.is_admin());
+  with check (
+    public.is_admin()
+    or (
+      parent_profile_id = public.current_profile_id()
+      and exists (select 1 from public.students s
+                   where s.profile_id = student_profile_id
+                     and s.created_by_parent_profile_id = public.current_profile_id())
+    )
+  );
 
 drop policy if exists "psl_update" on public.parent_student_links;
 create policy "psl_update" on public.parent_student_links for update to authenticated
-  using (parent_profile_id = public.current_profile_id() or public.is_admin())
-  with check (parent_profile_id = public.current_profile_id() or public.is_admin());
+  using (
+    public.is_admin()
+    or (
+      parent_profile_id = public.current_profile_id()
+      and exists (select 1 from public.students s
+                   where s.profile_id = student_profile_id
+                     and s.created_by_parent_profile_id = public.current_profile_id())
+    )
+  )
+  with check (
+    public.is_admin()
+    or (
+      parent_profile_id = public.current_profile_id()
+      and exists (select 1 from public.students s
+                   where s.profile_id = student_profile_id
+                     and s.created_by_parent_profile_id = public.current_profile_id())
+    )
+  );
 
 drop policy if exists "psl_delete" on public.parent_student_links;
 create policy "psl_delete" on public.parent_student_links for delete to authenticated
@@ -219,10 +256,15 @@ create policy "psl_delete" on public.parent_student_links for delete to authenti
 do $$
 declare t text;
 begin
-  -- topic_translations/subtopic_translations (migration 114) ride this loop on
-  -- purpose: a narrower SELECT than their parent tables would make anon and
-  -- public surfaces silently fall back to Azerbaijani.
+  -- topic_translations/subtopic_translations (migration 114) and
+  -- subject_translations (migration 171) ride this loop on purpose: a narrower
+  -- SELECT than their parent tables would make anon and public surfaces
+  -- silently fall back to Azerbaijani. For subject names that is the whole
+  -- point -- the landing strip, /services, /subjects and the public olympiad
+  -- catalog are all anonymous, and a subject that renames itself only for
+  -- logged-in readers is not renamed.
   foreach t in array array['districts','schools','grades','subjects','topics','subtopics',
+                           'subject_translations',
                            'topic_translations','subtopic_translations'] loop
     execute format('drop policy if exists "%1$s_select" on public.%1$I;', t);
     execute format(

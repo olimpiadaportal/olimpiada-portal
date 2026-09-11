@@ -14,18 +14,36 @@ import {
 } from "@/lib/coverage";
 import { fetchTaughtSubjectIds, keepTaughtSubjects } from "@/lib/data";
 import { ARENA_PALETTES, type ArenaPalette } from "@/theme/tokens";
+import { accountScoped } from "@/features/auth/accountScope";
 
+/**
+ * EVERY key here reads the signed-in CHILD's own rows, so every one of them is
+ * account-scoped (features/auth/accountScope.ts): on a shared family phone a
+ * second child must not be able to address the first one's cache entry. Six of
+ * these were bare constants — free access, the trial, the entitled-subject
+ * list, the streak and both rank reads — which is precisely the set that
+ * decides what a child is allowed to open.
+ *
+ * The "arena" prefix is untouched, so useRefreshArena()'s
+ * invalidateQueries({ queryKey: ["arena"] }) still sweeps all of them.
+ */
 export const QK = {
-  self: (id: string) => ["arena", "self", id] as const,
-  freeAccess: ["arena", "free-access"] as const,
-  freeTrial: ["arena", "free-trial"] as const,
-  accessibleSubjects: ["arena", "accessible-subjects"] as const,
-  subjects: (id: string) => ["arena", "subjects", id] as const,
-  pricedSubjects: ["arena", "priced-subjects"] as const,
-  attempts: (id: string) => ["arena", "attempts", id] as const,
-  streak: ["arena", "streak"] as const,
-  rank: ["arena", "lb-rank"] as const,
-  rankAllTime: ["arena", "lb-rank-all-time"] as const,
+  self: (id: string | null) => accountScoped(["arena", "self"] as const, id),
+  freeAccess: (id: string | null) => accountScoped(["arena", "free-access"] as const, id),
+  freeTrial: (id: string | null) => accountScoped(["arena", "free-trial"] as const, id),
+  accessibleSubjects: (id: string | null) =>
+    accountScoped(["arena", "accessible-subjects"] as const, id),
+  subjects: (id: string | null) => accountScoped(["arena", "subjects"] as const, id),
+  // Caller-scoped despite looking like a catalogue read: fetchPricedSubjects()
+  // calls fetchTaughtSubjectIds() with no argument, i.e. the my_taught_subjects
+  // RPC, so the list is narrowed to THIS child's grade.
+  pricedSubjects: (id: string | null) =>
+    accountScoped(["arena", "priced-subjects"] as const, id),
+  attempts: (id: string | null) => accountScoped(["arena", "attempts"] as const, id),
+  streak: (id: string | null) => accountScoped(["arena", "streak"] as const, id),
+  rank: (id: string | null) => accountScoped(["arena", "lb-rank"] as const, id),
+  rankAllTime: (id: string | null) =>
+    accountScoped(["arena", "lb-rank-all-time"] as const, id),
 };
 
 const ARENA_STALE_MS = 60_000;
@@ -81,7 +99,7 @@ async function fetchStudentSelf(profileId: string): Promise<StudentSelf> {
 export function useStudentSelf() {
   const profileId = useStudentProfileId();
   return useQuery({
-    queryKey: QK.self(profileId ?? "-"),
+    queryKey: QK.self(profileId),
     queryFn: () => fetchStudentSelf(profileId as string),
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
@@ -194,19 +212,19 @@ export function useArenaAccess(): ArenaAccess {
   const self = useStudentSelf();
   const profileId = useStudentProfileId();
   const free = useQuery({
-    queryKey: QK.freeAccess,
+    queryKey: QK.freeAccess(profileId),
     queryFn: fetchMyFreeAccessActive,
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
   });
   const trial = useQuery({
-    queryKey: QK.freeTrial,
+    queryKey: QK.freeTrial(profileId),
     queryFn: fetchMyFreeTrial,
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
   });
   const entitled = useQuery({
-    queryKey: QK.accessibleSubjects,
+    queryKey: QK.accessibleSubjects(profileId),
     queryFn: fetchMyAccessibleSubjects,
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
@@ -315,7 +333,7 @@ export async function fetchPricedSubjects(): Promise<ArenaSubject[]> {
 export function useMySubjects() {
   const profileId = useStudentProfileId();
   return useQuery({
-    queryKey: QK.subjects(profileId ?? "-"),
+    queryKey: QK.subjects(profileId),
     queryFn: () => fetchMySubjects(profileId as string),
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
@@ -331,7 +349,7 @@ export function useMySubjects() {
 export function usePricedSubjects(enabled: boolean) {
   const profileId = useStudentProfileId();
   return useQuery({
-    queryKey: QK.pricedSubjects,
+    queryKey: QK.pricedSubjects(profileId),
     queryFn: fetchPricedSubjects,
     enabled: enabled && !!profileId,
     staleTime: ARENA_STALE_MS,
@@ -378,7 +396,7 @@ async function fetchMyAttempts(profileId: string): Promise<ArenaAttempt[]> {
 export function useMyAttempts() {
   const profileId = useStudentProfileId();
   return useQuery({
-    queryKey: QK.attempts(profileId ?? "-"),
+    queryKey: QK.attempts(profileId),
     queryFn: () => fetchMyAttempts(profileId as string),
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
@@ -412,7 +430,7 @@ async function fetchStreakStatus(): Promise<StreakStatus> {
 export function useStreakStatus() {
   const profileId = useStudentProfileId();
   return useQuery({
-    queryKey: QK.streak,
+    queryKey: QK.streak(profileId),
     queryFn: fetchStreakStatus,
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,
@@ -440,7 +458,7 @@ async function fetchMyLeaderboardRank(period: "month" | "all_time"): Promise<MyL
 export function useMyLeaderboardRank(enabled: boolean) {
   const profileId = useStudentProfileId();
   return useQuery({
-    queryKey: QK.rank,
+    queryKey: QK.rank(profileId),
     queryFn: () => fetchMyLeaderboardRank("month"),
     enabled: enabled && !!profileId,
     staleTime: ARENA_STALE_MS,
@@ -452,7 +470,7 @@ export function useMyLeaderboardRank(enabled: boolean) {
 export function useMyAllTimeRank() {
   const profileId = useStudentProfileId();
   return useQuery({
-    queryKey: QK.rankAllTime,
+    queryKey: QK.rankAllTime(profileId),
     queryFn: () => fetchMyLeaderboardRank("all_time"),
     enabled: !!profileId,
     staleTime: ARENA_STALE_MS,

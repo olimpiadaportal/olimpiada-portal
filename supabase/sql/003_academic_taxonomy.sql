@@ -154,6 +154,76 @@ create table if not exists public.subjects (
 );
 
 -- -----------------------------------------------------------------------------
+-- subject_translations : per-locale subject DISPLAY names (migration 171).
+--
+-- Before 171 a subject had one Azerbaijani `name` and the visible label came
+-- from the apps' own `subj.<code>` dictionary, which WON over the column -- so
+-- renaming a seeded subject in the admin panel changed nothing anywhere. The
+-- label now resolves: this table for the reader's locale -> the built-in
+-- `subj.<code>` dictionary -> subjects.name -> the code.
+--
+-- Same sibling-table shape as question_translations / news_translations /
+-- topic_translations, with ONE deliberate divergence from the last of those:
+-- `az` IS stored here. topic_translations excludes az because topics are
+-- CREATED BY NAME by both bulk importers, which makes topics.name a match key
+-- that must have exactly one home.
+--
+-- SUBJECTS ARE MATCHED BY NAME TOO -- an earlier version of this comment said
+-- they never were, which was false. Three bulk-import RPCs in
+-- 011_indexes_constraints_functions_triggers.sql resolve a subject by name:
+-- :3026 (bulk_insert_questions, per row, raising `unknown subject %` on a
+-- miss), :3185 (the same function stamping question_imports.subject_id from the
+-- first row's meta.subject) and :6857 (the olympiad bulk import, when the
+-- package carries no subject of its own).
+--
+-- The consequence is the design, not a contradiction of it: A RENAME MUST NOT
+-- CHANGE subjects.name. The admin action writes the three rows here and leaves
+-- `name` alone, so `name` and the az translation ARE ALLOWED TO DIVERGE on
+-- purpose -- `name` is the stable machine-facing key the importers, the audit
+-- metadata, the deletion dialog and the admin search box read, while the az row
+-- is what a family sees. Nothing asserts the two agree, and 013's check 129
+-- deliberately does not: such an assertion would fail on the first rename.
+-- The LOCALISED label is a key to nothing, which is exactly why storing az here
+-- is free where storing it on topics would not be.
+--
+-- No extra index: uq_subject_locale is the (subject_id, locale) b-tree every
+-- read looks up on. Seeds for the shipped subjects live in 012.
+-- -----------------------------------------------------------------------------
+create table if not exists public.subject_translations (
+  id         uuid primary key default gen_random_uuid(),
+  subject_id uuid not null references public.subjects (id) on delete cascade,
+  locale     public.content_locale not null,
+  name       text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint uq_subject_locale unique (subject_id, locale),
+  constraint ck_subject_tr_name_not_blank check (btrim(name) <> '')
+);
+
+comment on table public.subject_translations is
+  'Per-locale subject display names (migration 171). A subject label resolves '
+  'as: this table for the reader locale -> the built-in subj.<code> dictionary '
+  '-> subjects.name -> the code. subjects.name is deliberately NOT kept in step '
+  'with the az row: three bulk-import RPCs in 011 resolve a subject by name, so '
+  'it is an import match key that a rename must leave alone.';
+
+comment on column public.subject_translations.name is
+  'Display name in that locale. ck_subject_tr_name_not_blank keeps a blank out: '
+  'the admin form falls back to the az value rather than storing an empty '
+  'string, so no reader can ever be shown an empty subject label.';
+
+-- Baseline privileges (RLS gates rows). Mirrors the 010 baseline for new tables,
+-- the same way 014_news.sql and 015_olympiad_preparation.sql do for theirs, and
+-- NOT redundant with 010's `alter default privileges`: those are grantor-scoped
+-- and cover only tables created by the role that ran them. Without an explicit
+-- grant a differently-owned deployment gives anon/authenticated no SELECT here,
+-- PostgREST returns nothing, and every subject silently keeps its dictionary
+-- name -- the exact bug migration 171 exists to fix. Asserted by 013 check 129.
+grant select on public.subject_translations to anon, authenticated, service_role;
+grant insert, update, delete on public.subject_translations to authenticated;
+grant all on public.subject_translations to service_role;
+
+-- -----------------------------------------------------------------------------
 -- topics : subject/grade topics.
 -- -----------------------------------------------------------------------------
 create table if not exists public.topics (

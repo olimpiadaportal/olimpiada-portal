@@ -9,7 +9,7 @@
 import React, { useMemo, useState } from "react";
 import { RefreshControl, SectionList, View } from "react-native";
 import { BellOff } from "lucide-react-native";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -18,6 +18,7 @@ import { spacing } from "@/theme/tokens";
 import { useArena } from "@/features/arena/useArena";
 import { useT } from "@/i18n/useT";
 import { isSafeRelativeUrl, resolveDeepLink } from "@/lib/deeplink";
+import { openTarget } from "@/lib/navigation";
 import { usePullRefresh } from "@/lib/usePullRefresh";
 import {
   useNotifications,
@@ -37,6 +38,7 @@ export default function StudentNotifications() {
   const { t, locale } = useT();
   const { arena } = useArena();
   const router = useRouter();
+  const pathname = usePathname();
   const queryClient = useQueryClient();
   const { items, loading, error, unreadCount, refresh, markRead, markAllRead, remove } =
     useNotifications(50);
@@ -86,10 +88,15 @@ export default function StudentNotifications() {
   // the SAME deep-link allowlist as push/universal links — STUDENT audience, so
   // parent/purchase targets never open from a child session; anything that does
   // not resolve falls back to the detail sheet.
+  // openTarget(), not router.push(): most student targets are TABS
+  // (/child/test, /child/olympiads, /child/leaderboard, /child/news), and
+  // pushing a tab route from this screen — stacked on top of those tabs —
+  // mounts a SECOND tab navigator whose back press lands on the Arena instead
+  // of returning here. See lib/navigation.ts.
   const openPath = (path: string): boolean => {
     const resolved = resolveDeepLink(path, "student");
     if (resolved && resolved.kind === "open") {
-      router.push(resolved.target as never);
+      openTarget(router, resolved.target, pathname);
       return true;
     }
     return false;

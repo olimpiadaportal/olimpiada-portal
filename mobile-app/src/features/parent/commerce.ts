@@ -75,8 +75,30 @@ export const INTERVAL_NAME_KEY: Record<Interval, string> = {
   year: "pricing.yearly",
 };
 
-/** One option per SUBJECT out of the flat subjects_pricing rows (name-sorted);
- *  the amounts in those rows are deliberately dropped here. */
+/**
+ * One option per SUBJECT out of the flat subjects_pricing rows; the amounts in
+ * those rows are deliberately dropped here.
+ *
+ * THIS ORDER IS CACHE STABILITY, NOT DISPLAY ORDER (2026-09-10), and the
+ * distinction is the whole point. It used to sort on `subjects.name` with a
+ * bare `localeCompare()`, which was wrong twice over: `subjects.name` is the
+ * frozen bulk-import key that migration 171 stopped following a rename — the
+ * screen prints `subjectLabel()`, i.e. the per-locale `subject_translations`
+ * name — and a locale-less `localeCompare()` collates in Hermes's default,
+ * while this product's default reader is Azerbaijani (q before l, x before i).
+ *
+ * Nor can the fix live here. This runs inside a react-query `queryFn` under a
+ * key that carries NO locale (`QK.pricing`, and the analytics tab's twin), and
+ * `setLocale()` only mutates the zustand store — it never touches the query
+ * cache. Any locale-aware order decided here would freeze at the language of
+ * the FIRST fetch and outlive every later language switch.
+ *
+ * So it sorts on `id`: locale-independent, cache-safe and openly arbitrary —
+ * `fetchSubjectsPricing` orders nothing, so an unsorted list would shuffle
+ * between fetches. Reading order is chosen where the reader's language lives,
+ * by `ManageSubjectsEditor` and the analytics tab, both through
+ * `sortSubjectsByLabel(t, locale, …)`. Web twin: `web-app/src/lib/pricing.ts`.
+ */
 export function groupPricing(rows: SubjectPricingRow[]): SubjectOption[] {
   const map = new Map<string, SubjectOption>();
   for (const row of rows) {
@@ -88,7 +110,7 @@ export function groupPricing(rows: SubjectPricingRow[]): SubjectOption[] {
       name: row.subject?.name ?? "—",
     });
   }
-  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  return Array.from(map.values()).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /** The allocated 8-digit login ID out of an activate/edit BFF payload. */

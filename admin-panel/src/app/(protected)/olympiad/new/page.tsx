@@ -5,6 +5,10 @@ import { getDict, getLocale, getT } from "@/i18n/server";
 import { OlympiadCreateForm } from "@/components/OlympiadCreateForm";
 import { olympiadLocalDict } from "@/lib/admin/olympiad-strings";
 import { mergeLocalDict } from "@/lib/admin/question-flow-labels";
+import {
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 
 // New Package = one workspace: package fields + the MANDATORY question bulk
 // upload submit together, so a package is never created with zero questions.
@@ -25,7 +29,10 @@ export default async function NewOlympiadPage() {
       // public card the moment the package goes on sale. Management views
       // (the /olympiad list filter, the edit page's current value) still show
       // every status; only "what may I pick for something new" is narrowed.
-      supabase.from("subjects").select("id, name").eq("status", "active").order("name"),
+      supabase
+        .from("subjects")
+        .select(SUBJECT_DISPLAY_SELECT)
+        .eq("status", "active"),
       supabase.from("grades").select("id, name, level").order("level"),
       supabase
         .from("question_types")
@@ -67,7 +74,11 @@ export default async function NewOlympiadPage() {
             ...olympiadLocalDict(locale),
           }}
           locale={locale}
-          subjects={((subjects ?? []) as any[]).map((s) => ({ value: s.id, label: s.name }))}
+          // The display name a family sees, sorted by it — `.order("name")`
+          // would sort by the frozen bulk-import key.
+          subjects={((subjects ?? []) as any[])
+            .map((s) => ({ value: s.id, label: subjectDisplayName(s, locale) }))
+            .sort((a, b) => a.label.localeCompare(b.label, locale))}
           grades={((grades ?? []) as any[]).map((g) => ({
             value: String(g.id),
             label: String(g.name),

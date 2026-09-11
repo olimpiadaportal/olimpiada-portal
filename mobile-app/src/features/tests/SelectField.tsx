@@ -88,7 +88,7 @@ export function SelectField({
             clamped on purpose — the full name is in the option list one tap
             away, and an unbounded form control breaks the setup-form rhythm. */}
         <AppText
-          color={selected ? arena.ink : arena.dim}
+          color={selected ? arena.ink : arena.muted}
           style={{ flex: 1, minWidth: 0 }}
           numberOfLines={2}
           ellipsizeMode="tail"
@@ -98,7 +98,7 @@ export function SelectField({
         <ChevronDown size={16} color={arena.dim} strokeWidth={2} />
       </Pressable>
       {note ? (
-        <AppText variant="muted" color={arena.dim} style={{ fontSize: 12 }}>
+        <AppText variant="muted" color={arena.muted} style={{ fontSize: 12 }}>
           {note}
         </AppText>
       ) : null}
@@ -186,7 +186,7 @@ export function SelectField({
                       onChangeText={setQuery}
                       accessibilityLabel={t("mob.select.search")}
                       placeholder={t("mob.select.search")}
-                      placeholderTextColor={arena.dim}
+                      placeholderTextColor={arena.muted}
                       autoCorrect={false}
                       autoCapitalize="none"
                       returnKeyType="search"
@@ -225,7 +225,7 @@ export function SelectField({
                     query.trim() ? (
                       <AppText
                         variant="muted"
-                        color={arena.dim}
+                        color={arena.muted}
                         style={{ padding: spacing.lg, fontSize: fontSize.sm }}
                       >
                         {t("mob.select.noResults")}

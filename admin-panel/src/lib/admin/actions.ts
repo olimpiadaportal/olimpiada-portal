@@ -14,7 +14,7 @@ import {
   PRICE_INTERVALS,
   parsePriceAmount,
   type PriceInterval,
-} from "@/app/(protected)/pricing/shared";
+} from "@/lib/admin/pricing-shared";
 
 export type SaveState = { error?: string } | null;
 
@@ -334,6 +334,61 @@ export async function deleteRow(formData: FormData): Promise<void> {
 // a float. The value goes straight to admin_upsert_subject_price, which
 // re-checks the same bounds and stores numeric(12,2). No arithmetic happens in
 // TypeScript at any point.
+//
+// WHY UPDATE NO LONGER WRITES PRICES (2026-09-10, the /pricing merge). Editing
+// a subject and repricing it are now two different actions on two different
+// tables: this file owns the `subjects` ROW, and saveSubjectPrice
+// (lib/admin/pricing.ts, one cell per (subject, interval)) owns
+// `subjects_pricing`. Creation still writes both, because a subject born
+// unpriced is the trap described above — but an EDIT that re-posted three
+// amounts read off a stale page would silently overwrite a reprice made in the
+// meantime, and there is no version to compare against. Two consequences, both
+// structural rather than careful:
+//   * renaming a subject cannot reset a price — updateSubject has no code path
+//     that reaches subjects_pricing at all;
+//   * a reprice cannot rename or publish a subject — saveSubjectPrice never
+//     reads a name or a status.
+// The invariant "status = 'active' implies three active pricing rows" is held
+// instead by CHECKING it: updateSubject refuses to move a subject to 'active'
+// unless all three cycles are already priced and active, exactly as
+// transitionSubject does. It also refuses a status change posted against a
+// status the row has since LEFT — the edit form carries the status it was
+// rendered against, and a stale tab must not be able to re-publish a subject
+// somebody archived in the meantime.
+//
+// WHY THE NAME IS THREE FIELDS (2026-09-10, migration 171). It used to be one,
+// and renaming a subject was a SILENT NO-OP: the apps resolved every visible
+// subject label from their own `subj.<code>` dictionary, which won over
+// `subjects.name`, so this action wrote the row, wrote the audit entry, said
+// "saved" — and nothing anywhere changed, in any of the three languages. The
+// names now live per-locale in `subject_translations` and the apps read that
+// first.
+//
+// `subjects.name` IS THE IMPORT KEY, AND AN UPDATE MUST NEVER WRITE IT. Three
+// bulk-import RPCs resolve a subject by that column and nothing else —
+// bulk_insert_questions, its olympiad-pool sibling and the question_imports log
+// row all run `where name = (meta ->> 'subject')`. So renaming "İngilis dili"
+// to "English / İngilis dili" through this action used to break every import
+// file that names the old string: the admin sees "saved", and days later a
+// colleague's upload fails with "unknown subject" and nothing connects the two.
+// The rule that follows is structural rather than careful — CREATE writes
+// `name` once, from the az field, and UPDATE has no code path that touches it.
+// The form says so on the edit screen, beside the field that no longer feeds it.
+//
+// WHAT THE PANEL SHOWS, DECIDED ONCE. Anything a human READS names the subject
+// by its display name in the admin's own locale — the Subjects list, the edit
+// heading, the price cells' accessible labels, the deletion dialog. Anything
+// that is a RECORD keys it by something stable: the audit rows carry the id and
+// the `code`, never the display name, because a name that can change is a poor
+// thing to reconstruct history from. The one place the raw key is PRINTED is
+// the edit form, labelled as what it is. And the list's search box matches the
+// key AND the translations, or a renamed subject would be findable only under a
+// name nobody sees any more.
+//
+// EN and RU are optional and fall back to az. A trilingual form that REFUSED to
+// save without all three would make an admin invent English for a subject they
+// only teach in Azerbaijani; copying az into the other two is the honest
+// default and is exactly what the reader saw before this existed.
 // ===========================================================================
 
 const UUID_SHAPE =
@@ -343,18 +398,41 @@ const SUBJECT_STATUSES = ["active", "inactive", "archived"] as const;
 type SubjectStatus = (typeof SUBJECT_STATUSES)[number];
 
 /** Which control an error belongs to, so the form can point at it. */
-export type SubjectFormField = "name" | "status" | PriceInterval;
+export type SubjectFormField =
+  | "name"
+  | "name_en"
+  | "name_ru"
+  | "status"
+  | PriceInterval;
+
+/** The three locales a subject name is stored in (public.content_locale). */
+export const SUBJECT_LOCALES = ["az", "en", "ru"] as const;
+export type SubjectLocale = (typeof SUBJECT_LOCALES)[number];
 
 export type SubjectSaveState = {
   error?: string;
   field?: SubjectFormField;
   ok?: boolean;
+  /**
+   * The submission's status change was refused because the row had moved under
+   * the form. A FLAG rather than a message comparison: the form has to re-read
+   * the server data after this outcome (its baseline is now provably stale, and
+   * every retry would reproduce the same refusal), and no client should have to
+   * recognise a translated sentence to know that.
+   */
+  stale?: boolean;
 } | null;
 
 type ParsedSubject =
   | {
       ok: true;
+      /**
+       * The az name. Written to `subjects.name` on CREATE only — that column is
+       * the bulk-import key (see the header), so updateSubject never writes it.
+       */
       name: string;
+      /** az/en/ru, en and ru already defaulted to az when left blank. */
+      names: Record<SubjectLocale, string>;
       status: SubjectStatus;
       prices: Record<PriceInterval, number>;
     }
@@ -362,10 +440,38 @@ type ParsedSubject =
 
 // Server-side validation of the whole form. The client mirrors these rules for
 // UX only — nothing here trusts a `required` attribute or a number input.
-function parseSubjectForm(formData: FormData, t: T): ParsedSubject {
+//
+// `withPrices` is FALSE for the edit form, which posts no price fields at all.
+// It is a parameter rather than "parse them if present" on purpose: absent
+// prices must be a refusal on the create path (a subject born unpriced is the
+// bug this whole module exists to prevent) and must be ignored on the edit path
+// (a posted `price_month` there is a forged field, and reading it would be the
+// second write path the merge removed).
+function parseSubjectForm(
+  formData: FormData,
+  t: T,
+  withPrices: boolean,
+): ParsedSubject {
+  // az is the required one, and on the create path it is also the value
+  // `subjects.name` is born with.
   const name = String(formData.get("name") ?? "").trim();
   if (name.length < 1 || name.length > TEXT_MAX) {
     return { ok: false, state: { error: t("subj.err.name"), field: "name" } };
+  }
+
+  // EN and RU are OPTIONAL but still validated: a blank one is a deliberate
+  // "same as Azerbaijani", an over-long one is a mistake and must be refused
+  // rather than silently truncated by the column.
+  const names = { az: name, en: name, ru: name } as Record<SubjectLocale, string>;
+  for (const loc of ["en", "ru"] as const) {
+    const raw = String(formData.get("name_" + loc) ?? "").trim();
+    if (raw.length > TEXT_MAX) {
+      return {
+        ok: false,
+        state: { error: t("subj.err.name"), field: ("name_" + loc) as SubjectFormField },
+      };
+    }
+    if (raw) names[loc] = raw;
   }
 
   const statusRaw = String(formData.get("status") ?? "").trim();
@@ -375,15 +481,46 @@ function parseSubjectForm(formData: FormData, t: T): ParsedSubject {
   const status = statusRaw as SubjectStatus;
 
   const prices = {} as Record<PriceInterval, number>;
-  for (const iv of PRICE_INTERVALS) {
-    const amount = parsePriceAmount(String(formData.get("price_" + iv) ?? ""));
-    if (amount === null) {
-      return { ok: false, state: { error: t("subj.err.price"), field: iv } };
+  if (withPrices) {
+    for (const iv of PRICE_INTERVALS) {
+      const amount = parsePriceAmount(String(formData.get("price_" + iv) ?? ""));
+      if (amount === null) {
+        return { ok: false, state: { error: t("subj.err.price"), field: iv } };
+      }
+      prices[iv] = amount;
     }
-    prices[iv] = amount;
   }
 
-  return { ok: true, name, status, prices };
+  return { ok: true, name, names, status, prices };
+}
+
+/**
+ * True when all three cycles have an ACTIVE row in subjects_pricing.
+ *
+ * The same question transitionSubject asks before it publishes, asked here for
+ * the same reason: since the edit form stopped carrying prices, the status
+ * dropdown is a second way into 'active', and it must not be a way AROUND the
+ * interlock. A read failure counts as NOT complete — refusing to publish on bad
+ * information is recoverable; publishing an unsellable subject is the silent
+ * failure that hid Elm and Fizika from /services.
+ */
+async function pricesComplete(supabase: Db, subjectId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("subjects_pricing")
+    .select("interval")
+    .eq("subject_id", subjectId)
+    .eq("status", "active");
+  if (error) {
+    console.error(
+      "[admin] subject pricing check failed",
+      error.code ?? "unknown",
+    );
+    return false;
+  }
+  const priced = new Set(
+    (data ?? []).map((r) => String((r as { interval: string }).interval)),
+  );
+  return PRICE_INTERVALS.every((iv) => priced.has(iv));
 }
 
 /**
@@ -451,11 +588,64 @@ async function writeSubjectPrices(
   return null;
 }
 
+/**
+ * Writes the three display names into `subject_translations`.
+ *
+ * UPSERT ON (subject_id, locale) — the table's own unique constraint — rather
+ * than delete-then-insert: a rename must never leave a subject with NO name for
+ * a locale, not even for the microseconds between two statements, because the
+ * apps read this table first and would render the raw code in that window.
+ *
+ * Returns false on failure. The caller treats that as a REPORTED failure, not a
+ * silent one: the whole point of migration 171 is that a rename which does not
+ * take must not look like a rename that did.
+ */
+async function writeSubjectNames(
+  supabase: Db,
+  subjectId: string,
+  names: Record<SubjectLocale, string>,
+): Promise<boolean> {
+  const { error } = await supabase.from("subject_translations").upsert(
+    SUBJECT_LOCALES.map((locale) => ({
+      subject_id: subjectId,
+      locale,
+      name: names[locale],
+      updated_at: new Date().toISOString(),
+    })),
+    { onConflict: "subject_id,locale" },
+  );
+  if (error) {
+    // Never a raw Postgres message; the detail stays in the server log.
+    console.error(
+      "[admin] subject translation write failed",
+      subjectId,
+      error.code ?? "unknown",
+    );
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Which locales this submission actually CHANGED, for the audit row.
+ *
+ * Small on purpose — locale codes, never the names themselves. An audit log is
+ * a record that a rename happened and by whom; the values live in the table
+ * that was written.
+ */
+function changedLocales(
+  before: Record<SubjectLocale, string> | null,
+  after: Record<SubjectLocale, string>,
+): SubjectLocale[] {
+  if (!before) return [...SUBJECT_LOCALES];
+  return SUBJECT_LOCALES.filter((l) => (before[l] ?? "") !== after[l]);
+}
+
 function revalidateSubject(id?: string): void {
   revalidatePath("/manage/subjects");
   if (id) revalidatePath("/manage/subjects/" + id + "/edit");
-  // The pricing grid reads the same two tables.
-  revalidatePath("/pricing");
+  // /pricing is no longer a screen — it redirects to /manage/subjects, which is
+  // already revalidated above.
 }
 
 export async function createSubject(
@@ -466,7 +656,8 @@ export async function createSubject(
   const ctx = await requireAdmin();
   const t = await getT();
 
-  const parsed = parseSubjectForm(formData, t);
+  // Creation is the one path that writes prices: a subject must be born priced.
+  const parsed = parseSubjectForm(formData, t, true);
   if (!parsed.ok) return parsed.state;
 
   const supabase = await createClient();
@@ -503,21 +694,47 @@ export async function createSubject(
 
   const newId = String((created as { id: string }).id);
 
+  // BOTH HALVES ARE WRITTEN BEFORE EITHER IS REPORTED.
+  //
+  // The names still go FIRST — a subject that becomes visible without them
+  // would render its raw `subjects.name` to English and Russian readers — but
+  // a failure there used to redirect immediately, which abandoned a created,
+  // UNPRICED, unpublished subject and told the admin only that the names had
+  // not saved. The likeliest cause of that failure is also the most invisible
+  // one: a database where migration 171 has not been applied yet, on which
+  // EVERY creation would have silently produced an unsellable subject. The
+  // prices are what decide whether the subject can ever be sold at all, so they
+  // are written whatever the names did; neither failure publishes.
+  const namesOk = await writeSubjectNames(supabase, newId, parsed.names);
+  const failedInterval = await writeSubjectPrices(supabase, newId, parsed.prices);
+
   await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.subject.create",
     targetTable: "subjects",
     targetId: newId,
-    metadata: { name: parsed.name, code: String(payload.code) },
+    metadata: {
+      // `name` here is the IMPORT KEY, chosen once at creation and never
+      // rewritten (see the header). Recording it is recording a stable value,
+      // which is why the update action records `code` instead.
+      name: parsed.name,
+      code: String(payload.code),
+      locales: namesOk ? changedLocales(null, parsed.names) : [],
+    },
   });
 
-  const failed = await writeSubjectPrices(supabase, newId, parsed.prices);
-  if (failed) {
-    // The subject EXISTS but is unpriced and still private. Sending the admin
-    // back to the create form would invite a duplicate; the edit page is where
-    // the missing price can actually be fixed, and the flag says what happened.
+  if (!namesOk || failedInterval) {
+    // The subject EXISTS and is still private. Sending the admin back to the
+    // create form would invite a duplicate; the edit page is where BOTH halves
+    // can actually be fixed. Each flag renders its own sentence there, so a
+    // submission that lost both is told it lost both rather than only the first
+    // thing that went wrong.
+    const flags = [
+      ...(namesOk ? [] : ["nameFailed=1"]),
+      ...(failedInterval ? ["priceFailed=1"] : []),
+    ].join("&");
     revalidateSubject(newId);
-    redirect("/manage/subjects/" + newId + "/edit?priceFailed=1");
+    redirect("/manage/subjects/" + newId + "/edit?" + flags);
   }
 
   if (parsed.status !== "inactive") {
@@ -558,31 +775,104 @@ export async function updateSubject(
   const id = String(formData.get("__id") ?? "").trim();
   if (!UUID_SHAPE.test(id)) return { error: t("err.server") };
 
-  const parsed = parseSubjectForm(formData, t);
+  // THE STATUS THIS PAGE WAS RENDERED AGAINST — a hidden field the edit form
+  // posts beside the id, and the only thing that makes the re-read below worth
+  // performing. Anything that is not one of the three statuses (absent, forged,
+  // a form cached from before this field existed) means "no baseline", and the
+  // staleness check is skipped rather than guessed at: refusing a save on a
+  // value we cannot interpret would break editing for nobody's benefit.
+  const renderedRaw = String(formData.get("__statusWas") ?? "").trim();
+  const renderedStatus = (SUBJECT_STATUSES as readonly string[]).includes(
+    renderedRaw,
+  )
+    ? (renderedRaw as SubjectStatus)
+    : null;
+
+  // NAME AND STATUS ONLY. The prices are inline cells with their own action —
+  // see the section header. Passing `false` here is what makes "editing a
+  // subject cannot reset its prices" structural: there is no parsed price to
+  // write, and nothing below this line mentions subjects_pricing except the
+  // read-only publish check.
+  const parsed = parseSubjectForm(formData, t, false);
   if (!parsed.ok) return parsed.state;
 
   const supabase = await createClient();
   // Re-verify the client-supplied id server-side before anything privileged.
+  // `code` is read for the audit row: it is the stable handle a rename cannot
+  // move, which is exactly what a history entry should be keyed by.
   const { data: row } = await supabase
     .from("subjects")
-    .select("id, name, status")
+    .select("id, code, status")
     .eq("id", id)
     .maybeSingle();
   if (!row) return { error: t("err.server") };
-  const before = row as { name: string; status: string };
+  const before = row as { code: string | null; status: string };
 
-  // PRICES FIRST, ROW SECOND. If a price write fails the status is left exactly
-  // where it was, so a failed reprice can never publish an unsellable subject —
-  // and the previous price stays in the database, which is what the error
-  // message promises the admin.
-  const failed = await writeSubjectPrices(supabase, id, parsed.prices);
-  if (failed) return { error: t("subj.err.priceSave"), field: failed };
+  // The names as they stand, so the audit row can say WHICH languages changed
+  // rather than "a save happened". A read failure is not fatal — it only costs
+  // the precision of that one metadata field, and every locale is reported as
+  // changed instead.
+  const { data: beforeRows } = await supabase
+    .from("subject_translations")
+    .select("locale, name")
+    .eq("subject_id", id);
+  let beforeNames: Record<SubjectLocale, string> | null = null;
+  if (Array.isArray(beforeRows)) {
+    beforeNames = { az: "", en: "", ru: "" };
+    for (const r of beforeRows as { locale: string; name: string }[]) {
+      const loc = String(r.locale);
+      if ((SUBJECT_LOCALES as readonly string[]).includes(loc)) {
+        beforeNames[loc as SubjectLocale] = String(r.name ?? "");
+      }
+    }
+  }
 
+  // A STALE TAB MUST NOT RE-PUBLISH AN ARCHIVED SUBJECT. The row is re-read
+  // above for the reason transitionSubject re-reads it — the page the admin is
+  // looking at may be minutes old — and re-reading buys nothing if the form's
+  // dropdown value is then written unconditionally. An admin who opened this
+  // page while the subject was 'active', and saves a rename after somebody else
+  // archived it, would otherwise put it back on sale without touching the
+  // dropdown and without being told.
+  //
+  // The refusal is NARROW, the same shape as the `from` whitelist in
+  // subject-status.ts: it fires only when the baseline disagrees with the stored
+  // status AND the submission would actually move the status. A posted value
+  // that already equals what is stored is a no-op with nothing to collide with.
+  //
+  // The RENAME still saves — it is unrelated data, and dropping it would punish
+  // this admin for someone else's edit — and the refusal is REPORTED below.
+  // Swallowing it silently is the same class of bug as the one it prevents.
+  const staleStatus =
+    renderedStatus !== null &&
+    renderedStatus !== before.status &&
+    parsed.status !== before.status;
+  const nextStatus: SubjectStatus = staleStatus
+    ? (before.status as SubjectStatus)
+    : parsed.status;
+
+  // THE PUBLISH INTERLOCK. Moving a subject to 'active' requires all three
+  // cycles priced and active, exactly as the list's publish button does. The
+  // check runs only for that direction: hiding or archiving an unpriced subject
+  // must always work, because it is the way OUT of a bad state rather than a
+  // reward for being in a good one. It asks about `nextStatus`, so a status
+  // change already refused as stale is never re-described as a pricing problem.
+  if (nextStatus === "active" && before.status !== "active") {
+    if (!(await pricesComplete(supabase, id))) {
+      return { error: t("subj.publishBlocked"), field: "status" };
+    }
+  }
+
+  // NO `name` IN THIS PAYLOAD, AND THAT IS THE POINT. `subjects.name` is the
+  // key three bulk-import RPCs resolve a subject by (`where name = (meta ->>
+  // 'subject')`), so rewriting it here would break every import file naming the
+  // old string — invisibly, and days after the rename that caused it. The
+  // display names go to `subject_translations` below; this row write carries
+  // the publication status and nothing else.
   const { error } = await supabase
     .from("subjects")
     .update({
-      name: parsed.name,
-      status: parsed.status,
+      status: nextStatus,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);
@@ -592,19 +882,49 @@ export async function updateSubject(
     return { error: t("err.server") };
   }
 
+  // The display names are the half a family actually sees, so a failure here is
+  // reported instead of being buried under a green "saved": before migration 171
+  // a rename that changed nothing looked exactly like a rename that worked, and
+  // that is the bug.
+  const namesOk = await writeSubjectNames(supabase, id, parsed.names);
+  const locales = namesOk ? changedLocales(beforeNames, parsed.names) : [];
+
   await writeAuditLog({
     actorProfileId: ctx.profileId,
     action: "admin.subject.update",
     targetTable: "subjects",
     targetId: id,
     metadata: {
-      name: parsed.name,
-      renamed: before.name !== parsed.name,
+      // THE STABLE HANDLE, not the display name. `code` is generated once and
+      // never changes, so an audit row still identifies the subject after any
+      // number of renames — and it stays small: locale codes and an id, never
+      // the names themselves.
+      code: before.code ?? "",
+      renamed: locales.length > 0,
+      // WHICH languages were renamed — locale codes only, never the strings.
+      locales,
       from: before.status,
-      to: parsed.status,
+      to: nextStatus,
+      // Present only when a status change was refused as stale, so the log can
+      // tell "nobody touched the status" apart from "somebody tried and lost".
+      ...(staleStatus ? { statusRefused: parsed.status } : {}),
     },
   });
 
   revalidateSubject(id);
+  // `stale` rides on BOTH refusals, not just the second one: a submission that
+  // lost the status race AND failed to write its names is still holding a
+  // baseline the database has moved past, and the form has to re-read before
+  // the admin retries or the retry reproduces this same refusal for ever.
+  if (!namesOk) {
+    return {
+      error: t("subj.err.nameSave"),
+      field: "name",
+      ...(staleStatus ? { stale: true } : {}),
+    };
+  }
+  if (staleStatus) {
+    return { error: t("subj.err.staleStatus"), field: "status", stale: true };
+  }
   return { ok: true };
 }

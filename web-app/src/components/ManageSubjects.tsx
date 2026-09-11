@@ -474,7 +474,7 @@ export function ManageSubjects({
                         : undefined
                   }
                   locale={locale}
-                  t={tt}
+                  t={t}
                 />
               );
             })}
@@ -718,7 +718,7 @@ export function ManageSubjects({
               }
               loading={quoting}
               locale={locale}
-              t={tt}
+              t={t}
             />
           </div>
 

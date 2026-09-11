@@ -4,16 +4,14 @@
 // RPC — the client never trusts a locally-stored role claim.
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase";
-import { queryClient } from "@/lib/queryClient";
 import {
   bffChildLogin,
   bffHealParentAccount,
   bffRegisterParent,
   type SessionTokens,
 } from "@/lib/api";
-import { clearPendingLink } from "@/lib/deeplink";
 import { deregisterPushToken } from "@/features/push/registration";
-import { clearAllDrafts } from "@/features/tests/draft";
+import { clearAccountState, resetAccountStateForSignIn } from "./sessionTeardown";
 
 export type SessionRole = "parent" | "student" | "unknown";
 export type AuthStatus = "restoring" | "signedOut" | "signedIn";
@@ -96,6 +94,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   parentLogin: async (email, password) => {
+    // A session can end without its teardown ever running (the OS kills the
+    // app, or a stored session is only found invalid later), so the incoming
+    // account must never inherit what the last one left addressable.
+    resetAccountStateForSignIn();
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
@@ -134,6 +136,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   childLogin: async (childId, password) => {
+    // Same reset as parentLogin — and this is the path that matters most on a
+    // shared family phone: the child signing in after the parent.
+    resetAccountStateForSignIn();
     const res = await bffChildLogin(childId, password);
     if (!res.ok) return { error: res.error };
     if (!(await adoptTokens(res.data))) {
@@ -145,6 +150,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   registerParent: async (fields) => {
+    resetAccountStateForSignIn();
     const res = await bffRegisterParent({
       first_name: fields.firstName,
       last_name: fields.lastName,
@@ -176,22 +182,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // local state is cleared regardless
     }
-    clearPendingLink();
-    queryClient.clear();
-    // In-flight test answers are per-account working state: on a shared device
-    // the next child must never inherit them (they live outside React Query,
-    // so queryClient.clear() does not reach them).
-    clearAllDrafts();
+    // THE SAME teardown the involuntary SIGNED_OUT path below runs — one
+    // function, so the two can never drift (sessionTeardown.ts).
+    clearAccountState();
     set({ status: "signedOut", role: null, userId: null, profileId: null });
   },
 }));
 
 // A hard sign-out elsewhere (token revoked, refresh failed) must flip the
-// store too, or the router would keep the user inside a role group.
+// store too, or the router would keep the user inside a role group — AND it
+// must tear the account state down exactly as the button does. Flipping the
+// status alone left the query cache and the in-flight answer drafts behind for
+// whoever signed in next, which on a family phone is a different child.
 supabase.auth.onAuthStateChange((event) => {
   if (event === "SIGNED_OUT") {
     const s = useAuthStore.getState();
     if (s.status === "signedIn") {
+      clearAccountState();
       useAuthStore.setState({ status: "signedOut", role: null, userId: null, profileId: null });
     }
   }

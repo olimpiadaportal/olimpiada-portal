@@ -775,6 +775,11 @@ export async function bulkImportQuestions(
   // spanning several topics. Each row now declares meta.term and it must equal
   // the curriculum topic's term — validated below and re-checked by the DB.
   const supabase = await createClient();
+  // `name` ON PURPOSE, and this is the one read in the panel that must NOT
+  // become the display name. It is written into every row's `meta.subject`
+  // below, and the import RPC resolves the subject with
+  // `where name = (meta ->> 'subject')`. The admin picked this subject by its
+  // display name in the modal above; the key is what the database matches on.
   const [{ data: subj }, { data: grade }] = await Promise.all([
     supabase.from("subjects").select("id, name").eq("id", subjectId).maybeSingle(),
     supabase.from("grades").select("id, level").eq("id", gradeId).maybeSingle(),

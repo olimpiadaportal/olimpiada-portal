@@ -1,6 +1,7 @@
-// "Report a problem" (migration 115) — the mobile dialog, modelled on the
-// sibling ConfirmModal.tsx so the two behave identically: RN <Modal>, backdrop
-// press to dismiss, an in-dialog error line, and ArenaButton's pending state.
+// "Report a problem" (migration 115) — the mobile dialog, built on the shared
+// ArenaDialog shell so it behaves identically to ConfirmModal and the rules
+// gate: safe-area-padded backdrop, a body that scrolls, and an action row that
+// cannot be pushed off the bottom of a short screen.
 //
 // Two behaviours are deliberate and match the web component:
 //   * while a submit is in flight the dialog is strictly modal — the backdrop
@@ -10,23 +11,13 @@
 //     confirmation belongs where the user is already looking (the same argument
 //     ConfirmModal makes for its errorText).
 import React, { useRef, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-} from "react-native";
+import { TextInput, View } from "react-native";
 import { AppText } from "@/components/AppText";
-import { KeyboardFocusBoundary } from "@/lib/useKeyboardAware";
-import { radius, shadow, spacing, type ArenaTokens } from "@/theme/tokens";
-import { ArenaButton, tint } from "./ui";
+import { radius, spacing, type ArenaTokens } from "@/theme/tokens";
+import { ArenaDialog } from "./ArenaDialog";
+import { ArenaButton } from "./ui";
 
 const MESSAGE_MAX = 1000;
-
-/** Stable no-op so a pending dialog's close handler never changes identity. */
-function noop() {}
 
 export function ReportQuestionSheet({
   arena,
@@ -82,156 +73,104 @@ export function ReportQuestionSheet({
   const remaining = MESSAGE_MAX - text.length;
 
   return (
-    <Modal
+    <ArenaDialog
+      arena={arena}
       visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={pending ? noop : dismiss}
-    >
-      {/* A Modal is its own NATIVE window, so KeyboardAvoidingView is the right
-          tool here (the app-wide measured contract belongs to scroll bodies) —
-          `padding` on BOTH platforms, exactly like PhoneField's country sheet:
-          this window starts at y=0 with no header to offset against, and if
-          Android's adjustResize did shrink it the measured frame already
-          shrank and the computed padding falls to 0.
-
-          It is NOT its own REACT tree, though: context reaches straight through
-          a Modal. The note field below is a bare TextInput today and reports
-          focus to nobody, but the boundary is what keeps that true — the moment
-          it becomes a TextField (which reports its wrapper upward) it would
-          otherwise scroll the runner/review list behind this sheet. */}
-      <KeyboardFocusBoundary>
-        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-          <Pressable
-            accessibilityLabel={t("test.report.cancel")}
-            onPress={pending ? undefined : dismiss}
-            style={{
-              flex: 1,
-              backgroundColor: tint("#000000", 0.55),
-              justifyContent: "center",
-              padding: spacing.xl,
-            }}
-          >
-            {/* Inner pressable swallows taps so the card never closes itself. */}
-            <Pressable
-              onPress={() => {}}
-              style={[
-                {
-                  backgroundColor: arena.panel,
-                  borderColor: arena.line,
-                  borderWidth: 1,
-                  borderRadius: radius.xl,
-                  padding: spacing.xl,
-                  gap: spacing.md,
-                  maxHeight: "85%",
-                },
-                shadow("float"),
-              ]}
-            >
-              <AppText variant="title" color={arena.ink}>
-                {sent ? t("test.report.successTitle") : t("test.report.title")}
+      title={sent ? t("test.report.successTitle") : t("test.report.title")}
+      dismissLabel={t("test.report.cancel")}
+      onDismiss={pending ? undefined : dismiss}
+      // The only dialog in the app with a text input: the Modal is its own
+      // native window, so KeyboardAvoidingView is the right tool here, and the
+      // focus boundary keeps the screen behind it from scrolling itself.
+      keyboardAvoiding
+      actions={
+        sent ? (
+          <ArenaButton
+            arena={arena}
+            kind="primary"
+            title={t("test.report.done")}
+            onPress={dismiss}
+          />
+        ) : (
+          <View style={{ gap: spacing.md }}>
+            {error ? (
+              <AppText
+                accessibilityLiveRegion="polite"
+                color={arena.red}
+                style={{ fontSize: 14, lineHeight: 20 }}
+              >
+                {error}
               </AppText>
-
-              {sent ? (
-                <>
-                  <AppText color={arena.muted} style={{ fontSize: 15, lineHeight: 21 }}>
-                    {t("test.report.successBody")}
-                  </AppText>
-                  <ArenaButton
-                    arena={arena}
-                    kind="primary"
-                    title={t("test.report.done")}
-                    onPress={dismiss}
-                    style={{ marginTop: spacing.sm }}
-                  />
-                </>
-              ) : (
-                <>
-                  <ScrollView
-                    keyboardShouldPersistTaps="handled"
-                    contentContainerStyle={{ gap: spacing.sm }}
-                  >
-                    <AppText color={arena.muted} style={{ fontSize: 15, lineHeight: 21 }}>
-                      {t("test.report.intro")}
-                    </AppText>
-                    <AppText variant="label" color={arena.muted} style={{ fontSize: 12 }}>
-                      {t("test.report.label")}
-                    </AppText>
-                    <TextInput
-                      accessibilityLabel={t("test.report.label")}
-                      multiline
-                      editable={!pending}
-                      maxLength={MESSAGE_MAX}
-                      value={text}
-                      onChangeText={(v) => {
-                        setText(v);
-                        if (error) setError(null);
-                      }}
-                      placeholder={t("test.report.placeholder")}
-                      placeholderTextColor={arena.dim}
-                      textAlignVertical="top"
-                      style={{
-                        backgroundColor: arena.panel2,
-                        color: arena.ink,
-                        borderWidth: 1,
-                        borderColor: arena.line,
-                        borderRadius: radius.md,
-                        padding: spacing.md,
-                        minHeight: 110,
-                        fontSize: 15,
-                        lineHeight: 21,
-                      }}
-                    />
-                    <AppText
-                      variant="mono"
-                      color={arena.dim}
-                      style={{ fontSize: 12, textAlign: "right" }}
-                    >
-                      {t("test.report.remaining").replace("{n}", String(remaining))}
-                    </AppText>
-                  </ScrollView>
-
-                  {error ? (
-                    <AppText
-                      accessibilityLiveRegion="polite"
-                      color={arena.red}
-                      style={{ fontSize: 14, lineHeight: 20 }}
-                    >
-                      {error}
-                    </AppText>
-                  ) : null}
-
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      gap: spacing.md,
-                      marginTop: spacing.sm,
-                    }}
-                  >
-                    <ArenaButton
-                      arena={arena}
-                      kind="ghost"
-                      title={t("test.report.cancel")}
-                      onPress={dismiss}
-                      disabled={pending}
-                      style={{ flex: 1 }}
-                    />
-                    <ArenaButton
-                      arena={arena}
-                      kind="primary"
-                      title={t("test.report.submit")}
-                      onPress={submit}
-                      pending={pending}
-                      pendingTitle={t("test.report.sending")}
-                      style={{ flex: 1 }}
-                    />
-                  </View>
-                </>
-              )}
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </KeyboardFocusBoundary>
-    </Modal>
+            ) : null}
+            <View style={{ flexDirection: "row", gap: spacing.md }}>
+              <ArenaButton
+                arena={arena}
+                kind="ghost"
+                title={t("test.report.cancel")}
+                onPress={dismiss}
+                disabled={pending}
+                style={{ flex: 1 }}
+              />
+              <ArenaButton
+                arena={arena}
+                kind="primary"
+                title={t("test.report.submit")}
+                onPress={submit}
+                pending={pending}
+                pendingTitle={t("test.report.sending")}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        )
+      }
+    >
+      {sent ? (
+        <AppText color={arena.muted} style={{ fontSize: 15, lineHeight: 21 }}>
+          {t("test.report.successBody")}
+        </AppText>
+      ) : (
+        <View style={{ gap: spacing.sm }}>
+          <AppText color={arena.muted} style={{ fontSize: 15, lineHeight: 21 }}>
+            {t("test.report.intro")}
+          </AppText>
+          <AppText variant="label" color={arena.muted} style={{ fontSize: 12 }}>
+            {t("test.report.label")}
+          </AppText>
+          <TextInput
+            accessibilityLabel={t("test.report.label")}
+            multiline
+            editable={!pending}
+            maxLength={MESSAGE_MAX}
+            value={text}
+            onChangeText={(v) => {
+              setText(v);
+              if (error) setError(null);
+            }}
+            placeholder={t("test.report.placeholder")}
+            placeholderTextColor={arena.muted}
+            textAlignVertical="top"
+            style={{
+              backgroundColor: arena.panel2,
+              color: arena.ink,
+              borderWidth: 1,
+              borderColor: arena.line,
+              borderRadius: radius.md,
+              padding: spacing.md,
+              minHeight: 110,
+              fontSize: 15,
+              lineHeight: 21,
+            }}
+          />
+          <AppText
+            variant="mono"
+            color={arena.muted}
+            style={{ fontSize: 12, textAlign: "right" }}
+          >
+            {t("test.report.remaining").replace("{n}", String(remaining))}
+          </AppText>
+        </View>
+      )}
+    </ArenaDialog>
   );
 }

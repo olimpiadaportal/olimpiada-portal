@@ -13,6 +13,11 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/guards";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { getLocale } from "@/i18n/server";
+import {
+  SUBJECT_DISPLAY_EMBED,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
 import type { ReportStatus } from "@/lib/admin/question-report-status";
 import {
   validateReplyBody,
@@ -108,6 +113,7 @@ export async function loadQuestionReport(
   const id = typeof rawId === "string" ? rawId.trim() : "";
   if (!UUID_RE.test(id)) return null;
   const supabase = await createClient();
+  const adminLocale = await getLocale();
 
   const { data: r } = await supabase
     .from("question_reports")
@@ -139,7 +145,7 @@ export async function loadQuestionReport(
     supabase
       .from("questions")
       .select(
-        "id, status, primary_locale, olympiad_package_id, subjects(name), grades(name), topics(name), subtopics(name), question_translations(locale, body, prompt), question_explanations(locale, explanation_body), answer_options(id, is_correct, order_index, answer_option_translations(locale, text))",
+        `id, status, primary_locale, olympiad_package_id, ${SUBJECT_DISPLAY_EMBED}, grades(name), topics(name), subtopics(name), question_translations(locale, body, prompt), question_explanations(locale, explanation_body), answer_options(id, is_correct, order_index, answer_option_translations(locale, text))`,
       )
       .eq("id", r.question_id)
       .maybeSingle(),
@@ -185,7 +191,11 @@ export async function loadQuestionReport(
       status: String(q.status),
       primary_locale: String(q.primary_locale ?? "az"),
       olympiad_package_id: q.olympiad_package_id ?? null,
-      subject: q.subjects?.name ?? null,
+      // The ADMIN's locale, not the reporter's: the fields around it (topic,
+      // subtopic, grade) are stored in one language and this panel is read in
+      // the language its user chose. The report BODY beside it is the half
+      // that follows the reporter, and it says which locale it came from.
+      subject: subjectDisplayName(q.subjects, adminLocale) || null,
       grade: q.grades?.name ?? null,
       topic: q.topics?.name ?? null,
       subtopic: q.subtopics?.name ?? null,

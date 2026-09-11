@@ -29,7 +29,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useT } from "@/i18n/I18nProvider";
 import { PlanSummary } from "@/components/PlanSummary";
 import { SubjectPlanCard } from "@/components/SubjectPlanCard";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { sortSubjectsByLabel, subjectLabel } from "@/lib/subjectLabel";
 import {
   addPlanSubject,
   availableSubjects,
@@ -136,9 +136,21 @@ export function PricingConfigurator({
     );
   };
 
-  const available = useMemo(
-    () => availableSubjects(subjects, selected),
-    [subjects, selected],
+  // ORDERED BY WHAT THE VISITOR READS — and ordered HERE on purpose.
+  // lib/pricing.ts hands this catalog over in an openly arbitrary,
+  // locale-independent order because its `unstable_cache` has no locale in its
+  // key and serves az, en and ru visitors the same payload; it is structurally
+  // unable to choose a reading order. This component can: it is where the
+  // labels are resolved, and it knows whose alphabet to use.
+  //
+  // Deliberately NOT useMemo'd. The sort key comes from t(), whose identity is
+  // new on every render, so a memo listing it would recompute every time while
+  // implying it does not — and one omitting it would serve a stale order after
+  // a language switch. The catalog is the platform's handful of subjects.
+  const available = sortSubjectsByLabel(
+    t,
+    locale,
+    availableSubjects(subjects, selected),
   );
   const byId = useMemo(
     () => new Map(subjects.map((s) => [s.id, s])),
@@ -184,7 +196,7 @@ export function PricingConfigurator({
               return (
                 <li key={s.id} className="pcfg-row">
                   <span className="pcfg-row-main">
-                    <span className="pcfg-row-name">{label(s)}</span>
+                    <span className="pcfg-row-name">{s.label}</span>
                     <span className="pcfg-row-price">
                       {from === null
                         ? t("cfg.unpriced")
@@ -196,8 +208,8 @@ export function PricingConfigurator({
                   <button
                     type="button"
                     className="pcfg-add"
-                    onClick={() => toggle(s.id, true, label(s))}
-                    aria-label={t("cfg.addAria").replace("{subject}", label(s))}
+                    onClick={() => toggle(s.id, true, s.label)}
+                    aria-label={t("cfg.addAria").replace("{subject}", s.label)}
                     data-pcfg-focus={s.id}
                   >
                     <span aria-hidden="true" className="pcfg-add-glyph">

@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getLocale, getT } from "@/i18n/server";
 import { isUuid } from "@/lib/uuid";
 import { pickName, pickTranslation } from "@/lib/localizedName";
-import { subjectLabel } from "@/lib/subjectLabel";
+import { subjectLabelOrNull } from "@/lib/subjectLabel";
 import { TestRunner, type TestAttemptData } from "@/components/TestRunner";
 import { ChildNavActive } from "@/components/ChildNav";
 
@@ -138,9 +138,12 @@ export default async function TestRunPage({
   // "counts for the rating" badge off them no matter what the flag says.
   const rated = !isOlympiad && !!(attRow as { is_rated?: boolean } | null)?.is_rated;
   const subjRow = subjectRow as { code?: string | null; name?: string } | null;
-  subjectName = subjRow?.name
-    ? subjectLabel(t, subjRow.code, subjRow.name).trim()
-    : "";
+  // GUARDED ON THE RESOLVED LABEL, never on `subjects.name`. That column is
+  // the frozen bulk-import match key and is allowed to be blank; a subject with
+  // a perfectly good `subject_translations` row used to lose its name in this
+  // header because the guard rejected the row before subjectLabel() was given
+  // the chance to find the translation that would have named it.
+  subjectName = subjectLabelOrNull(t, subjRow?.code, subjRow?.name) ?? "";
   // Daily rounds title the top bar "Round of the day — <subject>".
   if (isDaily) {
     dict["test.run.title"] = subjectName

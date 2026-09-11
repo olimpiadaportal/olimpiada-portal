@@ -2,7 +2,10 @@
 //
 // A server component — it renders no state of its own and takes the already
 // resolved trial from the caller, so only the countdown inside it is a client
-// island. Strings arrive translated; this file holds no i18n.
+// island. Strings arrive translated; this file holds no i18n — INCLUDING the
+// subject names, which arrive through `subjects` already resolved by
+// subjectLabel(). The trial RPC hands back `subjects.name`, the frozen
+// bulk-import key, and printing that is what this prop replaced.
 //
 // The expired CTA lives HERE and nowhere else. This is a web surface, where
 // naming a subscription is correct and legal. The same sentence must never
@@ -17,10 +20,23 @@ type Dict = Record<string, string>;
 export function FreeTrialStatusPanel({
   trial,
   d,
+  subjects,
   subscribeHref,
 }: {
   trial: FreeTrialState;
   d: Dict;
+  /**
+   * The trial's subjects, ALREADY resolved to the reader's language by the
+   * caller (subjectLabel) and ordered by that label.
+   *
+   * Required, and deliberately not defaulted to `trial.subjects`: those carry
+   * the raw `subjects.name`, which migration 171 froze as the internal
+   * bulk-import match key — it no longer follows a rename and it is Azerbaijani
+   * for every reader. This panel used to print it, which is the defect the prop
+   * exists to make unrepeatable; a silent fallback is exactly how it would come
+   * back.
+   */
+  subjects: { id: string; name: string }[];
   subscribeHref?: string;
 }) {
   if (trial.active && trial.endsAt) {
@@ -32,7 +48,7 @@ export function FreeTrialStatusPanel({
         </div>
 
         <ul className="ftrial-status-list">
-          {trial.subjects.map((s) => (
+          {subjects.map((s) => (
             <li key={s.id}>{s.name}</li>
           ))}
         </ul>
@@ -57,9 +73,9 @@ export function FreeTrialStatusPanel({
     <section className="ftrial-status is-over">
       <h3 className="ftrial-status-title">{d["trial.expired.title"]}</h3>
       <p className="ftrial-status-body">{d["trial.expired.body"]}</p>
-      {trial.subjects.length > 0 ? (
+      {subjects.length > 0 ? (
         <ul className="ftrial-status-list is-muted">
-          {trial.subjects.map((s) => (
+          {subjects.map((s) => (
             <li key={s.id}>{s.name}</li>
           ))}
         </ul>

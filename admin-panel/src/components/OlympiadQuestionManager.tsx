@@ -41,6 +41,7 @@ import {
   type OlympiadPoolQuestionData,
 } from "@/lib/admin/olympiad";
 import { fillTemplate } from "@/lib/admin/olympiad-per-attempt";
+import { displayLabelComparator } from "@/lib/admin/subject-display";
 
 export type OlympiadPoolRow = {
   id: string;
@@ -94,6 +95,7 @@ type BulkPreview = {
 
 export function OlympiadQuestionManager({
   dict,
+  locale,
   bulkStrings,
   packageId,
   packageCode,
@@ -103,6 +105,12 @@ export function OlympiadQuestionManager({
   floors,
 }: {
   dict: Record<string, string>;
+  /** The admin's own language. Every label here arrives pre-translated from the
+   *  server, so the ONLY thing this needs it for is COLLATION: the grade filter
+   *  and the bulk dialog both order display labels, and az/en/ru do not agree
+   *  on an alphabet. Required rather than defaulted — a defaulted locale is a
+   *  call site that silently orders a Russian admin's list in Azerbaijani. */
+  locale: string;
   bulkStrings: OlympiadPoolBulkStrings;
   packageId: string;
   /** Shown and demanded by the bulk dialog; the RPC compares it under lock. */
@@ -115,6 +123,11 @@ export function OlympiadQuestionManager({
 }) {
   const tt = (k: string) => dict[k] ?? k;
   const router = useRouter();
+  // One collator for every label list on this screen (2026-09-10). Grade labels
+  // are numbers wearing a suffix — "3-cü sinif", "10-cu sinif" — so the
+  // comparator's `numeric` option is doing visible work here, on top of the
+  // reader's alphabet.
+  const byLabel = useMemo(() => displayLabelComparator(locale), [locale]);
 
   const [search, setSearch] = useState("");
   // A SET, not a string: the owner asked for "Grade 3 + Grade 5" as a single
@@ -159,9 +172,13 @@ export function OlympiadQuestionManager({
     for (const g of packageGrades) byId.set(g.value, g.label);
     for (const r of rows) if (r.gradeId && !byId.has(r.gradeId)) byId.set(r.gradeId, r.gradeName);
     const opts = Array.from(byId, ([value, label]) => ({ value, label }));
-    opts.sort((a, b) => a.label.localeCompare(b.label));
+    // In the READER's collation. A bare localeCompare() here ordered the grade
+    // filter in the server runtime's default locale — the same order for every
+    // admin, in nobody's alphabet — and left "10-cu sinif" sitting above
+    // "3-cü sinif" because it compared the digits as text.
+    opts.sort((a, b) => byLabel(a.label, b.label));
     return opts;
-  }, [rows, packageGrades]);
+  }, [rows, packageGrades, byLabel]);
 
   /** Grade-less rows are legal; without their own option they are unreachable. */
   const anyWithoutGrade = useMemo(() => rows.some((r) => !r.gradeId), [rows]);
@@ -292,7 +309,11 @@ export function OlympiadQuestionManager({
     return {
       ids: chosen.map((r) => r.id),
       total: chosen.length,
-      grades: Array.from(new Set(chosen.map((r) => r.gradeName))).sort(),
+      // Same collation as the grade filter above. A bare `.sort()` compares
+      // UTF-16 code units, so the confirmation dialog for a delete listed the
+      // grades as 10, 11, 3 — the one place on this screen where an admin is
+      // asked to read a list carefully before agreeing to destroy something.
+      grades: Array.from(new Set(chosen.map((r) => r.gradeName))).sort(byLabel),
       code: packageCode,
     };
   };
@@ -308,7 +329,10 @@ export function OlympiadQuestionManager({
     return {
       ids: chosen.map((r) => r.id),
       total: chosen.length,
-      grades: Array.from(new Set(chosen.map((r) => r.gradeName))).sort(),
+      // The delete dialog's twin, and it gets the reader's collation for the
+      // same reason: an archive is refusable and demoting, so the grade list is
+      // read before the button is pressed.
+      grades: Array.from(new Set(chosen.map((r) => r.gradeName))).sort(byLabel),
       code: packageCode,
     };
   };

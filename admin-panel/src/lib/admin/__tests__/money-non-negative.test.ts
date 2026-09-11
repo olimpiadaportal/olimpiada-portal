@@ -24,7 +24,7 @@ import {
   parsePriceAmount,
   parsePackagePriceAmount,
   PRICE_MAX,
-} from "@/app/(protected)/pricing/shared";
+} from "@/lib/admin/pricing-shared";
 
 describe("subscription price parsing", () => {
   it("refuses every way of writing a negative", () => {

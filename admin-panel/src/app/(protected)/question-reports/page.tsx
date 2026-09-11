@@ -6,6 +6,10 @@ import { FilterBar } from "@/components/FilterBar";
 import { sanitizeSearchTerm } from "@/lib/admin/search";
 import { formatBakuDateTime } from "@/lib/admin/datetime";
 import {
+  SUBJECT_DISPLAY_SELECT,
+  subjectDisplayName,
+} from "@/lib/admin/subject-display";
+import {
   REPORT_STATUSES,
   isReportStatus,
   reportStatusPill,
@@ -117,7 +121,7 @@ export default async function QuestionReportsPage({
           .select("id, code, olympiad_package_translations(locale, title)")
           .in("id", packageIds)
       : Promise.resolve({ data: [] as any[] }),
-    supabase.from("subjects").select("id, name").order("name"),
+    supabase.from("subjects").select(SUBJECT_DISPLAY_SELECT),
   ]);
   const profileById = new Map<string, any>(
     ((profilesRes.data ?? []) as any[]).map((p) => [p.id, p]),
@@ -206,10 +210,14 @@ export default async function QuestionReportsPage({
             value: subject,
             allLabel: t("qrep.filter.allSubjects"),
             ariaLabel: t("qrep.field.subject"),
-            options: (((subjectsRes.data ?? []) as any[]) || []).map((s) => ({
-              value: s.id as string,
-              label: s.name as string,
-            })),
+            // The name a parent would quote in the report, not the import
+            // key — and sorted by it, which `.order("name")` cannot do.
+            options: ((subjectsRes.data ?? []) as any[])
+              .map((s) => ({
+                value: s.id as string,
+                label: subjectDisplayName(s, locale),
+              }))
+              .sort((a, b) => a.label.localeCompare(b.label, locale)),
           },
           {
             key: "platform",
